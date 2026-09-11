@@ -9,6 +9,10 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { batchConfirmUnits } from './inventoryUnit.service.js';
 import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
 import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
+import {
+  applyReceiveJobBarcodeReadiness,
+  assertReceiveJobBarcodeReady,
+} from './receiveBarcodeReadiness.service.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -168,16 +172,22 @@ export async function inspectReceiveJobLine(
     });
   }
 
-  // Auto-advance job status when all lines are inspection_complete
-  const allLines = await trx('receive_job_lines')
-    .where({ receive_job_id: receiveJobId, shop_id: shopId })
-    .select('inspection_complete');
-  const allInspected = allLines.every((l: any) => l.inspection_complete);
-  if (allInspected) {
-    await trx('receive_jobs')
-      .where({ receive_job_id: receiveJobId })
-      .update({ status: 'inspection', updated_at: new Date() });
-    console.info('[RECEIVE_JOB_ALL_LINES_INSPECTED]', { receiveJobId });
+  /**
+   * Auto-advance job status when all lines are inspection_complete.
+   *
+   * GH-1085: the destination is no longer a flat 'inspection'. Whether this
+   * stock can be scanned decides where it goes — BYO-barcode stock is already
+   * Stow-ready, while barcode-less stock owes a physical label acknowledgement
+   * and parks at 'barcode_assignment'. The canonical evaluator owns that call
+   * and is the same one the acknowledgement path and the close gate use.
+   */
+  const readiness = await applyReceiveJobBarcodeReadiness(trx, shopId, receiveJobId);
+  if (readiness.allInspected) {
+    console.info('[RECEIVE_JOB_ALL_LINES_INSPECTED]', {
+      receiveJobId,
+      status: readiness.status,
+      ready: readiness.ready,
+    });
   }
 
   await writeAuditLog(trx, {
@@ -339,6 +349,24 @@ export async function closeReceiveJob(
   if (incomplete.length > 0) {
     throw new Error(`[RECEIVE_JOB_CLOSE] ${incomplete.length} lines not yet inspected on job ${receiveJobId}`);
   }
+
+  /**
+   * BARCODE READINESS GATE (GH-1085 / BARCODE-LIFECYCLE-01)
+   * -------------------------------------------------------
+   * Deliberately the last validation and the first thing before ANY
+   * consequential write. Everything below this line — quantity_received, PO
+   * status, supplier metrics, inventory_movements, inventory_truth,
+   * barcode_print_jobs, stow_tasks, alerts, audit — is a side effect of
+   * letting stock leave receiving, and none of it may happen for stock that
+   * cannot be scanned once it reaches a bin.
+   *
+   * Recomputed from canonical state rather than trusting receive_jobs.status:
+   * that column is a cached reflection of this same answer, and a stale or
+   * hand-edited value must never be able to open the gate. Throwing here rolls
+   * the caller's transaction back whole, so a refused close leaves nothing
+   * behind.
+   */
+  await assertReceiveJobBarcodeReady(trx, shopId, receiveJobId);
 
   // 1. Write quantity_received back to PO line items
   for (const line of lines) {

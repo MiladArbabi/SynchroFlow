@@ -91,6 +91,16 @@ export interface ReceiveSessionPageProps {
   onComplete: () => void;
   onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
+  /**
+   * GH-1085 — explicit operator acknowledgement that this line's LSU- labels
+   * were printed AND attached. Called only from the acknowledgement action,
+   * never because a print request resolved.
+   *
+   * REQUIRED: an optional callback fails open. If the wiring ever drops it,
+   * the acknowledgement would no-op and the session would advance as though
+   * unscannable stock were ready.
+   */
+  onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
 }
 
 type ExceptionType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'barcode_mismatch' | 'other';
@@ -115,6 +125,7 @@ export default function ReceiveSessionPage({
   onComplete,
   onResolveBarcode,
   onPrintUnitLabels,
+  onConfirmUnitLabelsPrinted,
 }: ReceiveSessionPageProps) {
 
   const theme = useTheme();
@@ -123,6 +134,14 @@ export default function ReceiveSessionPage({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [accepted, setAccepted] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  /**
+   * GH-1085 — the receive_job_line_id whose LSU- labels are printed but not yet
+   * acknowledged. While set, the session waits: the line's physical barcode
+   * readiness is not complete and progression is held.
+   */
+  const [pendingLabelAck, setPendingLabelAck] = useState<string | null>(null);
+  const [labelAckSubmitting, setLabelAckSubmitting] = useState(false);
+  const [labelPrintFailed, setLabelPrintFailed] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [exceptionDialog, setExceptionDialog] = useState(false);
   const [exceptionType, setExceptionType] = useState<ExceptionType | null>(null);
@@ -184,23 +203,54 @@ export default function ReceiveSessionPage({
     }
   }, [scanError, sessionPhase, inspectMode]);
 
+  /**
+   * GH-1085 — inspect, then decide whether this line owes physical labelling.
+   *
+   * A variant that already carries a merchant barcode (EAN/UPC/GTIN) is
+   * scannable as it stands; printing LSU- labels for it is relabelling the
+   * merchant never asked for. Only barcode-less stock needs LSU- labels, and
+   * for that stock the print request resolving is NOT evidence the label
+   * reached the box — an explicit acknowledgement is required.
+   *
+   * Readiness is decided from ReceiveJobLine.barcode alone. SKU is not a
+   * barcode, and the LSP- catalog identity is one value shared by every unit
+   * of the SKU, so neither can stand in for physical unit identity.
+   *
+   * Returns whether the caller must hold progression pending acknowledgement.
+   */
   const inspectAndPrint = useCallback(async (params: {
     lasyncro_variant_id: string | null;
     receive_job_line_id: string;
     quantity_accepted: number;
     quantity_rejected: number;
-  }) => {
+  }): Promise<{ awaitingLabelAck: boolean }> => {
     await onInspectLine(params);
-    if (params.quantity_accepted > 0 && onPrintUnitLabels) {
+
+    const inspectedLine = lines.find(
+      (l) => l.receive_job_line_id === params.receive_job_line_id
+    );
+    const hasExternalBarcode = !!inspectedLine?.barcode?.trim();
+
+    if (params.quantity_accepted <= 0 || hasExternalBarcode) {
+      return { awaitingLabelAck: false };
+    }
+
+    if (onPrintUnitLabels) {
       try {
         await onPrintUnitLabels(params.receive_job_line_id);
+        setLabelPrintFailed(false);
       } catch {
-        // Print failure must never block the receive flow
-        console.warn('[RECEIVE] Unit label print failed — non-blocking', params.receive_job_line_id);
+        // A failed print must never be mistaken for a printed label. The
+        // inspection already recorded stays recorded; the operator can retry
+        // printing without re-inspecting the line.
+        console.warn('[RECEIVE] Unit label print failed — retry available', params.receive_job_line_id);
+        setLabelPrintFailed(true);
       }
     }
-  }, [onInspectLine, onPrintUnitLabels]);
 
+    setPendingLabelAck(params.receive_job_line_id);
+    return { awaitingLabelAck: true };
+  }, [onInspectLine, onPrintUnitLabels, lines]);
   // ── Scan handler — free-scan: resolves barcode against all PO lines ────────
   const handleScan = useCallback(async (scannedValue: string) => {
     if (!onResolveBarcode || scanProcessing) return;
@@ -308,6 +358,44 @@ export default function ReceiveSessionPage({
     setSubmitError(null);
   }, []);
 
+  /** Retry printing only — never re-inspects the line. */
+  const handleRetryPrintLabels = useCallback(async () => {
+    if (!pendingLabelAck || !onPrintUnitLabels) return;
+    try {
+      await onPrintUnitLabels(pendingLabelAck);
+      setLabelPrintFailed(false);
+    } catch {
+      setLabelPrintFailed(true);
+    }
+  }, [pendingLabelAck, onPrintUnitLabels]);
+
+  /**
+   * The ONLY path that reports physical label readiness to the backend.
+   * Progression resumes from here, not from the print request resolving.
+   */
+  const handleConfirmLabelsPrinted = useCallback(async () => {
+    if (!pendingLabelAck) return;
+    setLabelAckSubmitting(true);
+    setSubmitError(null);
+    try {
+      // No optional chaining: only a real backend acknowledgement may clear
+      // the pending line. A rejection leaves pendingLabelAck set, so the
+      // action stays on screen and the session does not advance.
+      await onConfirmUnitLabelsPrinted(pendingLabelAck);
+      setPendingLabelAck(null);
+      setLabelPrintFailed(false);
+      if (isLastLine) {
+        setCloseDialog(true);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not record the label acknowledgement. Please retry.');
+    } finally {
+      setLabelAckSubmitting(false);
+    }
+  }, [pendingLabelAck, onConfirmUnitLabelsPrinted, isLastLine]);
+
   const handleConfirmBatch = useCallback(async () => {
     if (!currentLine) return;
 
@@ -341,13 +429,16 @@ export default function ReceiveSessionPage({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await inspectAndPrint({
+      const outcome = await inspectAndPrint({
         lasyncro_variant_id: currentLine.lasyncro_variant_id,
         receive_job_line_id: currentLine.receive_job_line_id,
         quantity_accepted: accepted,
         quantity_rejected: 0,
       });
       resetForNext();
+      // GH-1085 — barcode-less stock is not physically ready yet. Hold here
+      // until the operator confirms the labels were printed and attached.
+      if (outcome.awaitingLabelAck) return;
       if (isLastLine) {
         setCloseDialog(true);
       } else {
@@ -368,7 +459,7 @@ export default function ReceiveSessionPage({
   ) => {
     setShortfallSubmitting(true);
     try {
-      await inspectAndPrint({
+      const outcome = await inspectAndPrint({
         lasyncro_variant_id: line.lasyncro_variant_id,
         receive_job_line_id: line.receive_job_line_id,
         quantity_accepted: acceptedQty,
@@ -380,6 +471,7 @@ export default function ReceiveSessionPage({
       setShortfallExceptionNotes('');
       setShortfallQtyError(null);
       resetForNext();
+      if (outcome.awaitingLabelAck) return;
       if (isLastLine) {
         setCloseDialog(true);
       } else {
@@ -951,6 +1043,50 @@ export default function ReceiveSessionPage({
       <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {submitError && (
           <Alert severity="error" sx={{ py: 0.5 }}>{submitError}</Alert>
+        )}
+
+        {/*
+          GH-1085 — physical label acknowledgement.
+          A produced PDF is not a label on a box. Until the operator confirms
+          the labels were printed and attached, this line's stock has no
+          scannable identity and the session does not advance.
+        */}
+        {pendingLabelAck && (
+          <Alert
+            severity={labelPrintFailed ? 'warning' : 'info'}
+            sx={{ py: 0.5 }}
+            action={
+              labelPrintFailed && onPrintUnitLabels ? (
+                <Button
+                  size="small"
+                  color="inherit"
+                  onClick={() => void handleRetryPrintLabels()}
+                >
+                  Retry print
+                </Button>
+              ) : undefined
+            }
+          >
+            {labelPrintFailed
+              ? 'Label print failed. The count is saved — retry printing, then confirm once the labels are attached.'
+              : 'Attach the printed labels to each unit, then confirm below.'}
+          </Alert>
+        )}
+
+        {pendingLabelAck && (
+          <Button
+            data-testid="confirm-unit-labels-printed"
+            variant="contained"
+            color="primary"
+            fullWidth
+            size="large"
+            disabled={labelAckSubmitting}
+            onClick={() => void handleConfirmLabelsPrinted()}
+            startIcon={<CheckCircle size={20} />}
+            sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
+          >
+            {labelAckSubmitting ? 'Confirming...' : 'Labels printed & attached'}
+          </Button>
         )}
 
         <Button

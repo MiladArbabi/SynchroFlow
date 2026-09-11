@@ -14,10 +14,11 @@ import {
   NO_ACTIVE_INTAKE_EXCEPTION_SQL,
 } from '../../services/wms/pickBatch.service.js';
 import { InventoryChangedDuringReleaseError } from '../../services/wms/batchReservation.service.js';
+import { PickExecutionReadinessError } from '../../services/wms/pickExecutionReadiness.service.js';
 import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
-import { computeCoverage } from '../../services/wms/inventoryUnit.service.js';
+import { computeCoverage, markLabelsPrinted } from '../../services/wms/inventoryUnit.service.js';
 import { getLiveActivity } from '../../services/wms/liveActivity.service.js';
 import {
   confirmPickScan,
@@ -498,6 +499,25 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
         variant_id: error.variantId,
         required_quantity: error.requiredQuantity,
         available_quantity: error.availableQuantity,
+      });
+    }
+    if (error instanceof PickExecutionReadinessError) {
+      console.warn('[WMS_BATCH_RELEASE_SCAN_READINESS_BLOCKED]', {
+        shopId,
+        lasyncro_variant_id: error.lasyncroVariantId,
+        location_code: error.locationCode,
+        required_quantity: error.requiredQuantity,
+        external_barcode_present: error.externalBarcodePresent,
+        ready_unit_count: error.readyUnitCount,
+      });
+      return res.status(422).json({
+        error: 'Pick release requires stock with a physical scan path.',
+        code: error.code,
+        lasyncro_variant_id: error.lasyncroVariantId,
+        location_code: error.locationCode,
+        required_quantity: error.requiredQuantity,
+        external_barcode_present: error.externalBarcodePresent,
+        ready_unit_count: error.readyUnitCount,
       });
     }
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -5376,6 +5396,82 @@ export const httpGetUnitLabels = async (req: Request, res: Response) => {
   } catch (err: unknown) {
     console.error('[UNIT_LABELS_FAILED]', { shopId, lineId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to generate unit labels: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/receive-job-lines/:lineId/unit-labels/printed
+// ─────────────────────────────────────────
+/**
+ * LABEL ACKNOWLEDGEMENT (GH-1085 / BARCODE-LIFECYCLE-01)
+ * ------------------------------------------------------
+ * The operator confirming that this line's LSU- labels were printed AND
+ * physically attached. This is the only evidence that barcode-less stock can
+ * be scanned, and it is what moves a job from 'barcode_assignment' to
+ * 'stow_ready'.
+ *
+ * Deliberately a POST and deliberately separate from
+ * GET /receive-job-lines/:lineId/unit-labels, which renders the PDF and must
+ * never mutate label_printed_at — generating or downloading a label says
+ * nothing about whether it reached the box.
+ *
+ * Readiness is recomputed inside markLabelsPrinted's canonical path, never
+ * duplicated here; this handler only reports the resulting status.
+ */
+export const httpAcknowledgeUnitLabelsPrinted = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const lineId = Array.isArray(req.params.lineId) ? req.params.lineId[0] : req.params.lineId;
+  if (!lineId) return res.status(400).json({ error: 'lineId required' });
+
+  try {
+    const outcome = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Shop-scoped lookup: another tenant's line is simply not found here.
+      const line = await trx('receive_job_lines')
+        .where({ receive_job_line_id: lineId, shop_id: shopId })
+        .first('receive_job_line_id', 'receive_job_id');
+
+      if (!line) return { error: 'line_not_found' as const };
+
+      const unitIds = await trx('inventory_units')
+        .where({ shop_id: shopId, receive_job_line_id: lineId })
+        .orderBy('receive_sequence')
+        .pluck('lasyncro_unit_id');
+
+      if (unitIds.length === 0) return { error: 'no_units' as const };
+
+      await markLabelsPrinted(trx, shopId, unitIds);
+
+      const job = await trx('receive_jobs')
+        .where({ receive_job_id: line.receive_job_id, shop_id: shopId })
+        .first('status');
+
+      return {
+        receive_job_line_id: line.receive_job_line_id as string,
+        receive_job_id: line.receive_job_id as string,
+        acknowledged_unit_count: unitIds.length,
+        receive_job_status: job?.status ?? null,
+      };
+    });
+
+    if ('error' in outcome) {
+      if (outcome.error === 'line_not_found') {
+        return res.status(404).json({ error: 'Receive job line not found' });
+      }
+      return res.status(409).json({
+        error: 'no_units',
+        message: 'No inventory units exist for this line — inspect the line first',
+      });
+    }
+
+    console.info('[UNIT_LABELS_ACKNOWLEDGED]', { shopId, lineId, ...outcome });
+    return res.status(200).json(outcome);
+  } catch (err: unknown) {
+    console.error('[UNIT_LABELS_ACK_FAILED]', { shopId, lineId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to acknowledge unit labels: ${getErrorMessage(err)}` });
   }
 };
 

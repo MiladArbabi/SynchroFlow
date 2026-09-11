@@ -3,6 +3,7 @@ import { v5 as uuidv5 } from 'uuid';
 import {
   pickableLocationCondition,
 } from '../inventory/pickableLocation.js';
+import { assertPickAllocationsScanReady } from './pickExecutionReadiness.service.js';
 
 const RESERVATION_NAMESPACE =
   'c2d3e4f5-a6b7-8901-bcde-f12345678901';
@@ -419,6 +420,12 @@ export async function reserveBatchInventory(
   const allocations = allocateRequiredQuantities(
     requiredByVariant,
     inventoryRows
+  );
+
+  await assertPickAllocationsScanReady(
+    trx,
+    shopId,
+    allocations
   );
 
   const ownershipAllocations =

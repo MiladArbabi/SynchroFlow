@@ -1,5 +1,6 @@
 import { Knex } from 'knex';
 import crypto from 'crypto';
+import { refreshReadinessForUnits } from './receiveBarcodeReadiness.service.js';
 
 /**
  * INVENTORY UNIT SERVICE (WM-46)
@@ -117,12 +118,26 @@ export async function batchConfirmUnits(
 /**
  * Records a label print event on a set of units.
  * Called after thermal label print job is dispatched.
+ *
+ * GH-1085 — this is the operator's acknowledgement that the physical label was
+ * printed AND attached, which is the only evidence that barcode-less stock can
+ * actually be scanned. Recording it can therefore complete a receive job's
+ * barcode readiness, so the affected parent job(s) are re-evaluated in the same
+ * transaction. Without that, label_printed_at would be written and nothing
+ * would ever move the job out of 'barcode_assignment'.
+ *
+ * refreshReadinessForUnits derives the jobs from the units, tolerates an empty
+ * list, and handles units spanning several lines or jobs. It lives in a
+ * dependency-neutral module so this service and receiveJob.service can both
+ * use it without a cycle.
  */
 export async function markLabelsPrinted(
   trx: Knex.Transaction,
   shopId: number,
   unitIds: string[]
 ): Promise<void> {
+  if (unitIds.length === 0) return;
+
   await trx('inventory_units')
     .whereIn('lasyncro_unit_id', unitIds)
     .where({ shop_id: shopId })
@@ -130,6 +145,8 @@ export async function markLabelsPrinted(
       label_printed_at: new Date(),
       updated_at: new Date(),
     });
+
+  await refreshReadinessForUnits(trx, shopId, unitIds);
 }
 
 /**

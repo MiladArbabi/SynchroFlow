@@ -284,6 +284,18 @@ export default function WmsOperationsPage() {
     }
   }, [openBlobInTab]);
 
+  /**
+   * GH-1085 — records the operator's confirmation that this line's LSU- labels
+   * were printed AND attached. Deliberately NOT folded into
+   * handlePrintUnitLabels: fetching the PDF is not evidence the label reached
+   * the box, and only this explicit action may unlock Stow.
+   */
+  const handleConfirmUnitLabelsPrinted = useCallback(async (receiveJobLineId: string) => {
+    await axiosInstance.post(
+      `/api/v1/wms/receive-job-lines/${receiveJobLineId}/unit-labels/printed`
+    );
+  }, []);
+
   const handlePrintInvoice = useCallback(async (orderId: string) => {
     const response = await axiosInstance.get(
       `/api/v1/wms/orders/${orderId}/invoice`,
@@ -688,6 +700,7 @@ export default function WmsOperationsPage() {
       onPrintInvoice={handlePrintInvoice}
       onPackFreeScan={handlePackFreeScan}
       onPrintUnitLabels={handlePrintUnitLabels}
+      onConfirmUnitLabelsPrinted={handleConfirmUnitLabelsPrinted}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRaisePackDecision={handleRaisePackDecision}

@@ -42,6 +42,7 @@ import {
   httpDeleteCarrierSettings,
   httpGenerateShippingLabel,
   httpGetUnitLabels,
+  httpAcknowledgeUnitLabelsPrinted,
   httpGetUnitLabelCoverage,
   httpResolveProblemTask,
   httpPatchWmsSettings,
@@ -643,6 +644,17 @@ router.get(
   requireCapability('warehouse.operations'),
   requireAction('wms:read'),
   httpGetUnitLabels
+);
+// GH-1085 — explicit operator acknowledgement that this line's LSU- labels
+// were printed and attached. Mutating sibling of the GET PDF route above; the
+// GET must never record acknowledgement.
+router.post(
+  '/receive-job-lines/:lineId/unit-labels/printed',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('receive-job:inspect'),
+  httpAcknowledgeUnitLabelsPrinted
 );
 router.get(
   '/coverage',

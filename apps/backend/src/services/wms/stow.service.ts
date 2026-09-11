@@ -171,6 +171,33 @@ export async function confirmStow(
 
     const completedAt = new Date();
     const qty = quantityPlaced ?? task.quantity; // support partial stow
+    const isInboundStock = task.trigger === 'inbound_stock';
+
+    if (isInboundStock) {
+      if (!lasyncroUnitId) {
+        throw new Error('[STOW_CONFIRM] INBOUND_LSU_REQUIRED');
+      }
+
+      if (qty !== 1) {
+        throw new Error('[STOW_CONFIRM] INBOUND_SINGLE_UNIT_REQUIRED');
+      }
+
+      const inboundUnit = await trx('inventory_units')
+        .where({
+          shop_id: shopId,
+          lasyncro_unit_id: lasyncroUnitId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          status: 'received',
+        })
+        .whereNull('current_location_code')
+        .forUpdate()
+        .select('lasyncro_unit_id')
+        .first();
+
+      if (!inboundUnit) {
+        throw new Error('[STOW_CONFIRM] INBOUND_LSU_MISMATCH');
+      }
+    }
 
     // INV-BLOCK-04 / INV-BLOCK-10b:
     // - return_restock is an inventory credit because returned stock has no
@@ -279,7 +306,7 @@ export async function confirmStow(
           `[STOW_CONFIRM] Cancelled-pick recovery LSU mismatch: ${lasyncroUnitId}`
         );
       }
-    } else if (!isInventoryCredit && lasyncroUnitId) {
+    } else if (!isInboundStock && !isInventoryCredit && lasyncroUnitId) {
       const unitRow = await trx('inventory_units')
         .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
         .select('current_location_code', 'status')
@@ -393,7 +420,12 @@ export async function confirmStow(
   // filters on movement_type only (INV-PROJ-MULTILOC-01), so replay is unaffected.
   const stowUnitIds: string[] = [];
 
-  if (lasyncroUnitId) {
+  if (isInboundStock) {
+    if (!lasyncroUnitId) {
+      throw new Error('[STOW_CONFIRM] INBOUND_LSU_REQUIRED');
+    }
+    stowUnitIds.push(lasyncroUnitId);
+  } else if (lasyncroUnitId) {
     stowUnitIds.push(lasyncroUnitId);
 
     const scannedUnit = await trx('inventory_units')

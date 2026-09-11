@@ -31,9 +31,14 @@ identity-resolution system described below.
 Every physical unit has (at least) one, and potentially several,
 scannable identities:
 
-- **LSU-{8char}** — LaSyncro's own unit barcode, printed at receive
-  time, unique per physical unit. The authoritative identity once
-  present.
+- **LSP-{8char}** — LaSyncro-owned product/variant catalog identity.
+  Every Shopify-backed variant must have one stable LSP. It is distinct
+  from `variants.barcode` and must never be written into or treated as
+  an EAN/UPC/GTIN.
+- **LSU-{8char}** — LaSyncro's own unit identity, unique per physical
+  unit. Every accepted inbound physical unit receives one LSU record.
+  For barcode-less stock, that LSU must also be physically established
+  and acknowledged before the stock may become Stow-ready.
 - **LSO-{8char}** — LaSyncro's invoice/order barcode, scanned at pack
   time to identify which order a packed unit belongs to. Not a
   variant/unit identity — resolved separately, rejected early by the
@@ -63,17 +68,21 @@ Priority order, checked in sequence:
 2. **`LSO-` prefix** → rejected immediately. This is an invoice
    barcode, not a variant/unit scan; the caller (`httpScanResolve`)
    handles it via a separate path.
-3. **Legacy fallback**, gated by `shop_wms_settings.legacy_barcode_fallback_enabled`
+3. **`LSP-` prefix** → direct tenant-scoped lookup against
+   `variants.lasyncro_barcode`. This is LaSyncro catalog/variant
+   identity, not physical-unit evidence. An unknown LSP returns no
+   match and must never fall through into legacy resolution.
+4. **Legacy fallback**, gated by `shop_wms_settings.legacy_barcode_fallback_enabled`
    (see §4). If disabled, legacy scans are rejected outright — the
    shop has fully migrated and this is intentional.
-   - 3a. **Direct barcode match** against
-     `external_product_identity_map.barcode` — the primary physical
-     scan resolution key.
-   - 3b. **External SKU** fallback, for variants without a barcode on
+   - 4a. **Direct barcode match** against
+     `external_product_identity_map.barcode` — the primary external
+     physical scan resolution key.
+   - 4b. **External SKU** fallback, for variants without a barcode on
      file.
-   - 3c. **External variant ID**, last resort platform-ID match.
+   - 4c. **External variant ID**, last resort platform-ID match.
 
-For any legacy-path match (3a/3b/3c), the resolver additionally
+For any legacy-path match (4a/4b/4c), the resolver additionally
 attempts to find an associated `inventory_units` row via
 `pickLegacyUnit()` — searching `received` then `stowed` status units
 for that variant — so downstream stow/pick confirm endpoints still
@@ -155,9 +164,11 @@ which is presently aspirational — see §7.
   live by default.
 - Coverage computation, accurate and tenant-scoped.
 - Coverage visibility UI on the Warehouse settings tab.
-- `barcode_print_jobs` lifecycle for tracking LSU- label print/attach
-  state per unit (see `0100_create_barcode_print_jobs.ts` if extending
-  print-side logic).
+- `inventory_units.label_printed_at` is the authoritative acknowledgement
+  that an LSU physical label has been established for a unit.
+- `barcode_print_jobs` remains a shared legacy/general print-job table used
+  by other workflows. Receive-close rows in that table are NOT authoritative
+  LSU physical-label evidence and must not authorize Stow or Pick release.
 
 If a future audit or handover note again describes "BYO barcode" as
 unscoped or pending, check this document and the files listed above
@@ -309,3 +320,225 @@ The backend LSU location guard must remain strict. Caller semantics,
 not the location guard, are responsible for preventing arbitrary
 legacy resolver candidates from being treated as physically scanned
 units.
+
+---
+
+## 10. BARCODE-LIFECYCLE-01 — catalog-to-Pick execution invariant
+
+**Status:** ✅ IMPLEMENTED 2026-09-11 — GH-1085
+
+GH-1085 closes the gap where inventory could reach Pick without ever having
+acquired a practical physical scan path.
+
+The locked lifecycle is:
+
+```text
+Shopify
+→ catalog variant
+→ stable LSP product identity
+→ mapped PO line
+→ Receive
+→ one LSU identity per accepted physical unit
+→ physical-label readiness when no usable external barcode exists
+→ Stow exact physical unit
+→ release only inventory with a practical Pick scan path
+→ Pick
+→ Pack / LSO
+```
+
+### 10.1 Identity namespaces are separate
+
+```text
+EAN / UPC / Shopify barcode / external SKU
+    merchant/platform identity
+
+LSP-*
+    LaSyncro product/variant catalog identity
+
+LSU-*
+    LaSyncro exact physical-unit identity
+
+LSO-*
+    LaSyncro order/parcel identity
+```
+
+These namespaces must not be collapsed.
+
+In particular:
+
+- `variants.barcode` remains external merchant/platform barcode data.
+- `variants.lasyncro_barcode` owns the LSP namespace.
+- LSP generation must never fabricate a GTIN by writing into
+  `variants.barcode`.
+- LSU is physical-unit identity and is never interchangeable with LSP.
+
+### 10.2 Catalog LSP invariant
+
+Every Shopify-backed catalog variant must have one stable
+`variants.lasyncro_barcode`.
+
+New/updated Shopify product sync calls the canonical mint-once LSP generator.
+Migration `0170_backfill_missing_product_barcode_identity` repairs historical
+variants whose LSP was still null.
+
+The historical repair:
+
+- changes only `lasyncro_barcode IS NULL` rows;
+- preserves every existing LSP byte-for-byte;
+- preserves `variants.barcode`;
+- retries unique collisions;
+- is idempotent with respect to already-established identities.
+
+### 10.3 Receive readiness
+
+Every accepted inbound physical unit receives an `inventory_units` row and LSU
+identity, including count-based Receive where the supplier item has no external
+barcode.
+
+A Receive line is allowed to leave receiving when either:
+
+```text
+usable external variants.barcode exists
+```
+
+or:
+
+```text
+every accepted physical unit has label_printed_at IS NOT NULL
+```
+
+An LSP alone does not satisfy physical-label readiness.
+
+For barcode-less stock the UI therefore requires explicit LSU label
+print/attachment acknowledgement before the Receive line becomes Stow-ready.
+
+### 10.4 Stow invariant
+
+For `stow_tasks.trigger = 'inbound_stock'`:
+
+```text
+one confirmation
+= one explicit LSU
+= quantity 1
+= exactly one physical unit moved
+```
+
+The backend verifies the LSU belongs to:
+
+```text
+same shop
++ same task variant
++ status = received
++ current_location_code IS NULL
+```
+
+and locks that exact unit before mutation.
+
+A single LSU scan must never bulk-stow FIFO sibling units.
+
+Other Stow triggers retain their existing semantics; this strict rule is scoped
+to normal inbound stock.
+
+### 10.5 Release / Pick scan-readiness invariant
+
+Before reservation writes, every computed Pick allocation is checked for a
+practical physical scan path.
+
+An allocation is Pick-ready when either:
+
+```text
+A. variants.barcode contains a usable external barcode
+```
+
+or:
+
+```text
+B. enough physically acknowledged LSU units exist at the allocation location
+   to cover the allocation quantity
+```
+
+For a bin allocation, qualifying LSU units are:
+
+```text
+same shop
++ same variant
++ status = stowed
++ current_location_code = allocation location
++ label_printed_at IS NOT NULL
+```
+
+For warehouse-root inventory, qualifying LSU units are:
+
+```text
+same shop
++ same variant
++ status = received
++ current_location_code IS NULL
++ label_printed_at IS NOT NULL
+```
+
+The following do **not** independently authorize release:
+
+- LSP / `variants.lasyncro_barcode`;
+- SKU alone;
+- `barcode_print_jobs`;
+- LSU rows whose `label_printed_at` is null.
+
+The readiness preflight runs after authoritative inventory rows are locked and
+allocations are calculated, but before the first reservation hold, allocation
+write, or inventory mutation. Failure is controlled and atomic.
+
+### 10.6 Pick evidence remains intentionally asymmetric
+
+The INV-RES-01 rule in §9 remains authoritative:
+
+```text
+EAN / UPC / SKU / external barcode / LSP
+    = variant evidence
+
+raw LSU-* scan
+    = exact physical-unit evidence
+
+reservation_allocation_id
+    = reservation ownership evidence
+```
+
+A resolver-returned candidate LSU produced while resolving a generic product
+identifier must not be promoted into exact-unit evidence.
+
+### 10.7 Legacy `barcode_print_jobs`
+
+Receive-close still writes a legacy variant-level `barcode_print_jobs` row for
+older/general print workflows. That table also serves unrelated invoice and
+Problem Center label flows.
+
+For BARCODE-LIFECYCLE-01 it is explicitly **non-authoritative**:
+
+```text
+barcode_print_jobs row exists
+≠ LSU label physically established
+≠ Stow authorization
+≠ Pick release authorization
+```
+
+The authoritative physical-label evidence is
+`inventory_units.label_printed_at`.
+
+Retiring the legacy Receive-close print-job artifact is a separate cleanup and
+must not be combined with barcode execution authority.
+
+### 10.8 Permanent regression contract
+
+GH-1085 is protected at these boundaries:
+
+- Shopify sync mints and preserves stable LSP identities.
+- Migration 0170 repairs historical missing LSP identities.
+- LSP resolver is tenant-scoped and precedes legacy fallback.
+- Receive prevents barcode-less accepted stock from becoming Stow-ready without
+  acknowledged physical LSU labels.
+- inbound-stock Stow requires one exact LSU per confirmation.
+- batch release refuses allocations with no practical physical scan path.
+- Pick forwards exact LSU evidence only for a raw LSU scan.
+
+Production/provider certification must additionally prove one real barcode-less
+Shopify variant through Receive → LSU acknowledgement → Stow → Release → Pick.

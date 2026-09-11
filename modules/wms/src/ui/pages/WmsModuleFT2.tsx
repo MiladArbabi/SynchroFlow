@@ -137,6 +137,14 @@ export type WmsModuleFT2Props = {
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
+  /**
+   * GH-1085 — REQUIRED, deliberately not optional. This module is a pure
+   * pass-through between WmsOperationsPage and ReceiveSessionPage, and an
+   * optional prop dropped here fails OPEN: the operator's "labels printed &
+   * attached" confirmation would silently no-op and barcode-less stock would
+   * be treated as ready with nothing recorded in the backend.
+   */
+  onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
 
   onClaimBatch: (batchId: string) => Promise<void>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
@@ -837,6 +845,7 @@ function WmsModuleFT2Inner({
   onReportReceiveException,
   onCloseReceiveJob,
   onPrintUnitLabels,
+  onConfirmUnitLabelsPrinted,
 
   onClaimBatch,
   onFetchLineItems,
@@ -1241,6 +1250,7 @@ function WmsModuleFT2Inner({
         onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
         onPrintUnitLabels={onPrintUnitLabels}
+        onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
       />
     );
   }

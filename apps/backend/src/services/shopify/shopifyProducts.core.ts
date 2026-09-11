@@ -1,6 +1,5 @@
 import { Knex } from 'knex';
-
-type DbExecutor = Knex | Knex.Transaction;
+import { ensureVariantBarcode } from '../wms/productBarcode.service.js';
 
 /**
  * mapShopifyProductType
@@ -36,8 +35,22 @@ function mapShopifyProductType(productType: string | null | undefined): string {
  * - avoid circular dependencies
  * - isolate DB logic
  */
+/**
+ * TENANT-SCOPED TRANSACTION REQUIRED (GH-1085)
+ * --------------------------------------------
+ * Tightened from `Knex | Knex.Transaction`. Every production caller already
+ * supplies a transaction with app.current_tenant set — seed_fresh_install
+ * (withTenant), shopify.service (db.transaction + SET LOCAL), and the two
+ * product webhooks (WebhookRouter's db.transaction + SET LOCAL) — so this
+ * narrows the type to what the call sites already pass.
+ *
+ * It is a real requirement, not a formality: variants is FORCE ROW LEVEL
+ * SECURITY (migration 0027), so an untenanted query returns zero rows instead
+ * of erroring, and ensureVariantBarcode's collision retry needs SAVEPOINTs,
+ * which only exist inside a transaction.
+ */
 export async function syncProducts(
-  trx: DbExecutor,
+  trx: Knex.Transaction,
   shopId: number,
   edges: any[]
 ) {
@@ -131,6 +144,40 @@ export async function syncProducts(
           image_url: variant.image?.url || node.featuredImage?.url || null, // merchant may add image after initial sync
           updated_at: new Date().toISOString(),
         });
+
+      /**
+       * 2b. LASYNCRO PRODUCT IDENTITY (GH-1085 / BARCODE-LIFECYCLE-01)
+       * --------------------------------------------------------------
+       * Shopify paused App Store review (ref 102766, 2.1.1) because "the
+       * product barcodes are not generating": on a test store every variant
+       * ships with an empty barcode field, so a merchant had nothing to scan
+       * and nothing to print. Ingestion is the only place that sees every
+       * variant, so identity is established here.
+       *
+       * ensureVariantBarcode is the single canonical minting implementation —
+       * deliberately reused rather than reimplemented. It is idempotent:
+       *   new / legacy NULL → mints once
+       *   already carrying an LSP- → returns it unchanged, never rotates
+       * so a resync heals barcode-less rows without renumbering labels that
+       * are already stuck to physical stock.
+       *
+       * NAMESPACE BOUNDARY: this writes variants.lasyncro_barcode only. The
+       * Shopify-owned variants.barcode and external_product_identity_map.barcode
+       * columns are left exactly as the platform supplied them — minting into
+       * them would fabricate a GTIN we hold no GS1 prefix for, and the next
+       * sync would overwrite it anyway.
+       *
+       * Fail closed: null means the variant we just upserted is not visible in
+       * this shop, which can only be a tenant/RLS mismatch. Rolling the whole
+       * sync back is correct — a mapped catalog variant with no scannable
+       * identity is the exact defect this slice exists to remove.
+       */
+      const lasyncroBarcode = await ensureVariantBarcode(trx, shopId, variantId);
+      if (!lasyncroBarcode) {
+        throw new Error(
+          `PRODUCT_BARCODE_IDENTITY_FAILED: variant ${variantId} not resolvable in shop ${shopId}`
+        );
+      }
 
       // 3. Insert external identity mapping (variant-level)
       await trx('external_product_identity_map')
