@@ -4110,7 +4110,7 @@ Requirement: audit and align headings, labels, body copy, card hierarchy, weight
 
 **BILL-UX-02 — Plan transition CTA semantics**
 
-Status: **DEFERRED / OPEN**
+Status: **IMPLEMENTED / LOCALLY VERIFIED — production certification pending**
 
 Problem: plan CTA wording must reflect the direction of the plan transition.
 
@@ -4120,9 +4120,30 @@ Contract:
 - Higher → lower tier: “Downgrade to <Tier>”.
 - Current tier: non-action/current-plan treatment.
 - Never render “Upgrade to Core” or “Upgrade to Starter” when the current plan is Growth/Scale.
-- CTA semantics must derive from canonical plan ordering/current plan, not ad-hoc copy.
+- CTA semantics derive from the canonical `TIER_ORDER` in `@lasyncro/commercial-policy`, not ad-hoc local tier ranking.
+- `RecommendedUpgrade` remains upgrade-only and unchanged.
+- Billing-provider behavior is unchanged: Shopify continues to use hosted Managed Pricing and Stripe continues to use the existing checkout flow.
 
-No implementation in this slice.
+Implementation:
+
+- `BillingSettings.tsx` now derives each non-current plan-card CTA from the current tier and canonical tier ordering.
+- Lower targets render `Downgrade to <Tier>`.
+- Higher targets render `Upgrade to <Tier>`.
+- Current-plan and `Redirecting…` states are preserved.
+- No Starter plan card was added in this slice.
+
+Verification:
+
+- Focused BillingSettings CTA regression: **3/3 PASS**.
+- Targeted TypeScript touched-surface check: **0 target errors**; one unrelated existing `api-types` resolution error remains in `AuthContext.tsx`.
+- `git diff --check`: **PASS**.
+- Growth live-browser verification on the implementation worktree:
+  - Core → `Downgrade to Core`
+  - Growth → `Current plan`
+  - Scale → `Upgrade to Scale`
+  - no `Upgrade to Core`
+  - **PASS**
+- Production certification remains pending.
 
 **MAP-TIER-01 — DEFERRED / UNRESOLVED DEVELOPMENT-ONLY OBSERVATION**
 

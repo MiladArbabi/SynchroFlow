@@ -12,6 +12,7 @@
 //   POST /api/v1/billing/checkout     → Stripe/Shopify checkout redirect
 //   POST /api/v1/billing/portal       → Stripe customer portal redirect
 
+import { TIER_ORDER } from '@lasyncro/commercial-policy';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Box, Typography, Button, Alert, CircularProgress, Divider,
@@ -343,16 +344,18 @@ function RecommendedUpgrade({
 // ─────────────────────────────────────────────
 
 function TierCard({
-  tierId, currency, billingInterval, isCurrent, onUpgrade, upgrading,
+  tierId, currency, billingInterval, currentTier, onUpgrade, upgrading,
 }: {
-  tierId: string;
+  tierId: Tier;
   currency: BillingCurrency;
   billingInterval: 'monthly' | 'annual';
-  isCurrent: boolean;
+  currentTier: Tier;
   onUpgrade: (id: string) => void;
   upgrading: string | null;
 }) {
   const theme = useTheme();
+  const isCurrent = tierId === currentTier;
+  const action = TIER_ORDER[tierId] > TIER_ORDER[currentTier] ? 'Upgrade' : 'Downgrade';
   const isFeatured = tierId === 'growth';
   const isAnnual   = billingInterval === 'annual';
   const tierLabel  = tierId.charAt(0).toUpperCase() + tierId.slice(1);
@@ -460,7 +463,7 @@ function TierCard({
                 : { borderColor: 'var(--rule)', color: 'text.primary', '&:hover': { borderColor: 'text.disabled' } }),
             }}
           >
-            {upgrading === tierId ? 'Redirecting…' : `Upgrade to ${tierLabel}`}
+            {upgrading === tierId ? 'Redirecting…' : `${action} to ${tierLabel}`}
           </Button>
         )}
       </Box>
@@ -912,7 +915,7 @@ const BillingSettings: React.FC = () => {
               tierId={tierId}
               currency={currency}
               billingInterval={billingInterval}
-              isCurrent={tier === tierId}
+              currentTier={tier}
               onUpgrade={handleUpgrade}
               upgrading={upgrading}
             />
