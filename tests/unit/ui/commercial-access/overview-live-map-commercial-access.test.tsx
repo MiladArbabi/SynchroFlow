@@ -45,6 +45,10 @@ const mockOverviewModuleFT2 = jest.fn((props: Record<string, unknown>) => (
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  // OPS-RESOLVE-01 Slice C: OverviewFT2Page now reads the address-session
+  // intent from the URL. Mock completeness only — no assertion in this file
+  // depends on search params, and the live_map contracts below are unchanged.
+  useSearchParams: () => [new URLSearchParams(), jest.fn()],
 }));
 
 jest.mock('@lasyncro/overview', () => ({
@@ -178,6 +182,14 @@ jest.mock('pages/problem-center/useProblemCenter', () => ({
     isLoading: false,
     isError: false,
   }); },
+}));
+
+// OPS-RESOLVE-01 Slice C: the page now reads address-session candidates. Mocked
+// like every other data hook in this file, so no QueryClientProvider is needed
+// and the live_map authority contracts stay the only thing under test.
+jest.mock('pages/orders/useAddressResolutionOrders', () => ({
+  useAddressResolutionOrders: () => ({ candidates: [], isLoading: false, isError: false }),
+  useInvalidateAddressResolutionOrders: () => jest.fn(),
 }));
 
 import OverviewPageFT2 from 'pages/ft2-pages/OverviewFT2Page';

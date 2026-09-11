@@ -45,7 +45,10 @@ export const OPS_STATUS_GLYPH: Record<OpsRowStatus, string> = {
   closed:     '·',
 };
 
-export type OpsSectionKey = 'NOW' | 'WAITING' | 'SETUP' | 'RECENT' | 'HISTORY';
+// OPS-CONSOLE-02: 'RECENT' removed. Closed alerts were rendered in OPEN *and*
+// in the HISTORY tab; OPEN is now actionable work only and alert lifecycle
+// history lives in exactly one place.
+export type OpsSectionKey = 'NOW' | 'WAITING' | 'SETUP' | 'HISTORY';
 
 export interface OpsRow {
   id: string;
@@ -61,15 +64,16 @@ export interface OpsRow {
   /**
    * Severity/context stated for assistive tech only. Severity is deliberately
    * NOT visible text on a NOW row — it consumed width and truncated the
-   * subject — but it must stay reachable, so it is carried here and rendered
-   * into a visually-hidden node plus the row's title.
+   * subject — but it must stay reachable, so it is rendered into a
+   * visually-hidden node. It is NOT put in a `title` attribute: that produced a
+   * native tooltip which made "warning severity" visible copy on hover.
    */
   a11yLabel?: string;
 }
 
 /** A row is "open attention" only while it is neither completed nor retired. */
 export function isOpenRow(row: OpsRow): boolean {
-  if (row.section === 'RECENT' || row.section === 'HISTORY') return false;
+  if (row.section === 'HISTORY') return false;
   return row.status !== 'verified'
     && row.status !== 'dismissed'
     && row.status !== 'closed';
@@ -119,17 +123,79 @@ export function relativeAgeLabel(iso: string | null, now: number = Date.now()): 
  * alerts are already ranked by the backend (severity → revenue); that order is
  * preserved rather than re-sorted here.
  *
+ * ACTIONABLE-ONLY (OPS-CONSOLE-02): an alert earns a NOW row only when it is
+ * BOTH classified actionable by NOW_ACTIONABLE_ALERT_TYPES and resolvable to a
+ * real operational destination by deepLink(). A row the merchant cannot
+ * act on is not "work now" — it is noise in a queue that answers "what needs my
+ * action now?". Such alerts are NOT lost: they remain authoritative in the
+ * alerts subsystem and are managed at /alerts. Deliberately no generic
+ * "View" / "Manage alert" fallback CTA is synthesised to keep them in the
+ * queue — that would restore the noise while pretending it was actionable.
+ *
  * acknowledged_at is explicitly NOT treated as resolution: an acknowledged
  * alert stays an open NOW row and only carries an 'acked' qualifier.
  */
+/**
+ * NOW ELIGIBILITY POLICY
+ * ----------------------
+ * An allow-list by alert_type, deliberately NOT "anything with a route".
+ *
+ * Having a destination proves an alert can be navigated to; it does not prove
+ * the merchant has a decision to make. A new alert type must be classified here
+ * on purpose before it can consume a NOW slot — the default for anything
+ * unrecognised is exclusion, so the queue cannot silently fill with whatever
+ * the backend starts emitting next.
+ *
+ * Severity is NOT the criterion. ready_to_pack / ready_to_ship / stow_pending /
+ * receive_arrived are info-severity but each represents real floor work, so all
+ * four are eligible. Conversely wms_batch_released is excluded despite having a
+ * perfectly valid route: it records that work was released to the floor — a
+ * progress event, not a new decision or intervention for the merchant.
+ *
+ * Excluded types are not lost: they stay authoritative in the alerts subsystem
+ * and are managed at /alerts.
+ */
+export const NOW_ACTIONABLE_ALERT_TYPES: ReadonlySet<string> = new Set([
+  // Order signals
+  'sla_breach',
+  'operational',
+  'inventory',
+  'customer',
+  'revenue_at_risk',
+  // Demand signals
+  'stockout_risk',
+  'reorder_warning',
+  'low_stock_reorder',
+  // Money signals
+  'missing_cogs',
+  // WMS exceptions
+  'wms_pick_exception',
+  'wms_pack_exception',
+  'wms_stow_exception',
+  'wms_receive_exception',
+  // WMS work queues — info severity, but real operational work
+  'wms_stow_pending',
+  'wms_receive_arrived',
+  'wms_batch_ready_to_pack',
+  'wms_batch_ready_to_ship',
+  // DELIBERATELY ABSENT: 'wms_batch_released' — progress/informational only.
+]);
+
+/** True only for an alert_type explicitly classified as operationally actionable. */
+export function isNowActionable(alert: Alert): boolean {
+  return NOW_ACTIONABLE_ALERT_TYPES.has(alert.alert_type);
+}
+
 export function buildNowRows(
   alerts: Alert[],
   deepLink: (alert: Alert) => { route: string; label: string } | null,
 ): OpsRow[] {
-  return alerts.map((alert) => {
+  return alerts.flatMap((alert) => {
+    if (!isNowActionable(alert)) return [];
     const link = deepLink(alert);
+    if (!link) return [];
     const acked = alert.acknowledged_at !== null;
-    return {
+    return [{
       id: `alert:${alert.id}`,
       section: 'NOW' as const,
       status: alert.severity === 'info' ? ('actionable' as const) : ('attention' as const),
@@ -137,14 +203,17 @@ export function buildNowRows(
       // Severity is NOT visible text: it crowded out the subject. It stays in
       // a11yLabel and in the glyph colour, so the semantic is intact.
       meta: acked ? 'acked' : undefined,
-      action: link ? { label: link.label, route: link.route } : undefined,
+      action: { label: link.label, route: link.route },
       tone: alert.severity,
       a11yLabel: acked
         ? `${alert.severity} severity, acknowledged`
         : `${alert.severity} severity`,
-    };
+    }];
   });
 }
+
+/** Default number of NOW rows rendered before the "Show N more" control. */
+export const NOW_VISIBLE_LIMIT = 5;
 
 // ─── WAITING ──────────────────────────────────────────────────────────────────
 
@@ -187,10 +256,10 @@ export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
   }));
 }
 
-// ─── RECENT / HISTORY — ALERT LIFECYCLE ONLY ─────────────────────────────────
+// ─── HISTORY — ALERT LIFECYCLE ONLY ──────────────────────────────────────────
 
 /**
- * These sections carry ALERT HISTORY, and nothing more.
+ * This section carries ALERT HISTORY, and nothing more.
  *
  * `resolved_at` is authoritative for the ALERT's own lifecycle (alerts.
  * controller.ts status='resolved'). It is NOT evidence that a Decision Engine
@@ -202,19 +271,19 @@ export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
  * So these rows take the neutral 'closed' status, never 'verified'. Green /
  * ✓ semantics stay reserved for sources that genuinely establish completion
  * (currently only onboarding SETUP). Row wording states that the alert closed
- * and asserts no cause.
+ * and asserts no cause. These rows are reachable ONLY from the HISTORY tab —
+ * OPEN carries actionable work exclusively.
  */
 export function buildAlertHistoryRows(
   resolvedAlerts: Alert[],
-  section: 'RECENT' | 'HISTORY',
   limit?: number,
   now: number = Date.now(),
 ): OpsRow[] {
   const rows = resolvedAlerts
     .filter((alert) => alert.resolved_at !== null)
     .map((alert) => ({
-      id: `${section.toLowerCase()}:${alert.id}`,
-      section,
+      id: `history:${alert.id}`,
+      section: 'HISTORY' as const,
       status: 'closed' as const,
       label: alert.title,
       // The '·' glyph already carries "closed"; the meta column is spent on

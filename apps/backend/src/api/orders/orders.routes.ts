@@ -10,6 +10,8 @@ import { httpGetOperationalPressure }
   from './orders.operational-pressure.controller.js';
 import { httpGetConstrainedOrders }
   from './orders.constrained.controller.js';
+import { httpGetAddressResolutionOrders }
+  from './orders.address-resolution.controller.js';
 import { httpGetFulfilledOrders }
   from './orders.fulfilled.controller.js';
 import { httpGetOrderDecision }
@@ -89,6 +91,26 @@ router.get(
   '/constrained',
   authenticateToken,
   httpGetConstrainedOrders
+);
+
+/**
+ * @route   GET /api/v1/orders/address-resolution
+ * @desc    Unelected Address Resolution Session membership: every order with an
+ *          active customer/incomplete_address constraint.
+ * @access  Private
+ *
+ * MUST stay above the '/:id' routes at the bottom of this file. Express matches
+ * in registration order, so registering it later would let the generic
+ * order-id route consume "address-resolution" as an order id.
+ *
+ * Deliberately NOT a variant of '/constrained': that endpoint elects one
+ * constraint per order for Flow's mutually exclusive buckets, which hides
+ * orders whose address block loses the election. See the controller header.
+ */
+router.get(
+  '/address-resolution',
+  authenticateToken,
+  httpGetAddressResolutionOrders
 );
 
 /**

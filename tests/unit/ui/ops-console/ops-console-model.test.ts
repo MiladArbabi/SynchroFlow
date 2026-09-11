@@ -15,6 +15,9 @@ import {
   buildAlertHistoryRows,
   buildSetupRows,
   buildWaitingRows,
+  isNowActionable,
+  NOW_ACTIONABLE_ALERT_TYPES,
+  NOW_VISIBLE_LIMIT,
   openAttentionCount,
   relativeAgeLabel,
 } from 'components/OpsConsole/opsConsoleModel';
@@ -151,9 +154,135 @@ describe('NOW rows', () => {
     expect(row.status).toBe('attention');
   });
 
-  it('omits the action when no route exists rather than inventing one', () => {
-    const [row] = buildNowRows([alert({ alert_type: 'unmapped_type' })], deepLink);
-    expect(row.action).toBeUndefined();
+  it('EXCLUDES an alert with no operational destination instead of rendering a dead end', () => {
+    const rows = buildNowRows(
+      [
+        alert({ id: 'a1' }),                                // mapped
+        alert({ id: 'a2', alert_type: 'unmapped_type' }),   // no destination
+      ],
+      deepLink,
+    );
+
+    expect(rows.map(r => r.id)).toEqual(['alert:a1']);
+    // Every NOW row that survives carries a real action — no generic
+    // "View" / "Manage alert" fallback was synthesised to keep the other one.
+    expect(rows.every(r => r.action !== undefined)).toBe(true);
+    const labels = rows.map(r => r.action!.label);
+    expect(labels).not.toContain('View');
+    expect(labels).not.toContain('Manage alert');
+  });
+
+  it('counts only actionable rows, so the NOW count is workload not alert volume', () => {
+    const inbox = [
+      alert({ id: 'a1' }),
+      alert({ id: 'a2', alert_type: 'unmapped_type' }),
+      alert({ id: 'a3', alert_type: 'also_unmapped' }),
+      alert({ id: 'a4' }),
+    ];
+    expect(inbox).toHaveLength(4);
+    expect(buildNowRows(inbox, deepLink)).toHaveLength(2);
+  });
+
+  it('caps the rendered queue at five while leaving the count intact', () => {
+    // The cap is a rendering limit only; the model still returns everything.
+    expect(NOW_VISIBLE_LIMIT).toBe(5);
+    const many = Array.from({ length: 8 }, (_, i) => alert({ id: `a${i}` }));
+    expect(buildNowRows(many, deepLink)).toHaveLength(8);
+  });
+});
+
+// ─── NOW ELIGIBILITY POLICY ──────────────────────────────────────────────────
+
+describe('NOW eligibility policy', () => {
+  // Every type resolves to a route, so the route is NOT what decides.
+  const routeForAll = () => ({ route: '/wms', label: 'Warehouse' });
+
+  const ACTIONABLE = [
+    'sla_breach', 'operational', 'inventory', 'customer', 'revenue_at_risk',
+    'stockout_risk', 'reorder_warning', 'low_stock_reorder', 'missing_cogs',
+    'wms_pick_exception', 'wms_pack_exception', 'wms_stow_exception',
+    'wms_receive_exception', 'wms_stow_pending', 'wms_receive_arrived',
+    'wms_batch_ready_to_pack', 'wms_batch_ready_to_ship',
+  ];
+
+  it('classifies exactly the ratified actionable set', () => {
+    expect([...NOW_ACTIONABLE_ALERT_TYPES].sort()).toEqual([...ACTIONABLE].sort());
+    for (const alert_type of ACTIONABLE) {
+      expect(isNowActionable(alert({ alert_type }))).toBe(true);
+    }
+  });
+
+  it('excludes wms_batch_released even though its route is perfectly valid', () => {
+    const released = alert({ alert_type: 'wms_batch_released' });
+
+    // Proof the exclusion is the POLICY, not a missing destination.
+    expect(routeForAll()).toEqual({ route: '/wms', label: 'Warehouse' });
+    expect(isNowActionable(released)).toBe(false);
+    expect(buildNowRows([released], routeForAll)).toEqual([]);
+  });
+
+  it.each([
+    'wms_batch_ready_to_pack',
+    'wms_batch_ready_to_ship',
+    'wms_stow_pending',
+    'wms_receive_arrived',
+  ])('keeps %s actionable despite info severity — severity is not actionability', (alert_type) => {
+    const rows = buildNowRows([alert({ alert_type, severity: 'info' })], routeForAll);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tone).toBe('info');
+    expect(rows[0].status).toBe('actionable');
+  });
+
+  it('excludes an unknown alert type by default, route or not', () => {
+    expect(isNowActionable(alert({ alert_type: 'brand_new_signal_2027' }))).toBe(false);
+    expect(buildNowRows([alert({ alert_type: 'brand_new_signal_2027' })], routeForAll))
+      .toEqual([]);
+  });
+
+  it('requires BOTH classification and a destination', () => {
+    const noRoute = () => null;
+    // Classified, but unroutable.
+    expect(buildNowRows([alert({ alert_type: 'sla_breach' })], noRoute)).toEqual([]);
+    // Routable, but unclassified.
+    expect(buildNowRows([alert({ alert_type: 'wms_batch_released' })], routeForAll)).toEqual([]);
+  });
+
+  it('preserves backend order among eligible rows and lets excluded ones consume nothing', () => {
+    const inbox = [
+      alert({ id: 'a1', alert_type: 'sla_breach' }),
+      alert({ id: 'x1', alert_type: 'wms_batch_released' }),   // excluded
+      alert({ id: 'a2', alert_type: 'operational' }),
+      alert({ id: 'x2', alert_type: 'unknown_type' }),         // excluded
+      alert({ id: 'a3', alert_type: 'inventory' }),
+    ];
+    const rows = buildNowRows(inbox, routeForAll);
+
+    // Order preserved, gaps closed, excluded rows uncounted.
+    expect(rows.map(r => r.id)).toEqual(['alert:a1', 'alert:a2', 'alert:a3']);
+    expect(rows).toHaveLength(3);
+    expect(openAttentionCount(rows)).toBe(3);
+  });
+
+  it('excluded rows do not consume the five-row visible cap', () => {
+    // 5 eligible interleaved with 4 excluded: all 5 eligible must survive, so
+    // none of the visible slots was spent on a progress event.
+    const inbox = [
+      alert({ id: 'a1', alert_type: 'sla_breach' }),
+      alert({ id: 'x1', alert_type: 'wms_batch_released' }),
+      alert({ id: 'a2', alert_type: 'operational' }),
+      alert({ id: 'x2', alert_type: 'wms_batch_released' }),
+      alert({ id: 'a3', alert_type: 'inventory' }),
+      alert({ id: 'x3', alert_type: 'wms_batch_released' }),
+      alert({ id: 'a4', alert_type: 'customer' }),
+      alert({ id: 'x4', alert_type: 'unknown_type' }),
+      alert({ id: 'a5', alert_type: 'missing_cogs' }),
+    ];
+    const rows = buildNowRows(inbox, routeForAll);
+
+    expect(rows).toHaveLength(NOW_VISIBLE_LIMIT);
+    expect(rows.slice(0, NOW_VISIBLE_LIMIT).map(r => r.id))
+      .toEqual(['alert:a1', 'alert:a2', 'alert:a3', 'alert:a4', 'alert:a5']);
   });
 });
 
@@ -203,7 +332,6 @@ describe('RECENT / HISTORY rows', () => {
   it('drops any row without a persisted resolved_at instead of showing it complete', () => {
     const rows = buildAlertHistoryRows(
       [...resolved, alert({ id: 'x1', title: 'Never resolved', resolved_at: null })],
-      'HISTORY',
     );
     expect(rows.map(r => r.id)).not.toContain('history:x1');
     expect(rows).toHaveLength(4);
@@ -211,10 +339,7 @@ describe('RECENT / HISTORY rows', () => {
   });
 
   it('NEVER presents a resolved alert as a verified Decision Engine outcome', () => {
-    const rows = [
-      ...buildAlertHistoryRows(resolved, 'RECENT', 3),
-      ...buildAlertHistoryRows(resolved, 'HISTORY'),
-    ];
+    const rows = buildAlertHistoryRows(resolved);
 
     // resolved_at is authoritative for the ALERT's lifecycle only. It must not
     // be promoted into the ✓ / verified vocabulary, which is reserved for
@@ -238,7 +363,7 @@ describe('RECENT / HISTORY rows', () => {
         alert({ id: 'c2', resolved_at: new Date(NOW - 2 * 3_600_000).toISOString() }),
         alert({ id: 'c3', resolved_at: new Date(NOW - 40 * 3_600_000).toISOString() }),
       ],
-      'RECENT', undefined, NOW,
+      undefined, NOW,
     );
 
     expect(rows.map(r => r.meta)).toEqual(['28m', '2h', expect.stringMatching(/^[A-Z][a-z]{2} \d{2}$/)]);
@@ -247,9 +372,14 @@ describe('RECENT / HISTORY rows', () => {
     expect(rows.every(r => r.a11yLabel === 'alert closed')).toBe(true);
   });
 
-  it('limits RECENT while HISTORY carries the full authoritative list', () => {
-    expect(buildAlertHistoryRows(resolved, 'RECENT', 3)).toHaveLength(3);
-    expect(buildAlertHistoryRows(resolved, 'HISTORY')).toHaveLength(4);
+  it('only ever produces HISTORY rows — RECENT no longer exists as a section', () => {
+    const rows = buildAlertHistoryRows(resolved);
+    expect(rows).toHaveLength(4);
+    expect(rows.every(r => r.section === 'HISTORY')).toBe(true);
+    expect(rows.map(r => r.section)).not.toContain('RECENT');
+    expect(rows.every(r => r.id.startsWith('history:'))).toBe(true);
+    // The optional limit still works, for HISTORY only.
+    expect(buildAlertHistoryRows(resolved, 2)).toHaveLength(2);
   });
 });
 
@@ -263,11 +393,10 @@ describe('openAttentionCount', () => {
         { key: 'a', label: 'Done', complete: true },                          // excluded
         { key: 'b', label: 'Todo', complete: false, actionRoute: '/x' },      // open
       ]),
-      ...buildAlertHistoryRows([alert({ id: 'r1', resolved_at: 'now' })], 'RECENT'),   // excluded
-      ...buildAlertHistoryRows([alert({ id: 'r2', resolved_at: 'now' })], 'HISTORY'),  // excluded
+      ...buildAlertHistoryRows([alert({ id: 'r2', resolved_at: 'now' })]),  // excluded
     ];
 
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(4);
     expect(openAttentionCount(rows)).toBe(2);
   });
 });

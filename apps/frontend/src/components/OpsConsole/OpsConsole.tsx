@@ -18,13 +18,15 @@
 // Data authority (see opsConsoleModel.ts for the rules):
 //   NOW     — canonical live alert inbox, passed down from the topnav, which
 //             is the single shell-level owner of that poll. No second poll is
-//             created here.
+//             created here. ACTIONABLE-ONLY and capped at five by default.
 //   WAITING — omitted in V1: no shop-wide intervention/verification read exists.
-//   SETUP   — existing useActivationChecklist assembler, unchanged.
-//   RECENT  — ALERT HISTORY: alerts the backend closed (resolved_at), fetched
-//             only while the console is open; historical status never polls.
-//             These are alert-lifecycle facts, not verified Decision Engine
-//             outcomes, so they render neutral ('closed'), never green ✓.
+//   SETUP   — existing useActivationChecklist assembler, unchanged. Secondary:
+//             collapsed until asked for, and always rendered below NOW.
+//   HISTORY — its own tab, never in OPEN: alerts the backend closed
+//             (resolved_at), fetched only while the console is open; historical
+//             status never polls. These are alert-lifecycle facts, not verified
+//             Decision Engine outcomes, so they render neutral ('closed'),
+//             never green ✓.
 //
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
@@ -46,6 +48,7 @@ import {
   buildNowRows,
   buildSetupRows,
   buildWaitingRows,
+  NOW_VISIBLE_LIMIT,
   openAttentionCount,
   type OpsRow,
 } from './opsConsoleModel';
@@ -66,8 +69,11 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
  * and the project already uses 100vw for shell-level widths (AppLayout, SpikeLayout).
  */
 export const OPS_CONSOLE_WIDTH = { xs: '100vw', sm: 340 } as const;
-/** On xs the CTA takes its own full-width line so its label can never clip. */
-export const OPS_ROW_ACTION_BASIS = { xs: '100%', sm: 'auto' } as const;
+/**
+ * Grid placement of the CTA cell: its own auto column on sm, and a compact
+ * second row spanning the subject columns on xs.
+ */
+export const OPS_ROW_ACTION_COLUMN = { xs: '2 / -1', sm: 'auto' } as const;
 /** xs wraps the subject freely; sm keeps the accepted two-line clamp. */
 export const OPS_ROW_SUBJECT_CLAMP = { xs: 'unset', sm: 2 } as const;
 
@@ -81,6 +87,25 @@ function useChecklistDismissed() {
 
 // ─── ROW ──────────────────────────────────────────────────────────────────────
 
+/**
+ * MICRO-CARD + DETERMINISTIC GRID
+ * -------------------------------
+ * Actionable rows (NOW, and expanded incomplete SETUP) render as compact
+ * micro-cards. HISTORY rows stay flat and quiet — no elevation, no border, no
+ * hover transform: they are a record, not work.
+ *
+ * Layout is CSS GRID, not flex-with-nowrap. Under flex the subject and the CTA
+ * competed for the same line and the subject could paint under the CTA. Grid
+ * gives each its own column, so collision is structurally impossible:
+ *
+ *   sm+ :  glyph(10px) | subject minmax(0,1fr) | meta auto | CTA auto
+ *   xs  :  glyph(10px) | subject minmax(0,1fr) | meta auto
+ *                        CTA on row 2, right-aligned, spanning cols 2..-1
+ *
+ * The meta cell is ALWAYS rendered (empty when there is no meta) so column
+ * positions never shift and the CTA cannot slide into the meta column.
+ * No absolute positioning is used for layout.
+ */
 function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: string) => void }) {
   const pal = useAppTheme();
 
@@ -88,6 +113,8 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
   // made it unreadable in light mode. Only genuinely retired rows are faded.
   const faded = row.status === 'verified' || row.status === 'dismissed';
   const quiet = faded || row.status === 'closed';
+  // Cardize actionable work only. HISTORY never gets elevation.
+  const isCard = row.section !== 'HISTORY' && Boolean(row.action);
 
   const glyphColor =
     row.status === 'attention'
@@ -103,24 +130,64 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
       data-testid={`ops-row-${row.id}`}
       data-status={row.status}
       data-section={row.section}
-      title={row.a11yLabel}
+      data-card={isCard ? 'true' : 'false'}
       sx={{
-        display: 'flex', alignItems: 'center', gap: 1,
-        // xs may wrap the CTA onto a second compact line; sm keeps the approved
-        // single-line anatomy. rowGap stays small so wrapping costs ~14px, not
-        // a card's worth of padding.
-        flexWrap: { xs: 'wrap', sm: 'nowrap' },
-        rowGap: 0.5,
-        px: 1.5, py: 0.75,
-        maxWidth: '100%', boxSizing: 'border-box',
-        borderBottom: `0.5px solid ${pal.rule}`,
-        bgcolor: 'transparent',
+        // position:relative scopes the absolutely-positioned sr-only node to
+        // its own row. Without it the nearest positioned ancestor was the
+        // panel, so every row's hidden node was laid out against the panel and
+        // contributed to the panel's overflow rather than the row's.
+        position: 'relative',
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: '10px minmax(0, 1fr) auto',
+          sm: '10px minmax(0, 1fr) auto auto',
+        },
+        alignItems: 'center',
+        columnGap: '6px',
+        rowGap: '3px',
+        boxSizing: 'border-box',
+        maxWidth: '100%',
+        ...(isCard
+          ? {
+              // Intrinsic height — no minHeight. Compact padding only.
+              mx: '7px', my: '3px',
+              px: '7px', py: '4px',
+              borderRadius: '6px',
+              border: `0.5px solid ${pal.rule}`,
+              // Existing theme tokens; no hardcoded colour.
+              boxShadow: pal.shadow,
+              bgcolor: pal.surface,
+              transition: 'transform 140ms ease-out, box-shadow 140ms ease-out, border-color 140ms ease-out',
+              '&:hover': {
+                borderColor: pal.rule2,
+                boxShadow: pal.shadowMd,
+                transform: 'translateY(-1px)',
+              },
+              // Settle back ~1px while the real CTA is pressed. Scoped to the
+              // CTA so the card never implies it is itself clickable.
+              '&:has(button:active)': { transform: 'translateY(0)' },
+              '@media (prefers-reduced-motion: reduce)': {
+                transition: 'box-shadow 140ms ease-out, border-color 140ms ease-out',
+                '&:hover': {
+                  borderColor: pal.rule2,
+                  boxShadow: pal.shadowMd,
+                  transform: 'none',
+                },
+                '&:has(button:active)': { transform: 'none' },
+              },
+            }
+          : {
+              px: 1.5, py: 0.75,
+              borderBottom: `0.5px solid ${pal.rule}`,
+              bgcolor: 'transparent',
+              '&:last-of-type': { borderBottom: 'none' },
+              '&:hover': { bgcolor: pal.rowHover },
+            }),
         opacity: faded ? 0.62 : 1,
-        '&:last-of-type': { borderBottom: 'none' },
-        '&:hover': { bgcolor: pal.rowHover },
       }}
     >
-      {/* Severity/context for assistive tech only — never visible text. */}
+      {/* Severity/context for assistive tech only — never visible text, and
+          never a title attribute (that produced a native tooltip). */}
       {row.a11yLabel && (
         <Box
           component="span"
@@ -134,20 +201,20 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
           {row.a11yLabel}
         </Box>
       )}
+
+      {/* COL 1 — glyph */}
       <Typography
         aria-hidden
-        sx={{ fontFamily: MONO, fontSize: 12, lineHeight: 1, width: 10, flexShrink: 0, color: glyphColor }}
+        sx={{ fontFamily: MONO, fontSize: 12, lineHeight: 1, color: glyphColor }}
       >
         {OPS_STATUS_GLYPH[row.status]}
       </Typography>
 
+      {/* COL 2 — subject, minmax(0,1fr): the only column allowed to give way */}
       <Typography
         data-testid={`ops-row-label-${row.id}`}
         sx={{
-          fontFamily: MONO, fontSize: 11.5,
-          // minWidth:0 lets the subject be the thing that gives way, so the CTA
-          // never has to shrink into a clipped label.
-          flex: '1 1 auto', minWidth: 0,
+          fontFamily: MONO, fontSize: 11.5, minWidth: 0,
           // xs wraps as far as it needs; sm keeps the accepted two-line clamp.
           display: { xs: 'block', sm: '-webkit-box' },
           WebkitLineClamp: OPS_ROW_SUBJECT_CLAMP,
@@ -161,24 +228,21 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
         {row.label}
       </Typography>
 
-      {row.meta && (
-        <Typography
-          data-testid={`ops-row-meta-${row.id}`}
-          sx={{ fontFamily: MONO, fontSize: 10, color: pal.ink4, flexShrink: 0 }}
-        >
-          {row.meta}
-        </Typography>
-      )}
+      {/* COL 3 — meta. Always present so the grid columns never shift. */}
+      <Typography
+        data-testid={`ops-row-meta-${row.id}`}
+        sx={{ fontFamily: MONO, fontSize: 10, color: pal.ink4, whiteSpace: 'nowrap' }}
+      >
+        {row.meta ?? ''}
+      </Typography>
 
+      {/* COL 4 (sm) / ROW 2 (xs) — CTA. Intrinsic width, never shrinks. */}
       {row.action && (
-        // Wrapper carries the reflow: full-width line on xs (button stays
-        // compact and right-aligned within it), transparent inline box on sm.
         <Box
           data-testid={`ops-row-action-wrap-${row.id}`}
           sx={{
             display: 'flex', justifyContent: 'flex-end',
-            flexBasis: OPS_ROW_ACTION_BASIS,
-            flexGrow: 0, flexShrink: 0,
+            gridColumn: OPS_ROW_ACTION_COLUMN,
             minWidth: 0,
           }}
         >
@@ -187,9 +251,10 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
             type="button"
             onClick={() => onNavigate(row.action!.route)}
             sx={{
-              fontFamily: MONO, fontSize: 10, lineHeight: 1.6,
-              px: 0.75, py: 0.25,
-              // Never shrink: a shrinking CTA is how the label got clipped.
+              fontFamily: MONO, fontSize: 10, lineHeight: 1.5,
+              px: '6px', py: '1px',
+              // Never shrink, never wrap: a shrinking CTA is how the label got
+              // clipped, and a wrapping one is how it grew the card.
               flexShrink: 0, whiteSpace: 'nowrap',
               bgcolor: 'transparent', color: 'var(--accent)',
               border: '0.5px solid var(--accent-border)', borderRadius: '4px',
@@ -221,6 +286,42 @@ function SectionHeader({ label, count }: { label: string; count?: number }) {
       {typeof count === 'number' && (
         <Typography sx={{ fontFamily: MONO, fontSize: 10, color: pal.ink4 }}>{count}</Typography>
       )}
+    </Box>
+  );
+}
+
+/** One-line disclosure control. Deliberately not a card and not a button row. */
+function DisclosureLine({
+  testId, expanded, onToggle, children,
+}: {
+  testId: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const pal = useAppTheme();
+  return (
+    <Box
+      component="button"
+      type="button"
+      data-testid={testId}
+      aria-expanded={expanded}
+      onClick={onToggle}
+      sx={{
+        display: 'flex', alignItems: 'center', gap: 0.5,
+        width: '100%', boxSizing: 'border-box', maxWidth: '100%',
+        px: 1.5, py: 0.625, cursor: 'pointer', textAlign: 'left',
+        bgcolor: 'transparent', border: 'none',
+        borderBottom: `0.5px solid ${pal.rule}`,
+        fontFamily: MONO, fontSize: 10, color: pal.ink4,
+        outline: 'none',
+        '&:focus': { outline: 'none' },
+        '&:focus-visible': { outline: `2px solid ${pal.accent}`, outlineOffset: '-2px' },
+        '&:hover': { color: pal.ink3, bgcolor: pal.rowHover },
+      }}
+    >
+      {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+      {children}
     </Box>
   );
 }
@@ -259,6 +360,9 @@ export function OpsConsolePanel({
   const nav = useNavigate();
   const [tab, setTab] = useState<'OPEN' | 'HISTORY'>('OPEN');
   const [showCompletedSetup, setShowCompletedSetup] = useState(false);
+  // Presentational only — no persistence, no new authority.
+  const [nowExpanded, setNowExpanded] = useState(false);
+  const [setupExpanded, setSetupExpanded] = useState(false);
 
   const { items, isLoading: setupLoading, isError: setupError } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
@@ -269,11 +373,16 @@ export function OpsConsolePanel({
   const resolvedQuery = useAlerts({ status: 'resolved' }, { enabled: open });
   const resolvedAlerts = resolvedQuery.data?.data ?? [];
 
+  // Actionable-only, in backend rank order — no client-side sorting anywhere.
   const nowRows = useMemo(() => buildNowRows(alerts, deepLink), [alerts, deepLink]);
   const waitingRows = buildWaitingRows();
   const setupRows = useMemo(() => (setupDismissed ? [] : buildSetupRows(items)), [items, setupDismissed]);
-  const recentRows = useMemo(() => buildAlertHistoryRows(resolvedAlerts, 'RECENT', 3), [resolvedAlerts]);
-  const historyRows = useMemo(() => buildAlertHistoryRows(resolvedAlerts, 'HISTORY'), [resolvedAlerts]);
+  const historyRows = useMemo(() => buildAlertHistoryRows(resolvedAlerts), [resolvedAlerts]);
+
+  // The cap is a rendering decision. The COUNT is always the full actionable
+  // total, so a hidden row is never an uncounted row.
+  const nowVisibleRows = nowExpanded ? nowRows : nowRows.slice(0, NOW_VISIBLE_LIMIT);
+  const nowHiddenCount = nowRows.length - nowVisibleRows.length;
 
   const openSetupRows = setupRows.filter((r) => r.status !== 'verified');
   const doneSetupRows = setupRows.filter((r) => r.status === 'verified');
@@ -297,7 +406,16 @@ export function OpsConsolePanel({
         width: OPS_CONSOLE_WIDTH,
         maxWidth: '100vw',
         boxSizing: 'border-box',
-        overflowX: 'hidden',
+        // ROOT CAUSE of the phantom bottom scroll (introduced by the xs width
+        // fix): this was `overflowX: 'hidden'` with overflow-y left at its
+        // default `visible`. Per CSS overflow, when one axis is not `visible`
+        // the other axis's `visible` COMPUTES TO `auto` — so the panel silently
+        // became a SECOND scroll container wrapped around the body's own
+        // scroller, and its 0.5px borders plus the absolutely-positioned
+        // sr-only nodes gave it a small scrollable overflow: blank scroll area
+        // after the footer. Both axes hidden here, so the panel never scrolls
+        // and the body below is the one and only scroller.
+        overflow: 'hidden',
         display: 'flex', flexDirection: 'column',
         bgcolor: pal.surface,
         borderLeft: `0.5px solid ${pal.rule}`,
@@ -354,13 +472,36 @@ export function OpsConsolePanel({
       </Box>
 
       {/* BODY */}
-      <Box sx={{ flex: 1, overflowY: 'auto' }}>
+      {/* The single scroll container. minHeight:0 lets it actually shrink
+          inside the flex column instead of pushing the footer out of view. */}
+      <Box data-testid="ops-console-body" sx={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
         {tab === 'OPEN' ? (
           <>
+            {/* NOW — actionable operational work, backend rank preserved. The
+                count is the full actionable total, not the rendered slice. */}
             <SectionHeader label="NOW" count={nowRows.length} />
             {nowRows.length === 0
               ? <StateLine>No operational items require action.</StateLine>
-              : nowRows.map((row) => <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />)}
+              : nowVisibleRows.map((row) => <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />)}
+
+            {nowHiddenCount > 0 && (
+              <DisclosureLine
+                testId="ops-now-show-more"
+                expanded={false}
+                onToggle={() => setNowExpanded(true)}
+              >
+                Show {nowHiddenCount} more
+              </DisclosureLine>
+            )}
+            {nowExpanded && nowRows.length > NOW_VISIBLE_LIMIT && (
+              <DisclosureLine
+                testId="ops-now-show-less"
+                expanded
+                onToggle={() => setNowExpanded(false)}
+              >
+                Show less
+              </DisclosureLine>
+            )}
 
             {/* WAITING renders only when authoritative verification state exists. */}
             {waitingRows.length > 0 && (
@@ -370,17 +511,24 @@ export function OpsConsolePanel({
               </>
             )}
 
+            {/* SETUP — always below NOW, and secondary: collapsed until asked
+                for, so unfinished onboarding never competes with live work. */}
             {!setupDismissed && (
               <>
-                <SectionHeader label="SETUP" count={openSetupRows.length} />
                 {setupError ? (
-                  <StateLine>Setup status unavailable.</StateLine>
+                  <>
+                    <SectionHeader label="SETUP" />
+                    <StateLine>Setup status unavailable.</StateLine>
+                  </>
                 ) : setupLoading ? (
-                  <StateLine>Loading setup…</StateLine>
+                  <>
+                    <SectionHeader label="SETUP" />
+                    <StateLine>Loading setup…</StateLine>
+                  </>
                 ) : allSetupComplete ? (
-                  /* Every item done: one compact line instead of six permanent
-                     completed rows. Purely presentational — no flag is written,
-                     and the rows are still derived from the same source truth. */
+                  /* Every item done: one compact line instead of N completed
+                     rows. Purely presentational — no flag is written, and the
+                     rows are still derived from the same source truth. */
                   <Box
                     data-testid="ops-setup-complete"
                     sx={{
@@ -399,49 +547,40 @@ export function OpsConsolePanel({
                       Setup complete · {doneSetupRows.length}/{setupRows.length}
                     </Typography>
                   </Box>
-                ) : (
+                ) : openSetupRows.length > 0 ? (
                   <>
-                    {openSetupRows.map((row) => <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />)}
-                    {doneSetupRows.length > 0 && (
+                    <DisclosureLine
+                      testId="ops-setup-toggle"
+                      expanded={setupExpanded}
+                      onToggle={() => setSetupExpanded((v) => !v)}
+                    >
+                      SETUP · {openSetupRows.length} remaining
+                    </DisclosureLine>
+
+                    {setupExpanded && (
                       <>
-                        <Box
-                          component="button"
-                          type="button"
-                          data-testid="ops-setup-completed-toggle"
-                          aria-expanded={showCompletedSetup}
-                          onClick={() => setShowCompletedSetup((v) => !v)}
-                          sx={{
-                            display: 'flex', alignItems: 'center', gap: 0.5, width: '100%',
-                            boxSizing: 'border-box', maxWidth: '100%',
-                            px: 1.5, py: 0.625, cursor: 'pointer',
-                            bgcolor: 'transparent', border: 'none',
-                            borderBottom: `0.5px solid ${pal.rule}`,
-                            fontFamily: MONO, fontSize: 10, color: pal.ink4, textAlign: 'left',
-                          }}
-                        >
-                          {showCompletedSetup ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                          {doneSetupRows.length} completed
-                        </Box>
-                        {showCompletedSetup && doneSetupRows.map((row) => (
+                        {openSetupRows.map((row) => (
                           <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />
                         ))}
+                        {doneSetupRows.length > 0 && (
+                          <>
+                            <DisclosureLine
+                              testId="ops-setup-completed-toggle"
+                              expanded={showCompletedSetup}
+                              onToggle={() => setShowCompletedSetup((v) => !v)}
+                            >
+                              {doneSetupRows.length} completed
+                            </DisclosureLine>
+                            {showCompletedSetup && doneSetupRows.map((row) => (
+                              <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />
+                            ))}
+                          </>
+                        )}
                       </>
                     )}
                   </>
-                )}
+                ) : null}
               </>
-            )}
-
-            {/* Alert history — neutral. Says an alert closed; claims no cause. */}
-            <SectionHeader label="RECENT ALERTS" count={recentRows.length} />
-            {resolvedQuery.isError ? (
-              <StateLine>Alert history unavailable.</StateLine>
-            ) : resolvedQuery.isLoading ? (
-              <StateLine>Loading alert history…</StateLine>
-            ) : recentRows.length === 0 ? (
-              <StateLine>No closed alerts yet.</StateLine>
-            ) : (
-              recentRows.map((row) => <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />)
             )}
           </>
         ) : (

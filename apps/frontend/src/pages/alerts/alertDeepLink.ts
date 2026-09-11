@@ -41,6 +41,32 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
   missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
+
+  // ── OPS-CONSOLE-02: three previously unmapped families ────────────────────
+  // These had no destination, so the Ops Console rendered them as dead ends.
+  // Routes and labels are NOT invented here: they are the existing repository
+  // truth from apps/backend/src/services/overview-ft2/overviewMorningBrief
+  // .resolver.ts (ACTION_LABEL_MAP + DEEP_LINK_MAP), which already ships these
+  // exact label/route pairs for the morning brief. Labels here are
+  // job-to-be-done rather than destination names, matching that resolver.
+  //
+  // `inventory` is the SHOP-LEVEL aggregate (entity_type='shop',
+  // entity_id=null): it does not name the affected variant or order, so it must
+  // NOT be routed to targeted Sourcing. It lands on the constrained-order list,
+  // where the merchant picks the actual order. Targeted Sourcing remains the
+  // job of the existing per-order inventory treatment, which has the constraint
+  // context this alert lacks.
+  // Label is 'Resolve stockouts', not 'Review stock': the destination is the
+  // resolution queue (Blocked Orders -> Out of Stock), not a stock report.
+  // Reviewing levels in Catalog cannot identify WHICH products blocked these
+  // orders, so the CTA names the job the destination actually performs.
+  inventory:               { route: '/orders/flow?constraint=inventory', label: 'Resolve stockouts' },
+  customer:                { route: '/overview?resolution=address',       label: 'Fix addresses' },
+  // Shop-level low-stock summary from the AL-01 aggregator. Kept SEPARATE from
+  // stockout_risk (per-variant, order-triggered) and from `inventory`
+  // (order-blocking): three different operational states that happen to share a
+  // landing page with stockout_risk. Not merged.
+  low_stock_reorder:       { route: '/demand?filter=critical',            label: 'Reorder now' },
 };
 
 export function alertDeepLink(alert: Alert): { route: string; label: string } | null {

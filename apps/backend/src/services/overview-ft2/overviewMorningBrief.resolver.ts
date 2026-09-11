@@ -122,7 +122,16 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   sla_breach:               { module: 'order-nexus',      deepLink: '/orders/flow?urgency=sla_breach' },
   operational:              { module: 'order-nexus',      deepLink: '/orders/flow?constraint=operational' },
   inventory:                { module: 'order-nexus',      deepLink: '/orders/flow?constraint=inventory' },
-  customer:                 { module: 'order-nexus',      deepLink: '/orders/flow?constraint=customer' },
+  // OPS-RESOLVE-01: the address signal now requests the Guided Resolution
+  // Session on the Overview surface instead of dropping the merchant into the
+  // generic Blocked Orders group. /overview is the canonical Overview route
+  // (LifecycleRouteHost.tsx: <Route path="/overview/*" element={<OverviewFT2Page/>} />)
+  // and ?resolution=address is the session intent OverviewFT2Page reads.
+  //
+  // Scoped to this ONE signal on purpose: 'inventory' and every other entry
+  // below still deep-link into Order Flow, and no generalised action framework
+  // is introduced for this pilot.
+  customer:                 { module: 'overview',         deepLink: '/overview?resolution=address' },
   // Financial signals
   // revenue_at_risk: CashFlowModuleFT2 has no constrained-orders list to
   // filter into — the page's own UI already deep-links this exact signal

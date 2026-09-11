@@ -212,6 +212,51 @@ Live browser:
 The Ops Console is now the canonical Layer 1 attention surface. Do not
 reintroduce separate onboarding or quick-alert topnav popovers.
 
+#### 2026-09-11 surface recovery and address-resolution certification
+
+The polished Ops Console surface contract was recovered and re-certified after
+the runtime UI had regressed to an older flat representation.
+
+The current contract is:
+
+- `NOW` contains only explicitly actionable alert types with a valid destination;
+- unknown or non-actionable alerts do not gain a CTA merely because a deep link exists;
+- actionable NOW rows render as compact micro-cards;
+- the initial NOW view is capped at five rows with `Show more / Show less`;
+- `SETUP` remains secondary and collapsed;
+- `HISTORY` remains visually neutral and separate from actionable work;
+- vertical scrolling stays inside the console;
+- reduced-motion users do not receive decorative movement.
+
+Current action mappings include:
+
+```text
+customer          → Fix addresses     → /overview?resolution=address
+inventory         → Resolve stockouts → /orders/flow?constraint=inventory
+low_stock_reorder → Reorder now       → /demand?filter=critical
+```
+
+The customer action now opens the guided Address Resolution Session instead of
+sending the merchant to the generic customer-constrained Order Flow view.
+
+Live certification confirmed:
+
+```text
+OPEN
+→ merchant saves corrected address
+→ RECHECKING with visible pending feedback
+→ canonical blocker clears
+→ FIXED
+→ resolved count increments
+```
+
+The count must never increment from mutation success alone.
+
+Automated recovery coverage includes the Ops Console model and surface contracts,
+Overview address-resolution wiring, commercial-access boundary, session-state
+contract and existing Order Detail address treatment.
+
+
 ---
 
 ### Layer 2 — First-Visit Spotlights (anchored coach marks)

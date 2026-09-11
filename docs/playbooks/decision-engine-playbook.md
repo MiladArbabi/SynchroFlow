@@ -899,6 +899,108 @@ established.
 interventions without inventing the missing intervention semantics itself.
 
 
+### OPS-RESOLVE-01 — guided address resolution session
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED — 2026-09-11.**
+
+Address issues are the first Decision Engine problem group with an in-context
+resolution session.
+
+The canonical flow is:
+
+```text
+Ops Console
+    ↓
+customer / incomplete_address
+    ↓
+Fix addresses
+    ↓
+/overview?resolution=address
+    ↓
+Address Resolution Session
+    ↓
+merchant corrects one order
+    ↓
+RECHECKING
+    ↓
+canonical constraint disappears
+    ↓
+FIXED
+```
+
+The governing rule is strict:
+
+```text
+PATCH success != resolution
+
+merchant action
+→ write succeeds
+→ reconciliation runs
+→ canonical customer/incomplete_address constraint clears
+→ FIXED
+```
+
+While canonical verification is pending, the row remains `RECHECKING`. The
+resolved count does not increment optimistically. The UI shows minimal pending
+feedback, and motion is disabled for `prefers-reduced-motion` users without
+hiding the pending state.
+
+Session membership is frozen when the modal opens. A row that reaches `FIXED`
+remains visible for the lifetime of that session so the merchant retains
+evidence of progress.
+
+Closing the session invalidates/refetches authoritative queries. The frontend
+must not manually decrement or remove the order from Ops Console, Order Flow,
+alerts or other projections.
+
+The canonical candidate source is:
+
+```text
+GET /api/v1/orders/address-resolution
+```
+
+It reads the current tenant's active `customer + incomplete_address`
+constraints directly rather than relying on elected `/orders/constrained`
+precedence. This allows an address issue to remain resolvable even when the same
+order also has an operational constraint.
+
+The Ops Console treatment is:
+
+```text
+customer → Fix addresses → /overview?resolution=address
+```
+
+The generic `/orders/flow?constraint=customer` route is no longer the address
+resolution treatment.
+
+#### Address authority and Shopify replay safety
+
+A merchant-corrected LaSyncro shipping address is authoritative for operational
+fulfillment.
+
+After an `address_corrected` fulfillment-history event exists, stale Shopify
+`orders/create` / `orders/sync` replay must not silently overwrite the corrected
+local shipping fields. Suppression is explicit and logged without shipping PII.
+
+The three address concepts remain separate:
+
+```text
+1. Shopify customer saved/default address
+2. Shopify specific-order shipping address
+3. LaSyncro operational shipping address
+```
+
+OPS-RESOLVE-01 does not change the Shopify customer default and does not yet
+write the corrected address back to Shopify.
+
+Future order-level Shopify writeback is deferred to `SHOP-ADDR-SYNC-01` and
+requires a durable outbox/retry/acknowledgement path. Customer-default mutation
+remains out of scope.
+
+Carrier-label recipient snapshot and post-purchase correction handling remain
+deferred to `CARRIER-LABEL-ADDRESS-01`.
+
+
 ---
 
 ## 11. ORD-DECISION-AUTO-01 — Approved Treatment Workshops

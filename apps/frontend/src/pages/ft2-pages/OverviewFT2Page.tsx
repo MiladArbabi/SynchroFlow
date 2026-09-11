@@ -2,7 +2,7 @@
 // Lines 1–12 (imports)
 import { useEffect, useRef } from 'react';
 import { useUiEvents } from 'analytics/useUiEvents';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Typography } from '@mui/material';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
 import { useTrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
@@ -20,6 +20,11 @@ import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
 import type { SyntheticStation, LiveBinActivity, WarehouseZone, LocationPulse } from '@lasyncro/shared/ui';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { AddressResolutionSessionModal } from '../orders/AddressResolutionSessionModal';
+import {
+  useAddressResolutionOrders,
+  useInvalidateAddressResolutionOrders,
+} from '../orders/useAddressResolutionOrders';
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
 
@@ -30,6 +35,47 @@ export default function OverviewPageFT2() {
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
   const morningBrief = useMorningBriefSnapshot(!authLoading);
+
+  /**
+   * ADDRESS RESOLUTION SESSION INTENT (OPS-RESOLVE-01, Slice C)
+   * ----------------------------------------------------------
+   * The morning brief's address signal deep-links to
+   * /overview?resolution=address rather than to a Blocked Orders group, so this
+   * page owns the session. No standalone route is introduced — the Overview
+   * surface the merchant is already on hosts the modal.
+   *
+   * Candidates come from the unelected server contract
+   * (GET /api/v1/orders/address-resolution), gated on the intent so the query
+   * costs nothing on a normal Overview visit. Once the modal is open it freezes
+   * its own row set, so later candidate refetches cannot prune a row the
+   * merchant just fixed — that retention lives in the modal and is not
+   * duplicated here.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const addressSessionRequested = searchParams.get('resolution') === 'address';
+  const addressResolution = useAddressResolutionOrders(addressSessionRequested);
+  const invalidateAddressResolution = useInvalidateAddressResolutionOrders();
+
+  /**
+   * Closing drops the URL intent and then lets AUTHORITATIVE queries re-derive
+   * everything. Deliberately no manual alert decrement, signal removal,
+   * constrained-order removal or local Overview patching:
+   *   - the URL intent is cleared with normal router semantics, so Back behaves;
+   *   - refreshMorningBrief() is the page's EXISTING refresh mechanism (the same
+   *     one the module's refresh control uses) — reused, not reinvented;
+   *   - the candidate query is invalidated so session membership is re-read;
+   *   - constrained / order-nexus / order-detail invalidation is NOT repeated
+   *     here: useShippingAddress already does it on every address write, and
+   *     duplicating it would be a second source of projection truth.
+   */
+  const handleCloseAddressSession = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('resolution');
+    setSearchParams(next, { replace: true });
+
+    invalidateAddressResolution();
+    void morningBrief.refreshMorningBrief();
+  };
 
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
   const { displayCurrency } = useEntitlements();
@@ -723,6 +769,66 @@ export default function OverviewPageFT2() {
   return (
     <>
       <ProfileCompletionBanner />
+
+        {/* GUIDED RESOLUTION SESSION — ADDRESS PILOT.
+            Overlays the Overview surface only while the URL carries the intent.
+            The modal owns its own frozen row set and its OPEN/RECHECKING/FIXED
+            machine; this page only supplies candidates and a close handler. */}
+        {addressSessionRequested && (
+          <Box
+            data-testid="address-session-overlay"
+            sx={{
+              position: 'fixed', inset: 0, zIndex: 1300,
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+              p: 3, overflowY: 'auto',
+              bgcolor: 'rgba(0,0,0,0.45)',
+            }}
+          >
+            <Box sx={{ width: '100%', maxWidth: 620 }}>
+              {addressResolution.isLoading ? (
+                <Box sx={{ p: 3, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px' }}>
+                  <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+                    Loading address issues…
+                  </Typography>
+                </Box>
+              ) : addressResolution.isError ? (
+                /* Truthful failure: never an empty workspace that implies
+                   "nothing to fix" when the read itself failed. */
+                <Box sx={{ p: 3, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
+                    Address issues unavailable
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)', mb: 2 }}>
+                    We could not load the affected orders. Close and try again.
+                  </Typography>
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={handleCloseAddressSession}
+                    sx={{
+                      px: 1.5, py: 0.5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      bgcolor: 'transparent', color: 'var(--accent)',
+                      border: '0.5px solid var(--accent)', borderRadius: '6px',
+                    }}
+                  >
+                    Close
+                  </Box>
+                </Box>
+              ) : (
+                /* Zero candidates is a legitimate, truthful state — the work was
+                   already resolved elsewhere. The modal renders its own
+                   "No orders are blocked by an incomplete address." line and no
+                   Fixed row is fabricated for work this session never captured. */
+                <AddressResolutionSessionModal
+                  open
+                  orders={addressResolution.candidates}
+                  onClose={handleCloseAddressSession}
+                />
+              )}
+            </Box>
+          </Box>
+        )}
+
         <OverviewModuleFT2
           {...overviewProps}
           operationalWarningState={operationalWarningState}

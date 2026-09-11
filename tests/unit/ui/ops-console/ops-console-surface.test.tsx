@@ -20,7 +20,7 @@ import type { Alert } from 'pages/alerts/useAlerts';
 import { ALERT_ROUTE_MAP, alertDeepLink } from 'pages/alerts/alertDeepLink';
 import {
   OPS_CONSOLE_WIDTH,
-  OPS_ROW_ACTION_BASIS,
+  OPS_ROW_ACTION_COLUMN,
   OPS_ROW_SUBJECT_CLAMP,
 } from 'components/OpsConsole/OpsConsole';
 
@@ -108,6 +108,11 @@ beforeEach(() => {
   });
 });
 
+/** SETUP is collapsed by default now; open it when a test needs its rows. */
+function expandSetup() {
+  fireEvent.click(screen.getByTestId('ops-setup-toggle'));
+}
+
 function renderPanel(props: Partial<React.ComponentProps<typeof OpsConsolePanel>> = {}) {
   return render(
     <OpsConsolePanel
@@ -181,6 +186,7 @@ describe('onboarding completion truth', () => {
 describe('SETUP rows', () => {
   it('navigate to the existing route, and navigating never promotes the row to waiting/verified', () => {
     renderPanel();
+    expandSetup();
 
     const row = screen.getByTestId('ops-row-setup:map-zones');
     expect(row).toHaveAttribute('data-status', 'actionable');
@@ -197,6 +203,7 @@ describe('SETUP rows', () => {
 
   it('shows verified styling only for items the onboarding source reported complete', () => {
     renderPanel();
+    expandSetup();
 
     fireEvent.click(screen.getByTestId('ops-setup-completed-toggle'));
     expect(screen.getByTestId('ops-row-setup:connect-store'))
@@ -207,6 +214,7 @@ describe('SETUP rows', () => {
       completedCount: 0, allComplete: false, isLoading: false, isError: false,
     });
     renderPanel();
+    fireEvent.click(screen.getAllByTestId('ops-setup-toggle').pop()!);
     expect(screen.getAllByTestId('ops-row-setup:connect-store').pop())
       .toHaveAttribute('data-status', 'available');
   });
@@ -230,6 +238,7 @@ describe('open badge', () => {
   it('does not grow when navigation occurs', () => {
     render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     fireEvent.click(screen.getByRole('button', { name: /Ops Console/ }));
+    expandSetup();
 
     const row = screen.getByTestId('ops-row-setup:map-zones');
     fireEvent.click(within(row).getByRole('button', { name: /Open/ }));
@@ -270,15 +279,16 @@ describe('OPEN | HISTORY filter', () => {
     renderPanel();
 
     expect(screen.getByTestId('ops-row-alert:a1')).toBeInTheDocument();
-    expect(screen.getByTestId('ops-row-setup:map-zones')).toBeInTheDocument();
-    expect(screen.getByTestId('ops-row-recent:r1')).toBeInTheDocument();
+    expect(screen.getByTestId('ops-setup-toggle')).toBeInTheDocument();
+    // OPEN carries no closed-alert history at all any more.
+    expect(screen.queryByTestId('ops-row-recent:r1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-row-history:r1')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
     expect(screen.getByTestId('ops-row-history:r1')).toHaveAttribute('data-status', 'closed');
     expect(screen.queryByTestId('ops-row-alert:a1')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('ops-row-setup:map-zones')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-setup-toggle')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'OPEN' }));
     expect(screen.getByTestId('ops-row-alert:a1')).toBeInTheDocument();
@@ -292,7 +302,8 @@ describe('OPEN | HISTORY filter', () => {
     const headers = Array.from(container.querySelectorAll('div'))
       .map(el => el.textContent ?? '');
     expect(headers.some(t => t.startsWith('NOW') && t.endsWith('2'))).toBe(true);
-    expect(headers.some(t => t.startsWith('SETUP') && t.endsWith('1'))).toBe(true);
+    // SETUP carries its own remaining count on its collapsed control.
+    expect(screen.getByTestId('ops-setup-toggle')).toHaveTextContent('SETUP · 1 remaining');
   });
 
   it('renders WAITING only when authoritative rows exist — absent in V1', () => {
@@ -312,7 +323,6 @@ describe('deliberate states', () => {
     mockUseAlerts.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     const loading = renderPanel({ alerts: [] });
     expect(within(loading.container).getByText('Loading setup…')).toBeInTheDocument();
-    expect(within(loading.container).getByText('Loading alert history…')).toBeInTheDocument();
     loading.unmount();
 
     mockUseActivationChecklist.mockReturnValue({
@@ -323,7 +333,6 @@ describe('deliberate states', () => {
     });
     const empty = renderPanel({ alerts: [] });
     expect(within(empty.container).getByText('No operational items require action.')).toBeInTheDocument();
-    expect(within(empty.container).getByText('No closed alerts yet.')).toBeInTheDocument();
     empty.unmount();
 
     mockUseActivationChecklist.mockReturnValue({
@@ -332,7 +341,13 @@ describe('deliberate states', () => {
     mockUseAlerts.mockReturnValue({ data: undefined, isLoading: false, isError: true });
     const failed = renderPanel({ alerts: [] });
     expect(within(failed.container).getByText('Setup status unavailable.')).toBeInTheDocument();
-    expect(within(failed.container).getByText('Alert history unavailable.')).toBeInTheDocument();
+    failed.unmount();
+
+    // History's own states live on the HISTORY tab.
+    mockUseAlerts.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    const histFailed = renderPanel({ alerts: [] });
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
+    expect(within(histFailed.container).getByText('Alert history unavailable.')).toBeInTheDocument();
   });
 });
 
@@ -341,11 +356,6 @@ describe('deliberate states', () => {
 describe('alert history semantics', () => {
   it('renders closed alerts neutrally — never with verified status, ✓ glyph or the confirm token', () => {
     const { container } = renderPanel();
-
-    const recent = screen.getByTestId('ops-row-recent:r1');
-    expect(recent).toHaveAttribute('data-status', 'closed');
-    expect(recent).not.toHaveAttribute('data-status', 'verified');
-    expect(recent).not.toHaveTextContent('✓');
 
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
     const history = screen.getByTestId('ops-row-history:r1');
@@ -413,8 +423,9 @@ describe('setup completion and dismissal', () => {
     const { container } = renderPanel();
 
     expect(screen.queryByTestId('ops-setup-complete')).not.toBeInTheDocument();
+    expandSetup();
     expect(screen.getByTestId('ops-row-setup:map-zones')).toHaveAttribute('data-status', 'actionable');
-    // The completed one is behind the collapse, not inline.
+    // The completed one is behind a further collapse, not inline.
     expect(container.querySelector('[data-testid="ops-row-setup:connect-store"]')).toBeNull();
     expect(screen.getByTestId('ops-setup-completed-toggle')).toHaveTextContent('1 completed');
   });
@@ -456,8 +467,9 @@ describe('setup completion and dismissal', () => {
 describe('closed alert rows — readability and chronology', () => {
   it('stay readable: no whole-row opacity, readable ink, neutral glyph, no confirm token', () => {
     renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
-    const row = screen.getByTestId('ops-row-recent:r1');
+    const row = screen.getByTestId('ops-row-history:r1');
     // The faded treatment is reserved for genuinely retired rows.
     expect(row).toHaveStyle({ opacity: '1' });
     expect(row).toHaveAttribute('data-status', 'closed');
@@ -472,8 +484,9 @@ describe('closed alert rows — readability and chronology', () => {
 
   it('show relative chronology, not the redundant word "closed"', () => {
     renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
-    const meta = screen.getByTestId('ops-row-meta-recent:r1');
+    const meta = screen.getByTestId('ops-row-meta-history:r1');
     expect(meta.textContent).not.toBe('closed');
     expect(meta.textContent).toMatch(/^(just now|\d+m|\d+h|[A-Z][a-z]{2} \d{2})$/);
 
@@ -487,8 +500,9 @@ describe('NOW rows — decluttered subject', () => {
     renderPanel({ alerts: [alert({ id: 'a1', severity: 'critical' })] });
 
     const row = screen.getByTestId('ops-row-alert:a1');
-    // No visible meta column at all on an unacknowledged NOW row.
-    expect(screen.queryByTestId('ops-row-meta-alert:a1')).not.toBeInTheDocument();
+    // The meta cell is always present so the grid columns cannot shift, but it
+    // is EMPTY on an unacknowledged NOW row — severity is not printed into it.
+    expect(screen.getByTestId('ops-row-meta-alert:a1').textContent).toBe('');
     expect(screen.getByTestId('ops-row-label-alert:a1').textContent)
       .toBe('Pick exception on batch 12');
     expect(row).not.toHaveTextContent(/\bcritical\b(?![^]*severity)/);
@@ -504,7 +518,9 @@ describe('NOW rows — decluttered subject', () => {
 
     expect(screen.getByTestId('ops-row-sr-alert:a1')).toHaveTextContent('critical severity');
     expect(screen.getByTestId('ops-row-sr-alert:a2')).toHaveTextContent('warning severity');
-    expect(screen.getByTestId('ops-row-alert:a1')).toHaveAttribute('title', 'critical severity');
+    // Screen-reader text only — never a native tooltip (see the dedicated
+    // "no native tooltip" contract below).
+    expect(screen.getByTestId('ops-row-alert:a1')).not.toHaveAttribute('title');
 
     // Backend rank order is untouched by the decluttering.
     const rows = Array.from(document.querySelectorAll('[data-section="NOW"]'))
@@ -669,9 +685,11 @@ describe('alert deep-link mapping', () => {
       missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
     };
 
-    expect(ALERT_ROUTE_MAP).toEqual(EXPECTED);
-
+    // Subset, not toEqual: the map may legitimately GAIN entries (OPS-CONSOLE-02
+    // added three). What must never happen is an existing type losing or
+    // silently changing its destination.
     for (const alert_type of Object.keys(EXPECTED)) {
+      expect(ALERT_ROUTE_MAP[alert_type]).toEqual(EXPECTED[alert_type]);
       expect(alertDeepLink(alert({ alert_type }))).toEqual(EXPECTED[alert_type]);
     }
 
@@ -784,13 +802,14 @@ describe('xs responsive layout', () => {
   });
 
   it('reflows the CTA onto its own line at xs and keeps it inline at sm', () => {
-    for (const w of NARROW) expect(resolve(OPS_ROW_ACTION_BASIS, w)).toBe('100%');
-    for (const w of [SM_BREAKPOINT, 1440]) expect(resolve(OPS_ROW_ACTION_BASIS, w)).toBe('auto');
+    // xs: CTA spans the subject columns on a second row. sm: its own column.
+    for (const w of NARROW) expect(resolve(OPS_ROW_ACTION_COLUMN, w)).toBe('2 / -1');
+    for (const w of [SM_BREAKPOINT, 1440]) expect(resolve(OPS_ROW_ACTION_COLUMN, w)).toBe('auto');
 
     const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
-    // The row must be allowed to wrap on xs and forbidden from wrapping on sm.
-    expect(source).toMatch(/flexWrap: \{ xs: 'wrap', sm: 'nowrap' \}/);
-    expect(source).toMatch(/flexBasis: OPS_ROW_ACTION_BASIS/);
+    // Grid, not flex-wrap.
+    expect(source).toMatch(/gridColumn: OPS_ROW_ACTION_COLUMN/);
+    expect(source).not.toMatch(/flexWrap:/);
   });
 
   it('never lets the CTA shrink or wrap its label — the subject gives way instead', () => {
@@ -798,8 +817,9 @@ describe('xs responsive layout', () => {
 
     // CTA: fixed size, unbreakable label.
     expect(source).toMatch(/flexShrink: 0, whiteSpace: 'nowrap'/);
-    // Subject: the flexible one, and allowed to reach zero width.
-    expect(source).toMatch(/flex: '1 1 auto', minWidth: 0/);
+    // Subject: the only column that may give way, and allowed to reach zero.
+    expect(source).toMatch(/minmax\(0, 1fr\)/);
+    expect(source).toMatch(/fontSize: 11\.5, minWidth: 0/);
     expect(source).toMatch(/overflowWrap: 'anywhere'/);
     // No fixed or minimum width anywhere in the row/action path that could
     // force horizontal overflow. (width:10 is the glyph column; the sr-only
@@ -847,14 +867,520 @@ describe('xs responsive layout', () => {
     // Section labels and their counts both survive the narrow layout.
     const texts = Array.from(document.querySelectorAll('div')).map(el => el.textContent ?? '');
     expect(texts.some(t => t.startsWith('NOW') && t.endsWith('1'))).toBe(true);
-    expect(texts.some(t => t.startsWith('SETUP') && t.endsWith('1'))).toBe(true);
+    expect(screen.getByTestId('ops-setup-toggle')).toHaveTextContent('SETUP · 1 remaining');
   });
 
   it('adds no oversized padding to buy the reflow', () => {
     const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
-    expect(source).toMatch(/rowGap: 0\.5/);
-    // Row vertical padding is unchanged from the approved desktop treatment.
+    // Compact grid gaps, and the flat (non-card) row keeps the approved
+    // desktop padding.
+    expect(source).toMatch(/rowGap: '3px'/);
+    expect(source).toMatch(/columnGap: '6px'/);
     expect(source).toMatch(/px: 1\.5, py: 0\.75,/);
+  });
+});
+
+// ─── OPS-CONSOLE-02 — ACTION-FIRST INFORMATION ARCHITECTURE ──────────────────
+
+describe('OPEN is actionable work only', () => {
+  it('renders NOW and SETUP and no closed-alert history whatsoever', () => {
+    const { container } = renderPanel();
+
+    expect(container.textContent).toMatch(/NOW/);
+    expect(screen.getByTestId('ops-setup-toggle')).toBeInTheDocument();
+
+    // No RECENT section, no closed rows, no history row ids in OPEN.
+    expect(container.textContent).not.toMatch(/RECENT/);
+    expect(container.querySelectorAll('[data-status="closed"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-section="HISTORY"]')).toHaveLength(0);
+  });
+
+  it('puts operational NOW above SETUP', () => {
+    const { container } = renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    const nowRow = screen.getByTestId('ops-row-alert:a1');
+    const setup = screen.getByTestId('ops-setup-toggle');
+    expect(nowRow.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(container.textContent!.indexOf('NOW'))
+      .toBeLessThan(container.textContent!.indexOf('SETUP'));
+  });
+
+  it('manufactures no WAITING section', () => {
+    const { container } = renderPanel();
+    expect(container.textContent).not.toMatch(/WAITING/);
+    expect(container.querySelectorAll('[data-status="waiting"]')).toHaveLength(0);
+  });
+});
+
+describe('HISTORY tab', () => {
+  it('is the only home for alert lifecycle, and stays neutral', () => {
+    const { container } = renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
+
+    const row = screen.getByTestId('ops-row-history:r1');
+    expect(row).toHaveAttribute('data-status', 'closed');
+    expect(container.textContent).toMatch(/ALERT HISTORY/);
+    // No completion or causal vocabulary.
+    expect(row).not.toHaveTextContent('✓');
+    const text = (container.textContent ?? '').toLowerCase();
+    for (const causal of ['verified', 'prevented', 'intervention', 'outcome']) {
+      expect(text).not.toContain(causal);
+    }
+  });
+});
+
+describe('NOW is actionable-only', () => {
+  it('drops dead-end alerts from the queue without inventing a generic CTA', () => {
+    renderPanel({
+      alerts: [
+        alert({ id: 'a1', alert_type: 'sla_breach' }),
+        alert({ id: 'a2', alert_type: 'totally_unmapped' }),
+      ],
+      deepLink: alertDeepLink,
+    });
+
+    expect(screen.getByTestId('ops-row-alert:a1')).toBeInTheDocument();
+    expect(screen.queryByTestId('ops-row-alert:a2')).not.toBeInTheDocument();
+
+    // No generic fallback CTA was synthesised on any ROW to keep the dead-end
+    // alert in the queue. (The rail's own "Manage alerts →" footer is a
+    // different thing and must still be there — asserted below.)
+    const rowCtas = Array.from(document.querySelectorAll('[data-testid^="ops-row-action-wrap-"]'))
+      .map(el => el.textContent ?? '');
+    expect(rowCtas).toEqual(['Orders →']);
+    for (const generic of ['View', 'Manage alert', 'Details']) {
+      expect(rowCtas.some(t => t.includes(generic))).toBe(false);
+    }
+
+    // /alerts remains the place unmapped alerts are managed.
+    expect(screen.getByTestId('ops-manage-alerts')).toBeInTheDocument();
+  });
+});
+
+describe('the three fixed dead-end alert families', () => {
+  const CASES = [
+    { alert_type: 'inventory',         label: 'Resolve stockouts', route: '/orders/flow?constraint=inventory' },
+    { alert_type: 'customer',          label: 'Fix addresses', route: '/overview?resolution=address' },
+    { alert_type: 'low_stock_reorder', label: 'Reorder now',   route: '/demand?filter=critical' },
+  ];
+
+  it.each(CASES)('$alert_type -> $label -> $route', ({ alert_type, label, route }) => {
+    expect(alertDeepLink(alert({ alert_type }))).toEqual({ route, label });
+
+    render(
+      <OpsConsolePanel
+        alerts={[alert({ id: 'a1', alert_type })]}
+        open
+        onClose={jest.fn()}
+      />,
+    );
+
+    const cta = within(screen.getByTestId('ops-row-alert:a1')).getByRole('button');
+    expect(cta.textContent).toBe(`${label} →`);
+    fireEvent.click(cta);
+    expect(mockNavigate).toHaveBeenCalledWith(route);
+  });
+
+  it('does not pretend the aggregate inventory alert has targeted Sourcing context', () => {
+    // The shop-level aggregate carries no variant/order: entity_type='shop',
+    // entity_id=null. It must land on the constrained-order list, never on a
+    // variant-scoped Sourcing deep link.
+    const aggregate = alert({
+      alert_type: 'inventory', entity_type: 'shop', entity_id: null,
+    });
+    const link = alertDeepLink(aggregate)!;
+
+    expect(link.route).toBe('/orders/flow?constraint=inventory');
+    expect(link.route).not.toMatch(/sourcing/i);
+    expect(link.route).not.toMatch(/variantId/);
+    expect(link.route).not.toMatch(/catalog/i);
+    // The label names the resolution job, not a stock report.
+    expect(link.label).toBe('Resolve stockouts');
+  });
+
+  it('keeps inventory, low_stock_reorder and stockout_risk as three distinct states', () => {
+    const routes = ['inventory', 'low_stock_reorder', 'stockout_risk']
+      .map(t => ALERT_ROUTE_MAP[t]);
+
+    expect(routes.every(Boolean)).toBe(true);
+    // inventory is order-blocking; the other two are demand-side.
+    expect(ALERT_ROUTE_MAP.inventory.route).not.toBe(ALERT_ROUTE_MAP.low_stock_reorder.route);
+    // Separate map entries, so the two demand signals can diverge later.
+    expect(ALERT_ROUTE_MAP.low_stock_reorder).not.toBe(ALERT_ROUTE_MAP.stockout_risk);
+    expect(ALERT_ROUTE_MAP.low_stock_reorder.label).toBe('Reorder now');
+    expect(ALERT_ROUTE_MAP.stockout_risk.label).toBe('Sourcing');
+  });
+});
+
+describe('NOW cap of five', () => {
+  const nine = Array.from({ length: 9 }, (_, i) =>
+    alert({ id: `a${i}`, title: `Actionable ${i}` }));
+
+  it('counts every actionable row while rendering only the first five', () => {
+    const { container } = renderPanel({ alerts: nine });
+
+    expect(container.querySelectorAll('[data-section="NOW"]')).toHaveLength(5);
+    // The header count is the full workload, including capped-away rows.
+    const texts = Array.from(container.querySelectorAll('div')).map(el => el.textContent ?? '');
+    expect(texts.some(t => t.startsWith('NOW') && t.endsWith('9'))).toBe(true);
+  });
+
+  it('preserves the backend input order — no client-side re-sorting', () => {
+    const { container } = renderPanel({ alerts: nine });
+
+    const ids = Array.from(container.querySelectorAll('[data-section="NOW"]'))
+      .map(el => el.getAttribute('data-testid'));
+    expect(ids).toEqual([
+      'ops-row-alert:a0', 'ops-row-alert:a1', 'ops-row-alert:a2',
+      'ops-row-alert:a3', 'ops-row-alert:a4',
+    ]);
+
+    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+    expect(source).not.toMatch(/\.sort\(/);
+  });
+
+  it('"Show N more" reveals the remainder and "Show less" restores the queue', () => {
+    const { container } = renderPanel({ alerts: nine });
+
+    const more = screen.getByTestId('ops-now-show-more');
+    expect(more).toHaveTextContent('Show 4 more');
+
+    fireEvent.click(more);
+    expect(container.querySelectorAll('[data-section="NOW"]')).toHaveLength(9);
+    expect(screen.queryByTestId('ops-now-show-more')).not.toBeInTheDocument();
+
+    // Order still untouched after expanding.
+    const ids = Array.from(container.querySelectorAll('[data-section="NOW"]'))
+      .map(el => el.getAttribute('data-testid'));
+    expect(ids).toEqual(nine.map(a => `ops-row-alert:${a.id}`));
+
+    fireEvent.click(screen.getByTestId('ops-now-show-less'));
+    expect(container.querySelectorAll('[data-section="NOW"]')).toHaveLength(5);
+    expect(screen.getByTestId('ops-now-show-more')).toHaveTextContent('Show 4 more');
+  });
+
+  it('shows no cap control at or below five actionable rows', () => {
+    const five = Array.from({ length: 5 }, (_, i) => alert({ id: `a${i}` }));
+    const { container } = renderPanel({ alerts: five });
+
+    expect(container.querySelectorAll('[data-section="NOW"]')).toHaveLength(5);
+    expect(screen.queryByTestId('ops-now-show-more')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-now-show-less')).not.toBeInTheDocument();
+  });
+
+  it('adds no pagination controls', () => {
+    renderPanel({ alerts: nine });
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/next|previous|page \d/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('SETUP is secondary and collapsed', () => {
+  it('is collapsed by default with its own remaining count, exposing no task rows', () => {
+    const { container } = renderPanel();
+
+    const toggle = screen.getByTestId('ops-setup-toggle');
+    expect(toggle).toHaveTextContent('SETUP · 1 remaining');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelectorAll('[data-section="SETUP"]')).toHaveLength(0);
+  });
+
+  it('expands accessibly and exposes incomplete tasks with their real routes', () => {
+    renderPanel();
+    const toggle = screen.getByTestId('ops-setup-toggle');
+
+    // Keyboard-activatable: it is a real button with aria-expanded state.
+    expect(toggle.tagName).toBe('BUTTON');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('ops-setup-toggle')).toHaveAttribute('aria-expanded', 'true');
+
+    const row = screen.getByTestId('ops-row-setup:map-zones');
+    fireEvent.click(within(row).getByRole('button', { name: /Open/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+  });
+
+  it('never renders completed setup as individual rows competing with open work', () => {
+    const { container } = renderPanel();
+    expandSetup();
+
+    // Only the one incomplete task is a row; the completed one stays behind
+    // its own collapse.
+    expect(container.querySelectorAll('[data-section="SETUP"]')).toHaveLength(1);
+    expect(screen.queryByTestId('ops-row-setup:connect-store')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ops-setup-completed-toggle')).toHaveTextContent('1 completed');
+  });
+
+  it('stays compact when everything is complete', () => {
+    mockUseActivationChecklist.mockReturnValue({
+      items: SETUP_ITEMS.map(i => ({ ...i, complete: true })),
+      completedCount: 2, allComplete: true, isLoading: false, isError: false,
+    });
+    const { container } = renderPanel({ alerts: [] });
+
+    expect(screen.getByTestId('ops-setup-complete')).toHaveTextContent('Setup complete · 2/2');
+    expect(container.querySelectorAll('[data-section="SETUP"]')).toHaveLength(0);
+    expect(screen.queryByTestId('ops-setup-toggle')).not.toBeInTheDocument();
+  });
+});
+
+describe('severity is semantics, not copy', () => {
+  it('renders no severity word and no native tooltip anywhere in the rail', () => {
+    const { container } = renderPanel({
+      alerts: [
+        alert({ id: 'a1', severity: 'critical', title: 'Blocked orders' }),
+        alert({ id: 'a2', severity: 'warning', title: 'Late orders' }),
+      ],
+    });
+
+    // No row (or any element) carries a title attribute — a native tooltip is
+    // exactly how "warning severity" became visible on hover.
+    expect(container.querySelectorAll('[title]')).toHaveLength(0);
+
+    // Visible text carries none of the severity vocabulary.
+    const visible = Array.from(container.querySelectorAll('[data-testid^="ops-row-label-"], [data-testid^="ops-row-meta-"]'))
+      .map(el => el.textContent ?? '').join(' ').toLowerCase();
+    for (const word of ['warning', 'critical', 'severity']) {
+      expect(visible).not.toContain(word);
+    }
+  });
+
+  it('keeps severity available to assistive tech and to the glyph tone', () => {
+    renderPanel({
+      alerts: [
+        alert({ id: 'a1', severity: 'critical' }),
+        alert({ id: 'a2', severity: 'warning', title: 'Second' }),
+      ],
+    });
+
+    expect(screen.getByTestId('ops-row-sr-alert:a1')).toHaveTextContent('critical severity');
+    expect(screen.getByTestId('ops-row-sr-alert:a2')).toHaveTextContent('warning severity');
+
+    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+    expect(source).toMatch(/var\(--critical-ink\)/);
+    expect(source).toMatch(/var\(--warning-ink\)/);
+  });
+});
+
+describe('bottom-scroll structure', () => {
+  // Structural regression only. jsdom does not lay out or scroll, so this
+  // asserts the single-scroll-container invariant that the defect violated —
+  // it does NOT prove scroll geometry. Browser verification stays required.
+  it('has exactly one scroll container: the body, never the panel', () => {
+    renderPanel();
+
+    expect(screen.getByTestId('ops-console-body')).toBeInTheDocument();
+
+    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+    // The panel must not set a single-axis overflow: per CSS overflow, when one
+    // axis is not `visible` the other's `visible` computes to `auto`, which
+    // silently made the panel a second, nested scroll container.
+    expect(source).not.toMatch(/overflowX: 'hidden',\n\s*display: 'flex', flexDirection: 'column'/);
+    expect(source).toMatch(/overflow: 'hidden',\n\s*display: 'flex', flexDirection: 'column'/);
+    // The body is the scroller and can actually shrink in the flex column.
+    expect(source).toMatch(/flex: '1 1 auto', minHeight: 0, overflowY: 'auto'/);
+  });
+
+  it('scopes each row\'s hidden severity node to its own row', () => {
+    renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    const row = screen.getByTestId('ops-row-alert:a1');
+    // The sr-only node is absolutely positioned; without position:relative on
+    // the row its containing block was the panel, so it was laid out against
+    // the panel and fed the panel's overflow instead of the row's.
+    expect(row.contains(screen.getByTestId('ops-row-sr-alert:a1'))).toBe(true);
+    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+    expect(source).toMatch(/position: 'relative',\n\s*display: 'grid',/);
+  });
+});
+
+// ─── DETERMINISTIC GRID + COMPACT MICRO-CARDS ────────────────────────────────
+
+describe('deterministic row layout', () => {
+  const src = () => fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+
+  it('uses grid with an explicit column track list, not nowrap flex', () => {
+    const source = src();
+
+    expect(source).toMatch(/display: 'grid',/);
+    expect(source).toMatch(/gridTemplateColumns: \{\s*\n\s*xs: '10px minmax\(0, 1fr\) auto',\s*\n\s*sm: '10px minmax\(0, 1fr\) auto auto',/);
+    // The flex anatomy that allowed subject/CTA collision is gone from the row.
+    expect(source).not.toMatch(/flexWrap:/);
+    // Layout is not solved with absolute positioning — the only absolute node
+    // is the off-screen sr-only span.
+    expect(source.match(/position: 'absolute'/g)).toHaveLength(1);
+  });
+
+  it('gives the subject minmax(0,1fr) and the CTA an intrinsic auto column', () => {
+    const source = src();
+
+    expect(source).toMatch(/minmax\(0, 1fr\) auto auto/);   // subject flexible, meta + CTA intrinsic
+    expect(source).toMatch(/fontSize: 11\.5, minWidth: 0/);   // subject may reach zero
+    expect(source).toMatch(/flexShrink: 0, whiteSpace: 'nowrap'/); // CTA never shrinks or wraps
+    expect(OPS_ROW_ACTION_COLUMN.sm).toBe('auto');
+  });
+
+  it('always renders the meta cell so columns cannot shift the CTA sideways', () => {
+    renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    // Present but empty — a missing cell would let the CTA slide into col 3.
+    const meta = screen.getByTestId('ops-row-meta-alert:a1');
+    expect(meta).toBeInTheDocument();
+    expect(meta.textContent).toBe('');
+  });
+
+  it('keeps a long subject in its own column, never beneath the CTA', () => {
+    const LONG = 'Variant 4450 out of stock at the Rotterdam fulfilment centre and blocking 12 orders';
+    renderPanel({ alerts: [alert({ id: 'a1', title: LONG })] });
+
+    const row = screen.getByTestId('ops-row-alert:a1');
+    const label = screen.getByTestId('ops-row-label-alert:a1');
+    const ctaWrap = screen.getByTestId('ops-row-action-wrap-alert:a1');
+
+    // Both are ordinary in-flow grid children of the same row — separate cells,
+    // so overlap is structurally impossible rather than merely unlikely.
+    expect(label.parentElement).toBe(row);
+    expect(ctaWrap.parentElement).toBe(row);
+    expect(label.textContent).toBe(LONG);
+    // Subject precedes the CTA in document order; neither is positioned.
+    expect(label.compareDocumentPosition(ctaWrap) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+  });
+});
+
+describe('compact micro-cards', () => {
+  const src = () => fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+
+  it('cardizes actionable NOW rows', () => {
+    renderPanel({ alerts: [alert({ id: 'a1' })] });
+    expect(screen.getByTestId('ops-row-alert:a1')).toHaveAttribute('data-card', 'true');
+  });
+
+  it('uses the same compact treatment for expanded incomplete SETUP rows', () => {
+    renderPanel();
+    expandSetup();
+    expect(screen.getByTestId('ops-row-setup:map-zones')).toHaveAttribute('data-card', 'true');
+  });
+
+  it('leaves HISTORY flat and quiet — no card, no elevation', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
+
+    expect(screen.getByTestId('ops-row-history:r1')).toHaveAttribute('data-card', 'false');
+    // Cardization is gated on being actionable AND not HISTORY.
+    expect(src()).toMatch(/const isCard = row\.section !== 'HISTORY' && Boolean\(row\.action\);/);
+  });
+
+  it('stays compact: intrinsic height, no minHeight, small padding and gaps', () => {
+    const source = src();
+
+    // Intrinsic height — nothing forces a dashboard-card proportion. The only
+    // permitted minHeight in the file is the body's `minHeight: 0`, which is
+    // the flex-shrink fix for the scroll container, not a card dimension.
+    const minHeights = [...codeOnly(source).matchAll(/minHeight: ([^,\s}]+)/g)].map(m => m[1]);
+    expect(minHeights).toEqual(['0']);
+    expect(source).toMatch(/px: '7px', py: '4px'/);      // 7px / 4px
+    expect(source).toMatch(/mx: '7px', my: '3px'/);      // 3px inter-card gap
+    expect(source).toMatch(/columnGap: '6px'/);
+    expect(source).toMatch(/rowGap: '3px'/);
+    expect(source).toMatch(/borderRadius: '6px'/);
+    // No card header/body/footer anatomy.
+    expect(source).not.toMatch(/CardHeader|CardContent|CardActions/);
+  });
+
+  it('borders and elevates from existing theme tokens only — no hardcoded colour', () => {
+    const source = src();
+
+    expect(source).toMatch(/border: `0\.5px solid \$\{pal\.rule\}`/);
+    expect(source).toMatch(/boxShadow: pal\.shadow,/);
+    expect(source).toMatch(/boxShadow: pal\.shadowMd,/);
+    expect(source).toMatch(/borderColor: pal\.rule2,/);
+    // Still no literal colours anywhere in the component.
+    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(source).not.toMatch(/\brgba?\(/);
+  });
+
+  it('keeps the CTA compact and does not make the card itself clickable', () => {
+    renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    const row = screen.getByTestId('ops-row-alert:a1');
+    // The card is a plain Box: no click handler, no button role, not focusable.
+    expect(row.tagName).toBe('DIV');
+    expect(row).not.toHaveAttribute('role', 'button');
+    expect(row).not.toHaveAttribute('tabindex');
+    expect(row).not.toHaveAttribute('onclick');
+
+    // Navigating requires the explicit CTA.
+    fireEvent.click(row);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    fireEvent.click(within(row).getByRole('button'));
+    expect(mockNavigate).toHaveBeenCalledWith('/problem-center');
+
+    // CTA is a small pill, not an oversized button.
+    expect(src()).toMatch(/px: '6px', py: '1px'/);
+  });
+});
+
+describe('micro-interaction', () => {
+  const src = () => fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+
+  it('lifts by at most 1px on hover, with no bounce/scale/glow/colour flood', () => {
+    const source = src();
+
+    expect(source).toMatch(/transform: 'translateY\(-1px\)'/);
+    // No larger translate, no scaling, no glow.
+    expect(source).not.toMatch(/translateY\(-(?!1px)\d+px\)/);
+    expect(source).not.toMatch(/scale\(/);
+    expect(source).not.toMatch(/cubic-bezier/);      // no bounce curve
+    expect(source).not.toMatch(/filter:|drop-shadow/);
+  });
+
+  it('settles back ~1px only while the real CTA is pressed', () => {
+    const source = src();
+    // Scoped to the button's :active — the card never claims its own press.
+    expect(source).toMatch(/'&:has\(button:active\)': \{ transform: 'translateY\(0\)' \}/);
+  });
+
+  it('transitions transform/shadow/border only, in the 120-160ms band', () => {
+    const source = src();
+
+    expect(source).toMatch(/transition: 'transform 140ms ease-out, box-shadow 140ms ease-out, border-color 140ms ease-out'/);
+    // Never `all`, which would animate colour and layout too.
+    expect(source).not.toMatch(/transition: 'all/);
+
+    const durations = [...source.matchAll(/(\d+)ms/g)].map(m => Number(m[1]));
+    expect(durations.length).toBeGreaterThan(0);
+    for (const d of durations) {
+      expect(d).toBeGreaterThanOrEqual(120);
+      expect(d).toBeLessThanOrEqual(160);
+    }
+  });
+
+  it('drops the transform animation under prefers-reduced-motion, keeping the cue', () => {
+    const source = src();
+
+    expect(source).toMatch(/'@media \(prefers-reduced-motion: reduce\)': \{/);
+    // Reduced motion: transform removed from both the transition and the states,
+    // but border/shadow feedback is retained so hover is still perceivable.
+    expect(source).toMatch(/transition: 'box-shadow 140ms ease-out, border-color 140ms ease-out'/);
+    expect(source).toMatch(/transform: 'none'/);
+  });
+});
+
+describe('no outcome semantics were introduced', () => {
+  it('adds no WAITING, verified or intervention vocabulary alongside the cards', () => {
+    const { container } = renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    expect(container.textContent).not.toMatch(/WAITING/);
+    expect(container.querySelectorAll('[data-status="waiting"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-section="NOW"][data-status="verified"]'))
+      .toHaveLength(0);
+
+    const text = (container.textContent ?? '').toLowerCase();
+    for (const word of ['intervention', 'prevented', 'verified outcome']) {
+      expect(text).not.toContain(word);
+    }
   });
 });
 
