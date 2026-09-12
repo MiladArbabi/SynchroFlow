@@ -61,6 +61,7 @@ import {
 } from './opsConsoleModel';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const OPS_SEARCH_HINT = 'FIND ORDER, SKU, BARCODE OR BATCH';
 
 /**
  * RESPONSIVE LAYOUT CONTRACT
@@ -430,26 +431,45 @@ function OpsGlobalSearch({
         </Typography>
         <Box sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
           {!searchFocused && query.length === 0 && (
-            <Typography
+            <Box
               aria-hidden
-              data-testid="ops-search-idle-caret"
               sx={{
                 position: 'absolute',
-                left: 0,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                fontFamily: MONO,
-                fontSize: 12,
-                color: pal.ink4,
-                animation: 'opsCaretBlink 1.1s steps(1) infinite',
-                '@keyframes opsCaretBlink': {
-                  '0%, 48%': { opacity: 1 },
-                  '49%, 100%': { opacity: 0 },
-                },
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                pointerEvents: 'none',
               }}
             >
-              _
-            </Typography>
+              <Typography
+                data-testid="ops-search-idle-hint"
+                sx={{
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  color: pal.ink4,
+                }}
+              >
+                {OPS_SEARCH_HINT}
+              </Typography>
+              <Typography
+                data-testid="ops-search-idle-caret"
+                sx={{
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  color: pal.ink4,
+                  animation: 'opsCaretBlink 1.1s steps(1) infinite',
+                  '@keyframes opsCaretBlink': {
+                    '0%, 48%': { opacity: 1 },
+                    '49%, 100%': { opacity: 0 },
+                  },
+                }}
+              >
+                _
+              </Typography>
+            </Box>
           )}
           <Box
             component="input"
@@ -459,6 +479,7 @@ function OpsGlobalSearch({
             onBlur={() => setSearchFocused(false)}
             onKeyDown={handleKeyDown}
             aria-label="Search orders, products, SKUs, barcodes, or batches"
+            placeholder={OPS_SEARCH_HINT}
             data-testid="ops-global-search-input"
             sx={{
               width: '100%',
@@ -472,6 +493,10 @@ function OpsGlobalSearch({
               fontSize: 12,
               lineHeight: 1.4,
               caretColor: pal.accent,
+              '&::placeholder': {
+                color: searchFocused ? pal.ink4 : 'transparent',
+                opacity: 1,
+              },
               '&:focus': { outline: 'none' },
             }}
           />

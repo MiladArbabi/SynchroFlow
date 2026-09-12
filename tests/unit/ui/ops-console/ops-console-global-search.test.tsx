@@ -202,7 +202,7 @@ beforeEach(() => {
 });
 
 describe('Ops Console global search', () => {
-  it('shows the idle terminal caret only while empty and unfocused', () => {
+  it('shows the idle discovery copy and terminal caret only while empty and unfocused', () => {
     renderPanel();
 
     const input = screen.getByLabelText('Search orders, products, SKUs, barcodes, or batches');
@@ -210,18 +210,23 @@ describe('Ops Console global search', () => {
     expect(screen.getByText('Pick exception on batch 12')).toBeInTheDocument();
     expect(screen.queryByRole('listbox', { name: 'Search results' })).not.toBeInTheDocument();
     expect(document.activeElement).not.toBe(input);
+    expect(screen.getByTestId('ops-search-idle-hint')).toHaveTextContent('FIND ORDER, SKU, BARCODE OR BATCH');
     expect(screen.getByTestId('ops-search-idle-caret')).toBeInTheDocument();
+    expect(input).toHaveAttribute('placeholder', 'FIND ORDER, SKU, BARCODE OR BATCH');
 
     act(() => {
       input.focus();
     });
 
     expect(document.activeElement).toBe(input);
+    expect(input).toHaveAttribute('placeholder', 'FIND ORDER, SKU, BARCODE OR BATCH');
+    expect(screen.queryByTestId('ops-search-idle-hint')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-search-idle-caret')).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { value: '10' } });
 
     expect(input).toHaveValue('10');
+    expect(screen.queryByText('FIND ORDER, SKU, BARCODE OR BATCH')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-search-idle-caret')).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { value: '' } });
@@ -229,6 +234,7 @@ describe('Ops Console global search', () => {
       input.blur();
     });
 
+    expect(screen.getByTestId('ops-search-idle-hint')).toHaveTextContent('FIND ORDER, SKU, BARCODE OR BATCH');
     expect(screen.getByTestId('ops-search-idle-caret')).toBeInTheDocument();
   });
 
@@ -264,6 +270,17 @@ describe('Ops Console global search', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(screen.getByTestId('batch-detail-body')).toHaveTextContent('BATCH:batch-1');
+  });
+
+  it('uses ArrowUp + Enter to keep the first result selected at the top boundary', () => {
+    renderPanel();
+    const input = screen.getByLabelText('Search orders, products, SKUs, barcodes, or batches');
+    fireEvent.change(input, { target: { value: '10' } });
+
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByTestId('order-detail-body')).toHaveTextContent('ORDER:order-1');
   });
 
   it('clears results with Escape without closing the console', () => {
