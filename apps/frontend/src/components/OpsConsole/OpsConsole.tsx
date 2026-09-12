@@ -31,17 +31,24 @@
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
 
-import { useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Typography, IconButton, Tooltip, Badge } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { Terminal, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { EntityDetailModal } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useActivationChecklist } from '../../hooks/useActivationChecklist';
 import { useAlerts, type Alert } from '../../pages/alerts/useAlerts';
 import { alertDeepLink } from '../../pages/alerts/alertDeepLink';
+import { OrderDetailModalBody } from '../../pages/orders/OrderDetailModalBody';
+import { BatchDetailModalBody } from '../../pages/ft2-pages/BatchDetailModalBody';
+import { VariantDetailModalHost } from '../../pages/ft2-pages/VariantDetailModalHost';
+import { usePickBatches } from '../../pages/wms/usePickBatches';
+import { useBulkSetPriority } from '../../pages/wms/useOrderPool';
+import { useGlobalSearch, type GlobalSearchResult } from './useGlobalSearch';
 import {
   OPS_STATUS_GLYPH,
   buildAlertHistoryRows,
@@ -335,6 +342,195 @@ function StateLine({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SearchResultTypeLabel({ type }: { type: GlobalSearchResult['type'] }) {
+  return (
+    <Typography
+      sx={{
+        fontFamily: MONO,
+        fontSize: 9,
+        lineHeight: 1,
+        letterSpacing: '0.12em',
+        color: 'var(--accent)',
+        minWidth: 46,
+      }}
+    >
+      {type === 'variant' ? 'PRODUCT' : type.toUpperCase()}
+    </Typography>
+  );
+}
+
+function OpsGlobalSearch({
+  open,
+  query,
+  onQueryChange,
+  activeIndex,
+  onActiveIndexChange,
+  onActivate,
+}: {
+  open: boolean;
+  query: string;
+  onQueryChange: (query: string) => void;
+  activeIndex: number;
+  onActiveIndexChange: (index: number) => void;
+  onActivate: (result: GlobalSearchResult) => void;
+}) {
+  const pal = useAppTheme();
+  const search = useGlobalSearch(query, open);
+  const trimmed = query.trim();
+  const results = search.data?.results ?? [];
+  const showResults = trimmed.length >= 2;
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  useEffect(() => {
+    onActiveIndexChange(results.length > 0 ? 0 : -1);
+  }, [onActiveIndexChange, query, results.length]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onQueryChange('');
+      onActiveIndexChange(-1);
+      return;
+    }
+
+    if (!showResults || results.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      onActiveIndexChange(activeIndex < 0 ? 0 : Math.min(activeIndex + 1, results.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      onActiveIndexChange(activeIndex <= 0 ? 0 : activeIndex - 1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const selected = results[activeIndex >= 0 ? activeIndex : 0];
+      if (selected) onActivate(selected);
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        flexShrink: 0,
+        borderBottom: `0.5px solid ${pal.rule}`,
+        bgcolor: 'transparent',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          px: 1.5,
+          py: 0.75,
+        }}
+      >
+        <Typography aria-hidden sx={{ fontFamily: MONO, fontSize: 12, color: pal.ink3 }}>
+          &gt;
+        </Typography>
+        <Box sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          {!searchFocused && query.length === 0 && (
+            <Typography
+              aria-hidden
+              data-testid="ops-search-idle-caret"
+              sx={{
+                position: 'absolute',
+                left: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontFamily: MONO,
+                fontSize: 12,
+                color: pal.ink4,
+                animation: 'opsCaretBlink 1.1s steps(1) infinite',
+                '@keyframes opsCaretBlink': {
+                  '0%, 48%': { opacity: 1 },
+                  '49%, 100%': { opacity: 0 },
+                },
+              }}
+            >
+              _
+            </Typography>
+          )}
+          <Box
+            component="input"
+            value={query}
+            onChange={(event) => onQueryChange(event.currentTarget.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            onKeyDown={handleKeyDown}
+            aria-label="Search orders, products, SKUs, barcodes, or batches"
+            data-testid="ops-global-search-input"
+            sx={{
+              width: '100%',
+              boxSizing: 'border-box',
+              p: 0,
+              border: 'none',
+              outline: 'none',
+              bgcolor: 'transparent',
+              color: pal.ink,
+              fontFamily: MONO,
+              fontSize: 12,
+              lineHeight: 1.4,
+              caretColor: pal.accent,
+              '&:focus': { outline: 'none' },
+            }}
+          />
+        </Box>
+      </Box>
+
+      {trimmed.length === 1 && <StateLine>Keep typing…</StateLine>}
+      {showResults && search.isLoading && <StateLine>Searching…</StateLine>}
+      {showResults && search.isError && <StateLine>Search unavailable.</StateLine>}
+      {showResults && !search.isLoading && !search.isError && results.length === 0 && (
+        <StateLine>No results.</StateLine>
+      )}
+      {showResults && results.length > 0 && (
+        <Box role="listbox" aria-label="Search results" sx={{ pb: 0.5 }}>
+          {results.slice(0, 6).map((result, index) => (
+            <Box
+              key={`${result.type}:${result.id}`}
+              component="button"
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              data-testid={`ops-search-result-${result.type}-${result.id}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onActivate(result)}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'auto minmax(0, 1fr)',
+                columnGap: 0.75,
+                rowGap: 0.25,
+                width: '100%',
+                px: 1.5,
+                py: 0.625,
+                textAlign: 'left',
+                border: 'none',
+                borderTop: `0.5px solid ${pal.rule}`,
+                bgcolor: index === activeIndex ? pal.accentGhost : 'transparent',
+                color: pal.ink,
+                cursor: 'pointer',
+                '&:hover': { bgcolor: pal.rowHover },
+              }}
+            >
+              <SearchResultTypeLabel type={result.type} />
+              <Typography sx={{ fontFamily: MONO, fontSize: 11.5, color: pal.ink, minWidth: 0 }}>
+                {result.label}
+              </Typography>
+              <Box />
+              {(result.secondary || result.meta) && (
+                <Typography sx={{ fontFamily: MONO, fontSize: 10, color: pal.ink4, minWidth: 0 }}>
+                  {[result.secondary, result.meta].filter(Boolean).join(' · ')}
+                </Typography>
+              )}
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // ─── PANEL ────────────────────────────────────────────────────────────────────
 
 export interface OpsConsoleProps {
@@ -363,10 +559,59 @@ export function OpsConsolePanel({
   // Presentational only — no persistence, no new authority.
   const [nowExpanded, setNowExpanded] = useState(false);
   const [setupExpanded, setSetupExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalSubtitle, setModalSubtitle] = useState<string | undefined>();
+  const [modalFooter, setModalFooter] = useState<ReactNode>(null);
 
   const { items, isLoading: setupLoading, isError: setupError } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
+  const pickBatchesQuery = usePickBatches({ enabled: open });
+  const selectedBatch = useMemo(
+    () => pickBatchesQuery.data?.batches.find((batch) => batch.pick_batch_id === selectedBatchId) ?? null,
+    [pickBatchesQuery.data?.batches, selectedBatchId]
+  );
+  const bulkSetPriority = useBulkSetPriority();
+  const onPriorityFlag = useCallback(
+    async (orderIds: string[], _flagged: boolean) => {
+      await bulkSetPriority.mutateAsync(orderIds);
+    },
+    [bulkSetPriority]
+  );
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setActiveSearchIndex(-1);
+  }, []);
+  const handleCloseOrderDetail = useCallback(() => {
+    setSelectedOrderId(null);
+    setModalTitle('');
+    setModalSubtitle(undefined);
+    setModalFooter(null);
+  }, []);
+  const activateSearchResult = useCallback((result: GlobalSearchResult) => {
+    clearSearch();
+    if (result.type === 'order') {
+      setSelectedBatchId(null);
+      setSelectedVariantId(null);
+      setSelectedOrderId(result.id);
+      return;
+    }
+    if (result.type === 'batch') {
+      setSelectedOrderId(null);
+      setSelectedVariantId(null);
+      setSelectedBatchId(result.id);
+      return;
+    }
+
+    setSelectedOrderId(null);
+    setSelectedBatchId(null);
+    setSelectedVariantId(result.id);
+  }, [clearSearch]);
 
   // Historical status never polls (useAlerts forces refetchInterval off for
   // anything but the inbox); gated on `open` so a closed console costs nothing.
@@ -470,6 +715,15 @@ export function OpsConsolePanel({
           </Box>
         ))}
       </Box>
+
+      <OpsGlobalSearch
+        open={open}
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        activeIndex={activeSearchIndex}
+        onActiveIndexChange={setActiveSearchIndex}
+        onActivate={activateSearchResult}
+      />
 
       {/* BODY */}
       {/* The single scroll container. minHeight:0 lets it actually shrink
@@ -622,6 +876,54 @@ export function OpsConsolePanel({
       >
         Manage alerts →
       </Box>
+
+      <EntityDetailModal
+        entityId={selectedBatchId}
+        onClose={() => setSelectedBatchId(null)}
+        title={`Batch ${selectedBatchId?.slice(0, 8).toUpperCase() ?? ''}`}
+        subtitle={
+          selectedBatch
+            ? `${selectedBatch.status.replace(/_/g, ' ')} · ${selectedBatch.release_trigger ?? 'standard'} release`
+            : undefined
+        }
+        maxWidth="md"
+      >
+        {selectedBatch && (
+          <BatchDetailModalBody
+            batch={selectedBatch}
+            onNavigateToOrder={(orderId) => {
+              setSelectedBatchId(null);
+              setSelectedOrderId(orderId);
+            }}
+          />
+        )}
+      </EntityDetailModal>
+
+      <EntityDetailModal
+        entityId={selectedOrderId}
+        onClose={handleCloseOrderDetail}
+        title={modalTitle}
+        subtitle={modalSubtitle}
+        maxWidth="md"
+        footerActions={modalFooter}
+      >
+        {selectedOrderId && (
+          <OrderDetailModalBody
+            orderId={selectedOrderId}
+            onTitleReady={setModalTitle}
+            onSubtitleReady={setModalSubtitle}
+            onNavigateToOrder={setSelectedOrderId}
+            onFooterReady={setModalFooter}
+            onPriorityFlag={onPriorityFlag}
+            onClose={handleCloseOrderDetail}
+          />
+        )}
+      </EntityDetailModal>
+
+      <VariantDetailModalHost
+        variantId={selectedVariantId}
+        onClose={() => setSelectedVariantId(null)}
+      />
     </Box>
   );
 }

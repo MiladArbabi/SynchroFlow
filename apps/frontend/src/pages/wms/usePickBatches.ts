@@ -39,7 +39,7 @@ export interface PickBatchLineItem {
   location_code: string;
 }
 
-export function usePickBatches(options?: { refetchInterval?: number }) {
+export function usePickBatches(options?: { refetchInterval?: number; enabled?: boolean }) {
   return useQuery<{ batches: PickBatch[] }>({
     queryKey: ['wms', 'batches'],
     queryFn: async () => {
@@ -48,6 +48,7 @@ export function usePickBatches(options?: { refetchInterval?: number }) {
     },
     // Default 30s; Order Flow passes a faster cadence for the live matrix/iso
     refetchInterval: options?.refetchInterval ?? 30_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

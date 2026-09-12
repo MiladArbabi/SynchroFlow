@@ -898,6 +898,27 @@ established.
 `OPS-CONSOLE-01` therefore provides the persistent surface needed for future SLA
 interventions without inventing the missing intervention semantics itself.
 
+#### Global entity search
+
+Global Search is rendered inside Ops Console, but it is not Decision Engine
+truth. It is a discovery/navigation layer for merchants who already know which
+Order, Variant/Product, or active Pick Batch they want to inspect.
+
+Search does not create completion state, outcome state, intervention state, or
+verified resolution state. NOW, HISTORY, SETUP, and WAITING semantics remain
+unchanged by search activity.
+
+Selecting a result opens the canonical entity surface in place:
+
+- Order results open `EntityDetailModal` + `OrderDetailModalBody`;
+- Batch results open `EntityDetailModal` + `BatchDetailModalBody`;
+- Variant/Product results open `VariantDetailModalHost`.
+
+For Order, Batch, and Variant search results, the current route is preserved.
+Navigation or clicking a search result remains non-evidence of resolution.
+
+See `docs/playbooks/global-search-playbook.md`.
+
 
 ### OPS-RESOLVE-01 — guided address resolution session
 

@@ -8,16 +8,38 @@
  * - member-order activation delegates to Order Detail navigation
  */
 import React from 'react';
+import fs from 'fs';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import { BatchDetailModalBody } from 'pages/ft2-pages/BatchDetailModalBody';
-
 const mockUsePickBatchOrders = jest.fn();
+const mockUsePickBatchLineItems = jest.fn();
+const mockUseCommercialAccess = jest.fn();
+const mockUseFloorPlanning = jest.fn();
+const mockIsometricCanvas = jest.fn((props: Record<string, unknown>) => (
+  <div data-testid="isometric-canvas" data-focused-bins={JSON.stringify(props.focusedBins)} />
+));
 
 jest.mock('pages/wms/usePickBatches', () => ({
   usePickBatchOrders: (...args: unknown[]) =>
     mockUsePickBatchOrders(...args),
+  usePickBatchLineItems: (...args: unknown[]) =>
+    mockUsePickBatchLineItems(...args),
 }));
+
+jest.mock('runtime/commercialContext', () => ({
+  useCommercialAccess: () => mockUseCommercialAccess(),
+}));
+
+jest.mock('pages/floor-planning/useFloorPlanning', () => ({
+  useFloorPlanning: (...args: unknown[]) => mockUseFloorPlanning(...args),
+}));
+
+jest.mock('@lasyncro/shared/ui', () => ({
+  IsometricCanvas: (props: Record<string, unknown>) =>
+    mockIsometricCanvas(props),
+}));
+
+import { BatchDetailModalBody } from 'pages/ft2-pages/BatchDetailModalBody';
 
 const batch = {
   pick_batch_id: 'abcd1234-1058-batch',
@@ -40,9 +62,69 @@ const batch = {
   packer_name: null,
 };
 
+function makeOrder(index: number) {
+  return {
+    lasyncro_order_id: `order-1058-${index}`,
+    external_order_id: `1700000000000${index}`,
+    wms_barcode: `LSO-1058-${index}`,
+    total_price: 20 * index,
+    currency: 'USD',
+    warehouse_status: index % 2 === 0 ? 'awaiting_pick' : 'picking',
+    line_items: [
+      {
+        lasyncro_line_item_id: `line-${index}`,
+        lasyncro_order_id: `order-1058-${index}`,
+        lasyncro_variant_id: `variant-${index}`,
+        sku: `SKU-${index}`,
+        product_title: `Product ${index}`,
+        variant_title: 'Default',
+        quantity: 1,
+        pack_scanned: false,
+        has_tracked_unit: true,
+      },
+    ],
+  };
+}
+
 describe('GH-1058 — BatchDetailModalBody', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockUseCommercialAccess.mockReturnValue({
+      isResolved: true,
+      decide: () => ({ allowed: true, reason: 'ALLOWED' }),
+    });
+    mockUseFloorPlanning.mockReturnValue({
+      data: {
+        zones: [
+          {
+            location_code: 'A-1',
+            type: 'bin',
+            active: true,
+            position_x: 1,
+            position_y: 1,
+          },
+          {
+            location_code: 'B-2',
+            type: 'bin',
+            active: true,
+            position_x: 2,
+            position_y: 2,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    mockUsePickBatchLineItems.mockReturnValue({
+      data: {
+        line_items: [
+          { lasyncro_line_item_id: 'line-a1', lasyncro_variant_id: 'variant-a', lasyncro_order_id: 'order-1058-a', sku: 'SKU-A', title: 'Alpha', quantity: 2, location_code: 'A-1' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
 
     mockUsePickBatchOrders.mockReturnValue({
       data: {
@@ -119,6 +201,9 @@ describe('GH-1058 — BatchDetailModalBody', () => {
     expect(mockUsePickBatchOrders).toHaveBeenCalledWith(
       batch.pick_batch_id,
     );
+    expect(mockUsePickBatchLineItems).toHaveBeenCalledWith(
+      batch.pick_batch_id,
+    );
 
     expect(screen.getByText('Picking progress')).toBeInTheDocument();
     expect(screen.getByText('4 / 10 units')).toBeInTheDocument();
@@ -137,6 +222,7 @@ describe('GH-1058 — BatchDetailModalBody', () => {
 
     expect(screen.getByText('2 orders')).toBeInTheDocument();
     expect(screen.getByText('6 lines · 10 units')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show \d+ more/i })).not.toBeInTheDocument();
 
     expect(
       screen.getByRole('button', {
@@ -171,5 +257,135 @@ describe('GH-1058 — BatchDetailModalBody', () => {
     expect(onNavigateToOrder).toHaveBeenCalledWith(
       'order-1058-a',
     );
+  });
+
+  it('does not fetch floor geometry when floor-planning access is denied', () => {
+    mockUseCommercialAccess.mockReturnValue({
+      isResolved: true,
+      decide: () => ({ allowed: false, reason: 'TIER_TOO_LOW' }),
+    });
+
+    render(
+      <BatchDetailModalBody
+        batch={batch}
+        onNavigateToOrder={jest.fn()}
+      />,
+    );
+
+    expect(mockUseFloorPlanning).toHaveBeenCalledWith(false);
+    expect(screen.getByText('Picking progress')).toBeInTheDocument();
+    expect(screen.getByText('Warehouse map is not available on this plan.')).toBeInTheDocument();
+  });
+
+  it('focuses distinct authoritative pick locations and ignores blanks', () => {
+    mockUsePickBatchLineItems.mockReturnValue({
+      data: {
+        line_items: [
+          { lasyncro_line_item_id: 'line-a1', lasyncro_variant_id: 'variant-a', lasyncro_order_id: 'order-1058-a', sku: 'SKU-A', title: 'Alpha', quantity: 2, location_code: 'A-1' },
+          { lasyncro_line_item_id: 'line-a2', lasyncro_variant_id: 'variant-b', lasyncro_order_id: 'order-1058-a', sku: 'SKU-B', title: 'Beta', quantity: 1, location_code: 'A-1' },
+          { lasyncro_line_item_id: 'line-a3', lasyncro_variant_id: 'variant-c', lasyncro_order_id: 'order-1058-a', sku: 'SKU-C', title: 'Gamma', quantity: 1, location_code: 'B-2' },
+          { lasyncro_line_item_id: 'line-a4', lasyncro_variant_id: 'variant-d', lasyncro_order_id: 'order-1058-a', sku: 'SKU-D', title: 'Delta', quantity: 1, location_code: '' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <BatchDetailModalBody
+        batch={batch}
+        onNavigateToOrder={jest.fn()}
+      />,
+    );
+
+    expect(mockUseFloorPlanning).toHaveBeenCalledWith(true);
+    expect(screen.getByText('Pick footprint')).toBeInTheDocument();
+    expect(mockIsometricCanvas).toHaveBeenCalledWith(
+      expect.objectContaining({
+        focusedBins: ['A-1', 'B-2'],
+        showLegend: false,
+        showControls: false,
+        disablePan: true,
+      }),
+    );
+  });
+
+  it('does not synthesize unmapped locations', () => {
+    mockUsePickBatchLineItems.mockReturnValue({
+      data: {
+        line_items: [
+          { lasyncro_line_item_id: 'line-a1', lasyncro_variant_id: 'variant-a', lasyncro_order_id: 'order-1058-a', sku: 'SKU-A', title: 'Alpha', quantity: 2, location_code: 'ROOT' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <BatchDetailModalBody
+        batch={batch}
+        onNavigateToOrder={jest.fn()}
+      />,
+    );
+
+    expect(mockIsometricCanvas).not.toHaveBeenCalled();
+    expect(screen.getByText('Pick locations are not positioned on the mapped floor.')).toBeInTheDocument();
+    expect(screen.getByText('ROOT · not mapped')).toBeInTheDocument();
+  });
+
+  it('keeps batch detail usable when geometry fails', () => {
+    mockUseFloorPlanning.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: true,
+    });
+
+    render(
+      <BatchDetailModalBody
+        batch={batch}
+        onNavigateToOrder={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Warehouse pick footprint is temporarily unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('Ava Picker')).toBeInTheDocument();
+  });
+
+  it('bounds the default order list for larger batches and expands on request', () => {
+    mockUsePickBatchOrders.mockReturnValue({
+      data: {
+        orders: [1, 2, 3, 4, 5, 6].map(makeOrder),
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+
+    render(
+      <BatchDetailModalBody
+        batch={{ ...batch, total_line_items: 6, total_units: 6 }}
+        onNavigateToOrder={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /Order #17000000000001/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Order #17000000000004/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Order #17000000000005/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more' }));
+
+    expect(screen.getByRole('button', { name: /Order #17000000000005/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Order #17000000000006/i })).toBeInTheDocument();
+  });
+
+  it('keeps the pick footprint map compact', () => {
+    const source = fs.readFileSync(
+      'apps/frontend/src/pages/ft2-pages/BatchDetailModalBody.tsx',
+      'utf8',
+    );
+
+    expect(source).toContain('height: 205');
+    expect(source).not.toMatch(/\bheight:\s*(3\d\d|[4-9]\d\d)\b/);
+    expect(source).not.toMatch(/\bminHeight:\s*(3\d\d|[4-9]\d\d)\b/);
   });
 });

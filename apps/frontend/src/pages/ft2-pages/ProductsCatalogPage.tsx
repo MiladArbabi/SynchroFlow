@@ -12,13 +12,14 @@
 // - Gift card filtered at backend (INV-05)
 // - Per-row CTAs: zero stock → Reorder, no image → fix signal only
 // - Read-only — never mutates
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProductsOperatorSummary } from '../products/useProductsOperatorSummary';
 import { FT2PresetSelector, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { Box, Typography, Divider, useTheme } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProductsCatalog } from '../products/useProductsCatalog';
 import type { CatalogVariant } from '../products/useProductsCatalog';
+import { VariantDetailModalHost } from './VariantDetailModalHost';
 
 interface Props {
   range: FT2DateRange;
@@ -40,8 +41,34 @@ function PulseRow({ label, value, valueColor, sub }: { label: string; value: str
 export default function ProductsCatalogPage({ range, onChange }: Props) {
   const theme = useTheme();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const operatorQuery = useProductsOperatorSummary(range);
   const catalogQuery = useProductsCatalog();
+  const variantId = searchParams.get('variant');
+  const variants = catalogQuery.data?.variants ?? [];
+  const selectedVariant =
+    variantId != null
+      ? variants.find((variant) => variant.lasyncro_variant_id === variantId) ?? null
+      : null;
+
+  const clearVariantParam = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('variant');
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!variantId || !catalogQuery.isSuccess || selectedVariant) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('variant');
+    setSearchParams(next, { replace: true });
+  }, [
+    catalogQuery.isSuccess,
+    searchParams,
+    selectedVariant,
+    setSearchParams,
+    variantId,
+  ]);
 
   // ── Pagination + sort state ───────────────────────────────
   const [page, setPage] = useState(1);
@@ -68,7 +95,6 @@ export default function ProductsCatalogPage({ range, onChange }: Props) {
   }
 
   const { noSkuProducts, noInventoryProducts, sellability, drift } = operatorQuery.data;
-  const variants = catalogQuery.data?.variants ?? [];
 
   // Group variants by product
   const productGroups = variants.reduce<Record<string, {
@@ -141,6 +167,7 @@ export default function ProductsCatalogPage({ range, onChange }: Props) {
   };
 
   return (
+    <>
     <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
 
       {/* ── HEADER ───────────────────────────────────────────── */}
@@ -508,5 +535,11 @@ export default function ProductsCatalogPage({ range, onChange }: Props) {
       </Box>{/* end TWO COLUMN */}
 
     </Box>
+
+    <VariantDetailModalHost
+      variantId={selectedVariant?.lasyncro_variant_id ?? null}
+      onClose={clearVariantParam}
+    />
+    </>
   );
 }

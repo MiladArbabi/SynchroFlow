@@ -1,6 +1,6 @@
 # LaSyncro — Entity Detail Modal Playbook
 
-> **Scope:** The shared "view and act on one entity without leaving the module" modal pattern — covers the shared shell component, and the per-entity (Orders, Members, Products) consumer status. Created 2026-06-28 out of the original ask: three new large-modal surfaces for Order/Member/Product detail.
+> **Scope:** The shared "view and act on one entity without leaving the module" modal pattern — covers the shared shell component, and the per-entity Order, Member, Variant/Product, and Batch consumer status. Created 2026-06-28 out of the original ask: three new large-modal surfaces for Order/Member/Product detail.
 > **Companion docs:** `docs/playbooks/cta-deeplink-playbook.md` (deep-link contract — ORD-01/02/03 below are also tracked there), `docs/playbooks/modules-ux-playbook.md` (CTA visual tiers, used by this shell).
 > **Status legend:** ✅ done · 🔴 open · 🟡 open, lower priority
 
@@ -165,9 +165,70 @@ Between the modal opening and `useOrderDetail` resolving, the header title is br
 
 ---
 
-## 4. Products — not started
+## 4. Variant / Product — ✅ Variant entity modal shipped (2026-09-12)
 
-Zero existing detail page or panel of any kind (confirmed: `find` returned nothing for product/variant detail anywhere in the codebase). Content scope undefined — likely candidates from tonight's other work: stock status (sellable/zeroStock/phantom from `ProductsCatalogPage.tsx`'s existing classification), cost-completeness (currently doesn't exist anywhere — see `cta-deeplink-playbook.md`'s `CATALOG-GAP`), demand/reorder signal (`DemandModuleFT2`'s `reorder_urgency`), recent returns. Needs its own scoping pass before building.
+The canonical Variant entity surface is now shared by Catalog deep links and
+Ops Console Global Search.
+
+Components:
+
+- `VariantDetailModalHost` — reusable host. Input is `variantId`; authority is
+  canonical `useProductsCatalog()` data; output is `EntityDetailModal` with
+  `VariantDetailModalBody`.
+- `VariantDetailModalBody` — variant identity, catalog inventory facts, and
+  additive spatial context.
+
+Entry points:
+
+- Ops Console Variant/Product result opens `VariantDetailModalHost` in place.
+- `/inventory/catalog?variant=<id>` opens the same host. Closing from Catalog
+  removes only `variant=` and preserves unrelated query params.
+
+Search metadata is discovery-only. Search result label, SKU/meta, or status
+must not become detail authority.
+
+### Variant spatial contract
+
+Inventory facts remain available as ordinary Variant detail. Spatial context is
+an additive enhancement.
+
+Spatial acquisition requires resolved access to both:
+
+- `inventory.live_map`
+- `warehouse.floor_planning`
+
+Denied or unresolved map access must not break Variant detail. The body uses the
+authoritative variant stocked-bin endpoint and real merchant floor geometry. It
+does not synthesize bins. Empty, partial, unpositioned, or unmapped locations
+remain truthful textual evidence.
+
+## 5. Batch — ✅ compact Pick footprint shipped (2026-09-12)
+
+Batch Detail now includes a compact read-only Pick footprint.
+
+Spatial contract:
+
+- authoritative focus comes from batch line-item `location_code` values;
+- geometry comes from the real warehouse floor;
+- `IsometricCanvas` is read-only, compact, no controls, no pan;
+- no live-picker, current-location, fake path, or fake route claim;
+- floor acquisition is gated by `warehouse.floor_planning`;
+- unpositioned/unmapped locations remain textual evidence.
+
+Default modal layout is compact and scroll-free at normal desktop sizes. Large
+member-order lists default to the first four orders with explicit expansion;
+orders are never silently discarded.
+
+Batch to Order navigation continues to open canonical Order Detail.
+
+## 6. Order spatial boundary
+
+Order Detail's Warehouse Status is a workflow-stage visualization, not physical
+spatial truth.
+
+Do not reinterpret it as a bin, exact current location, picker position, or
+live warehouse position signal. It remains stage/status context for the order
+workflow.
 
 ### 2.8 Resolved-state bug + design pivot — ✅ shipped (2026-07-01)
 

@@ -38,9 +38,24 @@ jest.mock('pages/alerts/useAlerts', () => ({
   useAlerts: (...args: unknown[]) => mockUseAlerts(...args),
 }));
 
+jest.mock('pages/wms/usePickBatches', () => ({
+  usePickBatches: () => ({
+    data: { batches: [] },
+    isLoading: false,
+    isError: false,
+  }),
+  usePickBatchOrders: () => ({
+    data: { orders: [] },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 jest.mock('@tanstack/react-query', () => ({
   // Only the onboarding-flags dismissal read goes through useQuery here.
   useQuery: () => ({ data: {} }),
+  useMutation: () => ({ mutateAsync: jest.fn() }),
+  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
 jest.mock('hooks/useAppTheme', () => ({
@@ -74,6 +89,18 @@ function codeOnly(src: string): string {
 const OPS_CONSOLE_SRC = path.join(REPO_ROOT, 'apps/frontend/src/components/OpsConsole/OpsConsole.tsx');
 const TOPNAV_SRC = path.join(REPO_ROOT, 'apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx');
 const CHECKLIST_HOOK_SRC = path.join(REPO_ROOT, 'apps/frontend/src/hooks/useActivationChecklist.ts');
+
+function opsConsoleRowSource(): string {
+  const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+  const start = source.indexOf('function OpsConsoleRow(');
+  const end = source.indexOf('function SectionHeader(', start);
+
+  if (start === -1 || end === -1) {
+    throw new Error('Unable to locate OpsConsoleRow source block');
+  }
+
+  return source.slice(start, end);
+}
 
 function alert(over: Partial<Alert> = {}): Alert {
   return {
@@ -813,7 +840,7 @@ describe('xs responsive layout', () => {
   });
 
   it('never lets the CTA shrink or wrap its label — the subject gives way instead', () => {
-    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+    const source = opsConsoleRowSource();
 
     // CTA: fixed size, unbreakable label.
     expect(source).toMatch(/flexShrink: 0, whiteSpace: 'nowrap'/);
@@ -821,11 +848,9 @@ describe('xs responsive layout', () => {
     expect(source).toMatch(/minmax\(0, 1fr\)/);
     expect(source).toMatch(/fontSize: 11\.5, minWidth: 0/);
     expect(source).toMatch(/overflowWrap: 'anywhere'/);
-    // No fixed or minimum width anywhere in the row/action path that could
-    // force horizontal overflow. (width:10 is the glyph column; the sr-only
-    // node's width:1 is off-screen; 6 is the trigger dot.)
+    // No positive numeric min-width inside OpsConsoleRow may force horizontal overflow.
     const widths = [...source.matchAll(/\bmin[Ww]idth: (\d+)/g)].map(m => Number(m[1]));
-    expect(widths.filter(n => n > 0)).toEqual([6]);
+    expect(widths.filter(n => n > 0)).toEqual([]);
   });
 
   it('renders a complete, untruncated CTA label with its own tappable wrapper', () => {
@@ -1197,7 +1222,7 @@ describe('bottom-scroll structure', () => {
 // ─── DETERMINISTIC GRID + COMPACT MICRO-CARDS ────────────────────────────────
 
 describe('deterministic row layout', () => {
-  const src = () => fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
+  const src = opsConsoleRowSource;
 
   it('uses grid with an explicit column track list, not nowrap flex', () => {
     const source = src();
@@ -1217,6 +1242,9 @@ describe('deterministic row layout', () => {
     expect(source).toMatch(/minmax\(0, 1fr\) auto auto/);   // subject flexible, meta + CTA intrinsic
     expect(source).toMatch(/fontSize: 11\.5, minWidth: 0/);   // subject may reach zero
     expect(source).toMatch(/flexShrink: 0, whiteSpace: 'nowrap'/); // CTA never shrinks or wraps
+    const widths = [...source.matchAll(/\bmin[Ww]idth: (\d+)/g)]
+      .map((match) => Number(match[1]));
+    expect(widths.filter((width) => width > 0)).toEqual([]);
     expect(OPS_ROW_ACTION_COLUMN.sm).toBe('auto');
   });
 

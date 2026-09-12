@@ -128,7 +128,7 @@ SVG floor-plan editor rendered in the Setup tab. It reads `position_x/y`, `width
 |---|---|---|---|---|
 | `full` | Floor Planning, WMS overview | yes | yes | click → panel |
 | `mini` | Order detail, Batch detail, Demand | no | no | click → tooltip |
-| `inline` | Product detail, SKU Gaps embed | no | no | read-only, expand on tap |
+| `inline` | Compact product/variant context and SKU Gaps embeds | no | no | read-only, expand on tap |
 
 ---
 
@@ -167,7 +167,7 @@ Only the Occupancy overlay receives occupancy heatmap data. Stock-out and Empty 
 | `GET /api/v1/floor-planning/grid/occupancy` | `httpGetBinOccupancy` | inventory_truth per bin, grouped by location_code |
 | `GET /api/v1/floor-planning/bin/:locationCode/log` | `httpGetBinLog` | Merged inventory_movements + pick_scan_log, 50 events DESC |
 | `GET /api/v1/floor-planning/bin/:locationCode/stats` | `httpGetBinStats` | picks_7d, last_pick_at, last_pick_by, reorder_in_days |
-| `GET /api/v1/floor-planning/variant/:variantId/bins` | `httpGetVariantBins` | Bin locations for a variant (alert deep-links) |
+| `GET /api/v1/floor-planning/variant/:variantId/bins` | `httpGetVariantBins` | Authoritative stocked-bin locations for a variant |
 | `POST /api/v1/floor-planning/zones` | `httpCreateZone` | Create zone with optional floor coordinates |
 | `PATCH /api/v1/floor-planning/zones/:locationCode` | `httpUpdateZone` | Update active, barcode, position, dimensions, zone_type |
 | `DELETE /api/v1/floor-planning/zones/:locationCode` | `httpDeleteZone` | Delete zone — blocked if has stock |
@@ -247,15 +247,16 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 
 ## Current Consumer Map
 
-| Module | variant | mode | Extra props |
-|---|---|---|---|
-| Floor Planning `/floor-planning` | `full` | `map` | `onBinSelect` → right panel |
-| WMS Batch Detail | `mini` | `pick` | `pickPath`, `highlightedBins`, `zoneTypes={['pick']}` |
-| Demand `/demand` | `mini` | `heatmap` | `occupancy` |
-| Product Detail | `inline` | `focus` | `focusedBins` (page not built yet) |
-| PO Receiving | `mini` | `focus` | `focusedBins` |
-| Overview `/overview` — Growth/Scale | `IsometricCanvas` (direct) | Live map + occupancy | `occupancy`, `stations` (aprons), `liveActivity` (picker dots) |
-| Overview `/overview` — Core owner/admin teaser | `IsometricCanvas` (direct) | Static miniature preview | Static sample zones and occupancy; SVG labels hidden; no customer map or live operational data |
+| Surface | Renderer | Contract |
+|---|---|---|
+| Floor Planning `/floor-planning` | Full editing surface | Map/Setup/Barcodes workspace; owns placement and geometry edits. |
+| Overview `/overview` — Growth/Scale | `IsometricCanvas` | Live full-map surface with occupancy, apron stations, and live activity where available. |
+| Overview `/overview` — Core owner/admin teaser | `IsometricCanvas` | Static miniature preview; no customer map or live operational data. |
+| Order Detail | `IsometricZoneView` | Workflow-stage visualization only; not physical spatial truth. |
+| Batch Detail | `IsometricCanvas` | Compact Pick footprint from authoritative batch line-item `location_code`s; read-only; no controls/pan; floor-planning commercial gate. |
+| Variant Detail | `IsometricCanvas` | Authoritative variant stocked-bin focus on real merchant geometry; textual fallback for unpositioned/unmapped locations; additive commercial access. |
+| Demand `/demand` | `WarehouseGrid` | Compact heatmap with occupancy. |
+| PO Receiving | `WarehouseGrid` | Compact focus context where wired. |
 
 ---
 
@@ -307,7 +308,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 - [ ] Responsive collapsible side panels — issue #962  
 - [ ] Multi-warehouse tab navigation — issue #963
 - [x] `GET /api/v1/wms/live-activity` — closed WG-11 (July 2026). Endpoint live, `useWmsLiveActivity` hook polling 15s, picker dots on `IsometricCanvas`. See `overview-live-map-playbook.md` §6.
-- [ ] Wire `inline/focus` into Product detail page (page doesn't exist yet)
+- [x] Variant Detail stocked-bin focus — shipped as compact read-only `IsometricCanvas` inside `VariantDetailModalBody`
 - [ ] Surfaced Today panel — left rail live intelligence (GitHub issue #958)
 - [ ] Velocity + Open orders overlays
 - [ ] BUG-08/09 edge cases — zone overlap at corners with 3+ adjacent zones (parked)
@@ -446,10 +447,13 @@ Zone filters are supplied through `filteredCodes`. All supported operational typ
 - Auto-fit, pan, zoom, and reset controls
 - IsometricZoneView shared export
 
-### Planned Consumers
+### Entity Detail Consumers
 
-- Product detail: show the product’s stocked bins
-- Order detail: show line-item pick locations
+- Variant Detail shows authoritative stocked bins for the selected variant.
+- Batch Detail shows the compact Pick footprint for authoritative pick
+  locations.
+- Order Detail uses `IsometricZoneView` for workflow-stage visualization only;
+  it is not a physical bin/current-location surface.
 
 ### Cross-references
 

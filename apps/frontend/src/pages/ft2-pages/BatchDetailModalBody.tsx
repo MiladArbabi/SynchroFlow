@@ -1,19 +1,27 @@
-import type { KeyboardEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import {
   Box,
   CircularProgress,
   Typography,
 } from '@mui/material';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 import {
   type PickBatch,
+  type PickBatchLineItem,
+  usePickBatchLineItems,
   usePickBatchOrders,
 } from '../wms/usePickBatches';
+import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { useCommercialAccess } from '../../runtime/commercialContext';
 
 interface BatchDetailModalBodyProps {
   batch: PickBatch;
   onNavigateToOrder: (orderId: string) => void;
 }
+
+const DEFAULT_VISIBLE_ORDERS = 4;
 
 const formatMoney = (
   value: number,
@@ -43,12 +51,115 @@ const formatTimestamp = (
   }).format(new Date(value));
 };
 
+const uniqueLocationCodes = (lineItems: PickBatchLineItem[]) => {
+  const seen = new Set<string>();
+
+  for (const item of lineItems) {
+    const code = item.location_code?.trim();
+    if (code) seen.add(code);
+  }
+
+  return [...seen];
+};
+
+function SpatialMessage({ children }: { children: string }) {
+  return (
+    <Box
+      sx={{
+        border: '1px solid var(--rule)',
+        borderRadius: '8px',
+        p: 1.5,
+        bgcolor: 'var(--bg)',
+      }}
+    >
+      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+        {children}
+      </Typography>
+    </Box>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <Box
+      sx={{
+        minWidth: 0,
+        border: '1px solid var(--rule)',
+        borderRadius: '8px',
+        px: 1.25,
+        py: 1,
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: 'var(--ink-4)',
+        }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        sx={{
+          mt: 0.25,
+          fontSize: 13,
+          fontWeight: 500,
+          color: 'var(--ink)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
 export function BatchDetailModalBody({
   batch,
   onNavigateToOrder,
 }: BatchDetailModalBodyProps) {
+  const [ordersExpanded, setOrdersExpanded] = useState(false);
   const ordersQuery = usePickBatchOrders(batch.pick_batch_id);
+  const lineItemsQuery = usePickBatchLineItems(batch.pick_batch_id);
+  const { decide, isResolved } = useCommercialAccess();
+  const floorDecision = decide('warehouse.floor_planning');
+  const hasSpatialAccess = isResolved && floorDecision.allowed;
+  const floorPlanning = useFloorPlanning(hasSpatialAccess);
   const orders = ordersQuery.data?.orders ?? [];
+  const lineItems = lineItemsQuery.data?.line_items ?? [];
+  const locationCodes = useMemo(
+    () => uniqueLocationCodes(lineItems),
+    [lineItems],
+  );
+  const floorZones: WarehouseZone[] = floorPlanning.data?.zones ?? [];
+  const positionedZones = useMemo(
+    () =>
+      floorZones.filter(
+        (zone) => zone.position_x != null && zone.position_y != null,
+      ),
+    [floorZones],
+  );
+  const positionedCodes = useMemo(
+    () => new Set(positionedZones.map((zone) => zone.location_code)),
+    [positionedZones],
+  );
+  const focusedBins = locationCodes.filter((code) => positionedCodes.has(code));
+  const unmappedCodes = locationCodes.filter((code) => !positionedCodes.has(code));
+  const spatialLoading = hasSpatialAccess && floorPlanning.isLoading;
+  const visibleOrders = ordersExpanded
+    ? orders
+    : orders.slice(0, DEFAULT_VISIBLE_ORDERS);
+  const hiddenOrderCount = Math.max(orders.length - visibleOrders.length, 0);
 
   const activateOrder = (
     orderId: string,
@@ -73,133 +184,48 @@ export function BatchDetailModalBody({
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: 1.5,
+          gridTemplateColumns: {
+            xs: 'repeat(2, minmax(0, 1fr))',
+            md: 'repeat(4, minmax(0, 1fr))',
+          },
+          gap: 1,
         }}
       >
-        <Box
-          sx={{
-            border: '1px solid var(--rule)',
-            borderRadius: '10px',
-            p: 1.5,
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: 10,
-              fontWeight: 500,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-4)',
-            }}
-          >
-            Picking progress
-          </Typography>
-
-          <Typography
-            sx={{
-              mt: 0.5,
-              fontSize: 18,
-              fontWeight: 500,
-              color: 'var(--ink)',
-            }}
-          >
-            {batch.units_picked} / {batch.total_units} units
-          </Typography>
-        </Box>
-
-        <Box
-          sx={{
-            border: '1px solid var(--rule)',
-            borderRadius: '10px',
-            p: 1.5,
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: 10,
-              fontWeight: 500,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-4)',
-            }}
-          >
-            Packing progress
-          </Typography>
-
-          <Typography
-            sx={{
-              mt: 0.5,
-              fontSize: 18,
-              fontWeight: 500,
-              color: 'var(--ink)',
-            }}
-          >
-            {batch.units_packed} / {batch.total_units} units
-          </Typography>
-        </Box>
+        <SummaryMetric
+          label="Picking progress"
+          value={`${batch.units_picked} / ${batch.total_units} units`}
+        />
+        <SummaryMetric
+          label="Packing progress"
+          value={`${batch.units_packed} / ${batch.total_units} units`}
+        />
+        <SummaryMetric
+          label="Picker"
+          value={batch.picker_name ?? 'Unassigned'}
+        />
+        <SummaryMetric
+          label="Packer"
+          value={batch.packer_name ?? 'Unassigned'}
+        />
       </Box>
 
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gridTemplateColumns: {
+            xs: '1fr',
+            md: 'minmax(0, 0.9fr) minmax(300px, 1.1fr)',
+          },
           gap: 1.5,
+          alignItems: 'start',
+          pt: 1.25,
+          borderTop: '1px solid var(--rule)',
         }}
       >
-        <Box>
-          <Typography
-            sx={{
-              fontSize: 10,
-              fontWeight: 500,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              color: 'var(--ink-4)',
-            }}
-          >
-            Picker
-          </Typography>
-          <Typography
-            sx={{
-              mt: 0.375,
-              fontSize: 13,
-              fontWeight: 400,
-              color: 'var(--ink)',
-            }}
-          >
-            {batch.picker_name ?? 'Unassigned'}
-          </Typography>
-        </Box>
-
-        <Box>
-          <Typography
-            sx={{
-              fontSize: 10,
-              fontWeight: 500,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              color: 'var(--ink-4)',
-            }}
-          >
-            Packer
-          </Typography>
-          <Typography
-            sx={{
-              mt: 0.375,
-              fontSize: 13,
-              fontWeight: 400,
-              color: 'var(--ink)',
-            }}
-          >
-            {batch.packer_name ?? 'Unassigned'}
-          </Typography>
-        </Box>
-      </Box>
 
       <Box
         sx={{
-          pt: 1.5,
-          borderTop: '1px solid var(--rule)',
+          minWidth: 0,
         }}
       >
         <Typography
@@ -218,8 +244,9 @@ export function BatchDetailModalBody({
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-            gap: 1.25,
+            gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr)',
+            columnGap: 1.25,
+            rowGap: 0.5,
           }}
         >
           {[
@@ -229,11 +256,16 @@ export function BatchDetailModalBody({
             ['Pack claimed', batch.pack_claimed_at],
             ['Pack completed', batch.pack_completed_at],
           ].map(([label, value]) => (
-            <Box key={label}>
+            <Box
+              key={label}
+              sx={{
+                display: 'contents',
+              }}
+            >
               <Typography
                 sx={{
-                  fontSize: 10,
-                  fontWeight: 400,
+                  fontSize: 11,
+                  fontWeight: 300,
                   color: 'var(--ink-4)',
                 }}
               >
@@ -241,10 +273,10 @@ export function BatchDetailModalBody({
               </Typography>
               <Typography
                 sx={{
-                  mt: 0.25,
                   fontSize: 11,
                   fontWeight: 300,
                   color: 'var(--ink-2)',
+                  textAlign: 'right',
                 }}
               >
                 {formatTimestamp(value)}
@@ -256,7 +288,124 @@ export function BatchDetailModalBody({
 
       <Box
         sx={{
-          pt: 1.5,
+          minWidth: 0,
+        }}
+      >
+        <Typography
+          sx={{
+            mb: 0.25,
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--ink)',
+          }}
+        >
+          Pick footprint
+        </Typography>
+        <Typography
+          sx={{
+            mb: 1,
+            fontSize: 11,
+            fontWeight: 300,
+            color: 'var(--ink-4)',
+          }}
+        >
+          Warehouse locations this batch is picking from.
+        </Typography>
+
+        {!isResolved && (
+          <SpatialMessage>Warehouse map availability is still resolving.</SpatialMessage>
+        )}
+        {isResolved && !hasSpatialAccess && (
+          <SpatialMessage>Warehouse map is not available on this plan.</SpatialMessage>
+        )}
+        {hasSpatialAccess && spatialLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress size={22} sx={{ color: 'var(--accent)' }} />
+          </Box>
+        )}
+        {hasSpatialAccess && !spatialLoading && floorPlanning.isError && (
+          <SpatialMessage>Warehouse pick footprint is temporarily unavailable.</SpatialMessage>
+        )}
+        {hasSpatialAccess &&
+          !spatialLoading &&
+          !floorPlanning.isError &&
+          locationCodes.length === 0 && (
+            <SpatialMessage>No pick locations are assigned to this batch.</SpatialMessage>
+          )}
+        {hasSpatialAccess &&
+          !spatialLoading &&
+          !floorPlanning.isError &&
+          locationCodes.length > 0 &&
+          positionedZones.length === 0 && (
+            <SpatialMessage>Warehouse locations exist, but no mapped floor is available.</SpatialMessage>
+          )}
+        {hasSpatialAccess &&
+          !spatialLoading &&
+          !floorPlanning.isError &&
+          locationCodes.length > 0 &&
+          positionedZones.length > 0 &&
+          focusedBins.length > 0 && (
+            <Box
+              sx={{
+                height: 205,
+                border: '1px solid var(--rule)',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                bgcolor: 'var(--bg)',
+              }}
+            >
+              <IsometricCanvas
+                zones={floorZones}
+                focusedBins={focusedBins}
+                focusTone="risk"
+                focusDimOpacity={0.45}
+                showLegend={false}
+                showControls={false}
+                disablePan
+                autoFit
+                fitPadding={0.84}
+              />
+            </Box>
+          )}
+        {hasSpatialAccess &&
+          !spatialLoading &&
+          !floorPlanning.isError &&
+          locationCodes.length > 0 &&
+          positionedZones.length > 0 &&
+          focusedBins.length === 0 && (
+            <SpatialMessage>Pick locations are not positioned on the mapped floor.</SpatialMessage>
+          )}
+
+        {hasSpatialAccess &&
+          !spatialLoading &&
+          !floorPlanning.isError &&
+          locationCodes.length > 0 && (
+          <Box sx={{ mt: 1.25, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            {locationCodes.map((code) => (
+              <Box
+                key={code}
+                sx={{
+                  px: 1,
+                  py: 0.375,
+                  border: '1px solid var(--rule)',
+                  borderRadius: '6px',
+                  bgcolor: 'var(--bg)',
+                }}
+              >
+                <Typography sx={{ fontSize: 11, fontWeight: 400, color: 'var(--ink-3)' }}>
+                  {code}
+                  {unmappedCodes.includes(code) ? ' · not mapped' : ''}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Box>
+      </Box>
+
+      <Box
+        sx={{
+          pt: 1.25,
           borderTop: '1px solid var(--rule)',
         }}
       >
@@ -320,7 +469,7 @@ export function BatchDetailModalBody({
 
         {!ordersQuery.isLoading &&
           !ordersQuery.isError &&
-          orders.map((order) => {
+          visibleOrders.map((order) => {
             const unitCount = order.line_items.reduce(
               (sum, line) => sum + Number(line.quantity),
               0,
@@ -341,10 +490,10 @@ export function BatchDetailModalBody({
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0, 1fr) auto',
-                  gap: 1.5,
+                  gap: 1,
                   alignItems: 'center',
-                  p: '10px 12px',
-                  mb: 0.75,
+                  p: '8px 10px',
+                  mb: 0.5,
                   border: '1px solid var(--rule)',
                   borderRadius: '8px',
                   cursor: 'pointer',
@@ -371,7 +520,7 @@ export function BatchDetailModalBody({
                   <Typography
                     sx={{
                       mt: 0.25,
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: 300,
                       color: 'var(--ink-4)',
                     }}
@@ -400,6 +549,32 @@ export function BatchDetailModalBody({
               </Box>
             );
           })}
+        {!ordersQuery.isLoading &&
+          !ordersQuery.isError &&
+          hiddenOrderCount > 0 && (
+            <Box
+              component="button"
+              type="button"
+              onClick={() => setOrdersExpanded(true)}
+              sx={{
+                mt: 0.25,
+                px: 1,
+                py: 0.5,
+                border: '1px solid var(--rule)',
+                borderRadius: '6px',
+                bgcolor: 'transparent',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 500,
+                '&:hover': {
+                  bgcolor: 'var(--bg)',
+                },
+              }}
+            >
+              Show {hiddenOrderCount} more
+            </Box>
+          )}
       </Box>
     </Box>
   );

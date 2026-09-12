@@ -42,6 +42,7 @@ import shopSettingsRoutes from '../api/settings/shopSettings.routes.js';
 import operatorsRoutes from '../api/operators/operators.routes.js';
 import shopifyBillingRoutes from '../api/shopify/shopify.billing.routes.js';
 import exportsRoutes from '../api/exports/exports.routes.js';
+import searchRoutes from '../api/search/search.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { httpRefundBackfill } from '../api/integrations/refundBackfill.controller.js';
@@ -131,6 +132,7 @@ export function createApp(): Express {
   app.use('/api/v1/settings/permissions', permissionsRoutes);
   app.use('/api/v1/settings/shop', shopSettingsRoutes);
   app.use('/api/v1/operators', operatorsRoutes);
+  app.use('/api/v1/search', searchRoutes);
   // Historical refund ingestion — idempotent, one-shot per shop
   app.post('/api/v1/integrations/refund-backfill', authenticateToken, httpRefundBackfill);
   app.use('/api/v1/billing', billingRoutes);
