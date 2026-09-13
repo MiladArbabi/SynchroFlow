@@ -68,34 +68,36 @@ const NON_ACTIVE_MODULES = ['finances', 'customers', 'specter'] as const;
 
 describe('CRA-C2 — active standard module matrix', () => {
   it('GREEN CONTROL: Starter carries the active Starter operational set', () => {
-    // The execution loop Starter pays for: overview, orders, alerts, Shopify
-    // plumbing, WMS + barcodes, fulfillment.
+    // The Starter foundation: overview, inventory/products, and alert inbox.
     for (const m of [
       'overview',
-      'order-nexus',
-      'fulfillment',
+      'products',
       'alerts',
-      'shopify_integration',
-      'wms',
-      'barcodes',
     ]) {
       expect(modules('starter').has(m)).toBe(true);
     }
   });
 
-  it('EXPECTED RED: Starter has NO Purchasing — suppliers-portal is Core+', () => {
+  it('EXPECTED RED: Starter has no full Orders Flow, WMS/barcode execution, or Returns', () => {
+    for (const m of ['order-nexus', 'fulfillment', 'wms', 'barcodes', 'returns']) {
+      expect(modules('starter').has(m)).toBe(false);
+    }
+  });
+
+  it('EXPECTED RED: Starter has NO Purchasing — suppliers-portal is Growth+', () => {
     // Ratified remodel: Starter has no Purchasing surface at all.
     expect(modules('starter').has('suppliers-portal')).toBe(false);
   });
 
-  it('EXPECTED RED: Core adds returns, products, problem-center and suppliers-portal', () => {
-    for (const m of ['returns', 'products', 'problem-center', 'suppliers-portal']) {
+  it('EXPECTED RED: Core adds orders, WMS, returns and exports foundations', () => {
+    for (const m of ['order-nexus', 'fulfillment', 'wms', 'returns']) {
       expect(modules('core').has(m)).toBe(true);
     }
+    expect(decide('exports.core', 'core').allowed).toBe(true);
   });
 
-  it('GREEN CONTROL: Growth adds demand and floor-planning', () => {
-    for (const m of ['demand', 'floor-planning']) {
+  it('GREEN CONTROL: Growth adds optimization, intelligence and purchasing surfaces', () => {
+    for (const m of ['demand', 'floor-planning', 'problem-center', 'suppliers-portal']) {
       expect(modules('growth').has(m)).toBe(true);
     }
   });
@@ -196,11 +198,11 @@ describe('CRA-C3 — commercial lifecycle distinguishes paused from deprecated',
 // C4 — PURCHASING SPLIT
 // ===========================================================================
 
-describe('CRA-C4 — purchasing.core (Core+) and purchasing.sourcing (Growth+)', () => {
-  it('EXPECTED RED: purchasing.core requires module suppliers-portal at minimumTier core', () => {
+describe('CRA-C4 — purchasing.core and purchasing.sourcing are Growth+', () => {
+  it('EXPECTED RED: purchasing.core requires module suppliers-portal at minimumTier growth', () => {
     const req = requirementOrFail('purchasing.core');
     expect(req.moduleId).toBe('suppliers-portal');
-    expect(req.minimumTier).toBe('core');
+    expect(req.minimumTier).toBe('growth');
   });
 
   it('EXPECTED RED: purchasing.sourcing exists and requires suppliers-portal at growth', () => {
@@ -213,7 +215,7 @@ describe('CRA-C4 — purchasing.core (Core+) and purchasing.sourcing (Growth+)',
   });
 
   const MATRIX: Record<string, Record<Tier, boolean>> = {
-    'purchasing.core': { starter: false, core: true, growth: true, scale: true },
+    'purchasing.core': { starter: false, core: false, growth: true, scale: true },
     'purchasing.sourcing': { starter: false, core: false, growth: true, scale: true },
   };
 
@@ -241,10 +243,10 @@ describe('CRA-C4 — purchasing.core (Core+) and purchasing.sourcing (Growth+)',
     return { ...base, modules: new Set([...base.modules, 'suppliers-portal']) };
   }
 
-  it('GREEN CONTROL: an additive suppliers-portal grant does not unlock purchasing.core below Core', () => {
+  it('GREEN CONTROL: an additive suppliers-portal grant does not unlock purchasing.core below Growth', () => {
     const d = CP.evaluateAccess(requirementOrFail('purchasing.core'), tierFloorPlusSuppliersPortal('starter'));
     expect({ allowed: d.allowed, reason: d.reason, requiredTier: d.requiredTier })
-      .toEqual({ allowed: false, reason: 'TIER_TOO_LOW', requiredTier: 'core' });
+      .toEqual({ allowed: false, reason: 'TIER_TOO_LOW', requiredTier: 'growth' });
   });
 
   it.each<[Tier]>([['starter'], ['core']])(
@@ -261,9 +263,10 @@ describe('CRA-C4 — purchasing.core (Core+) and purchasing.sourcing (Growth+)',
       expect({ tier, has: tierFloorPlusSuppliersPortal(tier).modules.has('suppliers-portal') })
         .toEqual({ tier, has: true });
     }
-    // ...and the Starter FLOOR genuinely lacks it — Purchasing left Starter.
+    // ...and the Starter/Core FLOOR genuinely lacks it — Purchasing is Growth+.
     expect(modules('starter').has('suppliers-portal')).toBe(false);
-    expect(modules('core').has('suppliers-portal')).toBe(true);
+    expect(modules('core').has('suppliers-portal')).toBe(false);
+    expect(modules('growth').has('suppliers-portal')).toBe(true);
   });
 });
 

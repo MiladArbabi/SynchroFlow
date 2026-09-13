@@ -5,8 +5,8 @@
 // No React, no DB, no server.
 // ===========================================================================
 // RATIFIED
-//   inventory.core = moduleId `products` + minimumTier `core`
-//   Starter DENY · Core/Growth/Scale ALLOW
+//   inventory.core = moduleId `products` + Starter+
+//   Starter/Core/Growth/Scale ALLOW
 //
 //   WMS EXCEPTION: products `/wms-readiness` belongs to warehouse.operations,
 //   NOT inventory.core, so a Starter shop with canonical WMS access keeps it.
@@ -34,7 +34,6 @@ const NAV_BOOTSTRAP = 'apps/frontend/src/runtime/navBootstrap.ts';
 const INVENTORY_TABS = 'apps/frontend/src/pages/ft2-pages/inventoryModuleTabs.ts';
 const INVENTORY_PAGE = 'apps/frontend/src/pages/ft2-pages/ProductsFT2Page.tsx';
 const ALERT_DEEP_LINK = 'apps/frontend/src/pages/alerts/alertDeepLink.ts';
-const ALERTS_PAGE = 'apps/frontend/src/pages/ft2-pages/AlertsPage.tsx';
 
 type Tier = 'starter' | 'core' | 'growth' | 'scale';
 const TIERS: Tier[] = ['starter', 'core', 'growth', 'scale'];
@@ -79,15 +78,15 @@ function navItemChunk(src: string, id: string): string {
 // ===========================================================================
 // C1 — inventory.core canonical policy
 // ===========================================================================
-describe('IPA-C1 — inventory.core is products + Core+', () => {
-  it('requirement is exactly { moduleId: products, minimumTier: core }', () => {
+describe('IPA-C1 — inventory.core is products + Starter+', () => {
+  it('requirement is exactly { moduleId: products }', () => {
     const req = requirementOrFail('inventory.core');
     expect(req.moduleId).toBe('products');
-    expect(req.minimumTier).toBe('core');
+    expect(req.minimumTier).toBeUndefined();
   });
 
   it.each<[Tier, boolean]>([
-    ['starter', false],
+    ['starter', true],
     ['core', true],
     ['growth', true],
     ['scale', true],
@@ -95,11 +94,9 @@ describe('IPA-C1 — inventory.core is products + Core+', () => {
     expect(decide('inventory.core', tier).allowed).toBe(allowed);
   });
 
-  it('CONTROL: inventory.core and warehouse.operations are different boundaries', () => {
-    // The WMS exception only means something if these two genuinely differ:
-    // Starter holds warehouse.operations but must not hold inventory.core.
-    expect(decide('warehouse.operations', 'starter').allowed).toBe(true);
-    expect(decide('inventory.core', 'starter').allowed).toBe(false);
+  it('CONTROL: inventory.core and warehouse.operations remain different boundaries', () => {
+    expect(decide('inventory.core', 'starter').allowed).toBe(true);
+    expect(decide('warehouse.operations', 'starter').allowed).toBe(false);
   });
 });
 
@@ -234,18 +231,15 @@ describe('IPA-C2 — Inventory nav resolves inventory.core', () => {
     )).toBe(true);
   });
 
-  it('GREEN CONTROL: an additive `products` module grant does NOT unlock Inventory for Starter', () => {
-    // The ratified boundary is CAPABILITY, not module membership. A Starter shop
-    // holding a bespoke/persisted `products` module row still fails the tier
-    // wall — this is the case a raw requiredModuleId gate gets wrong.
+  it('GREEN CONTROL: Starter Inventory is allowed by the canonical capability', () => {
     const starterPlusProducts: CP.AccessContext = {
       tier: 'starter',
       modules: new Set([...CP.modulesForTier('starter'), 'products']),
       flags: new Set(CP.flagsForTier('starter')),
     };
     const decision = CP.evaluateAccess(requirementOrFail('inventory.core'), starterPlusProducts);
-    expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe('TIER_TOO_LOW');
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toBe('ALLOWED');
   });
 });
 
@@ -357,11 +351,8 @@ describe('IPA-C6 — inventory recount resolves inventory.core', () => {
 // C8 — stale frontend links
 // ===========================================================================
 describe('IPA-C8 — active links target /inventory, never the retired /products', () => {
-  it.each([
-    ['alertDeepLink', ALERT_DEEP_LINK],
-    ['AlertsPage', ALERTS_PAGE],
-  ])('EXPECTED RED: %s missing_cogs routes to Inventory, not /products', (_name, rel) => {
-    const line = read(rel)
+  it('alertDeepLink missing_cogs routes to Inventory, not /products', () => {
+    const line = read(ALERT_DEEP_LINK)
       .split('\n')
       .find((l) => l.includes('missing_cogs'));
     expect(line).toBeDefined();

@@ -14,10 +14,9 @@
 //   - Module sets are cumulative: STARTER ⊆ CORE ⊆ GROWTH ⊆ SCALE
 //   - Scale standard limits resolve as unlimited
 //   - One canonical module registry; nav must only reference emittable ids
-//   - Purchasing = Core+ (purchasing.core) / Growth+ (purchasing.sourcing),
-//     canonical module `suppliers-portal` (P0-A3-5 retired the Starter+ claim)
-//   - Warehouse: operations=Starter, problem-center=Core,
-//     floor-planning=Growth, warehouse.analytics=Growth
+//   - Purchasing = Growth+ (purchasing.core / purchasing.sourcing),
+//     canonical module `suppliers-portal`
+//   - Warehouse: operations/analytics=Core, problem-center/floor-planning=Growth
 //   - No `import.meta.env.DEV` bypass inside the access decision
 //   - No fabricated `requiredTier ?? 'growth'` modal semantics
 //   - One shared policy package: packages/commercial-policy/
@@ -195,15 +194,14 @@ describe('C4 — canonical module config', () => {
     expect(CP.CAPABILITY_REQUIREMENTS['warehouse.operations'].moduleId).toBe('wms');
   });
 
-  it('GREEN CONTROL: canonical effective entitlements emit `suppliers-portal` at CORE and above', () => {
+  it('GREEN CONTROL: canonical effective entitlements emit `suppliers-portal` at Growth and above', () => {
     // TIER_CONFIG is the frozen persisted-row seed shape. Runtime availability
     // comes from modulesForTier(currentTier) union additive persisted rows.
     //
-    // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01: this previously
-    // asserted every tier. Purchasing is now Core+ — Starter has no Purchasing
-    // surface at all — so Starter must NOT emit suppliers-portal.
+    // Purchasing is now Growth+ — Starter/Core have no Purchasing surface.
     expect(CP.modulesForTier('starter').has('suppliers-portal')).toBe(false);
-    for (const tier of ['core', 'growth', 'scale'] as const) {
+    expect(CP.modulesForTier('core').has('suppliers-portal')).toBe(false);
+    for (const tier of ['growth', 'scale'] as const) {
       expect(CP.modulesForTier(tier).has('suppliers-portal')).toBe(true);
     }
   });
@@ -275,14 +273,12 @@ describe('C9 — environment-independent access decision', () => {
 // C10 — PURCHASING STARTER+ POLICY (semantic; full behavior in parity file)
 // ===========================================================================
 describe('C10 — Purchasing Core+/Growth+ policy', () => {
-  // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01. Purchasing was
-  // Starter+ under P0-A1; the ratified remodel makes purchasing.core Core+ and
-  // introduces purchasing.sourcing (ADVANCED SOURCING) at Growth+.
-  it('EXPECTED RED: canonical policy declares purchasing.core at minimum tier core', () => {
+  // Purchasing is Growth+ in the ratified commercial-policy foundation.
+  it('EXPECTED RED: canonical policy declares purchasing.core at minimum tier growth', () => {
     const req = CP.CAPABILITY_REQUIREMENTS?.['purchasing.core'];
     expect(req).toBeDefined();
     expect(req?.moduleId).toBe('suppliers-portal');
-    expect(req?.minimumTier).toBe('core');
+    expect(req?.minimumTier).toBe('growth');
   });
 
   it('EXPECTED RED: canonical policy declares purchasing.sourcing at minimum tier growth', () => {
@@ -588,16 +584,17 @@ describe('B8 — migrated tabs decided by the shared evaluator, not local logic'
     expect(/@lasyncro\/commercial-policy|evaluateAccess|useCommercialAccess|CommercialGate|capabilityId/.test(src)).toBe(true);
   });
 
-  it('EXPECTED RED: Warehouse Analytics tab uses canonical warehouse.analytics (feature wms.analytics), never wms.pick_batches', () => {
+  it('EXPECTED RED: Warehouse Analytics tab uses canonical warehouse.analytics, never wms.pick_batches', () => {
     const entry = tabEntrySource(WAREHOUSE_TABS, 'wms-analytics');
     expect(/feature:\s*'wms\.pick_batches'/.test(entry)).toBe(false);
     expect(/capabilityId:\s*'warehouse\.analytics'/.test(entry)).toBe(true);
   });
 
-  it('GREEN CONTROL: warehouse.analytics canonical feature is wms.analytics at Growth', () => {
+  it('GREEN CONTROL: warehouse.analytics canonical policy is Core module access', () => {
     const req = (CP as any).CAPABILITY_REQUIREMENTS['warehouse.analytics'];
-    expect(req.feature).toBe('wms.analytics');
-    expect(req.minimumTier).toBe('growth');
+    expect(req.moduleId).toBe('wms');
+    expect(req.feature).toBeUndefined();
+    expect(req.minimumTier).toBe('core');
   });
 });
 

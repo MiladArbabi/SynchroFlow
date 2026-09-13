@@ -9,7 +9,7 @@
 // never boots a server.
 //
 // Ratified model (P0-A3-3):
-//   returns.intake   -> Starter+  physical return receiving/intake workflow
+//   returns.intake   -> Core+     returns receiving/intake workflow
 //   returns.core     -> Core+     returns control/resolution workflow
 //   returns.analysis -> Growth+   returns analytical intelligence
 //   Scale inherits every lower capability.
@@ -111,16 +111,10 @@ describe('RET-A1 — the canonical registry declares all three Returns capabilit
     expect(REGISTRY['returns.intake']).toBeDefined();
   });
 
-  it('EXPECTED RED: returns.intake requirement is { moduleId: wms, minimumTier: starter }', () => {
-    // RATIFIED CORRECTION (P0-A3-3): the intake module is `wms`, NOT `returns`.
-    // Physical return receiving is warehouse EXECUTION, and Starter already
-    // holds `wms`. Binding intake to the `returns` module would have been
-    // unsatisfiable at Starter (`returns` is a Core+ grant — modules.ts
-    // STANDARD_CORE), and granting `returns` at Starter would have leaked the
-    // Returns management module. `returns` stays Core+ for core/analysis.
+  it('EXPECTED RED: returns.intake requirement is { moduleId: returns, minimumTier: core }', () => {
     const req = requirementOrFail('returns.intake');
-    expect(req.moduleId).toBe('wms');
-    expect(req.minimumTier).toBe('starter');
+    expect(req.moduleId).toBe('returns');
+    expect(req.minimumTier).toBe('core');
   });
 
   it('GREEN CONTROL: returns.core remains { moduleId: returns, minimumTier: core }', () => {
@@ -141,13 +135,13 @@ describe('RET-A1 — the canonical registry declares all three Returns capabilit
 // The ratified standard-plan matrix.
 //
 //                     Starter   Core   Growth   Scale
-//   returns.intake     ALLOW    ALLOW   ALLOW    ALLOW
+//   returns.intake     DENY     ALLOW   ALLOW    ALLOW
 //   returns.core       DENY     ALLOW   ALLOW    ALLOW
 //   returns.analysis   DENY     DENY    ALLOW    ALLOW
 // ---------------------------------------------------------------------------
 
 const RATIFIED_MATRIX: Record<string, Record<Tier, boolean>> = {
-  'returns.intake': { starter: true, core: true, growth: true, scale: true },
+  'returns.intake': { starter: false, core: true, growth: true, scale: true },
   'returns.core': { starter: false, core: true, growth: true, scale: true },
   'returns.analysis': { starter: false, core: false, growth: true, scale: true },
 };

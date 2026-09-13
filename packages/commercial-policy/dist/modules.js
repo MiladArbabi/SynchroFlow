@@ -50,22 +50,22 @@ export function isModuleId(value) {
     return typeof value === 'string' && value in MODULE_CLASSIFICATION;
 }
 // ---------------------------------------------------------------------------
-// Canonical standard module sets (cumulative). suppliers-portal is Starter+.
+// Canonical standard module sets (cumulative).
 // ---------------------------------------------------------------------------
 // COMMERCIAL-REMODEL-ALIGN-01 (2026-09-06) — canonical forward truth.
 //
-// Starter buys the execution loop: overview, orders, alerts, Shopify/internal
-// plumbing, and the full Receive -> Stow -> Pick -> Pack -> Ship WMS path.
-// Purchasing is NOT part of it — `suppliers-portal` moved to CORE.
+// Starter buys the operating foundation only: overview, inventory/products, and
+// the alerts inbox. It deliberately excludes full Orders Flow, WMS/barcode
+// execution, and Returns.
 const STANDARD_STARTER = [
-    'overview', 'order-nexus', 'fulfillment', 'alerts',
-    'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes',
+    'overview', 'products', 'alerts',
 ];
-// Core adds the management surfaces plus Purchasing (purchasing.core is Core+).
+// Core adds execution foundations: Orders, WMS operations/analytics, Returns,
+// and export basics.
 const STANDARD_CORE = [
-    ...STANDARD_STARTER, 'returns', 'products', 'problem-center', 'suppliers-portal',
+    ...STANDARD_STARTER, 'order-nexus', 'fulfillment', 'wms', 'returns',
 ];
-// Growth adds the intelligence modules only.
+// Growth adds optimization and intelligence surfaces.
 //
 // `customers`, `finances` and `specter` are deliberately ABSENT: Finances is
 // PAUSED and Customers/Specter are DEPRECATED (see catalog.ts). A paused or
@@ -73,7 +73,7 @@ const STANDARD_CORE = [
 // implicitly through a tier module set. Their implementation is intentionally
 // left in place — cleanup is a separate future program.
 const STANDARD_GROWTH = [
-    ...STANDARD_CORE, 'demand', 'floor-planning',
+    ...STANDARD_CORE, 'demand', 'floor-planning', 'problem-center', 'suppliers-portal',
 ];
 // Scale is "everything Growth has, without limits" — never a distinct module
 // set, and never an arbitrary Scale-only module wall.

@@ -133,16 +133,16 @@ describe('C12 — backend commercial authority', () => {
     expect(capBeforeAction).toBe(true);
   });
 
-  it('A2A: Warehouse Analytics routes enforce requireCapability(warehouse.analytics), canonical Growth+', () => {
+  it('A2A: Warehouse Analytics routes enforce requireCapability(warehouse.analytics), canonical Core+', () => {
     // P0-A2A migrated every /analytics* WMS route from the incidental
     // requireTier('growth') literal to the canonical capability gate. The
-    // enforcement is unchanged in effect — warehouse.analytics is Growth+ in
+    // enforcement is expressed through the single engine; warehouse.analytics is Core+
     // the shared policy — but now expressed through the single engine.
     const src = read(WMS_ROUTES);
     const analyticsRouteCount = (src.match(/'\/analytics(?:\/[a-z-]+)?'/g) || []).length;
     expect(analyticsRouteCount).toBeGreaterThan(0);
     expect(/requireCapability\(\s*['"]warehouse\.analytics['"]\s*\)/.test(src)).toBe(true);
-    expect((CP as any).CAPABILITY_REQUIREMENTS['warehouse.analytics'].minimumTier).toBe('growth');
+    expect((CP as any).CAPABILITY_REQUIREMENTS['warehouse.analytics'].minimumTier).toBe('core');
   });
 
   it('A2A: Demand route enforces requireCapability(demand.forecasting), canonical Growth+', () => {
@@ -313,10 +313,9 @@ describe('B18 — unknown CapabilityId fails closed in the shared engine', () =>
 //
 // The load-bearing point: the SuppliersPortalPage subtree carries ONE outer
 // purchasing.core gate today, and every child route — including /sourcing —
-// inherits only that. Inheritance from a Core+ gate is NOT evidence for a
-// Growth+ surface: a Core merchant typing /suppliers-portal/sourcing directly
-// clears the outer gate and reaches the Growth-only surface. The Sourcing
-// route element must therefore carry its own purchasing.sourcing decision.
+// inherits only that. Because purchasing.core and purchasing.sourcing are both
+// Growth+, the route element must still carry its own purchasing.sourcing
+// decision so the child remains explicit.
 
 const SUPPLIERS_PORTAL_PAGE_SRC = read(SUPPLIERS_PAGE);
 
@@ -364,14 +363,15 @@ describe('PUR-C4 — /suppliers-portal direct-URL capability resolution', () => 
     expect(/purchasing\.sourcing/.test(sourcingRegion)).toBe(true);
   });
 
-  it('GREEN CONTROL: canonical policy makes the two gates genuinely different decisions at Core', () => {
+  it('GREEN CONTROL: canonical policy keeps both purchasing gates Growth+', () => {
     const decide = (cap: string, tier: 'starter' | 'core' | 'growth' | 'scale') =>
       (CP as any).evaluateAccess(
         (CP as any).CAPABILITY_REQUIREMENTS[cap],
         (CP as any).standardContextForTier(tier),
       ).allowed;
-    expect(decide('purchasing.core', 'core')).toBe(true);
+    expect(decide('purchasing.core', 'core')).toBe(false);
     expect(decide('purchasing.sourcing', 'core')).toBe(false);
+    expect(decide('purchasing.core', 'growth')).toBe(true);
     expect(decide('purchasing.sourcing', 'growth')).toBe(true);
   });
 });

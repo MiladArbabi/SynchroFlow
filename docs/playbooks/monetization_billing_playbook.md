@@ -1,7 +1,7 @@
 # LaSyncro — Monetization, Billing & Currency Playbook
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
-> **Last updated:** August 21, 2026
+> **Last updated:** September 13, 2026
 > **Status:** Stripe billing, Shopify Managed Pricing reconciliation, Shopify App Events Shop GID capture, and Starter WMS shipped-order enforcement verified end-to-end.
 
 ---
@@ -30,10 +30,17 @@ over that package, not an independent owner (see §32). Values below are unchang
 
 **Module access by tier:**
 
-- Starter: overview, orders, fulfillment queue, alerts, Shopify integration, and the full Receive→Stow→Pick→Pack→Ship WMS loop including barcodes; commercial usage is gated by the 50-order shipped allowance rather than a module wall
-- Core+: everything in Starter plus returns processing, products, problem center (operational exceptions), and expanded commercial allowances
-- Growth+: cash flow, demand forecasting, customer LTV, Specter, returns analysis (supplier correlation), problem center analytics, floor planning, warehouse analytics, unlimited order history
-- Scale+: unlimited everything (same cumulative Growth capability set, no capacity caps)
+- Starter: `overview`, `products`, `alerts`
+- Core+: Starter modules plus `order-nexus`, `fulfillment`, `wms`, `returns`
+- Growth+: Core modules plus `demand`, `floor-planning`, `problem-center`, `suppliers-portal`
+- Scale: currently inherits the same canonical module set as Growth; MON-REM-01A introduced no Scale-only capability IDs
+
+**Capability boundaries:**
+
+- Starter+: `overview.core`, `inventory.core`, `alerts.inbox`
+- Core+: `orders.core`, `warehouse.operations`, `warehouse.analytics`, `returns.intake`, `returns.core`, `exports.core`
+- Growth+: `overview.live_map`, `inventory.live_map`, `orders.live_map`, `returns.analysis`, `demand.forecasting`, `warehouse.floor_planning`, `warehouse.problem_center`, `purchasing.core`, `purchasing.sourcing`, `alerts.rules`, `exports.column_selection`
+- Scale: inherits Growth capabilities; no Scale-exclusive capability IDs were added in MON-REM-01A
 
 **Order history data window:**
 
@@ -41,7 +48,74 @@ over that package, not an independent owner (see §32). Values below are unchang
 - Starter: 60 days · Core: 180 days · Growth+: unlimited
 - Source: `packages/backend-core/src/utils/tierDataWindow.ts`
 
-**Rule:** Never hardcode tier logic anywhere. Always import from `tiers.ts`.
+**Rule:** Never hardcode tier logic anywhere. Standard commercial access must
+come from `@lasyncro/commercial-policy`; `tiers.ts` remains a compatibility layer.
+Prefer `requireCapability()` / `evaluateAccess()` so commercial entitlement stays
+independent from RBAC/action permissions.
+
+## 1.1 MON-REM-01A — Commercial capability remodel (2026-09-13)
+
+MON-REM-01A remaps the active commercial surface around the current product
+contract: Starter is the visibility and inventory foundation, Core owns execution,
+Growth owns prediction and optimization, and Scale remains cumulative inheritance
+for now rather than a source of unimplemented Scale-only capability IDs.
+
+### Canonical module matrix
+
+| Tier | Canonical modules |
+|---|---|
+| Starter | `overview`, `products`, `alerts` |
+| Core | Starter plus `order-nexus`, `fulfillment`, `wms`, `returns` |
+| Growth | Core plus `demand`, `floor-planning`, `problem-center`, `suppliers-portal` |
+| Scale | Same canonical module set as Growth; no new Scale-only module/capability wall in this slice |
+
+### Capability matrix
+
+| Capability | Starter | Core | Growth | Scale |
+|---|---|---|---|---|
+| `overview.core` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `inventory.core` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `alerts.inbox` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `orders.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `warehouse.operations` | DENY | ALLOW | ALLOW | ALLOW |
+| `warehouse.analytics` | DENY | ALLOW | ALLOW | ALLOW |
+| `returns.intake` | DENY | ALLOW | ALLOW | ALLOW |
+| `returns.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `exports.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `overview.live_map` | DENY | DENY | ALLOW | ALLOW |
+| `inventory.live_map` | DENY | DENY | ALLOW | ALLOW |
+| `orders.live_map` | DENY | DENY | ALLOW | ALLOW |
+| `returns.analysis` | DENY | DENY | ALLOW | ALLOW |
+| `demand.forecasting` | DENY | DENY | ALLOW | ALLOW |
+| `warehouse.floor_planning` | DENY | DENY | ALLOW | ALLOW |
+| `warehouse.problem_center` | DENY | DENY | ALLOW | ALLOW |
+| `purchasing.core` | DENY | DENY | ALLOW | ALLOW |
+| `purchasing.sourcing` | DENY | DENY | ALLOW | ALLOW |
+| `alerts.rules` | DENY | DENY | ALLOW | ALLOW |
+| `exports.column_selection` | DENY | DENY | ALLOW | ALLOW |
+
+### Architecture and enforcement contract
+
+`@lasyncro/commercial-policy` is the canonical commercial policy authority for
+standard tier access. Persisted `shop_module_entitlements` remain additive
+explicit grants, not an alternate standard matrix. `requireCapability()` and
+`evaluateAccess()` are the preferred enforcement path, with commercial
+entitlement evaluated independently from RBAC/permission checks.
+
+### Explicit non-goals
+
+MON-REM-01A did not change quota enforcement, overage behavior, billing-provider
+behavior, Stripe/Shopify configuration, pricing, trial behavior, usage metering,
+seat/order/location limits, or historical compatibility data.
+
+### Verification evidence
+
+- Contract verification: **47 / 47 suites PASS**, **744 / 744 tests PASS**
+- Post-build targeted contract verification: **7 / 7 suites PASS**, **454 / 454 tests PASS**
+- Integration verification: **2 / 2 suites PASS**, **60 / 60 tests PASS**; disposable test DB cleanup proven
+- Unit verification: **1 / 1 suite PASS**, **40 / 40 tests PASS**
+- Commercial-policy build: `npm --workspace packages/commercial-policy run build` succeeded; generated `dist` updated
+- Jest ownership: `UNOWNED=0`, `MULTI_OWNED=0`
 
 ---
 
@@ -561,9 +635,11 @@ hardcoded `requireTier()` literal in route files. Both had to be updated:
 **Caps** (§1 table superseded — see below): Starter's `shippedOrderCap`
 raised `0 → 50`. Core `seatLimit` raised `2 → 3`.
 
-### 14.3 Updated §1 module table
+### 14.3 Historical module table (superseded by MON-REM-01A)
 
-Supersedes the module-access bullets in §1 — read this section as current:
+This section records the 2026-08-20 module table from the Starter WMS rollout.
+It is **historical/superseded** by MON-REM-01A (§1.1) and must not be read as
+the current commercial matrix:
 
 - **Starter:** overview, orders (full pipeline access — no longer view-only),
   fulfillment queue, alerts, Shopify integration, **WMS pick/pack/stow/receive
@@ -3668,17 +3744,16 @@ system-wide C14–C24 closure are not closed by this slice.
 
 ---
 
-## 33. Commercial Remodel Alignment — `COMMERCIAL-REMODEL-ALIGN-01` (ratified + implemented 2026-09-06)
+## 33. Commercial Remodel Alignment — `COMMERCIAL-REMODEL-ALIGN-01` (historical/superseded by MON-REM-01A)
 
-**This section is the CURRENT canonical commercial truth.** Where §32 and earlier
-sections disagree, they are the historical record and this supersedes them. §32's
-architecture — one policy package, capability-based access, `evaluateAccess()` —
-is unchanged; what changed is *what is sold at which tier*, and the lifecycle
-vocabulary for surfaces that are no longer sold.
+This section records the 2026-09-06 remodel state and is now
+**historical/superseded** by MON-REM-01A (§1.1). §32's architecture — one policy
+package, capability-based access, `evaluateAccess()` — is unchanged; the active
+module/capability tier matrix is now the MON-REM-01A contract.
 
 Tier order is unchanged: `starter < core < growth < scale`.
 
-### 33.1 Ratified tier matrix
+### 33.1 Superseded tier matrix
 
 **STARTER**
 - Overview · Orders · Alerts inbox · Shopify integration + internal plumbing
@@ -3824,7 +3899,7 @@ migrations.
 
 ---
 
-## 34. Inventory / Products Commercial Access — `P0-A3-4` (ratified + implemented 2026-09-06)
+## 34. Inventory / Products Commercial Access — `P0-A3-4` (historical, boundary superseded by MON-REM-01A)
 
 The Inventory/Products slice of P0-A3. Canonical policy needed no change — the
 capability was already correct — so this is a **wiring** slice: it moves every
@@ -3833,20 +3908,20 @@ one shared AccessDecision.
 
 ### 34.1 Canonical capability and tier behaviour
 
-    inventory.core = moduleId 'products' + minimumTier 'core'
+MON-REM-01A supersedes the original Core+ boundary. Current contract:
+
+    inventory.core = moduleId 'products' + minimumTier 'starter'
 
 | Tier | Inventory |
 |---|---|
-| Starter | **DENY** |
+| Starter | ALLOW |
 | Core | ALLOW |
 | Growth | ALLOW |
 | Scale | ALLOW |
 
-**An additive module grant does not bypass the tier wall.** A Starter shop holding
-a bespoke/persisted `products` module row is still denied `inventory.core`, with
-reason `TIER_TOO_LOW` — because the requirement carries `minimumTier: 'core'` and
-tier is evaluated before module membership. This is precisely what the previous
-raw `requiredModuleId: 'products'` nav gate got wrong: a module row satisfied it.
+The original `P0-A3-4` note treated Inventory as Core+. That boundary is
+historical; Inventory/Products is now the Starter inventory foundation. Additive
+module grants still do not bypass any capability's configured tier wall.
 
 ### 34.2 Merchant UI — one gate for the whole subtree
 
@@ -3889,17 +3964,18 @@ parent's capability changes.
 canonical commercial policy — otherwise a caller could simply pick the cheaper
 door. Alias removal is future cleanup, not this slice.
 
-### 34.5 WMS readiness exception
+### 34.5 Historical WMS readiness exception
 
 `GET /wms-readiness` belongs to **`warehouse.operations`**, not `inventory.core`,
 and is now positively gated on it (it previously carried no commercial gate at
-all). Starter WMS access remains valid.
+all). The old Starter WMS access note is **superseded by MON-REM-01A**:
+`warehouse.operations` is now Core+.
 
-> **Not a contradiction, and not to be "fixed":** `/inventory/data-quality` is an
-> Inventory UI route behind `inventory.core` (Core+), while the WMS-readiness API
-> it consumes is `warehouse.operations` (Starter+). A Core+ shop holds both, so
-> the pairing is consistent by design. Aligning them would break the Starter WMS
-> exception.
+> **Historical note, superseded by MON-REM-01A:** `/inventory/data-quality` was
+> previously described as an Inventory UI route behind `inventory.core` (Core+),
+> while the WMS-readiness API consumed `warehouse.operations` (Starter+).
+> Current MON-REM-01A boundaries are `inventory.core` Starter+ and
+> `warehouse.operations` Core+.
 
 ### 34.6 Inventory recount
 
@@ -4158,22 +4234,22 @@ Verification:
 
 ---
 
-## 35. Purchasing / Sourcing Commercial Access — `P0-A3-5` (ratified + implemented 2026-09-07)
+## 35. Purchasing / Sourcing Commercial Access — `P0-A3-5` (historical, boundary superseded by MON-REM-01A)
 
 This slice closes the runtime/frontend coverage gap deliberately left by
-`COMMERCIAL-REMODEL-ALIGN-01`. The canonical policy did not change; every
-Purchasing surface now consumes that policy consistently.
+`COMMERCIAL-REMODEL-ALIGN-01`. Its route-enforcement architecture remains useful
+history, but MON-REM-01A supersedes the tier boundary for `purchasing.core`.
 
 ### 35.1 Canonical commercial split
 
 | Capability | Starter | Core | Growth | Scale |
 |---|---|---|---|---|
-| `purchasing.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `purchasing.core` | DENY | DENY | ALLOW | ALLOW |
 | `purchasing.sourcing` | DENY | DENY | ALLOW | ALLOW |
 
 Both capabilities belong to module `suppliers-portal`, but their tier floors differ:
 
-- `purchasing.core` = **Core+** — Purchase Orders, Suppliers and basic Purchasing workflows
+- `purchasing.core` = **Growth+** — Purchase Orders, Suppliers and basic Purchasing workflows
 - `purchasing.sourcing` = **Growth+** — sourcing worklist, sourcing recommendations,
   supplier-product preferences and reorder/MOQ accumulation intelligence
 
@@ -4211,18 +4287,21 @@ The Purchasing parent, Open POs and Suppliers resolve through `purchasing.core`.
 Sourcing independently resolves through `purchasing.sourcing` in both
 `navBootstrap.ts` and `purchasingSubTabs.ts`.
 
-Therefore:
+Under the original P0-A3-5 contract:
 
 - Starter sees no Purchasing surface
 - Core sees Open POs and Suppliers but not Sourcing
 - Growth and Scale see basic Purchasing plus Advanced Sourcing
+
+Under MON-REM-01A, that Core Purchasing shell is superseded: Starter and Core see
+no Purchasing surface; Growth and Scale see Purchasing plus Advanced Sourcing.
 
 No raw `requiredTier` or `requiredModuleId` is commercial authority for these
 migrated Purchasing surfaces.
 
 ### 35.4 Direct-route protection
 
-`/suppliers-portal/*` keeps its outer:
+Historically, `/suppliers-portal/*` kept its outer:
 
     CommercialGate capabilityId="purchasing.core"
 
@@ -4230,13 +4309,15 @@ migrated Purchasing surfaces.
 
     CommercialGate capabilityId="purchasing.sourcing"
 
-The Growth gate wraps the Sourcing route element before it mounts. Core direct
-navigation therefore follows the canonical denial path and cannot mount or fetch
-the protected Sourcing surface.
+The Growth gate wrapped the Sourcing route element before it mounted. Under
+MON-REM-01A, both `purchasing.core` and `purchasing.sourcing` are Growth+, so
+Core direct navigation follows the canonical denial path for the entire
+Purchasing surface.
 
-### 35.5 Core-shell data isolation
+### 35.5 Historical Core-shell data isolation
 
-The shared `useSuppliersPortal` hook now fetches only Core-owned data:
+The shared `useSuppliersPortal` hook fetched only the data that was Core-owned at
+the time:
 
 - Purchase Orders
 - Suppliers
@@ -4248,14 +4329,14 @@ A Sourcing-only route component owns that query and mounts only behind
 `purchasing.sourcing`. Endpoint, query key, response mapping and refresh
 behaviour remain unchanged.
 
-The current `SuppliersPortalData` type still requires `never_ordered` and
+The `SuppliersPortalData` type at the time still required `never_ordered` and
 `never_ordered_count` on every view. Core views receive empty placeholders
 (`[]` / `0`); real Growth-only values are supplied only by the Sourcing route.
 Making those fields optional is separate module-surface cleanup.
 
-### 35.6 Runtime proof
+### 35.6 Historical runtime proof
 
-Verified runtime boundary:
+Verified runtime boundary at P0-A3-5:
 
 - Starter → `purchasing.core`: DENY / `TIER_TOO_LOW`
 - Core → `purchasing.core`: ALLOW
@@ -4264,6 +4345,10 @@ Verified runtime boundary:
 - Scale clears both capabilities
 
 The Sourcing domain suite now uses a coherent Growth subscription and Growth JWT.
+
+MON-REM-01A supersedes this proof for `purchasing.core`: Core now receives
+`COMMERCIAL_ACCESS_DENIED` / `TIER_TOO_LOW`; Growth and Scale clear the
+commercial gate.
 
 ### 35.7 Verification evidence
 
@@ -4297,11 +4382,18 @@ All Purchasing/Sourcing frontend contracts are green.
 
 `P0-A3-5` closes the Purchasing runtime/frontend/direct-URL commercial-access gap.
 
-The active truth is:
+The historical P0-A3-5 truth was:
 
     Starter -> no Purchasing
     Core    -> Purchase Orders + Suppliers + basic Purchasing
     Growth  -> Core Purchasing + Advanced Sourcing
+    Scale   -> all active Growth Purchasing/Sourcing capability
+
+The current MON-REM-01A truth is:
+
+    Starter -> no Purchasing
+    Core    -> no Purchasing
+    Growth  -> Purchasing + Advanced Sourcing
     Scale   -> all active Growth Purchasing/Sourcing capability
 
 `BILL-ENTITLEMENT-01` Fact B remains separate P0-B Commercial State Integrity

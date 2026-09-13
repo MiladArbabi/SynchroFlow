@@ -7,7 +7,7 @@
 //
 // Two things are protected here:
 //   1. orders.live_map is Orders (order-nexus) + Growth+, and orders.core is
-//      unchanged — Starter/Core keep the Orders surface and lose only the map.
+//      Core+.
 //   2. The Orders map does NOT borrow Overview's route. `/live-activity` keeps
 //      its overview.live_map ownership, and the Orders surface reads a parallel
 //      route gated on orders.live_map that reuses the SAME controller.
@@ -102,22 +102,24 @@ describe('ORDLM-C1 — orders.live_map is Orders (order-nexus) + Growth+', () =>
 });
 
 // ===========================================================================
-// ORDLM-C2 — orders.core is UNCHANGED
+// ORDLM-C2 — orders.core is Core+
 // ===========================================================================
-describe('ORDLM-C2 — adding the map does not move the Orders surface boundary', () => {
-  it('orders.core remains module-only with no tier step', () => {
+describe('ORDLM-C2 — orders.core is Core+', () => {
+  it('orders.core requires order-nexus at minimumTier core', () => {
     const req = requirementOrFail('orders.core');
     expect(req.moduleId).toBe('order-nexus');
-    expect(req.minimumTier).toBeUndefined();
+    expect(req.minimumTier).toBe('core');
     expect(req.feature).toBeUndefined();
   });
 
-  it.each<Tier>(['starter', 'core', 'growth', 'scale'])(
-    'orders.core stays allowed @ %s',
-    (tier) => {
-      expect(decide('orders.core', tier).allowed).toBe(true);
-    },
-  );
+  it.each<[Tier, boolean]>([
+    ['starter', false],
+    ['core', true],
+    ['growth', true],
+    ['scale', true],
+  ])('orders.core @ %s => %s', (tier, allowed) => {
+    expect(decide('orders.core', tier).allowed).toBe(allowed);
+  });
 
   it('CONTROL: Core keeps Orders but not the Orders live map', () => {
     expect(decide('orders.core', 'core').allowed).toBe(true);

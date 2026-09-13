@@ -23,8 +23,8 @@
 //   capability; Scale standard limits are Infinity.
 //   Active capability policy: the ACTIVE_CAPABILITY_POLICY table below.
 //   Finances / Cash Flow are DISABLED / LEGACY, not active paid capabilities.
-//   Warehouse Analytics => { moduleId:'wms', minimumTier:'growth',
-//   feature:'wms.analytics' } — NEVER feature 'wms.pick_batches'.
+//   Warehouse Analytics => { moduleId:'wms', minimumTier:'core' } — NEVER
+//   feature 'wms.pick_batches'.
 
 import * as CP from '@lasyncro/commercial-policy';
 
@@ -44,21 +44,23 @@ interface CapPolicy {
 const ACTIVE_CAPABILITY_POLICY: Record<string, CapPolicy> = {
   'overview.core':               { moduleId: 'overview' },
   'overview.live_map':           { moduleId: 'overview',        minTier: 'growth' },
-  'orders.core':                 { moduleId: 'order-nexus' },
-  'inventory.core':              { moduleId: 'products',        minTier: 'core' },
-  'demand.forecasting':          { moduleId: 'demand',          minTier: 'growth', feature: 'demand.forecasting' },
+  'inventory.core':              { moduleId: 'products' },
+  'inventory.live_map':          { moduleId: 'products',        minTier: 'growth' },
   'alerts.inbox':                { moduleId: 'alerts' },
-  'alerts.rules':                { moduleId: 'alerts',          minTier: 'growth', feature: 'alerts.rules' },
+  'orders.core':                 { moduleId: 'order-nexus',     minTier: 'core' },
+  'orders.live_map':             { moduleId: 'order-nexus',     minTier: 'growth' },
+  'warehouse.operations':        { moduleId: 'wms',             minTier: 'core' },
+  'returns.intake':              { moduleId: 'returns',         minTier: 'core' },
   'returns.core':                { moduleId: 'returns',         minTier: 'core' },
   'returns.analysis':            { moduleId: 'returns',         minTier: 'growth', feature: 'returns.analysis' },
-  'warehouse.operations':        { moduleId: 'wms' },
-  'warehouse.analytics':         { moduleId: 'wms',             minTier: 'growth', feature: 'wms.analytics' },
-  'warehouse.floor_planning':    { moduleId: 'floor-planning',  minTier: 'growth' },
-  'warehouse.problem_center':    { moduleId: 'problem-center',  minTier: 'core' },
-  // COMMERCIAL-REMODEL-ALIGN-01: Purchasing is Core+, ADVANCED SOURCING is Growth+.
-  'purchasing.core':             { moduleId: 'suppliers-portal', minTier: 'core' },
-  'purchasing.sourcing':         { moduleId: 'suppliers-portal', minTier: 'growth' },
+  'warehouse.analytics':         { moduleId: 'wms',             minTier: 'core' },
   'exports.core':                {                             minTier: 'core' },
+  'demand.forecasting':          { moduleId: 'demand',          minTier: 'growth', feature: 'demand.forecasting' },
+  'warehouse.floor_planning':    { moduleId: 'floor-planning',  minTier: 'growth' },
+  'warehouse.problem_center':    { moduleId: 'problem-center',  minTier: 'growth' },
+  'purchasing.core':             { moduleId: 'suppliers-portal', minTier: 'growth' },
+  'purchasing.sourcing':         { moduleId: 'suppliers-portal', minTier: 'growth' },
+  'alerts.rules':                { moduleId: 'alerts',          minTier: 'growth', feature: 'alerts.rules' },
   'exports.column_selection':    {                             minTier: 'growth', feature: 'exports.column_selection' },
   // specter.full_capture REMOVED from the ACTIVE matrix by
   // COMMERCIAL-REMODEL-ALIGN-01 — Specter is a DEPRECATED area. Its lifecycle is
@@ -73,7 +75,6 @@ const REQUIRED_CANONICAL_MODULES = [
   'floor-planning', 'problem-center', 'suppliers-portal', 'alerts', 'specter',
 ];
 const REQUIRED_CANONICAL_FEATURES: Record<string, Tier> = {
-  'wms.analytics':             'growth',
   'demand.forecasting':        'growth',
   'alerts.rules':              'growth',
   'returns.analysis':          'growth',
@@ -204,17 +205,17 @@ describe('A1-C5 — canonical ModuleId registry', () => {
 
   // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01.
   //
-  // This previously asserted `suppliers-portal` was a STARTER standard module
-  // inherited by every tier. The ratified commercial remodel moves Purchasing
-  // behind Core: Starter has no Purchasing at all, purchasing.core is Core+ and
-  // purchasing.sourcing is Growth+. The old assertion is therefore obsolete
+  // This previously asserted `suppliers-portal` was a STARTER/Core standard
+  // module inherited by every tier. The ratified commercial foundation moves
+  // Purchasing to Growth. The old assertion is therefore obsolete
   // product truth, not a regression guard, and is rewritten rather than left to
   // contradict the new matrix in commercial-remodel-align.contract.test.ts.
   //
   // LEGACY_MODULES_BY_TIER stays frozen and is deliberately NOT asserted here.
-  it('EXPECTED RED: `suppliers-portal` is a CORE+ standard module, absent from Starter', () => {
+  it('EXPECTED RED: `suppliers-portal` is a Growth+ standard module, absent before Growth', () => {
     expect(modulesForTier('starter').has('suppliers-portal')).toBe(false);
-    for (const t of ['core', 'growth', 'scale'] as const) {
+    expect(modulesForTier('core').has('suppliers-portal')).toBe(false);
+    for (const t of ['growth', 'scale'] as const) {
       expect(modulesForTier(t).has('suppliers-portal')).toBe(true);
     }
   });
@@ -243,9 +244,10 @@ describe('A1-C6 — canonical FeatureKey registry', () => {
     },
   );
 
-  it('EXPECTED RED: Warehouse Analytics feature is wms.analytics, not wms.pick_batches', () => {
+  it('EXPECTED RED: Warehouse Analytics is Core module access, not a feature gate', () => {
     const req = (CP as any).CAPABILITY_REQUIREMENTS?.['warehouse.analytics'];
-    expect(req?.feature).toBe('wms.analytics');
+    expect(req?.minimumTier).toBe('core');
+    expect(req?.feature).toBeUndefined();
     expect(req?.feature).not.toBe('wms.pick_batches');
   });
 });
@@ -383,6 +385,11 @@ describe('A1-C14 — active catalog contains every ratified active capability', 
     for (const cap of ACTIVE_CAPABILITY_IDS) {
       expect(Object.prototype.hasOwnProperty.call(reg, cap)).toBe(true);
     }
+  });
+
+  it('EXPECTED RED: CAPABILITY_REQUIREMENTS contains exactly the ratified active set', () => {
+    expect(Object.keys((CP as any).CAPABILITY_REQUIREMENTS ?? {}).sort())
+      .toEqual([...ACTIVE_CAPABILITY_IDS].sort());
   });
 
   it('EXPECTED RED: no active CapabilityId is a free-form string outside the typed registry', () => {

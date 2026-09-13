@@ -9,33 +9,23 @@
 export const CAPABILITY_REQUIREMENTS = Object.freeze({
     'overview.core': { moduleId: 'overview' },
     'overview.live_map': { moduleId: 'overview', minimumTier: 'growth' },
-    'orders.core': { moduleId: 'order-nexus' },
-    // ORD-UX-01: the Orders live operational map is the Growth+ half of Orders,
-    // mirroring overview.live_map / inventory.live_map. orders.core is unchanged —
-    // Starter/Core keep the Orders surface and lose only the map.
-    'orders.live_map': { moduleId: 'order-nexus', minimumTier: 'growth' },
-    'inventory.core': { moduleId: 'products', minimumTier: 'core' },
+    'inventory.core': { moduleId: 'products' },
     'inventory.live_map': { moduleId: 'products', minimumTier: 'growth' },
-    'demand.forecasting': { moduleId: 'demand', minimumTier: 'growth', feature: 'demand.forecasting' },
     'alerts.inbox': { moduleId: 'alerts' },
-    'alerts.rules': { moduleId: 'alerts', minimumTier: 'growth', feature: 'alerts.rules' },
-    // P0-A3-3: physical return receiving is warehouse EXECUTION, so it belongs to
-    // the `wms` module Starter already holds — NOT to the Core+ `returns`
-    // management module. Starter can receive a returned item on the floor without
-    // gaining Returns Overview / Items / resolution.
-    'returns.intake': { moduleId: 'wms', minimumTier: 'starter' },
+    'orders.core': { moduleId: 'order-nexus', minimumTier: 'core' },
+    'orders.live_map': { moduleId: 'order-nexus', minimumTier: 'growth' },
+    'warehouse.operations': { moduleId: 'wms', minimumTier: 'core' },
+    'returns.intake': { moduleId: 'returns', minimumTier: 'core' },
     'returns.core': { moduleId: 'returns', minimumTier: 'core' },
     'returns.analysis': { moduleId: 'returns', minimumTier: 'growth', feature: 'returns.analysis' },
-    'warehouse.operations': { moduleId: 'wms' },
-    'warehouse.analytics': { moduleId: 'wms', minimumTier: 'growth', feature: 'wms.analytics' },
-    'warehouse.floor_planning': { moduleId: 'floor-planning', minimumTier: 'growth' },
-    'warehouse.problem_center': { moduleId: 'problem-center', minimumTier: 'core' },
-    // COMMERCIAL-REMODEL-ALIGN-01: Purchasing is Core+, and ADVANCED SOURCING
-    // (recommendations, worklist, supplier-product preference intelligence,
-    // reorder/MOQ accumulation intelligence) is the Growth+ half of the split.
-    'purchasing.core': { moduleId: 'suppliers-portal', minimumTier: 'core' },
-    'purchasing.sourcing': { moduleId: 'suppliers-portal', minimumTier: 'growth' },
+    'warehouse.analytics': { moduleId: 'wms', minimumTier: 'core' },
     'exports.core': { minimumTier: 'core' },
+    'demand.forecasting': { moduleId: 'demand', minimumTier: 'growth', feature: 'demand.forecasting' },
+    'warehouse.floor_planning': { moduleId: 'floor-planning', minimumTier: 'growth' },
+    'warehouse.problem_center': { moduleId: 'problem-center', minimumTier: 'growth' },
+    'purchasing.core': { moduleId: 'suppliers-portal', minimumTier: 'growth' },
+    'purchasing.sourcing': { moduleId: 'suppliers-portal', minimumTier: 'growth' },
+    'alerts.rules': { moduleId: 'alerts', minimumTier: 'growth', feature: 'alerts.rules' },
     'exports.column_selection': { minimumTier: 'growth', feature: 'exports.column_selection' },
     // specter.full_capture RETIRED by COMMERCIAL-REMODEL-ALIGN-01 — Specter is a
     // DEPRECATED product area (catalog.ts) and a deprecated area must not carry an

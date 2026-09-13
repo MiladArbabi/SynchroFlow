@@ -48,14 +48,14 @@ const READY = () => expect(typeof requireCapability).toBe('function'); // RED ga
 
 // tier → expected {status, reason?} per capability (the ratified matrix)
 const MATRIX: Record<string, Partial<Record<Tier, { status: number; reason?: string }>>> = {
-  'warehouse.operations':     { starter: { status: 200 }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
-  'warehouse.analytics':      { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
+  'warehouse.operations':     { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
+  'warehouse.analytics':      { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
   'warehouse.floor_planning': { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
-  'warehouse.problem_center': { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
+  'warehouse.problem_center': { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   // P0-A3-5 (COMMERCIAL-REMODEL-ALIGN-01): the stale Starter+ Purchasing row is
-  // retired. Ratified split — purchasing.core is Core+, purchasing.sourcing is
-  // the Growth+ ADVANCED SOURCING half.
-  'purchasing.core':          { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
+  // retired. Ratified split — purchasing.core and purchasing.sourcing are
+  // Growth+ purchasing surfaces.
+  'purchasing.core':          { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   'purchasing.sourcing':      { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   'demand.forecasting':       { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
 };
@@ -114,9 +114,10 @@ describe('A2A-C16 — commercial gate is not RBAC', () => {
     READY();
     // P0-A3-5: the tier here must be one that is COMMERCIALLY eligible, so the
     // 200 proves the role was ignored rather than accidentally proving a tier
-    // pass. Starter is no longer eligible for purchasing.core (Core+), so the
-    // stale Starter input is retired; the assertion semantics are unchanged.
-    const r = await hit('purchasing.core', { tier: 'core', roles: ['operator'] });
+    // pass. Starter/Core are no longer eligible for purchasing.core (Growth+),
+    // so the stale lower-tier input is retired; the assertion semantics are
+    // unchanged.
+    const r = await hit('purchasing.core', { tier: 'growth', roles: ['operator'] });
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(true);
   });

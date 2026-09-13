@@ -122,7 +122,7 @@ function expectCommercialDenied(
 // contract this block used to carry. Ratified split
 // (COMMERCIAL-REMODEL-ALIGN-01):
 //
-//   purchasing.core     Core+    representative: GET /api/v1/suppliers/
+//   purchasing.core     Growth+  representative: GET /api/v1/suppliers/
 //   purchasing.sourcing Growth+  representative: GET /api/v1/suppliers/sourcing-worklist
 //
 // ALLOW keeps the meaning it has everywhere in this file: the request PASSED
@@ -133,13 +133,16 @@ function expectCommercialDenied(
 const PURCHASING_CORE_ROUTE = '/api/v1/suppliers/';
 const PURCHASING_SOURCING_ROUTE = '/api/v1/suppliers/sourcing-worklist';
 
-describe('P0-A3-5 purchasing.core (Core+) — GET /api/v1/suppliers/', () => {
-  it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / purchasing.core', async () => {
-    const res = await get(PURCHASING_CORE_ROUTE, 'starter');
-    expectCommercialDenied(res, 'purchasing.core', 'starter');
-  });
+describe('P0-A3-5 purchasing.core (Growth+) — GET /api/v1/suppliers/', () => {
+  it.each<[Tier]>([['starter'], ['core']])(
+    'DENY: %s => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / purchasing.core',
+    async (tier) => {
+      const res = await get(PURCHASING_CORE_ROUTE, tier);
+      expectCommercialDenied(res, 'purchasing.core', tier);
+    },
+  );
 
-  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
+  it.each<[Tier]>([['growth'], ['scale']])(
     'ALLOW: %s clears the commercial gate',
     async (tier) => {
       const res = await get(PURCHASING_CORE_ROUTE, tier);
@@ -190,17 +193,25 @@ describe('P0-A3-5 sourcing RBAC separation — commercial and role denial stay d
 });
 
 // ===========================================================================
-// WMS base  ->  warehouse.operations  (Starter+; no tier DENY case exists)
+// WMS base  ->  warehouse.operations  (Core+)
 // ===========================================================================
 describe('warehouse.operations — GET /api/v1/wms/batches', () => {
-  it('ALLOW: Starter clears the commercial gate', async () => {
+  it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
     const res = await get('/api/v1/wms/batches', 'starter');
-    expect(commercialGatePassed(res)).toBe(true);
+    expectCommercialDenied(res, 'warehouse.operations', 'starter');
   });
+
+  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
+    'ALLOW: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get('/api/v1/wms/batches', tier);
+      expect(commercialGatePassed(res)).toBe(true);
+    },
+  );
 });
 
 // ===========================================================================
-// WMS analytics  ->  warehouse.analytics  (Growth+)
+// WMS analytics  ->  warehouse.analytics  (Core+)
 // ===========================================================================
 describe('warehouse.analytics — GET /api/v1/wms/analytics', () => {
   it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
@@ -208,30 +219,34 @@ describe('warehouse.analytics — GET /api/v1/wms/analytics', () => {
     expectCommercialDenied(res, 'warehouse.analytics', 'starter');
   });
 
-  it('DENY: Core => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
-    const res = await get('/api/v1/wms/analytics', 'core');
-    expectCommercialDenied(res, 'warehouse.analytics', 'core');
-  });
-
-  it('ALLOW: Growth clears the commercial gate', async () => {
-    const res = await get('/api/v1/wms/analytics', 'growth');
-    expect(commercialGatePassed(res)).toBe(true);
-  });
+  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
+    'ALLOW: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get('/api/v1/wms/analytics', tier);
+      expect(commercialGatePassed(res)).toBe(true);
+    },
+  );
 });
 
 // ===========================================================================
-// WMS problem center  ->  warehouse.problem_center  (Core+)
+// WMS problem center  ->  warehouse.problem_center  (Growth+)
 // ===========================================================================
 describe('warehouse.problem_center — GET /api/v1/wms/problem-center/pick-exceptions', () => {
-  it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
-    const res = await get('/api/v1/wms/problem-center/pick-exceptions', 'starter');
-    expectCommercialDenied(res, 'warehouse.problem_center', 'starter');
-  });
+  it.each<[Tier]>([['starter'], ['core']])(
+    'DENY: %s => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW',
+    async (tier) => {
+      const res = await get('/api/v1/wms/problem-center/pick-exceptions', tier);
+      expectCommercialDenied(res, 'warehouse.problem_center', tier);
+    },
+  );
 
-  it('ALLOW: Core clears the commercial gate', async () => {
-    const res = await get('/api/v1/wms/problem-center/pick-exceptions', 'core');
-    expect(commercialGatePassed(res)).toBe(true);
-  });
+  it.each<[Tier]>([['growth'], ['scale']])(
+    'ALLOW: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get('/api/v1/wms/problem-center/pick-exceptions', tier);
+      expect(commercialGatePassed(res)).toBe(true);
+    },
+  );
 });
 
 // ===========================================================================
@@ -321,7 +336,7 @@ describe('demand.forecasting — GET /api/v1/modules/demand/', () => {
 // P0-A3-3 — Returns commercial classes (RED)
 //
 // One representative REAL route per ratified Returns capability class:
-//   returns.intake   (Starter+)  GET /api/v1/modules/returns/jobs
+//   returns.intake   (Core+)     GET /api/v1/modules/returns/jobs
 //   returns.core     (Core+)     GET /api/v1/modules/returns/items
 //   returns.analysis (Growth+)   GET /api/v1/modules/returns/correlation
 //
@@ -356,8 +371,13 @@ function expectNoTierDenial(res: request.Response) {
   expect(res.body?.error).not.toBe('TIER_INSUFFICIENT');
 }
 
-describe('P0-A3-3 returns.intake (Starter+) — GET /api/v1/modules/returns/jobs', () => {
-  it.each<[Tier]>([['starter'], ['core'], ['growth'], ['scale']])(
+describe('P0-A3-3 returns.intake (Core+) — GET /api/v1/modules/returns/jobs', () => {
+  it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / returns.intake', async () => {
+    const res = await get(RETURNS_INTAKE_ROUTE, 'starter');
+    expectCommercialDenied(res, 'returns.intake', 'starter');
+  });
+
+  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
     'EXPECTED RED: %s clears the commercial gate',
     async (tier) => {
       const res = await get(RETURNS_INTAKE_ROUTE, tier);
