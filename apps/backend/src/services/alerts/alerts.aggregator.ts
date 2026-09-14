@@ -2,6 +2,7 @@
 import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 import { buildSlaBreachAlertCopy, buildBlockedRevenueAlertCopy } from './alerts.copy.js';
+import { syncStockProtectionAlertsForShop } from './stockProtectionAlertSynchronizer.js';
 
 /**
  * ALERTS AGGREGATOR SERVICE (AL-01)
@@ -480,12 +481,11 @@ export async function aggregateAlertsForShop(shopId: number): Promise<void> {
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts, stockReorderAlerts] = await Promise.all([
+    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts] = await Promise.all([
         aggregateConstraintAlerts(trx, shopId),
         aggregateSlaAlerts(trx, shopId),
         aggregateRevenueAlerts(trx, shopId),
         aggregateMissingCogsAlerts(trx, shopId),
-        aggregateStockReorderAlerts(trx, shopId),
       ]);
 
       const allAlerts = [
@@ -493,10 +493,10 @@ export async function aggregateAlertsForShop(shopId: number): Promise<void> {
         ...slaAlerts,
         ...revenueAlerts,
         ...missingCogsAlerts,
-        ...stockReorderAlerts,
       ];
 
     await upsertAlerts(trx, allAlerts);
+    await syncStockProtectionAlertsForShop(trx, shopId);
 
     /**
      * RECONCILE — DEACTIVATE ORPHANED ALERTS
@@ -516,6 +516,7 @@ export async function aggregateAlertsForShop(shopId: number): Promise<void> {
       .map(a => a.alert_key);
     const deactivateQuery = trx('alerts')
       .where({ shop_id: shopId, is_active: true })
+      .whereIn('source', ['constraint', 'snapshot'])
       .update({
         is_active:   false,
         resolved_at: trx.fn.now(),

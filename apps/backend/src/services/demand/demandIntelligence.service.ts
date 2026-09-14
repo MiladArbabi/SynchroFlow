@@ -947,9 +947,6 @@ export async function computeDemandIntelligence(
       total_inventory_value: Math.round(totalInventoryValue * 100) / 100,
     };
 
-    // SRC-18c: single writer for demand:stockout_risk — see emitStockoutAlerts.
-    await emitStockoutAlerts(trx, shopId, variants);
-
     return { summary, variants, computed_at: new Date().toISOString() };
   });
 }

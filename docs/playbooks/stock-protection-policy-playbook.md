@@ -150,7 +150,7 @@ owns no business logic.
 ## 11. Next Slices
 
 - **STOCK-PROTECT-02** — Buffer Diagnosis
-- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring — Slices 1–4 implemented and verified; dark verification + canonical cutover pending
+- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring — Slices 1–5 complete; Slice 6 implemented and locally verified; production cutover certification pending
 - **STOCK-PROTECT-04** — WAITING read model
 - **STOCK-PROTECT-05** — Protection Failure Diagnosis
 - **OUTCOME-VALUE-01** — Verified Value Ledger
@@ -182,8 +182,9 @@ silently.
 
 ## 13. STOCK-PROTECT-03 — Unified Replenishment Lifecycle / Monitoring
 
-**Status (2026-09-14): Slices 1–4 implemented and verified.**
-Dark decision verification and the atomic canonical-alert cutover remain pending.
+**Status (2026-09-14): Slices 1–5 complete; Slice 6 implemented and locally verified.**
+Production cutover remains pending commit/push, CI/deploy, and risk-based
+production certification.
 
 ### Objective
 
@@ -264,10 +265,13 @@ The canonical alert identity is:
 
 ```text
 alert_type  = stock_protection
+source      = stock_protection
 entity_type = variant
 entity_id   = <variantId>
 alert_key   = stock_protection:<variantId>
 ```
+
+The canonical synchronizer persists the treatment verbatim on the alert row.
 
 No separate replenishment lifecycle table was introduced.
 
@@ -317,6 +321,125 @@ create concurrent cycles.
 The shop-snapshot dispatcher also owns explicit lifecycle state and its stop
 path waits for an in-flight poll before reporting stopped.
 
+### Slice 5 — dark decision verification
+
+Slice 5 is **complete / pass**.
+
+Production dark verification was read-only. No canonical alert persistence
+occurred during Slice 5.
+
+Shops checked:
+
+- shop 1;
+- shop 8;
+- shop 15.
+
+Canonical evaluator results:
+
+| Shop | Evaluated variants | `reorder_now` | `complete_setup` | `none` |
+|---|---:|---:|---:|---:|
+| 1 | 27 | 1 | 11 | 15 |
+| 8 | 0 | 0 | 0 | 0 |
+| 15 | 110 | 15 | 7 | 88 |
+
+Decision/evidence cross-check:
+
+- 137 evaluated variants total;
+- zero treatment-rule mismatches;
+- no real-production pending reorder, draft PO, committed PO, or
+  receiving-boundary evidence among evaluated variants;
+- `finish_reorder` and `receive_inbound` therefore were not exercised by real
+  production data in dark verification, but remain covered by automated
+  contracts.
+
+Legacy population reconciliation:
+
+| Shop | Legacy low-stock rows | Canonical overlap | Not evaluated | Suspicious missed eligibility |
+|---|---:|---|---|---:|
+| 1 | 8 | `reorder_now` / critical: 1; `none` / no_velocity: 1; `none` / healthy: 1 | 5 total: 3 non-physical, 2 active physical but dormant | 0 |
+| 15 | 167 | `reorder_now` / critical: 15 | 152 total: 102 product not active, 49 active physical but dormant, 1 non-physical | 0 |
+
+Conclusion:
+
+- the large legacy → canonical population reduction is intentional noise
+  removal, not lost replenishment coverage;
+- Slice 5 passed;
+- this evidence authorized the Slice 6 cutover implementation.
+
+### Slice 6 — atomic canonical alert cutover
+
+Slice 6 implementation is **complete locally** and automated verification is
+**complete locally**. It is not yet claimed live in production.
+
+Production cutover remains pending:
+
+1. exact commit preflight;
+2. commit/push;
+3. CI/deploy;
+4. risk-based production certification.
+
+Canonical alert authority:
+
+- `apps/backend/src/services/alerts/stockProtectionAlertSynchronizer.ts`;
+- delegates treatment decisions exclusively to
+  `evaluateStockProtectionForShop()`;
+- writes canonical identity:
+  - `alert_type = stock_protection`;
+  - `source = stock_protection`;
+  - `entity_type = variant`;
+  - `entity_id = <variantId>`;
+  - `alert_key = stock_protection:<variantId>`;
+- persists `treatment` verbatim.
+
+Approved active treatments:
+
+- `reorder_now`;
+- `finish_reorder`;
+- `receive_inbound`;
+- `complete_setup`.
+
+`none` produces an inactive/resolved canonical row.
+
+Severity mapping:
+
+- `critical` → `critical`;
+- `warning` → `warning`;
+- `planning_data_required` → `warning`.
+
+Reconciliation behavior:
+
+- full-shop synchronization reconciles stale canonical Stock Protection rows;
+- scoped synchronization changes only supplied variants;
+- `[]` scope is a strict no-op;
+- full-shop synchronization resolves historical active replenishment rows:
+  - `low_stock_reorder`;
+  - `stockout_risk`;
+  - `reorder_warning`;
+- historical rows are preserved and are not deleted;
+- unrelated order-block / foreign-owned alerts remain untouched.
+
+Legacy producer cutover:
+
+- `aggregateAlertsForShop` no longer calls `aggregateStockReorderAlerts`;
+- `computeDemandIntelligence` no longer calls `emitStockoutAlerts`;
+- `resolve_inventory_block.handler.ts` no longer calls `emitStockoutAlerts`;
+- `resolve_inventory_block` now performs scoped canonical Stock Protection
+  synchronization.
+
+Legacy functions may still physically exist as dead definitions for later
+cleanup. The Slice 6 contract is that they have no live production callers.
+
+Alert ownership correction:
+
+- `aggregateAlertsForShop` orphan reconciliation is restricted to its owned
+  sources:
+  - `snapshot`;
+  - `constraint`;
+- source ownership audit confirmed all `snapshot` / `constraint` producers in
+  `apps/backend/src` are confined to `alerts.aggregator.ts`;
+- absence from aggregator output therefore cannot deactivate decision-owned or
+  Stock Protection alerts.
+
 ### Explicit boundaries
 
 STOCK-PROTECT-03 does **not**:
@@ -334,17 +457,18 @@ authority.
 
 ### Remaining rollout
 
-The implementation sequence after Slice 4 is:
+The remaining sequence after Slice 6 local verification is:
 
-1. **Dark decision verification** — compare canonical Stock Protection outcomes
-   without merchant-visible cutover.
-2. **Atomic logical cutover** — canonical `stock_protection` alerts ON while
-   legacy replenishment alert producers are turned OFF in the same rollout;
-   historical active legacy replenishment rows are resolved, not deleted.
-3. **Cleanup** — remove dead legacy replenishment paths after the cutover has
-   proven stable.
+1. exact commit preflight;
+2. commit/push;
+3. CI/deploy;
+4. risk-based production certification;
+5. later dead-code / compatibility cleanup of retired legacy producers and
+   routing where safe.
 
-The cutover has **not** happened yet.
+Slice 5 dark verification is complete. Slice 6 atomic canonical alert cutover
+is implemented and locally verified. Production cutover has **not** been
+claimed live yet.
 
 ### Slice 4 verification evidence — 2026-09-14
 
@@ -362,6 +486,22 @@ before reaching Slice 4 behaviour because its fresh-install fixture remained on
 `starter` while `warehouse.operations` now requires `core`. That was classified
 as unrelated commercial-fixture drift and was not changed as part of
 STOCK-PROTECT-03.
+
+### Slice 5–6 verification evidence — 2026-09-14
+
+| Verification layer / run | Result |
+|---|---|
+| Slice 6 targeted architecture contract | 1 suite / 4 tests PASS |
+| Slice 6 canonical synchronization integration | 1 suite / 4 tests PASS |
+| Slice 6 disposable DB lifecycle | created → migrated → runtime OK → dropped cleanly |
+| Closest Stock Protection neighbours after implementation: transport + monitoring evidence | 2 suites / 35 tests PASS |
+| Closest Stock Protection neighbours after implementation: treatment + alert action resolver | 2 suites / 54 tests PASS |
+| Consequential DB neighbour regression: shop snapshot dispatcher, Stock Protection eligibility, sourcing worklist, inventory decision contract | 4 suites / 69 tests PASS |
+| Consequential DB neighbour disposable lifecycle | created → migrated → runtime OK → dropped cleanly |
+| Non-DB neighbour regression: contract | 3 suites / 24 tests PASS |
+| Non-DB neighbour regression: backend legacy/unit | 3 suites / 94 tests PASS |
+| Backend TypeScript | `apps/backend` `tsc --noEmit` PASS |
+| Slice 6 diff hygiene | `git diff --check` PASS |
 
 
 *Adjacent docs: `stock-protection-buffer-diagnosis-playbook.md`

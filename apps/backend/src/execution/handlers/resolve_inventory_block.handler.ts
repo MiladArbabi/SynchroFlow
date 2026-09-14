@@ -7,8 +7,8 @@
  * Strategy:
  * 1. Check inventory_truth for all variants on this order
  * 2. If ALL variants have sufficient stock → delegate to proceed_fulfillment
- * 3. If ANY variant is still out of stock → delegate to the demand engine's
- *    emitter, which writes stockout_risk from inbound-aware numbers (SRC-18c)
+ * 3. If ANY variant is still out of stock → run scoped canonical Stock
+ *    Protection alert synchronization for the shorted variants.
  *
  * IMPORTANT:
  * - execution_mode is 'manual' in the decision engine — this handler
@@ -19,11 +19,8 @@
 
 import { ExecutionHandler } from '../execution.registry.js';
 import { proceedFulfillmentHandler } from './proceed_fulfillment.handler.js';
-import {
-  computeVariantPlanning,
-  emitStockoutAlerts,
-} from '../../services/demand/demandIntelligence.service.js';
 import { evaluateInventoryConstraint } from '../../services/constraints/evaluators/inventoryConstraintEvaluator.js';
+import { syncStockProtectionAlertsForShop } from '../../services/alerts/stockProtectionAlertSynchronizer.js';
 
 export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) => {
   console.info('[RESOLVE_INVENTORY_BLOCK_START]', {
@@ -117,11 +114,11 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
   }
 
   /**
-   * STEP 3b — STILL OUT OF STOCK: log, then delegate alerting
+   * STEP 3b — STILL OUT OF STOCK: log, then synchronize scoped alerting
    * -------------------------------------------------------------------
    * Operator needs to know which specific variants are blocking. The alert
-   * itself is written by the demand engine's emitter (SRC-18c) rather than
-   * here — see the block below for why.
+   * itself is written by the canonical Stock Protection synchronizer rather
+   * than by this handler.
    */
   console.warn('[RESOLVE_INVENTORY_BLOCK_STILL_SHORT]', {
     decision_id: job.decision_id,
@@ -131,27 +128,12 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
   });
 
   /**
-   * SRC-18c — SINGLE WRITER FOR demand:stockout_risk
-   * -------------------------------------------------
-   * This handler previously wrote its own row on the same alert_key with
-   * `order_qty - available`, which ignores committed inbound entirely and so
-   * could instruct a merchant to reorder units already on an open PO. It now
-   * routes through the demand engine's own planning + emitter, so both paths
-   * publish one message from one set of numbers.
-   *
-   * BEHAVIOUR CHANGE (accepted): only variants the planner marks `critical`
-   * alert. A partial shortage (5 held, 10 needed) is an order-allocation
-   * problem surfaced by the order-block UI, not a reorder signal.
-   *
-   * RLS: computeVariantPlanning runs RLS-protected queries and requires a
-   * real transaction whose caller has set app.current_tenant. `trx` is
-   * therefore required here rather than falling back to `dbx` — the guard
-   * that proves it now sits at STEP 1, since the evaluator needs the same
-   * tenant-scoped transaction and runs first.
-   *
-   * reconcile=false: the emitter's sweep resolves every active demand alert
-   * absent from the supplied list. This caller holds only one order's
-   * variants, so sweeping here would deactivate the rest of the shop's.
+   * STOCK-PROTECT-03 — SCOPED CANONICAL ALERT SYNC
+   * ----------------------------------------------
+   * The synchronizer delegates treatment decisions to
+   * evaluateStockProtectionForShop and is scoped to this order's shorted
+   * variants. It must not widen into a full-shop reconciliation from this
+   * handler.
    */
   // targetId is optional on ConstraintEvaluationResult; the inventory
   // evaluator always populates it (one row per variant), so this narrows
@@ -160,9 +142,5 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
     .map((s) => s.targetId)
     .filter((id): id is string => Boolean(id));
 
-  const planned = await computeVariantPlanning(trx, job.shop_id, shortedVariantIds);
-  const critical = planned.filter((v) => v.reorder_urgency === 'critical');
-  if (critical.length > 0) {
-    await emitStockoutAlerts(trx, job.shop_id, critical, false);
-  }
+  await syncStockProtectionAlertsForShop(trx, job.shop_id, shortedVariantIds);
 };
