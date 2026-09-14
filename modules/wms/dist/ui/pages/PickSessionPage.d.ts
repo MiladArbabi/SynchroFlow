@@ -24,7 +24,8 @@
  * PICK-AUD-08    — No MUI color= props, sx with var(--accent) tokens throughout
  * PICK-AUD-09    — fontWeight max 600
  * PICK-AUD-10    — Full exception taxonomy from Playbook §3
- * PICK-AUD-11    — onCreateProblemTask called on every exception
+ * PICK-AUD-11    — SUPERSEDED by GH-1049: the server owns Problem Center task
+ *                  creation. Pick reports physical truth exactly once.
  */
 export interface LineItem {
     lasyncro_line_item_id: string;
@@ -54,6 +55,27 @@ export interface ConfirmScanParams {
     lasyncro_unit_id?: string;
 }
 export interface ReportExceptionParams {
+    lasyncro_line_item_id: string;
+    lasyncro_variant_id: string;
+    /** GH-1049: exact physical pick task; undefined on legacy batches. */
+    reservation_allocation_id?: string;
+    exception_type: string;
+    /** GH-1049: Pick clients report at the pick stage. */
+    stage: 'pick';
+    quantity_required: number;
+    quantity_found: number;
+    /** GH-1049: stable per-report id so a retry replays instead of duplicating. */
+    device_event_id: string;
+    notes?: string;
+}
+/**
+ * Pack-stage exception payload.
+ *
+ * Pack custody is a later GH-1049 slice, so this deliberately keeps the
+ * pre-GH-1049 shape and is NOT the Pick contract above — Pick alone carries
+ * allocation identity, stage and a device event id today.
+ */
+export interface ReportPackExceptionParams {
     lasyncro_line_item_id: string;
     lasyncro_variant_id: string;
     exception_type: string;
@@ -86,8 +108,7 @@ export interface PickSessionPageProps {
     onReportException: (params: ReportExceptionParams) => Promise<{
         pick_exception_id: string;
     }>;
-    onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
     onPickComplete: () => Promise<void>;
 }
-export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, }: PickSessionPageProps): import("react").JSX.Element | null;
+export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onPickComplete, }: PickSessionPageProps): import("react").JSX.Element | null;
 //# sourceMappingURL=PickSessionPage.d.ts.map

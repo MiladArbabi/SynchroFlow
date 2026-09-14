@@ -33,6 +33,7 @@ import {
   httpCreateReceiveJob,
   httpGetReceiveJob,
   httpClaimReceiveJob,
+  httpUpdateReceiveJobLineProgress,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
@@ -188,6 +189,14 @@ router.post(
   requireCapability('purchasing.core'),
   requireAction('receive-job:read'),
   httpClaimReceiveJob
+);
+router.patch(
+  '/receive-jobs/:jobId/lines/:lineId/progress',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  httpUpdateReceiveJobLineProgress
 );
 router.post(
   '/receive-jobs/:jobId/inspect',

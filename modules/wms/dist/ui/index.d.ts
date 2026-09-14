@@ -7,7 +7,7 @@ export { default as CountingSessionPage } from './pages/CountingSessionPage.js';
 export type { CountingSessionPageProps, CountingTask, CountingLine, CountingSkipReason, CountingFinding, CountingFindingType, } from './pages/CountingSessionPage.js';
 export { default as PickSessionPage } from './pages/PickSessionPage.js';
 export { default as PackSessionPage } from './pages/PackSessionPage.js';
-export type { PickSessionPageProps, LineItem, ConfirmScanParams, ReportExceptionParams, CreateProblemTaskParams } from './pages/PickSessionPage.js';
+export type { PickSessionPageProps, LineItem, ConfirmScanParams, ReportExceptionParams, ReportPackExceptionParams, CreateProblemTaskParams } from './pages/PickSessionPage.js';
 export type { PackSessionPageProps, PackOrder, PackLineItem } from './pages/PackSessionPage.js';
 export { default } from './ModuleEntry.js';
 export { useOfflineScanQueue } from './hooks/useOfflineScanQueue.js';

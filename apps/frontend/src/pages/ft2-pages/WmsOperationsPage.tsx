@@ -147,7 +147,12 @@ export default function WmsOperationsPage() {
    * so refreshing doesn't re-trigger the session.
    */
   const [pendingReceiveSession, setPendingReceiveSession] = useState<{
-    receiveJobId: string; poId: string; supplierName: string; lines: import('@lasyncro/wms').ReceiveJobLine[];
+    receiveJobId: string;
+    poId: string;
+    supplierName: string;
+    closedAt?: string | null;
+    actualDeliveryDate?: string | null;
+    lines: import('@lasyncro/wms').ReceiveJobLine[];
   } | null>(null);
   const [showQzPrompt, setShowQzPrompt] = useState(false);
   const [finishedCountLabel, setFinishedCountLabel] = useState<string | null>(null);
@@ -164,6 +169,8 @@ export default function WmsOperationsPage() {
           receiveJobId,
           poId: result.job.po_id,
           supplierName: result.job.supplier_name,
+          closedAt: result.job.closed_at ?? null,
+          actualDeliveryDate: result.job.actual_delivery_date ?? null,
           lines: result.lines,
         });
       })
@@ -390,9 +397,17 @@ export default function WmsOperationsPage() {
     await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
   }, []);
 
+  const handlePersistReceiveLineProgress = useCallback(async (
+    jobId: string,
+    lineId: string,
+    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }
+  ) => {
+    await axiosInstance.patch(`/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/progress`, params);
+  }, []);
+
   const handleReportReceiveException = useCallback(async (
     jobId: string,
-    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }
+    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }
   ) => {
     const { data } = await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
     if (params.lasyncro_variant_id) {
@@ -683,6 +698,7 @@ export default function WmsOperationsPage() {
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}
+      onPersistReceiveLineProgress={handlePersistReceiveLineProgress}
       onReportReceiveException={handleReportReceiveException}
       onCloseReceiveJob={handleCloseReceiveJob}
       onClaimBatch={handleClaimBatch}

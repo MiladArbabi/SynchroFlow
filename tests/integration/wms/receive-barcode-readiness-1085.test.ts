@@ -100,7 +100,7 @@ async function provisionFt2Shop(label: string) {
   const atFt1 = await withTenant(shopId, (trx) =>
     trx('user_lifecycle_snapshot').where({ shop_id: shopId }).first());
   expect(atFt1?.phase).toBe('FT1');
-  const token = issueTestToken({ userId, shopId });
+  const token = issueTestToken({ userId, shopId, tier: 'scale' });
   const confirm = await request(app).post('/api/v1/lifecycle/ft2/confirm')
     .set('Authorization', `Bearer ${token}`).send({});
   expect(confirm.status).toBe(200);
@@ -257,11 +257,12 @@ function inspect(f: ReceiveFixture, quantityAccepted: number, quantityRejected =
  * Real close path, in production's transaction shape. Any throw rolls back the
  * entire close, which is what makes the zero-side-effect assertions meaningful.
  */
-function close(f: ReceiveFixture) {
+function close(f: ReceiveFixture, actualDeliveryDate?: string) {
   return withTenant(f.shopId, (trx) =>
     closeReceiveJob(trx, {
       shopId: f.shopId,
       receiveJobId: f.receiveJobId,
+      actualDeliveryDate,
       closedBy: f.userId,
     }));
 }
@@ -276,7 +277,11 @@ async function state(f: ReceiveFixture) {
   return withTenant(f.shopId, async (trx) => ({
     job: await trx('receive_jobs')
       .where({ shop_id: f.shopId, receive_job_id: f.receiveJobId })
-      .first('status', 'closed_at', 'units_accepted'),
+      .first('status', 'closed_at', 'units_accepted', 'units_inspected', 'units_rejected'),
+
+    line: await trx('receive_job_lines')
+      .where({ shop_id: f.shopId, receive_job_line_id: f.receiveJobLineId })
+      .first('quantity_expected', 'quantity_accepted', 'quantity_rejected', 'quantity_sellable_provisional', 'inspection_complete'),
 
     units: await trx('inventory_units')
       .where({ shop_id: f.shopId, receive_job_line_id: f.receiveJobLineId })
@@ -375,7 +380,7 @@ it('B3 — close fails atomically while no LSU- label has been acknowledged', as
   expect(before.units).toHaveLength(2);
   expect(before.units.every((u: any) => u.label_printed_at === null)).toBe(true);
 
-  await expect(close(f)).rejects.toThrow(/barcode|label/i);
+  await expect(close(f, '2026-09-14')).rejects.toThrow(/barcode|label/i);
 
   // The close ran inside production's transaction shape, so a rejection must
   // leave nothing behind at all.
@@ -402,7 +407,7 @@ it('B4 — partial label acknowledgement is not sufficient readiness', async () 
   // One labelled unit out of two means one unscannable unit on the shelf.
   expect(s.job!.status).not.toBe('stow_ready');
 
-  await expect(close(f)).rejects.toThrow(/barcode|label/i);
+  await expect(close(f, '2026-09-14')).rejects.toThrow(/barcode|label/i);
   expectNoCloseSideEffects(await state(f));
 });
 
@@ -423,7 +428,7 @@ it('B5 — acknowledging every accepted LSU- label unlocks Stow and allows close
   // Every accepted unit now carries physical scan identity.
   expect(ready.job!.status).toBe('stow_ready');
 
-  await expect(close(f)).resolves.toBeUndefined();
+  await expect(close(f, '2026-09-14')).resolves.toBeUndefined();
 
   const s = await state(f);
   expect(s.job!.status).toBe('closed');
@@ -467,7 +472,7 @@ it('B6 — an existing external barcode satisfies readiness without forcing LSU-
   // The external barcode already satisfies the readiness rule.
   expect(s.job!.status).toBe('stow_ready');
 
-  await expect(close(f)).resolves.toBeUndefined();
+  await expect(close(f, '2026-09-14')).resolves.toBeUndefined();
 
   const after = await state(f);
   expect(after.job!.status).toBe('closed');
@@ -500,6 +505,39 @@ it('B6 — an existing external barcode satisfies readiness without forcing LSU-
  */
 const ACK_ROUTE = (lineId: string) =>
   `/api/v1/wms/receive-job-lines/${lineId}/unit-labels/printed`;
+
+const RECEIVE_JOB_ROUTE = (jobId: string) =>
+  `/api/v1/suppliers/receive-jobs/${jobId}`;
+
+const RECEIVE_EXCEPTION_ROUTE = (jobId: string) =>
+  `/api/v1/suppliers/receive-jobs/${jobId}/exception`;
+
+const RECEIVE_PROGRESS_ROUTE = (jobId: string, lineId: string) =>
+  `/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/progress`;
+
+function auth(token: string) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function fetchReceiveJobLine(f: ReceiveFixture) {
+  const response = await request(app)
+    .get(RECEIVE_JOB_ROUTE(f.receiveJobId))
+    .set(auth(f.token));
+
+  expect(response.status).toBe(200);
+  const line = response.body.lines.find(
+    (candidate: any) => candidate.receive_job_line_id === f.receiveJobLineId
+  );
+  expect(line).toBeTruthy();
+  return line;
+}
+
+function patchReceiveProgress(f: ReceiveFixture, quantity: number) {
+  return request(app)
+    .patch(RECEIVE_PROGRESS_ROUTE(f.receiveJobId, f.receiveJobLineId))
+    .set(auth(f.token))
+    .send({ quantity_sellable_provisional: quantity });
+}
 
 it('B7 — an operator can acknowledge a line\'s printed LSU- labels, which unlocks Stow', async () => {
   const f = await receiveFixture({ externalBarcode: null, quantityOrdered: 2 });
@@ -534,4 +572,436 @@ it('B7 — an operator can acknowledge a line\'s printed LSU- labels, which unlo
 
   expect(foreign.status).toBeGreaterThanOrEqual(400);
   expect(foreign.status).toBeLessThan(500);
+});
+
+it('B8 — supplier receive-job GET exposes canonical label-hold readiness before and after acknowledgement', async () => {
+  const f = await receiveFixture({ externalBarcode: null, quantityOrdered: 2 });
+  await inspect(f, 2);
+
+  const before = await fetchReceiveJobLine(f);
+  expect(before.awaiting_label_ack).toBe(true);
+  expect(Number(before.accepted_unit_count)).toBe(2);
+  expect(Number(before.labelled_unit_count)).toBe(0);
+  expect(before.barcode_readiness_reason).toBe('labels_outstanding');
+
+  const ack = await request(app)
+    .post(ACK_ROUTE(f.receiveJobLineId))
+    .set(auth(f.token))
+    .send({});
+
+  expect(ack.status).toBe(200);
+
+  const after = await fetchReceiveJobLine(f);
+  expect(after.awaiting_label_ack).toBe(false);
+  expect(Number(after.labelled_unit_count)).toBe(Number(after.accepted_unit_count));
+  expect(Number(after.labelled_unit_count)).toBe(2);
+  expect(after.barcode_readiness_reason).not.toBe('labels_outstanding');
+});
+
+it('B9 — supplier receive-job GET projects canonical reported problems without changing receive quantities', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 3 });
+  await inspect(f, 3);
+
+  const before = await fetchReceiveJobLine(f);
+  expect(Number(before.quantity_accepted)).toBe(3);
+  expect(Number(before.quantity_rejected)).toBe(0);
+  expect(before.reported_problems ?? []).toEqual([]);
+
+  const report = await request(app)
+    .post(RECEIVE_EXCEPTION_ROUTE(f.receiveJobId))
+    .set(auth(f.token))
+    .send({
+      lasyncro_variant_id: f.lasyncroVariantId,
+      receive_job_line_id: f.receiveJobLineId,
+      exception_type: 'barcode_mismatch',
+      quantity_affected: 1,
+      notes: 'BAD-CODE',
+    });
+
+  expect(report.status).toBe(201);
+  expect(report.body.receive_exception_id).toBeTruthy();
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(Number(projected.quantity_accepted)).toBe(3);
+  expect(Number(projected.quantity_rejected)).toBe(0);
+  expect(projected.reported_problems).toEqual([
+    expect.objectContaining({
+      receive_exception_id: report.body.receive_exception_id,
+      exception_type: 'barcode_mismatch',
+      quantity_affected: 1,
+      notes: 'BAD-CODE',
+      resolved: false,
+    }),
+  ]);
+  expect(projected.reported_problems[0].raised_at).toBeTruthy();
+
+  const stranger = await provisionFt2Shop(crypto.randomUUID());
+  const foreign = await request(app)
+    .get(RECEIVE_JOB_ROUTE(f.receiveJobId))
+    .set(auth(stranger.token));
+
+  expect(foreign.status).toBe(404);
+});
+
+// ── Receive reconciliation accounting model ────────────────────────────────
+
+async function reportReceiveProblem(
+  f: ReceiveFixture,
+  body: {
+    exception_type: string;
+    quantity_affected: number;
+    notes?: string;
+    accounting_role?: string;
+    counts_toward_shortfall?: boolean;
+  }
+) {
+  return request(app)
+    .post(RECEIVE_EXCEPTION_ROUTE(f.receiveJobId))
+    .set(auth(f.token))
+    .send({
+      lasyncro_variant_id: f.lasyncroVariantId,
+      receive_job_line_id: f.receiveJobLineId,
+      ...body,
+    });
+}
+
+it('B10 — backend rejects short line completion when accounted shortfall is insufficient', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 3 });
+
+  await expect(inspect(f, 2, 0)).rejects.toThrow(/shortfall|account/i);
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Boolean(persisted.inspection_complete)).toBe(false);
+});
+
+it('B11 — backend accepts short line completion when accepted plus accounted shortfall equals expected', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 3 });
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(report.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).resolves.toBeUndefined();
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Number(persisted.quantity_accepted)).toBe(2);
+  expect(Number(persisted.quantity_rejected)).toBe(0);
+  expect(Boolean(persisted.inspection_complete)).toBe(true);
+});
+
+it('B12 — missing_item accounting does not require fake received inventory', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 1 });
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(report.status).toBe(201);
+
+  await expect(inspect(f, 0, 0)).resolves.toBeUndefined();
+  await expect(close(f, '2026-09-14')).resolves.toBeUndefined();
+
+  const s = await state(f);
+  expect(s.inboundMovements).toEqual([]);
+  expect(s.rootTruth).toBeUndefined();
+  expect(s.stowTasks).toEqual([]);
+});
+
+it('B13 — GET /receive-job restores durable reconciliation state', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 5 });
+
+  const damaged = await reportReceiveProblem(f, {
+    exception_type: 'defect',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  const missing = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(damaged.status).toBe(201);
+  expect(missing.status).toBe(201);
+
+  const line = await fetchReceiveJobLine(f);
+  expect(line.reconciliation).toEqual(expect.objectContaining({
+    expected: 5,
+    sellable: 3,
+    accounted: 2,
+    unaccounted: 0,
+    allocations: expect.arrayContaining([
+      expect.objectContaining({ exception_type: 'defect', quantity_affected: 1, counts_toward_shortfall: true }),
+      expect.objectContaining({ exception_type: 'missing_item', quantity_affected: 1, counts_toward_shortfall: true }),
+    ]),
+  }));
+});
+
+it('B14 — resolved receive problems remain part of historical accounting', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(report.status).toBe(201);
+
+  await withTenant(f.shopId, (trx) =>
+    trx('receive_exceptions')
+      .where({ receive_exception_id: report.body.receive_exception_id, shop_id: f.shopId })
+      .update({ resolved: true, resolved_at: new Date(), resolved_by: f.userId })
+  );
+
+  const line = await fetchReceiveJobLine(f);
+  expect(line.reconciliation.allocations).toEqual([
+    expect.objectContaining({
+      receive_exception_id: report.body.receive_exception_id,
+      exception_type: 'missing_item',
+      resolved: true,
+      counts_toward_shortfall: true,
+    }),
+  ]);
+  expect(line.reconciliation.accounted).toBe(1);
+});
+
+it('B15 — missing_item and extra_item are distinct from legacy wrong_quantity', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
+
+  const missing = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 1,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  const extra = await reportReceiveProblem(f, {
+    exception_type: 'extra_item',
+    quantity_affected: 1,
+    accounting_role: 'overage',
+    counts_toward_shortfall: false,
+  });
+
+  expect(missing.status).toBe(201);
+  expect(extra.status).toBe(201);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(projected.reported_problems).toEqual(expect.arrayContaining([
+    expect.objectContaining({ exception_type: 'missing_item' }),
+    expect.objectContaining({ exception_type: 'extra_item' }),
+  ]));
+  expect(projected.reported_problems.map((p: any) => p.exception_type)).not.toContain('wrong_quantity');
+});
+
+it('B16 — barcode problem does not count toward shortfall accounting unless explicitly marked accounting', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
+
+  const barcodeProblem = await reportReceiveProblem(f, {
+    exception_type: 'barcode_mismatch',
+    quantity_affected: 1,
+    notes: 'BAD-CODE',
+  });
+  expect(barcodeProblem.status).toBe(201);
+
+  await expect(inspect(f, 1, 0)).rejects.toThrow(/shortfall|account/i);
+
+  const line = await fetchReceiveJobLine(f);
+  expect(line.reconciliation).toEqual(expect.objectContaining({
+    expected: 2,
+    accounted: 0,
+  }));
+  expect(line.reconciliation.allocations).toEqual([
+    expect.objectContaining({
+      exception_type: 'barcode_mismatch',
+      quantity_affected: 1,
+      counts_toward_shortfall: false,
+    }),
+  ]);
+});
+
+it('B17 — overdelivery is not committed by direct line inspection without persisted overage approval', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 1 });
+
+  await expect(inspect(f, 2, 0)).rejects.toThrow(/overdelivery|overage|approval/i);
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Number(persisted.quantity_accepted)).toBe(0);
+  expect(Boolean(persisted.inspection_complete)).toBe(false);
+});
+
+it('B18 — quantity_rejected is not required to equal missing shortfall for reconciliation completion', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 4 });
+
+  const missing = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 2,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(missing.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).resolves.toBeUndefined();
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(Number(projected.quantity_accepted)).toBe(2);
+  expect(Number(projected.quantity_rejected)).toBe(0);
+  expect(projected.reconciliation.accounted).toBe(2);
+  expect(projected.reconciliation.unaccounted).toBe(0);
+});
+
+it('B19 — provisional count is durable without inventory mutation', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 10 });
+
+  const progress = await patchReceiveProgress(f, 7);
+  expect(progress.status).toBe(200);
+  expect(progress.body).toEqual(expect.objectContaining({
+    success: true,
+    receive_job_id: f.receiveJobId,
+    receive_job_line_id: f.receiveJobLineId,
+    quantity_sellable_provisional: 7,
+  }));
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(projected.reconciliation).toEqual(expect.objectContaining({
+    expected: 10,
+    sellable: 7,
+    accounted: 0,
+    unaccounted: 3,
+  }));
+  expect(Boolean(projected.inspection_complete)).toBe(false);
+  expect(Number(projected.quantity_accepted)).toBe(0);
+
+  const s = await state(f);
+  expect(Number(s.line!.quantity_sellable_provisional)).toBe(7);
+  expect(Number(s.line!.quantity_accepted)).toBe(0);
+  expect(Boolean(s.line!.inspection_complete)).toBe(false);
+  expect(Number(s.poLine!.quantity_received)).toBe(0);
+  expect(Number(s.job!.units_inspected)).toBe(0);
+  expect(Number(s.job!.units_accepted)).toBe(0);
+  expect(s.units).toEqual([]);
+  expect(s.inboundMovements).toEqual([]);
+  expect(s.rootTruth).toBeUndefined();
+  expect(s.stowTasks).toEqual([]);
+});
+
+it('B20 — provisional shortfall survives refresh projection', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 10 });
+
+  const progress = await patchReceiveProgress(f, 9);
+  expect(progress.status).toBe(200);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(projected.reconciliation).toEqual(expect.objectContaining({
+    expected: 10,
+    sellable: 9,
+    accounted: 0,
+    unaccounted: 1,
+  }));
+});
+
+it('B21 — provisional zero is distinct from untouched', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 10 });
+
+  const untouched = await fetchReceiveJobLine(f);
+  expect(untouched.quantity_sellable_provisional).toBeNull();
+  expect(untouched.reconciliation.sellable).toBe(10);
+
+  const progress = await patchReceiveProgress(f, 0);
+  expect(progress.status).toBe(200);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(Number(projected.quantity_sellable_provisional)).toBe(0);
+  expect(projected.reconciliation).toEqual(expect.objectContaining({
+    expected: 10,
+    sellable: 0,
+    accounted: 0,
+    unaccounted: 10,
+  }));
+});
+
+it('B22 — overdelivery draft is allowed without inventory mutation', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 10 });
+
+  const progress = await patchReceiveProgress(f, 11);
+  expect(progress.status).toBe(200);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(projected.reconciliation).toEqual(expect.objectContaining({
+    expected: 10,
+    sellable: 11,
+    accounted: 0,
+    unaccounted: 0,
+  }));
+
+  const s = await state(f);
+  expect(Number(s.line!.quantity_sellable_provisional)).toBe(11);
+  expect(Number(s.line!.quantity_accepted)).toBe(0);
+  expect(Boolean(s.line!.inspection_complete)).toBe(false);
+  expect(Number(s.poLine!.quantity_received)).toBe(0);
+  expect(s.units).toEqual([]);
+  expect(s.inboundMovements).toEqual([]);
+  expect(s.stowTasks).toEqual([]);
+});
+
+it('B23 — completed line cannot have draft progress mutated', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
+  await inspect(f, 2);
+
+  const progress = await patchReceiveProgress(f, 1);
+  expect(progress.status).toBe(409);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(Number(projected.quantity_accepted)).toBe(2);
+  expect(Boolean(projected.inspection_complete)).toBe(true);
+});
+
+it('B24 — final inspection clears draft progress and final accepted becomes canonical', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 4 });
+
+  const progress = await patchReceiveProgress(f, 2);
+  expect(progress.status).toBe(200);
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'missing_item',
+    quantity_affected: 2,
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  });
+  expect(report.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).resolves.toBeUndefined();
+
+  const s = await state(f);
+  expect(s.line!.quantity_sellable_provisional).toBeNull();
+  expect(Number(s.line!.quantity_accepted)).toBe(2);
+  expect(Boolean(s.line!.inspection_complete)).toBe(true);
+
+  const projected = await fetchReceiveJobLine(f);
+  expect(Number(projected.quantity_accepted)).toBe(2);
+  expect(projected.reconciliation.sellable).toBe(2);
+});
+
+
+// ── B25 ─────────────────────────────────────────────────────────────────────
+
+it('B25 — a Stow-ready Receive cannot close without an actual delivery date', async () => {
+  const f = await receiveFixture({
+    externalBarcode: '5012345678900',
+    quantityOrdered: 2,
+  });
+
+  await inspect(f, 2);
+
+  const ready = await state(f);
+  expect(ready.job!.status).toBe('stow_ready');
+
+  await expect(close(f)).rejects.toThrow(/actual delivery date|required/i);
+
+  expectNoCloseSideEffects(await state(f));
 });

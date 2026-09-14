@@ -7,7 +7,7 @@ export declare const WMS_TIER1_ACTION_SX: {
 };
 export declare function wmsTier2SelectionSx(selected: boolean): {
     readonly bgcolor: "transparent" | "var(--surface)";
-    readonly border: "1px solid var(--rule-2)" | "1px solid var(--rule)";
+    readonly border: "1px solid var(--rule)" | "1px solid var(--rule-2)";
     readonly color: "var(--ink)";
     readonly fontWeight: 600 | 700;
 };

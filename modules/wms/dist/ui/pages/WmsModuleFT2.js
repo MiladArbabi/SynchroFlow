@@ -206,7 +206,7 @@ function WorkQueueFamily({ title, summary, expanded, onToggle, children, }) {
                             transition: 'transform 150ms ease',
                         } })] }), _jsx(Collapse, { in: expanded, children: _jsx(Box, { sx: { px: 2, pb: 2 }, children: children }) })] }));
 }
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onRecountUpgrade, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onReassignCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, canReassignCount, pendingCountTaskId, onCountSessionEnter, onSetupBinsClick, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onPersistReceiveLineProgress, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onConfirmUnitLabelsPrinted, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, pendingReturnJobId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onRecountUpgrade, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onReassignCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, canReassignCount, pendingCountTaskId, onCountSessionEnter, onSetupBinsClick, }) {
     const [countDialogOpen, setCountDialogOpen] = useState(false);
     const [countDialogLoading, setCountDialogLoading] = useState(false);
     const [countDialogError, setCountDialogError] = useState(null);
@@ -316,9 +316,11 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     // Auto-enter receive session if handed off from Suppliers portal via URL param
     const [activeSession, setActiveSession] = useState(pendingReceiveSession
         ? { type: 'receive', ...pendingReceiveSession }
-        : pendingStowTaskId
-            ? { type: 'stow', taskId: pendingStowTaskId }
-            : null);
+        : pendingReturnJobId
+            ? { type: 'return', returnJobId: pendingReturnJobId }
+            : pendingStowTaskId
+                ? { type: 'stow', taskId: pendingStowTaskId }
+                : null);
     useEffect(() => {
         if (pendingReceiveSession) {
             setActiveSession({ type: 'receive', ...pendingReceiveSession });
@@ -329,6 +331,11 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
             setActiveSession({ type: 'stow', taskId: pendingStowTaskId });
         }
     }, [pendingStowTaskId]);
+    useEffect(() => {
+        if (pendingReturnJobId) {
+            setActiveSession({ type: 'return', returnJobId: pendingReturnJobId });
+        }
+    }, [pendingReturnJobId]);
     useEffect(() => {
         if (recountLocked) {
             setActiveSession((session) => session?.type === 'count' ? null : session);
@@ -437,7 +444,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     };
     // Active pick session
     if (activeSession?.type === 'pick') {
-        return (_jsx(PickSessionPage, { pickBatchId: activeSession.batchId, lineItems: activeSession.lineItems, onComplete: exitSession, onResolveBarcode: onResolveBarcode, onConfirmScan: (params) => onConfirmScan(activeSession.batchId, params), onReportException: (params) => onReportException(activeSession.batchId, params), onCreateProblemTask: onCreateProblemTask, onPickComplete: () => onPickComplete(activeSession.batchId) }));
+        return (_jsx(PickSessionPage, { pickBatchId: activeSession.batchId, lineItems: activeSession.lineItems, onComplete: exitSession, onResolveBarcode: onResolveBarcode, onConfirmScan: (params) => onConfirmScan(activeSession.batchId, params), onReportException: (params) => onReportException(activeSession.batchId, params), onPickComplete: () => onPickComplete(activeSession.batchId) }));
     }
     // Active pack session (WEB-PACK-02 — item-centric free-scan)
     if (activeSession?.type === 'pack') {
@@ -450,7 +457,21 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     }
     // Active receive session
     if (activeSession?.type === 'receive') {
-        return (_jsx(ReceiveSessionPage, { receiveJobId: activeSession.receiveJobId, poId: activeSession.poId, supplierName: activeSession.supplierName, lines: activeSession.lines, onInspectLine: (params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onReportException: (params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onCloseJob: (params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onComplete: exitSession, onResolveBarcode: onResolveBarcode, onPrintUnitLabels: onPrintUnitLabels }));
+        const refreshReceiveSession = async () => {
+            if (!onFetchReceiveJob)
+                return;
+            const latest = await onFetchReceiveJob(activeSession.receiveJobId);
+            setActiveSession({
+                type: 'receive',
+                receiveJobId: activeSession.receiveJobId,
+                poId: latest.job.po_id,
+                supplierName: latest.job.supplier_name,
+                closedAt: latest.job.closed_at ?? null,
+                actualDeliveryDate: latest.job.actual_delivery_date ?? null,
+                lines: latest.lines,
+            });
+        };
+        return (_jsx(ReceiveSessionPage, { receiveJobId: activeSession.receiveJobId, poId: activeSession.poId, supplierName: activeSession.supplierName, closedAt: activeSession.closedAt, actualDeliveryDate: activeSession.actualDeliveryDate, lines: activeSession.lines, onInspectLine: (params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onPersistLineProgress: (lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve(), onReportException: (params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onCloseJob: (params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve(), onComplete: exitSession, onResolveBarcode: onResolveBarcode, onPrintUnitLabels: onPrintUnitLabels, onConfirmUnitLabelsPrinted: onConfirmUnitLabelsPrinted, onRefresh: refreshReceiveSession }));
     }
     // Active stow session
     if (activeSession?.type === 'stow') {

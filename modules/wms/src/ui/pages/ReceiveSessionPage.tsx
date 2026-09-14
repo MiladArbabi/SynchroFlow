@@ -1,59 +1,36 @@
 // modules/wms/src/ui/pages/ReceiveSessionPage.tsx
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Button,
-  LinearProgress,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
+  Box,
+  Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  LinearProgress,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  TextField,
+  Typography,
   useTheme,
 } from '@mui/material';
-import { 
-  CheckCircle, 
-  AlertTriangle, 
-  PackageX, 
-  ScanBarcode, 
-  Hash, 
-  BarChart2, 
-  Package 
+import {
+  AlertTriangle,
+  CheckCircle,
+  Hash,
+  Package,
+  PackageX,
+  ScanBarcode,
 } from 'lucide-react';
 
-/**
- * RECEIVE SESSION PAGE (FEAT-004)
- * --------------------------------
- * Operator interface for processing inbound PO shipments.
- * Supports two inspection paths:
- *
- * PATH A — Count mode (always available)
- *   One variant per screen. Operator taps +/− or uses Set All.
- *   Shortfall → exception modal → Problem Center routing.
- *
- * PATH B — Scan mode (when manufacturer barcodes exist in Shopify)
- *   Free-scan: operator scans any unit in the delivery.
- *   System resolves barcode → PO line → increments count.
- *   Auto-confirms when scan count = expected qty.
- *   Overcount → confirmation dialog.
- *   Lines without barcodes → inline count fallback.
- *
- * Session phases: brief → inspect → summary → (close dialog) → done
- *
- * API calls injected via props — module stays decoupled from HTTP layer.
- */
-
-type SessionPhase = 'brief' | 'inspect' | 'summary';
-type InspectMode = 'count' | 'scan';
+type SessionPhase = 'brief' | 'inspect' | 'reconcile' | 'review' | 'handoff';
+type LineAction = 'scan' | 'count';
 
 export interface ReceiveJobLine {
   receive_job_line_id: string;
@@ -62,17 +39,51 @@ export interface ReceiveJobLine {
   variant_title: string | null;
   description: string | null;
   quantity_expected: number;
-  inspection_complete?: boolean;
   quantity_accepted?: number;
+  quantity_rejected?: number;
+  quantity_sellable_provisional?: number | null;
+  reconciliation_started_at?: string | null;
+  inspection_complete?: boolean;
   image_url: string | null;
   barcode: string | null;
   product_title: string | null;
+  barcode_ready?: boolean;
+  barcode_readiness_reason?:
+    | 'not_inspected'
+    | 'no_accepted_units'
+    | 'external_barcode'
+    | 'labels_acknowledged'
+    | 'labels_outstanding'
+    | 'unit_evidence_mismatch';
+  awaiting_label_ack?: boolean;
+  accepted_unit_count?: number;
+  labelled_unit_count?: number;
+  reported_problems?: ReceiveReportedProblem[];
+  reconciliation?: {
+    expected: number;
+    sellable: number;
+    accounted: number;
+    unaccounted: number;
+    allocations: ReceiveReportedProblem[];
+  };
+}
+
+export interface ReceiveReportedProblem {
+  receive_exception_id: string;
+  exception_type: ProblemType | string;
+  quantity_affected: number;
+  notes?: string | null;
+  resolved?: boolean;
+  raised_at?: string | null;
+  counts_toward_shortfall?: boolean;
 }
 
 export interface ReceiveSessionPageProps {
   receiveJobId: string;
   poId: string;
   supplierName: string;
+  closedAt?: string | null;
+  actualDeliveryDate?: string | null;
   lines: ReceiveJobLine[];
   onInspectLine: (params: {
     lasyncro_variant_id: string | null;
@@ -85,410 +96,813 @@ export interface ReceiveSessionPageProps {
     receive_job_line_id: string;
     exception_type: string;
     quantity_affected: number;
+    accounting_role?: string;
     notes?: string;
   }) => Promise<void>;
+  onPersistLineProgress?: (
+    receiveJobLineId: string,
+    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }
+  ) => Promise<void>;
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
   onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
-  /**
-   * GH-1085 — explicit operator acknowledgement that this line's LSU- labels
-   * were printed AND attached. Called only from the acknowledgement action,
-   * never because a print request resolved.
-   *
-   * REQUIRED: an optional callback fails open. If the wiring ever drops it,
-   * the acknowledgement would no-op and the session would advance as though
-   * unscannable stock were ready.
-   */
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
+  onRefresh?: () => Promise<void> | void;
 }
 
-type ExceptionType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'barcode_mismatch' | 'other';
+type ProblemType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'missing_item' | 'extra_item' | 'barcode_mismatch' | 'other';
 
-const EXCEPTION_LABELS: Record<ExceptionType, string> = {
-  defect: 'Unit defect',
-  packaging_damage: 'Packaging damaged',
+type ProblemChoice =
+  | 'defect'
+  | 'packaging_damage'
+  | 'wrong_item'
+  | 'wrong_variant'
+  | 'missing_item'
+  | 'extra_item'
+  | 'barcode_mismatch'
+  | 'other';
+
+const PROBLEM_LABELS: Record<ProblemType, string> = {
+  defect: 'Damaged unit',
+  packaging_damage: 'Damaged packaging',
   wrong_item: 'Wrong product',
   wrong_variant: 'Wrong variant',
-  wrong_quantity: 'Wrong quantity',
-  barcode_mismatch: 'Barcode mismatch',
-  other: 'Other',
+  wrong_quantity: 'Missing or extra',
+  missing_item: 'Missing item',
+  extra_item: 'Extra item',
+  barcode_mismatch: 'Barcode problem',
+  other: 'Other problem',
 };
+
+const PROBLEM_CHOICES: Array<{
+  id: ProblemChoice;
+  label: string;
+  problemType: ProblemType;
+  defaultNotes?: string;
+}> = [
+  { id: 'defect', label: 'Damaged unit', problemType: 'defect' },
+  { id: 'packaging_damage', label: 'Damaged packaging', problemType: 'packaging_damage' },
+  { id: 'wrong_item', label: 'Wrong product', problemType: 'wrong_item' },
+  { id: 'wrong_variant', label: 'Wrong variant', problemType: 'wrong_variant' },
+  {
+    id: 'missing_item',
+    label: 'Missing item',
+    problemType: 'missing_item',
+    defaultNotes: 'Missing item reported during receive',
+  },
+  {
+    id: 'extra_item',
+    label: 'Extra item',
+    problemType: 'extra_item',
+    defaultNotes: 'Extra item reported during receive',
+  },
+  { id: 'barcode_mismatch', label: 'Barcode problem', problemType: 'barcode_mismatch' },
+  { id: 'other', label: 'Other', problemType: 'other' },
+];
+
+const RECONCILIATION_CHOICES: Array<{ type: ProblemType; label: string; requiresNotes?: boolean }> = [
+  { type: 'defect', label: 'Damaged unit' },
+  { type: 'wrong_item', label: 'Wrong product' },
+  { type: 'wrong_variant', label: 'Wrong variant' },
+  { type: 'missing_item', label: 'Missing item' },
+  { type: 'other', label: 'Other', requiresNotes: true },
+];
+
+const OPS_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+const monoSx = { fontFamily: OPS_MONO, letterSpacing: 0 };
+
+const OPS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatOpsDate(value?: string | null): string {
+  if (!value) return '—';
+
+  const calendarDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (calendarDate) {
+    const [, year, month, day] = calendarDate;
+    return `${Number(day)} ${OPS_MONTHS[Number(month) - 1]} ${year}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return `${parsed.getDate()} ${OPS_MONTHS[parsed.getMonth()]} ${parsed.getFullYear()}`;
+}
+
+function formatOpsTimestamp(value?: string | null): string {
+  if (!value) return '—';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+
+  return `${parsed.getDate()} ${OPS_MONTHS[parsed.getMonth()]} ${parsed.getFullYear()} · ${hours}:${minutes}`;
+}
+const countStepperButtonSx = (emphasized = false) => ({
+  minWidth: 0,
+  height: 40,
+  px: 1.5,
+  borderRadius: '6px',
+  bgcolor: emphasized ? 'var(--surface)' : 'transparent',
+  borderColor: emphasized ? 'var(--rule-2)' : 'var(--rule)',
+  color: 'var(--ink)',
+  fontWeight: 800,
+  '&:hover': {
+    bgcolor: 'var(--surface)',
+    borderColor: 'var(--rule-2)',
+  },
+  '&.Mui-disabled': {
+    bgcolor: 'transparent',
+    borderColor: 'var(--rule)',
+  },
+} as const);
+const countStepperValueSx = {
+  '& .MuiInputBase-root': {
+    height: 40,
+    borderRadius: '6px',
+    bgcolor: 'transparent',
+    color: 'var(--ink)',
+  },
+  '& .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'var(--rule)',
+  },
+  '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'var(--rule-2)',
+  },
+  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'var(--rule-2)',
+    borderWidth: 1,
+  },
+  '& .MuiInputBase-input': {
+    py: 0,
+  },
+} as const;
+const reconciliationChoiceSx = (selected: boolean) => ({
+  minHeight: 40,
+  px: 1.5,
+  py: 0.75,
+  borderRadius: '6px',
+  justifyContent: 'flex-start',
+  bgcolor: selected ? 'var(--surface)' : 'transparent',
+  borderColor: selected ? 'var(--rule-2)' : 'var(--rule)',
+  color: 'var(--ink)',
+  boxShadow: 'none',
+  fontWeight: selected ? 700 : 600,
+  cursor: 'pointer',
+  '&:hover': {
+    bgcolor: selected ? 'var(--surface)' : 'var(--surface-2, var(--surface))',
+    borderColor: 'var(--rule-2)',
+  },
+  '&.Mui-focusVisible': {
+    outline: '2px solid var(--focus-ring, var(--rule-2))',
+    outlineOffset: 2,
+  },
+  '&.Mui-disabled': {
+    bgcolor: 'transparent',
+    borderColor: 'var(--rule)',
+  },
+} as const);
+const reconciliationCommitActionSx = {
+  width: '100%',
+  minHeight: 38,
+  borderRadius: '6px',
+  bgcolor: 'var(--accent)',
+  borderColor: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  fontWeight: 750,
+  '&:hover': {
+    bgcolor: 'var(--accent)',
+    borderColor: 'var(--accent)',
+    opacity: 0.88,
+  },
+  '&.Mui-focusVisible': {
+    outline: '2px solid var(--focus-ring, var(--rule-2))',
+    outlineOffset: 2,
+  },
+  '&.Mui-disabled': {
+    bgcolor: 'transparent',
+    borderColor: 'var(--rule)',
+    color: 'text.disabled',
+  },
+} as const;
+
+function lineName(line: ReceiveJobLine): string {
+  return line.product_title ?? line.variant_title ?? line.description ?? line.sku ?? 'Unknown item';
+}
+
+function variantName(line: ReceiveJobLine): string {
+  return line.variant_title && line.variant_title !== 'Default Title'
+    ? line.variant_title
+    : line.description ?? line.sku ?? 'Default variant';
+}
+
+function hasExternalBarcode(line: ReceiveJobLine): boolean {
+  return !!line.barcode?.trim();
+}
+
+function statusLabel(line: ReceiveJobLine, awaitingLabel: boolean, complete: boolean): string {
+  if (awaitingLabel) return 'label hold';
+  if (complete) return 'received';
+  if (hasExternalBarcode(line)) return 'scan or count';
+  return 'count only';
+}
+
+function problemLabel(exceptionType: string): string {
+  return PROBLEM_LABELS[exceptionType as ProblemType] ?? 'Reported problem';
+}
+
+function unitLabel(quantity: number): string {
+  return `${quantity} unit${quantity === 1 ? '' : 's'}`;
+}
+
+function reportedProblems(line: ReceiveJobLine): ReceiveReportedProblem[] {
+  return line.reported_problems ?? [];
+}
+
+function projectedSellable(line: ReceiveJobLine): number {
+  return Number(
+    line.quantity_sellable_provisional
+      ?? line.quantity_accepted
+      ?? 0
+  );
+}
+
+function hasProjectedReconciliation(line: ReceiveJobLine): boolean {
+  if (!line.reconciliation) return false;
+  return !!line.reconciliation_started_at
+    || line.reconciliation.allocations.length > 0
+    || line.reconciliation.unaccounted === 0 && line.reconciliation.sellable < line.reconciliation.expected
+    || line.reconciliation.sellable < line.reconciliation.expected
+      && line.reconciliation.allocations.some((allocation) => allocation.counts_toward_shortfall);
+}
+
+function projectedReconciliationState(line: ReceiveJobLine) {
+  if (!line.reconciliation) return null;
+  const expected = Number(line.reconciliation.expected ?? line.quantity_expected);
+  const sellable = Number(line.reconciliation.sellable ?? line.quantity_accepted ?? 0);
+  const accounted = Number(line.reconciliation.accounted ?? 0);
+  const unaccounted = Number(line.reconciliation.unaccounted ?? Math.max(0, expected - sellable - accounted));
+  const totalShortfall = accounted + unaccounted;
+  if (totalShortfall <= 0) return null;
+
+  return {
+    line,
+    accepted: sellable,
+    totalShortfall,
+    remainingShortfall: unaccounted,
+    allocations: line.reconciliation.allocations.map((allocation) => ({
+      type: allocation.exception_type as ProblemType,
+      quantity: Number(allocation.quantity_affected ?? 0),
+    })),
+  };
+}
+
+function problemCountLabel(line: ReceiveJobLine): string | null {
+  const count = reportedProblems(line).length;
+  if (count === 0) return null;
+  return `${count} problem${count === 1 ? '' : 's'} reported`;
+}
+
+function problemDetailLabel(problem: ReceiveReportedProblem): string {
+  const label = problemLabel(problem.exception_type);
+  const quantity = unitLabel(Number(problem.quantity_affected ?? 0));
+  return problem.resolved ? `${label} · ${quantity} · resolved` : `${label} · ${quantity}`;
+}
+
+
+function ReportedProblemSummary({
+  line,
+  compact = false,
+}: {
+  line: ReceiveJobLine;
+  compact?: boolean;
+}) {
+  const problems = reportedProblems(line);
+  if (problems.length === 0) return null;
+
+  if (compact) {
+    return (
+      <Chip
+        size="small"
+        variant="outlined"
+        label={`${problems.length} problem${problems.length === 1 ? '' : 's'}`}
+        sx={{
+          mt: 0.5,
+          height: 24,
+          maxWidth: '100%',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+          '& .MuiChip-label': {
+            px: 0.9,
+            fontSize: 11,
+            fontWeight: 650,
+          },
+        }}
+      />
+    );
+  }
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        width: '100%',
+        minHeight: 64,
+        p: 1.25,
+        mb: 2,
+        borderRadius: '6px',
+        borderColor: 'divider',
+        bgcolor: 'background.default',
+        display: 'grid',
+        gap: 0.75,
+      }}
+    >
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 1,
+          alignItems: 'center',
+        }}
+      >
+        <Typography variant="body2" fontWeight={700}>
+          {problemCountLabel(line)}
+        </Typography>
+
+        <Chip
+          size="small"
+          variant="outlined"
+          label="Problem Center"
+          sx={{
+            height: 24,
+            borderColor: 'divider',
+            '& .MuiChip-label': {
+              px: 0.9,
+              fontSize: 11,
+              fontWeight: 650,
+            },
+          }}
+        />
+      </Box>
+
+      {problems.map((problem) => (
+        <Box
+          key={problem.receive_exception_id}
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) auto',
+            gap: 1,
+            alignItems: 'center',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {problemLabel(problem.exception_type)}
+          </Typography>
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            noWrap
+            sx={monoSx}
+          >
+            {unitLabel(Number(problem.quantity_affected ?? 0))}
+            {problem.resolved ? ' · resolved' : ''}
+          </Typography>
+        </Box>
+      ))}
+    </Paper>
+  );
+}
 
 export default function ReceiveSessionPage({
   receiveJobId,
+  poId,
   supplierName,
+  closedAt,
+  actualDeliveryDate,
   lines,
   onInspectLine,
   onReportException,
+  onPersistLineProgress,
   onCloseJob,
   onComplete,
   onResolveBarcode,
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
+  onRefresh,
 }: ReceiveSessionPageProps) {
-
   const theme = useTheme();
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const progressPersistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const progressPersistErrorRef = useRef<Error | null>(null);
 
-  // ── Count mode state ───────────────────────────────────────────────────────
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const initialComplete = useMemo(
+    () => new Set(lines.filter((line) => line.inspection_complete).map((line) => line.receive_job_line_id)),
+    [lines]
+  );
+  const initialAccepted = useMemo(
+    () => Object.fromEntries(lines.map((line) => [line.receive_job_line_id, projectedSellable(line)])),
+    [lines]
+  );
+  const initialRejected = useMemo(
+    () => Object.fromEntries(lines.map((line) => [line.receive_job_line_id, Number(line.quantity_rejected ?? 0)])),
+    [lines]
+  );
+
+  const firstBackendHold = lines.find((line) => line.awaiting_label_ack)?.receive_job_line_id ?? null;
+  const firstReconciliationIndex = lines.findIndex((line) => !line.inspection_complete && hasProjectedReconciliation(line));
+  const firstActiveIndex = lines.findIndex((line) => !line.inspection_complete && line.quantity_sellable_provisional != null);
+  const hasResumeState = lines.some((line) => (
+    line.inspection_complete
+      || line.awaiting_label_ack
+      || hasProjectedReconciliation(line)
+      || line.quantity_sellable_provisional != null
+  ));
+  const startsComplete = lines.length > 0 && lines.every((line) => line.inspection_complete && !line.awaiting_label_ack);
+  const initialCurrentIndex = firstReconciliationIndex >= 0
+    ? firstReconciliationIndex
+    : firstBackendHold
+      ? lines.findIndex((line) => line.receive_job_line_id === firstBackendHold)
+      : firstActiveIndex >= 0
+        ? firstActiveIndex
+        : (() => {
+          const firstOpen = lines.findIndex((line) => !line.inspection_complete || line.awaiting_label_ack);
+          return firstOpen >= 0 ? firstOpen : 0;
+        })();
+  const initialReconciliationLine = firstReconciliationIndex >= 0
+    ? projectedReconciliationState(lines[firstReconciliationIndex])
+    : null;
+
+  const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
+    closedAt
+      ? 'handoff'
+      : startsComplete
+        ? 'review'
+        : firstReconciliationIndex >= 0
+          ? 'reconcile'
+          : hasResumeState
+            ? 'inspect'
+            : 'brief'
+  );
+  const [currentIndex, setCurrentIndex] = useState(initialCurrentIndex);
+  const [lineAction, setLineAction] = useState<LineAction>('count');
   const [accepted, setAccepted] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-  /**
-   * GH-1085 — the receive_job_line_id whose LSU- labels are printed but not yet
-   * acknowledged. While set, the session waits: the line's physical barcode
-   * readiness is not complete and progression is held.
-   */
-  const [pendingLabelAck, setPendingLabelAck] = useState<string | null>(null);
-  const [labelAckSubmitting, setLabelAckSubmitting] = useState(false);
+  const [acceptedByLine, setAcceptedByLine] = useState<Record<string, number>>(initialAccepted);
+  const [rejectedByLine, setRejectedByLine] = useState<Record<string, number>>(initialRejected);
+  const [completeLines, setCompleteLines] = useState<Set<string>>(initialComplete);
+  const [acknowledgedLabelLines, setAcknowledgedLabelLines] = useState<Set<string>>(new Set());
+  const [labelHoldLineId, setLabelHoldLineId] = useState<string | null>(firstBackendHold);
   const [labelPrintFailed, setLabelPrintFailed] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [exceptionDialog, setExceptionDialog] = useState(false);
-  const [exceptionType, setExceptionType] = useState<ExceptionType | null>(null);
-  const [exceptionNotes, setExceptionNotes] = useState('');
-  const [exceptionQty, setExceptionQty] = useState('1');
-  const [closing, setClosing] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState('');
-  const [closeDialog, setCloseDialog] = useState(false);
+  const [labelAckSubmitting, setLabelAckSubmitting] = useState(false);
 
-  // ── Scan mode state ────────────────────────────────────────────────────────
-  // Initialise from backend state — supports session resume after refresh
-  const initialScanCounts: Record<string, number> = {};
-  const initialConfirmedLines = new Set<string>();
-  for (const line of lines) {
-    if (line.inspection_complete) {
-      initialConfirmedLines.add(line.receive_job_line_id);
-      initialScanCounts[line.receive_job_line_id] = line.quantity_accepted ?? line.quantity_expected;
-    }
-  }
-  // scanCounts: { [receive_job_line_id]: number } — units scanned per line
-  const [scanCounts, setScanCounts] = useState<Record<string, number>>(initialScanCounts);
-  // confirmedLines: set of receive_job_line_ids that have been inspected
-  const [confirmedLines, setConfirmedLines] = useState<Set<string>>(initialConfirmedLines);
-  // Resume brief screen only if no lines are already confirmed — otherwise go straight to inspect
-  const hasPartialProgress = initialConfirmedLines.size > 0;
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [scanInputValue, setScanInputValue] = useState('');
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProcessing, setScanProcessing] = useState(false);
-  // overcountLine: holds line that was scanned over expected qty — triggers dialog
-  const [overcountLine, setOvercountLine] = useState<ReceiveJobLine | null>(null);
-  const scanInputRef = useRef<HTMLInputElement>(null);
   const [flashLine, setFlashLine] = useState<string | null>(null);
-  const [scanInputValue, setScanInputValue] = useState('');
+  const [overDeliveryDecision, setOverDeliveryDecision] = useState<{
+    line: ReceiveJobLine;
+    counted: number;
+  } | null>(null);
 
-  // ── Session phase + mode ───────────────────────────────────────────────────
-  // Persist inspect mode in sessionStorage — survives refresh within the same tab
-  const storedMode = sessionStorage.getItem(`receive-mode-${receiveJobId}`);
-  const [inspectMode, setInspectMode] = useState<InspectMode>(
-    storedMode === 'scan' && onResolveBarcode ? 'scan'
-    : hasPartialProgress && onResolveBarcode ? 'scan'
-    : 'count'
-  );
-  
-  // Skip brief screen if resuming a partially-completed session
-  const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
-    hasPartialProgress || storedMode ? 'inspect' : 'brief'
-  );
-  
-  // Auto-focus scan input when in scan mode
-  useEffect(() => {
-    if (sessionPhase === 'inspect' && inspectMode === 'scan') {
-      scanInputRef.current?.focus();
-    }
-  }, [sessionPhase, inspectMode]);
+  const [problemDialog, setProblemDialog] = useState(false);
+  const [problemChoice, setProblemChoice] = useState<ProblemChoice | null>(null);
+  const [problemType, setProblemType] = useState<ProblemType | null>(null);
+  const [problemNotes, setProblemNotes] = useState('');
+  const [problemQty, setProblemQty] = useState('1');
+  const [problemSubmitting, setProblemSubmitting] = useState(false);
+  const [problemError, setProblemError] = useState<string | null>(null);
 
-  // Re-focus after error — error Alert renders and steals focus
-  useEffect(() => {
-    if (sessionPhase === 'inspect' && inspectMode === 'scan') {
-      setTimeout(() => scanInputRef.current?.focus(), 50);
-    }
-  }, [scanError, sessionPhase, inspectMode]);
-
-  /**
-   * GH-1085 — inspect, then decide whether this line owes physical labelling.
-   *
-   * A variant that already carries a merchant barcode (EAN/UPC/GTIN) is
-   * scannable as it stands; printing LSU- labels for it is relabelling the
-   * merchant never asked for. Only barcode-less stock needs LSU- labels, and
-   * for that stock the print request resolving is NOT evidence the label
-   * reached the box — an explicit acknowledgement is required.
-   *
-   * Readiness is decided from ReceiveJobLine.barcode alone. SKU is not a
-   * barcode, and the LSP- catalog identity is one value shared by every unit
-   * of the SKU, so neither can stand in for physical unit identity.
-   *
-   * Returns whether the caller must hold progression pending acknowledgement.
-   */
-  const inspectAndPrint = useCallback(async (params: {
-    lasyncro_variant_id: string | null;
-    receive_job_line_id: string;
-    quantity_accepted: number;
-    quantity_rejected: number;
-  }): Promise<{ awaitingLabelAck: boolean }> => {
-    await onInspectLine(params);
-
-    const inspectedLine = lines.find(
-      (l) => l.receive_job_line_id === params.receive_job_line_id
-    );
-    const hasExternalBarcode = !!inspectedLine?.barcode?.trim();
-
-    if (params.quantity_accepted <= 0 || hasExternalBarcode) {
-      return { awaitingLabelAck: false };
-    }
-
-    if (onPrintUnitLabels) {
-      try {
-        await onPrintUnitLabels(params.receive_job_line_id);
-        setLabelPrintFailed(false);
-      } catch {
-        // A failed print must never be mistaken for a printed label. The
-        // inspection already recorded stays recorded; the operator can retry
-        // printing without re-inspecting the line.
-        console.warn('[RECEIVE] Unit label print failed — retry available', params.receive_job_line_id);
-        setLabelPrintFailed(true);
-      }
-    }
-
-    setPendingLabelAck(params.receive_job_line_id);
-    return { awaitingLabelAck: true };
-  }, [onInspectLine, onPrintUnitLabels, lines]);
-  // ── Scan handler — free-scan: resolves barcode against all PO lines ────────
-  const handleScan = useCallback(async (scannedValue: string) => {
-    if (!onResolveBarcode || scanProcessing) return;
-    setScanProcessing(true);
-    setScanError(null);
-    try {
-      const resolved = await onResolveBarcode(scannedValue);
-      if (!resolved?.lasyncro_variant_id) {
-        setScanError(`Not recognised — no product matched for "${scannedValue}"`);
-        return;
-      }
-      const matchedLine = lines.find(
-        (l) => l.lasyncro_variant_id === resolved.lasyncro_variant_id
-      );
-      if (!matchedLine) {
-        setScanError(`Not in this PO — scanned barcode matches a different product`);
-        return;
-      }
-      if (confirmedLines.has(matchedLine.receive_job_line_id)) {
-        setScanError(`Already confirmed — ${matchedLine.sku ?? matchedLine.variant_title ?? 'this item'} is fully received`);
-        return;
-      }
-      const current = scanCounts[matchedLine.receive_job_line_id] ?? 0;
-      const next = current + 1;
-      if (next > matchedLine.quantity_expected) {
-        // Overcount — pause and confirm with operator
-        setOvercountLine(matchedLine);
-        return;
-      }
-      setScanCounts((prev) => ({ ...prev, [matchedLine.receive_job_line_id]: next }));
-      // Flash the matched line green briefly as scan confirmation
-      setFlashLine(matchedLine.receive_job_line_id);
-      setTimeout(() => {
-        setFlashLine(null);
-        scanInputRef.current?.focus();
-      }, 600);
-      if (next === matchedLine.quantity_expected) {
-        // Auto-confirm this line
-        setScanProcessing(true);
-        try {
-          await inspectAndPrint({
-            lasyncro_variant_id: matchedLine.lasyncro_variant_id,
-            receive_job_line_id: matchedLine.receive_job_line_id,
-            quantity_accepted: next,
-            quantity_rejected: 0,
-          });
-        } catch (inspectErr: any) {
-          // 409 = already inspected — treat as confirmed, not an error
-          if (inspectErr?.response?.status !== 409) throw inspectErr;
-        }
-        setConfirmedLines((prev) => new Set([...prev, matchedLine.receive_job_line_id]));
-        setScanError(null);
-        // Check if all lines confirmed
-        const newConfirmed = new Set([...confirmedLines, matchedLine.receive_job_line_id]);
-        if (newConfirmed.size === lines.length) {
-          setSessionPhase('summary');
-        } else {
-          setTimeout(() => scanInputRef.current?.focus(), 50);
-        }
-      }
-    } catch {
-      setScanError('Scan failed — check connection and try again');
-    } finally {
-      setScanProcessing(false);
-      scanInputRef.current?.focus();
-    }
-  }, [onResolveBarcode, scanProcessing, lines, confirmedLines, scanCounts, onInspectLine]);
-
-  // ── Overcount confirm — add one more unit ──────────────────────────────────
-  const handleOvercountAccept = useCallback(async () => {
-    if (!overcountLine) return;
-    const next = (scanCounts[overcountLine.receive_job_line_id] ?? 0) + 1;
-    setScanCounts((prev) => ({ ...prev, [overcountLine.receive_job_line_id]: next }));
-    setOvercountLine(null);
-    scanInputRef.current?.focus();
-  }, [overcountLine, scanCounts]);
-
-  const handleOvercountReject = useCallback(() => {
-    setOvercountLine(null);
-    scanInputRef.current?.focus();
-  }, []);
-
-  // ── Shortfall modal state ──────────────────────────────────────────────────
   const [shortfallModal, setShortfallModal] = useState<{
     line: ReceiveJobLine;
     accepted: number;
     totalShortfall: number;
     remainingShortfall: number;
   } | null>(null);
-  const [shortfallExceptionType, setShortfallExceptionType] = useState<ExceptionType | null>(null);
-  const [shortfallExceptionQty, setShortfallExceptionQty] = useState('');
-  const [shortfallExceptionNotes, setShortfallExceptionNotes] = useState('');
+  const [shortfallProblemType, setShortfallProblemType] = useState<ProblemType | null>(null);
+  const [shortfallProblemQty, setShortfallProblemQty] = useState('');
+  const [shortfallProblemNotes, setShortfallProblemNotes] = useState('');
   const [shortfallSubmitting, setShortfallSubmitting] = useState(false);
   const [shortfallQtyError, setShortfallQtyError] = useState<string | null>(null);
+  const [reconciliationLine, setReconciliationLine] = useState<{
+    line: ReceiveJobLine;
+    accepted: number;
+    totalShortfall: number;
+    remainingShortfall: number;
+    allocations: Array<{ type: ProblemType; quantity: number }>;
+  } | null>(initialReconciliationLine);
 
-  const currentLine = lines[currentIndex];
-  const isLastLine = currentIndex === lines.length - 1;
-  const progress = Math.round((currentIndex / lines.length) * 100);
-  const rejected = currentLine ? Math.max(0, currentLine.quantity_expected - accepted) : 0;
-  const totalCounted = accepted + rejected;
-  const remaining = currentLine ? currentLine.quantity_expected - totalCounted : 0;
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [closing, setClosing] = useState(false);
 
-  const resetForNext = useCallback(() => {
-    setAccepted(0);
-    setSubmitError(null);
+  const totalExpected = lines.reduce((sum, line) => sum + line.quantity_expected, 0);
+  const currentLine = lines[currentIndex] ?? null;
+
+  const isLineComplete = useCallback((line: ReceiveJobLine) => (
+    completeLines.has(line.receive_job_line_id) || !!line.inspection_complete
+  ), [completeLines]);
+
+  const isLineAwaitingLabel = useCallback((line: ReceiveJobLine) => {
+    if (acknowledgedLabelLines.has(line.receive_job_line_id)) return false;
+    return labelHoldLineId === line.receive_job_line_id || !!line.awaiting_label_ack;
+  }, [acknowledgedLabelLines, labelHoldLineId]);
+
+  const isLineDone = useCallback((line: ReceiveJobLine) => (
+    isLineComplete(line) && !isLineAwaitingLabel(line)
+  ), [isLineAwaitingLabel, isLineComplete]);
+
+  const completedCount = lines.filter(isLineDone).length;
+  const progress = lines.length ? Math.round((completedCount / lines.length) * 100) : 0;
+  const currentAwaitingLabel = currentLine ? isLineAwaitingLabel(currentLine) : false;
+  const currentComplete = currentLine ? isLineComplete(currentLine) : false;
+  const currentCanScan = !!currentLine && hasExternalBarcode(currentLine) && !!onResolveBarcode;
+  const scanReady = sessionPhase === 'inspect'
+    && !!currentLine
+    && lineAction === 'scan'
+    && currentCanScan
+    && !currentAwaitingLabel
+    && !problemDialog
+    && !shortfallModal
+    && !reconciliationLine
+    && !overDeliveryDecision
+    && !submitting
+    && !currentComplete;
+  const activeAccepted = currentLine ? accepted : 0;
+  const activeRejected = currentLine ? rejectedByLine[currentLine.receive_job_line_id] ?? 0 : 0;
+  const allLinesDone = lines.length > 0 && lines.every(isLineDone);
+
+  const persistLineProgress = useCallback((
+    line: ReceiveJobLine,
+    nextAccepted: number,
+    options?: { reconciliationRequired?: boolean }
+  ) => {
+    setAccepted(nextAccepted);
+    setAcceptedByLine((prev) => ({
+      ...prev,
+      [line.receive_job_line_id]: nextAccepted,
+    }));
+    if (!onPersistLineProgress || isLineComplete(line)) return progressPersistQueueRef.current;
+
+    progressPersistQueueRef.current = progressPersistQueueRef.current
+      .then(async () => {
+        await onPersistLineProgress(line.receive_job_line_id, {
+          quantity_sellable_provisional: nextAccepted,
+          ...(options?.reconciliationRequired ? { reconciliation_required: true } : {}),
+        });
+        progressPersistErrorRef.current = null;
+      })
+      .catch((err: any) => {
+        const error = err instanceof Error ? err : new Error(err?.message ?? 'Could not save count progress.');
+        progressPersistErrorRef.current = error;
+      });
+
+    return progressPersistQueueRef.current;
+  }, [isLineComplete, onPersistLineProgress]);
+
+  const flushLineProgress = useCallback(async () => {
+    await progressPersistQueueRef.current;
+    if (progressPersistErrorRef.current) throw progressPersistErrorRef.current;
   }, []);
 
-  /** Retry printing only — never re-inspects the line. */
-  const handleRetryPrintLabels = useCallback(async () => {
-    if (!pendingLabelAck || !onPrintUnitLabels) return;
-    try {
-      await onPrintUnitLabels(pendingLabelAck);
-      setLabelPrintFailed(false);
-    } catch {
-      setLabelPrintFailed(true);
-    }
-  }, [pendingLabelAck, onPrintUnitLabels]);
+  useEffect(() => {
+    if (!currentLine) return;
+    setAccepted(acceptedByLine[currentLine.receive_job_line_id] ?? Number(currentLine.quantity_accepted ?? 0));
+    setLineAction(currentLine.quantity_sellable_provisional != null ? 'count' : currentCanScan ? 'scan' : 'count');
+    setSubmitError(null);
+    setScanError(null);
+    setScanInputValue('');
+  }, [currentCanScan, currentLine]);
 
-  /**
-   * The ONLY path that reports physical label readiness to the backend.
-   * Progression resumes from here, not from the print request resolving.
-   */
-  const handleConfirmLabelsPrinted = useCallback(async () => {
-    if (!pendingLabelAck) return;
-    setLabelAckSubmitting(true);
+  useEffect(() => {
+    if (sessionPhase !== 'inspect' || !allLinesDone) return;
+    setSessionPhase('review');
+  }, [allLinesDone, sessionPhase]);
+
+  useEffect(() => {
+    if (!scanReady) return;
+    scanInputRef.current?.focus();
+  }, [scanReady, currentIndex, scanError, scanProcessing]);
+
+  const moveToNextLineOrReview = useCallback((completedLineId?: string, ackedLineId?: string) => {
+    const nextIndex = lines.findIndex((line) => {
+      if (line.receive_job_line_id === completedLineId || line.receive_job_line_id === ackedLineId) return false;
+      const complete = completeLines.has(line.receive_job_line_id) || !!line.inspection_complete;
+      const awaitingLabel = line.receive_job_line_id === labelHoldLineId || !!line.awaiting_label_ack;
+      const acked = acknowledgedLabelLines.has(line.receive_job_line_id) || line.receive_job_line_id === ackedLineId;
+      return !complete || (awaitingLabel && !acked);
+    });
+
+    if (nextIndex === -1) {
+      setSessionPhase('review');
+      return;
+    }
+
+    setCurrentIndex(nextIndex);
+    setSessionPhase('inspect');
+  }, [acknowledgedLabelLines, completeLines, labelHoldLineId, lines]);
+
+  const inspectAndResolveReadiness = useCallback(async (
+    line: ReceiveJobLine,
+    quantityAccepted: number,
+    quantityRejected: number,
+  ): Promise<{ awaitingLabelAck: boolean }> => {
+    await onInspectLine({
+      lasyncro_variant_id: line.lasyncro_variant_id,
+      receive_job_line_id: line.receive_job_line_id,
+      quantity_accepted: quantityAccepted,
+      quantity_rejected: quantityRejected,
+    });
+
+    setAcceptedByLine((prev) => ({ ...prev, [line.receive_job_line_id]: quantityAccepted }));
+    setRejectedByLine((prev) => ({ ...prev, [line.receive_job_line_id]: quantityRejected }));
+    setCompleteLines((prev) => new Set([...prev, line.receive_job_line_id]));
+
+    const needsLabelAck = quantityAccepted > 0 && !hasExternalBarcode(line);
+    if (!needsLabelAck) return { awaitingLabelAck: false };
+
+    // Establish the hold before any asynchronous print work. Otherwise the
+    // completed-line effect can briefly see every line as done and advance
+    // the session to Review before attachment acknowledgement exists.
+    setLabelHoldLineId(line.receive_job_line_id);
+
+    if (onPrintUnitLabels) {
+      try {
+        await onPrintUnitLabels(line.receive_job_line_id);
+        setLabelPrintFailed(false);
+      } catch {
+        setLabelPrintFailed(true);
+      }
+    }
+
+    return { awaitingLabelAck: true };
+  }, [onInspectLine, onPrintUnitLabels]);
+
+  const completeLine = useCallback(async (
+    line: ReceiveJobLine,
+    quantityAccepted: number,
+    quantityRejected: number,
+  ) => {
+    setSubmitting(true);
     setSubmitError(null);
     try {
-      // No optional chaining: only a real backend acknowledgement may clear
-      // the pending line. A rejection leaves pendingLabelAck set, so the
-      // action stays on screen and the session does not advance.
-      await onConfirmUnitLabelsPrinted(pendingLabelAck);
-      setPendingLabelAck(null);
-      setLabelPrintFailed(false);
-      if (isLastLine) {
-        setCloseDialog(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
+      const outcome = await inspectAndResolveReadiness(line, quantityAccepted, quantityRejected);
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(line.receive_job_line_id);
       }
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Could not record the label acknowledgement. Please retry.');
+      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
     } finally {
-      setLabelAckSubmitting(false);
+      setSubmitting(false);
     }
-  }, [pendingLabelAck, onConfirmUnitLabelsPrinted, isLastLine]);
+  }, [inspectAndResolveReadiness, moveToNextLineOrReview]);
 
-  const handleConfirmBatch = useCallback(async () => {
-    if (!currentLine) return;
+  const handleStart = useCallback(() => {
+    const firstOpen = lines.findIndex((line) => !isLineDone(line));
+    setCurrentIndex(firstOpen >= 0 ? firstOpen : 0);
+    if (firstOpen >= 0) {
+      void persistLineProgress(lines[firstOpen], projectedSellable(lines[firstOpen]));
+    }
+    setSessionPhase(firstOpen >= 0 ? 'inspect' : 'review');
+  }, [isLineDone, lines, persistLineProgress]);
 
-    // In scan mode — Confirm Batch advances to summary if all lines confirmed
-    if (inspectMode === 'scan') {
-      if (confirmedLines.size === lines.length) {
-        setSessionPhase('summary');
-      } else {
-        setSubmitError(`${lines.length - confirmedLines.size} line${lines.length - confirmedLines.size > 1 ? 's' : ''} still need scanning before you can continue.`);
-      }
+  const handleCountConfirm = useCallback(async () => {
+    if (!currentLine || currentComplete || currentAwaitingLabel) return;
+    try {
+      await flushLineProgress();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not save count progress. Please retry.');
+      return;
+    }
+    if (accepted > currentLine.quantity_expected) {
+      setOverDeliveryDecision({ line: currentLine, counted: accepted });
       return;
     }
 
     const shortfall = currentLine.quantity_expected - accepted;
-
-    // Shortfall detected — force exception reporting before allowing confirmation
     if (shortfall > 0) {
-      setShortfallModal({
+      try {
+        await persistLineProgress(currentLine, accepted, { reconciliationRequired: true });
+        await flushLineProgress();
+      } catch (err: any) {
+        setSubmitError(err?.message ?? 'Could not save count progress. Please retry.');
+        return;
+      }
+      setReconciliationLine({
         line: currentLine,
         accepted,
         totalShortfall: shortfall,
         remainingShortfall: shortfall,
+        allocations: [],
       });
-      setShortfallExceptionType(null);
-      setShortfallExceptionQty('');
-      setShortfallExceptionNotes('');
+      setShortfallProblemType(null);
+      setShortfallProblemQty('1');
+      setShortfallProblemNotes('');
+      setShortfallQtyError(null);
+      setSessionPhase('reconcile');
       return;
     }
 
-    // All units accounted — submit directly
-    setSubmitting(true);
+    await completeLine(currentLine, accepted, 0);
+  }, [accepted, completeLine, currentAwaitingLabel, currentComplete, currentLine, flushLineProgress, persistLineProgress]);
+
+  const handleScan = useCallback(async (value: string) => {
+    if (!scanReady || !currentLine || !onResolveBarcode || scanProcessing) return;
+    const scannedValue = value.trim();
+    if (!scannedValue) return;
+
+    setScanProcessing(true);
+    setScanError(null);
+    try {
+      const resolved = await onResolveBarcode(scannedValue);
+      if (!resolved?.lasyncro_variant_id) {
+        setScanError(`Barcode not recognised: ${scannedValue}`);
+        return;
+      }
+      if (resolved.lasyncro_variant_id !== currentLine.lasyncro_variant_id) {
+        setScanError('That barcode belongs to a different receive line.');
+        return;
+      }
+
+      const next = activeAccepted + 1;
+      if (next > currentLine.quantity_expected) {
+        setOverDeliveryDecision({ line: currentLine, counted: next });
+        return;
+      }
+
+      void persistLineProgress(currentLine, next);
+      setFlashLine(currentLine.receive_job_line_id);
+      window.setTimeout(() => setFlashLine(null), 450);
+    } catch {
+      setScanError('Scan failed. Check the connection and try again.');
+    } finally {
+      setScanProcessing(false);
+      setScanInputValue('');
+      if (scanReady) window.setTimeout(() => scanInputRef.current?.focus(), 30);
+    }
+  }, [
+    activeAccepted,
+    currentLine,
+    onResolveBarcode,
+    persistLineProgress,
+    scanProcessing,
+    scanReady,
+  ]);
+
+  const handleRetryPrintLabels = useCallback(async () => {
+    if (!labelHoldLineId || !onPrintUnitLabels) return;
+    try {
+      await onPrintUnitLabels(labelHoldLineId);
+      setLabelPrintFailed(false);
+    } catch {
+      setLabelPrintFailed(true);
+    }
+  }, [labelHoldLineId, onPrintUnitLabels]);
+
+  const handleConfirmLabelsPrinted = useCallback(async () => {
+    if (!labelHoldLineId) return;
+    setLabelAckSubmitting(true);
     setSubmitError(null);
     try {
-      const outcome = await inspectAndPrint({
-        lasyncro_variant_id: currentLine.lasyncro_variant_id,
-        receive_job_line_id: currentLine.receive_job_line_id,
-        quantity_accepted: accepted,
-        quantity_rejected: 0,
-      });
-      resetForNext();
-      // GH-1085 — barcode-less stock is not physically ready yet. Hold here
-      // until the operator confirms the labels were printed and attached.
-      if (outcome.awaitingLabelAck) return;
-      if (isLastLine) {
-        setCloseDialog(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
-      }
+      await onConfirmUnitLabelsPrinted(labelHoldLineId);
+      setAcknowledgedLabelLines((prev) => new Set([...prev, labelHoldLineId]));
+      const ackedLineId = labelHoldLineId;
+      setLabelHoldLineId(null);
+      setLabelPrintFailed(false);
+      moveToNextLineOrReview(undefined, ackedLineId);
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Failed to confirm batch. Please retry.');
+      setSubmitError(err?.message ?? 'Could not record label acknowledgement. Please retry.');
     } finally {
-      setSubmitting(false);
+      setLabelAckSubmitting(false);
     }
-  }, [currentLine, accepted, isLastLine, onInspectLine, resetForNext]);
+  }, [labelHoldLineId, moveToNextLineOrReview, onConfirmUnitLabelsPrinted]);
 
-  // ── Submit inspection after all shortfall exceptions accounted for ─────────
   const submitInspectionAfterShortfall = useCallback(async (
     line: ReceiveJobLine,
     acceptedQty: number,
     totalShortfall: number,
   ) => {
-    setShortfallSubmitting(true);
     try {
-      const outcome = await inspectAndPrint({
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        receive_job_line_id: line.receive_job_line_id,
-        quantity_accepted: acceptedQty,
-        quantity_rejected: totalShortfall,
-      });
+      const outcome = await inspectAndResolveReadiness(line, acceptedQty, totalShortfall);
       setShortfallModal(null);
-      setShortfallExceptionType(null);
-      setShortfallExceptionQty('');
-      setShortfallExceptionNotes('');
+      setShortfallProblemType(null);
+      setShortfallProblemQty('');
+      setShortfallProblemNotes('');
       setShortfallQtyError(null);
-      resetForNext();
-      if (outcome.awaitingLabelAck) return;
-      if (isLastLine) {
-        setCloseDialog(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(line.receive_job_line_id);
       }
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Failed to submit inspection.');
-    } finally {
-      setShortfallSubmitting(false);
+      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
     }
-  }, [onInspectLine, resetForNext, isLastLine]);
+  }, [inspectAndResolveReadiness, moveToNextLineOrReview]);
 
-  // ── Shortfall modal confirm — report one exception chunk ───────────────────
   const handleShortfallConfirm = useCallback(async () => {
-    if (!shortfallModal || !shortfallExceptionType) return;
-    const qty = parseInt(shortfallExceptionQty, 10);
-    if (!shortfallExceptionQty.trim() || isNaN(qty) || qty <= 0) {
+    if (!shortfallModal || !shortfallProblemType) return;
+    const qty = Number.parseInt(shortfallProblemQty, 10);
+    if (!shortfallProblemQty.trim() || Number.isNaN(qty) || qty <= 0) {
       setShortfallQtyError('Enter a quantity to continue.');
       return;
     }
@@ -496,31 +910,28 @@ export default function ReceiveSessionPage({
       setShortfallQtyError(`Maximum is ${shortfallModal.remainingShortfall}.`);
       return;
     }
-    setShortfallQtyError(null);
-
-    const needsNotes = shortfallExceptionType === 'barcode_mismatch' || shortfallExceptionType === 'other';
-    if (needsNotes && !shortfallExceptionNotes.trim()) return;
+    const needsNotes = shortfallProblemType === 'barcode_mismatch' || shortfallProblemType === 'other';
+    if (needsNotes && !shortfallProblemNotes.trim()) return;
 
     setShortfallSubmitting(true);
+    setSubmitError(null);
     try {
       await onReportException({
         lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
         receive_job_line_id: shortfallModal.line.receive_job_line_id,
-        exception_type: shortfallExceptionType,
+        exception_type: shortfallProblemType,
         quantity_affected: qty,
-        notes: shortfallExceptionNotes.trim() || `${qty} unit${qty > 1 ? 's' : ''} unaccounted during receive`,
+        accounting_role: 'shortfall',
+        notes: shortfallProblemNotes.trim() || `${qty} missing during receive`,
       });
 
-      const newRemaining = shortfallModal.remainingShortfall - qty;
-
-      if (newRemaining > 0) {
-        // More shortfall to account for — loop
-        setShortfallModal((prev) => prev ? { ...prev, remainingShortfall: newRemaining } : null);
-        setShortfallExceptionType(null);
-        setShortfallExceptionQty('');
-        setShortfallExceptionNotes('');
+      const remainingShortfall = shortfallModal.remainingShortfall - qty;
+      if (remainingShortfall > 0) {
+        setShortfallModal((prev) => prev ? { ...prev, remainingShortfall } : null);
+        setShortfallProblemType(null);
+        setShortfallProblemQty('');
+        setShortfallProblemNotes('');
       } else {
-        // All accounted — submit inspection
         await submitInspectionAfterShortfall(
           shortfallModal.line,
           shortfallModal.accepted,
@@ -528,805 +939,1446 @@ export default function ReceiveSessionPage({
         );
       }
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Failed to report exception.');
+      setSubmitError(err?.message ?? 'Could not report the problem. Nothing was changed; retry to continue.');
     } finally {
       setShortfallSubmitting(false);
     }
-  }, [shortfallModal, shortfallExceptionType, shortfallExceptionQty, shortfallExceptionNotes, onReportException, submitInspectionAfterShortfall]);
+  }, [
+    onReportException,
+    shortfallModal,
+    shortfallProblemNotes,
+    shortfallProblemQty,
+    shortfallProblemType,
+    submitInspectionAfterShortfall,
+  ]);
 
-  // ── Miscount escape hatch — accept full expected, no exception ─────────────
-  const handleMiscount = useCallback(async () => {
-    if (!shortfallModal) return;
-    setShortfallModal(null);
-    setAccepted(shortfallModal.line.quantity_expected);
+  const handleReconciliationAllocation = useCallback(async () => {
+    if (!reconciliationLine || !shortfallProblemType) return;
+    const qty = Number.parseInt(shortfallProblemQty, 10);
+    if (!shortfallProblemQty.trim() || Number.isNaN(qty) || qty <= 0) {
+      setShortfallQtyError('Enter a quantity to continue.');
+      return;
+    }
+    if (qty > reconciliationLine.remainingShortfall) {
+      setShortfallQtyError(`Maximum is ${reconciliationLine.remainingShortfall}.`);
+      return;
+    }
+    if (shortfallProblemType === 'other' && !shortfallProblemNotes.trim()) {
+      setShortfallQtyError('Add a note to continue.');
+      return;
+    }
+
     setShortfallSubmitting(true);
+    setSubmitError(null);
     try {
-      await inspectAndPrint({
-        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
-        receive_job_line_id: shortfallModal.line.receive_job_line_id,
-        quantity_accepted: shortfallModal.line.quantity_expected,
-        quantity_rejected: 0,
+      await onReportException({
+        lasyncro_variant_id: reconciliationLine.line.lasyncro_variant_id,
+        receive_job_line_id: reconciliationLine.line.receive_job_line_id,
+        exception_type: shortfallProblemType,
+        quantity_affected: qty,
+        accounting_role: 'shortfall',
+        notes: shortfallProblemNotes.trim() || `${qty} ${problemLabel(shortfallProblemType).toLowerCase()} during receive`,
       });
-      resetForNext();
-      if (isLastLine) {
-        setCloseDialog(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
+
+      const remainingShortfall = reconciliationLine.remainingShortfall - qty;
+      const allocations = [...reconciliationLine.allocations, { type: shortfallProblemType, quantity: qty }];
+      setReconciliationLine({ ...reconciliationLine, remainingShortfall, allocations });
+      setShortfallProblemType(null);
+      setShortfallProblemQty(remainingShortfall > 0 ? '1' : '0');
+      setShortfallProblemNotes('');
+      setShortfallQtyError(null);
+      await onRefresh?.();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not add this reconciliation item. Retry to continue.');
+    } finally {
+      setShortfallSubmitting(false);
+    }
+  }, [
+    onRefresh,
+    onReportException,
+    reconciliationLine,
+    shortfallProblemNotes,
+    shortfallProblemQty,
+    shortfallProblemType,
+  ]);
+
+  const handleFinishReconciledLine = useCallback(async () => {
+    if (!reconciliationLine || reconciliationLine.remainingShortfall > 0) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const outcome = await inspectAndResolveReadiness(reconciliationLine.line, reconciliationLine.accepted, 0);
+      const completedLineId = reconciliationLine.line.receive_job_line_id;
+      setReconciliationLine(null);
+      setSessionPhase('inspect');
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(completedLineId);
       }
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Failed to submit inspection.');
+      setSubmitError(err?.message ?? 'Could not finish this line. Please retry.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [inspectAndResolveReadiness, moveToNextLineOrReview, reconciliationLine]);
+
+  const handleMiscount = useCallback(async () => {
+    if (!shortfallModal) return;
+    setShortfallSubmitting(true);
+    setAccepted(shortfallModal.line.quantity_expected);
+    try {
+      const outcome = await inspectAndResolveReadiness(shortfallModal.line, shortfallModal.line.quantity_expected, 0);
+      setShortfallModal(null);
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(shortfallModal.line.receive_job_line_id);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
     } finally {
       setShortfallSubmitting(false);
     }
-  }, [shortfallModal, onInspectLine, resetForNext, isLastLine]);
+  }, [inspectAndResolveReadiness, moveToNextLineOrReview, shortfallModal]);
 
-  const handleReportException = useCallback(async () => {
-    if (!currentLine || !exceptionType) return;
-    const needsNotes = exceptionType === 'barcode_mismatch' || exceptionType === 'other';
-    if (needsNotes && !exceptionNotes.trim()) return;
+  const handleReconciliationMiscount = useCallback(async () => {
+    if (!reconciliationLine) return;
+    setShortfallSubmitting(true);
+    setAccepted(reconciliationLine.line.quantity_expected);
+    try {
+      const outcome = await inspectAndResolveReadiness(reconciliationLine.line, reconciliationLine.line.quantity_expected, 0);
+      const completedLineId = reconciliationLine.line.receive_job_line_id;
+      setReconciliationLine(null);
+      setSessionPhase('inspect');
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(completedLineId);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
+    } finally {
+      setShortfallSubmitting(false);
+    }
+  }, [inspectAndResolveReadiness, moveToNextLineOrReview, reconciliationLine]);
 
+  const openProblemDialog = useCallback((defaults?: { choice?: ProblemChoice; qty?: string; notes?: string }) => {
+    const choice = defaults?.choice ?? null;
+    const option = choice ? PROBLEM_CHOICES.find((item) => item.id === choice) : undefined;
+
+    setProblemChoice(choice);
+    setProblemType(option?.problemType ?? null);
+    setProblemQty(defaults?.qty ?? '1');
+    setProblemNotes(defaults?.notes ?? option?.defaultNotes ?? '');
+    setProblemError(null);
+    setProblemDialog(true);
+  }, []);
+
+  const handleAcceptOverDelivery = useCallback(async () => {
+    if (!overDeliveryDecision) return;
+    const { line, counted } = overDeliveryDecision;
+    setOverDeliveryDecision(null);
+    await persistLineProgress(line, counted);
+    await flushLineProgress();
+    await completeLine(line, counted, 0);
+  }, [completeLine, flushLineProgress, overDeliveryDecision, persistLineProgress]);
+
+  const handleRejectOverDelivery = useCallback(() => {
+    if (!overDeliveryDecision) return;
+    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
+    setOverDeliveryDecision(null);
+  }, [overDeliveryDecision, persistLineProgress]);
+
+  const handleReportOverDelivery = useCallback(() => {
+    if (!overDeliveryDecision) return;
+    const extra = Math.max(1, overDeliveryDecision.counted - overDeliveryDecision.line.quantity_expected);
+    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
+    setOverDeliveryDecision(null);
+    openProblemDialog({
+      choice: 'extra_item',
+      qty: String(extra),
+      notes: `${extra} extra unit${extra === 1 ? '' : 's'} found during receive`,
+    });
+  }, [openProblemDialog, overDeliveryDecision, persistLineProgress]);
+
+  const handleReportProblem = useCallback(async () => {
+    if (!currentLine || !problemType) return;
+    const qty = Number.parseInt(problemQty, 10);
+    if (Number.isNaN(qty) || qty <= 0) {
+      setProblemError('Enter a quantity to continue.');
+      return;
+    }
+    const needsNotes = problemType === 'barcode_mismatch' || problemType === 'other';
+    if (needsNotes && !problemNotes.trim()) {
+      setProblemError('Add a note to continue.');
+      return;
+    }
+
+    setProblemSubmitting(true);
+    setProblemError(null);
     try {
       await onReportException({
         lasyncro_variant_id: currentLine.lasyncro_variant_id,
         receive_job_line_id: currentLine.receive_job_line_id,
-        exception_type: exceptionType,
-        quantity_affected: parseInt(exceptionQty, 10) || 1,
-        notes: exceptionNotes.trim() || undefined,
+        exception_type: problemType,
+        quantity_affected: qty,
+        notes: problemNotes.trim() || undefined,
       });
+      setProblemDialog(false);
+      setProblemChoice(null);
+      setProblemType(null);
+      setProblemNotes('');
+      setProblemQty('1');
+      await onRefresh?.();
     } catch (err: any) {
-      console.error('[RECEIVE_SESSION] Exception report failed', err?.message);
+      setProblemError(err?.message ?? 'Could not report the problem. Your entry is still here; retry when ready.');
     } finally {
-      setExceptionDialog(false);
-      setExceptionType(null);
-      setExceptionNotes('');
-      setExceptionQty('1');
+      setProblemSubmitting(false);
     }
-  }, [currentLine, exceptionType, exceptionNotes, exceptionQty, onReportException]);
+  }, [currentLine, onRefresh, onReportException, problemNotes, problemQty, problemType]);
 
   const handleCloseJob = useCallback(async () => {
-    setClosing(true);
-    try {
-      await onCloseJob({ actual_delivery_date: deliveryDate || undefined });
-      onComplete();
-    } catch (err: any) {
-      setSubmitError(err?.message ?? 'Failed to close receive job.');
-      setClosing(false);
-      setCloseDialog(false);
+    if (!deliveryDate.trim()) {
+      setSubmitError('Actual delivery date is required before closing this receive.');
+      return;
     }
-  }, [deliveryDate, onCloseJob, onComplete]);
 
-  const totalUnits = lines.reduce((s, l) => s + l.quantity_expected, 0);
+    setClosing(true);
+    setSubmitError(null);
+    try {
+      await onCloseJob({ actual_delivery_date: deliveryDate });
+      await onRefresh?.();
+      setSessionPhase('handoff');
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not close receive. Nothing was changed; retry when ready.');
+    } finally {
+      setClosing(false);
+    }
+  }, [deliveryDate, onCloseJob, onRefresh]);
 
-  // ── BRIEF SCREEN ──────────────────────────────────────────────────────────
-  if (sessionPhase === 'brief') {
+  const WorkNote = () => {
+    const item = currentLine ? lineName(currentLine) : `${lines.length} lines`;
+    const identity = currentLine
+      ? currentLine.barcode?.trim() || currentLine.sku || currentLine.lasyncro_variant_id || currentLine.receive_job_line_id
+      : receiveJobId;
+    const action = sessionPhase === 'brief'
+      ? 'Brief'
+      : sessionPhase === 'review'
+        ? 'Review'
+        : sessionPhase === 'handoff'
+          ? 'Stow handoff'
+          : sessionPhase === 'reconcile'
+            ? 'Reconcile'
+            : currentAwaitingLabel
+            ? 'Label hold'
+            : lineAction === 'scan'
+              ? 'Scan line'
+              : 'Count line';
+    const quantity = currentLine
+      ? sessionPhase === 'reconcile' && reconciliationLine
+        ? `${reconciliationLine.accepted}/${currentLine.quantity_expected}, ${reconciliationLine.remainingShortfall} unaccounted`
+        : `${activeAccepted}/${currentLine.quantity_expected}${activeAccepted > currentLine.quantity_expected ? `, +${activeAccepted - currentLine.quantity_expected} extra` : ''}${activeRejected ? `, ${activeRejected} problem` : ''}`
+      : `${completedCount}/${lines.length} lines`;
+    const nextStep = sessionPhase === 'brief'
+      ? 'start receive'
+      : sessionPhase === 'review'
+        ? 'close receive'
+        : sessionPhase === 'handoff'
+          ? 'move stock to stow'
+          : sessionPhase === 'reconcile'
+            ? 'account shortfall'
+            : currentAwaitingLabel
+            ? 'attach LSU labels'
+            : lineAction === 'scan'
+              ? 'scan or count locally'
+              : 'finish count';
+
+    const workNoteFields = sessionPhase === 'handoff'
+      ? [
+          ['Action', action],
+          ['Status', 'CLOSED'],
+          ['Closed at', formatOpsTimestamp(closedAt)],
+          ['Actual delivery', formatOpsDate(actualDeliveryDate)],
+          ['Reference', poId],
+          ['Item', item],
+          ['Qty', quantity],
+          ['Source', supplierName],
+          ['Identity', identity],
+          ['Next', nextStep],
+        ]
+      : [
+          ['Action', action],
+          ['Reference', poId],
+          ['Item', item],
+          ['Qty', quantity],
+          ['Source', supplierName],
+          ['Identity', identity],
+          ['Next', nextStep],
+        ];
+
     return (
-      <Box sx={{ p: 3, maxWidth: 560, mx: 'auto' }}>
-        <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>Receive from {supplierName}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          {lines.length} variant{lines.length !== 1 ? 's' : ''} · {totalUnits} units expected
-        </Typography>
+      <Paper
+        variant="outlined"
+        sx={{
+          px: 2,
+          py: 1.25,
+          borderRadius: '6px',
+          bgcolor: 'background.paper',
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr 1fr',
+            md: sessionPhase === 'handoff'
+              ? 'repeat(5, minmax(0, 1fr))'
+              : 'repeat(4, minmax(0, 1fr))',
+          },
+          gap: 1,
+        }}
+      >
+        {workNoteFields.map(([label, value]) => (
+          <Box key={label} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
+              {label}
+            </Typography>
+            <Typography
+              variant="body2"
+              noWrap
+              sx={{ ...(label === 'Item' || label === 'Source' ? {} : monoSx), fontWeight: 650 }}
+            >
+              {value}
+            </Typography>
+          </Box>
+        ))}
+      </Paper>
+    );
+  };
 
-        {/* LINE ITEM SUMMARY */}
-        <Paper variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600, fontSize: 11 }}>Product</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Expected</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {lines.map((line) => (
+  const LineMedia = ({ line, size = 44 }: { line: ReceiveJobLine; size?: number }) => (
+    line.image_url ? (
+      <Box component="img" src={line.image_url} alt="" sx={{ width: size, height: size, objectFit: 'cover', borderRadius: '4px', flexShrink: 0 }} />
+    ) : (
+      <Box sx={{ width: size, height: size, borderRadius: '4px', bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Package size={Math.max(16, size / 2.5)} style={{ opacity: 0.4 }} />
+      </Box>
+    )
+  );
+
+  const renderBrief = () => (
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      <Box>
+        <Typography variant="h5" fontWeight={750}>Receive from {supplierName}</Typography>
+        <Typography variant="body2" color="text.secondary">
+          PO <Box component="span" sx={monoSx}>{poId}</Box> · Receive <Box component="span" sx={monoSx}>{receiveJobId}</Box>
+        </Typography>
+      </Box>
+
+      <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Product + variant</TableCell>
+              <TableCell align="right">Expected</TableCell>
+              <TableCell align="right">Already received</TableCell>
+              <TableCell align="right">Remaining</TableCell>
+              <TableCell>Barcode state</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {lines.map((line) => {
+              const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
+              const remainingQty = Math.max(0, line.quantity_expected - acceptedQty);
+              const awaiting = isLineAwaitingLabel(line);
+              const complete = isLineComplete(line);
+              return (
                 <TableRow key={line.receive_job_line_id}>
-                  <TableCell sx={{ fontSize: 12 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {line.image_url ? (
-                        <Box component="img" src={line.image_url} alt="" sx={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
-                      ) : (
-                        <Box sx={{ width: 36, height: 36, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Package size={16} style={{ opacity: 0.4 }} />
-                        </Box>
-                      )}
-                      <Box>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {line.product_title ?? line.variant_title ?? line.description ?? line.sku ?? '—'}
+                  <TableCell>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', minWidth: 0 }}>
+                      <LineMedia line={line} size={36} />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={650} noWrap>{lineName(line)}</Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {variantName(line)}
+                          {line.sku ? <> · <Box component="span" sx={monoSx}>{line.sku}</Box></> : null}
                         </Typography>
-                        {line.sku && <Typography variant="caption" color="text.secondary">{line.sku}</Typography>}
+                        <ReportedProblemSummary line={line} compact />
                       </Box>
                     </Box>
                   </TableCell>
-                  <TableCell align="right" sx={{ fontSize: 12 }}>{line.quantity_expected}</TableCell>
+                  <TableCell align="right" sx={monoSx}>{line.quantity_expected}</TableCell>
+                  <TableCell align="right" sx={monoSx}>{acceptedQty}</TableCell>
+                  <TableCell align="right" sx={monoSx}>{remainingQty}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={hasExternalBarcode(line) ? `barcode ${line.barcode}` : awaiting ? 'LSU label hold' : 'barcode-less: LSU labels after count'}
+                      color={awaiting ? 'warning' : complete ? 'success' : hasExternalBarcode(line) ? 'primary' : 'default'}
+                      variant={complete || awaiting ? 'filled' : 'outlined'}
+                      sx={{ maxWidth: 240, '& .MuiChip-label': { ...monoSx, overflow: 'hidden', textOverflow: 'ellipsis' } }}
+                    />
+                  </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Paper>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Paper>
 
-        {/* MODE SELECTOR */}
-        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1.5, display: 'block', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          How do you want to inspect?
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
-          <Paper
-            variant="outlined"
-            onClick={() => { setInspectMode('count'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'count'); }}
+      <Alert severity="info">
+        Barcode-capable lines can scan continuously or be counted locally. Barcode-less lines are counted, then held until LSU labels are printed and attached.
+      </Alert>
+
+      <Button
+        variant="contained"
+        size="large"
+        onClick={handleStart}
+        sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+      >
+        Start Receive
+      </Button>
+    </Box>
+  );
+
+  const renderLineRail = () => (
+    <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
+      {lines.map((line, index) => {
+        const complete = isLineComplete(line);
+        const awaiting = isLineAwaitingLabel(line);
+        const done = isLineDone(line);
+        return (
+          <Box
+            key={line.receive_job_line_id}
+            component="button"
+            disabled={done}
+            onClick={() => setCurrentIndex(index)}
             sx={{
-              p: 2, borderRadius: 2, cursor: 'pointer',
-              borderColor: inspectMode === 'count' ? 'var(--accent)' : 'divider',
-              bgcolor: inspectMode === 'count' ? 'var(--accent-ghost)' : 'transparent',
-              transition: 'all 0.15s',
+              width: '100%',
+              display: 'grid',
+              gridTemplateColumns: 'auto minmax(0,1fr) auto',
+              gap: 1,
+              alignItems: 'center',
+              p: 1.25,
+              border: 0,
+              borderBottom: index === lines.length - 1 ? 0 : '1px solid',
+              borderColor: 'divider',
+              bgcolor: currentIndex === index ? 'var(--accent-ghost)' : 'transparent',
+              color: 'text.primary',
+              textAlign: 'left',
+              cursor: done ? 'not-allowed' : 'pointer',
+              opacity: done ? 0.58 : 1,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Hash size={20} color={inspectMode === 'count' ? 'var(--accent)' : theme.palette.text.secondary} />
-              <Box>
-                <Typography variant="body2" fontWeight={600} color={inspectMode === 'count' ? 'var(--accent)' : 'text.primary'}>
-                  Count by hand
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Tap + for each accepted unit. Always available.
-                </Typography>
-              </Box>
+            {done ? <CheckCircle size={16} color={theme.palette.success.main} /> : awaiting ? <AlertTriangle size={16} color={theme.palette.warning.main} /> : <Hash size={16} />}
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={650} noWrap>{lineName(line)}</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap sx={monoSx}>
+                {line.sku ?? line.receive_job_line_id}
+              </Typography>
+              <ReportedProblemSummary line={line} compact />
             </Box>
-          </Paper>
+            <Chip size="small" label={statusLabel(line, awaiting, complete)} variant="outlined" sx={{ '& .MuiChip-label': monoSx }} />
+          </Box>
+        );
+      })}
+    </Paper>
+  );
 
-          <Paper
-            variant="outlined"
-            onClick={() => { if (onResolveBarcode) { setInspectMode('scan'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'scan'); } }}
-            sx={{
-              p: 2, borderRadius: 2,
-              cursor: onResolveBarcode ? 'pointer' : 'not-allowed',
-              opacity: onResolveBarcode ? 1 : 0.45,
-              borderColor: inspectMode === 'scan' ? 'var(--accent)' : 'divider',
-              bgcolor: inspectMode === 'scan' ? 'var(--accent-ghost)' : 'transparent',
-              transition: 'all 0.15s',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <ScanBarcode size={20} color={inspectMode === 'scan' ? 'var(--accent)' : theme.palette.text.secondary} />
-              <Box>
-                <Typography variant="body2" fontWeight={600} color={inspectMode === 'scan' ? 'var(--accent)' : 'text.primary'}>
-                  Scan barcodes
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Free-scan any unit — system matches it to the right PO line automatically.
-                  {!onResolveBarcode && ' (Not available — barcode resolver not connected)'}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-        </Box>
-
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          onClick={() => setSessionPhase('inspect')}
-          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
-        >
-          Start Receiving
-        </Button>
-      </Box>
-    );
-  }
-
-  // ── SUMMARY SCREEN ────────────────────────────────────────────────────────
-  if (sessionPhase === 'summary') {
-    const totalAccepted = lines.reduce((s, l) => {
-      if (inspectMode === 'scan') return s + (scanCounts[l.receive_job_line_id] ?? 0);
-      return s + (confirmedLines.has(l.receive_job_line_id) ? (scanCounts[l.receive_job_line_id] ?? l.quantity_expected) : accepted);
-    }, 0);
-    const totalRejected = totalUnits - totalAccepted;
+  const renderInspect = () => {
+    if (!currentLine) return null;
+    const remaining = Math.max(0, currentLine.quantity_expected - activeAccepted);
+    const extra = Math.max(0, activeAccepted - currentLine.quantity_expected);
 
     return (
-      <Box sx={{ p: 3, maxWidth: 560, mx: 'auto' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-          <CheckCircle size={28} color={theme.palette.success.main} />
-          <Typography variant="h6" fontWeight={600}>Inspection complete</Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          {supplierName} · {lines.length} variant{lines.length !== 1 ? 's' : ''}
-        </Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr) 320px' },
+          gap: 2,
+          alignItems: 'stretch',
+        }}
+      >
+        {renderLineRail()}
 
-        {/* PER-LINE SUMMARY */}
-        <Paper variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: '6px',
+            p: 2.25,
+            bgcolor: flashLine === currentLine.receive_job_line_id ? 'rgba(34,197,94,0.10)' : 'background.paper',
+            transition: 'background-color 180ms ease',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 320,
+          }}
+        >
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1, mb: 2 }}>
+            {currentLine.sku && (
+              <Chip
+                size="small"
+                label={`SKU ${currentLine.sku}`}
+                sx={{ width: '100%', '& .MuiChip-label': monoSx }}
+              />
+            )}
+            <Chip
+              size="small"
+              label={`Expected ${currentLine.quantity_expected}`}
+              sx={{ width: '100%', '& .MuiChip-label': monoSx }}
+            />
+            <Chip
+              size="small"
+              label={`Remaining ${remaining}`}
+              color={remaining === 0 ? 'success' : 'default'}
+              sx={{ width: '100%', '& .MuiChip-label': monoSx }}
+            />
+          </Box>
+
+          <ReportedProblemSummary line={currentLine} />
+
+          {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+
+          {currentAwaitingLabel ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={750}>
+                  Attach a label to each unit
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  {activeAccepted} unit labels were created for {variantName(currentLine)}.
+                  Attach one label to each unit before moving them to Stow.
+                </Typography>
+              </Box>
+
+              {labelPrintFailed && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" color="warning.main">
+                    Labels could not be printed.
+                  </Typography>
+                  {onPrintUnitLabels && (
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      size="small"
+                      onClick={() => void handleRetryPrintLabels()}
+                      sx={{ borderRadius: '6px', fontWeight: 650 }}
+                    >
+                      Reprint labels
+                    </Button>
+                  )}
+                </Box>
+              )}
+
+              <Button
+                data-testid="confirm-unit-labels-printed"
+                variant="contained"
+                disabled={labelAckSubmitting}
+                onClick={() => void handleConfirmLabelsPrinted()}
+                startIcon={<CheckCircle size={16} />}
+                sx={{
+                  width: '100%',
+                  minHeight: 36,
+                  mt: 'auto',
+                  bgcolor: 'var(--accent)',
+                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                }}
+              >
+                {labelAckSubmitting ? 'Confirming...' : `All ${activeAccepted} labels are attached`}
+              </Button>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+              {currentCanScan && (
+                <Box sx={{ display: 'inline-flex', gap: 0.75, alignItems: 'center' }}>
+                  <Button
+                    variant={lineAction === 'scan' ? 'contained' : 'outlined'}
+                    size="small"
+                    startIcon={<ScanBarcode size={14} />}
+                    onClick={() => setLineAction('scan')}
+                    sx={{ borderRadius: '6px', fontWeight: 650 }}
+                  >
+                    Scan
+                  </Button>
+                  <Button
+                    variant={lineAction === 'count' ? 'contained' : 'outlined'}
+                    size="small"
+                    startIcon={<Hash size={14} />}
+                    onClick={() => {
+                      setLineAction('count');
+                      void persistLineProgress(currentLine, accepted);
+                    }}
+                    sx={{ borderRadius: '6px', fontWeight: 650 }}
+                  >
+                    Count
+                  </Button>
+                </Box>
+              )}
+
+              {lineAction === 'scan' && currentCanScan ? (
+                <Box sx={{ display: 'grid', gap: 1 }}>
+                  <TextField
+                    inputRef={scanInputRef}
+                    size="small"
+                    fullWidth
+                    value={scanInputValue}
+                    disabled={!scanReady || scanProcessing || currentComplete}
+                    placeholder="Scan barcode"
+                    onChange={(event) => setScanInputValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return;
+                      const value = scanInputValue;
+                      setScanInputValue('');
+                      void handleScan(value);
+                    }}
+                    helperText={scanProcessing ? 'Processing scan...' : 'Scanner-ready: scan, process, clear, refocus'}
+                    autoComplete="off"
+                    inputProps={{ style: monoSx }}
+                  />
+                  {scanError && <Alert severity="error" onClose={() => setScanError(null)}>{scanError}</Alert>}
+                </Box>
+              ) : (
+                <Box sx={{ width: '100%', my: 'auto' }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                      gap: 1,
+                    }}
+                  >
+                    <Button
+                      variant="outlined"
+                      onClick={() => {
+                        const next = Math.max(0, accepted - 1);
+                        void persistLineProgress(currentLine, next);
+                      }}
+                      disabled={accepted <= 0 || currentComplete}
+                      sx={countStepperButtonSx()}
+                    >
+                      −
+                    </Button>
+
+                    <TextField
+                      size="small"
+                      value={accepted}
+                      disabled={currentComplete}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10);
+                        if (Number.isNaN(next) || next < 0) return;
+                        void persistLineProgress(currentLine, next);
+                        if (next > currentLine.quantity_expected) {
+                          setOverDeliveryDecision({ line: currentLine, counted: next });
+                          return;
+                        }
+                      }}
+                      inputProps={{
+                        min: 0,
+                        style: { ...monoSx, textAlign: 'center', fontWeight: 800 },
+                      }}
+                      sx={countStepperValueSx}
+                    />
+
+                    <Button
+                      variant="outlined"
+                      onClick={() => {
+                        const next = accepted + 1;
+                        void persistLineProgress(currentLine, next);
+                        if (accepted >= currentLine.quantity_expected) {
+                          setOverDeliveryDecision({ line: currentLine, counted: next });
+                          return;
+                        }
+                      }}
+                      disabled={currentComplete}
+                      sx={countStepperButtonSx(true)}
+                    >
+                      +
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => void persistLineProgress(currentLine, currentLine.quantity_expected)}
+                      disabled={currentComplete}
+                      sx={{
+                        minWidth: 0,
+                        height: 40,
+                        gridColumn: 2,
+                        borderRadius: '6px',
+                        fontWeight: 650,
+                      }}
+                    >
+                      ALL {currentLine.quantity_expected}
+                    </Button>
+                  </Box>
+
+                  <Box sx={{ mt: 1.5 }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        mb: 0.75,
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 650 }}>
+                        COUNTED
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={monoSx}>
+                        {accepted} / {currentLine.quantity_expected}
+                      </Typography>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        height: 4,
+                        borderRadius: 999,
+                        bgcolor: 'action.hover',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${Math.min(
+                            100,
+                            (accepted / Math.max(1, currentLine.quantity_expected)) * 100,
+                          )}%`,
+                          height: '100%',
+                          borderRadius: 999,
+                          bgcolor:
+                            accepted >= currentLine.quantity_expected
+                              ? 'var(--accent)'
+                              : 'text.secondary',
+                          transition: 'width 180ms ease, background-color 180ms ease',
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1, mt: 'auto' }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  aria-label="Finish count Confirm line"
+                  disabled={submitting || currentComplete}
+                  onClick={() => void handleCountConfirm()}
+                  startIcon={<CheckCircle size={16} />}
+                  sx={{
+                    width: '100%',
+                    minHeight: 36,
+                    bgcolor: 'var(--accent)',
+                    '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {submitting ? 'Saving...' : 'Finish count'}
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </Paper>
+
+        <Paper
+          variant="outlined"
+          sx={{
+            display: { xs: 'none', lg: 'flex' },
+            flexDirection: 'column',
+            borderRadius: '6px',
+            p: 2.25,
+            minHeight: 320,
+            overflow: 'hidden',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} noWrap>
+              {lineName(currentLine)}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {variantName(currentLine)}
+            </Typography>
+          </Box>
+
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+            <LineMedia line={currentLine} size={220} />
+          </Box>
+        </Paper>
+      </Box>
+    );
+  };
+
+  const renderReconciliation = () => {
+    if (!reconciliationLine) return renderInspect();
+    const { line, accepted: sellable, totalShortfall, remainingShortfall, allocations } = reconciliationLine;
+    const accounted = totalShortfall - remainingShortfall;
+    const selectedChoice = RECONCILIATION_CHOICES.find((choice) => choice.type === shortfallProblemType);
+
+    return (
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr) 320px' },
+          gap: 2,
+          alignItems: 'stretch',
+        }}
+      >
+        {renderLineRail()}
+
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: '6px',
+            p: 2.25,
+            bgcolor: 'background.paper',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 420,
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+            {[
+              ['Expected', line.quantity_expected],
+              ['Sellable', sellable],
+              ['To account for', remainingShortfall],
+            ].map(([label, value]) => (
+              <Paper key={label} variant="outlined" sx={{ p: 1.25, borderRadius: '6px', minHeight: 70 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+                  {label}
+                </Typography>
+                <Typography variant="h6" sx={monoSx} fontWeight={800}>
+                  {value}
+                </Typography>
+              </Paper>
+            ))}
+          </Box>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mt: -0.25 }}>
+            Account for the remaining {remainingShortfall} units before finishing this line.
+          </Typography>
+
+          {submitError && <Alert severity="error">{submitError}</Alert>}
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 0.875 }}>
+            {RECONCILIATION_CHOICES.map((choice) => {
+              const selected = shortfallProblemType === choice.type;
+              const isOther = choice.type === 'other';
+              return (
+                <Button
+                  key={choice.type}
+                  variant="outlined"
+                  color="inherit"
+                  aria-pressed={selected}
+                  data-testid={`reconciliation-choice-${choice.type}`}
+                  disabled={remainingShortfall === 0 || shortfallSubmitting}
+                  onClick={() => {
+                    setShortfallProblemType(choice.type);
+                    setShortfallProblemQty('1');
+                    setShortfallProblemNotes('');
+                    setShortfallQtyError(null);
+                  }}
+                  sx={{
+                    ...reconciliationChoiceSx(selected),
+                    gridColumn: { xs: '1', sm: isOther ? '1 / -1' : 'auto' },
+                  }}
+                  style={isOther ? { gridColumn: '1 / -1' } : undefined}
+                >
+                  {selected && (
+                    <CheckCircle
+                      size={14}
+                      aria-hidden="true"
+                      style={{ marginRight: 8, flexShrink: 0 }}
+                    />
+                  )}
+                  {choice.label}
+                </Button>
+              );
+            })}
+          </Box>
+
+          {shortfallProblemType && remainingShortfall > 0 && (
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                Qty affected
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) 44px', gap: 1, alignItems: 'center' }}>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  disabled={shortfallSubmitting}
+                  onClick={() => {
+                    const current = Number.parseInt(shortfallProblemQty, 10) || 1;
+                    setShortfallProblemQty(String(Math.max(1, current - 1)));
+                  }}
+                  sx={countStepperButtonSx()}
+                >
+                  −
+                </Button>
+                <TextField
+                  type="number"
+                  size="small"
+                  value={shortfallProblemQty}
+                  onChange={(event) => {
+                    setShortfallProblemQty(event.target.value);
+                    setShortfallQtyError(null);
+                  }}
+                  error={!!shortfallQtyError}
+                  helperText={shortfallQtyError ?? undefined}
+                  inputProps={{
+                    min: 1,
+                    max: remainingShortfall,
+                    'aria-label': 'Qty affected',
+                    style: { ...monoSx, textAlign: 'center' },
+                  }}
+                  sx={countStepperValueSx}
+                />
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  disabled={shortfallSubmitting}
+                  onClick={() => {
+                    const current = Number.parseInt(shortfallProblemQty, 10) || 1;
+                    setShortfallProblemQty(String(Math.min(remainingShortfall, current + 1)));
+                  }}
+                  sx={countStepperButtonSx(true)}
+                >
+                  +
+                </Button>
+              </Box>
+
+              {selectedChoice?.requiresNotes && (
+                <TextField
+                  label="Notes"
+                  size="small"
+                  value={shortfallProblemNotes}
+                  onChange={(event) => setShortfallProblemNotes(event.target.value)}
+                  required
+                  multiline
+                  rows={2}
+                />
+              )}
+
+              <Button
+                variant="contained"
+                color="inherit"
+                disabled={shortfallSubmitting || !shortfallProblemType}
+                onClick={() => void handleReconciliationAllocation()}
+                sx={reconciliationCommitActionSx}
+              >
+                {shortfallSubmitting ? 'Adding...' : 'Add to reconciliation'}
+              </Button>
+            </Box>
+          )}
+
+          <Box sx={{ mt: 'auto', display: 'grid', gap: 0.75 }}>
+            <Typography variant="subtitle2" fontWeight={750}>
+              Accounted
+            </Typography>
+            {allocations.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No allocations yet.
+              </Typography>
+            ) : (
+              <Box sx={{ display: 'grid', gap: 0.75 }}>
+                {allocations.map((allocation, index) => (
+                  <Box
+                    key={`${allocation.type}-${index}`}
+                    sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, borderBottom: '1px solid', borderColor: 'divider', pb: 0.75 }}
+                  >
+                    <Typography variant="body2">{problemLabel(allocation.type)}</Typography>
+                    <Typography variant="body2" sx={monoSx}>{unitLabel(allocation.quantity)}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+            <Typography variant="body2" sx={monoSx}>
+              Accounted {accounted} / {totalShortfall}
+            </Typography>
+            <Typography variant="body2" sx={monoSx}>
+              To account for {remainingShortfall}
+            </Typography>
+            <Button
+              variant="contained"
+              disabled={remainingShortfall > 0 || submitting}
+              onClick={() => void handleFinishReconciledLine()}
+              sx={{
+                mt: 0.5,
+                width: '100%',
+                minHeight: 36,
+                bgcolor: 'var(--accent)',
+                '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                borderRadius: '6px',
+                fontWeight: 700,
+              }}
+            >
+              {submitting ? 'Finishing...' : 'Finish line'}
+            </Button>
+            {allocations.length === 0 && (
+              <Button
+                color="inherit"
+                disabled={shortfallSubmitting || submitting}
+                onClick={() => void handleReconciliationMiscount()}
+                sx={{ borderRadius: '6px', fontWeight: 650 }}
+              >
+                I miscounted
+              </Button>
+            )}
+          </Box>
+        </Paper>
+
+        <Paper
+          variant="outlined"
+          sx={{
+            display: { xs: 'none', lg: 'flex' },
+            flexDirection: 'column',
+            borderRadius: '6px',
+            p: 2.25,
+            minHeight: 420,
+            overflow: 'hidden',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} noWrap>
+              {lineName(line)}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {variantName(line)}
+            </Typography>
+          </Box>
+
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+            <LineMedia line={line} size={220} />
+          </Box>
+        </Paper>
+      </Box>
+    );
+  };
+
+  const renderReview = () => {
+    const totalAccepted = lines.reduce((sum, line) => sum + (acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0)), 0);
+    const totalProblems = lines.reduce((sum, line) => sum + reportedProblems(line).length, 0);
+    const totalExtra = lines.reduce((sum, line) => {
+      const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
+      return sum + Math.max(0, acceptedQty - line.quantity_expected);
+    }, 0);
+
+    return (
+      <Box sx={{ display: 'grid', gap: 2 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={750}>Review receive</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Count and scan paths converge here before closing.
+          </Typography>
+        </Box>
+
+        {submitError && <Alert severity="error">{submitError}</Alert>}
+
+        <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 600, fontSize: 11 }}>Product</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Expected</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Accepted</TableCell>
+                <TableCell>Line</TableCell>
+                <TableCell align="right">Expected</TableCell>
+                <TableCell align="right">Received</TableCell>
+                <TableCell align="right">Extra</TableCell>
+                <TableCell align="right">Problems</TableCell>
+                <TableCell>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {lines.map((line) => {
-                const lineAccepted = inspectMode === 'scan'
-                  ? (scanCounts[line.receive_job_line_id] ?? 0)
-                  : (confirmedLines.has(line.receive_job_line_id) ? line.quantity_expected : 0);
-                const short = line.quantity_expected - lineAccepted;
+                const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
+                const problemCount = reportedProblems(line).length;
+                const extraQty = Math.max(0, acceptedQty - line.quantity_expected);
+                const awaiting = isLineAwaitingLabel(line);
                 return (
                   <TableRow key={line.receive_job_line_id}>
-                    <TableCell sx={{ fontSize: 12 }}>
-                      <Typography variant="body2" fontWeight={500} noWrap>
-                        {line.variant_title && line.variant_title !== 'Default Title'
-                          ? line.variant_title
-                          : line.description ?? line.sku ?? '—'}
-                      </Typography>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={650}>{lineName(line)}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={monoSx}>{line.sku ?? line.receive_job_line_id}</Typography>
+                      <ReportedProblemSummary line={line} compact />
                     </TableCell>
-                    <TableCell align="right" sx={{ fontSize: 12 }}>{line.quantity_expected}</TableCell>
-                    <TableCell align="right" sx={{ fontSize: 12 }}>
-                      <Typography variant="body2" color={short > 0 ? 'error' : 'success.main'} fontWeight={600}>
-                        {lineAccepted}
-                      </Typography>
+                    <TableCell align="right" sx={monoSx}>{line.quantity_expected}</TableCell>
+                    <TableCell align="right" sx={monoSx}>{acceptedQty}</TableCell>
+                    <TableCell align="right" sx={{ ...monoSx, color: extraQty > 0 ? 'warning.main' : 'text.primary' }}>{extraQty}</TableCell>
+                    <TableCell align="right" sx={monoSx}>{problemCount}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={awaiting ? 'warning' : 'success'}
+                        label={awaiting ? 'label hold' : 'ready'}
+                        sx={{ '& .MuiChip-label': monoSx }}
+                      />
                     </TableCell>
                   </TableRow>
                 );
               })}
               <TableRow>
-                <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Total</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 12 }}>{totalUnits}</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 12 }}>
-                  <Typography variant="body2" color={totalRejected > 0 ? 'error' : 'success.main'} fontWeight={600}>
-                    {totalAccepted}
-                  </Typography>
-                </TableCell>
+                <TableCell sx={{ fontWeight: 750 }}>Total</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalExpected}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalAccepted}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750, color: totalExtra > 0 ? 'warning.main' : 'text.primary' }}>{totalExtra}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalProblems}</TableCell>
+                <TableCell />
               </TableRow>
             </TableBody>
           </Table>
         </Paper>
 
-        {totalRejected > 0 && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {totalRejected} unit{totalRejected > 1 ? 's' : ''} short — exceptions have been logged to the Problem Center.
-          </Alert>
-        )}
-
-        <TextField
-          label="Actual delivery date (optional)"
-          type="date"
-          size="small"
-          fullWidth
-          value={deliveryDate}
-          onChange={(e) => setDeliveryDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-          sx={{ mb: 2 }}
-        />
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          disabled={closing}
-          onClick={() => void handleCloseJob()}
-          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
-        >
-          {closing ? 'Closing...' : 'Close & Create Stow Tasks'}
-        </Button>
+        <Paper variant="outlined" sx={{ borderRadius: '6px', p: 2, display: 'grid', gap: 1.5, maxWidth: 420 }}>
+          <TextField
+            label="Actual delivery date"
+            type="date"
+            size="small"
+            required
+            value={deliveryDate}
+            onChange={(event) => setDeliveryDate(event.target.value)}
+            helperText="Required to close this receive."
+            InputLabelProps={{ shrink: true }}
+          />
+          <Button
+            variant="contained"
+            disabled={closing || !deliveryDate.trim() || lines.some(isLineAwaitingLabel)}
+            onClick={() => void handleCloseJob()}
+            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+          >
+            {closing ? 'Closing receive...' : 'Close receive'}
+          </Button>
+        </Paper>
       </Box>
     );
-  }
+  };
 
-  // ── DONE SCREEN ───────────────────────────────────────────
-  if (!currentLine && !closeDialog && sessionPhase === 'inspect' && inspectMode === 'count') {
-    return (
-      <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-        <CheckCircle size={56} color={theme.palette.success.main} />
-        <Typography variant="h5" fontWeight={700} sx={{ mt: 2 }}>All variants inspected</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 4, textAlign: 'center' }}>
-          {lines.length} variant{lines.length !== 1 ? 's' : ''} processed from {supplierName}.
-        </Typography>
-      </Box>
-    );
-  }
+  const renderHandoff = () => (
+    <Box sx={{ maxWidth: 560, mx: 'auto', textAlign: 'center', py: 7 }}>
+      <CheckCircle size={58} color={theme.palette.success.main} />
+      <Typography variant="h4" fontWeight={800} sx={{ mt: 2 }}>Receive complete</Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+        Received units are now available for Stow.
+      </Typography>
+      <Button
+        variant="contained"
+        onClick={onComplete}
+        sx={{ mt: 3, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+      >
+        Back to WMS
+      </Button>
+    </Box>
+  );
+
+  const renderBody = () => {
+    if (sessionPhase === 'brief') return renderBrief();
+    if (sessionPhase === 'reconcile') return renderReconciliation();
+    if (sessionPhase === 'review') return renderReview();
+    if (sessionPhase === 'handoff') return renderHandoff();
+    return renderInspect();
+  };
 
   return (
-    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-      {/* PROGRESS */}
-      <Box sx={{ px: 2, pt: 1.5, pb: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-          <Typography variant="caption" color="text.secondary">
-            Variant {currentIndex + 1} of {lines.length} — {supplierName}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">{progress}%</Typography>
+    <Box
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1300,
+        bgcolor: 'background.default',
+        color: 'text.primary',
+        overflow: 'auto',
+      }}
+    >
+      <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
+        <Box
+          component="header"
+          sx={{
+            px: { xs: 2, md: 3 },
+            py: 1.5,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+                Focus receive session
+              </Typography>
+              <Typography variant="h6" fontWeight={800} noWrap>
+                {supplierName}
+              </Typography>
+            </Box>
+            <Chip
+              label={`${progress}% complete`}
+              color={progress === 100 ? 'success' : 'default'}
+              sx={{ '& .MuiChip-label': monoSx }}
+            />
+          </Box>
+          <LinearProgress variant="determinate" value={progress} sx={{ height: 5, borderRadius: 1, mb: 1.25 }} />
+          <WorkNote />
         </Box>
-        <LinearProgress variant="determinate" value={progress} sx={{ borderRadius: 1, height: 5 }} />
+
+        <Box component="main" sx={{ width: '100%', maxWidth: 1180, mx: 'auto', p: { xs: 2, md: 3 }, flex: 1 }}>
+          {renderBody()}
+        </Box>
       </Box>
 
-      {/* ZONE 1 — SCAN MODE or COUNT MODE */}
-      <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, p: 2, borderRadius: 2, flex: '0 0 auto' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
-            {inspectMode === 'scan' ? 'Scan mode' : 'Inspection count'}
-          </Typography>
-          {inspectMode === 'scan' && (
-            <Box
-              onClick={() => { setInspectMode('count'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'count'); }}
-              sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500,
-                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
-                borderRadius: '6px', cursor: 'pointer',
-                '&:hover': { opacity: 0.75 },
-              }}
-            >
-              <Hash size={12} /> Switch to count
-            </Box>
-          )}
-          {inspectMode === 'count' && onResolveBarcode && (
-            <Box
-              onClick={() => { setInspectMode('scan'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'scan'); }}
-              sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500,
-                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
-                borderRadius: '6px', cursor: 'pointer',
-                '&:hover': { opacity: 0.75 },
-              }}
-            >
-              <ScanBarcode size={12} /> Switch to scan
-            </Box>
-          )}
-        </Box>
-
-        {inspectMode === 'scan' ? (
-          <Box>
-            {/* SCAN PROGRESS — all lines */}
-            <Box sx={{ mb: 2 }}>
-              {lines.map((line) => {
-                const count = scanCounts[line.receive_job_line_id] ?? 0;
-                const isConfirmed = confirmedLines.has(line.receive_job_line_id);
-                return (
-                  <Box
-                    key={line.receive_job_line_id}
-                    sx={{
-                      display: 'flex', alignItems: 'center', gap: 1, mb: 0.75,
-                      px: 1, py: 0.5, borderRadius: '6px',
-                      bgcolor: flashLine === line.receive_job_line_id
-                        ? 'rgba(34,197,94,0.15)'
-                        : 'transparent',
-                      transition: 'background-color 0.4s ease',
-                    }}
-                  >
-                    <Box sx={{ flexShrink: 0 }}>
-                      {line.image_url ? (
-                        <Box component="img" src={line.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5 }} />
-                      ) : (
-                        <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Package size={14} style={{ opacity: 0.4 }} />
-                        </Box>
-                      )}
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="caption" noWrap color={isConfirmed ? 'success.main' : 'text.primary'} fontWeight={isConfirmed ? 600 : 400}>
-                        {line.product_title ?? line.variant_title ?? line.description ?? '—'}
-                      </Typography>
-                      {line.sku && <Typography variant="caption" display="block" color="text.secondary" noWrap>{line.sku}</Typography>}
-                    </Box>
-                    <Chip
-                      label={`${count} / ${line.quantity_expected}`}
-                      size="small"
-                      color={isConfirmed ? 'success' : count > 0 ? 'primary' : 'default'}
-                      variant={isConfirmed ? 'filled' : 'outlined'}
-                    />
-                    {isConfirmed && <CheckCircle size={14} color={theme.palette.success.main} />}
-                  </Box>
-                );
-              })}
-            </Box>
-
-            {/* RESUME NOTICE — mid-scan progress (not yet confirmed) is lost on refresh */}
-            {hasPartialProgress && lines.some(l =>
-              !confirmedLines.has(l.receive_job_line_id) &&
-              (scanCounts[l.receive_job_line_id] ?? 0) === 0 &&
-              !l.inspection_complete
-            ) && (
-              <Alert severity="info" sx={{ mb: 1.5, py: 0.5, fontSize: 12 }}>
-                Session resumed — fully scanned lines are restored. Any partial scans must be re-scanned.
-              </Alert>
-            )}
-
-            {/* SCAN INPUT */}
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-              <TextField
-                inputRef={scanInputRef}
-                fullWidth
-                size="small"
-                placeholder="Scan barcode or type and press Enter"
-                disabled={scanProcessing}
-                value={scanInputValue}
-                onChange={(e) => setScanInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const val = scanInputValue.trim();
-                    if (val) {
-                      void handleScan(val);
-                      setScanInputValue('');
-                    }
-                  }
-                }}
-                helperText={scanProcessing ? 'Processing...' : 'Scanner auto-submits · manual entry: press Enter or tap Scan'}
-                autoComplete="off"
-              />
-              {scanInputValue.trim() && (
-                <Button
-                  variant="contained"
-                  size="small"
-                  disabled={scanProcessing}
-                  onClick={() => {
-                    const val = scanInputValue.trim();
-                    if (val) {
-                      void handleScan(val);
-                      setScanInputValue('');
-                    }
-                  }}
-                  sx={{
-                    bgcolor: 'var(--accent)',
-                    '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                    borderRadius: '6px',
-                    fontWeight: 600,
-                    whiteSpace: 'nowrap',
-                    mt: 0.25,
-                    minWidth: 64,
-                  }}
-                >
-                  Scan
-                </Button>
-              )}
-            </Box>
-
-            {scanError && (
-              <Alert severity="error" sx={{ mt: 1, py: 0.5 }} onClose={() => setScanError(null)}>
-                {scanError}
-              </Alert>
-            )}
-          </Box>
-        ) : (
-          <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
-            Inspection count
-          </Typography>
-        )}
-        {inspectMode === 'count' && (
-        <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-
-          {/* ACCEPTED */}
-          <Box sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="caption" color="success.main" fontWeight={700}>Accepted</Typography>
-            <Typography variant="h3" fontWeight={800} color="success.main">{accepted}</Typography>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mt: 1, alignItems: 'center' }}>
-              <Button
-                variant="outlined"
-                color="success"
-                size="small"
-                onClick={() => setAccepted((a) => Math.max(0, a - 1))}
-                disabled={accepted === 0}
-                sx={{ minWidth: 36, px: 1 }}
-              >
-                −
-              </Button>
-              <TextField
-                size="small"
-                value={accepted}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= 0 && currentLine && v <= currentLine.quantity_expected) {
-                    setAccepted(v);
-                  }
-                }}
-                inputProps={{ style: { textAlign: 'center', width: 48, fontWeight: 700 } }}
-                sx={{ width: 72 }}
-              />
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                onClick={() => setAccepted((a) => a + 1)}
-                sx={{ minWidth: 36, px: 1 }}
-              >
-                +
-              </Button>
-            </Box>
-            <Button
-              size="small"
-              variant="text"
-              color="success"
-              onClick={() => currentLine && setAccepted(currentLine.quantity_expected)}
-              sx={{ mt: 0.5, fontSize: 11 }}
-            >
-              Set all ({currentLine?.quantity_expected})
-            </Button>
-          </Box>
-        </Box>
-        )}
-      </Paper>
-
-      {/* ZONE 3 — ACTIONS */}
-      <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        {submitError && (
-          <Alert severity="error" sx={{ py: 0.5 }}>{submitError}</Alert>
-        )}
-
-        {/*
-          GH-1085 — physical label acknowledgement.
-          A produced PDF is not a label on a box. Until the operator confirms
-          the labels were printed and attached, this line's stock has no
-          scannable identity and the session does not advance.
-        */}
-        {pendingLabelAck && (
-          <Alert
-            severity={labelPrintFailed ? 'warning' : 'info'}
-            sx={{ py: 0.5 }}
-            action={
-              labelPrintFailed && onPrintUnitLabels ? (
-                <Button
-                  size="small"
-                  color="inherit"
-                  onClick={() => void handleRetryPrintLabels()}
-                >
-                  Retry print
-                </Button>
-              ) : undefined
-            }
-          >
-            {labelPrintFailed
-              ? 'Label print failed. The count is saved — retry printing, then confirm once the labels are attached.'
-              : 'Attach the printed labels to each unit, then confirm below.'}
-          </Alert>
-        )}
-
-        {pendingLabelAck && (
-          <Button
-            data-testid="confirm-unit-labels-printed"
-            variant="contained"
-            color="primary"
-            fullWidth
-            size="large"
-            disabled={labelAckSubmitting}
-            onClick={() => void handleConfirmLabelsPrinted()}
-            startIcon={<CheckCircle size={20} />}
-            sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
-          >
-            {labelAckSubmitting ? 'Confirming...' : 'Labels printed & attached'}
-          </Button>
-        )}
-
-        <Button
-          variant="contained"
-          color="success"
-          fullWidth
-          size="large"
-          disabled={submitting || (inspectMode === 'count' && totalCounted === 0)}
-          onClick={() => void handleConfirmBatch()}
-          startIcon={<CheckCircle size={20} />}
-          sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
-        >
-          {submitting ? 'Confirming...'
-            : inspectMode === 'scan' ? 'Finish & Review'
-            : isLastLine ? 'Confirm & Finish'
-            : 'Confirm Batch'}
-        </Button>
-
-        <Button
-          variant="outlined"
-          color="warning"
-          fullWidth
-          size="large"
-          startIcon={<AlertTriangle size={18} />}
-          onClick={() => setExceptionDialog(true)}
-          sx={{ borderRadius: 2, fontWeight: 600 }}
-        >
-          Report Problem
-        </Button>
-      </Box>
-
-      {/* SHORTFALL MODAL — forces exception reporting when accepted < expected */}
-      <Dialog open={!!shortfallModal} onClose={() => {
-        // Only allow close if no exceptions have been committed yet
-        if (shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall) {
-          setShortfallModal(null);
-        }
-      }} fullWidth maxWidth="sm">
-        <DialogTitle>
-          {shortfallModal && shortfallModal.remainingShortfall < shortfallModal.totalShortfall
-            ? `${shortfallModal.remainingShortfall} unit${shortfallModal.remainingShortfall > 1 ? 's' : ''} still unaccounted`
-            : `${shortfallModal?.totalShortfall} unit${(shortfallModal?.totalShortfall ?? 0) > 1 ? 's' : ''} short — what happened?`
+      <Dialog
+        open={!!shortfallModal}
+        fullWidth
+        maxWidth="sm"
+        onClose={() => {
+          if (shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall) {
+            setShortfallModal(null);
           }
+        }}
+      >
+        <DialogTitle>
+          {shortfallModal?.remainingShortfall} missing unit{(shortfallModal?.remainingShortfall ?? 0) === 1 ? '' : 's'}
         </DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Box sx={{ display: 'grid', gap: 1.5, pt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Expected {shortfallModal?.line.quantity_expected}, accepted {shortfallModal?.accepted}.
-              Account for all {shortfallModal?.remainingShortfall} unit{(shortfallModal?.remainingShortfall ?? 0) > 1 ? 's' : ''} before continuing.
+              Expected <Box component="span" sx={monoSx}>{shortfallModal?.line.quantity_expected}</Box>, counted <Box component="span" sx={monoSx}>{shortfallModal?.accepted}</Box>. Account for every missing unit before the line can close.
             </Typography>
-
-            {(Object.keys(EXCEPTION_LABELS) as ExceptionType[]).map((type) => (
+            {submitError && <Alert severity="error">{submitError}</Alert>}
+            {(Object.keys(PROBLEM_LABELS) as ProblemType[]).map((type) => (
               <Button
                 key={type}
-                variant={shortfallExceptionType === type ? 'contained' : 'outlined'}
+                variant={shortfallProblemType === type ? 'contained' : 'outlined'}
                 color={type === 'defect' || type === 'wrong_item' ? 'error' : 'warning'}
-                fullWidth
-                size="large"
-                onClick={() => setShortfallExceptionType(type)}
-                sx={{ borderRadius: 2, justifyContent: 'flex-start' }}
+                onClick={() => setShortfallProblemType(type)}
+                sx={{ justifyContent: 'flex-start', borderRadius: '6px' }}
               >
-                {EXCEPTION_LABELS[type]}
+                {PROBLEM_LABELS[type]}
               </Button>
             ))}
-
-            {shortfallExceptionType && (
+            {shortfallProblemType && (
               <TextField
                 label={`Qty affected (max ${shortfallModal?.remainingShortfall})`}
                 type="number"
                 size="small"
-                value={shortfallExceptionQty}
-                onChange={(e) => {
-                  setShortfallExceptionQty(e.target.value);
+                value={shortfallProblemQty}
+                onChange={(event) => {
+                  setShortfallProblemQty(event.target.value);
                   setShortfallQtyError(null);
                 }}
-                inputProps={{ min: 1, max: shortfallModal?.remainingShortfall }}
-                fullWidth
                 error={!!shortfallQtyError}
                 helperText={shortfallQtyError ?? undefined}
-                placeholder={`Enter qty (max ${shortfallModal?.remainingShortfall})`}
+                inputProps={{ min: 1, max: shortfallModal?.remainingShortfall, style: monoSx }}
               />
             )}
-
-            {(shortfallExceptionType === 'barcode_mismatch' || shortfallExceptionType === 'other') && (
+            {(shortfallProblemType === 'barcode_mismatch' || shortfallProblemType === 'other') && (
               <TextField
-                label={shortfallExceptionType === 'barcode_mismatch' ? 'Scanned barcode value' : 'Notes'}
-                value={shortfallExceptionNotes}
-                onChange={(e) => setShortfallExceptionNotes(e.target.value)}
-                fullWidth
+                label={shortfallProblemType === 'barcode_mismatch' ? 'Barcode value' : 'Notes'}
+                value={shortfallProblemNotes}
+                onChange={(event) => setShortfallProblemNotes(event.target.value)}
                 required
-                multiline={shortfallExceptionType === 'other'}
-                rows={shortfallExceptionType === 'other' ? 2 : 1}
-                placeholder={shortfallExceptionType === 'barcode_mismatch' ? 'Enter the barcode printed on the unit' : 'Describe the problem'}
+                multiline={shortfallProblemType === 'other'}
+                rows={shortfallProblemType === 'other' ? 2 : 1}
               />
             )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
           {shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall && (
-          <Box
-            onClick={() => !shortfallSubmitting && void handleMiscount()}
-            sx={{
-              display: 'inline-flex', alignItems: 'center',
-              px: 1.25, py: 0.5,
-              fontSize: 11, fontWeight: 500,
-              color: 'var(--accent)',
-              border: '0.5px solid var(--accent-border)',
-              borderRadius: '6px', cursor: shortfallSubmitting ? 'not-allowed' : 'pointer',
-              opacity: shortfallSubmitting ? 0.4 : 1,
-              '&:hover': { opacity: shortfallSubmitting ? 0.4 : 0.75 },
-            }}
-          >
-            I miscounted — accept all {shortfallModal?.line.quantity_expected}
-          </Box>
+            <Button color="inherit" disabled={shortfallSubmitting} onClick={() => void handleMiscount()}>
+              I miscounted
+            </Button>
           )}
           <Button
             variant="contained"
-            disabled={!shortfallExceptionType || shortfallSubmitting}
+            disabled={!shortfallProblemType || shortfallSubmitting}
             onClick={() => void handleShortfallConfirm()}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
           >
-            {shortfallSubmitting ? 'Saving...' : 'Confirm exception'}
+            {shortfallSubmitting ? 'Saving...' : 'Save problem'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* OVERCOUNT DIALOG — scan mode: operator scanned more than expected */}
-      <Dialog open={!!overcountLine} fullWidth maxWidth="sm">
-        <DialogTitle>Extra unit scanned</DialogTitle>
+      <Dialog open={!!overDeliveryDecision} fullWidth maxWidth="sm">
+        <DialogTitle>Extra unit detected</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            You've already scanned {overcountLine ? scanCounts[overcountLine.receive_job_line_id] ?? 0 : 0} of {overcountLine?.quantity_expected} expected units
-            for <strong>{overcountLine?.variant_title && overcountLine.variant_title !== 'Default Title'
-              ? overcountLine.variant_title
-              : overcountLine?.description ?? overcountLine?.sku ?? 'this product'}</strong>.
-            Add another?
-          </Typography>
+          <Box sx={{ display: 'grid', gap: 1.5, pt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Decide what to do with the overage before this line can continue.
+            </Typography>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: 1,
+              }}
+            >
+              {[
+                ['Expected', overDeliveryDecision?.line.quantity_expected ?? 0],
+                ['Counted', overDeliveryDecision?.counted ?? 0],
+                ['Extra', Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0))],
+              ].map(([label, value]) => (
+                <Paper key={label} variant="outlined" sx={{ p: 1.25, borderRadius: '6px' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+                    {label}
+                  </Typography>
+                  <Typography variant="h6" sx={monoSx} fontWeight={800}>
+                    {value}
+                  </Typography>
+                </Paper>
+              ))}
+            </Box>
+          </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleOvercountReject} color="inherit">No — skip it</Button>
+          <Button onClick={handleRejectOverDelivery} color="inherit">Do not receive extra</Button>
+          <Button onClick={handleReportOverDelivery} color="warning">Report problem</Button>
           <Button
             variant="contained"
-            onClick={() => void handleOvercountAccept()}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+            color="warning"
+            onClick={() => void handleAcceptOverDelivery()}
           >
-            Yes — add it
+            Accept extra unit{Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* EXCEPTION DIALOG */}
-      <Dialog open={exceptionDialog} onClose={() => setExceptionDialog(false)} fullWidth>
-        <DialogTitle>Report Problem</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
-            {(Object.keys(EXCEPTION_LABELS) as ExceptionType[]).map((type) => (
-              <Button
-                key={type}
-                variant={exceptionType === type ? 'contained' : 'outlined'}
-                color={type === 'defect' || type === 'wrong_item' ? 'error' : 'warning'}
-                fullWidth
-                size="large"
-                startIcon={type === 'wrong_item' ? <PackageX size={16} /> : <ScanBarcode size={16} />}
-                onClick={() => setExceptionType(type)}
-                sx={{ borderRadius: 2, justifyContent: 'flex-start' }}
-              >
-                {EXCEPTION_LABELS[type]}
-              </Button>
-            ))}
+      <Dialog
+        open={problemDialog}
+        onClose={() => !problemSubmitting && setProblemDialog(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Report a problem</DialogTitle>
 
-            {exceptionType && (
+        <DialogContent>
+          <Box sx={{ display: 'grid', gap: 2, pt: 0.5 }}>
+            {problemError && <Alert severity="error">{problemError}</Alert>}
+
+            {currentLine && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  borderRadius: '6px',
+                  bgcolor: 'background.default',
+                }}
+              >
+                <Typography variant="body2" fontWeight={700}>
+                  {lineName(currentLine)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {variantName(currentLine)}
+                </Typography>
+                {currentLine.sku && (
+                  <Typography variant="caption" color="text.secondary" sx={monoSx}>
+                    SKU {currentLine.sku}
+                  </Typography>
+                )}
+              </Paper>
+            )}
+
+            <Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                What happened?
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                  gap: 1,
+                }}
+              >
+                {PROBLEM_CHOICES.map((choice) => {
+                  const selected = problemChoice === choice.id;
+
+                  return (
+                    <Button
+                      key={choice.id}
+                      variant="outlined"
+                      onClick={() => {
+                        if (problemChoice !== choice.id) {
+                          setProblemNotes(choice.defaultNotes ?? '');
+                        }
+                        setProblemChoice(choice.id);
+                        setProblemType(choice.problemType);
+                        setProblemError(null);
+                      }}
+                      sx={{
+                        minHeight: 40,
+                        justifyContent: 'flex-start',
+                        borderRadius: '6px',
+                        fontWeight: 650,
+                        color: 'text.primary',
+                        bgcolor: selected ? 'action.selected' : 'transparent',
+                        borderColor: selected ? 'text.secondary' : 'divider',
+                        boxShadow: selected ? 'inset 0 0 0 1px currentColor' : 'none',
+                        '&:hover': {
+                          bgcolor: selected ? 'action.selected' : 'action.hover',
+                          borderColor: 'text.secondary',
+                        },
+                      }}
+                    >
+                      {choice.label}
+                    </Button>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            {problemChoice && (
               <TextField
                 label="Qty affected"
                 type="number"
                 size="small"
-                value={exceptionQty}
-                onChange={(e) => setExceptionQty(e.target.value)}
-                inputProps={{ min: 1 }}
-                fullWidth
+                value={problemQty}
+                onChange={(event) => setProblemQty(event.target.value)}
+                inputProps={{ min: 1, style: monoSx }}
               />
             )}
 
-            {(exceptionType === 'barcode_mismatch' || exceptionType === 'other') && (
+            {problemChoice === 'barcode_mismatch' && (
               <TextField
-                label={exceptionType === 'barcode_mismatch' ? 'Scanned barcode value' : 'Notes'}
-                value={exceptionNotes}
-                onChange={(e) => setExceptionNotes(e.target.value)}
-                fullWidth
+                label="Barcode value"
+                size="small"
+                value={problemNotes}
+                onChange={(event) => setProblemNotes(event.target.value)}
                 required
-                multiline={exceptionType === 'other'}
-                rows={exceptionType === 'other' ? 2 : 1}
-                placeholder={exceptionType === 'barcode_mismatch' ? 'Enter the barcode printed on the unit' : 'Describe the problem'}
+              />
+            )}
+
+            {problemChoice === 'other' && (
+              <TextField
+                label="Notes"
+                size="small"
+                value={problemNotes}
+                onChange={(event) => setProblemNotes(event.target.value)}
+                required
+                multiline
+                rows={2}
               />
             )}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setExceptionDialog(false); setExceptionType(null); }}>Cancel</Button>
+
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            color="inherit"
+            disabled={problemSubmitting}
+            onClick={() => setProblemDialog(false)}
+          >
+            Cancel
+          </Button>
+
           <Button
             variant="contained"
-            color="warning"
-            disabled={!exceptionType}
-            onClick={() => void handleReportException()}
+            disabled={!problemChoice || !problemType || problemSubmitting}
+            onClick={() => void handleReportProblem()}
+            sx={{
+              bgcolor: 'var(--accent)',
+              '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+              borderRadius: '6px',
+              fontWeight: 700,
+            }}
           >
-            Report
+            {problemSubmitting ? 'Saving...' : 'Report problem'}
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* CLOSE JOB DIALOG */}
-      <Dialog open={closeDialog} fullWidth>
-        <DialogTitle>Close receive session</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              All variants inspected. Closing the session will write received quantities and create stow tasks automatically.
-            </Typography>
-            <TextField
-              label="Actual delivery date (optional)"
-              type="date"
-              value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-              fullWidth
-              InputLabelProps={{ shrink: true }}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCloseDialog(false)} disabled={closing}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="success"
-            disabled={closing}
-            onClick={() => void handleCloseJob()}
-          >
-            {closing ? 'Closing...' : 'Close & Create Stow Tasks'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
     </Box>
   );
 }

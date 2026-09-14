@@ -8,17 +8,20 @@ import { useScanSourceDetector } from '../hooks/useScanSourceDetector.js';
 const EXCEPTION_LABELS = {
     item_missing: 'Item not found at location',
     short_pick: 'Short pick — fewer units than required',
-    defect: 'Product defect',
-    packaging_damage: 'Packaging damaged',
+    product_defect: 'Product defect',
+    packaging_defect: 'Packaging damaged',
     wrong_item: 'Wrong item entirely',
-    wrong_variant: 'Wrong variant (size / colour)',
-    wrong_quantity: 'Wrong quantity on label',
-    barcode_mismatch: 'Barcode mismatch',
-    other: 'Other',
 };
-const NOTES_REQUIRED = ['barcode_mismatch', 'other'];
+const NOTES_REQUIRED = [];
 const QTY_REQUIRED = ['short_pick'];
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+/** Stable client event id for one exception report (GH-1049 idempotency). */
+function newEventId() {
+    const c = globalThis.crypto;
+    if (c?.randomUUID)
+        return c.randomUUID();
+    return `evt-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
 /** Accept LOC-A-1-3-7 or A-1-3-7 against location_code A-1-3-7 */
 function locationMatches(scanned, locationCode) {
     const n = scanned.trim().toUpperCase();
@@ -33,7 +36,7 @@ function parseLocationLabel(code) {
     return code;
 }
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, }) {
+export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onPickComplete, }) {
     const theme = useTheme();
     const { onInputChange, detectSourceAndReset, reset: resetScanDetector } = useScanSourceDetector();
     const locationInputRef = useRef(null);
@@ -54,6 +57,12 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
     const [exceptionNotes, setExceptionNotes] = useState('');
     const [exceptionError, setExceptionError] = useState(null);
     const [exceptionProcessing, setExceptionProcessing] = useState(false);
+    /**
+     * GH-1049 — stable identity for ONE operator report. Minted when the dialog
+     * opens and held across retries, so a resubmit after a failed response
+     * replays the same incident instead of creating a second one.
+     */
+    const [exceptionEventId, setExceptionEventId] = useState(() => newEventId());
     const [pickResults, setPickResults] = useState([]);
     const [completingPick, setCompletingPick] = useState(false);
     const [completionError, setCompletionError] = useState(null);
@@ -203,21 +212,23 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
         setExceptionProcessing(true);
         setExceptionError(null);
         const qtyFound = exceptionType === 'short_pick' ? (parseInt(exceptionQty, 10) || 0) : 0;
+        /**
+         * GH-1049 — one report carries the whole physical truth: which allocation,
+         * what was expected, what was actually found. The server creates the
+         * linked Problem Center task in the same transaction; the client must not
+         * mint a second incident.
+         */
         onReportException({
             lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
             lasyncro_variant_id: currentItem.lasyncro_variant_id,
+            reservation_allocation_id: currentItem.reservation_allocation_id ?? undefined,
             exception_type: exceptionType,
+            stage: 'pick',
             quantity_required: currentItem.quantity,
             quantity_found: qtyFound,
+            device_event_id: exceptionEventId,
             notes: exceptionNotes.trim() || undefined,
         })
-            .then((reported) => onCreateProblemTask({
-            lasyncro_variant_id: currentItem.lasyncro_variant_id,
-            quantity: currentItem.quantity - qtyFound,
-            exception_type: exceptionType,
-            source: 'pick',
-            source_exception_id: reported?.pick_exception_id,
-        }))
             .then(() => {
             setPickResults(prev => [...prev, { lineItem: currentItem, status: 'exception', exceptionType }]);
             setExceptionDialog(false);
@@ -231,7 +242,7 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
             setExceptionError(msg);
         })
             .finally(() => setExceptionProcessing(false));
-    }, [currentItem, exceptionType, exceptionQty, exceptionNotes, onReportException, onCreateProblemTask, advanceOrSummary]);
+    }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrSummary]);
     // ── Pick complete ──────────────────────────────────────────
     const handlePickComplete = useCallback(() => {
         setCompletingPick(true);
@@ -248,6 +259,7 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
         });
     }, [onPickComplete, onComplete]);
     const openExceptionDialog = useCallback(() => {
+        setExceptionEventId(newEventId());
         setExceptionType(null);
         setExceptionQty('');
         setExceptionNotes('');

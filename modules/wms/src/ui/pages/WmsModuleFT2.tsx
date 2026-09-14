@@ -132,9 +132,18 @@ export type WmsModuleFT2Props = {
   gridLocations?: WarehouseLocation[];
 
   onCreateReceiveJob?: (poId: string) => Promise<{ receive_job_id: string }>;
-  onFetchReceiveJob?: (jobId: string) => Promise<{ job: { po_id: string; supplier_name: string }; lines: ReceiveJobLine[] }>;
+  onFetchReceiveJob?: (jobId: string) => Promise<{
+    job: {
+      po_id: string;
+      supplier_name: string;
+      closed_at?: string | null;
+      actual_delivery_date?: string | null;
+    };
+    lines: ReceiveJobLine[];
+  }>;
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
-  onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
+  onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }) => Promise<void>;
+  onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
   /**
@@ -202,7 +211,14 @@ export type WmsModuleFT2Props = {
   isOnline: boolean;
   queuedCount: number;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
-  pendingReceiveSession?: { receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] } | null;
+  pendingReceiveSession?: {
+    receiveJobId: string;
+    poId: string;
+    supplierName: string;
+    closedAt?: string | null;
+    actualDeliveryDate?: string | null;
+    lines: ReceiveJobLine[];
+  } | null;
   /** Stow task ID from URL param — auto-enters stow session on mount. */
   pendingStowTaskId?: string | null;
   /** Return job ID from URL param — auto-enters the existing return session on mount. */
@@ -828,7 +844,15 @@ function WorkQueueFamily({
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; freeScanResult: PackFreeScanResult }
-  | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
+  | {
+      type: 'receive';
+      receiveJobId: string;
+      poId: string;
+      supplierName: string;
+      closedAt?: string | null;
+      actualDeliveryDate?: string | null;
+      lines: ReceiveJobLine[];
+    }
   | { type: 'stow'; taskId: string }
   | { type: 'count'; task: CountingTask }
   | { type: 'return'; returnJobId: string }
@@ -842,6 +866,7 @@ function WmsModuleFT2Inner({
   onCreateReceiveJob,
   onFetchReceiveJob,
   onInspectReceiveLine,
+  onPersistReceiveLineProgress,
   onReportReceiveException,
   onCloseReceiveJob,
   onPrintUnitLabels,
@@ -1238,19 +1263,37 @@ function WmsModuleFT2Inner({
 
   // Active receive session
   if (activeSession?.type === 'receive') {
+    const refreshReceiveSession = async () => {
+      if (!onFetchReceiveJob) return;
+      const latest = await onFetchReceiveJob(activeSession.receiveJobId);
+      setActiveSession({
+        type: 'receive',
+        receiveJobId: activeSession.receiveJobId,
+        poId: latest.job.po_id,
+        supplierName: latest.job.supplier_name,
+        closedAt: latest.job.closed_at ?? null,
+        actualDeliveryDate: latest.job.actual_delivery_date ?? null,
+        lines: latest.lines,
+      });
+    };
+
     return (
       <ReceiveSessionPage
         receiveJobId={activeSession.receiveJobId}
         poId={activeSession.poId}
         supplierName={activeSession.supplierName}
+        closedAt={activeSession.closedAt}
+        actualDeliveryDate={activeSession.actualDeliveryDate}
         lines={activeSession.lines}
         onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve()}
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
         onPrintUnitLabels={onPrintUnitLabels}
         onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
+        onRefresh={refreshReceiveSession}
       />
     );
   }

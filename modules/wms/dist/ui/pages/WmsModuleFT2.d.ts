@@ -1,4 +1,4 @@
-import { type LineItem, type ConfirmScanParams, type ReportExceptionParams, type CreateProblemTaskParams } from './PickSessionPage.js';
+import { type LineItem, type ConfirmScanParams, type ReportExceptionParams, type ReportPackExceptionParams, type CreateProblemTaskParams } from './PickSessionPage.js';
 import { type PackOrder } from './PackSessionPage.js';
 import { type ReceiveJobLine } from './ReceiveSessionPage.js';
 import { type CountingLine, type CountingSkipReason, type CountingTask, type CountingFinding, type CountingFindingType } from './CountingSessionPage.js';
@@ -74,6 +74,8 @@ export type WmsModuleFT2Props = {
         job: {
             po_id: string;
             supplier_name: string;
+            closed_at?: string | null;
+            actual_delivery_date?: string | null;
         };
         lines: ReceiveJobLine[];
     }>;
@@ -83,17 +85,30 @@ export type WmsModuleFT2Props = {
         quantity_accepted: number;
         quantity_rejected: number;
     }) => Promise<void>;
+    onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: {
+        quantity_sellable_provisional: number;
+        reconciliation_required?: boolean;
+    }) => Promise<void>;
     onReportReceiveException?: (jobId: string, params: {
         lasyncro_variant_id: string | null;
         receive_job_line_id: string;
         exception_type: string;
         quantity_affected: number;
+        accounting_role?: string;
         notes?: string;
     }) => Promise<void>;
     onCloseReceiveJob?: (jobId: string, params: {
         actual_delivery_date?: string;
     }) => Promise<void>;
     onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
+    /**
+     * GH-1085 — REQUIRED, deliberately not optional. This module is a pure
+     * pass-through between WmsOperationsPage and ReceiveSessionPage, and an
+     * optional prop dropped here fails OPEN: the operator's "labels printed &
+     * attached" confirmation would silently no-op and barcode-less stock would
+     * be treated as ready with nothing recorded in the backend.
+     */
+    onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
     onClaimBatch: (batchId: string) => Promise<void>;
     onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
     onResolveBarcode: (scannedValue: string) => Promise<{
@@ -116,7 +131,7 @@ export type WmsModuleFT2Props = {
     }) => Promise<{
         order_complete: boolean;
     }>;
-    onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<{
+    onReportPackException: (batchId: string, params: ReportPackExceptionParams) => Promise<{
         pick_exception_id: string;
     }>;
     onPrintLabel: (orderId: string) => Promise<void>;
@@ -157,10 +172,14 @@ export type WmsModuleFT2Props = {
         receiveJobId: string;
         poId: string;
         supplierName: string;
+        closedAt?: string | null;
+        actualDeliveryDate?: string | null;
         lines: ReceiveJobLine[];
     } | null;
     /** Stow task ID from URL param — auto-enters stow session on mount. */
     pendingStowTaskId?: string | null;
+    /** Return job ID from URL param — auto-enters the existing return session on mount. */
+    pendingReturnJobId?: string | null;
     /** Called when operator claims a stow task — parent sets URL param for refresh recovery. */
     onStowSessionEnter?: (taskId: string) => void;
     /** Pick batch ID from URL param — auto-enters pick session on mount. */

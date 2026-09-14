@@ -1,7 +1,8 @@
 # LaSyncro — Modules UX Playbook
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces. Auth pages (`apps/frontend/src/pages/authentication/*`) are a **brand surface**, governed by `docs/blueprints/auth_blueprint.md` — the font ban and layout rules below do not apply there.
-> **Last updated:** 2026-07-22
+> **Last updated:** 2026-09-14
+> **2026-09-14 — WMS operator-session UX contract ratified using Receive as the reference implementation.** See §22 for focus-shell, Work Note, scanner-focus, reconciliation, typography, completion-evidence, and handoff rules that future Receive / Stow / Pick session work must preserve.
 > **2026-07-22 — Inventory Intelligence adopted the shared `PulseCard`.** See §18, PULSE-02A, for the verified metric mapping and layout rules.
 > **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sends operators to the wrong workflow (reorder vs. check receiving).
 > **2026-06-21 — Suppliers Portal gained standalone supplier CRUD.** Suppliers were previously create-only inside the New-PO dialog; the portal's Suppliers list now supports add/edit/remove without a PO. Pattern: a single reusable `SupplierFormDialog` (mode `add` | `edit`) drives every supplier entry point for identical fields + validation; "Add supplier" uses the filled-accent CTA convention (per CTA-016); per-row Edit/Delete are outlined inline actions. Delete is a **soft-delete** (`active = false`) — `purchase_orders.supplier_id` is `ON DELETE RESTRICT`, so PO history is preserved and the supplier is hidden from new POs. Place record-management CRUD on the owning operational surface, not in Settings (which is for shop config, not records).
@@ -1149,3 +1150,316 @@ verified in both light and dark mode**, not covered by an automated
 pixel/color-computation check — dark accent-ink text on the filled orange
 buttons is the intended, doctrine-correct result (§8), not a defect to "fix"
 toward white.
+
+## 22. WMS operator-session UX contract — Receive reference implementation, 2026-09-14
+
+Receive is the first fully reconciled implementation of the operator-session
+system that Receive, Stow, Pick, Pack, Count, and future floor workflows should
+converge toward. The goal is not to make several scanner screens merely look
+similar; they must feel like one continuous warehouse operating system from
+brief → execution → completion → handoff.
+
+This section governs operator-facing session UX. §14 continues to govern session
+routing/module architecture, and §21 continues to govern CTA tier semantics.
+
+### Session change process
+
+Consequential session UX changes follow this sequence:
+
+1. audit the existing end-to-end session;
+2. workshop wireframes separately;
+3. approve the design direction from those wireframes;
+4. implement;
+5. automate the regression contract;
+6. live-browser verify the real workflow;
+7. obtain UX approval;
+8. only then update this playbook.
+
+Do not document speculative session UX before the implementation and live flow
+have been approved.
+
+### Session Focus Shell
+
+Once an operator enters an active warehouse session, reduce unrelated navigation
+and decision surface.
+
+Required behavior:
+
+- hide normal module navigation, global search, and unrelated alerts while the
+  workflow is active;
+- keep a compact operational header with workflow identity, progress, Exit,
+  and connectivity/operator state where useful;
+- remain inside the focus shell through completion summary and handoff;
+- do not return to the general WMS surface merely because the last scan or count
+  has completed.
+
+The shell exists to reduce accidental navigation and protect scanner-driven
+muscle memory.
+
+### Persistent Work Note / action identity
+
+Every workflow state must keep the operator's current action identifiable. Treat
+the Work Note as the digital equivalent of the note a warehouse lead would hand
+to an operator.
+
+At minimum expose, when applicable:
+
+- Action
+- Reference
+- Item / variant
+- Quantity / progress
+- Source or destination
+- Physical identity
+- Next
+
+The Work Note persists through brief, active execution, reconciliation, label
+hold, review, and handoff. State changes may change `Action` and `Next`; they
+must not erase the identity of the work being performed.
+
+For completed Receive work the Work Note additionally carries:
+
+- `STATUS` → `CLOSED`
+- `CLOSED AT` → canonical system close timestamp
+- `ACTUAL DELIVERY` → business delivery date
+
+`actual_delivery_date` and `closed_at` are different facts. Actual delivery is
+supplier/receiving truth. `closed_at` is audit evidence for when LaSyncro
+completed the Receive workflow. Never substitute one for the other and never
+invent a client-side close timestamp.
+
+### Typography inside operator sessions
+
+Human-facing language stays in the app's normal Plus Jakarta Sans typography.
+
+Monospace is a deliberate exception only for machine/state facts where fixed
+character shapes improve operational recognition, including:
+
+- LSU / LSP / LSO identities;
+- SKU and barcode values;
+- bin/location codes;
+- operational references;
+- quantities/progress where the value functions as machine/state evidence.
+
+Do not expand monospace into instructional copy, headings, labels, or general
+body text merely to create a terminal aesthetic.
+
+### Scanner-focus state machine
+
+Scanner focus is a workflow state, not a generic autofocus behavior.
+
+Canonical states:
+
+- `SCAN_READY` — scanner input owns focus and automatically regains it after a
+  successful scan;
+- `SCAN_PROCESSING` — duplicate input is blocked while the previous scan is
+  being processed;
+- `SCAN_ERROR` — show the recoverable reason, then restore scanner focus;
+- `HUMAN_DECISION_REQUIRED` — release scanner focus; do not autofocus a
+  consequential CTA;
+- `COUNT_READY` — no hidden scanner capture or scanner autofocus;
+- `HOLD` — no scanner capture and no trailing-Enter confirmation;
+- `SUMMARY` / handoff — no scanner capture.
+
+An operator who needs to scan-scan-scan should continue without touching a
+mouse. The moment judgement, reconciliation, or acknowledgement is required,
+scanner ownership must stop intentionally.
+
+### Visual hierarchy and symmetry
+
+Active sessions use a three-zone hierarchy:
+
+1. operational facts / progress;
+2. the current interaction;
+3. consequential action(s).
+
+Keep the primary task in the visual center. Product imagery is contextual and
+quiet, not the dominant interaction surface.
+
+Peer controls must have intentional symmetry:
+
+- matching dimensions;
+- matching padding/radius;
+- matching spacing rhythm;
+- aligned columns;
+- consistent chip/status treatment;
+- consistent CTA hierarchy.
+
+Do not leave one peer action as a loose text block while another is a structured
+control.
+
+### CTA semantics inside sessions
+
+§21 remains authoritative:
+
+- consequential state changes and persisted writes use Tier 1 orange accent;
+- selections, toggles, and treatment choices remain neutral Tier 2;
+- MUI default structural blue is not a WMS interaction state.
+
+Examples:
+
+- `Finish Count`, `Add to reconciliation`, `Finish Line`, label acknowledgement,
+  and workflow close are consequential;
+- Count/Scan treatment selection and reconciliation-reason selection are neutral
+  choices until separately committed.
+
+### Receive count and reconciliation accounting
+
+During active Count or Scan, the operator records **correct sellable units
+only**. Do not expose a general `Report Problem` action during ordinary counting.
+
+The primary exit from active counting is `Finish Count`.
+
+At Finish Count:
+
+- `SELLABLE == EXPECTED` → normal completion / label-hold path;
+- `SELLABLE < EXPECTED` → explicit reconciliation;
+- `SELLABLE > EXPECTED` → explicit over-delivery decision.
+
+Reconciliation exposes three primary facts:
+
+- `EXPECTED`
+- `SELLABLE`
+- `TO ACCOUNT FOR`
+
+Shortfall completion invariant:
+
+```text
+SELLABLE + ACCOUNTED SHORTFALL = EXPECTED
+```
+
+Exact completion invariant:
+
+```text
+SELLABLE = EXPECTED
+```
+
+Over-delivery invariant:
+
+```text
+SELLABLE > EXPECTED
+→ explicit over-delivery approval required
+```
+
+`Missing item` is available only after a shortfall has been established.
+Multiple reconciliation allocations may be added until `TO ACCOUNT FOR` reaches
+zero.
+
+Canonical shortfall-consuming reasons include:
+
+- Damaged Unit
+- Wrong Product
+- Wrong Variant
+- Missing Item
+
+Barcode mismatch does not consume inventory shortfall.
+
+`quantity_rejected` is not a synonym for missing stock. It remains a legacy /
+compatibility quantity for physically present units that were not accepted.
+Missing units create canonical Receive problem/accounting records without
+inventing an inventory write-off for stock that was never physically present.
+
+Receive problems continue through the canonical Receive exception → Problem
+Center path. Do not create a local-only problem system inside the session.
+
+### Reconciliation interaction rules
+
+The reconciliation action area uses:
+
+- factual counters at the top;
+- neutral reason selection;
+- neutral quantity stepper;
+- Tier-1 `Add to reconciliation` because it persists an accounting allocation;
+- visible allocation history;
+- `Accounted x/y` and remaining quantity;
+- Tier-1 `Finish Line` only after `TO ACCOUNT FOR == 0`.
+
+When nothing remains to account for, do not continue displaying instructions
+such as "Account for the remaining 0 units." `Next` must advance semantically to
+the actual next operator action.
+
+### Label hold
+
+Barcode-less accepted units do not advance merely because inspection completed.
+
+The label hold must be established **before** asynchronous LSU label generation
+begins so the session cannot race into Review while printing is in flight.
+
+The operator must explicitly acknowledge that all generated LSU labels are
+physically attached before the line/session may continue.
+
+Refresh/re-entry must restore the canonical label-hold state.
+
+### Review and Receive close
+
+Receive cannot close without an explicit Actual delivery date.
+
+Do not silently default this field to "today." The date is a business fact and
+must come from the operator.
+
+Successful close persists the Receive close first, refreshes canonical server
+truth, and only then enters the completion handoff.
+
+A refreshed or reopened Receive job with canonical `closed_at` must restore
+directly into the completion handoff. It must not fall back into Review or expose
+`Close Receive` again.
+
+### Completion handoff
+
+Canonical Receive completion language:
+
+> Received units are now available for Stow.
+
+Use operational outcome language. Never explain backend/API implementation
+details to the warehouse operator.
+
+The completion surface must not fabricate downstream facts that the current API
+does not know. For example, do not invent:
+
+- a Stow task count;
+- a bin/location;
+- a Stow-ready timestamp;
+- any other downstream assignment not yet created.
+
+The Work Note carries the audit seal (`STATUS CLOSED`, canonical `CLOSED AT`,
+`ACTUAL DELIVERY`) while `Next` identifies the operational continuation:
+`move stock to stow`.
+
+### Data seam for canonical completion evidence
+
+The session component stays presentational per §14.
+
+Canonical completion evidence flows:
+
+```text
+Receive API
+→ WmsOperationsPage
+→ pending Receive session
+→ WmsModuleFT2 activeSession
+→ ReceiveSessionPage
+```
+
+API snake_case fields are deliberately normalized at the app/session boundary:
+
+```text
+closed_at            → closedAt
+actual_delivery_date → actualDeliveryDate
+```
+
+Do not drop these fields when refreshing or reconstructing a Receive session.
+A completed session must remain auditable across navigation and browser refresh.
+
+### Verification — Receive reference implementation
+
+Approved 2026-09-14 after:
+
+- full Receive frontend regression: 50/50 passing;
+- WMS Operations deep-link regression: 2/2 passing;
+- `@lasyncro/wms` build passing;
+- scoped `git diff --check` passing;
+- live localhost verification of closed-session refresh/re-entry;
+- live verification of canonical close timestamp and Actual delivery evidence;
+- live verification of the operator-facing Stow handoff language.
+
+The broader `apps/frontend` TypeScript project remains blocked by unrelated
+pre-existing repository errors outside this Receive/WMS change. No reported
+TypeScript error from that run was in the touched Receive/WMS files.

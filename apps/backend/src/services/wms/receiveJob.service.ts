@@ -15,6 +15,78 @@ import {
 } from './receiveBarcodeReadiness.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 
+const SHORTFALL_ACCOUNTING_TYPES = new Set(['defect', 'wrong_item', 'wrong_variant', 'missing_item', 'other']);
+const OVERAGE_ACCOUNTING_TYPES = new Set(['extra_item']);
+
+function shouldCountTowardShortfall(exception: any): boolean {
+  if (exception.counts_toward_shortfall === true) return true;
+  if (exception.accounting_role === 'shortfall') return true;
+  return SHORTFALL_ACCOUNTING_TYPES.has(exception.exception_type)
+    && exception.exception_type !== 'barcode_mismatch';
+}
+
+function isPersistedOverageApproval(exception: any): boolean {
+  return exception.accounting_role === 'overage'
+    || OVERAGE_ACCOUNTING_TYPES.has(exception.exception_type);
+}
+
+export async function receiveLineReconciliationState(
+  trx: Knex.Transaction,
+  input: {
+    shopId: number;
+    receiveJobId: string;
+    receiveJobLineId: string;
+    expected: number;
+    sellable?: number;
+  }
+) {
+  const exceptions = await trx('receive_exceptions')
+    .where({
+      shop_id: input.shopId,
+      receive_job_id: input.receiveJobId,
+      receive_job_line_id: input.receiveJobLineId,
+    })
+    .select(
+      'receive_exception_id',
+      'exception_type',
+      'quantity_affected',
+      'notes',
+      'resolved',
+      'raised_at',
+      'accounting_role',
+      'counts_toward_shortfall',
+    )
+    .orderBy('raised_at', 'asc');
+
+  const sellable = Number(input.sellable ?? 0);
+  const shortfall = Math.max(0, Number(input.expected ?? 0) - sellable);
+  const allocations = exceptions.map((exception: any) => ({
+    receive_exception_id: exception.receive_exception_id,
+    exception_type: exception.exception_type,
+    quantity_affected: Number(exception.quantity_affected ?? 0),
+    notes: exception.notes ?? null,
+    resolved: Boolean(exception.resolved),
+    raised_at: exception.raised_at,
+    accounting_role: exception.accounting_role ?? null,
+    counts_toward_shortfall: shouldCountTowardShortfall(exception),
+  }));
+  const accounted = Math.min(
+    shortfall,
+    allocations
+      .filter((allocation) => allocation.counts_toward_shortfall)
+      .reduce((sum, allocation) => sum + allocation.quantity_affected, 0),
+  );
+
+  return {
+    expected: Number(input.expected ?? 0),
+    sellable,
+    accounted,
+    unaccounted: Math.max(0, shortfall - accounted),
+    allocations,
+    overage_approved: exceptions.some(isPersistedOverageApproval),
+  };
+}
+
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
  * --------------------------------
@@ -111,6 +183,65 @@ export interface InspectLineInput {
   inspectedBy: number;
 }
 
+export interface UpdateReceiveLineProgressInput {
+  shopId: number;
+  receiveJobId: string;
+  receiveJobLineId: string;
+  quantitySellableProvisional: number;
+  reconciliationRequired?: boolean;
+}
+
+export async function updateReceiveJobLineProgress(
+  trx: Knex.Transaction,
+  input: UpdateReceiveLineProgressInput
+): Promise<{
+  expected: number;
+  sellable: number;
+  accounted: number;
+  unaccounted: number;
+  allocations: any[];
+  overage_approved: boolean;
+}> {
+  const { shopId, receiveJobId, receiveJobLineId, quantitySellableProvisional, reconciliationRequired } = input;
+
+  if (!Number.isInteger(quantitySellableProvisional) || quantitySellableProvisional < 0) {
+    throw new Error('[RECEIVE_PROGRESS] quantity_sellable_provisional must be a non-negative integer');
+  }
+
+  const line = await trx('receive_job_lines')
+    .where({
+      shop_id: shopId,
+      receive_job_id: receiveJobId,
+      receive_job_line_id: receiveJobLineId,
+    })
+    .first('receive_job_line_id', 'quantity_expected', 'inspection_complete');
+
+  if (!line) throw new Error(`[RECEIVE_PROGRESS] Line not found on job ${receiveJobId}`);
+  if (line.inspection_complete) {
+    throw new Error('[RECEIVE_PROGRESS] cannot update progress for an already inspected line');
+  }
+
+  await trx('receive_job_lines')
+    .where({
+      shop_id: shopId,
+      receive_job_id: receiveJobId,
+      receive_job_line_id: receiveJobLineId,
+    })
+    .update({
+      quantity_sellable_provisional: quantitySellableProvisional,
+      ...(reconciliationRequired ? { reconciliation_started_at: new Date() } : {}),
+      updated_at: new Date(),
+    });
+
+  return receiveLineReconciliationState(trx, {
+    shopId,
+    receiveJobId,
+    receiveJobLineId,
+    expected: Number(line.quantity_expected ?? 0),
+    sellable: quantitySellableProvisional,
+  });
+}
+
 /**
  * Records inspection result for a single variant batch.
  * Marks the line as inspection_complete.
@@ -135,11 +266,42 @@ export async function inspectReceiveJobLine(
   if (!line) throw new Error(`[RECEIVE_INSPECT] Line not found on job ${receiveJobId}`);
   if (line.inspection_complete) throw new Error(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`);
 
+  const expected = Number(line.quantity_expected ?? 0);
+  if (quantityAccepted > expected) {
+    const reconciliation = await receiveLineReconciliationState(trx, {
+      shopId,
+      receiveJobId,
+      receiveJobLineId: line.receive_job_line_id,
+      expected,
+      sellable: quantityAccepted,
+    });
+    if (!reconciliation.overage_approved) {
+      throw new Error('[RECEIVE_INSPECT] overdelivery requires persisted overage approval before committing');
+    }
+  }
+
+  if (quantityAccepted < expected && quantityAccepted + quantityRejected < expected) {
+    const reconciliation = await receiveLineReconciliationState(trx, {
+      shopId,
+      receiveJobId,
+      receiveJobLineId: line.receive_job_line_id,
+      expected,
+      sellable: quantityAccepted,
+    });
+    const physicallyRejected = Math.max(0, quantityRejected);
+    const unaccounted = Math.max(0, reconciliation.unaccounted - physicallyRejected);
+    if (unaccounted > 0) {
+      throw new Error(`[RECEIVE_INSPECT] shortfall must be fully accounted before completion; ${unaccounted} unaccounted`);
+    }
+  }
+
   await trx('receive_job_lines')
     .where({ receive_job_line_id: line.receive_job_line_id })
     .update({
       quantity_accepted: quantityAccepted,
       quantity_rejected: quantityRejected,
+      quantity_sellable_provisional: null,
+      reconciliation_started_at: null,
       inspection_complete: true,
       updated_at: new Date(),
     });
@@ -327,7 +489,7 @@ export async function revalidateOrdersForReceivedVariants(
  * 2. Writes quantity_accepted back to purchase_order_line_items.quantity_received
  * 3. Checks if PO is now fully received → advances PO status
  * 4. Creates stow_tasks for all accepted variant groups
- * 5. Writes actual_delivery_date to purchase_orders if provided
+ * 5. Requires and writes actual_delivery_date to purchase_orders
  * 6. Resolves wms:receive:arrived alert
  */
 export async function closeReceiveJob(
@@ -335,6 +497,10 @@ export async function closeReceiveJob(
   input: CloseReceiveJobInput
 ): Promise<void> {
   const { shopId, receiveJobId, actualDeliveryDate, closedBy } = input;
+
+  if (!actualDeliveryDate?.trim()) {
+    throw new Error('[RECEIVE_JOB_CLOSE] Actual delivery date is required');
+  }
 
   const job = await trx('receive_jobs')
     .where({ receive_job_id: receiveJobId, shop_id: shopId })
@@ -378,16 +544,14 @@ export async function closeReceiveJob(
       });
   }
 
-  // 2. Write actual_delivery_date to PO if provided
+  // 2. Write required actual_delivery_date to PO
   const po = await trx('purchase_orders')
     .where({ id: job.po_id, shop_id: shopId })
     .first();
 
-  if (actualDeliveryDate) {
-    await trx('purchase_orders')
-      .where({ id: job.po_id, shop_id: shopId })
-      .update({ actual_delivery_date: actualDeliveryDate, updated_at: new Date() });
-  }
+  await trx('purchase_orders')
+    .where({ id: job.po_id, shop_id: shopId })
+    .update({ actual_delivery_date: actualDeliveryDate, updated_at: new Date() });
 
   // 3. Check if PO is now fully received
   const allLineItems = await trx('purchase_order_line_items')

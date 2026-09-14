@@ -1,8 +1,15 @@
 // apps/backend/src/api/suppliers/receiveJob.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
-import { createReceiveJob, inspectReceiveJobLine, closeReceiveJob } from '../../services/wms/receiveJob.service.js';
+import {
+  createReceiveJob,
+  inspectReceiveJobLine,
+  closeReceiveJob,
+  receiveLineReconciliationState,
+  updateReceiveJobLineProgress,
+} from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
+import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBarcodeReadiness.service.js';
 
 /**
  * RECEIVE JOB CONTROLLER (FEAT-004)
@@ -152,6 +159,11 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
 
       if (!job) return null;
 
+      const readiness = await evaluateReceiveJobBarcodeReadiness(trx, shopId, jobId);
+      const readinessByLine = new Map(
+        readiness.lines.map((line) => [line.receiveJobLineId, line])
+      );
+
       const lines = await trx('receive_job_lines as rjl')
         .leftJoin('variants as v', 'rjl.lasyncro_variant_id', 'v.lasyncro_variant_id')
         .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
@@ -167,7 +179,72 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           'poli.description',
         );
 
-      return { job, lines };
+      const reportedProblems = await trx('receive_exceptions')
+        .where({ shop_id: shopId, receive_job_id: jobId })
+        .select(
+          'receive_exception_id',
+          'receive_job_line_id',
+          'exception_type',
+          'quantity_affected',
+          'notes',
+          'resolved',
+          'raised_at',
+          'accounting_role',
+          'counts_toward_shortfall',
+        )
+        .orderBy('raised_at', 'asc');
+
+      const reportedProblemsByLine = new Map<string, any[]>();
+      for (const problem of reportedProblems) {
+        const lineProblems = reportedProblemsByLine.get(problem.receive_job_line_id) ?? [];
+        lineProblems.push({
+          receive_exception_id: problem.receive_exception_id,
+          exception_type: problem.exception_type,
+          quantity_affected: Number(problem.quantity_affected ?? 0),
+          notes: problem.notes ?? null,
+          resolved: Boolean(problem.resolved),
+          raised_at: problem.raised_at,
+          accounting_role: problem.accounting_role ?? null,
+          counts_toward_shortfall: Boolean(problem.counts_toward_shortfall),
+        });
+        reportedProblemsByLine.set(problem.receive_job_line_id, lineProblems);
+      }
+
+      const linesWithReadiness = await Promise.all(lines.map(async (line: any) => {
+        const lineReadiness = readinessByLine.get(line.receive_job_line_id);
+        const lineProblems = reportedProblemsByLine.get(line.receive_job_line_id) ?? [];
+        const provisionalSellable = line.inspection_complete
+          ? Number(line.quantity_accepted ?? 0)
+          : line.quantity_sellable_provisional != null
+            ? Number(line.quantity_sellable_provisional)
+            : Math.max(
+            0,
+            Number(line.quantity_expected ?? 0)
+              - lineProblems
+                .filter((problem) => problem.counts_toward_shortfall)
+                .reduce((sum, problem) => sum + Number(problem.quantity_affected ?? 0), 0),
+            );
+        const reconciliation = await receiveLineReconciliationState(trx, {
+          shopId,
+          receiveJobId: jobId,
+          receiveJobLineId: line.receive_job_line_id,
+          expected: Number(line.quantity_expected ?? 0),
+          sellable: provisionalSellable,
+        });
+        return {
+          ...line,
+          barcode_ready: lineReadiness?.ready ?? false,
+          barcode_readiness_reason: lineReadiness?.reason ?? 'not_inspected',
+          awaiting_label_ack: lineReadiness?.reason === 'labels_outstanding'
+            || lineReadiness?.reason === 'unit_evidence_mismatch',
+          accepted_unit_count: lineReadiness?.acceptedUnitCount ?? 0,
+          labelled_unit_count: lineReadiness?.labelledUnitCount ?? 0,
+          reported_problems: lineProblems,
+          reconciliation,
+        };
+      }));
+
+      return { job, lines: linesWithReadiness };
     });
 
     if (!result) return res.status(404).json({ error: 'Receive job not found' });
@@ -217,6 +294,51 @@ export async function httpClaimReceiveJob(req: Request, res: Response) {
     if (err.statusCode === 409) return res.status(409).json({ error: err.message });
     console.error('[RECEIVE_JOB_CLAIM_FAILED]', { jobId, userId, error: err.message });
     return res.status(500).json({ error: 'Failed to claim receive job' });
+  }
+}
+
+// ─────────────────────────────────────────
+// PATCH /receive-jobs/:jobId/lines/:lineId/progress
+// ─────────────────────────────────────────
+export async function httpUpdateReceiveJobLineProgress(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const lineId = req.params.lineId as string;
+  const { quantity_sellable_provisional, reconciliation_required } = req.body ?? {};
+  if (!Number.isInteger(quantity_sellable_provisional) || quantity_sellable_provisional < 0) {
+    return res.status(400).json({ error: 'quantity_sellable_provisional must be a non-negative integer' });
+  }
+  if (reconciliation_required != null && typeof reconciliation_required !== 'boolean') {
+    return res.status(400).json({ error: 'reconciliation_required must be boolean when provided' });
+  }
+
+  try {
+    const reconciliation = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return updateReceiveJobLineProgress(trx, {
+        shopId,
+        receiveJobId: jobId,
+        receiveJobLineId: lineId,
+        quantitySellableProvisional: quantity_sellable_provisional,
+        reconciliationRequired: reconciliation_required === true,
+      });
+    });
+
+    return res.json({
+      success: true,
+      receive_job_id: jobId,
+      receive_job_line_id: lineId,
+      quantity_sellable_provisional,
+      reconciliation_required: reconciliation_required === true,
+      reconciliation,
+    });
+  } catch (err: any) {
+    console.error('[RECEIVE_JOB_PROGRESS_FAILED]', { shopId, jobId, lineId, error: err.message });
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    if (err.message.includes('already inspected')) return res.status(409).json({ error: err.message });
+    return res.status(500).json({ error: `Progress update failed: ${err.message}` });
   }
 }
 
@@ -301,13 +423,20 @@ export async function httpReportReceiveException(req: Request, res: Response) {
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const jobId = req.params.jobId as string;
-  const { lasyncro_variant_id, receive_job_line_id, exception_type, quantity_affected, notes } = req.body;
+  const {
+    lasyncro_variant_id,
+    receive_job_line_id,
+    exception_type,
+    quantity_affected,
+    notes,
+    accounting_role,
+  } = req.body;
 
   if (!lasyncro_variant_id || !receive_job_line_id || !exception_type) {
     return res.status(400).json({ error: 'lasyncro_variant_id, receive_job_line_id, exception_type required' });
   }
 
-  const VALID_TYPES = ['defect','packaging_damage','wrong_item','wrong_variant','wrong_quantity','barcode_mismatch','other'];
+  const VALID_TYPES = ['defect','packaging_damage','wrong_item','wrong_variant','wrong_quantity','missing_item','extra_item','barcode_mismatch','other'];
   if (!VALID_TYPES.includes(exception_type)) {
     return res.status(400).json({ error: `Invalid exception_type. Must be one of: ${VALID_TYPES.join(', ')}` });
   }
@@ -332,6 +461,15 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         lasyncro_variant_id,
         exception_type,
         quantity_affected: quantity_affected ?? 1,
+        accounting_role: accounting_role ?? (
+          ['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type)
+            ? 'shortfall'
+            : exception_type === 'extra_item'
+              ? 'overage'
+              : null
+        ),
+        counts_toward_shortfall: ['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type)
+          || (exception_type === 'other' && accounting_role === 'shortfall'),
         notes: notes ?? null,
         raised_by: req.user!.userId,
         raised_at: new Date(),
