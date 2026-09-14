@@ -49,17 +49,17 @@ export const PEGGED_DISPLAY_PRICES = {
     },
     core: {
         GBP: { monthly: 5966, annual: 59660 },
-        USD: { monthly: 7900, annual: 79000 },
+        USD: { monthly: 9900, annual: 79000 },
         EUR: { monthly: 6999, annual: 69999 },
     },
     growth: {
         GBP: { monthly: 13399, annual: 133990 },
-        USD: { monthly: 17900, annual: 171840 },
+        USD: { monthly: 24900, annual: 171840 },
         EUR: { monthly: 15499, annual: 154900 },
     },
     scale: {
         GBP: { monthly: 28990, annual: 289900 },
-        USD: { monthly: 34900, annual: 335040 },
+        USD: { monthly: 59900, annual: 335040 },
         EUR: { monthly: 32850, annual: 328499 },
     },
 };
@@ -100,6 +100,27 @@ export const PRICE_ID_ENV_KEYS = {
  */
 export function getStripePriceId(tier, currency, interval) {
     const envKey = PRICE_ID_ENV_KEYS[tier][currency][interval];
+    const priceId = process.env[envKey];
+    if (!priceId) {
+        throw new Error(`[pricing] Missing env var: ${envKey}. Add it to .env and Fly secrets.`);
+    }
+    return priceId;
+}
+/**
+ * MON-REM-01B-4 — new PLG checkout ownership.
+ *
+ * PRICE_ID_ENV_KEYS remains the legacy provider-recognition table so existing
+ * annual / GBP / EUR / historical USD subscriptions stay resolvable.
+ * New self-service purchases are USD monthly only and use new immutable
+ * Stripe Price objects.
+ */
+export const SELF_SERVE_PRICE_ID_ENV_KEYS = {
+    core: 'STRIPE_PRICE_SELF_SERVE_CORE_MONTHLY_USD',
+    growth: 'STRIPE_PRICE_SELF_SERVE_GROWTH_MONTHLY_USD',
+    scale: 'STRIPE_PRICE_SELF_SERVE_SCALE_MONTHLY_USD',
+};
+export function getSelfServeStripePriceId(tier) {
+    const envKey = SELF_SERVE_PRICE_ID_ENV_KEYS[tier];
     const priceId = process.env[envKey];
     if (!priceId) {
         throw new Error(`[pricing] Missing env var: ${envKey}. Add it to .env and Fly secrets.`);

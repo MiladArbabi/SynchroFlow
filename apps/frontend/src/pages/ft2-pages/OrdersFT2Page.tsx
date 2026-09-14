@@ -41,8 +41,6 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
-import { OrderCapBanner } from '../../components/OrderCapBanner';
-import { ShippedOrderCapBanner } from '../../components/ShippedOrderCapBanner';
 import { ExportDrawer } from 'components/ExportDrawer';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 import { Box } from '@mui/system';
@@ -247,8 +245,6 @@ export default function OrdersFT2Page() {
     <>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <Box sx={{ mt: 3, px: 2 }}>
-        <OrderCapBanner />
-        <ShippedOrderCapBanner />
       </Box>
       <OrdersModuleFT2
         {...headerProps}

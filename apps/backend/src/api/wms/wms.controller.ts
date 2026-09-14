@@ -90,24 +90,10 @@ class ShippedOrderCapReachedError extends Error {
 }
 
 
-class OverageDisabledError extends Error {
-  constructor(
-    readonly details: {
-      current: number;
-      batchOrders: number;
-      limit: number;
-      tier: 'core' | 'growth';
-    }
-  ) {
-    super('OVERAGE_DISABLED');
-    this.name = 'OverageDisabledError';
-  }
-}
-
 class OverageBillingUnavailableError extends Error {
   constructor(
     readonly details: {
-      tier: 'core' | 'growth';
+      tier: 'core' | 'growth' | 'scale';
       billingProvider: string | null;
     }
   ) {
@@ -1756,7 +1742,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
     billingProvider: 'stripe' | 'shopify';
     overageUnits: number;
     idempotencyKey: string;
-    tier: 'core' | 'growth';
+    tier: 'core' | 'growth' | 'scale';
     includedAllowance: number;
     currentBefore: number;
     projectedAfter: number;
@@ -1895,31 +1881,29 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           .first(
             'tier',
             'billing_provider',
-            'stripe_customer_id',
-            'allow_overage'
+            'stripe_customer_id'
           );
 
         const rawTier = subscription?.tier ?? 'starter';
         const tier = isValidTier(rawTier) ? rawTier : 'starter';
 
         /**
-         * MON-ALLOW-04
-         * ------------
-         * Commercial execution is measured exclusively by completed WMS
-         * fulfilled orders.
+         * MON-REM-01B-2
+         * ----------------
+         * Commercial usage is measured by completed WMS orders.
          *
          * Starter:
-         * - 50 fulfilled orders included.
-         * - hard stop above allowance; upgrade required.
+         * - warehouse.operations is Core+ at the route boundary;
+         * - this controller cap remains a defensive compatibility guard.
          *
-         * Core / Growth:
-         * - finite included allowance;
-         * - allow_overage=false atomically blocks any batch crossing it;
-         * - allow_overage=true permits execution and records only newly
-         *   over-cap units as an immutable billing/overage domain event.
-         *
-         * Scale:
-         * - unlimited; no commercial volume guard or usage event.
+         * Core / Growth / Scale:
+         * - each tier has a finite included processed-order allowance;
+         * - crossing that allowance never blocks active warehouse execution;
+         * - newly over-allowance units create one immutable billing/overage
+         *   event atomically with usage increment + pack-complete;
+         * - Stripe/Shopify identity gaps are deferred to durable asynchronous
+         *   delivery rather than rolling back fulfillment;
+         * - unsupported billing-provider configuration still fails closed.
          */
         const currentShipped = Number(usageRow.shipped_orders ?? 0);
         const projectedShipped = currentShipped + billableCount;
@@ -1938,20 +1922,8 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           }
         }
 
-        if (tier === 'core' || tier === 'growth') {
+        if (tier === 'core' || tier === 'growth' || tier === 'scale') {
           const { shippedOrderCap } = getTierConfig(tier);
-
-          if (
-            projectedShipped > shippedOrderCap &&
-            subscription?.allow_overage !== true
-          ) {
-            throw new OverageDisabledError({
-              current: currentShipped,
-              batchOrders: billableCount,
-              limit: shippedOrderCap,
-              tier,
-            });
-          }
 
           const alreadyOverBefore = Math.max(
             0,
@@ -1977,13 +1949,6 @@ export const httpCompletePack = async (req: Request, res: Response) => {
             if (provider === 'stripe') {
               const stripeCustomerId = subscription?.stripe_customer_id;
 
-              if (!stripeCustomerId) {
-                throw new OverageBillingUnavailableError({
-                  tier,
-                  billingProvider: provider,
-                });
-              }
-
               pendingOverageEvent = {
                 billingProvider: 'stripe',
                 overageUnits,
@@ -1993,20 +1958,13 @@ export const httpCompletePack = async (req: Request, res: Response) => {
                 currentBefore: currentShipped,
                 projectedAfter: projectedShipped,
                 usagePeriodId: usagePeriod.id,
-                stripeCustomerId,
+                stripeCustomerId: stripeCustomerId ?? undefined,
               };
             } else if (provider === 'shopify') {
               const installation = await trx('shopify_app_installations')
                 .where({ shop_id: shopId })
                 .whereNull('uninstalled_at')
                 .first('shop_gid');
-
-              if (!installation?.shop_gid) {
-                throw new OverageBillingUnavailableError({
-                  tier,
-                  billingProvider: provider,
-                });
-              }
 
               pendingOverageEvent = {
                 billingProvider: 'shopify',
@@ -2017,7 +1975,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
                 currentBefore: currentShipped,
                 projectedAfter: projectedShipped,
                 usagePeriodId: usagePeriod.id,
-                shopGid: installation.shop_gid,
+                shopGid: installation?.shop_gid ?? undefined,
               };
             } else {
               throw new OverageBillingUnavailableError({
@@ -2137,24 +2095,11 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       });
     }
 
-    if (error instanceof OverageDisabledError) {
-      return res.status(403).json({
-        error: 'OVERAGE_DISABLED',
-        message:
-          'Your included monthly fulfilled-order allowance has been reached. Enable overage or change plan to continue.',
-        current: error.details.current,
-        batch_orders: error.details.batchOrders,
-        limit: error.details.limit,
-        tier: error.details.tier,
-        allow_overage: false,
-      });
-    }
-
     if (error instanceof OverageBillingUnavailableError) {
       return res.status(409).json({
         error: 'OVERAGE_BILLING_UNAVAILABLE',
         message:
-          'Overage is enabled, but billing is not configured for this shop. No fulfillment was completed.',
+          'Usage billing is not configured for a supported provider. No fulfillment was completed.',
         tier: error.details.tier,
         billing_provider: error.details.billingProvider,
       });
@@ -3214,8 +3159,8 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
         scanSource: scan_source,
         lasyncroUnitId:
           typeof lasyncro_unit_id === 'string' && lasyncro_unit_id.startsWith('LSU-')
-            ? lasyncro_unit_id
-            : undefined,
+          ? lasyncro_unit_id
+          : undefined,
       });
       await enqueueShopSnapshotJob(trx, shopId);
       return scanResult;

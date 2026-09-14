@@ -24,17 +24,17 @@ export const PEGGED_DISPLAY_PRICES: Record<
   Record<BillingCurrency, { monthly: number; annual: number }>
 > = {
   core: {
-    USD: { monthly: 79,     annual: 790    },
+    USD: { monthly: 99,     annual: 790    },
     GBP: { monthly: 59.66, annual: 596.60 },
     EUR: { monthly: 69.99, annual: 699.99 },
   },
   growth: {
-    USD: { monthly: 179,    annual: 1718.40  },
+    USD: { monthly: 249,    annual: 1718.40  },
     GBP: { monthly: 133.99, annual: 1339.90  },
     EUR: { monthly: 154.99, annual: 1549.00  },
   },
   scale: {
-    USD: { monthly: 349,    annual: 3350.40  },
+    USD: { monthly: 599,    annual: 3350.40  },
     GBP: { monthly: 289.90, annual: 2899.00  },
     EUR: { monthly: 328.50, annual: 3284.99  },
   },
@@ -62,7 +62,7 @@ export function annualSavings(tier: Exclude<Tier, 'starter'>, currency: BillingC
 
 // ── Extra-seat add-on pricing (AUD-C16) ──────────────────────
 // Mirrors backend SEAT_DISPLAY_PRICES in pricing.config.ts.
-// Scale excluded — unlimited seats, no add-on needed.
+// Scale excluded — self-service extra-seat add-ons are not offered on Scale.
 export type SeatTier = 'core' | 'growth';
 
 export const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, number>> = {

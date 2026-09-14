@@ -4,9 +4,9 @@
 // ----------------------------
 // Stripe Checkout session creation, Customer Portal, and plan management.
 //
-// Annual billing (MON-08):
-//   - Each tier has two Stripe Price IDs: monthly and annual
-//   - Annual = 20% discount (~2 months free)
+// Self-service billing:
+//   - New purchases are USD monthly only for Core, Growth, and Scale
+//   - Existing legacy annual / GBP / EUR Stripe prices remain recognizable
 //   - Price IDs are read from env vars — never hardcoded
 //
 // Env vars required:
@@ -26,70 +26,97 @@ import Stripe from 'stripe';
 import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { 
-  getStripePriceId, 
+  getSelfServeStripePriceId,
   getSeatPriceId, 
   SeatTier, 
-  PEGGED_DISPLAY_PRICES, 
   BillingCurrency 
 } from '@lasyncro/backend-core/config/pricing.config.js';
 import { getOrRotateOpenUsagePeriod } from './usagePeriod.service.js';
+import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
+import { isShopifyPartnerBillingError } from '../../services/shopify/shopifyBillingReconciliation.service.js';
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[billing] STRIPE_SECRET_KEY not set');
-  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
+  return new Stripe(key, { apiVersion: '2026-08-26.dahlia' });
 };
 
 /**
  * POST /api/v1/billing/checkout
  *
- * Creates a Stripe Checkout session for the requested tier + interval.
- * Redirects user to Stripe-hosted checkout page.
+ * Creates a Stripe Checkout session for a self-service paid tier.
+ * New purchases are USD monthly only.
  *
- * Body: { tier: 'core' | 'growth' | 'scale', interval: 'monthly' | 'annual' }
+ * Body: { tier: 'core' | 'growth' | 'scale', interval?: 'monthly' }
  */
 export async function createCheckoutSession(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
   const { tier, interval = 'monthly' } = req.body;
 
   if (!isValidTier(tier) || tier === 'starter') {
-    return res.status(400).json({ error: 'INVALID_TIER', allowed: ['core', 'growth', 'scale'] });
+    return res.status(400).json({
+      error: 'INVALID_TIER',
+      allowed: ['core', 'growth', 'scale'],
+    });
   }
 
-  if (interval !== 'monthly' && interval !== 'annual') {
-    return res.status(400).json({ error: 'INVALID_INTERVAL', allowed: ['monthly', 'annual'] });
+  if (interval !== 'monthly') {
+    return res.status(400).json({
+      error: 'INVALID_INTERVAL',
+      allowed: ['monthly'],
+    });
   }
 
   try {
-    const stripe = getStripe();
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
 
-    // Retrieve or create Stripe customer
     const subRow = await db('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('stripe_customer_id', 'billing_currency', 'billing_provider');
+      .first(
+        'stripe_customer_id',
+        'billing_currency',
+        'billing_provider',
+      );
 
     if (subRow?.billing_provider === 'shopify') {
       return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
     }
 
-    const billingCurrency = (subRow?.billing_currency ?? 'USD') as BillingCurrency;
-    const priceId = getStripePriceId(tier as Exclude<Tier, 'starter'>, billingCurrency, interval);
-    let customerId: string | undefined = subRow?.stripe_customer_id ?? undefined;
+    if (subRow?.billing_provider !== 'stripe') {
+      return res.status(409).json({ error: 'BILLING_PROVIDER_UNRESOLVED' });
+    }
+
+    const stripe = getStripe();
+
+    const billingCurrency =
+      (subRow?.billing_currency ?? 'USD') as BillingCurrency;
+
+    if (billingCurrency !== 'USD') {
+      return res.status(409).json({
+        error: 'SELF_SERVE_USD_ONLY',
+        currency: billingCurrency,
+      });
+    }
+
+    const priceId = getSelfServeStripePriceId(
+      tier as Exclude<Tier, 'starter'>,
+    );
+
+    let customerId: string | undefined =
+      subRow?.stripe_customer_id ?? undefined;
 
     if (!customerId) {
-      const shop = await db('shops').where({ id: shopId }).first('name');
+      const shop = await db('shops')
+        .where({ id: shopId })
+        .first('name');
+
       const customer = await stripe.customers.create({
         name: shop?.name ?? `Shop ${shopId}`,
         metadata: { shopId: String(shopId) },
       });
+
       customerId = customer.id;
     }
-
-    const monthlyMinor = PEGGED_DISPLAY_PRICES[tier as Tier][billingCurrency].monthly;
-    const annualSavings = interval === 'annual'
-      ? Math.round((monthlyMinor * 12 * 0.2) / 100)
-      : null;
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -99,28 +126,35 @@ export async function createCheckoutSession(req: Request, res: Response) {
         metadata: {
           shopId: String(shopId),
           tier,
-          billing_interval: interval,
+          billing_interval: 'monthly',
         },
-        // Annual savings callout shown in Stripe checkout
-        ...(annualSavings && interval === 'annual'
-          ? { description: `Save ${annualSavings} ${billingCurrency}/year vs monthly` }
-          : {}),
       },
       success_url: `${frontendUrl}/settings/billing?success=1&tier=${tier}`,
       cancel_url: `${frontendUrl}/settings/billing?canceled=1`,
       metadata: {
         shopId: String(shopId),
         tier,
-        billing_interval: interval,
+        billing_interval: 'monthly',
       },
     });
 
-    console.log('[billing] checkout session created', { shopId, tier, interval, sessionId: session.id });
+    console.log('[billing] checkout session created', {
+      shopId,
+      tier,
+      interval: 'monthly',
+      sessionId: session.id,
+    });
 
     return res.json({ url: session.url });
   } catch (err: any) {
-    console.error('[billing] createCheckoutSession failed', { shopId, err: err.message });
-    return res.status(500).json({ error: 'CHECKOUT_SESSION_FAILED' });
+    console.error('[billing] createCheckoutSession failed', {
+      shopId,
+      err: err.message,
+    });
+
+    return res.status(500).json({
+      error: 'CHECKOUT_SESSION_FAILED',
+    });
   }
 }
 
@@ -138,7 +172,6 @@ export async function createSetupSession(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
 
   try {
-    const stripe = getStripe();
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
 
     const subRow = await db('shop_subscriptions')
@@ -148,6 +181,12 @@ export async function createSetupSession(req: Request, res: Response) {
     if (subRow?.billing_provider === 'shopify') {
       return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
     }
+
+    if (subRow?.billing_provider !== 'stripe') {
+      return res.status(409).json({ error: 'BILLING_PROVIDER_UNRESOLVED' });
+    }
+
+    const stripe = getStripe();
 
     let customerId: string | undefined = subRow?.stripe_customer_id ?? undefined;
 
@@ -211,6 +250,10 @@ export async function addSeats(req: Request, res: Response) {
       return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
     }
 
+    if (subRow?.billing_provider !== 'stripe') {
+      return res.status(409).json({ error: 'BILLING_PROVIDER_UNRESOLVED' });
+    }
+
     if (subRow?.tier !== 'core' && subRow?.tier !== 'growth') {
       return res.status(400).json({ error: 'SEATS_NOT_APPLICABLE_FOR_TIER' });
     }
@@ -256,6 +299,10 @@ export async function createPortalSession(req: Request, res: Response) {
       return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
     }
 
+    if (subRow?.billing_provider !== 'stripe') {
+      return res.status(409).json({ error: 'BILLING_PROVIDER_UNRESOLVED' });
+    }
+
     if (!subRow?.stripe_customer_id) {
       return res.status(404).json({ error: 'NO_STRIPE_CUSTOMER' });
     }
@@ -274,6 +321,48 @@ export async function createPortalSession(req: Request, res: Response) {
   } catch (err: any) {
     console.error('[billing] createPortalSession failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'PORTAL_SESSION_FAILED' });
+  }
+}
+
+/**
+ * POST /api/v1/billing/shopify/reconcile
+ *
+ * Reconciles Shopify App Pricing return flows against Partner API truth.
+ * The request plan handle is diagnostic only; provider state decides access.
+ */
+export async function reconcileShopifyBilling(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+  const expectedPlanHandle =
+    typeof req.body?.expected_plan_handle === 'string'
+      ? req.body.expected_plan_handle
+      : typeof req.body?.plan_handle === 'string'
+        ? req.body.plan_handle
+        : null;
+
+  try {
+    const state = await withTenant(shopId, (trx) => applyShopifyBillingState(shopId, trx));
+
+    return res.json({
+      tier: state.tier,
+      status: state.status,
+      billing_provider: 'shopify',
+      expected_plan_handle: expectedPlanHandle,
+      authoritative_plan_handle: state.planHandle,
+      plan_handle_mismatch:
+        typeof expectedPlanHandle === 'string' && expectedPlanHandle !== state.planHandle,
+    });
+  } catch (err: any) {
+    console.error('[billing] reconcileShopifyBilling failed', {
+      shopId,
+      code: err?.code,
+      err: err?.message,
+    });
+
+    if (isShopifyPartnerBillingError(err)) {
+      return res.status(err.statusCode).json({ error: err.code });
+    }
+
+    return res.status(500).json({ error: 'SHOPIFY_BILLING_RECONCILE_FAILED' });
   }
 }
 
@@ -327,9 +416,7 @@ export async function getSubscription(req: Request, res: Response) {
         'current_period_end',
         'canceled_at',
         // SHB-03/04: provider drives frontend billing-surface branching
-        'billing_provider',
-        // MON-ALLOW-04: Core/Growth merchant overage preference
-        'allow_overage'
+        'billing_provider'
       );
     if (!row) {
       return res.json({
@@ -340,8 +427,7 @@ export async function getSubscription(req: Request, res: Response) {
         current_period_start: null,
         current_period_end: null,
         canceled_at: null,
-        billing_provider: 'stripe',
-        allow_overage: true,
+        billing_provider: null,
         manage_billing_url: null,
       });
     }

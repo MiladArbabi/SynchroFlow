@@ -179,16 +179,16 @@ describe('A1-C3 — Scale satisfies every active standard capability', () => {
 });
 
 // ===========================================================================
-// A1-C4 — SCALE UNLIMITED
+// A1-C4 — SCALE FINITE COMMERCIAL CAPACITY
 // ===========================================================================
-describe('A1-C4 — Scale standard limits are unlimited', () => {
-  it('EXPECTED RED: no finite standard Scale limit', () => {
+describe('A1-C4 — Scale has finite ratified commercial capacity', () => {
+  it('MON-REM-01B RED: Scale has finite processed-order, seat, location, and history allowances', () => {
     const limits = (CP as any).standardLimits?.('scale') ?? (CP as any).PLAN_LIMITS?.scale;
     expect(limits).toBeDefined();
-    expect(limits?.monthlyOrderCap).toBe(Infinity);
-    expect(limits?.shippedOrderCap).toBe(Infinity);
-    expect(limits?.seatLimit).toBe(Infinity);
-    expect(limits?.specterSessionCap).toBe(Infinity);
+    expect(limits?.shippedOrderCap).toBe(20000);
+    expect(limits?.seatLimit).toBe(25);
+    expect(limits?.locationLimit).toBe(10);
+    expect(limits?.historyDays).toBe(730);
   });
 });
 

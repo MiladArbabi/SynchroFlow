@@ -1,180 +1,176 @@
 // apps/frontend/src/components/ShippedOrderCapBanner.tsx
 //
-// SHIPPED ORDER CAP BANNER (SEG-023)
-// -----------------------------------
-// Inline on Orders/Order Flow page. Watches shipped_orders (pack-complete
-// count) against TIER_SHIPPED_ORDER_CAP — distinct from OrderCapBanner,
-// which watches ingested_orders. Two-stage thresholds (75%/90%) per
-// product decision, vs. OrderCapBanner's single 80% stage — do not
-// merge these two components, they intentionally differ.
-//
-// Self-fetches /api/v1/billing/usage — renders nothing below 75%.
-// "Shipped" here means pack-complete, not carrier-confirmed ship — see
-// wms.controller.ts httpPackComplete. Copy says "packed" to stay accurate.
+// MON-REM-01B-4
+// Paid warehouse tiers continue execution above their included processed-order
+// allowance. This surface informs the merchant about usage and automatic
+// overage; it never presents the allowance as an execution stop.
 
 import { useEffect, useState } from 'react';
 import { Box, Typography, useTheme, alpha } from '@mui/material';
-import { AlertTriangle, XCircle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { PLAN_PROCESSED_ORDER_OVERAGE_CENTS } from '@lasyncro/commercial-policy';
 import { useEntitlements } from '../contexts/EntitlementsContext';
 import { TIER_SHIPPED_ORDER_CAP, type Tier } from '../config/tiers';
-import { useCapStatus } from '../hooks/useCapStatus';
 import { axiosInstance } from '../api/axiosConfig';
 
 interface UsageSummary {
   shipped_orders: number;
-  period_starts_at?: string;
 }
 
 const NEXT_TIER: Partial<Record<Tier, Tier>> = {
-  starter: 'core',
-  core:    'growth',
-  growth:  'scale',
+  core: 'growth',
+  growth: 'scale',
 };
-
-function formatResetDate(isoDate: string | undefined): string {
-  if (!isoDate) return 'your next cycle';
-  return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
 
 export function ShippedOrderCapBanner() {
   const theme = useTheme();
   const navigate = useNavigate();
-  // SHB-03/SHB-05 interim: Shopify-billed shops have no pay-per-order path
-  // (Managed Pricing has no usage add-on built yet) — hard cap + upgrade only.
-  const { tier, billingProvider } = useEntitlements();
-  const isShopifyBilled = billingProvider === 'shopify';
+  const { tier } = useEntitlements();
   const [usage, setUsage] = useState<UsageSummary | null>(null);
-  const [settingUpPPO, setSettingUpPPO] = useState(false);
 
   useEffect(() => {
     axiosInstance.get('/api/v1/billing/usage')
-      .then(r => setUsage(r.data))
-      .catch(() => {}); // non-fatal
+      .then((response) => setUsage(response.data))
+      .catch(() => {});
   }, []);
 
-  const shippedCap = tier ? TIER_SHIPPED_ORDER_CAP[tier as Tier] : 0;
-  const { pct, level } = useCapStatus(usage?.shipped_orders ?? 0, shippedCap, [0.75, 0.9]);
+  if (!usage || !tier || tier === 'starter') return null;
 
-  if (!usage || !tier || tier === 'scale') return null;
-  if (shippedCap === Infinity) return null;
-  if (level === 'ok') return null;
+  const paidTier = tier as Tier;
+  const included = TIER_SHIPPED_ORDER_CAP[paidTier];
+  const overageCents =
+    PLAN_PROCESSED_ORDER_OVERAGE_CENTS[
+      paidTier as keyof typeof PLAN_PROCESSED_ORDER_OVERAGE_CENTS
+    ];
 
-  const isBlocked = level === 'blocked';
-  const isUrgent = level === 'urgent';
-  const nextTier = NEXT_TIER[tier as Tier];
+  if (
+    !Number.isFinite(included) ||
+    included <= 0 ||
+    overageCents == null
+  ) {
+    return null;
+  }
 
-  const tokens = isBlocked || isUrgent
-    ? {
-        bg:         alpha(theme.palette.error.main, 0.08),
-        border:     alpha(theme.palette.error.main, 0.25),
-        tileBg:     alpha(theme.palette.error.main, 0.08),
-        tileBorder: alpha(theme.palette.error.main, 0.25),
-        iconColor:  theme.palette.error.main,
-        barColor:   theme.palette.error.main,
-      }
-    : {
-        bg:         alpha(theme.palette.warning.main, 0.12),
-        border:     alpha(theme.palette.warning.main, 0.30),
-        tileBg:     alpha(theme.palette.warning.main, 0.12),
-        tileBorder: alpha(theme.palette.warning.main, 0.30),
-        iconColor:  theme.palette.warning.main,
-        barColor:   theme.palette.warning.main,
-      };
+  const used = usage.shipped_orders;
+  const ratio = used / included;
 
-  const handleUpgrade = () => navigate('/settings/billing');
+  if (ratio < 0.75) return null;
 
-  // SEG-022-B: opens Stripe Checkout in 'setup' mode — saves a card,
-  // no subscription. handleCheckoutSetupComplete webhook persists
-  // stripe_customer_id on completion; reportShippedOrderOverage then
-  // starts firing automatically for this shop.
-  const handlePayPerOrder = async () => {
-    setSettingUpPPO(true);
-    try {
-      const { data } = await axiosInstance.post('/api/v1/billing/setup-payment-method');
-      if (data.url) window.location.href = data.url;
-    } catch (err) {
-      console.error('[ShippedOrderCapBanner] setup-payment-method failed', err);
-      setSettingUpPPO(false);
-    }
-  };
+  const overageUnits = Math.max(0, used - included);
+  const isOverAllowance = overageUnits > 0;
+  const isNearAllowance = !isOverAllowance && ratio >= 0.9;
+  const nextTier = NEXT_TIER[paidTier];
+  const overageRate = overageCents / 100;
+
+  const tone =
+    isOverAllowance || isNearAllowance
+      ? theme.palette.warning.main
+      : theme.palette.info.main;
 
   return (
-    <Box sx={{
-      display: 'flex', alignItems: 'center', gap: '16px', p: '16px 18px',
-      background: tokens.bg, border: `1px solid ${tokens.border}`,
-      borderRadius: '12px', mb: 3,
-    }}>
-      <Box sx={{
-        width: 40, height: 40, borderRadius: '10px',
-        background: tokens.tileBg, border: `1px solid ${tokens.tileBorder}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>
-        {isBlocked
-          ? <XCircle size={20} color={tokens.iconColor} strokeWidth={1.8} />
-          : <AlertTriangle size={20} color={tokens.iconColor} strokeWidth={1.8} />}
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        p: '16px 18px',
+        background: alpha(tone, 0.08),
+        border: `1px solid ${alpha(tone, 0.25)}`,
+        borderRadius: '12px',
+        mb: 3,
+      }}
+    >
+      <Box
+        sx={{
+          width: 40,
+          height: 40,
+          borderRadius: '10px',
+          background: alpha(tone, 0.08),
+          border: `1px solid ${alpha(tone, 0.25)}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <AlertTriangle
+          size={20}
+          color={tone}
+          strokeWidth={1.8}
+        />
       </Box>
 
       <Box sx={{ flex: 1 }}>
-        <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
-          {isBlocked
-            ? 'Monthly pack limit reached'
-            : `You've packed ${usage.shipped_orders.toLocaleString()} of your ${shippedCap.toLocaleString()} monthly orders`}
-        </Typography>
-
-        <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'text.secondary', mt: '2px' }}>
-          {/* SHB-05 interim: no pay-per-order mention for Shopify-billed shops */}
-          {isShopifyBilled
-            ? (isBlocked
-                ? `New packs are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)} — upgrade your plan to keep shipping.`
-                : isUrgent
-                ? `You're close to your limit. Upgrade${nextTier ? ` to ${nextTier}` : ''} to avoid an interruption.`
-                : `Upgrade your plan for more headroom.`)
-            : (isBlocked
-                ? `New packs are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)} — enable pay-per-order to keep shipping, or upgrade your plan.`
-                : isUrgent
-                ? `You're close to your limit. Enable pay-per-order to avoid an interruption, or upgrade${nextTier ? ` to ${nextTier}` : ''}.`
-                : `Enable pay-per-order for orders past your limit, or upgrade your plan for more headroom.`)}
-        </Typography>
-
-        <Box sx={{
-          height: 6, width: '100%', maxWidth: 380, borderRadius: '100px',
-          background: theme.palette.action.hover, overflow: 'hidden', mt: '9px',
-        }}>
-          <Box sx={{ height: '100%', width: `${pct}%`, borderRadius: '100px', background: tokens.barColor }} />
-        </Box>
-      </Box>
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-        {/* SHB-05 interim: pay-per-order is Stripe-only — no Managed Pricing usage add-on exists */}
-        {!isShopifyBilled && (
-        <Box
-          onClick={settingUpPPO ? undefined : handlePayPerOrder}
+        <Typography
           sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', height: 36, px: '16px',
-            background: theme.palette.primary.main, color: '#FFF', borderRadius: '8px',
-            fontSize: 12.5, fontWeight: 600, cursor: settingUpPPO ? 'default' : 'pointer',
-            whiteSpace: 'nowrap', opacity: settingUpPPO ? 0.6 : 1,
-            '&:hover': { opacity: settingUpPPO ? 0.6 : 0.88 },
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'text.primary',
           }}
         >
-          {settingUpPPO ? 'Redirecting…' : 'Enable pay-per-order'}
-        </Box>
-        )}
-        {nextTier && (
+          {isOverAllowance
+            ? `${overageUnits.toLocaleString()} processed order${overageUnits === 1 ? '' : 's'} above your included monthly allowance`
+            : `You've processed ${used.toLocaleString()} of ${included.toLocaleString()} included monthly orders`}
+        </Typography>
+
+        <Typography
+          sx={{
+            fontSize: 12.5,
+            fontWeight: 300,
+            color: 'text.secondary',
+            mt: '2px',
+          }}
+        >
+          {isOverAllowance
+            ? `Warehouse execution continues normally. Additional processed orders are billed at $${overageRate.toFixed(2)} each.`
+            : `Warehouse execution continues normally above the allowance at $${overageRate.toFixed(2)} per additional processed order.`}
+        </Typography>
+
+        <Box
+          sx={{
+            height: 6,
+            width: '100%',
+            maxWidth: 380,
+            borderRadius: '100px',
+            background: theme.palette.action.hover,
+            overflow: 'hidden',
+            mt: '9px',
+          }}
+        >
           <Box
-            onClick={handleUpgrade}
             sx={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', height: 30, px: '16px',
-              color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '8px',
-              fontSize: 11.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
-              '&:hover': { opacity: 0.75 },
+              height: '100%',
+              width: `${Math.min(ratio * 100, 100)}%`,
+              borderRadius: '100px',
+              background: tone,
             }}
-          >
-            Upgrade plan
-          </Box>
-        )}
+          />
+        </Box>
       </Box>
+
+      {nextTier && (
+        <Box
+          onClick={() => navigate('/settings/billing')}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: 36,
+            px: '16px',
+            color: 'var(--accent)',
+            border: '0.5px solid var(--accent)',
+            borderRadius: '8px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            '&:hover': { opacity: 0.75 },
+          }}
+        >
+          View plans
+        </Box>
+      )}
     </Box>
   );
 }

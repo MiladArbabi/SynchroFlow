@@ -2,20 +2,17 @@
 //
 // Shopify Billing Reconciliation Sweep (BILL-20)
 // -----------------------------------------------
-// Runs on a schedule. Shopify's app_subscriptions/update webhook is the
-// primary path for keeping shop_subscriptions in sync with a merchant's
-// live billing state, but Shopify gives no hard delivery guarantee for
-// every billing state change — a missed webhook (delivery failure,
-// server downtime, transient error) leaves entitlements silently out of
-// sync with reality until the next real billing event fires, if ever.
+// Runs on a schedule. Partner API activeSubscription is provider truth for
+// Shopify App Pricing. Redirect reconciliation is the immediate path after a
+// merchant returns from Shopify's hosted pricing page; this sweep is the
+// durability/fallback path for any missed redirect, webhook, or transient
+// provider event.
 //
-// This sweep is the fallback: for every Shopify-billed shop, it calls
-// applyShopifyBillingState — the same function the webhook handler uses —
-// which fetches live billing state from Shopify's Admin GraphQL API and
-// reconciles shop_subscriptions + entitlements to match. Idempotent by
-// construction (an already-correct shop is simply re-written to the same
-// values), so running this on a schedule is safe even when nothing has
-// actually changed.
+// For every Shopify-billed shop, this calls applyShopifyBillingState, which
+// fetches live billing state from Partner API activeSubscription and reconciles
+// shop_subscriptions + entitlements to match. Idempotent by construction (an
+// already-correct shop is simply re-written to the same values), so running
+// this on a schedule is safe even when nothing has actually changed.
 //
 // Unlike shopifyUninstallGrace.service.ts (deliberately DB-only, since it
 // targets shops that may have already revoked/rotated their access token

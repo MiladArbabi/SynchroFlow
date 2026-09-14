@@ -34,8 +34,8 @@
  *     EntitlementsService.getForUser (tier floor ∪ still-open rows), never as
  *     source-specific revocation bookkeeping;
  *   - applyShopifyBillingState is NOT mocked. Only the Shopify network boundary
- *     is: axios for token exchange/identity, global fetch for the Admin
- *     GraphQL billing query. Both reject unknown URLs so no call can escape.
+ *     is: axios for token exchange/identity, global fetch for the Partner API
+ *     billing query. Both reject unknown URLs so no call can escape.
  *
  * HARNESS
  *   Real Express app, real GET /api/v1/integrations/oauth/callback/shopify,
@@ -81,6 +81,8 @@ import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 // would assert capabilities the access layer never grants.
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { SHOPIFY_REQUIRED_SCOPES } from 'api-src/services/shopify/shopifyScopes';
+import fs from 'fs';
+import path from 'path';
 
 const app = createApp();
 
@@ -91,6 +93,7 @@ const GRAPHQL_URL_FRAGMENT = '/graphql.json';
 const FULL_GRANT_STRING = [...SHOPIFY_REQUIRED_SCOPES].join(',');
 const SHOP_GID = 'gid://shopify/Shop/999042';
 const LEDGER_TABLE = 'shop_subscription_transitions';
+const REPO = path.resolve(__dirname, '../../..');
 
 jest.setTimeout(180_000);
 
@@ -121,9 +124,9 @@ function programAxios(shopDomain: string) {
   });
 }
 
-// ── Shopify network boundary #2: global fetch (Admin GraphQL billing query) ──
+// ── Shopify network boundary #2: global fetch (Partner API billing query) ───
 //
-// shopifyBillingReconciliation.service.ts issues the Active Subscription query
+// shopifyBillingReconciliation.service.ts issues the activeSubscription query
 // with global fetch, not axios. The resolver itself is never mocked — only this
 // transport is — so plan -> tier mapping and the DB write remain real.
 
@@ -134,28 +137,51 @@ let billingFetch: jest.Mock;
 function activePlan(planHandle: string) {
   return {
     data: {
-      currentAppInstallation: {
-        activeSubscriptions: [
+      activeSubscription: {
+        shop: { id: SHOP_GID },
+        billingPeriod: 'EVERY_30_DAYS',
+        cancelAtEndOfCycle: false,
+        trialEndsAt: null,
+        currentBillingCycle: {
+          startTime: '2026-09-01T00:00:00Z',
+          endTime: '2099-01-01T00:00:00Z',
+        },
+        items: [
           {
-            id: 'gid://shopify/AppSubscription/77',
-            name: `Display Name For ${planHandle}`,
-            status: 'ACTIVE',
-            currentPeriodEnd: '2099-01-01T00:00:00Z',
-            lineItems: [
-              {
-                id: 'gid://shopify/AppSubscriptionLineItem/77',
-                plan: {
-                  pricingDetails: {
-                    __typename: 'AppRecurringPricing',
-                    planHandle,
-                    interval: 'EVERY_30_DAYS',
-                    price: { amount: '99.00', currencyCode: 'USD' },
-                  },
+            handle: planHandle,
+            description: `Display Name For ${planHandle}`,
+            price: {
+              __typename: 'FlatRatePrice',
+              active: true,
+              currency: 'USD',
+              amount: '99.00',
+            },
+            usage: null,
+          },
+          {
+            handle: 'shipped-order',
+            description: 'Processed order overage',
+            price: {
+              __typename: 'TieredPrice',
+              active: true,
+              currency: 'USD',
+              tiersMode: 'VOLUME',
+              tiers: [
+                {
+                  upTo: null,
+                  amountPerUnit: '0.08',
+                  amount: null,
                 },
-              },
-            ],
+              ],
+            },
+            usage: {
+              quantity: 0,
+              cost: { amount: '0.00', currencyCode: 'USD' },
+            },
           },
         ],
+        pendingUpdate: null,
+        legacySubscriptionId: 'gid://shopify/AppSubscription/77',
       },
     },
   };
@@ -163,7 +189,7 @@ function activePlan(planHandle: string) {
 
 /** The production condition: merchant has no live Shopify subscription. */
 const noActiveSubscriptions = {
-  data: { currentAppInstallation: { activeSubscriptions: [] } },
+  data: { activeSubscription: null },
 };
 
 type BillingPlan =
@@ -444,6 +470,9 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
     process.env.ENCRYPTION_KEY =
       process.env.ENCRYPTION_KEY || 'test-encryption-key-0123456789abcdef';
     process.env.SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-07';
+    process.env.SHOPIFY_PARTNER_ORG_ID = '123';
+    process.env.SHOPIFY_APP_GID = 'gid://shopify/App/320563019777';
+    process.env.SHOPIFY_PARTNER_API_ACCESS_TOKEN = 'test-partner-token-not-printed';
 
     completePostInstallationSpy = jest
       .spyOn(ShopifyAppService, 'completePostInstallation')
@@ -710,5 +739,18 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
         }),
       ])
     );
+  });
+});
+
+describe('MON-REM-01B-4 — OAuth commercial reconciliation source', () => {
+  it('OAuth reconnect reconciliation depends on Partner API activeSubscription truth rather than Admin activeSubscriptions', () => {
+    const source = fs.readFileSync(
+      path.join(REPO, 'apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('activeSubscription');
+    expect(source).not.toContain('currentAppInstallation');
+    expect(source).not.toContain('activeSubscriptions');
   });
 });

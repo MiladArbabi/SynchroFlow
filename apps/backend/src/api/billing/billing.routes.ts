@@ -12,10 +12,10 @@ import {
   createCheckoutSession,
   createSetupSession,
   createPortalSession,
+  reconcileShopifyBilling,
   getSubscription,
   getUsage,
   addSeats,
-  updateOveragePreference,
 } from './billing.controller.js';
 
 const router = Router();
@@ -31,18 +31,13 @@ router.post('/checkout', authenticateToken, requireAction('billing:write'), crea
 // POST /api/v1/billing/portal — create Stripe Customer Portal session
 router.post('/portal', authenticateToken, requireAction('billing:read'), createPortalSession);
 
+// POST /api/v1/billing/shopify/reconcile — reconcile Shopify App Pricing return
+router.post('/shopify/reconcile', authenticateToken, requireAction('billing:write'), reconcileShopifyBilling);
+
 // POST /api/v1/billing/setup-payment-method — save a card, no subscription (SEG-022-B)
 router.post('/setup-payment-method', authenticateToken, requireAction('billing:write'), createSetupSession);
 
 // POST /api/v1/billing/add-seats — add extra team seats to existing subscription (AUD-C16)
 router.post('/add-seats', authenticateToken, requireAction('billing:write'), addSeats);
-
-// PATCH /api/v1/billing/overage — Core/Growth overage preference (MON-ALLOW-04)
-router.patch(
-  '/overage',
-  authenticateToken,
-  requireAction('billing:write'),
-  updateOveragePreference
-);
 
 export default router;

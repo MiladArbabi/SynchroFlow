@@ -106,6 +106,8 @@ describe('P0-B3 — Shopify commercial resolver', () => {
   // ── SHOPIFY-01 ──────────────────────────────────────────────────────────
   describe('SHOPIFY-01: planHandle is the authoritative tier key', () => {
     it.each([
+      ['starter', 'starter'],
+      ['early-access', 'starter'],
       ['core', 'core'],
       ['growth', 'growth'],
       ['scale', 'scale'],

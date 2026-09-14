@@ -1,23 +1,13 @@
-import { Tier } from '@lasyncro/backend-core/config/tiers.js';
-import { resolveShopifyAccessToken } from '../../api/shopify/shopify.billing.controller.js';
+import type { Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import {
-  resolveShopifySubscriptionCommercial,
+  resolveShopifyPlanHandle,
   type ShopifyRecurringPrice,
 } from './shopifyCommercialResolver.service.js';
 
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION!;
-
-// BILL-ENTITLEMENT-01 / P0-B3: the legacy name-keyed tier map has been removed.
-// Tier used to be keyed on AppSubscription.name — the merchant-facing invoice
-// string — so a Partner Dashboard rename was a silent commercial outage and any
-// plan named "Growth" granted Growth at any price. Tier now comes from the
-// immutable AppRecurringPricing.planHandle via shopifyCommercialResolver.
-// Status/grace mapping moved there too, unchanged in behaviour.
-
-// Selection only (not entitlement): Shopify allows one active app subscription
-// per shop, but we defensively prefer an ACTIVE entry rather than assuming
-// array length === 1. Entitlement itself is decided by the canonical resolver.
-const ACTIVE_STATUSES = new Set(['ACTIVE']);
+const PARTNER_API_VERSION = '2026-07';
+const SHOP_GID_PATTERN = /^gid:\/\/shopify\/Shop\/\d+$/;
+const APP_GID_PATTERN = /^gid:\/\/shopify\/App\/\d+$/;
 
 export interface ShopifyBillingState {
   tier: Tier;
@@ -33,93 +23,242 @@ export interface ShopifyBillingState {
   interval: string | null;
 }
 
+class ShopifyPartnerBillingError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly statusCode = 502,
+  ) {
+    super(message);
+  }
+}
+
+function starterCanceledState(): ShopifyBillingState {
+  return {
+    tier: 'starter',
+    status: 'canceled',
+    isEntitled: false,
+    currentPeriodEnd: null,
+    shopifySubscriptionId: null,
+    shopifySubscriptionName: null,
+    planHandle: null,
+    price: null,
+    interval: null,
+  };
+}
+
+function requiredEnv(name: 'SHOPIFY_PARTNER_ORG_ID' | 'SHOPIFY_PARTNER_API_ACCESS_TOKEN' | 'SHOPIFY_APP_GID'): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new ShopifyPartnerBillingError(
+      `[shopify_billing_reconciliation] missing ${name}`,
+      'SHOPIFY_PARTNER_CONFIG_MISSING',
+      500,
+    );
+  }
+  return value;
+}
+
+async function resolveShopGid(shopId: number): Promise<string> {
+  const row = await withTenant(shopId, (trx) =>
+    trx('shopify_app_installations')
+      .where({ shop_id: shopId })
+      .whereNull('uninstalled_at')
+      .orderBy('installed_at', 'desc')
+      .first('shop_gid'),
+  );
+
+  const shopGid = typeof row?.shop_gid === 'string' ? row.shop_gid.trim() : '';
+  if (!SHOP_GID_PATTERN.test(shopGid)) {
+    throw new ShopifyPartnerBillingError(
+      '[shopify_billing_reconciliation] missing or invalid shop_gid',
+      'SHOPIFY_SHOP_GID_INVALID',
+      409,
+    );
+  }
+  return shopGid;
+}
+
+function extractPartnerItems(activeSubscription: any): any[] {
+  if (Array.isArray(activeSubscription?.items)) {
+    return activeSubscription.items;
+  }
+
+  if (Array.isArray(activeSubscription?.lineItems)) {
+    return activeSubscription.lineItems
+      .map((lineItem: any) => lineItem?.plan?.pricingDetails)
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function readCommercialHandle(item: any): string | null {
+  const handle = typeof item?.handle === 'string' ? item.handle : item?.planHandle;
+  if (typeof handle !== 'string' || handle.trim().length === 0) {
+    return null;
+  }
+  return handle.trim().toLowerCase();
+}
+
+function readPrice(item: any): ShopifyRecurringPrice | null {
+  const rawPrice = item?.price;
+  if (!rawPrice) {
+    return null;
+  }
+
+  return {
+    amount: rawPrice.amount ?? null,
+    currencyCode: rawPrice.currencyCode ?? rawPrice.currency ?? null,
+  };
+}
+
+function readCurrentPeriodEnd(activeSubscription: any): Date | null {
+  const value =
+    activeSubscription?.currentBillingCycle?.endTime ??
+    activeSubscription?.currentPeriodEnd ??
+    null;
+
+  return value ? new Date(value) : null;
+}
+
+export function normalizePartnerActiveSubscriptionToBillingState(
+  activeSubscription: unknown,
+): ShopifyBillingState {
+  if (!activeSubscription) {
+    return starterCanceledState();
+  }
+
+  const subscription = activeSubscription as any;
+  const items = extractPartnerItems(subscription);
+  for (const item of items) {
+    const planHandle = readCommercialHandle(item);
+    if (!planHandle) {
+      continue;
+    }
+
+    try {
+      const tier = resolveShopifyPlanHandle(planHandle);
+      return {
+        tier,
+        status: 'active',
+        isEntitled: true,
+        currentPeriodEnd: readCurrentPeriodEnd(subscription),
+        shopifySubscriptionId: subscription?.legacySubscriptionId ?? subscription?.id ?? null,
+        shopifySubscriptionName: item?.description ?? subscription?.name ?? null,
+        planHandle,
+        price: readPrice(item),
+        interval: subscription?.billingPeriod ?? item?.interval ?? null,
+      };
+    } catch {
+      // Usage handles such as shipped-order are not commercial tier handles.
+    }
+  }
+
+  throw new ShopifyPartnerBillingError(
+    '[shopify_billing_reconciliation] no recognized Partner API commercial plan handle',
+    'SHOPIFY_PARTNER_PLAN_UNRESOLVED',
+    409,
+  );
+}
+
+export function isShopifyPartnerBillingError(err: unknown): err is ShopifyPartnerBillingError {
+  return err instanceof ShopifyPartnerBillingError;
+}
+
 /**
  * Fetch and normalize a shop's live Shopify Managed Pricing state.
- * Falls back to 'starter' / not-entitled if no active subscription exists
- * (e.g. merchant hasn't approved a plan yet, or is on the free plan).
+ * Provider truth comes from the Partner API activeSubscription query using the
+ * stored shop_gid. Missing subscriptions fall back to starter / canceled.
  */
 export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyBillingState> {
-  const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
+  const orgId = requiredEnv('SHOPIFY_PARTNER_ORG_ID');
+  const token = requiredEnv('SHOPIFY_PARTNER_API_ACCESS_TOKEN');
+  const appId = requiredEnv('SHOPIFY_APP_GID');
+  if (!APP_GID_PATTERN.test(appId)) {
+    throw new ShopifyPartnerBillingError(
+      '[shopify_billing_reconciliation] invalid SHOPIFY_APP_GID',
+      'SHOPIFY_PARTNER_CONFIG_INVALID',
+      500,
+    );
+  }
 
-  const response = await fetch(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+  const shopIdGid = await resolveShopGid(shopId);
+  const response = await fetch(`https://partners.shopify.com/${orgId}/api/${PARTNER_API_VERSION}/graphql.json`, {
     method: 'POST',
     headers: {
-      'X-Shopify-Access-Token': accessToken,
+      'X-Shopify-Access-Token': token,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      // P0-B3: lineItems -> plan -> pricingDetails is the authoritative path.
-      // planHandle is available from Admin API 2025-04 onward (production runs
-      // 2025-07, released webhook config 2026-04). `name` is still requested,
-      // but only for display/diagnostics.
-      query: `{
-        currentAppInstallation {
-          activeSubscriptions {
-            id
-            name
-            status
-            currentPeriodEnd
-            lineItems {
-              id
-              plan {
-                pricingDetails {
-                  ... on AppRecurringPricing {
-                    planHandle
-                    interval
-                    price {
-                      amount
-                      currencyCode
-                    }
+      query: `
+        query ShopifyPartnerActiveSubscription($appId: ID!, $shopId: ID!) {
+          activeSubscription(appId: $appId, shopId: $shopId) {
+            shop { id }
+            billingPeriod
+            cancelAtEndOfCycle
+            trialEndsAt
+            currentBillingCycle { startTime endTime }
+            items {
+              handle
+              description
+              price {
+                __typename
+                active
+                currency
+                ... on FlatRatePrice {
+                  amount
+                }
+                ... on TieredPrice {
+                  tiersMode
+                  tiers {
+                    upTo
+                    amountPerUnit
+                    amount
                   }
                 }
               }
+              usage {
+                quantity
+                cost {
+                  amount
+                  currencyCode
+                }
+              }
             }
+            pendingUpdate { id }
+            legacySubscriptionId
           }
         }
-      }`,
+      `,
+      variables: { appId, shopId: shopIdGid },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`[shopify_billing_reconciliation] GraphQL request failed: ${response.status}`);
+    throw new ShopifyPartnerBillingError(
+      `[shopify_billing_reconciliation] Partner API request failed: ${response.status}`,
+      'SHOPIFY_PARTNER_API_FAILED',
+    );
   }
 
   const json = await response.json();
-  const subscriptions = json?.data?.currentAppInstallation?.activeSubscriptions ?? [];
-
-  if (subscriptions.length === 0) {
-    console.warn('[shopify_billing_reconciliation] no active subscriptions found', { shopId });
-    return {
-      tier: 'starter',
-      status: 'canceled',
-      isEntitled: false,
-      currentPeriodEnd: null,
-      shopifySubscriptionId: null,
-      shopifySubscriptionName: null,
-      planHandle: null,
-      price: null,
-      interval: null,
-    };
+  if (Array.isArray(json?.errors) && json.errors.length > 0) {
+    throw new ShopifyPartnerBillingError(
+      '[shopify_billing_reconciliation] Partner API returned GraphQL errors',
+      'SHOPIFY_PARTNER_API_FAILED',
+    );
   }
 
-  const sub =
-    subscriptions.find((s: any) => ACTIVE_STATUSES.has(s.status)) ?? subscriptions[0];
+  const activeSubscription = json?.data?.activeSubscription ?? null;
+  const returnedShopGid = activeSubscription?.shop?.id;
+  if (returnedShopGid && returnedShopGid !== shopIdGid) {
+    throw new ShopifyPartnerBillingError(
+      '[shopify_billing_reconciliation] Partner API shop mismatch',
+      'SHOPIFY_PARTNER_SHOP_MISMATCH',
+      409,
+    );
+  }
 
-  // Authoritative resolution is delegated to the canonical resolver, which
-  // keys on planHandle and preserves the SHB-08 grace and SHB-13 starter
-  // semantics exactly. An unmapped or missing handle throws there rather than
-  // falling back to the display name.
-  const commercial = resolveShopifySubscriptionCommercial(sub);
-
-  return {
-    tier: commercial.tier,
-    status: commercial.status,
-    isEntitled: commercial.isEntitled,
-    currentPeriodEnd: commercial.currentPeriodEnd,
-    shopifySubscriptionId: commercial.shopifySubscriptionId,
-    shopifySubscriptionName: commercial.displayName,
-    planHandle: commercial.planHandle,
-    price: commercial.price,
-    interval: commercial.interval,
-  };
+  return normalizePartnerActiveSubscriptionToBillingState(activeSubscription);
 }

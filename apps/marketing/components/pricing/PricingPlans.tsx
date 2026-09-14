@@ -1,15 +1,11 @@
 'use client'
 
-import { useState } from 'react'
 import PricingPlanCTA from './PricingPlanCTA'
 import LaunchNotifyForm, { useShopifyAvailability } from '@/components/conversion/LaunchNotifyForm'
-
-type BillingInterval = 'monthly' | 'annual'
 
 interface Plan {
   tier: string
   monthly: number
-  annual: number
   desc: string
   features: string[]
   featured: boolean
@@ -26,18 +22,13 @@ const plans: Plan[] = [
   {
     tier: 'Starter',
     monthly: 0,
-    annual: 0,
-    desc: 'For shops validating LaSyncro before committing to structured warehouse workflows.',
+    desc: 'Inventory visibility for shops getting operational control.',
     features: [
       'Real-time inventory sync',
-      '50 synced orders / month',
-      '50 warehouse-processed orders / month',
-      'Receive / stow / pick / pack / ship',
-      'Barcode scanning',
-      'Orders & fulfillment queue',
       'Real-time stock alerts',
       'Owner only',
-      'Email support',
+      '1 location',
+      '30-day history',
     ],
     featured: false,
     badge: null,
@@ -45,18 +36,17 @@ const plans: Plan[] = [
   },
   {
     tier: 'Core',
-    monthly: 79,
-    annual: 790,
-    desc: 'Run a structured warehouse workflow with more volume and operational control.',
+    monthly: 99,
+    desc: 'Run structured warehouse execution with barcode workflows.',
     features: [
       'Everything in Starter',
-      '2,000 synced orders / month included',
-      '500 warehouse-processed orders / month included',
-      '$0.08 per additional processed order when overage is enabled',
-      'Returns management',
-      'Product catalog',
-      'Problem center',
-      '2 non-owner seats included',
+      '2,000 warehouse-processed orders / month included',
+      '$0.08 per additional processed order',
+      '3 non-owner seats included',
+      '1 location',
+      '90-day history',
+      'Receive / stow / pick / pack / ship',
+      'Barcode scanning',
     ],
     featured: false,
     badge: null,
@@ -64,20 +54,17 @@ const plans: Plan[] = [
   },
   {
     tier: 'Growth',
-    monthly: 179,
-    annual: 1718.4,
-    desc: 'Where operational control turns into margin protection.',
+    monthly: 249,
+    desc: 'More capacity and operational intelligence for growing teams.',
     features: [
       'Everything in Core',
-      '10,000 synced orders / month included',
-      '2,500 warehouse-processed orders / month included',
-      '$0.08 per additional processed order when overage is enabled',
-      'Demand intelligence',
-      'Cash flow',
-      'Customer LTV',
+      '7,500 warehouse-processed orders / month included',
+      '$0.06 per additional processed order',
+      '10 non-owner seats included',
+      '3 locations',
+      '365-day history',
+      'Demand forecasting',
       'Floor planning',
-      'Advanced operational analytics',
-      '5 non-owner seats included',
     ],
     featured: true,
     badge: 'Recommended',
@@ -85,18 +72,20 @@ const plans: Plan[] = [
   },
   {
     tier: 'Scale',
-    monthly: 349,
-    annual: 3350.4,
-    desc: 'For higher-volume teams that need unlimited order capacity and team seats.',
+    monthly: 599,
+    desc: 'High-capacity warehouse operations with priority support.',
     features: [
       'Everything in Growth',
-      'Unlimited synced orders',
-      'Unlimited warehouse-processed orders',
-      'Unlimited seats',
+      '20,000 warehouse-processed orders / month included',
+      '$0.04 per additional processed order',
+      '25 non-owner seats included',
+      '10 locations',
+      '730-day history',
+      'Priority support',
     ],
     featured: false,
     badge: null,
-    cta: 'Contact us',
+    cta: 'Choose Scale',
   },
 ]
 
@@ -108,86 +97,21 @@ function formatUsd(amount: number): string {
 }
 
 export default function PricingPlans() {
-  const [billingInterval, setBillingInterval] =
-    useState<BillingInterval>('monthly')
   const shopifyAvailability = useShopifyAvailability()
-
-  const isAnnual = billingInterval === 'annual'
 
   return (
     <div style={{ ...W, padding: '0 5vw 80px' }}>
-      <style>{`
-        .pricing-billing-option:focus-visible {
-          outline: 2px solid var(--accent);
-          outline-offset: 3px;
-        }
-      `}</style>
-
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 16,
+          fontFamily: 'var(--sans)',
+          fontSize: 13,
+          fontWeight: 600,
+          color: 'var(--ink-3)',
+          lineHeight: 1.5,
           marginBottom: 22,
-          flexWrap: 'wrap',
         }}
       >
-        <div
-          style={{
-            fontFamily: 'var(--sans)',
-            fontSize: 13,
-            fontWeight: 600,
-            color: 'var(--ink-3)',
-            lineHeight: 1.5,
-          }}
-        >
-          Prices shown in USD. Annual plans are billed once per year.
-        </div>
-
-        <div
-          role="group"
-          aria-label="Billing period"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            background: 'var(--bg-2)',
-            border: '1px solid var(--rule)',
-            borderRadius: 14,
-            padding: 4,
-          }}
-        >
-          {(['monthly', 'annual'] as const).map((interval) => {
-            const active = billingInterval === interval
-
-            return (
-              <button
-                key={interval}
-                type="button"
-                className="pricing-billing-option"
-                aria-pressed={active}
-                onClick={() => setBillingInterval(interval)}
-                style={{
-                  appearance: 'none',
-                  border: active
-                    ? '1px solid var(--rule-2)'
-                    : '1px solid transparent',
-                  borderRadius: 10,
-                  padding: '8px 16px',
-                  background: active ? 'var(--bg-3)' : 'transparent',
-                  color: active ? 'var(--ink)' : 'var(--ink-3)',
-                  fontFamily: 'var(--sans)',
-                  fontSize: 13,
-                  fontWeight: active ? 750 : 650,
-                  cursor: 'pointer',
-                }}
-              >
-                {interval === 'monthly' ? 'Monthly' : 'Annual'}
-              </button>
-            )
-          })}
-        </div>
+        Prices shown in USD. Monthly billing.
       </div>
 
       <div
@@ -199,18 +123,6 @@ export default function PricingPlans() {
         }}
       >
         {plans.map((plan) => {
-          const monthlyEquivalent =
-            plan.monthly === 0
-              ? 0
-              : isAnnual
-                ? plan.annual / 12
-                : plan.monthly
-
-          const annualSavings =
-            plan.monthly === 0
-              ? 0
-              : plan.monthly * 12 - plan.annual
-
           return (
             <div
               key={plan.tier}
@@ -283,7 +195,7 @@ export default function PricingPlans() {
                   marginBottom: 8,
                 }}
               >
-                {formatUsd(monthlyEquivalent)}
+                {formatUsd(plan.monthly)}
 
                 {plan.monthly > 0 && (
                   <span
@@ -299,23 +211,6 @@ export default function PricingPlans() {
                     /mo
                   </span>
                 )}
-              </div>
-
-              <div
-                style={{
-                  minHeight: 22,
-                  marginBottom: 8,
-                  fontFamily: 'var(--sans)',
-                  fontSize: 11,
-                  fontWeight: 500,
-                  color: isAnnual
-                    ? 'var(--accent)'
-                    : 'var(--ink-4)',
-                }}
-              >
-                {plan.monthly > 0 && isAnnual
-                  ? `Billed ${formatUsd(plan.annual)}/year · Save ${formatUsd(annualSavings)}/year`
-                  : '\u00A0'}
               </div>
 
               <p
@@ -381,7 +276,6 @@ export default function PricingPlans() {
                 plan={plan.tier}
                 cta={plan.cta}
                 featured={plan.featured}
-                billingInterval={billingInterval}
                 shopifyAvailable={shopifyAvailability.available}
                 installUrl={shopifyAvailability.installUrl}
               />
@@ -405,11 +299,11 @@ export default function PricingPlans() {
         }}
       >
         <strong style={{ color: 'var(--ink-2)' }}>How usage is counted:</strong>{' '}
-        Synced orders are orders ingested from Shopify into LaSyncro. A
-        warehouse-processed order is counted when it reaches Pack complete in
-        LaSyncro. Core and Growth include the amounts shown above and can
-        continue above the included allowance at $0.08 per additional processed
-        order when overage is enabled.
+        Shopify orders always continue syncing into LaSyncro and are not a
+        commercial allowance. A processed order is counted when warehouse
+        execution reaches Pack complete. Core, Growth, and Scale continue above
+        their included monthly volume automatically at the per-order rate shown
+        for each plan.
       </div>
 
       <div

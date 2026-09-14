@@ -33,6 +33,7 @@
 
 import {
   PRICE_ID_ENV_KEYS,
+  SELF_SERVE_PRICE_ID_ENV_KEYS,
   SEAT_PRICE_ID_ENV_KEYS,
   type BillingCurrency,
   type BillingInterval,
@@ -111,6 +112,23 @@ function buildReverseTable(): ReverseTable {
           envKey: envKey as string,
         });
       }
+    }
+  }
+
+  // MON-REM-01B-4: new USD-monthly PLG prices resolve inbound too.
+  // Missing self-serve IDs do not invalidate legacy-provider recognition;
+  // checkout itself fails loudly when its required Price ID is absent.
+  for (const [tier, envKey] of Object.entries(SELF_SERVE_PRICE_ID_ENV_KEYS)) {
+    const priceId = process.env[envKey];
+
+    if (priceId) {
+      claim(priceId, {
+        tier: tier as Tier,
+        currency: 'USD',
+        interval: 'monthly',
+        itemKind: 'base',
+        envKey,
+      });
     }
   }
 

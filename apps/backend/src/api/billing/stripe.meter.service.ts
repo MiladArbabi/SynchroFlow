@@ -25,7 +25,7 @@ import { getTierConfig, isValidTier } from '@lasyncro/backend-core/config/tiers.
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[stripe.meter] STRIPE_SECRET_KEY not set');
-  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
+  return new Stripe(key, { apiVersion: '2026-08-26.dahlia' });
 }
 
 export interface StripeOverageDelivery {
@@ -128,7 +128,7 @@ export async function reportShippedOrderOverage(
     const rawTier = sub.tier ?? 'starter';
     const tier = isValidTier(rawTier) ? rawTier : 'starter';
     const { shippedOrderCap } = getTierConfig(tier);
-    // Scale tier: unlimited — never report overage
+    // Finite commercial allowances, including Scale, may produce overage.
     if (!isFinite(shippedOrderCap)) return;
     const totalShipped = Number(usageRow?.shipped_orders ?? 0);
     const previousTotal = totalShipped - newlyShipped;

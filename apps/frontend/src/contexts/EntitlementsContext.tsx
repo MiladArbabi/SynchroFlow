@@ -53,7 +53,7 @@ interface EntitlementsResponse {
   /** CURRENCY LAYER 3 — billing currency from shop_subscriptions. Set once at registration. */
   billingCurrency: string;
   /** SHB-03/04 — 'stripe' | 'shopify'. Drives billing-surface branching (Stripe checkout/portal vs Shopify hosted pricing page). */
-  billingProvider: string;
+  billingProvider: 'stripe' | 'shopify' | null;
 }
 
 // --- Context shape exposed to UI ---
@@ -74,8 +74,8 @@ interface EntitlementsContextValue {
   displayCurrency: string;
   locale: string;
   billingCurrency: string;
-  /** SHB-03/04 — billing provider; 'stripe' default. Shopify-billed shops must never see Stripe CTAs. */
-  billingProvider: string;
+  /** Billing provider. Null means ownership is unresolved and billing actions fail closed. */
+  billingProvider: 'stripe' | 'shopify' | null;
   isLoading: boolean;
   hasResolved: boolean;
   error: string | null;
@@ -107,7 +107,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
   const [locale, setLocale] = useState<string>('en-US');
   const [billingCurrency, setBillingCurrency] = useState<string>('USD');
-  const [billingProvider, setBillingProvider] = useState<string>('stripe'); // SHB-03/04
+  const [billingProvider, setBillingProvider] = useState<'stripe' | 'shopify' | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
@@ -119,7 +119,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     displayCurrency: string;
     locale: string;
     billingCurrency: string;
-    billingProvider: string;
+    billingProvider: 'stripe' | 'shopify' | null;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -206,6 +206,10 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
 
         // Validate against canonical Tier union — unrecognized values degrade to 'starter' (fail-safe).
         const nextTier: Tier = isValidTier(payload.tier) ? payload.tier : 'starter';
+        const nextBillingProvider =
+          payload.billingProvider === 'stripe' || payload.billingProvider === 'shopify'
+            ? payload.billingProvider
+            : null;
 
         setShopId(nextShopId);
         setModules(nextModules);
@@ -215,7 +219,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setDisplayCurrency(payload.displayCurrency ?? 'USD');
         setLocale(payload.locale ?? 'en-US');
         setBillingCurrency(payload.billingCurrency ?? 'USD');
-        setBillingProvider(payload.billingProvider ?? 'stripe'); // SHB-03/04
+        setBillingProvider(nextBillingProvider);
         setError(null);
         setHasResolved(true);
         // --- Persist last known good snapshot ---
@@ -227,7 +231,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           displayCurrency: payload.displayCurrency ?? 'USD',
           locale: payload.locale ?? 'en-US',
           billingCurrency: payload.billingCurrency ?? 'USD',
-          billingProvider: payload.billingProvider ?? 'stripe',
+          billingProvider: nextBillingProvider,
         };
 
         if (import.meta.env.DEV) {
@@ -260,7 +264,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setDisplayCurrency(snap.displayCurrency ?? 'USD');
         setLocale(snap.locale ?? 'en-US');
         setBillingCurrency(snap.billingCurrency ?? 'USD');
-        setBillingProvider(snap.billingProvider ?? 'stripe'); // SHB-03/04
+        setBillingProvider(snap.billingProvider);
         setError(null);
         setHasResolved(true);
 

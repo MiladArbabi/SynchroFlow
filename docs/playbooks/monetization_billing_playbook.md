@@ -1446,6 +1446,12 @@ All items independently live-verified via direct API calls and DB queries agains
 
 ## 24. Shopify Managed Pricing Sync — SHB Audit (verified 2026-07-18)
 
+> **Superseded for current App Pricing authority by MON-REM-01B-4 / §38.3
+> (2026-09-14).** This section records the historical Admin API/webhook
+> architecture that was valid at the time. Current Shopify App Pricing
+> authority is Partner API `activeSubscription`; the verification details below
+> are retained for lineage only.
+
 The `/api/v1/shopify-billing/change-plan` endpoint documented in earlier sessions (§9-era work, using `appSubscriptionCreate` directly) was retired June 2026 — Shopify rejects direct Billing API charge creation for apps on Managed Pricing ("Managed Pricing Apps cannot use the Billing API to create charges"). Plan selection moved entirely to Shopify's hosted pricing page. The retirement left a real gap: nothing synced the resulting plan state back into `shop_subscriptions`, meaning a merchant approving a paid plan on Shopify's own page got no entitlements at all. This session closed that gap end-to-end and caught two independent bugs that would have shipped otherwise.
 
 ### Architecture (SHB-01, SHB-07)
@@ -5053,38 +5059,74 @@ Shopify-installed tenants are Shopify-billed and Shopify-owned.
 Authoritative Managed Pricing path:
 
 ```
-AppSubscription
-  -> lineItems[]
-  -> plan
-  -> pricingDetails            (AppRecurringPricing)
-  -> planHandle                -> canonical tier
+Partner API activeSubscription(appId, shopId)
+  -> items[]
+  -> recognized commercial handle
+  -> canonical tier
+  -> applyShopifyBillingState()
+  -> transitionShopSubscription()
+  -> commercial-policy entitlements
 ```
 
-| planHandle | tier |
+Partner API version: `2026-07`.
+
+Required runtime config:
+
+- `SHOPIFY_PARTNER_ORG_ID`;
+- `SHOPIFY_PARTNER_API_ACCESS_TOKEN`;
+- `SHOPIFY_APP_GID`.
+
+Merchant identity comes from `shopify_app_installations.shop_gid`
+(`gid://shopify/Shop/...`). The reconciliation path fails closed if the stored
+Shop GID is missing or invalid; it does not derive merchant identity from the
+shop domain.
+
+| Partner item handle | tier |
 |---|---|
-| `early-access` | starter |
+| `starter` | starter |
+| `early-access` | starter (legacy compatibility) |
 | `core` | core |
 | `growth` | growth |
 | `scale` | scale |
 
-- `AppSubscription.name` is **diagnostic / display only** and no longer
-  influences tier. `PLAN_NAME_TO_TIER` and its name-normalizer are removed.
-- recurring `price.amount`, `price.currencyCode` and `interval` are fetched and
-  carried through as **provider facts for cross-check and provenance** — they
-  are not hardcoded expectations, because no canonical source declares per-plan
-  Shopify amounts
-- a missing or unmapped handle throws, with an explicit refusal to fall back to
-  the display name
-- existing semantics are **preserved unchanged**: `ACTIVE` entitlement,
-  `CANCELLED`/`FROZEN` in-period grace (SHB-08), lapsed grace → Starter
-  (SHB-13), `PENDING`/`DECLINED`/`EXPIRED` → not entitled, the Shopify→DB status
-  mapping, `currentPeriodEnd` handling, and the no-active-subscription Starter
-  fallback
+- `shipped-order` is usage only and must never determine tier.
+- Unknown or unrecognized commercial state fails closed; there is no fallback
+  to display names or request parameters.
+- Partner pricing fields are carried as provider facts for provenance and
+  cross-checking. They are not tier authority.
+- `activeSubscription = null` resolves safely to Starter / no active Shopify
+  subscription.
+- Partner `trialEndsAt` is provider billing state. It is not copied into local
+  product-trial state (`shop_subscriptions.trial_ends_at`). A live Partner
+  subscription produces local `status = active` at the canonical tier.
 
-**Correction to an earlier note.** §SHB-12 recorded that `AppSubscription` has
-no handle field and that tier therefore had to key on `name`. That is no longer
-accurate: `AppRecurringPricing.planHandle` is available from Admin API 2025-04
-onward. The name-keyed mapping is retired.
+Shopify hosted App Pricing returns merchants to
+`/settings/billing?plan_handle=<handle>`. The request `plan_handle` is expected
+/ diagnostic state only and must never grant entitlement. The immediate return
+flow is:
+
+```
+POST /api/v1/billing/shopify/reconcile
+  -> Partner API activeSubscription
+  -> applyShopifyBillingState()
+  -> shop_subscriptions + entitlements
+  -> EntitlementsContext.refresh()
+  -> refetch subscription
+  -> remove plan_handle from URL
+```
+
+Partner API truth wins on mismatch.
+
+The scheduled durability path remains:
+
+```
+runShopifyBillingReconciliationCycle()
+  -> applyShopifyBillingState()
+```
+
+`app_subscriptions/update` may remain as legacy/secondary infrastructure, but it
+is not canonical App Pricing authority. §24's Admin API/webhook architecture is
+retained as historical lineage only.
 
 ### 38.4 Provider ownership
 

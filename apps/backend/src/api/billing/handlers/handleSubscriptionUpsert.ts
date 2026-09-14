@@ -23,6 +23,7 @@
 import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { getTierConfig, TIER_ORDER, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
@@ -181,14 +182,17 @@ export async function handleSubscriptionUpsert(
 
   // 2. Re-seed entitlements from tier constants
   // Additive only — EntitlementsService never revokes
-  const moduleRows = tierConfig.modules.map((moduleKey) => ({
+  const tierModules = [...modulesForTier(tier)];
+  const tierFlags = [...flagsForTier(tier)];
+
+  const moduleRows = tierModules.map((moduleKey) => ({
     shop_id: shopId,
     module_key: moduleKey,
     flag_key: null as string | null,
     source: `tier:${tier}`,
   }));
 
-  const flagRows = tierConfig.flags.map((flagKey) => ({
+  const flagRows = tierFlags.map((flagKey) => ({
     shop_id: shopId,
     module_key: flagKey.split('.')[0],
     flag_key: flagKey,
@@ -203,11 +207,12 @@ export async function handleSubscriptionUpsert(
   // pattern in trial-expiry.service.ts, the only other place this
   // system revokes entitlements.
   if (priorTier && priorTier !== tier) {
-    const priorTierConfig = getTierConfig(priorTier);
-    const newModuleSet = new Set(tierConfig.modules);
-    const newFlagSet = new Set(tierConfig.flags);
-    const modulesToRevoke = priorTierConfig.modules.filter((m) => !newModuleSet.has(m));
-    const flagsToRevoke = priorTierConfig.flags.filter((f) => !newFlagSet.has(f));
+    const priorModules = [...modulesForTier(priorTier)];
+    const priorFlags = [...flagsForTier(priorTier)];
+    const newModuleSet = new Set(tierModules);
+    const newFlagSet = new Set(tierFlags);
+    const modulesToRevoke = priorModules.filter((m) => !newModuleSet.has(m));
+    const flagsToRevoke = priorFlags.filter((f) => !newFlagSet.has(f));
 
     if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
       await EntitlementRevocationService.revokeEntitlements({

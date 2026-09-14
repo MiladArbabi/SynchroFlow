@@ -13,6 +13,7 @@ import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { captureEvent } from '../../../utils/analytics.js';
 import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
 export async function handleSubscriptionDeleted(
@@ -74,12 +75,12 @@ export async function handleSubscriptionDeleted(
   // not. No re-seed call needed — starter modules were already granted
   // additively at signup and are never touched by upgrade/downgrade flows.
   if (priorTier && priorTier !== 'starter') {
-    const priorTierConfig = getTierConfig(priorTier);
-    const starterTierConfig = getTierConfig('starter' as Tier);
-    const starterModuleSet = new Set(starterTierConfig.modules);
-    const starterFlagSet = new Set(starterTierConfig.flags);
-    const modulesToRevoke = priorTierConfig.modules.filter((m) => !starterModuleSet.has(m));
-    const flagsToRevoke = priorTierConfig.flags.filter((f) => !starterFlagSet.has(f));
+    const priorModules = [...modulesForTier(priorTier)];
+    const priorFlags = [...flagsForTier(priorTier)];
+    const starterModuleSet = modulesForTier('starter');
+    const starterFlagSet = flagsForTier('starter');
+    const modulesToRevoke = priorModules.filter((m) => !starterModuleSet.has(m));
+    const flagsToRevoke = priorFlags.filter((f) => !starterFlagSet.has(f));
 
     if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
       await EntitlementRevocationService.revokeEntitlements({

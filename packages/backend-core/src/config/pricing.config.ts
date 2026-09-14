@@ -61,17 +61,17 @@ export const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency, {
   },
   core: {
     GBP: { monthly: 5966,  annual: 59660  },
-    USD: { monthly: 7900,  annual: 79000  },
+    USD: { monthly: 9900,  annual: 79000  },
     EUR: { monthly: 6999,  annual: 69999  },
   },
   growth: {
     GBP: { monthly: 13399, annual: 133990 },
-    USD: { monthly: 17900, annual: 171840 },
+    USD: { monthly: 24900, annual: 171840 },
     EUR: { monthly: 15499, annual: 154900 },
   },
   scale: {
     GBP: { monthly: 28990, annual: 289900 },
-    USD: { monthly: 34900, annual: 335040 },
+    USD: { monthly: 59900, annual: 335040 },
     EUR: { monthly: 32850, annual: 328499 },
   },
 };
@@ -129,8 +129,37 @@ export function getStripePriceId(
   return priceId;
 }
 
+/**
+ * MON-REM-01B-4 — new PLG checkout ownership.
+ *
+ * PRICE_ID_ENV_KEYS remains the legacy provider-recognition table so existing
+ * annual / GBP / EUR / historical USD subscriptions stay resolvable.
+ * New self-service purchases are USD monthly only and use new immutable
+ * Stripe Price objects.
+ */
+export const SELF_SERVE_PRICE_ID_ENV_KEYS = {
+  core: 'STRIPE_PRICE_SELF_SERVE_CORE_MONTHLY_USD',
+  growth: 'STRIPE_PRICE_SELF_SERVE_GROWTH_MONTHLY_USD',
+  scale: 'STRIPE_PRICE_SELF_SERVE_SCALE_MONTHLY_USD',
+} as const;
+
+export function getSelfServeStripePriceId(
+  tier: Exclude<Tier, 'starter'>,
+): string {
+  const envKey = SELF_SERVE_PRICE_ID_ENV_KEYS[tier];
+  const priceId = process.env[envKey];
+
+  if (!priceId) {
+    throw new Error(
+      `[pricing] Missing env var: ${envKey}. Add it to .env and Fly secrets.`
+    );
+  }
+
+  return priceId;
+}
+
 // ── Extra-seat add-on pricing ─────────────────────────────────
-// Scale excluded — unlimited seats, no add-on needed.
+// Scale excluded — self-service extra-seat add-ons are not offered on Scale.
 // Confirmed live in Stripe (2026-07-14): 6 Price objects, one per
 // tier x currency, e.g. "Core - Extra seat/month USD".
 

@@ -25,6 +25,20 @@ export declare const PRICE_ID_ENV_KEYS: Record<Exclude<Tier, 'starter'>, Record<
  * not silently with an undefined Price ID passed to Stripe.
  */
 export declare function getStripePriceId(tier: Exclude<Tier, 'starter'>, currency: BillingCurrency, interval: BillingInterval): string;
+/**
+ * MON-REM-01B-4 — new PLG checkout ownership.
+ *
+ * PRICE_ID_ENV_KEYS remains the legacy provider-recognition table so existing
+ * annual / GBP / EUR / historical USD subscriptions stay resolvable.
+ * New self-service purchases are USD monthly only and use new immutable
+ * Stripe Price objects.
+ */
+export declare const SELF_SERVE_PRICE_ID_ENV_KEYS: {
+    readonly core: "STRIPE_PRICE_SELF_SERVE_CORE_MONTHLY_USD";
+    readonly growth: "STRIPE_PRICE_SELF_SERVE_GROWTH_MONTHLY_USD";
+    readonly scale: "STRIPE_PRICE_SELF_SERVE_SCALE_MONTHLY_USD";
+};
+export declare function getSelfServeStripePriceId(tier: Exclude<Tier, 'starter'>): string;
 export type SeatTier = 'core' | 'growth';
 export declare const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, number>>;
 /** Exported for the same single-source-of-truth reason as PRICE_ID_ENV_KEYS. */

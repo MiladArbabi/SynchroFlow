@@ -2,7 +2,7 @@ import axios from 'axios';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 
 const SHOPIFY_AUTH_URL = 'https://api.shopify.com/auth/access_token';
-const SHOPIFY_EVENTS_URL = 'https://api.shopify.com/app/unstable/events';
+const SHOPIFY_EVENTS_URL = 'https://api.shopify.com/app/2026-07/events';
 const DEFAULT_TOKEN_TTL_SECONDS = 3600;
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -76,6 +76,20 @@ async function mintAccessToken(): Promise<CachedToken> {
     throw new Error('Shopify token response omitted access_token');
   }
 
+  const scope = response.data?.scope ?? '';
+  const grantedScopes = new Set(
+    scope
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+
+  if (!grantedScopes.has('write_global_api_app_events')) {
+    throw new Error(
+      'Shopify App Events token missing write_global_api_app_events scope',
+    );
+  }
+
   // Shopify documents a 60-minute TTL. Some successful responses omit
   // expires_in, so retain the documented TTL as an explicit fallback.
   const reportedTtl = Number(response.data?.expires_in);
@@ -85,7 +99,7 @@ async function mintAccessToken(): Promise<CachedToken> {
       : DEFAULT_TOKEN_TTL_SECONDS;
 
   console.info('[shopify.events] access token acquired', {
-    scope: response.data?.scope ?? 'not_returned',
+    scope,
     ttlSeconds,
   });
 
@@ -280,14 +294,6 @@ export async function reportShopifyOverageEvent(
         shopId,
         reason: 'billing_provider_is_not_shopify',
         billingProvider: context.billingProvider,
-      });
-      return;
-    }
-
-    if (context.tier === 'scale') {
-      console.info('[shopify.events] report skipped', {
-        shopId,
-        reason: 'scale_has_unlimited_shipped_orders',
       });
       return;
     }

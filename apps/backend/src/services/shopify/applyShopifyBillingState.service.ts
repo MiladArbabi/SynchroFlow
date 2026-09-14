@@ -2,12 +2,10 @@
 //
 // Shopify Billing State Application (SHB-01, SHB-08)
 // -----------------------------------------------------
-// Extracted from handleAppSubscriptionUpdate so the same logic can be
-// safely reused by handleAppUninstalled as a fallback path — Shopify
-// gives no hard guarantee that app_subscriptions/update fires alongside
-// every app/uninstalled event (e.g. a free-tier shop with no
-// subscription to cancel), so uninstall must be able to independently
-// reconcile billing state rather than assume the other webhook covers it.
+// Applies the canonical Shopify App Pricing state resolved from Partner API
+// activeSubscription. Redirect reconciliation, scheduled durability sweeps,
+// and legacy/secondary webhook paths all route through this boundary rather
+// than writing shop_subscriptions or entitlements directly.
 //
 // Single source of truth for "given a shop, make shop_subscriptions and
 // entitlements match Shopify's live billing state right now." Both
@@ -16,6 +14,7 @@
 
 import type { Knex } from 'knex';
 import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../entitlement-revocation.service.js';
 import { fetchShopifyBillingState, ShopifyBillingState } from './shopifyBillingReconciliation.service.js';
@@ -27,7 +26,8 @@ export async function applyShopifyBillingState(
 ): Promise<ShopifyBillingState> {
   const billingState = await fetchShopifyBillingState(shopId);
   const tier = billingState.tier;
-  const tierConfig = getTierConfig(tier);
+  const tierModules = [...modulesForTier(tier)];
+  const tierFlags = [...flagsForTier(tier)];
 
   // Prior tier for downgrade-diff revocation (mirrors ISS-C19)
   const priorRow = await trx('shop_subscriptions')
@@ -44,11 +44,11 @@ export async function applyShopifyBillingState(
   // against Shopify's live billing state is, by definition, Shopify-billed.
   // current_period_end remains an accompanying non-authoritative field.
   //
-  // No externalEventId/idempotencyKey: this function is called both by the
-  // app_subscription_update webhook and by the periodic reconciliation sweep,
-  // and its own signature carries no provider event id. The sweep must stay
-  // free to record every genuine state change it observes, so no key is
-  // invented here.
+  // No externalEventId/idempotencyKey: this function is called by redirect
+  // reconciliation, the periodic reconciliation sweep, and legacy/secondary
+  // webhook paths, and its own signature carries no provider event id. The
+  // sweep must stay free to record every genuine state change it observes, so
+  // no key is invented here.
   await transitionShopSubscription(
     {
       shopId,
@@ -75,14 +75,14 @@ export async function applyShopifyBillingState(
   );
 
   // 2. Re-seed entitlements from tier constants (additive only)
-  const moduleRows = tierConfig.modules.map((moduleKey) => ({
+  const moduleRows = tierModules.map((moduleKey) => ({
     shop_id: shopId,
     module_key: moduleKey,
     flag_key: null as string | null,
     source: `shopify_billing:${tier}`,
   }));
 
-  const flagRows = tierConfig.flags.map((flagKey) => ({
+  const flagRows = tierFlags.map((flagKey) => ({
     shop_id: shopId,
     module_key: flagKey.split('.')[0],
     flag_key: flagKey,
@@ -94,11 +94,12 @@ export async function applyShopifyBillingState(
   // 3. Revoke modules/flags the prior tier granted that the new tier does not.
   // Covers both real tier downgrades AND SHB-13 forced-starter on cancellation.
   if (priorTier && priorTier !== tier) {
-    const priorTierConfig = getTierConfig(priorTier);
-    const newModuleSet = new Set(tierConfig.modules);
-    const newFlagSet = new Set(tierConfig.flags);
-    const modulesToRevoke = priorTierConfig.modules.filter((m) => !newModuleSet.has(m));
-    const flagsToRevoke = priorTierConfig.flags.filter((f) => !newFlagSet.has(f));
+    const priorModules = [...modulesForTier(priorTier)];
+    const priorFlags = [...flagsForTier(priorTier)];
+    const newModuleSet = new Set(tierModules);
+    const newFlagSet = new Set(tierFlags);
+    const modulesToRevoke = priorModules.filter((m) => !newModuleSet.has(m));
+    const flagsToRevoke = priorFlags.filter((f) => !newFlagSet.has(f));
 
     if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
       await EntitlementRevocationService.revokeEntitlements({

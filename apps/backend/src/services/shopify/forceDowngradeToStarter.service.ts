@@ -15,6 +15,7 @@
 
 import type { Knex } from 'knex';
 import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementRevocationService } from '../entitlement-revocation.service.js';
 import { transitionShopSubscription } from '../billing/subscriptionTransition.service.js';
 
@@ -59,12 +60,12 @@ export async function forceDowngradeShopToStarter(
     trx
   );
 
-  const starterConfig = getTierConfig('starter');
-  const priorTierConfig = getTierConfig(priorTier);
-  const starterModuleSet = new Set(starterConfig.modules);
-  const starterFlagSet = new Set(starterConfig.flags);
-  const modulesToRevoke = priorTierConfig.modules.filter((m) => !starterModuleSet.has(m));
-  const flagsToRevoke = priorTierConfig.flags.filter((f) => !starterFlagSet.has(f));
+  const priorModules = [...modulesForTier(priorTier)];
+  const priorFlags = [...flagsForTier(priorTier)];
+  const starterModuleSet = modulesForTier('starter');
+  const starterFlagSet = flagsForTier('starter');
+  const modulesToRevoke = priorModules.filter((m) => !starterModuleSet.has(m));
+  const flagsToRevoke = priorFlags.filter((f) => !starterFlagSet.has(f));
 
   if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
     await EntitlementRevocationService.revokeEntitlements({

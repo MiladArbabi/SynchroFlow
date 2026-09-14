@@ -11,8 +11,7 @@
 import { useState } from 'react';
 import { Dialog, Box, Typography, useTheme, alpha } from '@mui/material';
 import { Lock, ChevronRight } from 'lucide-react';
-import { useEntitlements } from '../contexts/EntitlementsContext';
-import { PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency } from '../config/pricingDisplay';
+import { PEGGED_DISPLAY_PRICES, formatDisplayPrice } from '../config/pricingDisplay';
 
 const DISMISSED_KEY = 'post_trial_interstitial_dismissed';
 
@@ -54,15 +53,12 @@ interface PostTrialInterstitialProps {
 export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
   const theme = useTheme();
   const [open, setOpen] = useState(() => show && !isDismissed());
-  const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
-  const { billingCurrency } = useEntitlements();
-  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
+
 
   if (!show || !open) return null;
 
-  const growthPrice = formatDisplayPrice(PEGGED_DISPLAY_PRICES.growth[currency][billingInterval], currency);
-  const scalePrice = formatDisplayPrice(PEGGED_DISPLAY_PRICES.scale[currency][billingInterval], currency);
-  const growthSaving = annualSavings('growth', currency);
+  const growthPrice = formatDisplayPrice(PEGGED_DISPLAY_PRICES.growth.USD.monthly, 'USD');
+  const scalePrice = formatDisplayPrice(PEGGED_DISPLAY_PRICES.scale.USD.monthly, 'USD');
 
   const handleDismiss = () => {
     setDismissed();
@@ -152,31 +148,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
           }}>
             Keep your momentum
           </Typography>
-          <Box sx={{
-            display: 'flex',
-            background: theme.palette.action.hover,
-            border: `1px solid ${theme.palette.divider}`,
-            borderRadius: '9px',
-            p: '3px',
-          }}>
-            {(['monthly', 'annual'] as const).map(iv => (
-              <Box
-                key={iv}
-                onClick={() => setBillingInterval(iv)}
-                sx={{
-                  px: '11px', py: '5px',
-                  borderRadius: '6px',
-                  fontSize: 11, fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all .12s',
-                  background: billingInterval === iv ? theme.palette.background.paper : 'transparent',
-                  color: billingInterval === iv ? 'text.primary' : 'text.secondary',
-                }}
-              >
-                {iv === 'monthly' ? 'Monthly' : 'Annual'}
-              </Box>
-            ))}
-          </Box>
         </Box>
 
         {/* Growth — primary recommended card */}
@@ -210,12 +181,12 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
                 {growthPrice}
               </Box>
               <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary' }}>
-                /{billingInterval === 'monthly' ? 'mo' : 'yr'}
+                /mo
               </Box>
             </Box>
           </Box>
           <Typography sx={{ fontSize: 12.5, fontWeight: 300, lineHeight: 1.45, color: 'text.secondary', mt: '8px' }}>
-            Everything you just had — forecasting, cash flow, LTV and 5 seats.
+            7,500 processed orders · 10 seats for non-owner team members · 3 locations · 365-day history.
           </Typography>
           <Box
             onClick={handleUpgradeGrowth}
@@ -232,14 +203,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
           >
             Continue on Growth
           </Box>
-          {billingInterval === 'annual' && (
-            <Typography sx={{
-              textAlign: 'center', mt: '9px',
-              fontSize: 11, fontWeight: 600, color: theme.palette.primary.main,
-            }}>
-              Save {formatDisplayPrice(growthSaving, currency)}/yr
-            </Typography>
-          )}
         </Box>
 
         {/* Scale — secondary card */}
@@ -260,7 +223,7 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
               Scale
             </Typography>
             <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'text.secondary', mt: '2px' }}>
-              Floor planning · unlimited seats
+              20,000 processed orders · 25 seats · 10 locations · 730-day history · Priority support
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -272,7 +235,7 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
                 {scalePrice}
               </Box>
               <Box component="span" sx={{ fontSize: 10, fontWeight: 500, color: 'text.secondary' }}>
-                /{billingInterval === 'monthly' ? 'mo' : 'yr'}
+                /mo
               </Box>
             </Box>
             <ChevronRight size={16} color={theme.palette.text.disabled} />

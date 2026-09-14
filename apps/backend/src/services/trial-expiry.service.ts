@@ -21,6 +21,7 @@ import db, {
   withTenant,
 } from '@lasyncro/backend-core/db.js';
 import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementRevocationService } from './entitlement-revocation.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { sendTrialExpiryEmail, sendTrialReminderEmail } from './email/email.service.js';
@@ -32,13 +33,16 @@ import { transitionShopSubscription } from './billing/subscriptionTransition.ser
  * Called when trial_ends_at < NOW() and status = 'trialing'.
  */
 async function downgradeTrialShop(shopId: number): Promise<void> {
-  const starterConfig = getTierConfig('starter');
-  const growthConfig = getTierConfig('growth');
+  const starterModules = [...modulesForTier('starter')];
+  const growthModules = [...modulesForTier('growth')];
+  const starterModuleSet = new Set(starterModules);
+  const starterFlagSet = flagsForTier('starter');
 
-  // Modules present in Growth but NOT in Starter — revoke only these
-  const starterModuleSet = new Set(starterConfig.modules);
-  const modulesToRevoke = growthConfig.modules.filter((m) => !starterModuleSet.has(m));
-  const flagsToRevoke = [...growthConfig.flags];
+  // Canonical commercial-policy decides what Growth loses on Starter.
+  const modulesToRevoke = growthModules.filter((m) => !starterModuleSet.has(m));
+  const flagsToRevoke = [...flagsForTier('growth')].filter(
+    (f) => !starterFlagSet.has(f)
+  );
 
   await withTenant(shopId, async (trx) => {
     // 1. Downgrade subscription record — BILL-ENTITLEMENT-01
@@ -87,7 +91,7 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
     }
 
     // 3. Seed Starter entitlements (additive, idempotent)
-    const starterRows = starterConfig.modules.map((moduleKey) => ({
+    const starterRows = starterModules.map((moduleKey) => ({
       shop_id: shopId,
       module_key: moduleKey,
       flag_key: null as string | null,

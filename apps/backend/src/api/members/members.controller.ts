@@ -4,6 +4,7 @@ import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { authEmailExists } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import bcrypt from 'bcrypt';
 import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
+import { isValidTier, standardLimits } from '@lasyncro/commercial-policy';
 
 /**
  * MEMBERS CONTROLLER
@@ -158,84 +159,72 @@ export const createMember = async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'EMAIL_ALREADY_IN_USE' });
     }
 
-    // --- Seat limit enforcement (MON-04) ---
-    // Tier is read from JWT claim (set at login/refresh via shop_subscriptions).
-    // Falls back to 'starter' (0 non-owner seats) if claim is missing — fail closed.
-    const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
-    const rawTier = req.user!.tier ?? 'starter';
-    const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
-    const { seatLimit: baseSeatLimit } = getTierConfig(currentTier);
-
-    const { activeSeatCount, subscription } = await withTenant(shopId, async (trx) => {
-      const [activeSeatCount, subscription] = await Promise.all([
-        trx('shop_memberships')
-          .where({ shop_id: shopId })
-          .whereNull('revoked_at')
-          .whereNot('role', 'owner')
-          .count('id as count')
-          .first(),
-        trx('shop_subscriptions')
-          .where({ shop_id: shopId })
-          .first('extra_seats'),
-      ]);
-
-      return { activeSeatCount, subscription };
-    });
-
-    const currentSeats = Number(activeSeatCount?.count ?? 0);
-
-    // WHY: Core/Growth seat add-ons are purchased capacity on top of the
-    // tier's included non-owner seats. Starter cannot buy extras; Scale
-    // remains unlimited regardless of the persisted add-on value.
-    const extraSeats =
-      currentTier === 'core' || currentTier === 'growth'
-        ? Math.max(0, Number(subscription?.extra_seats ?? 0))
-        : 0;
-
-    const effectiveSeatLimit = Number.isFinite(baseSeatLimit)
-      ? baseSeatLimit + extraSeats
-      : Infinity;
-
-    if (currentSeats >= effectiveSeatLimit) {
-      console.warn('[MEMBERS] Seat limit reached', {
-        shopId,
-        currentSeats,
-        baseSeatLimit,
-        extraSeats,
-        effectiveSeatLimit,
-        tier: currentTier,
-      });
-
-      return res.status(403).json({
-        error: 'SEAT_LIMIT_REACHED',
-        current: currentSeats,
-        limit: effectiveSeatLimit,
-        base_limit: baseSeatLimit,
-        extra_seats: extraSeats,
-        tier: currentTier,
-      });
-    }
-
-    // Resolve shop name + creator name for invite email
+    // Resolve shop + creator before the serialized capacity mutation.
     const [shop, creator] = await withTenant(shopId, (trx) => Promise.all([
       trx('shops').where({ id: shopId }).first('name'),
       trx('users')
         .where({ id: creatorUserId, shop_id: shopId })
         .first('first_name', 'last_name', 'email'),
     ]));
+
     const invitedByName = creator
       ? `${creator.first_name ?? ''} ${creator.last_name ?? ''}`.trim() || creator.email
       : 'Your team admin';
 
-    // Generate temporary password
+    // Password work happens before taking the commercial-capacity lock.
     const temporaryPassword = crypto.randomUUID().slice(0, 12);
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     let newUser: { id: number; email: string };
 
-    await withTenant(shopId, async (trx) => {
-      // 1. Create user (shop_id = existing shop, NOT a new shop)
-      const [created] = await trx('users')
+    // MON-REM-01B-3:
+    // shop_subscriptions is unique per shop and is the serialization point for
+    // seat-capacity mutations. Tier capacity is live commercial truth, never
+    // the potentially stale JWT tier.
+    const created = await withTenant(shopId, async (trx) => {
+      const subscription = await trx('shop_subscriptions')
+        .where({ shop_id: shopId })
+        .select('tier', 'extra_seats')
+        .forUpdate()
+        .first();
+
+      const rawTier = subscription?.tier ?? 'starter';
+      const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
+      const { seatLimit: baseSeatLimit } = standardLimits(currentTier);
+
+      // Core/Growth retain their purchased seat add-ons. Starter has none.
+      // Scale is finite at its canonical included allowance and currently has
+      // no self-serve extra-seat SKU.
+      const extraSeats =
+        currentTier === 'core' || currentTier === 'growth'
+          ? Math.max(0, Number(subscription?.extra_seats ?? 0))
+          : 0;
+
+      const effectiveSeatLimit = baseSeatLimit + extraSeats;
+
+      const activeSeatCount = await trx('shop_memberships')
+        .where({ shop_id: shopId })
+        .whereNull('revoked_at')
+        .whereNot('role', 'owner')
+        .count('id as count')
+        .first();
+
+      const currentSeats = Number(activeSeatCount?.count ?? 0);
+
+      if (currentSeats >= effectiveSeatLimit) {
+        throw Object.assign(new Error('SEAT_LIMIT_REACHED'), {
+          code: 'SEAT_LIMIT_REACHED',
+          details: {
+            current: currentSeats,
+            limit: effectiveSeatLimit,
+            base_limit: baseSeatLimit,
+            extra_seats: extraSeats,
+            tier: currentTier,
+          },
+        });
+      }
+
+      const [user] = await trx('users')
         .insert({
           shop_id: shopId,
           email: email.toLowerCase(),
@@ -246,15 +235,16 @@ export const createMember = async (req: Request, res: Response) => {
         })
         .returning(['id', 'email']);
 
-      newUser = created;
-
-      // 2. Create membership
       await trx('shop_memberships').insert({
         shop_id: shopId,
-        user_id: created.id,
+        user_id: user.id,
         role: role as Role,
       });
+
+      return user as { id: number; email: string };
     });
+
+    newUser = created;
 
     console.info('[MEMBERS] Member created', {
       shopId,
@@ -283,7 +273,21 @@ export const createMember = async (req: Request, res: Response) => {
       email: newUser!.email,
       role,
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'SEAT_LIMIT_REACHED') {
+      const details = err.details;
+
+      console.warn('[MEMBERS] Seat limit reached', {
+        shopId,
+        ...details,
+      });
+
+      return res.status(403).json({
+        error: 'SEAT_LIMIT_REACHED',
+        ...details,
+      });
+    }
+
     console.error('[MEMBERS] createMember failed:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }

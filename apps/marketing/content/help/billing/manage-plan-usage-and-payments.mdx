@@ -43,21 +43,18 @@ The Billing page can show:
 - past-due state;
 - usage meters;
 - plan options;
-- monthly and annual billing options for non-Shopify billing;
+- monthly self-service billing for new Stripe purchases;
 - **Manage billing** when an external billing page is available.
 
 ## Review usage
 
 Usage meters show activity for the current period.
 
-The current Billing page can show:
+The Billing page shows processed-order usage for warehouse-enabled paid plans.
 
-- orders ingested;
-- shipped orders.
+Shopify order ingestion is telemetry only. It is not a merchant allowance and does not stop order ingestion.
 
-Each meter compares current usage to the plan allowance when the allowance is finite.
-
-Status text can show whether usage is on track, approaching a limit, almost at a limit, or already at the limit.
+Processed-order usage compares Pack-complete activity with the included monthly volume. Core, Growth, and Scale continue warehouse execution above that volume automatically, with additional processed orders billed at the plan's overage rate.
 
 ## Trial and past-due states
 
@@ -89,7 +86,7 @@ Extra-seat billing is currently supported for Stripe-billed Core and Growth shop
 
 Starter shops may need to upgrade before adding more team members.
 
-Scale includes unlimited seats.
+Scale includes 25 non-owner seats and priority support.
 
 Shopify-billed shops may be directed through Shopify billing instead.
 

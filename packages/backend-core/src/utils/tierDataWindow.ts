@@ -1,39 +1,27 @@
-// packages/backend-core/src/utils/tierDataWindow.ts
+// Tier-aware historical visibility boundary.
 //
-// Tier-aware data window utility.
-// Returns the earliest date a shop can query order data from.
-//
-// Starter: 90 days (aligns with Shopify's own history window)
-// Core:    365 days (12 months)
-// Growth:  null (unlimited)
-// Scale:   null (unlimited)
-//
-// Applied at the query layer — never deletes data.
-// Upgrade immediately unlocks the full window.
+// MON-REM-01B:
+// The visibility horizon comes from @lasyncro/commercial-policy.
+// This utility never deletes historical data; it only returns the earliest
+// date the current tier may query.
 
+import { standardLimits } from '@lasyncro/commercial-policy';
 import type { Tier } from '../config/tiers.js';
 
-// Starter: 60 days
-// Core:    180 days (6 months)
-// Growth:  null (unlimited)
-// Scale:   null (unlimited)
-
-const WINDOW_DAYS: Record<Tier, number | null> = {
-  starter: 60,
-  core:    180,
-  growth:  null,
-  scale:   null,
-};
-
 /**
- * Returns the earliest date boundary for order queries for a given tier.
- * Returns null for unlimited access (Growth/Scale).
+ * Returns the earliest visible historical date for a tier.
+ *
+ * Current horizons:
+ * Starter: 30 days
+ * Core:    90 days
+ * Growth:  365 days
+ * Scale:   730 days
  */
-export function tierDataWindowSince(tier: Tier): Date | null {
-  const days = WINDOW_DAYS[tier];
-  if (days === null) return null;
+export function tierDataWindowSince(tier: Tier): Date {
+  const { historyDays } = standardLimits(tier);
+
   const since = new Date();
-  since.setDate(since.getDate() - days);
+  since.setDate(since.getDate() - historyDays);
   since.setHours(0, 0, 0, 0);
   return since;
 }

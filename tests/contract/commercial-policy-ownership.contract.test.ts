@@ -103,37 +103,71 @@ describe('A1-C12 — backend-core compatibility re-export', () => {
 });
 
 // ===========================================================================
-// A1-C13 — one canonical standard-limit source (with backend-true values)
+// A1-C13 — canonical commercial limits + economics
 // ===========================================================================
-describe('A1-C13 — canonical standard limits', () => {
+describe('A1-C13 — canonical commercial limits + economics', () => {
   const limitsFor = (t: string): any =>
     (CP as any).standardLimits?.(t) ?? (CP as any).PLAN_LIMITS?.[t];
 
-  it('EXPECTED RED: commercial-policy exposes canonical standard limits per tier', () => {
+  it('GREEN GUARD: commercial-policy exposes canonical standard limits per tier', () => {
     for (const t of ['starter', 'core', 'growth', 'scale']) {
       expect(limitsFor(t)).toBeDefined();
     }
   });
 
-  it('EXPECTED RED: canonical shipped-order cap = backend truth (core 500, growth 2500)', () => {
-    expect(limitsFor('core')?.shippedOrderCap).toBe(500);
-    expect(limitsFor('growth')?.shippedOrderCap).toBe(2500);
+  it('MON-REM-01B RED: processed-order allowances are 0 / 2000 / 7500 / 20000', () => {
+    expect(limitsFor('starter')?.shippedOrderCap).toBe(0);
+    expect(limitsFor('core')?.shippedOrderCap).toBe(2000);
+    expect(limitsFor('growth')?.shippedOrderCap).toBe(7500);
+    expect(limitsFor('scale')?.shippedOrderCap).toBe(20000);
   });
 
-  it('EXPECTED RED: canonical seat limit = backend truth (starter 0, core 2)', () => {
+  it('MON-REM-01B RED: included non-owner seats are 0 / 3 / 10 / 25', () => {
     expect(limitsFor('starter')?.seatLimit).toBe(0);
-    expect(limitsFor('core')?.seatLimit).toBe(2);
+    expect(limitsFor('core')?.seatLimit).toBe(3);
+    expect(limitsFor('growth')?.seatLimit).toBe(10);
+    expect(limitsFor('scale')?.seatLimit).toBe(25);
   });
 
-  it('EXPECTED RED: canonical order-ingestion cap unchanged (starter 50 … growth 10000)', () => {
-    expect(limitsFor('starter')?.monthlyOrderCap).toBe(50);
-    expect(limitsFor('growth')?.monthlyOrderCap).toBe(10000);
+  it('MON-REM-01B RED: warehouse-location allowances are 1 / 1 / 3 / 10', () => {
+    expect(limitsFor('starter')?.locationLimit).toBe(1);
+    expect(limitsFor('core')?.locationLimit).toBe(1);
+    expect(limitsFor('growth')?.locationLimit).toBe(3);
+    expect(limitsFor('scale')?.locationLimit).toBe(10);
   });
 
-  it('DOCUMENTED FACT (must stay true until P0-A2 migrates consumers): frontend caps currently drift from backend', () => {
-    const feCaps = read('apps/frontend/src/config/tiers.ts');
-    // The drift the audit found — this assertion tracks the target for P0-A2 UI migration.
-    expect(/core:\s*200/.test(feCaps)).toBe(true);    // FE shipped cap (wrong vs backend 500)
-    expect(/starter:\s*1,\s*\n?\s*core:\s*3/.test(feCaps) || /starter:\s*1/.test(feCaps)).toBe(true); // FE seat (wrong vs backend 0/2)
+  it('MON-REM-01B RED: visible-history windows are 30 / 90 / 365 / 730 days', () => {
+    expect(limitsFor('starter')?.historyDays).toBe(30);
+    expect(limitsFor('core')?.historyDays).toBe(90);
+    expect(limitsFor('growth')?.historyDays).toBe(365);
+    expect(limitsFor('scale')?.historyDays).toBe(730);
+  });
+
+  it('MON-REM-01B RED: processed-order overage economics are canonical', () => {
+    const rates = (CP as any).PLAN_PROCESSED_ORDER_OVERAGE_CENTS;
+    expect(rates).toBeDefined();
+    expect(rates?.starter).toBeNull();
+    expect(rates?.core).toBe(8);
+    expect(rates?.growth).toBe(6);
+    expect(rates?.scale).toBe(4);
+  });
+
+  it('MON-REM-01B RED: canonical base-price anchors are Free / 99 / 249 / 599 USD', () => {
+    const prices = (CP as any).PLAN_PRICING_CENTS;
+    expect(prices?.starter).toBe(0);
+    expect(prices?.core).toBe(9900);
+    expect(prices?.growth).toBe(24900);
+    expect(prices?.scale).toBe(59900);
+  });
+
+  it('GREEN CONTROL: ingestion remains telemetry rather than a commercial execution boundary', () => {
+    expect(limitsFor('starter')?.monthlyOrderCap).toBeDefined();
+    expect(limitsFor('growth')?.monthlyOrderCap).toBeDefined();
+  });
+
+  it('MON-REM-01B RED: history query window consumes canonical commercial-policy historyDays', () => {
+    const historySrc = read('packages/backend-core/src/utils/tierDataWindow.ts');
+    expect(/standardLimits/.test(historySrc)).toBe(true);
+    expect(/const\s+WINDOW_DAYS/.test(historySrc)).toBe(false);
   });
 });

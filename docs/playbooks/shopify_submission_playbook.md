@@ -133,41 +133,84 @@ Fixes:
 
 ---
 
-## Shopify Billing — Managed Pricing Sync (verified 2026-07-18)
+## Shopify Billing — Managed Pricing Sync
 
 ### Background
 
 The original `/api/v1/shopify-billing/change-plan` endpoint (using `appSubscriptionCreate` directly) was retired June 2026 — Shopify rejects direct Billing API charge creation for apps on Managed Pricing ("Managed Pricing Apps cannot use the Billing API to create charges"). Plan selection now happens entirely on Shopify's hosted pricing page (`https://admin.shopify.com/store/:store_handle/charges/:app_handle/pricing_plans`). The retirement left a gap: nothing synced the resulting plan state back into `shop_subscriptions`. Closed this session (SHB-01, SHB-07, SHB-13, SHB-16).
 
-### Architecture
+### Current architecture (MON-REM-01B-4, verified 2026-09-14)
 
-- `apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts` — `fetchShopifyBillingState(shopId)`. Treats the webhook as a trigger only; fetches authoritative state via the Admin GraphQL Active Subscription API (`currentAppInstallation.activeSubscriptions`), API version `2026-07`. Reusable for webhook-triggered, install-time, and future cron reconciliation.
-- `apps/backend/src/api/shopify/handlers/handleAppSubscriptionUpdate.ts` — consumes the `app_subscriptions/update` webhook, calls the reconciliation service, upserts `shop_subscriptions` with `billing_provider: 'shopify'` stamped explicitly, re-seeds entitlements, and revokes the tier-downgrade diff (mirrors ISS-C19).
-- Registered in `shopifyWebhooks.core.ts` (topic `app_subscriptions/update` → GraphQL enum `APP_SUBSCRIPTIONS_UPDATE`) and dispatched via `shopify.webhook.ts` / `shopify.webhook.router.ts`.
+- `apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts`
+  fetches authoritative Shopify App Pricing state from the Shopify Partner API
+  `activeSubscription(appId, shopId)` query, version `2026-07`.
+- Required runtime config:
+  - `SHOPIFY_PARTNER_ORG_ID`;
+  - `SHOPIFY_PARTNER_API_ACCESS_TOKEN`;
+  - `SHOPIFY_APP_GID`.
+- Merchant identity comes from `shopify_app_installations.shop_gid`
+  (`gid://shopify/Shop/...`). The reconciliation path fails closed if that
+  value is missing or invalid.
+- `applyShopifyBillingState()` remains the one application boundary for
+  `shop_subscriptions` and commercial-policy entitlement updates, routing
+  through `transitionShopSubscription()`.
+- `app_subscriptions/update` may remain registered as legacy/secondary
+  infrastructure, but it is not the canonical App Pricing authority.
 
-### Plan name → tier mapping
+### Commercial handle mapping
 
-`AppSubscription` has **no `handle` field** (confirmed via GraphQL introspection) — mapping keys on the invoice-facing `name` string, normalized (trim, lowercase, hyphens/underscores collapsed to spaces) to tolerate formatting drift:
-"Early-access" -> starter
-"Core"         -> core
-"Growth"       -> growth
-"Scale"        -> scale
-Partner Dashboard "Internal plan handle" values (`early-access`, `core`, `growth`, `scale`) are NOT used for mapping — they're invisible to the Admin API.
+Partner API `activeSubscription.items[]` carries the canonical item handles.
+Only recognized commercial handles determine tier:
 
-### Status mapping
+| Partner item handle | Canonical tier |
+|---|---|
+| `starter` | starter |
+| `early-access` | starter (legacy compatibility) |
+| `core` | core |
+| `growth` | growth |
+| `scale` | scale |
 
-`shop_subscriptions.status` has a DB check constraint written for Stripe's lowercase vocabulary (`trialing, active, past_due, canceled, unpaid`). Shopify's `AppSubscriptionStatus` enum (`ACTIVE, PENDING, DECLINED, EXPIRED, FROZEN, CANCELLED`) has no exact equivalents and is case-mismatched even for the success case — writing it raw violated the constraint on every status including `ACTIVE`. Mapped by semantic fit:
-ACTIVE    -> active
-PENDING   -> unpaid     (no payment collected, awaiting merchant decision)
-FROZEN    -> past_due
-DECLINED  -> canceled
-EXPIRED   -> canceled
-CANCELLED -> canceled
-(no sub)  -> canceled
+`shipped-order` is a usage item handle only. It must never determine tier.
+Unknown or unrecognized commercial state fails closed.
 
-### SHB-13: forced-starter on non-active status
+Pricing fields returned by Partner API are provider facts for provenance and
+cross-checking. They are not tier authority.
 
-`resolveTierForShop` (used for the JWT `tier` claim on every token issuance, 15-min expiry) reads `shop_subscriptions.tier` verbatim — no code anywhere reads `status` for gating. So the reconciliation service forces `tier: 'starter'` whenever Shopify status isn't `ACTIVE`, regardless of the plan name on the (inactive) subscription, and the handler revokes the resulting downgrade diff. This is provider-agnostic risk in principle — see monetization_billing_playbook.md §24 for the equivalent open gap on the Stripe side (SHB-14, not yet fixed).
+### Billing-return reconciliation
+
+Shopify hosted App Pricing returns merchants to
+`/settings/billing?plan_handle=<handle>`. That URL value is expected /
+diagnostic state only and must never grant entitlement.
+
+Canonical return flow:
+
+```text
+plan_handle return
+  -> POST /api/v1/billing/shopify/reconcile
+  -> Partner API activeSubscription
+  -> applyShopifyBillingState()
+  -> shop_subscriptions + entitlements
+  -> EntitlementsContext.refresh()
+  -> refetch subscription
+  -> remove plan_handle from URL
+```
+
+Partner API truth wins on mismatch. A Shopify-managed billing trial represented
+by Partner `trialEndsAt` is provider billing state and is not copied into local
+`shop_subscriptions.trial_ends_at`; a live Partner subscription produces local
+`status = active` at the canonical tier.
+
+### Reconciliation durability
+
+The scheduled fallback remains:
+
+```text
+runShopifyBillingReconciliationCycle()
+  -> applyShopifyBillingState()
+```
+
+This is the durability path for Shopify-billed shops if redirect or webhook
+activity is missed.
 
 ### SHB-16: webhook router shop-resolution bug (systemic, not billing-specific)
 

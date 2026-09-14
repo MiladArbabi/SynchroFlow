@@ -31,6 +31,7 @@ export type { Tier } from './tiers.js';
 export {
   PLAN_LIMITS,
   PLAN_PRICING_CENTS,
+  PLAN_PROCESSED_ORDER_OVERAGE_CENTS,
   standardLimits,
 } from './limits.js';
 export type { PlanLimits } from './limits.js';

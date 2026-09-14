@@ -2,7 +2,7 @@ export declare const COMMERCIAL_POLICY_PACKAGE: "@lasyncro/commercial-policy";
 export declare const COMMERCIAL_POLICY_WIRING_OK: true;
 export { TIERS, TIER_ORDER, tierAtLeast, isValidTier, } from './tiers.js';
 export type { Tier } from './tiers.js';
-export { PLAN_LIMITS, PLAN_PRICING_CENTS, standardLimits, } from './limits.js';
+export { PLAN_LIMITS, PLAN_PRICING_CENTS, PLAN_PROCESSED_ORDER_OVERAGE_CENTS, standardLimits, } from './limits.js';
 export type { PlanLimits } from './limits.js';
 export { MODULE_IDS, MODULE_CLASSIFICATION, LEGACY_MODULES_BY_TIER, modulesForTier, isModuleId, } from './modules.js';
 export type { ModuleId, ModuleClassification } from './modules.js';

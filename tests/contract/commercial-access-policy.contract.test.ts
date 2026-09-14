@@ -12,7 +12,7 @@
 // Ratified inputs used here:
 //   - Tier hierarchy: starter < core < growth < scale (WORKSHOP Part 2 §1)
 //   - Module sets are cumulative: STARTER ⊆ CORE ⊆ GROWTH ⊆ SCALE
-//   - Scale standard limits resolve as unlimited
+//   - Scale retains capability supremacy while commercial capacity remains finite
 //   - One canonical module registry; nav must only reference emittable ids
 //   - Purchasing = Growth+ (purchasing.core / purchasing.sourcing),
 //     canonical module `suppliers-portal`
@@ -151,16 +151,12 @@ describe('C2 — cumulative commercial sets', () => {
 });
 
 // ===========================================================================
-// C3 — SCALE SUPREMACY / UNLIMITED
+// C3 — SCALE SUPREMACY WITH FINITE CAPACITY
 // ===========================================================================
-describe('C3 — Scale unlimited', () => {
-  it('GREEN CONTROL: Scale carries no finite standard plan-volume hard stop', () => {
-    // Asserted through the EXISTING TierConfig shape — no invented sentinel.
-    // If a finite Scale cap is ever re-introduced this flips to RED.
-    expect(TIER_CONFIG.scale.monthlyOrderCap).toBe(Infinity);
-    expect(TIER_CONFIG.scale.shippedOrderCap).toBe(Infinity);
-    expect(TIER_CONFIG.scale.seatLimit).toBe(Infinity);
-    expect(TIER_CONFIG.scale.specterSessionCap).toBe(Infinity);
+describe('C3 — Scale capability supremacy with finite commercial capacity', () => {
+  it('MON-REM-01B RED: Scale carries finite processed-order and seat allowances', () => {
+    expect(TIER_CONFIG.scale.shippedOrderCap).toBe(20000);
+    expect(TIER_CONFIG.scale.seatLimit).toBe(25);
   });
 
   it('GREEN CONTROL: Scale module set is a superset of every other tier', () => {

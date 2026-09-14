@@ -313,30 +313,29 @@ describe('CRA-C7 — Shopify ingestion is telemetry-gated, never commercially bl
 });
 
 // ===========================================================================
-// C8 — SCALE DENIAL INVARIANT
+// C8 — SCALE CAPABILITY / CAPACITY SEPARATION
 // ===========================================================================
-
-describe('CRA-C8 — standard Scale capacity can never produce a commercial denial', () => {
-  it('GREEN CONTROL: every standard Scale limit is unlimited', () => {
+describe('CRA-C8 — finite Scale capacity never becomes a capability denial', () => {
+  it('MON-REM-01B RED: Scale has the ratified finite operational allowances', () => {
     const limits = CP.standardLimits('scale') as unknown as Record<string, number>;
-    for (const [name, value] of Object.entries(limits)) {
-      expect({ limit: name, finite: Number.isFinite(value) }).toEqual({ limit: name, finite: false });
-    }
+    expect(limits.shippedOrderCap).toBe(20000);
+    expect(limits.seatLimit).toBe(25);
+    expect(limits.locationLimit).toBe(10);
+    expect(limits.historyDays).toBe(730);
   });
 
-  it('EXPECTED RED: Scale is ALLOWED for every active capability', () => {
-    // If standard Scale can be denied any active capability, some capacity or
-    // grant wall exists above Growth — which the remodel forbids.
+  it('GREEN CONTROL: Scale is ALLOWED for every active capability', () => {
     const denied = ACTIVE_IDS.filter((id) => !decide(id, 'scale').allowed);
     expect(denied).toEqual([]);
   });
 
-  it('GREEN CONTROL: no finite Scale allowance can trigger a cap/seat/overage denial', () => {
-    const { seatLimit, shippedOrderCap } = CP.standardLimits('scale');
-    // SHIPPED_ORDER_CAP_REACHED / SEAT_LIMIT_REACHED / OVERAGE_DISABLED are all
-    // reachable only from a finite standard allowance.
-    expect(Number.isFinite(shippedOrderCap)).toBe(false);
-    expect(Number.isFinite(seatLimit)).toBe(false);
+  it('MON-REM-01B RED: finite Scale capacity does not alter capability grants', () => {
+    const { shippedOrderCap, seatLimit } = CP.standardLimits('scale');
+    expect(Number.isFinite(shippedOrderCap)).toBe(true);
+    expect(Number.isFinite(seatLimit)).toBe(true);
+
+    const denied = ACTIVE_IDS.filter((id) => !decide(id, 'scale').allowed);
+    expect(denied).toEqual([]);
   });
 });
 

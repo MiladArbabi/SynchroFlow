@@ -38,6 +38,7 @@ import type { Tier } from '@lasyncro/backend-core/config/tiers.js';
  * unlike the display name they are not editable copy.
  */
 const PLAN_HANDLE_TO_TIER: Record<string, Tier> = {
+  starter: 'starter',
   'early-access': 'starter',
   core: 'core',
   growth: 'growth',

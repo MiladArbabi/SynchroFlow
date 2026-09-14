@@ -21,7 +21,7 @@ import { useTheme, alpha } from '@mui/material/styles';
 import { ExternalLink, Check, Users } from 'lucide-react';
 import { axiosInstance } from '../../api/axiosConfig';
 import {
-  TIER_MONTHLY_ORDER_CAP, TIER_SHIPPED_ORDER_CAP, type Tier,
+  TIER_SHIPPED_ORDER_CAP, type Tier,
 } from '../../config/tiers';
 import {
   PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency,
@@ -34,42 +34,61 @@ import { useCapStatus } from '../../hooks/useCapStatus';
 // ─────────────────────────────────────────────
 
 const PLAN_FEATURES: Record<string, string[]> = {
-  starter: ['Orders & fulfillment queue', 'Real-time stock alerts', '1 sales channel', 'Email support'],
-  core:    ['Everything in Starter', 'WMS — pick / pack / stow', 'Barcode scanning', 'Returns management', 'Product catalog'],
-  growth:  ['Everything in Core', 'Cash flow & runway', 'Demand forecasting', 'Customer LTV', 'Supplier scorecards'],
-  // ISS-SCALE1: previously listed 'Warehouse floor planning' and
-  // 'Specter intelligence' as Scale differentiators — both are
-  // already included in Growth (SCALE_MODULES has zero exclusive
-  // modules beyond GROWTH_MODULES), so this misrepresented existing
-  // Growth features as new Scale value. Specter is additionally
-  // deprecated/frozen. Corrected to reflect Scale's actual
-  // differentiation: capacity only, no exclusive modules.
-  scale:   ['Everything in Growth', 'Unlimited seats', 'No order or shipment caps', 'Priority support'],
+  starter: [
+    'Real-time inventory',
+    'Stock alerts',
+    '1 location',
+    '30-day history',
+  ],
+  core: [
+    'Everything in Starter',
+    '2,000 processed orders / month',
+    '$0.08 per additional processed order',
+    '3 non-owner seats',
+    '1 location',
+    '90-day history',
+    'Receive / stow / pick / pack / ship',
+    'Barcode scanning',
+  ],
+  growth: [
+    'Everything in Core',
+    '7,500 processed orders / month',
+    '$0.06 per additional processed order',
+    '10 non-owner seats',
+    '3 locations',
+    '365-day history',
+    'Demand forecasting',
+    'Floor planning',
+  ],
+  scale: [
+    'Everything in Growth',
+    '20,000 processed orders / month',
+    '$0.04 per additional processed order',
+    '25 non-owner seats',
+    '10 locations',
+    '730-day history',
+    'Priority support',
+  ],
 };
 
 const PLAN_BLURBS: Record<string, string> = {
-  starter: 'For shops getting their first orders under control.',
-  core:    'Run the warehouse — scan, pick, pack, return.',
-  growth:  'See the money — forecasting, cash flow, LTV.',
-  scale:   'No limits — floor planning and unlimited team.',
+  starter: 'Inventory visibility for shops getting operational control.',
+  core: 'Run structured warehouse execution with barcode workflows.',
+  growth: 'More capacity and operational intelligence for growing teams.',
+  scale: 'High-capacity warehouse operations with priority support.',
 };
 
 const PLAN_SEATS: Record<string, string> = {
-  starter: '0 extra seats',
-  // ISS-SCALE3: stale — Core's seatLimit was raised 2→3, this display
-  // constant was never updated to match. Verified against
-  // members.controller.ts: currentSeats counts non-owner active
-  // memberships directly against TIER_CONFIG.core.seatLimit (3).
-  core:    '3 non-owner seats',
-  growth:  '5 non-owner seats',
-  scale:   'Unlimited seats',
+  starter: 'Owner only',
+  core: '3 non-owner seats',
+  growth: '10 non-owner seats',
+  scale: '25 non-owner seats',
 };
 
-// Next recommended tier given the current one
 const NEXT_TIER: Partial<Record<string, string>> = {
-  starter: 'growth',
-  core:    'growth',
-  growth:  'scale',
+  starter: 'core',
+  core: 'growth',
+  growth: 'scale',
 };
 
 const UPGRADE_TIERS = ['core', 'growth', 'scale'] as const;
@@ -87,7 +106,7 @@ interface SubscriptionData {
   current_period_end: string | null;
   canceled_at: string | null;
   // SHB-03/04: provider + backend-composed Shopify Managed Pricing URL
-  billing_provider?: 'stripe' | 'shopify';
+  billing_provider?: 'stripe' | 'shopify' | null;
   manage_billing_url?: string | null;
 }
 
@@ -495,11 +514,10 @@ function TierCard({
 // ─────────────────────────────────────────────
 
 function PlanHeader({
-  sub, currentTier, currency, onPortal, openingPortal, onUpgrade,
+  sub, currentTier, onPortal, openingPortal, onUpgrade,
 }: {
   sub: SubscriptionData;
   currentTier: string;
-  currency: BillingCurrency;
   onPortal: () => void;
   openingPortal: boolean;
   onUpgrade: (tierId: string) => void;
@@ -508,15 +526,8 @@ function PlanHeader({
   const tierLabel   = currentTier.charAt(0).toUpperCase() + currentTier.slice(1);
   const isTrialing  = sub.status === 'trialing';
   const isPastDue   = sub.status === 'past_due';
-  const hasPricing  = currentTier in PEGGED_DISPLAY_PRICES;
-  const tierKey     = currentTier as keyof typeof PEGGED_DISPLAY_PRICES;
-
-  const monthlyPrice = hasPricing
-    ? formatDisplayPrice(PEGGED_DISPLAY_PRICES[tierKey][currency].monthly, currency)
-    : null;
-
-  const billingLine = hasPricing && sub.billing_interval && sub.current_period_end
-    ? `${monthlyPrice}/mo · billed ${sub.billing_interval} · renews ${fmtDate(sub.current_period_end)}`
+  const billingLine = sub.billing_interval && sub.current_period_end
+    ? `Billed ${sub.billing_interval} · renews ${fmtDate(sub.current_period_end)}`
     : null;
 
   const daysLeft = isTrialing && sub.trial_ends_at ? daysUntil(sub.trial_ends_at) : 0;
@@ -586,7 +597,7 @@ function PlanHeader({
               {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
             </Typography>
             <Typography sx={{ fontSize: 12, fontWeight: 300, lineHeight: 1.45, color: 'text.secondary', mt: 0.375 }}>
-              on your {tierLabel} trial. Add a payment method to keep forecasting, cash flow and LTV.
+              on your {tierLabel} trial. Choose a paid plan to keep warehouse execution, forecasting, and operational planning.
             </Typography>
             <Button
               variant="contained" size="small" onClick={() => onUpgrade(currentTier)} disabled={openingPortal}
@@ -686,31 +697,77 @@ function BillingToggle({
 // ─────────────────────────────────────────────
 
 const BillingSettings: React.FC = () => {
-  const { tier: currentTier, billingCurrency } = useEntitlements();
-  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
+  const { tier: currentTier, refresh: refreshEntitlements } = useEntitlements();
+  const currency: BillingCurrency = 'USD';
 
   const [sub, setSub]                   = useState<SubscriptionData | null>(null);
   const [usage, setUsage]               = useState<UsageData | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
-  const [billingInterval, setBilling]   = useState<'monthly' | 'annual'>('monthly');
+  const billingInterval = 'monthly' as const;
   const [upgrading, setUpgrading]       = useState<string | null>(null);
   const [openingPortal, setOpPortal]    = useState(false);
   const planCardsRef                    = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    axiosInstance.get('/api/v1/billing/subscription')
-      .then((r) => {
+    let cancelled = false;
+
+    const loadSubscription = async (commit: boolean) => {
+      const r = await axiosInstance.get('/api/v1/billing/subscription');
+      if (commit && !cancelled) {
         setSub(r.data);
-        if (r.data.billing_interval === 'annual') setBilling('annual');
-      })
-      .catch(() => setError('Failed to load billing information.'))
-      .finally(() => setLoading(false));
+      }
+    };
+
+    const reconcileShopifyReturn = async (planHandle: string) => {
+      await axiosInstance.post('/api/v1/billing/shopify/reconcile', {
+        expected_plan_handle: planHandle,
+      });
+      await refreshEntitlements();
+
+      const params = new URLSearchParams(window.location.search);
+      params.delete('plan_handle');
+      const search = params.toString();
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`,
+      );
+    };
+
+    const loadBilling = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const planHandle = params.get('plan_handle');
+        if (planHandle) {
+          await reconcileShopifyReturn(planHandle);
+        }
+        await loadSubscription(true);
+      } catch {
+        if (!cancelled) {
+          setError('Failed to load billing information.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadBilling();
 
     axiosInstance.get('/api/v1/billing/usage')
-      .then((r) => setUsage(r.data))
+      .then((r) => {
+        if (!cancelled) {
+          setUsage(r.data);
+        }
+      })
       .catch(() => {}); // non-fatal
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshEntitlements]);
 
   const handleUpgrade = async (tierId: string) => {
     // SHB-03/04: plan changes for Shopify-billed shops happen on Shopify's
@@ -724,16 +781,24 @@ const BillingSettings: React.FC = () => {
       }
       return;
     }
+
+    if (sub?.billing_provider !== 'stripe') {
+      setError('Billing is temporarily unavailable. Please contact support.');
+      return;
+    }
+
     setUpgrading(tierId);
     try {
       const { data } = await axiosInstance.post('/api/v1/billing/checkout', {
-        tier: tierId, interval: billingInterval,
+        tier: tierId, interval: 'monthly',
       });
       if (data.url) window.location.href = data.url;
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (code === 'APP_STORE_MERCHANT') {
-        setError("Paid plans aren't available yet for stores installed via the Shopify App Store — you'll keep full access on the Starter plan in the meantime.");
+        setError("Plan changes for Shopify-billed stores are managed through Shopify.");
+      } else if (code === 'SELF_SERVE_USD_ONLY') {
+        setError('New self-service plan purchases are currently available in USD monthly billing only.');
       } else {
         setError('Failed to start checkout. Please try again.');
       }
@@ -753,6 +818,12 @@ const BillingSettings: React.FC = () => {
       }
       return;
     }
+
+    if (sub?.billing_provider !== 'stripe') {
+      setError('Billing is temporarily unavailable. Please contact support.');
+      return;
+    }
+
     setOpPortal(true);
     try {
       const { data } = await axiosInstance.post('/api/v1/billing/portal');
@@ -774,10 +845,6 @@ const BillingSettings: React.FC = () => {
     }
   };
 
-  const handleSwitchAnnual = () => {
-    setBilling('annual');
-    planCardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   if (loading) {
     return (
@@ -789,13 +856,11 @@ const BillingSettings: React.FC = () => {
 
   const tier       = currentTier ?? 'starter';
   const nextTierId = NEXT_TIER[tier];
-  const isMonthly  = billingInterval === 'monthly';
   // SHB-03/04: Shopify-billed shops manage plans exclusively on Shopify's
   // hosted Managed Pricing page — all Stripe CTAs retarget or hide.
   const isShopifyBilled  = sub?.billing_provider === 'shopify';
   const manageBillingUrl = sub?.manage_billing_url ?? null;
 
-  const ingestedCap = TIER_MONTHLY_ORDER_CAP[tier as Tier] ?? Infinity;
   const shippedCap  = TIER_SHIPPED_ORDER_CAP[tier as Tier] ?? 0;
 
   const periodLabel = usage?.period_starts_at && sub?.current_period_end
@@ -819,7 +884,6 @@ const BillingSettings: React.FC = () => {
         <PlanHeader
           sub={sub}
           currentTier={tier}
-          currency={currency}
           onPortal={handlePortal}
           openingPortal={openingPortal}
           onUpgrade={handleUpgrade}
@@ -848,30 +912,17 @@ const BillingSettings: React.FC = () => {
             </Box>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <UsageMeter
-                label="Orders ingested"
-                used={usage.ingested_orders}
-                cap={ingestedCap}
-                unit="orders"
-              />
               {shippedCap > 0 && (
                 <UsageMeter
-                  label="Shipped orders"
+                  label="Processed orders"
                   used={usage.shipped_orders}
                   cap={shippedCap}
-                  unit="shipments"
+                  unit="orders"
                 />
               )}
             </Box>
 
             {/* SHB-03/04: interval switching is Stripe-only; Shopify intervals are set on the hosted pricing page */}
-            {!isShopifyBilled && isMonthly && tier !== 'starter' && tier in PEGGED_DISPLAY_PRICES && (
-              <AnnualSavingsCallout
-                currency={currency}
-                tierId={tier as Exclude<Tier, 'starter'>}
-                onSwitch={handleSwitchAnnual}
-              />
-            )}
           </Box>
 
           {/* Right: recommended upgrade */}
@@ -892,11 +943,6 @@ const BillingSettings: React.FC = () => {
       {/* Billing toggle + plan cards */}
       <Box ref={planCardsRef}>
         {/* SHB-03/04: monthly/annual selection happens on Shopify's hosted page for App Store merchants */}
-        {!isShopifyBilled && (
-          <Box sx={{ mb: 3 }}>
-            <BillingToggle value={billingInterval} onChange={setBilling} />
-          </Box>
-        )}
 
         <Box sx={{
           display: 'grid',

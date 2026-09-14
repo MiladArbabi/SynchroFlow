@@ -6,7 +6,6 @@ interface Props {
   plan: string
   cta: string
   featured: boolean
-  billingInterval: 'monthly' | 'annual'
   shopifyAvailable?: boolean
   installUrl?: string | null
 }
@@ -15,20 +14,16 @@ export default function PricingPlanCTA({
   plan,
   cta,
   featured,
-  billingInterval,
   shopifyAvailable = false,
   installUrl = null,
 }: Props) {
   const waitingForLaunch = !shopifyAvailable || !installUrl
-  const isScale = plan.toLowerCase() === 'scale'
 
   const resolvedCta = waitingForLaunch ? 'Notify me at launch' : cta
   const resolvedHref = waitingForLaunch
     ? '#launch-pricing'
-    : isScale
-      ? 'mailto:contact@lasyncro.com?subject=LaSyncro%20Scale%20plan'
-      : installUrl ?? '#launch-pricing'
-  const opensInstallUrl = !waitingForLaunch && !isScale
+    : installUrl ?? '#launch-pricing'
+  const opensInstallUrl = !waitingForLaunch
 
   return (
     <a
@@ -39,7 +34,7 @@ export default function PricingPlanCTA({
         captureMarketingEvent('pricing_plan_cta_clicked', {
           plan: plan.toLowerCase(),
           cta_label: resolvedCta,
-          billing_interval: billingInterval,
+          billing_interval: 'monthly',
           shopify_available: !waitingForLaunch,
         })
       }

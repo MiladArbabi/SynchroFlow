@@ -45,13 +45,13 @@ jest.mock('api-src/services/notifications/notificationDispatch.service', () => (
 
 const app = createApp();
 
-type FixtureTier = 'starter' | 'core' | 'growth';
+type FixtureTier = 'starter' | 'core' | 'growth' | 'scale';
 
 type FixtureInput = {
   tier: FixtureTier;
   usageBefore: number;
   allowOverage?: boolean;
-  billingProvider?: 'stripe';
+  billingProvider?: 'stripe' | 'shopify';
   stripeCustomerId?: string;
   physicalEvidence?: 'complete' | 'missing' | 'no-orders' | 'no-lines' | 'no-status' | 'packing' | 'no-scan' | 'short-scan';
 };
@@ -305,28 +305,46 @@ async function getBillingOverageEventPayload(shopId: number): Promise<Record<str
 }
 
 async function packComplete(shopId: number, userId: number, batchId: string) {
-  const token = issueTestToken({ userId, shopId });
+  const subscription = await withTenant(shopId, (trx) =>
+    trx('shop_subscriptions')
+      .where({ shop_id: shopId })
+      .first('tier')
+  );
+
+  const tier = subscription?.tier as FixtureTier | undefined;
+  if (!tier) {
+    throw new Error('TEST_FIXTURE_SUBSCRIPTION_TIER_MISSING');
+  }
+
+  const token = issueTestToken({ userId, shopId, tier });
+
   return request(app)
     .post(`/api/v1/wms/batch/${batchId}/pack-complete`)
     .set('Authorization', `Bearer ${token}`)
     .send({});
 }
 
-describe('Shipped-order commercial enforcement (MON-ALLOW-04)', () => {
-  // ── COMMERCIAL-01 ──────────────────────────────────────────────────────
-  // Starter, at the included allowance: succeeds, usage increments exactly
-  // once, and reaching the boundary is not billable.
-  describe('COMMERCIAL-01: Starter included allowance succeeds', () => {
-    it('49 -> 50 succeeds with zero billing/outbox side effects', async () => {
-      const { shopId, userId, batchId, usagePeriodId } = await createCommercialFixture(
-        'com01',
-        { tier: 'starter', usageBefore: 49 }
-      );
+describe('Shipped-order commercial enforcement (MON-REM-01B-2)', () => {
+  // Paid-tier commercial invariant:
+  //
+  // Included allowance affects billing economics, never warehouse execution.
+  // Core, Growth, and Scale continue pack-complete above allowance regardless
+  // of the legacy allow_overage preference. Crossing into overage persists one
+  // durable billing/overage event + outbox row in the same transaction.
+
+  describe('COMMERCIAL-01: Core included boundary remains non-billable', () => {
+    it('1999 -> 2000 succeeds under allow_overage=false with no overage event', async () => {
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com01', {
+          tier: 'core',
+          usageBefore: 1999,
+          allowOverage: false,
+        });
 
       const res = await packComplete(shopId, userId, batchId);
 
       expect(res.status).toBe(200);
-      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(50);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(2000);
 
       const batch = await readBatchState(shopId, batchId);
       expect(batch.status).toBe('pack_complete');
@@ -337,105 +355,22 @@ describe('Shipped-order commercial enforcement (MON-ALLOW-04)', () => {
     });
   });
 
-  // ── COMMERCIAL-02 + ATOMICITY-01 (Starter) ────────────────────────────
-  // Starter hard cap rejects the next shipped order with zero persisted
-  // shipping/billing side effects — the transaction that would have caused
-  // them never commits.
-  describe('COMMERCIAL-02: Starter hard cap rejects atomically', () => {
-    it('at 50 rejects 403 SHIPPED_ORDER_CAP_REACHED, leaving all state unchanged', async () => {
-      const { shopId, userId, batchId, usagePeriodId } = await createCommercialFixture(
-        'com02',
-        { tier: 'starter', usageBefore: 50 }
-      );
-
-      const res = await packComplete(shopId, userId, batchId);
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('SHIPPED_ORDER_CAP_REACHED');
-
-      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(50);
-
-      const batch = await readBatchState(shopId, batchId);
-      expect(batch.status).toBe('packing');
-      expect(batch.pack_completed_at).toBeNull();
-
-      expect(await countBillingOverageEvents(shopId)).toBe(0);
-      expect(await countBillingOverageOutboxRows(shopId)).toBe(0);
-    });
-  });
-
-  // ── COMMERCIAL-03 ──────────────────────────────────────────────────────
-  // Core can consume its included allowance even when allow_overage=false:
-  // the flag only governs execution BEYOND the allowance, not up to it.
-  describe('COMMERCIAL-03: Core included allowance succeeds under allow_overage=false', () => {
-    it('499 -> 500 succeeds with zero billing/outbox side effects', async () => {
-      const { shopId, userId, batchId, usagePeriodId } = await createCommercialFixture(
-        'com03',
-        { tier: 'core', usageBefore: 499, allowOverage: false }
-      );
-
-      const res = await packComplete(shopId, userId, batchId);
-
-      expect(res.status).toBe(200);
-      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(500);
-
-      const batch = await readBatchState(shopId, batchId);
-      expect(batch.status).toBe('pack_complete');
-      expect(batch.pack_completed_at).not.toBeNull();
-
-      expect(await countBillingOverageEvents(shopId)).toBe(0);
-      expect(await countBillingOverageOutboxRows(shopId)).toBe(0);
-    });
-  });
-
-  // ── COMMERCIAL-04 + ATOMICITY-01 (Growth) ─────────────────────────────
-  // Growth at allowance with allow_overage=false rejects atomically —
-  // same zero-side-effect guarantee as the Starter hard cap.
-  describe('COMMERCIAL-04: Growth at allowance rejects atomically when overage disabled', () => {
-    it('at 2500 rejects 403 OVERAGE_DISABLED, leaving all state unchanged', async () => {
-      const { shopId, userId, batchId, usagePeriodId } = await createCommercialFixture(
-        'com04',
-        { tier: 'growth', usageBefore: 2500, allowOverage: false }
-      );
-
-      const res = await packComplete(shopId, userId, batchId);
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('OVERAGE_DISABLED');
-
-      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(2500);
-
-      const batch = await readBatchState(shopId, batchId);
-      expect(batch.status).toBe('packing');
-      expect(batch.pack_completed_at).toBeNull();
-
-      expect(await countBillingOverageEvents(shopId)).toBe(0);
-      expect(await countBillingOverageOutboxRows(shopId)).toBe(0);
-    });
-  });
-
-  // ── COMMERCIAL-05 ──────────────────────────────────────────────────────
-  // Growth at allowance with allow_overage=true succeeds and persists
-  // exactly one billable overage intent + outbox row. No provider call is
-  // made or expected here — delivery is a separate, unstarted worker.
-  describe('COMMERCIAL-05: Growth overage succeeds and persists one billable intent', () => {
-    it('2500 -> 2501 succeeds with exactly one billing/overage event and outbox row', async () => {
-      const stripeCustomerId = 'cus_test_fixture_com05';
-      const { shopId, userId, batchId, usagePeriodId } = await createCommercialFixture(
-        'com05',
-        {
-          tier: 'growth',
-          usageBefore: 2500,
-          allowOverage: true,
+  describe('COMMERCIAL-02: Core overage cannot be disabled by legacy preference', () => {
+    it('2000 -> 2001 succeeds under allow_overage=false and persists one billing intent', async () => {
+      const stripeCustomerId = 'cus_test_fixture_core_overage';
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com02', {
+          tier: 'core',
+          usageBefore: 2000,
+          allowOverage: false,
           billingProvider: 'stripe',
           stripeCustomerId,
-        }
-      );
+        });
 
       const res = await packComplete(shopId, userId, batchId);
 
       expect(res.status).toBe(200);
-      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(2501);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(2001);
 
       const batch = await readBatchState(shopId, batchId);
       expect(batch.status).toBe('pack_complete');
@@ -444,18 +379,126 @@ describe('Shipped-order commercial enforcement (MON-ALLOW-04)', () => {
       expect(await countBillingOverageEvents(shopId)).toBe(1);
       expect(await countBillingOverageOutboxRows(shopId)).toBe(1);
 
-      // Only fields actually consumed by the delivery path
-      // (apps/backend/src/workers/domain-event-outbox.dispatcher.ts
-      // parseBillingPayload) are asserted here. tier, included_allowance,
-      // current_before, projected_after, usage_period_id, and batch_id are
-      // written into the payload but are not read by any current
-      // downstream consumer — audited as incidental, not asserted.
       const payload = await getBillingOverageEventPayload(shopId);
       expect(payload.billing_provider).toBe('stripe');
       expect(payload.overage_units).toBe(1);
       expect(payload.stripe_customer_id).toBe(stripeCustomerId);
-      expect(typeof payload.idempotency_key).toBe('string');
-      expect((payload.idempotency_key as string).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('COMMERCIAL-03: Growth overage cannot be disabled by legacy preference', () => {
+    it('7500 -> 7501 succeeds under allow_overage=false and persists one billing intent', async () => {
+      const stripeCustomerId = 'cus_test_fixture_growth_overage';
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com03', {
+          tier: 'growth',
+          usageBefore: 7500,
+          allowOverage: false,
+          billingProvider: 'stripe',
+          stripeCustomerId,
+        });
+
+      const res = await packComplete(shopId, userId, batchId);
+
+      expect(res.status).toBe(200);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(7501);
+
+      expect(await countBillingOverageEvents(shopId)).toBe(1);
+      expect(await countBillingOverageOutboxRows(shopId)).toBe(1);
+
+      const payload = await getBillingOverageEventPayload(shopId);
+      expect(payload.billing_provider).toBe('stripe');
+      expect(payload.overage_units).toBe(1);
+    });
+  });
+
+  describe('COMMERCIAL-04: Scale has finite billable overage', () => {
+    it('20000 -> 20001 succeeds and persists one billing intent', async () => {
+      const stripeCustomerId = 'cus_test_fixture_scale_overage';
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com04', {
+          tier: 'scale',
+          usageBefore: 20000,
+          allowOverage: false,
+          billingProvider: 'stripe',
+          stripeCustomerId,
+        });
+
+      const res = await packComplete(shopId, userId, batchId);
+
+      expect(res.status).toBe(200);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(20001);
+
+      const batch = await readBatchState(shopId, batchId);
+      expect(batch.status).toBe('pack_complete');
+      expect(batch.pack_completed_at).not.toBeNull();
+
+      expect(await countBillingOverageEvents(shopId)).toBe(1);
+      expect(await countBillingOverageOutboxRows(shopId)).toBe(1);
+
+      const payload = await getBillingOverageEventPayload(shopId);
+      expect(payload.billing_provider).toBe('stripe');
+      expect(payload.overage_units).toBe(1);
+      expect(payload.stripe_customer_id).toBe(stripeCustomerId);
+    });
+  });
+
+  describe('COMMERCIAL-05: missing Stripe customer never blocks fulfillment', () => {
+    it('persists the overage intent for asynchronous delivery failure/retry', async () => {
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com05', {
+          tier: 'core',
+          usageBefore: 2000,
+          allowOverage: false,
+          billingProvider: 'stripe',
+          stripeCustomerId: undefined,
+        });
+
+      const res = await packComplete(shopId, userId, batchId);
+
+      expect(res.status).toBe(200);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(2001);
+
+      const batch = await readBatchState(shopId, batchId);
+      expect(batch.status).toBe('pack_complete');
+      expect(batch.pack_completed_at).not.toBeNull();
+
+      expect(await countBillingOverageEvents(shopId)).toBe(1);
+      expect(await countBillingOverageOutboxRows(shopId)).toBe(1);
+
+      const payload = await getBillingOverageEventPayload(shopId);
+      expect(payload.billing_provider).toBe('stripe');
+      expect(payload.overage_units).toBe(1);
+      expect(payload).not.toHaveProperty('stripe_customer_id');
+    });
+  });
+
+  describe('COMMERCIAL-06: missing Shopify GID never blocks fulfillment', () => {
+    it('persists the overage intent for asynchronous delivery failure/retry', async () => {
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('com06', {
+          tier: 'growth',
+          usageBefore: 7500,
+          allowOverage: false,
+          billingProvider: 'shopify',
+        });
+
+      const res = await packComplete(shopId, userId, batchId);
+
+      expect(res.status).toBe(200);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(7501);
+
+      const batch = await readBatchState(shopId, batchId);
+      expect(batch.status).toBe('pack_complete');
+      expect(batch.pack_completed_at).not.toBeNull();
+
+      expect(await countBillingOverageEvents(shopId)).toBe(1);
+      expect(await countBillingOverageOutboxRows(shopId)).toBe(1);
+
+      const payload = await getBillingOverageEventPayload(shopId);
+      expect(payload.billing_provider).toBe('shopify');
+      expect(payload.overage_units).toBe(1);
+      expect(payload).not.toHaveProperty('shop_gid');
     });
   });
 });

@@ -1,6 +1,11 @@
 import type { Tier } from '../config/tiers.js';
 /**
- * Returns the earliest date boundary for order queries for a given tier.
- * Returns null for unlimited access (Growth/Scale).
+ * Returns the earliest visible historical date for a tier.
+ *
+ * Current horizons:
+ * Starter: 30 days
+ * Core:    90 days
+ * Growth:  365 days
+ * Scale:   730 days
  */
-export declare function tierDataWindowSince(tier: Tier): Date | null;
+export declare function tierDataWindowSince(tier: Tier): Date;
