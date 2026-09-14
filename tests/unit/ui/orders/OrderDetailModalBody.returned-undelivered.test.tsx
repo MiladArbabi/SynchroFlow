@@ -340,7 +340,7 @@ describe('OrderDetailModalBody returned-undelivered routing', () => {
 
     renderModal();
 
-    expect(screen.getByText('Pick Exception')).toBeInTheDocument();
+    expect(screen.getByText('Operational hold')).toBeInTheDocument();
     expect(screen.getByText('manual hold')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Mark as resolved' }));
     expect(mockExecute).toHaveBeenCalledWith('order-1');

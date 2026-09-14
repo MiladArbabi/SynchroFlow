@@ -137,6 +137,8 @@ Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `W
 
 ### Resolution cascade (confirmed from `returnJobs.service.ts`, not inferred)
 
+> **Ownership clarification — 2026-09-14:** The table below describes current runtime wiring, not the final product ownership boundary. Post-shipment return/recovery problems — including `returned_undelivered`, `return_shortfall`, and `repackaging_required` — belong canonically to Returns. Problem Center owns pre-shipment Receive / Stow / Pick / Pack execution exceptions. The remaining `return_shortfall` / `repackaging_required` writes into `problem_center_tasks` are transitional coupling; Slice 3A.3 did not migrate those backend paths.
+
 | `item_condition` | Cascade |
 |---|---|
 | `resellable` | `createStowTask()` called directly — inventory restored once stow completes |
@@ -150,7 +152,7 @@ Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `W
 | `reship` | Resolves the `returned_undelivered` order constraint, job → `complete` |
 | `write_off` | For each damaged/unsellable line: requires the configured problem-bin location, then inserts `inventory_movements` with `movement_type: 'write_off_return'` and negative `quantity_delta`. Missing problem-bin configuration fails closed instead of writing a movement against a synthetic location. |
 
-**This confirms §4's design rationale with code, not just intent** — `repackable` and shortfall handling don't just *conceptually* belong with Product Issues, they *write into the same table* (`problem_center_tasks`) at runtime. The two sub-surfaces are operationally linked, not just co-located in nav.
+**Implementation note:** `repackable` and shortfall handling still write into `problem_center_tasks` at runtime. As of the 2026-09-14 ownership clarification, that technical coupling no longer defines canonical product ownership. These return-specific problems are Returns-owned and the remaining Problem Center write path is pending migration.
 
 ---
 
@@ -162,13 +164,17 @@ Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `W
 
 ---
 
-## 4. Why these two are paired (design rationale)
+## 4. Ownership boundary
 
-Not "order-side vs. product-side" — both genuinely have that, but it's not the unifying test. The actual dividing line, established during the June 2026 IA workshop:
+> **Supersedes the June 2026 pairing rationale as of 2026-09-14.**
 
-**Does resolving this require a physical warehouse action (stow, restock, discard, write-off), or a data/catalog fix (assign a SKU, assign a bin, reconcile a count)?**
+The canonical dividing line is lifecycle ownership:
 
-Physical → here. Data → Inventory's Data Quality tab. This is why Problem Center's pick/pack/stow/receive exceptions and Returns' restock decisions sit together, while SKU/bin/count-mismatch issues correctly live elsewhere despite superficially "feeling" similar.
+- **Problem Center:** pre-shipment warehouse execution exceptions raised during Receive → Stow → Pick → Pack.
+- **Returns:** post-shipment order recovery and returned-product problems, including `returned_undelivered`, `return_shortfall`, and `repackaging_required`.
+- **Inventory Data Quality:** SKU, bin, count, and other inventory-data integrity problems.
+
+Physical handling may occur in both Problem Center and Returns; physical handling alone therefore does not determine ownership. The question is whether the problem belongs to fulfillment execution before shipment or to recovery after shipment.
 
 ---
 

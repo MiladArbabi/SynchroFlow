@@ -203,6 +203,9 @@ the existing mapping work without an inventory-specific special case):
 | other actionable `operational` | Operational issues |
 | unconstrained SLA breach | Shipping SLA breached |
 
+> **Order Flow ownership clarification — 2026-09-14:** The mapping above remains valid for Orders Overview / `order-nexus`, where returned packages are correctly shown as **Package returned** and route into Returns. The separate `/orders/flow` Blocked Orders rail excludes an order whose only active constraint is `operational` + `returned_undelivered`, because post-shipment recovery belongs to Returns. If that order also carries a genuine customer or inventory blocker, it remains visible for that real blocker. The underlying `returned_undelivered` constraint remains intact as an internal Order Pool release-safety guard. The generic `/orders/flow` operational fallback label is **Operational hold**, never **Pick Exception**.
+
+
 Empty groups remain hidden.
 
 #### Actionability allow-list

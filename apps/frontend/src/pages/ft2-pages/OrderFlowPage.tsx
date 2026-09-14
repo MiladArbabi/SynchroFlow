@@ -23,12 +23,17 @@
 // COLUMN NOTES
 // ------------
 //   - Blocked: orders are grouped into sections by reason category
-//     (blockedByReason — Pick Exception / Out of Stock / Address Issue,
+//     (blockedByReason — Operational hold / Out of Stock / Address Issue,
 //     CONSTRAINT_LABELS in useConstrainedOrders.ts), one label per card.
 //     Each card also shows a CPT-bucket indicator (overdue/today/ahead —
 //     see DATA CAVEATS) as a separate time signal. 'operational' was
-//     previously labeled "Overdue", which collided with this CPT badge —
-//     renamed to "Pick Exception" to resolve it (see useConstrainedOrders.ts).
+//     previously labeled "Overdue" (collided with this CPT badge), then
+//     "Pick Exception" (RETURNS-BOUNDARY-01, 2026-09-14: wrong — the
+//     evaluator producing it is permanently inert and the dominant real
+//     cause is returned_undelivered, an internal Order Pool release guard
+//     that is now filtered out of this column entirely, not a pick
+//     exception). Now a neutral "Operational hold" for the rare residual
+//     case (see useConstrainedOrders.ts and blockedOrders above).
 //   - Order pool: table + wave builder, feeds batch release via
 //     useOrderPool.ts / pickBatch.service.ts.
 //   - Fulfillment: read-only — all batch-lifecycle actions are scan-gated
@@ -188,7 +193,43 @@ export default function OrderFlowPage() {
   const { data: operatorsData } = useWmsOperators();
 
   const operators = operatorsData?.operators ?? [];
-  const blockedOrders = useMemo(() => constrainedQuery.data?.data ?? [], [constrainedQuery.data]);
+  /**
+   * RETURNS-BOUNDARY-01: returned_undelivered is an internal Order Pool
+   * release guard (order_constraints.constraint_type='operational',
+   * block_type='returned_undelivered'), not a merchant-facing pre-fulfillment
+   * blocker. It stays written for release-safety (HO-2026-09-14-05 proved
+   * it can be the sole reason an order is excluded from the pool) but must
+   * not render here — Order Flow / Blocked Orders is pre-fulfillment
+   * blockers only. Its merchant-facing action/visibility lives in Returns
+   * (Order Detail's "Review return" CTA and the Returns Items/Overview
+   * tabs already route there independently of this filter — see
+   * orders.decision-by-order.controller.ts and OrderDetailModalBody.tsx,
+   * both untouched by this filter).
+   *
+   * Dropped ONLY when it is the order's sole active constraint
+   * (other_blocker_types empty). The backend elects operational first by
+   * precedence (orders.constrained.controller.ts), so an order that also
+   * carries a real customer/inventory block would otherwise be hidden
+   * entirely by a naive filter — other_blocker_types is exactly the
+   * signal that a real blocker is still present, and that row is kept
+   * as-is so the real blocker stays visible (FLOW-MULTIBLOCK-01 invariant:
+   * an order with both a real blocker and this guard remains blocked for
+   * the real blocker only).
+   *
+   * Filtered client-side, not server-side: /api/v1/orders/constrained is
+   * also consumed by OrdersModuleFT2 (modules/order-nexus), which already
+   * has its own correct, tested "Package returned" handling and depends on
+   * receiving these rows.
+   */
+  const blockedOrders = useMemo(
+    () => (constrainedQuery.data?.data ?? []).filter((order) => {
+      const isReturnedUndeliveredGuard =
+        order.constraint_type === 'operational' && order.block_type === 'returned_undelivered';
+      const hasOtherRealBlocker = (order.other_blocker_types?.length ?? 0) > 0;
+      return !isReturnedUndeliveredGuard || hasOtherRealBlocker;
+    }),
+    [constrainedQuery.data],
+  );
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
   const selectedBatch = useMemo(

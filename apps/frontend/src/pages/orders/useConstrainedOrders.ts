@@ -11,18 +11,27 @@ import { isApproachingFulfillmentSla } from '@lasyncro/shared/contracts/fulfillm
  * Always translate to operator-facing language.
  *
  * system → operator
- * operational → Pick Exception
+ * operational → Operational hold
  * inventory  → Out of Stock
  * customer   → Address Issue
  *
- * 'operational' was previously labeled 'Overdue', which collided with the
- * unrelated CPT-bucket time indicator (also literally 'overdue') shown on
- * the same Blocked card. Renamed to reflect the evaluator's real signal —
- * a physical pick exception, not a time/SLA breach. See
+ * RETURNS-BOUNDARY-01 (2026-09-14): 'operational' was previously labeled
+ * 'Pick Exception', on the assumption that the evaluator's only live
+ * signal was a physical pick exception. That assumption is now wrong on
+ * two counts: (1) operationalConstraintEvaluator.ts is permanently inert
+ * (BL-01b) — no pick exception can produce this constraint_type today —
+ * and (2) the dominant real producer of an active 'operational' row is
+ * returned_undelivered (returnJobs.service.ts), which is an internal
+ * Order Pool release guard, not a pick exception, and is filtered out of
+ * OrderFlowPage's Blocked Orders entirely (see OrderFlowPage.tsx). This
+ * label is therefore now a neutral fallback for the rare case an
+ * 'operational' row reaches this page with SOME OTHER real blocker also
+ * active on the order (FLOW-MULTIBLOCK-01 keeps such rows visible) — it
+ * must not claim a specific cause the data does not support. See
  * operationalConstraintEvaluator.ts.
  */
 export const CONSTRAINT_LABELS: Record<string, string> = {
-  operational: 'Pick Exception',
+  operational: 'Operational hold',
   inventory: 'Out of Stock',
   customer: 'Address Issue',
 };
@@ -66,7 +75,7 @@ export function getBlockerReason(order: ConstrainedOrder): string {
     if (order.block_type === 'returned_undelivered') {
       return 'Package returned';
     }
-    return 'Pick exception on the floor';
+    return 'Operational hold';
   }
   return 'Needs attention';
 }

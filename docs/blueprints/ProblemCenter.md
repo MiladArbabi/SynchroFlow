@@ -13,9 +13,11 @@
 
 ## 1. Purpose & Product Philosophy
 
-The Problem Center is LaSyncro's physical warehouse exception triage surface. It is the single destination where all anomalous physical items — items that cannot continue through their normal workflow — are collected, tracked, and resolved.
+The Problem Center is LaSyncro's pre-shipment physical warehouse exception triage surface. It is the canonical merchant-facing destination for execution exceptions raised while inventory moves through Receive → Stow → Pick → Pack.
 
-**Core principle:** Every exception in every WMS workflow (pick, pack, stow, receive, returns) produces one outcome: the operator physically moves the item to a designated problem bin, and one `problem_center_tasks` row is created. The owner/admin resolves it. Resolution always has an inventory consequence.
+**Core principle:** Warehouse execution exceptions from receive, stow, pick, and pack are resolved through the Problem Center. Post-shipment return and recovery problems belong to the Returns module, not the Problem Center.
+
+> **Ownership clarification — 2026-09-14:** Returns is explicitly outside the Problem Center's canonical product ownership. Existing `return_shortfall` / `repackaging_required` writes into `problem_center_tasks` are transitional implementation coupling and remain pending migration into Returns-owned resolution. Slice 3A.3 did not change those backend write paths.
 
 **What it is NOT:**
 
@@ -220,7 +222,7 @@ These are the flows that automatically create `problem_center_tasks` rows:
 | **Stow** | `POST /api/v1/wms/stow-tasks/:taskId/exception` | `httpReportStowException` | `shrinkage` or `damage` written immediately |
 | **Pack** | Pack scan exception flow | Pack controller | ❌ `wms_pack_exception` alert not firing (ISSUE-006 — open) |
 | **Receive** | Receive rejection | Receive controller | Via `receive_rejection` exception type |
-| **Returns** | Return shortfall / repackaging | Returns controller | Via `returns` source |
+| **Returns — transitional coupling** | Return shortfall / repackaging | Returns controller | Existing runtime still writes `returns`-source tasks, but canonical ownership is Returns; migration pending |
 
 ✅ **Stow exceptions now defer inventory impact to resolve time** — unified with pick exceptions. `httpReportStowException` creates `problem_center_tasks` row only. `httpResolveProblemTask` writes the inventory movement on owner resolution (INV-PC-01 resolved May 31, 2026).
 
