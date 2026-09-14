@@ -15,6 +15,7 @@ import {
   BufferDiagnosisVariantNotFoundError,
 } from '../../services/inventory/stockProtectionBufferEvidence.js';
 import { computeBufferDiagnosis } from '../../services/inventory/stockProtectionBufferDiagnosis.js';
+import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * GET /api/v1/modules/demand
@@ -86,8 +87,8 @@ export const httpUpsertStockProtectionPolicy = async (req: Request, res: Respons
 
     const actorId = req.user?.userId != null ? String(req.user.userId) : null;
 
-    const result = await withTenant(shopId, (trx) =>
-      upsertStockProtectionPolicy(trx, {
+    const result = await withTenant(shopId, async (trx) => {
+      const upserted = await upsertStockProtectionPolicy(trx, {
         shopId,
         variantId,
         safetyDays,
@@ -99,8 +100,10 @@ export const httpUpsertStockProtectionPolicy = async (req: Request, res: Respons
         actorType: 'user',
         actorId,
         recommendationSnapshot: recommendationSnapshot ?? null,
-      })
-    );
+      });
+      await enqueueShopSnapshotJob(trx, shopId);
+      return upserted;
+    });
 
     return res.status(200).json(result.current);
   } catch (error) {

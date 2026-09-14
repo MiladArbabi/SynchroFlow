@@ -166,6 +166,12 @@ export const NOW_ACTIONABLE_ALERT_TYPES: ReadonlySet<string> = new Set([
   'stockout_risk',
   'reorder_warning',
   'low_stock_reorder',
+  // STOCK-PROTECT-03 Slice 3B: canonical Stock Protection. Actionability is
+  // still gated by deepLink() resolving non-null — a complete_setup row or
+  // a commercially-denied/resolved row has action=null (backend-derived,
+  // never re-inferred here) and is correctly excluded from NOW by the
+  // existing rule below, exactly like any other unresolvable alert.
+  'stock_protection',
   // Money signals
   'missing_cogs',
   // WMS exceptions

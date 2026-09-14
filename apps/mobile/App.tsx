@@ -41,6 +41,7 @@ import IntelligenceScreen from './src/intelligence/IntelligenceScreen';
 
 import { usePushRegistration } from './src/hooks/usePushRegistration';
 import { useForegroundToast } from './src/hooks/useForegroundToast';
+import { resolveAlertDestination } from './src/navigation/resolveAlertDestination';
 
 // ─── Notification handler (foreground display) — must be set at module level ─
 Notifications.setNotificationHandler({
@@ -123,32 +124,18 @@ function AlertFeed({
   const navigation            = useNavigation<any>();
 
   const navigateToModule = useCallback((alertType: string) => {
-    const WMS_TAB_MAP: Record<string, 'inbound' | 'outbound' | 'exceptions'> = {
-      wms_receive_arrived:     'inbound',
-      wms_stow_pending:        'inbound',
-      wms_supplier_rating:     'inbound',
-      wms_batch_ready_to_pack: 'outbound',
-      wms_batch_ready_to_ship: 'outbound',
-      wms_batch_released:      'outbound',
-      wms_receive_exception:   'exceptions',
-      wms_pick_exception:      'exceptions',
-      wms_pack_exception:      'exceptions',
-      wms_stow_exception:      'exceptions',
-    };
+    // STOCK-PROTECT-03: resolveAlertDestination returns null for
+    // alert_type='stock_protection' — no canonical mobile destination
+    // exists yet, and the card is rendered non-navigable below anyway, so
+    // this is belt-and-suspenders only. Never fall through to the generic
+    // Intelligence tab for it.
+    const destination = resolveAlertDestination(alertType);
+    if (!destination) return;
+
     const parent = navigation.getParent() ?? navigation;
-    if (alertType.startsWith('wms_')) {
-      parent.navigate('OwnerTabs', {
-        screen: 'Tasks',
-        params: { initialTab: WMS_TAB_MAP[alertType] ?? 'inbound' },
-      });
-    } else if (alertType === 'stockout_risk' || alertType === 'sla_breach' || alertType === 'operational') {
-      parent.navigate('OwnerTabs', {
-        screen: 'Tasks',
-        params: { initialTab: alertType === 'stockout_risk' ? 'inbound' : 'outbound' },
-      });
-    } else {
-      parent.navigate('OwnerTabs', { screen: 'Intelligence' });
-    }
+    parent.navigate('OwnerTabs', destination.params
+      ? { screen: destination.screen, params: destination.params }
+      : { screen: destination.screen });
   }, [navigation]);
 
   const load = useCallback(async () => {
@@ -181,12 +168,8 @@ function AlertFeed({
             <Text style={alertStyles.emptyText}>{emptyMessage}</Text>
           </View>
         ) : (
-          alerts.map(alert => (
-            <TouchableOpacity
-              key={alert.id}
-              onPress={() => navigateToModule(alert.alert_type)}
-              activeOpacity={0.7}
-            >
+          alerts.map(alert => {
+            const cardContent = (
               <View style={[
                 alertStyles.card,
                 alert.severity === 'critical' && alertStyles.cardCritical,
@@ -204,8 +187,30 @@ function AlertFeed({
                   </Text>
                 )}
               </View>
-            </TouchableOpacity>
-          ))
+            );
+
+            // STOCK-PROTECT-03: no canonical mobile Sourcing/Open-PO
+            // destination exists yet, and a backend web route
+            // (alert.action.route) is not a React Navigation route — it
+            // must never be interpreted as one. Rendering this card
+            // non-navigable (no TouchableOpacity, no tap affordance) is the
+            // safe V1 behavior: visible, but never routes anywhere
+            // incorrect. Temporary until a real mobile Stock Protection /
+            // Purchasing treatment surface exists.
+            if (alert.alert_type === 'stock_protection') {
+              return <View key={alert.id}>{cardContent}</View>;
+            }
+
+            return (
+              <TouchableOpacity
+                key={alert.id}
+                onPress={() => navigateToModule(alert.alert_type)}
+                activeOpacity={0.7}
+              >
+                {cardContent}
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
     </Screen>

@@ -69,7 +69,22 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   low_stock_reorder:       { route: '/demand?filter=critical',            label: 'Reorder now' },
 };
 
+/**
+ * STOCK-PROTECT-03 Slice 3B: a backend-derived `alert.action` ALWAYS takes
+ * precedence over the static ALERT_ROUTE_MAP below — this is how
+ * alert_type='stock_protection' rows resolve to a real destination without
+ * this file ever re-deriving treatment or inventing a route. There is
+ * deliberately no 'stock_protection' entry in ALERT_ROUTE_MAP: a
+ * stock_protection row with `action: null` (no capable destination right
+ * now — complete_setup, commercial denial, resolved, or an unresolved
+ * treatment) falls through to `ALERT_ROUTE_MAP[alert.alert_type]`, finds
+ * nothing, and correctly returns null. Do not add one.
+ */
 export function alertDeepLink(alert: Alert): { route: string; label: string } | null {
+  if (alert.action) {
+    return { route: alert.action.route, label: alert.action.label };
+  }
+
   const base = ALERT_ROUTE_MAP[alert.alert_type];
   if (!base) return null;
   if (alert.entity_id && alert.entity_type === 'variant' &&

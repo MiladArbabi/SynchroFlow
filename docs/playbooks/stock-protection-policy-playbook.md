@@ -150,7 +150,7 @@ owns no business logic.
 ## 11. Next Slices
 
 - **STOCK-PROTECT-02** — Buffer Diagnosis
-- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring
+- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring — Slices 1–4 implemented and verified; dark verification + canonical cutover pending
 - **STOCK-PROTECT-04** — WAITING read model
 - **STOCK-PROTECT-05** — Protection Failure Diagnosis
 - **OUTCOME-VALUE-01** — Verified Value Ledger
@@ -179,6 +179,190 @@ silently.
 | Backend TypeScript (`tsc --noEmit`) | 3 pre-existing unrelated errors (Stripe API-version literals in `apps/backend/src/api/billing/*`, untouched by this work); 0 errors in any STOCK-PROTECT-01 file |
 
 ---
+
+## 13. STOCK-PROTECT-03 — Unified Replenishment Lifecycle / Monitoring
+
+**Status (2026-09-14): Slices 1–4 implemented and verified.**
+Dark decision verification and the atomic canonical-alert cutover remain pending.
+
+### Objective
+
+STOCK-PROTECT-03 turns fragmented replenishment evidence into one canonical
+merchant treatment per variant.
+
+The product contract is:
+
+```text
+approved Stock Protection policy
++ canonical inventory
++ demand / planning evidence
++ open demand
++ reorder activity
++ purchase-order / inbound state
+        ↓
+Stock Protection evaluation
+        ↓
+one canonical treatment
+        ↓
+Ops Console / alert projections / resolution surfaces
+        ↓
+merchant action
+        ↓
+canonical re-evaluation
+        ↓
+resolved only when underlying truth clears
+```
+
+The supported merchant treatments are:
+
+```ts
+type StockProtectionTreatment =
+  | 'none'
+  | 'reorder_now'
+  | 'finish_reorder'
+  | 'receive_inbound'
+  | 'complete_setup';
+```
+
+The frontend must consume the backend-derived treatment/action. It must not
+reconstruct Stock Protection policy from raw inventory, PO, reorder, or demand
+fields.
+
+This follows the Decision Engine contract:
+
+```text
+Signal
+→ Problem
+→ Decision
+→ Resolution Session
+→ Intervention
+→ Canonical Verification
+→ Outcome
+```
+
+### Canonical monitoring contract
+
+Planning and action evidence are evaluated together.
+
+Action evidence is interpreted as:
+
+- pending reorder request or draft PO → replenishment intent exists;
+- ordered / confirmed / in-production PO → committed replenishment exists;
+- shipped / partially-received PO → receiving-boundary evidence exists;
+- received / cancelled / dismissed records are not active replenishment evidence.
+
+The treatment precedence is canonical:
+
+1. planning data required → `complete_setup`;
+2. healthy / no velocity → `none`;
+3. receiving-boundary PO → `receive_inbound`;
+4. sufficient committed replenishment → `none`;
+5. pending reorder request or draft PO → `finish_reorder`;
+6. otherwise → `reorder_now`.
+
+The canonical alert identity is:
+
+```text
+alert_type  = stock_protection
+entity_type = variant
+entity_id   = <variantId>
+alert_key   = stock_protection:<variantId>
+```
+
+No separate replenishment lifecycle table was introduced.
+
+### Slice 4 — refresh and reconciliation architecture
+
+Stock Protection refresh uses the existing `shop_snapshot_jobs` queue and
+existing shop-snapshot dispatcher. There is no second queue and no second
+planning/alert dispatcher.
+
+Consequential mutations enqueue `shop_snapshot_jobs` inside the transaction
+that owns the mutation. Covered mutation families include:
+
+- receive-job close;
+- batch release and cancellation;
+- confirmed pick;
+- Stock Protection policy update;
+- supplier mutations;
+- reorder-request create / dismiss / convert;
+- purchase-order create / patch / status / legacy receive;
+- inventory recount commit;
+- Problem Center inventory discard/write-off;
+- stow when the operation is a real physical inventory credit.
+
+Existing order-entity projection coverage remains authoritative for order
+cancellation unwind and fulfilled-order physical removal.
+
+A Shopify refund webhook does **not** enqueue Stock Protection merely because
+the refund event arrived. Physical replenishment truth changes when returned
+inventory is actually credited through the warehouse flow.
+
+### Periodic reconciliation
+
+A 15-minute reconciliation worker exists only as a missed-event safety net.
+
+It:
+
+1. discovers active/trialing subscription tenants through
+   `list_stock_protection_reconciliation_tenants()`;
+2. resolves commercial eligibility through the canonical commercial-policy
+   layer;
+3. enqueues eligible shops into `shop_snapshot_jobs`;
+4. performs no planning writes and no alert writes itself.
+
+The worker owns one idempotent long-lived loop. Repeated `start()` calls do not
+create concurrent cycles.
+
+The shop-snapshot dispatcher also owns explicit lifecycle state and its stop
+path waits for an in-flight poll before reporting stopped.
+
+### Explicit boundaries
+
+STOCK-PROTECT-03 does **not**:
+
+- make Demand GET endpoints mutate alerts;
+- silently adopt Buffer Diagnosis recommendations as policy;
+- create a second lifecycle persistence model;
+- reduce executable paid-order inventory by safety stock;
+- make Stock Protection the authority for batch release;
+- infer frontend treatments independently of backend truth;
+- run canonical and legacy replenishment alert systems concurrently.
+
+`inventory_truth` plus reservation locking remains warehouse execution
+authority.
+
+### Remaining rollout
+
+The implementation sequence after Slice 4 is:
+
+1. **Dark decision verification** — compare canonical Stock Protection outcomes
+   without merchant-visible cutover.
+2. **Atomic logical cutover** — canonical `stock_protection` alerts ON while
+   legacy replenishment alert producers are turned OFF in the same rollout;
+   historical active legacy replenishment rows are resolved, not deleted.
+3. **Cleanup** — remove dead legacy replenishment paths after the cutover has
+   proven stable.
+
+The cutover has **not** happened yet.
+
+### Slice 4 verification evidence — 2026-09-14
+
+| Gate | Result |
+|---|---|
+| Dispatcher + reconciliation lifecycle + architecture/enqueue contracts | 4 suites / 44 tests PASS |
+| Dedicated DB-backed Slice 4 matrix | 8 suites / 28 tests PASS |
+| Recount neighbour regression | 2 suites / 25 tests PASS |
+| Existing Stock Protection policy/planning/evidence/transport neighbours | 7 suites / 88 tests PASS |
+| Disposable DB lifecycle | created → migrated → runtime OK → dropped cleanly |
+| Diff hygiene | `git diff --check` PASS on Slice 4 surface |
+
+One broader WMS neighbour suite (`pick-exception-allocation-1049`) was blocked
+before reaching Slice 4 behaviour because its fresh-install fixture remained on
+`starter` while `warehouse.operations` now requires `core`. That was classified
+as unrelated commercial-fixture drift and was not changed as part of
+STOCK-PROTECT-03.
+
 
 *Adjacent docs: `stock-protection-buffer-diagnosis-playbook.md`
 (STOCK-PROTECT-02 — the read-only recommendation layer built on this

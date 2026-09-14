@@ -37,6 +37,7 @@ import {
   useAlerts, useAcknowledgeAlert, useSnoozeAlert, useResolveAlert,
   type Alert, type AlertCategory, type AlertFilters, type AlertStatus,
 } from '../alerts/useAlerts';
+import { alertDeepLink } from '../alerts/alertDeepLink';
 
 // ─── MODULE TAB BAR CONFIG (blueprint §3) ─────────────────────────────────────
 
@@ -71,40 +72,6 @@ const CATEGORY_CONFIG: Record<AlertCategory | 'uncategorized', {
   uncategorized:    { label: 'Other',               icon: Bell },
 };
 
-// ─── DEEP LINK ROUTING (KI-1 fix) ─────────────────────────────────────────────
-// alert_type is always underscore-delimited (set by all producers).
-// alert_key is colon-delimited and was the source of the original mismatch.
-// Entity-aware: appends entity_id where the destination UI can consume it.
-
-const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> = {
-  wms_pick_exception:      { route: '/problem-center', label: 'Problem Center' },
-  wms_pack_exception:      { route: '/problem-center', label: 'Problem Center' },
-  wms_stow_pending:        { route: '/wms',            label: 'Warehouse' },
-  wms_stow_exception:      { route: '/problem-center', label: 'Problem Center' },
-  wms_batch_ready_to_pack: { route: '/wms',            label: 'Warehouse' },
-  wms_batch_ready_to_ship: { route: '/wms',            label: 'Warehouse' },
-  wms_batch_released:      { route: '/wms',            label: 'Warehouse' },
-  wms_receive_arrived:     { route: '/wms',            label: 'Warehouse' },
-  wms_receive_exception:   { route: '/problem-center', label: 'Problem Center' },
-  // FIX (2026-06-30): was routing to /demand — Sourcing module didn't
-  // exist when this was written. Real path confirmed in
-  // purchasingSubTabs.ts. bellDeepLink() already appends ?variantId=
-  // for this alert type; Sourcing's v1 build (sourcing-recommendation-
-  // playbook.md §6) should read that param to scope directly to the
-  // flagged variant once implemented.
-  stockout_risk:           { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
-  // Currently dead — nothing in the backend creates this alert type yet
-  // (confirmed via repo-wide search, 2026-06-30). Routed alongside
-  // stockout_risk in anticipation of DF-03 (proactive, velocity-based
-  // reorder signal — see MVP Roadmap, still 🔴 OPEN). When built, this
-  // is where it should land.
-  reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
-  revenue_at_risk:         { route: '/overview',      label: 'Overview' },
-  operational:             { route: '/orders',         label: 'Orders' },
-  sla_breach:              { route: '/orders',         label: 'Orders' },
-  missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
-};
-
 const SNOOZE_OPTIONS = [
   { label: '1 hour',   getUntil: () => new Date(Date.now() + 60 * 60 * 1000).toISOString() },
   { label: '4 hours',  getUntil: () => new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString() },
@@ -120,19 +87,10 @@ const SNOOZE_OPTIONS = [
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-function buildDeepLink(alert: Alert): { route: string; label: string } | null {
-  const base = ALERT_ROUTE_MAP[alert.alert_type];
-  if (!base) return null;
-  // Variant-scoped demand alerts get entity_id injected as query param
-  if (
-    alert.entity_id && alert.entity_type === 'variant' &&
-    (alert.alert_type === 'stockout_risk' || alert.alert_type === 'reorder_warning')
-  ) {
-    return { route: `${base.route}?variantId=${alert.entity_id}`, label: base.label };
-  }
-  return base;
-}
+// Deep-link routing is owned entirely by the canonical shared resolver
+// (../alerts/alertDeepLink.ts) — no duplicate routing table lives here.
+// See that file for the backend-action-takes-precedence contract
+// (STOCK-PROTECT-03 Slice 3B).
 
 function relativeAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -375,7 +333,7 @@ function AlertCard({ alert, isOwner, currentUserId, readOnly = false }: {
   const [snoozeAnchor, setSnoozeAnchor] = useState<null | HTMLElement>(null);
 
   const acknowledged = alert.acknowledged_at !== null;
-  const deepLink     = buildDeepLink(alert);
+  const deepLink     = alertDeepLink(alert);
   const revenue      = alert.revenue_impact ? Number(alert.revenue_impact) : null;
   const ackByLabel   = acknowledged
     ? (alert.acknowledged_by === currentUserId ? 'by you' : 'by a teammate')

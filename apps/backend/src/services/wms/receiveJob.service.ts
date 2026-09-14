@@ -13,6 +13,7 @@ import {
   applyReceiveJobBarcodeReadiness,
   assertReceiveJobBarcodeReady,
 } from './receiveBarcodeReadiness.service.js';
+import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -616,4 +617,5 @@ export async function closeReceiveJob(
       ),
     ];
     await revalidateOrdersForReceivedVariants(trx, shopId, receivedVariantIds);
+    await enqueueShopSnapshotJob(trx, shopId);
 }

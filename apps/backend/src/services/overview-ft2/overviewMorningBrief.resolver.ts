@@ -27,6 +27,13 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { getTrustFt2Snapshot } from '../trust-ft2/trustFt2.resolver.js';
+import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { isValidTier, standardContextForTier, type Tier } from '@lasyncro/commercial-policy';
+import { resolveCommercialActionContext } from '../alerts/resolveCommercialActionContext.js';
+import {
+  getActionableStockProtectionTreatments,
+  resolveAlertAction,
+} from '../alerts/alertActionResolver.js';
 
 /**
  * Computes a personalized greeting based on shop timezone and owner's first name.
@@ -220,53 +227,109 @@ export async function computeMorningBrief(input: {
     };
   });
 
+  // STOCK-PROTECT-03 Slice 3A: shop's commercial tier, resolved ONCE here
+  // (not per alert row) via the canonical resolveTierForShop — the same
+  // helper token.service.ts/entitlements.controller.ts already use for
+  // non-HTTP-JWT tier resolution. Fail closed: missing/unrecognized tier is
+  // treated as 'starter', mirroring resolveTier()'s convention for the HTTP
+  // path (require-entitlement.middleware.ts).
+  const rawTier = await resolveTierForShop(shopId);
+  const effectiveTier: Tier = isValidTier(rawTier) ? rawTier : 'starter';
+  const commercialContext = resolveCommercialActionContext(standardContextForTier(effectiveTier));
+  const actionableStockProtectionTreatments = getActionableStockProtectionTreatments(commercialContext);
+
   // --- Read active, non-dismissed alerts ---
   // Ranked by severity (critical first) then revenue impact (highest first).
-const alerts = await db.transaction(async (trx): Promise<any[]> => {
+  // Kept at LIMIT 5 — a Stock Protection row that cannot resolve to a real
+  // merchant action (wrong entity identity, ineligible treatment, resolved,
+  // or commercially denied) is excluded from the candidate set BEFORE this
+  // LIMIT is applied, so it can never starve a valid legacy signal ranked
+  // below it. Legacy alert types are entirely unaffected by this predicate.
+  const alerts = await db.transaction(async (trx): Promise<any[]> => {
     await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
-    return trx('alerts')
+    const query = trx('alerts')
       .where({ shop_id: shopId, is_active: true })
-      .whereNull('dismissed_at')
-    .orderByRaw(`
-      CASE severity
-        WHEN 'critical' THEN 1
-        WHEN 'warning'  THEN 2
-        WHEN 'info'     THEN 3
-        ELSE 4
-      END ASC,
-      revenue_impact DESC NULLS LAST
-    `)
-    .limit(5)
-    .select('alert_key', 'alert_type', 'severity', 'title', 'message', 'revenue_impact');
+      .whereNull('dismissed_at');
+
+    if (actionableStockProtectionTreatments.length === 0) {
+      // Explicit branch — never rely on whereIn([]) semantics either way.
+      query.andWhere('alert_type', '<>', 'stock_protection');
+    } else {
+      query.andWhere((qb) => {
+        qb.where('alert_type', '<>', 'stock_protection').orWhere((qb2) => {
+          qb2
+            .where('alert_type', 'stock_protection')
+            .whereNull('resolved_at')
+            .andWhere('entity_type', 'variant')
+            .whereNotNull('entity_id')
+            .whereIn('treatment', [...actionableStockProtectionTreatments]);
+        });
+      });
+    }
+
+    return query
+      .orderByRaw(`
+        CASE severity
+          WHEN 'critical' THEN 1
+          WHEN 'warning'  THEN 2
+          WHEN 'info'     THEN 3
+          ELSE 4
+        END ASC,
+        revenue_impact DESC NULLS LAST
+      `)
+      .limit(5)
+      .select(
+        'alert_key', 'alert_type', 'severity', 'title', 'message', 'revenue_impact',
+        'treatment', 'entity_type', 'entity_id', 'is_active', 'resolved_at',
+      );
   });
 
   // --- Map to signals ---
-  const signals: MorningBriefSignal[] = alerts.map((alert: any, index: number) => {
-    const destination = DEEP_LINK_MAP[alert.alert_type] ?? {
-      module: 'overview',
-      deepLink: '/overview',
-    };
+  // Defence in depth: every stock_protection row admitted by the SQL
+  // prefilter above still passes through resolveAlertAction — the SAME
+  // shared resolver GET /api/v1/alerts uses. If it unexpectedly returns
+  // null, the row is omitted entirely — NEVER defaulted to the generic
+  // /overview destination. Legacy alert types are unaffected: they keep
+  // resolving through DEEP_LINK_MAP/ACTION_LABEL_MAP exactly as today.
+  const signals: MorningBriefSignal[] = alerts
+    .map((alert: any, index: number) => {
+      let destination: { module: string; deepLink: string };
+      let actionLabel: string | undefined;
 
-    // Assign priority: first two criticals = P1/P2, first two warnings = P3/P4, rest = P5
-    const basePriority = SEVERITY_PRIORITY[alert.severity] ?? 5;
-    const priority = Math.min(5, basePriority + (index > 0 ? 1 : 0)) as 1 | 2 | 3 | 4 | 5;
+      if (alert.alert_type === 'stock_protection') {
+        const action = resolveAlertAction(alert, commercialContext);
+        if (action === null) return null;
+        destination = { module: action.module, deepLink: action.route };
+        actionLabel = action.label;
+      } else {
+        destination = DEEP_LINK_MAP[alert.alert_type] ?? {
+          module: 'overview',
+          deepLink: '/overview',
+        };
+        actionLabel = ACTION_LABEL_MAP[alert.alert_type] ?? undefined;
+      }
 
-    return {
-      id: alert.alert_key,
-      alertType: alert.alert_type,
-      priority,
-      title: alert.title,
-      // Strip trailing revenue suffix injected by alerts aggregator (e.g. ".$42,952 at risk")
-      // Revenue impact is surfaced separately via revenueImpact field — not in detail text.
-      detail: alert.message.replace(/\.\$[\d,]+ at risk$/, '').trim(),
-      module: destination.module,
-      deepLink: destination.deepLink,
-      revenueImpact: alert.revenue_impact != null ? Number(alert.revenue_impact) : null,
-      // Differentiated CTA per alert type — consumed by OverviewModuleFT2 TriageRow.
-      // Falls back to DEFAULT_ACTIONS[module] in the frontend when undefined.
-      actionLabel: ACTION_LABEL_MAP[alert.alert_type] ?? undefined,
-    };
-  });
+      // Assign priority: first two criticals = P1/P2, first two warnings = P3/P4, rest = P5
+      const basePriority = SEVERITY_PRIORITY[alert.severity] ?? 5;
+      const priority = Math.min(5, basePriority + (index > 0 ? 1 : 0)) as 1 | 2 | 3 | 4 | 5;
+
+      return {
+        id: alert.alert_key,
+        alertType: alert.alert_type,
+        priority,
+        title: alert.title,
+        // Strip trailing revenue suffix injected by alerts aggregator (e.g. ".$42,952 at risk")
+        // Revenue impact is surfaced separately via revenueImpact field — not in detail text.
+        detail: alert.message.replace(/\.\$[\d,]+ at risk$/, '').trim(),
+        module: destination.module,
+        deepLink: destination.deepLink,
+        revenueImpact: alert.revenue_impact != null ? Number(alert.revenue_impact) : null,
+        // Differentiated CTA per alert type — consumed by OverviewModuleFT2 TriageRow.
+        // Falls back to DEFAULT_ACTIONS[module] in the frontend when undefined.
+        actionLabel,
+      };
+    })
+    .filter((signal): signal is NonNullable<typeof signal> => signal !== null);
 
   const hasUrgentIssues = signals.some(s => s.priority <= 2);
 

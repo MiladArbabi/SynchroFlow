@@ -72,6 +72,7 @@ import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJo
 import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.service.js';
 import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
 import { STOW_TASK_OPEN_STATUSES } from '@lasyncro/shared';
+import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
 
 class ShippedOrderCapReachedError extends Error {
   constructor(
@@ -447,7 +448,7 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
     const { assigned_operator_id, assigned_packer_id, priority_order_ids, exclusive } = req.body ?? {};
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return releaseBatch(
+      const released = await releaseBatch(
         trx,
         shopId,
         'manual',
@@ -457,6 +458,10 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
         Array.isArray(priority_order_ids) ? priority_order_ids : undefined,
         exclusive === true,
       );
+      if (released) {
+        await enqueueShopSnapshotJob(trx, shopId);
+      }
+      return released;
     });
 
      if (!result) {
@@ -546,11 +551,13 @@ export const httpCancelBatch = async (req: Request, res: Response) => {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      return cancelUnclaimedBatch(
+      const cancelled = await cancelUnclaimedBatch(
         trx,
         shopId,
         batchId
       );
+      await enqueueShopSnapshotJob(trx, shopId);
+      return cancelled;
     });
 
     return res.status(200).json(result);
@@ -3192,7 +3199,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
-      return confirmPickScan(trx, {
+      const scanResult = await confirmPickScan(trx, {
         pickBatchId: pick_batch_id,
         lasyncroLineItemId: lasyncro_line_item_id,
         lasyncroVariantId: lasyncro_variant_id,
@@ -3210,6 +3217,8 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
             ? lasyncro_unit_id
             : undefined,
       });
+      await enqueueShopSnapshotJob(trx, shopId);
+      return scanResult;
     });
 
     return res.status(201).json(result);
@@ -3643,6 +3652,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           problem_task_id: taskId, movement_type: movementType,
           qty_written: writeQty, variant_id: task.lasyncro_variant_id, shopId,
         });
+        await enqueueShopSnapshotJob(trx, shopId);
       }
 
       // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─

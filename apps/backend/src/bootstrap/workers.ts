@@ -296,6 +296,9 @@ export async function startWorkers(): Promise<void> {
       }).catch((err) => {
         console.error('[bootstrap/workers] Shop snapshot dispatcher threw during start:', err);
       });
+      if (typeof snapshotDispatcher.stopShopSnapshotJobDispatcher === 'function') {
+        workerStopFns.push(async () => await snapshotDispatcher.stopShopSnapshotJobDispatcher());
+      }
     }
   } catch (err) {
     console.error(
@@ -304,6 +307,25 @@ export async function startWorkers(): Promise<void> {
     );
   }
 
+  // start Stock Protection reconciliation worker
+  try {
+    const stockProtectionReconciliation = await import('../workers/stockProtectionReconciliation.worker.js');
+    if (typeof stockProtectionReconciliation.startStockProtectionReconciliationWorker === 'function') {
+      superviseWorker(
+        'stock-protection-reconciliation',
+        () => stockProtectionReconciliation.startStockProtectionReconciliationWorker()
+      );
+      if (typeof stockProtectionReconciliation.stopStockProtectionReconciliationWorker === 'function') {
+        workerStopFns.push(async () => await stockProtectionReconciliation.stopStockProtectionReconciliationWorker());
+      }
+      console.log('[bootstrap/workers] Stock Protection reconciliation worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Stock Protection reconciliation worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
 
   // start WMS idle alert worker
   try {

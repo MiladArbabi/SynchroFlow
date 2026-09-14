@@ -44,6 +44,35 @@ export type Alert = {
   rule_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * STOCK-PROTECT-03 Slice 3A/3B: canonical Stock Protection treatment for
+   * alert_type='stock_protection' rows, verbatim from the backend. Null for
+   * every other alert_type and for a stock_protection row with no treatment
+   * yet resolved. Required: GET /api/v1/alerts guarantees this field on
+   * every returned row — this type represents the actual API contract, not
+   * an accommodation for incomplete fixtures.
+   *
+   * Frontend code MUST NOT branch on this value to derive a route/label
+   * itself — that is the backend alertActionResolver's job. This field
+   * exists for display/debugging only (e.g. a future admin view), never for
+   * routing logic.
+   */
+  treatment: string | null;
+  /**
+   * STOCK-PROTECT-03 Slice 3A/3B: the backend-derived, presentation-ready
+   * action for this alert, or null when no actionable destination exists
+   * right now (unresolved treatment, commercially denied, resolved/inactive
+   * row, or a treatment with no capable destination yet — e.g.
+   * complete_setup). Required, like `treatment` above. Consumers use this
+   * verbatim; they never re-derive a route from `treatment` or any other
+   * raw field.
+   */
+  action: {
+    key: string;
+    label: string;
+    route: string;
+    module: string;
+  } | null;
 };
 
 export type AlertsResponse = {

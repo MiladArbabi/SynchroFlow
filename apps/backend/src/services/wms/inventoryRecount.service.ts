@@ -2,6 +2,7 @@ import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { isActionAllowed } from '../permissions/permissionCache.service.js';
+import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * INVENTORY RECOUNT SERVICE (INV-PHYSICAL-COUNT-13 / INV-RECON-WRITER-14)
@@ -1054,6 +1055,7 @@ export async function commitRecount(
   if (variantIds.length > 0) {
     await rebuildInventoryProjectionForVariants(shopId, variantIds as string[], trx, now);
   }
+  await enqueueShopSnapshotJob(trx, shopId);
 
   await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })

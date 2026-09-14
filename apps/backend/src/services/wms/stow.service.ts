@@ -2,6 +2,7 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
+import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * STOW SERVICE (WM-05)
@@ -731,6 +732,10 @@ export async function confirmStow(
       quantity_placed_total: updatedTask.quantity_placed,
     },
   });
+
+  if (isInventoryCredit) {
+    await enqueueShopSnapshotJob(trx, shopId);
+  }
 
   return {
     isFullyPlaced,

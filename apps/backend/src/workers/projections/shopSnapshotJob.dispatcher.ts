@@ -2,39 +2,33 @@ import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { computeShopOperationalSnapshot } from './shopOperationalSnapshot.worker.js';
 import { aggregateAlertsForShop } from '../../services/alerts/alerts.aggregator.js';
 
+const POLL_INTERVAL_MS = 2000;
+
+let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let pollRunning = false;
+let inFlightPoll: Promise<void> | null = null;
+
 /**
- * SHOP SNAPSHOT JOB DISPATCHER
- * -----------------------------
- * Consumes scheduled snapshot jobs and executes
- * Control Tower snapshot recomputation.
- *
- * Guarantees:
- * - one snapshot job per shop
- * - deterministic recomputation
- * - worker isolation from reconciliation pipeline
+ * LOGGING: structured + centralized-ready
+ * Replaceable with real logger without changing call sites
  */
-export async function startShopSnapshotJobDispatcher() {
+const log = (message: string, meta?: Record<string, unknown>) => {
+  process.stdout.write(
+    JSON.stringify({
+      level: 'info',
+      context: 'snapshot-dispatcher',
+      message,
+      ...(meta ?? {}),
+      timestamp: new Date().toISOString(),
+    }) + '\n'
+  );
+};
 
-  /**
-   * LOGGING: structured + centralized-ready
-   * Replaceable with real logger without changing call sites
-   */
-  const log = (message: string, meta?: Record<string, unknown>) => {
-    process.stdout.write(
-      JSON.stringify({
-        level: 'info',
-        context: 'snapshot-dispatcher',
-        message,
-        ...(meta ?? {}),
-        timestamp: new Date().toISOString(),
-      }) + '\n'
-    );
-  };
+async function pollShopSnapshotJobs(): Promise<void> {
+  if (pollRunning) return;
+  pollRunning = true;
 
-  log('started');
-
-  setInterval(async () => {
-
+  try {
     /**
      * PROJECTION CATCHUP DELAY (CRITICAL)
      * -------------------------------------
@@ -52,7 +46,6 @@ export async function startShopSnapshotJobDispatcher() {
     const jobs: Array<{ shop_id: number }> = dueTenants.rows;
 
     for (const job of jobs) {
-
       try {
         await computeShopOperationalSnapshot(String(job.shop_id));
         /**
@@ -82,7 +75,7 @@ export async function startShopSnapshotJobDispatcher() {
           const { projectDailyOperationalBrief } = await import('../../projections/dailyOperationalBriefProjection.js');
           await projectDailyOperationalBrief(trx, String(job.shop_id), 0, new Date());
         });
-        
+
         await withTenant(job.shop_id, (trx) =>
           trx('shop_snapshot_jobs')
             .where({ shop_id: job.shop_id })
@@ -101,6 +94,55 @@ export async function startShopSnapshotJobDispatcher() {
         });
       }
     }
-  }, 2000); // poll every 2 seconds
+  } finally {
+    pollRunning = false;
+  }
+}
 
+/**
+ * SHOP SNAPSHOT JOB DISPATCHER
+ * -----------------------------
+ * Consumes scheduled snapshot jobs and executes
+ * Control Tower snapshot recomputation.
+ *
+ * Guarantees:
+ * - one snapshot job per shop
+ * - deterministic recomputation
+ * - worker isolation from reconciliation pipeline
+ */
+export async function startShopSnapshotJobDispatcher() {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
+  log('started');
+
+  intervalHandle = setInterval(() => {
+    if (inFlightPoll) return;
+
+    inFlightPoll = pollShopSnapshotJobs()
+      .catch((err) => {
+        console.error('[snapshot-dispatcher] poll failed', {
+          error: err instanceof Error ? err.message : err,
+        });
+      })
+      .finally(() => {
+        inFlightPoll = null;
+      });
+  }, POLL_INTERVAL_MS);
+}
+
+export async function stopShopSnapshotJobDispatcher() {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
+
+  const activePoll = inFlightPoll;
+  if (activePoll) {
+    await activePoll;
+  }
+
+  pollRunning = false;
+  log('stopped');
 }

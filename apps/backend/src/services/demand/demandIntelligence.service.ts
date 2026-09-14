@@ -4,6 +4,14 @@ import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { pickableLocationCondition } from '../inventory/pickableLocation.js';
 import { resolveEffectivePolicy as resolveEffectiveStockProtectionPolicy } from '../inventory/stockProtectionPolicyResolution.js';
+import {
+  RELIABLE_INBOUND_PO_STATUSES,
+  STOCK_PROTECTION_ELIGIBILITY_PO_STATUSES,
+} from '../inventory/purchaseOrderStatusGroups.js';
+import {
+  getActiveReplenishmentEvidence,
+  type ActiveReplenishmentEvidence,
+} from '../inventory/replenishmentEvidence.js';
 
 /**
  * DEMAND INTELLIGENCE SERVICE (DF-01, DF-02, DF-03 / SRC-11)
@@ -112,6 +120,37 @@ export type DemandIntelligenceResult = {
   computed_at: string;
 };
 
+/**
+ * STOCK-PROTECT-03: opt-in candidate-set eligibility contract.
+ * ----------------------------------------------------------------
+ * 'legacy' (default): exact existing behavior — candidate set is
+ * INNER-JOIN-anchored on inventory_truth, then the trailing
+ * units_sold_all_time>0||available_quantity>0 filter. Every existing caller
+ * that omits `options` keeps this behavior unchanged.
+ *
+ * 'stock_protection': candidate set is anchored on active+physical
+ * variants/products (LEFT JOIN inventory_truth), and a variant is eligible
+ * when ANY of: pickable stock>0, historical fulfilled demand>0, open
+ * customer demand>0, an approved Stock Protection policy exists, a pending
+ * reorder_request exists, or a PO status intersects
+ * STOCK_PROTECTION_ELIGIBILITY_PO_STATUSES (draft/shipped/partially_received
+ * — NOT ordered/confirmed/in_production, which are pure supplier-side wait
+ * state and must never independently wake a dormant SKU).
+ */
+export type PlanningEligibilityMode = 'legacy' | 'stock_protection';
+
+export interface ComputeVariantPlanningOptions {
+  eligibilityMode?: PlanningEligibilityMode;
+  /**
+   * Stock Protection mode only. When supplied, reused as-is — zero
+   * additional replenishment-evidence queries run. When omitted (and mode
+   * is 'stock_protection'), this function loads it itself via
+   * getActiveReplenishmentEvidence (standalone-caller fallback). Ignored
+   * entirely in 'legacy' mode, which never queries replenishment evidence.
+   */
+  replenishmentEvidence?: ActiveReplenishmentEvidence;
+}
+
 const VELOCITY_WINDOW_DAYS = 30;
 const MEDIUM_VELOCITY_WINDOW_DAYS = 90;
 const MAX_VELOCITY_WINDOW_DAYS = 180;
@@ -172,8 +211,11 @@ function deriveUrgency(
 export async function computeVariantPlanning(
   trx: Knex.Transaction,
   shopId: number,
-  variantIds?: string[]
+  variantIds?: string[],
+  options?: ComputeVariantPlanningOptions
 ): Promise<DemandVelocity[]> {
+    const eligibilityMode: PlanningEligibilityMode = options?.eligibilityMode ?? 'legacy';
+
     const window30Start = new Date();
     window30Start.setDate(window30Start.getDate() - VELOCITY_WINDOW_DAYS);
 
@@ -372,7 +414,7 @@ export async function computeVariantPlanning(
     const reliableInboundRows: any[] = await trx('purchase_order_line_items as poli')
       .join('purchase_orders as po', 'po.id', 'poli.po_id')
       .where('po.shop_id', shopId)
-      .whereIn('po.status', ['ordered', 'confirmed', 'in_production'])
+      .whereIn('po.status', [...RELIABLE_INBOUND_PO_STATUSES])
       .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('poli.lasyncro_variant_id', variantIds); })
       .whereNotNull('poli.lasyncro_variant_id')
       .select(
@@ -438,36 +480,97 @@ export async function computeVariantPlanning(
      * returns, pack, ship, kitting, problem, and quarantine stock are real
      * stock but not sellable-from, and stay excluded exactly as they do for
      * pick allocation.
+     *
+     * STOCK-PROTECT-03: 'legacy' mode keeps this exact INNER-JOIN-on-
+     * inventory_truth query, unchanged. 'stock_protection' mode anchors from
+     * active+physical variants/products instead and LEFT JOINs
+     * inventory_truth (+ pickable warehouse_locations), so a variant with NO
+     * inventory_truth row still appears with available_quantity=0 — the same
+     * COALESCE-to-zero pattern already used by
+     * inventoryConstraintEvaluator.ts and products.catalog.controller.ts for
+     * this same table. Non-pickable-only stock still nets to 0 via the
+     * `FILTER (WHERE wl.location_code IS NOT NULL)` guard, exactly mirroring
+     * the constraint evaluator's proven aggregation shape.
      */
-    const inventoryRows: any[] = await trx('inventory_truth as it')
-      .join('warehouse_locations as wl', function () {
-        this.on('wl.location_code', '=', 'it.location_code')
-          .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
-          .andOnVal('wl.active', true)
-          .andOn(pickableLocationCondition(trx));
-      })
-      .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
-      .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
-      .where('it.shop_id', shopId)
-      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('it.lasyncro_variant_id', variantIds); })
-      .andWhere('p.product_type', 'physical')
-      .andWhere('p.status', 'active')
-      .andWhere('v.status', 'active')
-      .groupBy(
-        'it.lasyncro_variant_id',
-        'v.title',
-        'v.unit_cost',
-        'v.sku',
-        'p.title'
-      )
-      .select(
-        'it.lasyncro_variant_id',
-        trx.raw('SUM(it.available_quantity)::integer as available_quantity'),
-        'v.title',
-        'v.unit_cost',
-        trx.raw('COALESCE(v.sku, NULL) as sku'),
-        'p.title as product_title',
-      );
+    const inventoryRows: any[] =
+      eligibilityMode === 'stock_protection'
+        ? await trx('variants as v')
+            .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+            .leftJoin('inventory_truth as it', function () {
+              this.on('it.lasyncro_variant_id', '=', 'v.lasyncro_variant_id')
+                .andOn('it.shop_id', '=', trx.raw('?', [shopId]));
+            })
+            .leftJoin('warehouse_locations as wl', function () {
+              this.on('wl.location_code', '=', 'it.location_code')
+                .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+                .andOnVal('wl.active', true)
+                .andOn(pickableLocationCondition(trx));
+            })
+            .where('v.shop_id', shopId)
+            .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('v.lasyncro_variant_id', variantIds); })
+            .andWhere('p.product_type', 'physical')
+            .andWhere('p.status', 'active')
+            .andWhere('v.status', 'active')
+            .groupBy(
+              'v.lasyncro_variant_id',
+              'v.title',
+              'v.unit_cost',
+              'v.sku',
+              'p.title'
+            )
+            .select(
+              'v.lasyncro_variant_id',
+              trx.raw(
+                "COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.location_code IS NOT NULL), 0)::integer as available_quantity"
+              ),
+              'v.title',
+              'v.unit_cost',
+              trx.raw('COALESCE(v.sku, NULL) as sku'),
+              'p.title as product_title',
+            )
+        : await trx('inventory_truth as it')
+            .join('warehouse_locations as wl', function () {
+              this.on('wl.location_code', '=', 'it.location_code')
+                .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+                .andOnVal('wl.active', true)
+                .andOn(pickableLocationCondition(trx));
+            })
+            .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+            .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+            .where('it.shop_id', shopId)
+            .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('it.lasyncro_variant_id', variantIds); })
+            .andWhere('p.product_type', 'physical')
+            .andWhere('p.status', 'active')
+            .andWhere('v.status', 'active')
+            .groupBy(
+              'it.lasyncro_variant_id',
+              'v.title',
+              'v.unit_cost',
+              'v.sku',
+              'p.title'
+            )
+            .select(
+              'it.lasyncro_variant_id',
+              trx.raw('SUM(it.available_quantity)::integer as available_quantity'),
+              'v.title',
+              'v.unit_cost',
+              trx.raw('COALESCE(v.sku, NULL) as sku'),
+              'p.title as product_title',
+            );
+
+    /**
+     * STOCK-PROTECT-03: raw replenishment evidence for 'stock_protection'
+     * eligibility signals E (pending reorder_request) and F (draft/
+     * shipped/partially_received PO). 'legacy' mode NEVER calls this —
+     * zero replenishment-evidence queries for any existing caller.
+     * Reuses a caller-supplied snapshot when present (evaluateStockProtection
+     * ForShop's single-canonical-read invariant); loads it itself only as a
+     * standalone-caller fallback.
+     */
+    const replenishmentEvidence: ActiveReplenishmentEvidence | null =
+      eligibilityMode === 'stock_protection'
+        ? options?.replenishmentEvidence ?? await getActiveReplenishmentEvidence(trx, shopId, variantIds)
+        : null;
 
     /**
      * BUILD PER-VARIANT DEMAND RECORDS
@@ -675,7 +778,27 @@ export async function computeVariantPlanning(
         };
       })
 
-      .filter((v: DemandVelocity) => v.units_sold_all_time > 0 || v.available_quantity > 0)
+      .filter((v: DemandVelocity) => {
+        if (eligibilityMode !== 'stock_protection') {
+          return v.units_sold_all_time > 0 || v.available_quantity > 0;
+        }
+
+        /**
+         * STOCK-PROTECT-03 eligibility contract — a variant is eligible when
+         * ANY relevance signal holds. Ordered/confirmed/in_production PO
+         * status is deliberately NOT one of them here (see
+         * STOCK_PROTECTION_ELIGIBILITY_PO_STATUSES) — a committed,
+         * pre-arrival PO alone must never wake an otherwise dormant SKU.
+         */
+        if (v.available_quantity > 0) return true; // A
+        if (v.units_sold_all_time > 0) return true; // B
+        if ((openDemandMap.get(v.lasyncro_variant_id) ?? 0) > 0) return true; // C
+        if (policyMap.has(v.lasyncro_variant_id)) return true; // D
+        if (replenishmentEvidence!.pendingReorderRequestVariantIds.has(v.lasyncro_variant_id)) return true; // E
+        const poStatuses = replenishmentEvidence!.poStatusesByVariant.get(v.lasyncro_variant_id);
+        if (poStatuses && STOCK_PROTECTION_ELIGIBILITY_PO_STATUSES.some((s) => poStatuses.has(s))) return true; // F
+        return false;
+      })
 
       .sort((a: DemandVelocity, b: DemandVelocity) => {
         const urgencyOrder = {

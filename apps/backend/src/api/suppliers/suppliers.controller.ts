@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { fireReceiveArrivedAlert } from '../../services/wms/wmsAlerts.service.js';
 import { recomputeSupplierRating } from '../../services/suppliers/supplierRating.service.js';
+import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * SUPPLIERS PORTAL CONTROLLERS
@@ -133,7 +134,9 @@ export async function httpUpdateSupplier(req: Request, res: Response) {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       const existing = await trx('suppliers').where({ id, shop_id: shopId }).first();
       if (!existing) throw Object.assign(new Error('SUPPLIER_NOT_FOUND'), { statusCode: 404 });
-      return trx('suppliers').where({ id, shop_id: shopId }).update(updates).returning('*');
+      const result = await trx('suppliers').where({ id, shop_id: shopId }).update(updates).returning('*');
+      await enqueueShopSnapshotJob(trx, shopId);
+      return result;
     });
     return res.json({ supplier });
   } catch (err: any) {
@@ -159,6 +162,7 @@ export async function httpDeleteSupplier(req: Request, res: Response) {
       const existing = await trx('suppliers').where({ id, shop_id: shopId }).first();
       if (!existing) throw Object.assign(new Error('SUPPLIER_NOT_FOUND'), { statusCode: 404 });
       await trx('suppliers').where({ id, shop_id: shopId }).update({ active: false, updated_at: new Date() });
+      await enqueueShopSnapshotJob(trx, shopId);
       console.info('[SUPPLIERS] supplier soft-deleted', { shopId, id });
     });
     return res.json({ success: true });
@@ -269,6 +273,7 @@ export async function httpCreatePurchaseOrder(req: Request, res: Response) {
         }))
       );
 
+      await enqueueShopSnapshotJob(trx, shopId);
       return newPo;
     });
 
@@ -374,6 +379,8 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
       if (status === 'partially_received') {
         await recomputeSupplierRating(trx, shopId, po.supplier_id);
       }
+
+      await enqueueShopSnapshotJob(trx, shopId);
     });
 
     return res.json({ success: true });
@@ -460,6 +467,7 @@ export async function httpReceiveShipment(req: Request, res: Response) {
       }
 
       await recomputeSupplierRating(trx, shopId, po.supplier_id);
+      await enqueueShopSnapshotJob(trx, shopId);
     });
 
     return res.json({ success: true });
@@ -504,6 +512,7 @@ export async function httpPatchPurchaseOrder(req: Request, res: Response) {
       }
 
       await trx('purchase_orders').where({ id: poId, shop_id: shopId }).update(updates);
+      await enqueueShopSnapshotJob(trx, shopId);
       console.info('[SUPPLIERS] PO updated', { shopId, poId, updates });
     });
 

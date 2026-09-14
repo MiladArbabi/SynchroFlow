@@ -2,6 +2,10 @@
 
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { resolveTier } from '../../middleware/require-entitlement.middleware.js';
+import { standardContextForTier } from '@lasyncro/commercial-policy';
+import { resolveCommercialActionContext } from '../../services/alerts/resolveCommercialActionContext.js';
+import { resolveAlertAction, type AlertAction, type AlertActionInput } from '../../services/alerts/alertActionResolver.js';
 
 /**
  * ALERTS CONTROLLER
@@ -26,8 +30,27 @@ const ALERT_SELECT = [
   'is_active', 'dismissed_at', 'resolved_at',
   'acknowledged_at', 'acknowledged_by', 'snoozed_until',
   'escalated_at', 'rule_id',
+  'treatment',
   'created_at', 'updated_at',
 ] as const;
+
+/**
+ * STOCK-PROTECT-03 Slice 3A: attaches the derived `action` field for
+ * alert_type='stock_protection' rows via the shared, pure
+ * alertActionResolver. Every other alert_type gets action=null — their
+ * routing stays owned by the frontend's existing ALERT_ROUTE_MAP fallback
+ * until a later slice migrates them too. `commercialContext` is resolved
+ * ONCE per request (below), never per row.
+ */
+function withStockProtectionAction<T extends AlertActionInput>(
+  alert: T,
+  commercialContext: ReturnType<typeof resolveCommercialActionContext>,
+): T & { action: AlertAction | null } {
+  if (alert.alert_type !== 'stock_protection') {
+    return { ...alert, action: null };
+  }
+  return { ...alert, action: resolveAlertAction(alert, commercialContext) };
+}
 
 // ─── GET /api/v1/alerts ────────────────────────────────────────────────────
 
@@ -92,9 +115,13 @@ export const httpGetAlerts = async (req: Request, res: Response) => {
       return q;
     });
 
+    // STOCK-PROTECT-03 Slice 3A: resolved ONCE per request, not per row.
+    const commercialContext = resolveCommercialActionContext(standardContextForTier(resolveTier(req)));
+    const data = alerts.map((alert) => withStockProtectionAction(alert, commercialContext));
+
     return res.status(200).json({
-      data: alerts,
-      meta: { total: alerts.length, status },
+      data,
+      meta: { total: data.length, status },
     });
 
   } catch (error) {

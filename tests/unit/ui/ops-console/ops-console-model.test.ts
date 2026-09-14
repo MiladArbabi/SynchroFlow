@@ -46,6 +46,8 @@ function alert(over: Partial<Alert> = {}): Alert {
     rule_id: null,
     created_at: '2026-09-09T10:00:00.000Z',
     updated_at: '2026-09-09T10:00:00.000Z',
+    treatment: null,
+    action: null,
     ...over,
   };
 }
@@ -203,6 +205,7 @@ describe('NOW eligibility policy', () => {
     'wms_pick_exception', 'wms_pack_exception', 'wms_stow_exception',
     'wms_receive_exception', 'wms_stow_pending', 'wms_receive_arrived',
     'wms_batch_ready_to_pack', 'wms_batch_ready_to_ship',
+    'stock_protection', // STOCK-PROTECT-03 Slice 3B
   ];
 
   it('classifies exactly the ratified actionable set', () => {
@@ -283,6 +286,50 @@ describe('NOW eligibility policy', () => {
     expect(rows).toHaveLength(NOW_VISIBLE_LIMIT);
     expect(rows.slice(0, NOW_VISIBLE_LIMIT).map(r => r.id))
       .toEqual(['alert:a1', 'alert:a2', 'alert:a3', 'alert:a4', 'alert:a5']);
+  });
+
+  // ── STOCK-PROTECT-03 Slice 3B ────────────────────────────────────────────
+  // stock_protection is classified actionable, but — exactly like every
+  // other alert_type — earns a NOW row ONLY when deepLink() resolves
+  // non-null. The console never inspects `treatment` itself; the injected
+  // deepLink resolver (in production, alertDeepLink()) is the only place
+  // that reads the backend-derived `action` field.
+
+  it('F: stock_protection + a resolvable deep link -> appears in NOW', () => {
+    const spDeepLink = (a: ReturnType<typeof alert>) =>
+      a.alert_type === 'stock_protection' && a.action
+        ? { route: a.action.route, label: a.action.label }
+        : null;
+    const sp = alert({
+      alert_type: 'stock_protection',
+      action: { key: 'stock_protection_reorder_now', label: 'Reorder now', route: '/suppliers-portal/sourcing?variantId=v1', module: 'suppliers-portal' },
+    });
+
+    const rows = buildNowRows([sp], spDeepLink);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toEqual({ label: 'Reorder now', route: '/suppliers-portal/sourcing?variantId=v1' });
+  });
+
+  it('G: stock_protection + action=null (e.g. complete_setup) -> excluded from NOW', () => {
+    const spDeepLink = (a: ReturnType<typeof alert>) =>
+      a.alert_type === 'stock_protection' && a.action
+        ? { route: a.action.route, label: a.action.label }
+        : null;
+    const sp = alert({ alert_type: 'stock_protection', action: null });
+
+    expect(buildNowRows([sp], spDeepLink)).toEqual([]);
+  });
+
+  it('H: legacy actionable types are unaffected by the stock_protection addition', () => {
+    for (const alert_type of ['sla_breach', 'stockout_risk', 'wms_pick_exception']) {
+      expect(isNowActionable(alert({ alert_type }))).toBe(true);
+    }
+    const rows = buildNowRows(
+      [alert({ id: 'legacy1', alert_type: 'sla_breach' })],
+      routeForAll,
+    );
+    expect(rows).toHaveLength(1);
   });
 });
 

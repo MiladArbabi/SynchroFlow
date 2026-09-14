@@ -20,6 +20,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
+import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
 
 /**
  * OUTCOME-INV-01 — INVENTORY INTERVENTION PROVENANCE
@@ -349,6 +350,8 @@ export async function httpCreateReorderRequest(req: Request, res: Response) {
           }),
         });
       }
+
+      await enqueueShopSnapshotJob(trx, shopId);
     });
 
     if (!row) return res.status(404).json({ error: 'Supplier or variant not found' });
@@ -389,6 +392,7 @@ export async function httpDeleteReorderRequest(req: Request, res: Response) {
       await trx('reorder_requests')
         .where({ id, shop_id: shopId })
         .update({ status: 'dismissed', updated_at: trx.fn.now() });
+      await enqueueShopSnapshotJob(trx, shopId);
     });
 
     if (!found) return res.status(404).json({ error: 'Request not found' });
@@ -531,6 +535,7 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
           converted_at:    now,
           updated_at:      now,
         });
+      await enqueueShopSnapshotJob(trx, shopId);
     });
 
     // SRC-01a: 422 = gate blocked (actionable), 400 = nothing queued.
