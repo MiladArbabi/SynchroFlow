@@ -38,7 +38,7 @@ import { isShopifyPartnerBillingError } from '../../services/shopify/shopifyBill
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[billing] STRIPE_SECRET_KEY not set');
-  return new Stripe(key, { apiVersion: '2026-08-26.dahlia' });
+  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
 };
 
 /**
