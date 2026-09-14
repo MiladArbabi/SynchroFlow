@@ -72,7 +72,7 @@ const ACTIVE_CAPABILITY_IDS = Object.keys(ACTIVE_CAPABILITY_POLICY);
 
 const REQUIRED_CANONICAL_MODULES = [
   'overview', 'order-nexus', 'products', 'returns', 'demand', 'wms',
-  'floor-planning', 'problem-center', 'suppliers-portal', 'alerts', 'specter',
+  'floor-planning', 'problem-center', 'suppliers-portal', 'alerts',
 ];
 const REQUIRED_CANONICAL_FEATURES: Record<string, Tier> = {
   'demand.forecasting':        'growth',
@@ -364,10 +364,14 @@ describe('A1-C10 — disabled / legacy surfaces are not active paid capabilities
     expect(['paused', 'disabled', 'legacy']).toContain(status);
   });
 
-  it('EXPECTED RED: internal / grant-only module ids are classified, not silently dropped', () => {
+  it('COMMERCIAL-DEAD-SURFACE-01D: echo-hub is not a live ModuleId', () => {
+    expect((CP as any).MODULE_IDS ?? []).not.toContain('echo-hub');
+    expect(((CP as any).MODULE_CLASSIFICATION ?? {})['echo-hub']).toBeUndefined();
+  });
+
+  it('EXPECTED RED: live internal module ids are classified, not silently dropped', () => {
     const cls = (CP as any).MODULE_CLASSIFICATION ?? {};
     expect((CP as any).MODULE_CLASSIFICATION).toBeDefined();
-    expect(cls['echo-hub']).toBe('grant_only');
     expect(cls['shopify_integration']).toBe('internal');
     expect(cls['specter_sdk_free']).toBe('internal');
     expect(cls['barcodes']).toBe('internal');

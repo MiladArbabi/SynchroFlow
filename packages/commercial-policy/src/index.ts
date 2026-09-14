@@ -81,6 +81,11 @@ export {
 } from './catalog.js';
 export type { CapabilityStatus, CatalogEntry } from './catalog.js';
 
+export {
+  isEffectivePersistedGrant,
+} from './persisted-grants.js';
+export type { PersistedGrantInput } from './persisted-grants.js';
+
 // Frozen compatibility shape re-exported by @lasyncro/backend-core.
 export {
   LEGACY_TIER_CONFIG,

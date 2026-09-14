@@ -2,7 +2,7 @@
 import type { Knex } from 'knex';
 import bcrypt from 'bcrypt';
 import { encrypt } from '../src/security/encryption.service.js';
-import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { runWithTenantContext } from '@lasyncro/backend-core/db.js';
 /**
@@ -120,14 +120,13 @@ export async function seed(knex: Knex): Promise<void> {
       .onConflict('shop_id')
       .merge({ tier: 'growth', status: 'active' });
 
-    const growthConfig = getTierConfig('growth');
-    const growthModuleRows = growthConfig.modules.map((moduleKey) => ({
+    const growthModuleRows = [...modulesForTier('growth')].map((moduleKey) => ({
       shop_id: shop.id,
       module_key: moduleKey,
       flag_key: null as string | null,
       source: 'dev_seed:growth',
     }));
-    const growthFlagRows = growthConfig.flags.map((flagKey) => ({
+    const growthFlagRows = [...flagsForTier('growth')].map((flagKey) => ({
       shop_id: shop.id,
       module_key: flagKey.split('.')[0],
       flag_key: flagKey,

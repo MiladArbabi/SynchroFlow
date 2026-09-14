@@ -342,9 +342,9 @@ describe('CRA-C8 — finite Scale capacity never becomes a capability denial', (
 // ===========================================================================
 // C9 — FT2 FREE BASELINE LIFECYCLE SAFETY
 //
-// grantFt2FreeBaselineForShop is dormant but live code, and getForUser unions
-// valid persisted grants ADDITIVELY — so anything it writes becomes real access
-// regardless of tier. It must never hand out a paused or deprecated surface.
+// grantFt2FreeBaselineForShop is dormant but live code. Standard plan access
+// is owned by modulesForTier()/flagsForTier(), so this compatibility entry
+// point must not persist plan-materialization rows.
 //
 // Asserted at the lowest stable layer: the literal grant list in source. A DB
 // integration test would need the whole entitlements stack to prove the same
@@ -363,8 +363,8 @@ describe('CRA-C9 — the FT2 free baseline cannot grant a paused/deprecated surf
     return [...body.matchAll(/module_key:\s*'([^']+)'/g)].map((m) => m[1]);
   }
 
-  it('GREEN CONTROL: the baseline grants a non-empty, explicit module list', () => {
-    expect(ft2BaselineModules().length).toBeGreaterThan(0);
+  it('COMMERCIAL-DEAD-SURFACE-01D: the baseline persists no standard plan modules', () => {
+    expect(ft2BaselineModules()).toEqual([]);
   });
 
   it.each(NON_ACTIVE_MODULES)(

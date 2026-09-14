@@ -97,10 +97,11 @@ for now rather than a source of unimplemented Scale-only capability IDs.
 ### Architecture and enforcement contract
 
 `@lasyncro/commercial-policy` is the canonical commercial policy authority for
-standard tier access. Persisted `shop_module_entitlements` remain additive
-explicit grants, not an alternate standard matrix. `requireCapability()` and
-`evaluateAccess()` are the preferred enforcement path, with commercial
-entitlement evaluated independently from RBAC/permission checks.
+standard tier access. Standard plan access comes from `modulesForTier(currentTier)`
+and `flagsForTier(currentTier)`; persisted `shop_module_entitlements` are filtered
+explicit grants or required internal plumbing, not an alternate standard matrix.
+`requireCapability()` and `evaluateAccess()` are the preferred enforcement path,
+with commercial entitlement evaluated independently from RBAC/permission checks.
 
 ### Explicit non-goals
 
@@ -2567,29 +2568,110 @@ Delivered:
 #### 1. Effective entitlement model
 
 `EntitlementsService.getForUser(userId)` no longer returns a rows-only snapshot.
-It now derives a **tier floor** from `@lasyncro/commercial-policy` and unions the
-persisted rows on top:
+It now derives a **tier floor** from `@lasyncro/commercial-policy` and unions only
+persisted rows that pass the canonical persisted-grant effectiveness policy:
 
 ```
 currentTier      = resolveTierForShop(shopId)   // canonical path; fails closed to 'starter'
-effectiveModules = modulesForTier(currentTier)  ∪  temporally-valid persisted module rows
-effectiveFlags   = flagsForTier(currentTier)    ∪  temporally-valid persisted flag rows
+effectiveModules = modulesForTier(currentTier)  ∪  effective persisted module rows
+effectiveFlags   = flagsForTier(currentTier)    ∪  effective persisted flag rows
 ```
 
 - **Zero persisted rows still yields the full tier floor** (previously it returned
   `{ modules: [], flags: [] }`).
-- Valid persisted rows are **purely additive** over the floor.
+- Temporally valid persisted rows are **not automatically effective**. They are
+  additive only when they represent an effective explicit persisted grant or
+  required live internal plumbing.
 - **Expired rows are excluded** by the unchanged temporal query
   (`valid_from <= now AND (valid_until IS NULL OR valid_until > now)`).
 - **No deny/exclusion row model**, no schema change, no migration, no backfill.
   Downgrade continues to rely on the current tier plus temporal revocation
   (see §4 below).
-- Persisted duplicate tier-derived rows may remain in the table temporarily and
-  are harmless (set-union). These persisted rows are **legacy / additive
-  entitlement rows — they are not all semantically bespoke commercial grants**;
-  true bespoke row-based backend enforcement is P0-A3 (see "bespoke-grant
-  limitation" below).
+- Persisted duplicate tier-derived rows may remain in the table as historical /
+  auditable state, but they no longer independently widen standard commercial
+  access. These persisted rows are **legacy entitlement rows — they are not all
+  semantically bespoke commercial grants**; true bespoke row-based backend
+  enforcement is P0-A3 (see "bespoke-grant limitation" below).
 - Snapshot shape `{ shopId, modules: string[], flags: string[] }` is unchanged.
+
+#### 1a. Persisted entitlement authority seal — `COMMERCIAL-DEAD-SURFACE-01D-1`
+
+The canonical authority rule after `COMMERCIAL-DEAD-SURFACE-01D-1` is:
+
+```
+effective access =
+  canonical tier floor
+  + effective explicit persisted grants
+  + required live internal plumbing
+```
+
+Standard plan access comes only from `modulesForTier(currentTier)` and
+`flagsForTier(currentTier)` in `@lasyncro/commercial-policy`. The
+`shop_module_entitlements` table is not a second plan matrix, and temporal
+validity alone is not an access-authority rule.
+
+Intentional explicit additive grant sources are:
+
+- `billing`
+- `admin`
+- `migration`
+
+Historical plan-materialization sources must not independently create standard
+plan access, including:
+
+- `free_tier_default`
+- `ft2_free_baseline`
+- `trial:growth`
+- `tier:*`
+- `shopify_billing:*`
+- `trial_expiry:*`
+- `reviewer_seed:*`
+- `dev_seed:*`
+- `manual:scale_upgrade`
+
+Rows from those sources are not deleted by this slice. They remain historical /
+auditable database state until a separate repair, revocation, or migration is
+explicitly approved.
+
+Product lifecycle handling is also sealed:
+
+- **Discontinued / non-effective persisted identities:** `echo-hub`, the
+  Customers product surface, `specter`, `specter_sdk_free`.
+- **Paused / non-effective while paused:** `finances`, `cashflow`, and
+  finances-related paused capabilities.
+- **Internal plumbing that remains valid:** `shopify_integration`,
+  `use_shopify_sync`, `barcodes`, and other explicitly ratified operational
+  plumbing.
+
+The deprecated Customers item is the commercial product/surface, not historical
+Customers operational database data. `echo-hub` is no longer grant-only: it has
+been removed from the live commercial module registry and from the FT2 paid
+contract because the feature is discontinued.
+
+Plan/trial entitlement materialization for registration, Shopify install, dev
+seed, and reviewer seed now derives standard grants from `modulesForTier()` and
+`flagsForTier()`, not legacy `getTierConfig(...).modules` /
+`getTierConfig(...).flags`. Shopify reconciliation, Stripe subscription handling,
+and trial expiry were already on the canonical commercial-policy path.
+
+Free-baseline writers are constrained accordingly:
+
+- `grantDefaultFreeTierForShop` no longer persists `specter_sdk_free` or
+  `order-nexus`.
+- Required Shopify internal plumbing may still be persisted.
+- `grantFt2FreeBaselineForShop` no longer persists standard plan modules.
+- The canonical tier floor owns standard tier access.
+
+Production trigger: a Growth shop was found with active historical entitlement
+rows from `free_tier_default`, `manual:scale_upgrade`,
+`shopify_billing:growth`, and `trial:growth`. Those rows included discontinued
+or paused product identities and proved that temporal validity alone was
+insufficient as an access-authority rule.
+
+Deferred to later `COMMERCIAL-DEAD-SURFACE` slices: deleting Specter runtime,
+deleting Customers product runtime, unmounting Finances/Cashflow, repairing
+historical production entitlement rows, dropping old DB schema, and Shopify
+pricing changes.
 
 #### 2. `requireCapability(capabilityId)`
 
@@ -3847,11 +3929,11 @@ seats**; Scale is unlimited. No Starter extra-seat SKU or price is invented here
 - catalog lifecycle vocabulary extended with `paused` and `deprecated`
 - `suppliers-portal` moved Starter → Core
 - `purchasing.core` now Core+; `purchasing.sourcing` added at Growth+
-- `grantFt2FreeBaselineForShop` reduced to **`order-nexus` only**. It previously
-  granted `products` (a Core+ paid surface), `customers` (deprecated) and
-  `finances` (paused); because `getForUser` unions persisted grants **additively**,
-  that dormant function could resurrect paid or withdrawn surfaces regardless of
-  tier. The function is retained, idempotent and additive as before.
+- `grantFt2FreeBaselineForShop` was first reduced to `order-nexus` only by this
+  remodel, then superseded by `COMMERCIAL-DEAD-SURFACE-01D-1`: it no longer
+  persists standard plan modules at all. Canonical tier floor owns standard tier
+  access; historical persisted plan-materialization rows are filtered before
+  they can affect effective access.
 - **`LEGACY_MODULES_BY_TIER` deliberately remains frozen compatibility data** and
   was not touched.
 

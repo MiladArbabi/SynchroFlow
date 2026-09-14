@@ -43,8 +43,6 @@ export const MODULE_CLASSIFICATION = Object.freeze({
   'floor-planning':    'standard',
   'suppliers-portal':  'standard',
 
-  'echo-hub':          'grant_only',
-
   shopify_integration: 'internal',
   specter_sdk_free:    'internal',
   barcodes:            'internal',

@@ -55,7 +55,12 @@
 
 import { withTenant } from '../db.js';
 import { requireShopIdForUser, resolveTierForShop } from './shop-resolution.service.js';
-import { modulesForTier, flagsForTier, isValidTier } from '@lasyncro/commercial-policy';
+import {
+  modulesForTier,
+  flagsForTier,
+  isValidTier,
+  isEffectivePersistedGrant,
+} from '@lasyncro/commercial-policy';
 
 export interface EntitlementsSnapshot {
   shopId: number;
@@ -87,15 +92,16 @@ export class EntitlementsService {
   /**
    * Resolve the EFFECTIVE entitlements for a given user ID.
    *
-   *   effective modules = modulesForTier(currentTier) ∪ temporally-valid persisted module rows
-   *   effective flags   = flagsForTier(currentTier)   ∪ temporally-valid persisted flag rows
+   *   effective modules = modulesForTier(currentTier) ∪ effective persisted module rows
+   *   effective flags   = flagsForTier(currentTier)   ∪ effective persisted flag rows
    *
    * COMMERCIAL-ACCESS-ARCH-01 P0-A2A: the snapshot now derives a canonical
    * tier floor from @lasyncro/commercial-policy. Zero persisted rows still
-   * returns the tier's standard grants; valid persisted rows remain purely
-   * additive; expired rows are excluded by the existing temporal query;
-   * downgrade continues to rely on the current tier plus temporal revocation.
-   * No deny/exclusion semantics, no schema change, no backfill.
+   * returns the tier's standard grants; persisted rows are additive only when
+   * they represent an effective explicit grant or required internal plumbing;
+   * expired rows are excluded by the existing temporal query; downgrade
+   * continues to rely on the current tier plus temporal revocation. No
+   * destructive mutation, no schema change, no backfill.
    */
   static async getForUser(userId: number): Promise<EntitlementsSnapshot | null> {
     // 1) Authoritative shop resolution
@@ -118,14 +124,21 @@ export class EntitlementsService {
         .andWhere((qb) =>
           qb.whereNull('valid_until').orWhere('valid_until', '>', trx.fn.now())
         )
-        .select('module_key', 'flag_key')
+        .select('module_key', 'flag_key', 'source')
     );
 
-    // 4) Effective set = canonical tier floor ∪ valid persisted rows (non-null).
+    // 4) Effective set = canonical tier floor ∪ effective persisted rows.
     const moduleSet = new Set<string>(modulesForTier(currentTier));
     const flagSet = new Set<string>(flagsForTier(currentTier));
 
     for (const row of rows ?? []) {
+      if (!isEffectivePersistedGrant({
+        moduleKey: row.module_key,
+        flagKey: row.flag_key,
+        source: row.source,
+      })) {
+        continue;
+      }
       if (row.module_key) {
         moduleSet.add(row.module_key);
       }
@@ -170,21 +183,6 @@ export class EntitlementsService {
         source: 'free_tier_default',
       },
 
-      // Specter SDK – free tier embed
-      {
-        shop_id: shopId,
-        module_key: 'specter_sdk_free',
-        flag_key: null,
-        source: 'free_tier_default',
-      },
-      
-      // Orders / Order Nexus – core operational module
-      {
-        shop_id: shopId,
-        module_key: 'order-nexus',
-        flag_key: null,
-        source: 'free_tier_default',
-      },
     ];
 
     await withTenant(shopId, (trx) =>
@@ -192,18 +190,12 @@ export class EntitlementsService {
     );
   }
 
-    /**
-   * Grant the FT2-Free baseline entitlements for a given shop.
+  /**
+   * Historical compatibility entry point for FT2-Free baseline entitlements.
    *
-   * FT2-Free rules:
-   * - Observability-only access
-   * - No paid / premium flags
-   * - Idempotent and additive
-   *
-   * IMPORTANT:
-   * - Must NOT revoke existing entitlements
-   * - Must NOT infer lifecycle
-   * - Must NOT grant pricing flags
+   * Standard plan access is owned by the canonical tier floor. This writer must
+   * not materialize standard modules into persisted rows, because historical
+   * rows are no longer allowed to widen effective access.
    */
   static async grantFt2FreeBaselineForShop(shopId: number): Promise<void> {
     const rows: Array<{
@@ -211,21 +203,7 @@ export class EntitlementsService {
       module_key: string;
       flag_key: string | null;
       source: string;
-    }> = [
-      // COMMERCIAL-REMODEL-ALIGN-01 (2026-09-06) — FT2-FREE BASELINE SAFETY.
-      //
-      // getForUser unions valid persisted grants ADDITIVELY, so anything written
-      // here becomes real access regardless of the shop's tier. This list was
-      // granting three surfaces it had no business granting:
-      //
-      //   customers — DEPRECATED product area (catalog.ts)
-      //   finances  — PAUSED product area (catalog.ts)
-      //   products  — a CORE+ paid surface, not a free baseline one
-      //
-      // A "free baseline" must only ever contain surfaces a Starter/free shop is
-      // genuinely entitled to. Only order-nexus qualifies.
-      { shop_id: shopId, module_key: 'order-nexus', flag_key: null, source: 'ft2_free_baseline' },
-    ];
+    }> = [];
 
     await withTenant(shopId, (trx) =>
       EntitlementsService.applyEntitlementRows(trx, rows)

@@ -126,7 +126,7 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     softWarningThreshold: 1.0,
     upgradeRoute: '/upgrade/problem-center',
     lockedMessage:
-      'You have reached the Free tier limit for Problem Center workflows. Upgrade to unlock the full EchoHub experience.',
+      'You have reached the Free tier limit for Problem Center workflows. Upgrade to unlock full workflow automation.',
     resetPeriod: 'monthly'
   },
 

@@ -20,7 +20,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import bcrypt from 'bcrypt';
-import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 
 const REVIEWER_EMAIL    = 'contact@lasyncro.com';
@@ -96,12 +96,11 @@ async function main(): Promise<void> {
       .onConflict('shop_id')
       .merge({ tier: 'growth', status: 'active' });
 
-    const growthConfig = getTierConfig('growth');
-    const moduleRows = growthConfig.modules.map((moduleKey) => ({
+    const moduleRows = [...modulesForTier('growth')].map((moduleKey) => ({
       shop_id: shopId, module_key: moduleKey, flag_key: null as string | null,
       source: 'reviewer_seed:growth',
     }));
-    const flagRows = growthConfig.flags.map((flagKey) => ({
+    const flagRows = [...flagsForTier('growth')].map((flagKey) => ({
       shop_id: shopId, module_key: flagKey.split('.')[0], flag_key: flagKey,
       source: 'reviewer_seed:growth',
     }));

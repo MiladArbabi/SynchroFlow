@@ -4,7 +4,6 @@ export interface ModulePresence {
   finance: boolean;
   skuOs: boolean;
   wmsLite: boolean;
-  echoHub: boolean;
   orderNexus: boolean;
   returnNexus: boolean;
   psCore: boolean;

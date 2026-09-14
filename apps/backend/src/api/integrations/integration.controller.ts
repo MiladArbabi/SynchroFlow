@@ -31,7 +31,7 @@ import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuth
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
-import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
@@ -1052,14 +1052,13 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           .onConflict('shop_id')
           .ignore();
 
-        const growthConfig = getTierConfig('growth');
-        const moduleRows = growthConfig.modules.map((moduleKey) => ({
+        const moduleRows = [...modulesForTier('growth')].map((moduleKey) => ({
           shop_id: shopId,
           module_key: moduleKey,
           flag_key: null as string | null,
           source: 'trial:growth',
         }));
-        const flagRows = growthConfig.flags.map((flagKey) => ({
+        const flagRows = [...flagsForTier('growth')].map((flagKey) => ({
           shop_id: shopId,
           module_key: flagKey.split('.')[0],
           flag_key: flagKey,

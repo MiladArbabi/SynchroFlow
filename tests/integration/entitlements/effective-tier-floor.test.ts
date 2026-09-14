@@ -58,14 +58,20 @@ async function createFixtureShop(
 
 async function insertRow(
   shopId: number,
-  row: { module_key?: string | null; flag_key?: string | null; valid_from?: Date; valid_until?: Date | null },
+  row: {
+    module_key?: string | null;
+    flag_key?: string | null;
+    source?: string;
+    valid_from?: Date;
+    valid_until?: Date | null;
+  },
 ) {
   await withTenant(shopId, (trx) =>
     trx('shop_module_entitlements').insert({
       shop_id: shopId,
       module_key: row.module_key ?? null,
       flag_key: row.flag_key ?? null,
-      source: 'test',
+      source: row.source ?? 'test',
       valid_from: row.valid_from ?? new Date(Date.now() - 60_000),
       valid_until: row.valid_until ?? null,
     }),
@@ -113,18 +119,63 @@ describe('A2A-C2 — effective flag floor from tier', () => {
 });
 
 // ===========================================================================
-// A2A-C3 — VALID (legacy/additive) ROWS ARE ADDITIVE
+// A2A-C3 — EFFECTIVE PERSISTED GRANT POLICY
 // ===========================================================================
-describe('A2A-C3 — persisted rows are additive over the tier floor', () => {
-  it('EXPECTED RED: Growth + a valid `echo-hub` row => Growth modules ∪ {echo-hub}', async () => {
-    const { shopId, userId } = await createFixtureShop('a2a-c3', 'growth');
-    await insertRow(shopId, { module_key: 'echo-hub' }); // grant-only, in no tier
+describe('A2A-C3 — persisted rows only widen access when commercially effective', () => {
+  it('COMMERCIAL-DEAD-SURFACE-01D: Starter + plan-materialized order-nexus row does not widen Starter', async () => {
+    const { shopId, userId } = await createFixtureShop('a2a-c3-starter', 'starter');
+    await insertRow(shopId, { module_key: 'order-nexus', source: 'free_tier_default' });
+
     const snap = await EntitlementsService.getForUser(userId);
     const modules = new Set(snap!.modules);
-    expect(modules.has('echo-hub')).toBe(true);
-    for (const m of modulesForTier('growth')) {
-      expect({ module: m, present: modules.has(m) }).toEqual({ module: m, present: true });
+    expect(modules.has('order-nexus')).toBe(modulesForTier('starter').has('order-nexus'));
+  });
+
+  it('COMMERCIAL-DEAD-SURFACE-01D: Growth ignores historical deprecated and paused module rows', async () => {
+    const { shopId, userId } = await createFixtureShop('a2a-c3-dead', 'growth');
+    await insertRow(shopId, { module_key: 'customers', source: 'shopify_billing:growth' });
+    await insertRow(shopId, { module_key: 'specter', source: 'trial:growth' });
+    await insertRow(shopId, { module_key: 'specter_sdk_free', source: 'free_tier_default' });
+    await insertRow(shopId, { module_key: 'finances', source: 'manual:scale_upgrade' });
+    await insertRow(shopId, { module_key: 'cashflow', source: 'shopify_billing:growth' });
+    await insertRow(shopId, { module_key: 'echo-hub', source: 'manual:scale_upgrade' });
+
+    const snap = await EntitlementsService.getForUser(userId);
+    const modules = new Set(snap!.modules);
+    for (const moduleKey of ['customers', 'specter', 'specter_sdk_free', 'finances', 'cashflow', 'echo-hub']) {
+      expect({ moduleKey, effective: modules.has(moduleKey) }).toEqual({ moduleKey, effective: false });
     }
+  });
+
+  it('COMMERCIAL-DEAD-SURFACE-01D: persisted deprecated and paused flags are non-effective', async () => {
+    const { shopId, userId } = await createFixtureShop('a2a-c3-flags', 'growth');
+    await insertRow(shopId, { module_key: 'customers', flag_key: 'customers.segmentation', source: 'trial:growth' });
+    await insertRow(shopId, { module_key: 'specter', flag_key: 'specter.full_capture', source: 'free_tier_default' });
+    await insertRow(shopId, { module_key: 'cashflow', flag_key: 'cashflow.revenue_buckets', source: 'manual:scale_upgrade' });
+
+    const snap = await EntitlementsService.getForUser(userId);
+    const flags = new Set(snap!.flags);
+    for (const flagKey of ['customers.segmentation', 'specter.full_capture', 'cashflow.revenue_buckets']) {
+      expect({ flagKey, effective: flags.has(flagKey) }).toEqual({ flagKey, effective: false });
+    }
+  });
+
+  it('COMMERCIAL-DEAD-SURFACE-01D: explicit additive admin grants remain effective', async () => {
+    const { shopId, userId } = await createFixtureShop('a2a-c3-admin', 'starter');
+    await insertRow(shopId, { module_key: 'wms', source: 'admin' });
+
+    const snap = await EntitlementsService.getForUser(userId);
+    expect(new Set(snap!.modules).has('wms')).toBe(true);
+  });
+
+  it('COMMERCIAL-DEAD-SURFACE-01D: required internal Shopify plumbing remains effective', async () => {
+    const { shopId, userId } = await createFixtureShop('a2a-c3-plumbing', 'starter');
+    await insertRow(shopId, { module_key: 'shopify_integration', source: 'free_tier_default' });
+    await insertRow(shopId, { module_key: 'shopify_integration', flag_key: 'use_shopify_sync', source: 'free_tier_default' });
+
+    const snap = await EntitlementsService.getForUser(userId);
+    expect(new Set(snap!.modules).has('shopify_integration')).toBe(true);
+    expect(new Set(snap!.flags).has('use_shopify_sync')).toBe(true);
   });
 });
 

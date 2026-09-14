@@ -19,7 +19,8 @@ import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { issueAuthTokens } from './token.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
-import { TIERS, getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { TIERS } from '@lasyncro/backend-core/config/tiers.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { detectBillingCurrency } from '@lasyncro/backend-core/config/pricing.config.js';
 import { audit } from '../../utils/audit.js';
@@ -190,15 +191,14 @@ export const registerUser = async (req: Request, res: Response) => {
     .onConflict('shop_id')
     .ignore();
 
-    const growthConfig = getTierConfig('growth');
-    const moduleRows = growthConfig.modules.map((moduleKey) => ({
+    const moduleRows = [...modulesForTier('growth')].map((moduleKey) => ({
       shop_id: shopId,
       module_key: moduleKey,
       flag_key: null as string | null,
       source: 'trial:growth',
     }));
 
-    const flagRows = growthConfig.flags.map((flagKey) => ({
+    const flagRows = [...flagsForTier('growth')].map((flagKey) => ({
       shop_id: shopId,
       module_key: flagKey.split('.')[0],
       flag_key: flagKey,

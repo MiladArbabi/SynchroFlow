@@ -10,13 +10,9 @@
 // - No revocations
 
 export const FT2_PAID_MODULES = [
-  'specter',
   'wms',
-  'echo-hub',
 ] as const;
 
 export const FT2_PAID_FLAGS = [
   'orders.advanced_filters',
-  'customers.segmentation',
-  'specter.full_capture',
 ] as const;
