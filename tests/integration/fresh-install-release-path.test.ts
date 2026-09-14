@@ -150,7 +150,7 @@ it('keeps root inventory releasable across zero-bin -> one-empty-bin transition'
     expect(atFt1?.user_id).toBe(ghostUser.id);
 
     // ---- 3. confirm FT2 through the real endpoint ----------------------
-    const token = issueTestToken({ userId: ghostUser.id, shopId });
+    const token = issueTestToken({ userId: ghostUser.id, shopId, tier: 'core' });
 
     const confirm = await request(app)
       .post('/api/v1/lifecycle/ft2/confirm')
