@@ -226,7 +226,6 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
                 }
               }
             }
-            pendingUpdate { id }
             legacySubscriptionId
           }
         }

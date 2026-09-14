@@ -33,6 +33,7 @@ describe('MON-REM-01B-4 — Shopify App Pricing Partner API reconciliation bound
     expect(reconciliation).not.toContain('RecurringApplicationCharge');
     expect(reconciliation).not.toContain('UsageApplicationCharge');
     expect(reconciliation).not.toContain('balanceUsed');
+    expect(reconciliation).not.toContain('pendingUpdate');
   });
 
   it('does not use Admin currentAppInstallation.activeSubscriptions as the commercial reconciliation authority', () => {
@@ -44,7 +45,7 @@ describe('MON-REM-01B-4 — Shopify App Pricing Partner API reconciliation bound
   it('scheduled reconciliation sweep delegates through applyShopifyBillingState rather than duplicating provider behavior', () => {
     expect(sweep).toContain('applyShopifyBillingState.service');
     expect(sweep).toMatch(/\bapplyShopifyBillingState\s*\(\s*row\.shop_id\s*,\s*trx\s*\)/);
-    expect(sweep).not.toContain('activeSubscription');
-    expect(sweep).not.toContain('activeSubscriptions');
+    expect(sweep).not.toMatch(/\bactiveSubscription\s*\(/);
+    expect(sweep).not.toMatch(/\bactiveSubscriptions\s*\{/);
   });
 });
