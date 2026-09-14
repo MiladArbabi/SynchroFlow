@@ -150,7 +150,7 @@ owns no business logic.
 ## 11. Next Slices
 
 - **STOCK-PROTECT-02** — Buffer Diagnosis
-- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring — Slices 1–5 complete; Slice 6 implemented and locally verified; production cutover certification pending
+- **STOCK-PROTECT-03** — Unified Replenishment Lifecycle / monitoring — Slices 1–6 production certified and complete
 - **STOCK-PROTECT-04** — WAITING read model
 - **STOCK-PROTECT-05** — Protection Failure Diagnosis
 - **OUTCOME-VALUE-01** — Verified Value Ledger
@@ -182,9 +182,9 @@ silently.
 
 ## 13. STOCK-PROTECT-03 — Unified Replenishment Lifecycle / Monitoring
 
-**Status (2026-09-14): Slices 1–5 complete; Slice 6 implemented and locally verified.**
-Production cutover remains pending commit/push, CI/deploy, and risk-based
-production certification.
+**Status (2026-09-14): Slices 1–6 production certified and complete.**
+STOCK-PROTECT-03 functional rollout is complete through production
+certification.
 
 ### Objective
 
@@ -368,15 +368,19 @@ Conclusion:
 
 ### Slice 6 — atomic canonical alert cutover
 
-Slice 6 implementation is **complete locally** and automated verification is
-**complete locally**. It is not yet claimed live in production.
+Slice 6 is **PRODUCTION CERTIFIED / COMPLETE**.
 
-Production cutover remains pending:
+Certified commit:
 
-1. exact commit preflight;
-2. commit/push;
-3. CI/deploy;
-4. risk-based production certification.
+- `62f38ab470bf18227c13333ccc14d9954c644b9b`
+
+CI / deploy certification:
+
+- CI — UI modules #352: success;
+- CI / RLS Security Boundary #211: success;
+- Fly Deploy #1446: success;
+- deployed Fly machine version: `v666`;
+- production health check: 1/1 passing.
 
 Canonical alert authority:
 
@@ -440,6 +444,43 @@ Alert ownership correction:
 - absence from aggregator output therefore cannot deactivate decision-owned or
   Stock Protection alerts.
 
+Production cutover verification:
+
+| Shop | Canonical rows | Active | Inactive | Active treatments | Legacy active |
+|---|---:|---:|---:|---|---:|
+| 1 | 27 | 12 | 15 | 11 `complete_setup`, 1 `reorder_now` | 0 |
+| 8 | 0 | 0 | 0 | none | 0 |
+| 15 | 110 | 22 | 88 | 15 `reorder_now`, 7 `complete_setup` | 0 |
+
+Global RLS-safe certification:
+
+- eligible shops checked: 1, 2, 8, 15, 16, 17;
+- `canonical_total = 137`;
+- `canonical_active = 34`.
+
+Invariant violations:
+
+- `active_legacy_count = 0`;
+- `bad_identity_count = 0`;
+- `bad_active_treatment_count = 0`;
+- `active_with_resolved_at_count = 0`;
+- `none_active_count = 0`.
+
+Production persisted population exactly matched Slice 5 dark evaluation:
+
+- 137 evaluated/canonical variants;
+- 34 actionable active.
+
+This confirms the cutover did not introduce unexpected population drift.
+
+Certification note:
+
+- an initial cross-tenant `systemQuery` returned zero rows because alerts
+  remain protected by PostgreSQL RLS;
+- that result was not treated as product evidence;
+- certification was rerun correctly using the `SECURITY DEFINER` tenant
+  enumerator plus `withTenant()` reads.
+
 ### Explicit boundaries
 
 STOCK-PROTECT-03 does **not**:
@@ -455,20 +496,18 @@ STOCK-PROTECT-03 does **not**:
 `inventory_truth` plus reservation locking remains warehouse execution
 authority.
 
-### Remaining rollout
+### Remaining cleanup
 
-The remaining sequence after Slice 6 local verification is:
+STOCK-PROTECT-03 functional rollout is complete through production
+certification. Remaining work is later cleanup only:
 
-1. exact commit preflight;
-2. commit/push;
-3. CI/deploy;
-4. risk-based production certification;
-5. later dead-code / compatibility cleanup of retired legacy producers and
-   routing where safe.
+- remove dead legacy producer definitions when safe:
+  - `aggregateStockReorderAlerts`;
+  - `emitStockoutAlerts`;
+- remove historical compatibility routing only when no longer needed;
+- keep historical resolved alert rows; do not delete them as part of cleanup.
 
-Slice 5 dark verification is complete. Slice 6 atomic canonical alert cutover
-is implemented and locally verified. Production cutover has **not** been
-claimed live yet.
+This cleanup is not required for correctness of the live cutover.
 
 ### Slice 4 verification evidence — 2026-09-14
 
