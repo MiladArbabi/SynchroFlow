@@ -302,6 +302,7 @@ const BASIC_PURCHASING_ROUTES = [
   'POST /purchase-orders/:poId/receive-jobs',
   'GET /receive-jobs/:jobId',
   'POST /receive-jobs/:jobId/claim',
+  'PATCH /receive-jobs/:jobId/lines/:lineId/progress',
   'POST /receive-jobs/:jobId/inspect',
   'POST /receive-jobs/:jobId/close',
   'POST /receive-jobs/:jobId/exception',
