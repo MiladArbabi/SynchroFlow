@@ -711,29 +711,26 @@ truth for any usage-vs-cap threshold logic. Takes `used`, `cap`, and an
 array of ascending fraction thresholds (e.g. `[0.75, 0.9]`), returns
 `{ pct, level }` where `level` is `'ok' | 'warn' | 'urgent' | 'blocked'`.
 
-**Why this exists:** two components (`OrderCapBanner`, `UsageMeter`) each
-had their own copy-pasted 80%-cutoff logic before this change, with no
-shared source — a recipe for silent drift where "approaching the limit"
-means something different on different screens. Extracted once, consumed
-by both the loud banner variant and the quiet inline meter variant.
+**Why this exists:** usage-vs-cap presentation needs one threshold helper so
+"approaching the limit" cannot silently drift between screens. `useCapStatus()`
+remains the shared helper for legitimate processed-order and usage-meter UI.
 
-**Pattern — two presentations, one data source:**
+**Pattern — presentations share threshold semantics, not commercial ownership:**
 
-- **Loud (banner):** appears inline on the relevant page only when
-  `level !== 'ok'`, dismissed by not rendering rather than a close button.
-  First use: `OrderCapBanner.tsx` (ingestion cap, single threshold `[0.8]`,
-  unchanged legacy behavior), `ShippedOrderCapBanner.tsx` (shipped/pack
-  cap, two-stage `[0.75, 0.9]`, new 2026-07-14).
-- **Quiet (meter):** always visible on the Billing usage panel, progress
-  bar fills proportionally, color shifts via the same `level` value.
-  `UsageMeter` in `BillingSettings.tsx`, upgraded to 3-stage this session.
+- **Loud (banner):** `ShippedOrderCapBanner.tsx` presents the
+  merchant-facing processed-order allowance on the workflow surface where it
+  matters.
+- **Quiet (meter):** `UsageMeter` in `BillingSettings.tsx` presents the same
+  processed-order usage model in Billing.
+- **Retired by FINAL-RECON-01C (2026-09-15):** `OrderCapBanner.tsx` and the
+  frontend `TIER_MONTHLY_ORDER_CAP` table were removed. `ingested_orders`
+  remains internal telemetry only and must never be presented as a merchant
+  ingestion allowance or blocking condition.
 
-**Scoping rule — banners are page-scoped, not global.** `OrderCapBanner`
-was already scoped to `OrdersFT2Page.tsx` only, not Overview or other
-modules. `ShippedOrderCapBanner` follows the same convention deliberately
-— cap warnings belong on the page where the capped activity happens, not
-broadcast everywhere. Don't mount cap banners globally; each one is
-relevant to a specific workflow.
+**Scoping rule — commercial warnings are page-scoped, not global.**
+`ShippedOrderCapBanner` belongs on the page where warehouse-processed usage
+happens. Do not introduce a replacement ingestion-cap banner; Shopify order
+truth is always ingested.
 
 **CTA hierarchy applied per §2:** in `ShippedOrderCapBanner`, "Enable
 pay-per-order" commits an action → Tier 1 filled accent. "Upgrade plan"

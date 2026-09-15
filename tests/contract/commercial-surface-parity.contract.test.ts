@@ -115,8 +115,6 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
         if (!/\.(ts|tsx)$/.test(entry.name)) continue;
 
         const rel = path.relative(ROOT, full).replace(/\\/g, '/');
-        if (rel.endsWith('/OrderCapBanner.tsx')) continue;
-
         const src = fs.readFileSync(full, 'utf8');
 
         // Count only an actual rendered commercial surface. Comments,

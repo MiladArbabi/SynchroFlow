@@ -538,14 +538,14 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 `apps/backend/src/api/shopify/handlers/handleOrderCreated.ts`
 
 - Shopify order truth is always ingested; commercial plan limits must never discard a valid order webhook
-- `monthlyOrderCap` is an allowance/telemetry threshold, not an ingestion boundary
+- `monthlyOrderCap` is an internal telemetry threshold only, not a merchant allowance and not an ingestion boundary
 - The handler reads the current open `shop_usage_metrics` period via `getOrRotateOpenUsagePeriod()`
-- Warns from 80% of the allowance via `[ORDER_CAP_APPROACHING]`
-- At or above the allowance, ingestion continues and emits `[ORDER_CAP_EXCEEDED_INGEST_CONTINUES]`
+- Warning telemetry begins from 80% of the configured telemetry threshold via `[ORDER_CAP_APPROACHING]`
+- At or above the telemetry threshold, ingestion continues and emits `[ORDER_CAP_EXCEEDED_INGEST_CONTINUES]`
 - `ingested_orders` increments only after a successful `domain_events` insert
 - Falls back to the Starter tier configuration if no subscription row exists
-- Scale has `monthlyOrderCap = Infinity`, so finite-cap warning telemetry is skipped
-- WMS execution and pay-per-order billing enforcement belong downstream of ingestion and must not be moved back into the Shopify ingestion boundary
+- Canonical telemetry thresholds are Starter 50, Core 2,000, Growth 10,000, Scale 50,000
+- WMS execution and processed-order billing enforcement belong downstream of ingestion and must not be moved back into the Shopify ingestion boundary
 - Starter shipped-order enforcement is implemented atomically at WMS `pack-complete`; see MON-PPO-03 below
 
 ### MON-PPO-02 runtime proof — 2026-08-21
@@ -2618,6 +2618,13 @@ limit is `Infinity`.
 > Active owners and revoked memberships do not consume seats; Core/Growth
 > purchased `extra_seats` extend capacity; Scale remains finite at 25.
 >
+> **Updated 2026-09-15 by FINAL-RECON-01C:** the obsolete frontend
+> ingestion-cap surface is retired. `OrderCapBanner.tsx` and
+> `TIER_MONTHLY_ORDER_CAP` were removed; the permanent frontend contract now
+> requires zero merchant ingestion-cap ownership. Backend `monthlyOrderCap`
+> and `ingested_orders` remain non-blocking telemetry only. Shopify order truth
+> continues to ingest unconditionally.
+>
 > **FINAL-RECON-01B — CLOSED / PRODUCTION CERTIFIED (2026-09-15).**
 > Implementation shipped in `1bf9d05cffe2a8f03955a1c707b591b7a731e683`;
 > the architecture-aware CI contract correction shipped in
@@ -4129,17 +4136,19 @@ COMMERCIAL-DEAD-SURFACE-01D-2.
 - `ingested_orders` is **internal telemetry ONLY**. Shopify ingestion must **never**
   be commercially blocked: dropping order truth at a plan limit creates an
   unrecoverable operational-history gap while the webhook still reports success.
-- **fulfilled / WMS-completed orders** are the merchant-facing commercial
-  allowance and the enforcement meter: Starter hard stop, Core/Growth configurable
-  overage, Scale unlimited.
+- **warehouse-processed orders** are the merchant-facing commercial allowance.
+  Included allowances are Starter 0, Core 2,000, Growth 7,500, Scale 20,000.
+  Paid tiers continue above the included allowance using their configured
+  overage economics; Starter has no WMS processed-order allowance.
 
 Never describe `ingested_orders` as the merchant-facing hard cap.
 
 ### 33.5 Seats
 
-`0 / 2 / 5 / Infinity` are **INCLUDED non-owner seats**, not hard maximums.
-Effective capacity on a finite paid tier = **included seats + purchased extra
-seats**; Scale is unlimited. No Starter extra-seat SKU or price is invented here.
+Included non-owner seats are **Starter 0 / Core 3 / Growth 10 / Scale 25**.
+Owner accounts do not consume a seat. Core and Growth may extend capacity with
+valid purchased `extra_seats`; Starter and Scale do not. Scale is finite at
+25 non-owner seats.
 
 ### 33.6 What the implementation changed
 

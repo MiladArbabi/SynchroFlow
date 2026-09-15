@@ -46,7 +46,6 @@ jest.mock('@lasyncro/shared/ui', () => ({
 }));
 
 jest.mock('components/ModuleTabBar', () => ({ ModuleTabBar: () => null }));
-jest.mock('components/OrderCapBanner', () => ({ OrderCapBanner: () => null }));
 jest.mock('components/ShippedOrderCapBanner', () => ({ ShippedOrderCapBanner: () => null }));
 jest.mock('components/ExportDrawer', () => ({ ExportDrawer: () => null }));
 jest.mock('pages/orders/OrderDetailModalBody', () => ({ OrderDetailModalBody: () => null }));

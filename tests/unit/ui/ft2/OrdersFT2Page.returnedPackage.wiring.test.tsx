@@ -27,6 +27,7 @@ jest.mock('@lasyncro/order-nexus', () => ({
 jest.mock('@lasyncro/shared/ui', () => ({
   __esModule: true,
   EntityDetailModal: ({ children }: any) => require('react').createElement(require('react').Fragment, {}, children),
+  IsometricCanvas: () => null,
 }));
 
 jest.mock('pages/orders/OrderDetailModalBody', () => ({
@@ -37,11 +38,6 @@ jest.mock('pages/orders/OrderDetailModalBody', () => ({
 jest.mock('components/ModuleTabBar', () => ({
   __esModule: true,
   ModuleTabBar: () => null,
-}));
-
-jest.mock('components/OrderCapBanner', () => ({
-  __esModule: true,
-  OrderCapBanner: () => null,
 }));
 
 jest.mock('components/ShippedOrderCapBanner', () => ({
@@ -85,7 +81,16 @@ jest.mock('pages/orders/useConstrainedOrders', () => ({
 }));
 
 jest.mock('contexts/EntitlementsContext', () => ({
-  useEntitlements: () => ({ displayCurrency: 'USD', locale: 'en-US', tier: 'growth' }),
+  useEntitlements: () => ({
+    displayCurrency: 'USD',
+    locale: 'en-US',
+    tier: 'growth',
+    snapshot: {
+      modules: new Set<string>(),
+      flags: new Set<string>(),
+    },
+    hasResolved: true,
+  }),
 }));
 
 jest.mock('hooks/useExchangeRates', () => ({

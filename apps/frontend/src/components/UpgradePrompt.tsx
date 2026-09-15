@@ -10,7 +10,7 @@
 //   mode="locked"  — hard gate, no children rendered. Full-container empty state
 //                    with feature name, blurb, CTA and "See all plan features" link.
 //
-//   mode="modal"   — Dialog triggered on seat/order cap or locked-feature click.
+//   mode="modal"   — Dialog triggered on seat-capacity or locked-feature actions.
 //                    Shows current→required tier step, optional benefits list.
 //
 //   mode="overlay" — backward-compat alias for "teased".
@@ -18,8 +18,6 @@
 // Callers:
 //   PlanGate     → teased | locked
 //   MembersPage  → modal (seat limit)
-//   OrderCapBanner (future) → modal (order cap)
-//
 // DECISION-DRIVEN PATH (COMMERCIAL-ACCESS-ARCH-01 P0-A2B):
 //   Migrated callers (Sidenav, ModuleTabBar, CommercialGate) pass a `decision`
 //   (AccessDecision) instead of a raw `requiredTier` string. When `decision`

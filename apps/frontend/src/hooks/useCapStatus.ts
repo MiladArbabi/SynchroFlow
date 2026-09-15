@@ -7,7 +7,7 @@
 // from each other on what "approaching the limit" means.
 //
 // Usage:
-//   const { pct, level } = useCapStatus(used, cap, [0.8]);           // 1-stage (legacy OrderCapBanner)
+//   const { pct, level } = useCapStatus(used, cap, [0.8]);           // 1-stage
 //   const { pct, level } = useCapStatus(used, cap, [0.75, 0.9]);     // 2-stage (SEG-023)
 //
 // CHANGE POLICY:
@@ -37,7 +37,7 @@ export function useCapStatus(
   if (rawPct >= 1) return { pct, level: 'blocked' };
 
   // thresholds ascending: first breach → 'warn', last breach → 'urgent'.
-  // Single-threshold callers (legacy) only ever see 'warn'.
+  // Single-threshold callers only ever see 'warn'.
   const sorted = [...thresholds].sort((a, b) => a - b);
   const urgentAt = sorted[sorted.length - 1];
   const warnAt = sorted[0];
