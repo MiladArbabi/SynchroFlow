@@ -2618,8 +2618,16 @@ limit is `Infinity`.
 > Active owners and revoked memberships do not consume seats; Core/Growth
 > purchased `extra_seats` extend capacity; Scale remains finite at 25.
 >
-> FINAL-RECON-01B is implemented and technically verified here; commit,
-> deployment, and live-browser certification remain pending.
+> **FINAL-RECON-01B — CLOSED / PRODUCTION CERTIFIED (2026-09-15).**
+> Implementation shipped in `1bf9d05cffe2a8f03955a1c707b591b7a731e683`;
+> the architecture-aware CI contract correction shipped in
+> `7064b2a76bfcb75bd91a2358340411db95f14990`.
+> Exact-SHA `CI — UI modules #362` and `Fly Deploy #1460` passed.
+> Live production Team verification confirmed Growth capacity at 10
+> non-owner seats: with only the owner active, Team rendered `0 of 10 used`
+> and `10 seats available`; Add Member rendered `10 of 10 seats available`.
+> Owner accounts remain visible but do not consume commercial seat capacity.
+>
 > The legacy ingestion-cap surface remains separate and belongs to
 > FINAL-RECON-01C.
 
