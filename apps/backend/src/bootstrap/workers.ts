@@ -1,9 +1,8 @@
 // apps/backend/src/bootstrap/workers.ts
 // Lazily start/stop background workers — keep this isolated so server boot is cleaner.
 //
-// Minimal, backward-compatible update: keep startWorkers/stopWorkers API but also
-// attempt to start the Specter ingestion worker when available. Stop functions are
-// accumulated and invoked in sequence on shutdown.
+// Minimal, backward-compatible update: keep startWorkers/stopWorkers API.
+// Stop functions are accumulated and invoked in sequence on shutdown.
 
 let started = false;
 let workerStopFns: Array<() => Promise<void> | void> = [];
@@ -55,21 +54,6 @@ export async function startWorkers(): Promise<void> {
     }
   } catch (err) {
     console.warn('[bootstrap/workers] Failed to start Sync worker (ignored in dev):', err && (err as Error).message ? (err as Error).message : err);
-  }
-
-  // start Specter ingestion worker (FT0) if present
-  try {
-    const specter = await import('../workers/specter-ingestion.worker.js');
-    if (typeof specter.startSpecterIngestionWorker === 'function') {
-      try { await Promise.resolve(specter.startSpecterIngestionWorker()); } catch (_) { /* ignore start error */ }
-      if (typeof specter.stopSpecterIngestionWorker === 'function') {
-        workerStopFns.push(async () => await specter.stopSpecterIngestionWorker());
-      }
-      console.log('[bootstrap/workers] Specter ingestion worker started');
-    }
-  } catch (err) {
-    // Not fatal — specter worker may not exist in tests/dev
-    console.warn('[bootstrap/workers] Specter ingestion worker not available (skipping):', err && (err as Error).message ? (err as Error).message : err);
   }
 
   // start Product ingestion worker (FT0)

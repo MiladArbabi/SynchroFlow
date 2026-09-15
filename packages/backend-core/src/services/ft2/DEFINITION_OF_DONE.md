@@ -60,7 +60,6 @@ The following **must exist and be terminal**:
 | Products FT2 | Snapshot resolved |
 | Customers FT2| Snapshot resolved |
 | Finances FT2 | Snapshot resolved |
-| Specter FT2  | Snapshot resolved |
 
 Rules:
 - `null` snapshot = **not complete**

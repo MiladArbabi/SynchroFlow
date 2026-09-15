@@ -136,14 +136,6 @@ export class ShopifyAppService {
 
   /**
    * Post-installation hooks.
-   *
-   * RETIRED (June 2026): Specter SDK injection removed — Specter is fully
-   * deprecated. It used the legacy ScriptTag REST API (script_tags.json),
-   * which Shopify restricts to vintage themes and explicitly disallows for
-   * App Store apps (theme app extensions are the required replacement).
-   * Since Specter itself is being redesigned as a GA/PostHog integration
-   * module rather than an injected storefront script, there is no
-   * replacement script-tag call needed here.
    */
   static async completePostInstallation(
     shopDomain: string,
@@ -163,39 +155,11 @@ export class ShopifyAppService {
         shop_domain: shopDomain,
         access_token: this.encryptToken(accessToken),
         scopes:
-          'read_products,read_orders,read_customers,read_inventory,read_fulfillments,read_returns,write_script_tags',
+          'read_products,read_orders,read_customers,read_inventory,read_fulfillments,read_returns',
         installed_at: new Date(),
       });
     }
   }
-
-  /**
-   * RETIRED (June 2026): Specter fully deprecated; this checked for the
-   * legacy ScriptTag REST install marker, which Shopify restricts to
-   * vintage themes and disallows for App Store apps. No callers remain.
-   */
-  /* static async verifyInstallation(shopDomain: string): Promise<boolean> {
-    try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain);
-      if (!accessToken) {
-        console.warn('[ShopifyAppService] Cannot verify installation —missing access token', {
-          shopDomain,
-        });
-        return false;
-      }
-      const scriptTagsUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
-      const response = await axios.get(scriptTagsUrl, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken
-        }
-      });
-      const scriptTags = response.data.script_tags;
-      return scriptTags.some((tag: any) => tag.src.includes('specter-sdk-v1.js'));
-    } catch (error) {
-      console.error('Failed to verify installation:', error);
-      return false;
-    }
-  } */
 
   /**
    * Encrypt access token
@@ -294,18 +258,6 @@ export class ShopifyAppService {
     return this.decryptToken(installation.access_token);
   };
   
-  /**
-   * RETIRED (June 2026): generateSpecterConfig, createSpecterScript, and
-   * installSpecterSDK are fully removed. Specter is deprecated — it
-   * injected a storefront script via the legacy ScriptTag REST API
-   * (script_tags.json), which Shopify restricts to vintage themes and
-   * explicitly disallows for App Store apps (theme app extensions are
-   * the required replacement). Specter's customer-analytics surface is
-   * being redesigned as a Google Analytics / PostHog integration module
-   * instead — no storefront script injection involved, so no GraphQL
-   * or theme-app-extension replacement is needed here. No callers remain.
-   */
-
   /**
    * @deprecated
    * Shopify returns webhooks are NOT reliable nor accessible

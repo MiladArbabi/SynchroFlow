@@ -72,13 +72,6 @@ const TOPOLOGY = [
     options: { durable: true },
   },
 
-  // ── Specter session ingestion ────────────────────────────────────
-  {
-    type: 'queue' as const,
-    name: 'specter_events',
-    options: { durable: true },
-  },
-
   // ── Execution pipeline (with DLX) ───────────────────────────────
   {
     type: 'exchange' as const,

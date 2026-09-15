@@ -120,6 +120,52 @@ seat/order/location limits, or historical compatibility data.
 
 ---
 
+## 1.2 COMMERCIAL-DEAD-SURFACE-01D-2 — Specter runtime retirement (2026-09-15)
+
+COMMERCIAL-DEAD-SURFACE-01D-2 is implemented and technically verified. This
+slice retired Specter as executable/runtime/product code while preserving
+historical database schema and fail-closed entitlement tombstones for rolling
+safety.
+
+Facts recorded by this slice:
+
+- Specter product/runtime is discontinued and gutted.
+- `@lasyncro/specter` workspace was removed.
+- Specter backend API was removed.
+- Specter ingestion worker and the live `specter_events` queue were removed.
+- Specter Redis/store bootstrap was removed.
+- Specter onboarding/readiness provider was removed.
+- Specter frontend provider, API, settings, customer-module, and wiring surfaces were removed.
+- Shopify sync no longer emits Specter telemetry.
+- Billing no longer writes new `specter_sessions` usage values.
+- Specter was removed from live commercial module identities and limits.
+- `specterSessionCap` was removed from live commercial policy.
+- `specter_sdk_free` was removed from live/internal module identity.
+- Historical persisted `specter` and `specter_sdk_free` entitlement rows remain explicitly non-effective through persisted-grant tombstones.
+- Historical DB schema is intentionally retained for rolling-safe code-first retirement:
+  - `specter_shop_configs`
+  - `shop_usage_metrics.specter_sessions`
+- Historical migrations were not rewritten.
+- Historical entitlement row cleanup belongs to 01D-5.
+- No Shopify external pricing/dashboard changes were made.
+- Customers product gut remains 01D-3.
+- Finances remains paused and belongs to 01D-4.
+
+Verification evidence:
+
+- Retirement contract: **10 / 10 PASS**
+- Commercial regression: **313 / 313 PASS**
+- Commercial-policy build: **PASS**
+- Shared build: **PASS**
+- Backend-core build: **PASS**
+- Backend build: **PASS**
+- Frontend no-emit remains RED only from unrelated pre-existing errors; no Specter or 01D-2-touched-surface errors were observed
+- `git diff --check`: **PASS**
+
+This does not close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
+
+---
+
 ## 2. Pricing Config
 
 Single source of truth for display prices and Stripe Price IDs:
@@ -648,7 +694,7 @@ the current commercial matrix:
 - **Core+:** adds returns processing, products/catalog, problem center
   (supervisor exception queue), sender-address management, 12-month order
   history
-- **Growth+:** adds cash flow, demand forecasting, customer LTV, Specter,
+- **Growth+:** adds cash flow, demand forecasting, customer LTV,
   returns analysis, problem center analytics, **floor planning + live
   operations map (moved from Scale)**, unlimited order history
 - **Scale+:** unlimited seats, unlimited orders ingested/shipped — no
@@ -2398,14 +2444,17 @@ NOT import `backend-core` (contract A1-C11 GREEN GUARD). Root `build:deps` build
 ALLOWED under `standardContextForTier('scale')` (17/17); every Scale standard
 limit is `Infinity`.
 
-**Canonical plan limits** (verified, unchanged):
+**Historical P0-A1 canonical plan limits** (superseded):
 
-| Tier | seatLimit | monthlyOrderCap | shippedOrderCap | specterSessionCap | price (¢) |
-|---|---|---|---|---|---|
-| starter | 0 | 50 | 50 | 500 | 0 |
-| core | 2 | 2000 | 500 | 5000 | 7900 |
-| growth | 5 | 10000 | 2500 | 25000 | 17900 |
-| scale | ∞ | ∞ | ∞ | ∞ | 34900 |
+| Tier | seatLimit | monthlyOrderCap | shippedOrderCap | price (¢) |
+|---|---|---|---|---|
+| starter | 0 | 50 | 50 | 0 |
+| core | 2 | 2000 | 500 | 7900 |
+| growth | 5 | 10000 | 2500 | 17900 |
+| scale | ∞ | ∞ | ∞ | 34900 |
+
+> **Updated 2026-09-15 by COMMERCIAL-DEAD-SURFACE-01D-2 (§1.2):**
+> `specterSessionCap` is no longer a live commercial policy limit.
 
 > The frontend legacy display constants in `apps/frontend/src/config/tiers.ts`
 > (`TIER_SHIPPED_ORDER_CAP` core 200 / growth 1000; `TIER_SEAT_LIMIT` starter 1 /
@@ -2436,8 +2485,9 @@ core/growth/scale via `modulesForTier()`.
 
 > **Updated 2026-09-06 by `COMMERCIAL-REMODEL-ALIGN-01` (§33):** now **five** —
 > `specter.full_capture` was removed from canonical active feature truth because
-> Specter is DEPRECATED. The legacy compatibility flag list in `legacy.ts` still
-> carries it. **Warehouse Analytics uses
+> Specter is DEPRECATED. COMMERCIAL-DEAD-SURFACE-01D-2 later removed
+> `specter.full_capture` from the legacy tier flag list while keeping the
+> deprecated catalog compatibility tombstone. **Warehouse Analytics uses
 `wms.analytics`, never `wms.pick_batches`.** The legacy 27-entry frontend
 `PLAN_FEATURES` map is **not** copied and remains runtime debt for P0-A2/A3.
 
@@ -2485,9 +2535,9 @@ routes are **not** removed by P0-A1.
 > `active | paused | deprecated | legacy | disabled` (`legacy` retained as a
 > compatibility alias). Finances entries are **paused** — withdrawn from sale but
 > **may return in a future release**. `customers.ltv`/`customers.segmentation` and
-> `specter.full_capture` are **deprecated** — not expected to return. Physical code
-> for all three is deliberately NOT deleted; cleanup is a separate,
-> regression-protected future program.
+> `specter.full_capture` are **deprecated** — not expected to return.
+> COMMERCIAL-DEAD-SURFACE-01D-2 later gutted Specter runtime; Customers cleanup
+> remains separate.
 
 **Access decision model.** `AccessRequirement { moduleId?, minimumTier?, feature?,
 action? }` · `AccessContext { tier, modules, flags, roles?, allowedActions? }` ·
@@ -2668,10 +2718,10 @@ rows from `free_tier_default`, `manual:scale_upgrade`,
 or paused product identities and proved that temporal validity alone was
 insufficient as an access-authority rule.
 
-Deferred to later `COMMERCIAL-DEAD-SURFACE` slices: deleting Specter runtime,
-deleting Customers product runtime, unmounting Finances/Cashflow, repairing
-historical production entitlement rows, dropping old DB schema, and Shopify
-pricing changes.
+COMMERCIAL-DEAD-SURFACE-01D-2 later deleted Specter runtime. Deferred to later
+`COMMERCIAL-DEAD-SURFACE` slices: deleting Customers product runtime,
+unmounting Finances/Cashflow, repairing historical production entitlement rows,
+dropping old DB schema, and Shopify pricing changes.
 
 #### 2. `requireCapability(capabilityId)`
 
@@ -3879,7 +3929,7 @@ Tier order is unchanged: `starter < core < growth < scale`.
 |---|---|---|
 | Finances | **PAUSED** | withdrawn from sale, **may return in a future release** |
 | Customers | **DEPRECATED** | not expected to return |
-| Specter | **DEPRECATED** | not expected to return |
+| Specter | **DISCONTINUED / RETIRED** | runtime gutted by COMMERCIAL-DEAD-SURFACE-01D-2 |
 
 The distinction is load-bearing: it decides whether cleanup should ever be
 scheduled. **Finances must never be described as permanently deprecated.**
@@ -3887,9 +3937,9 @@ scheduled. **Finances must never be described as permanently deprecated.**
 `CapabilityStatus` is now `active | paused | deprecated | legacy | disabled`
 (`legacy` kept as a compatibility alias). Paused and deprecated entries carry **no
 `AccessRequirement`**, are absent from `ACTIVE_CAPABILITY_IDS`, and are **not
-standard tier grants at any tier**. Physical code for all three areas is
-deliberately retained — deletion is a separate, regression-protected future
-program, not part of this slice.
+standard tier grants at any tier**. Physical code for Finances and Customers was
+retained in this slice; Specter runtime was later gutted by
+COMMERCIAL-DEAD-SURFACE-01D-2.
 
 ### 33.3 Purchasing
 
@@ -3934,8 +3984,9 @@ seats**; Scale is unlimited. No Starter extra-seat SKU or price is invented here
   persists standard plan modules at all. Canonical tier floor owns standard tier
   access; historical persisted plan-materialization rows are filtered before
   they can affect effective access.
-- **`LEGACY_MODULES_BY_TIER` deliberately remains frozen compatibility data** and
-  was not touched.
+- **Superseded by COMMERCIAL-DEAD-SURFACE-01D-2:** Specter identities were
+  removed from `LEGACY_MODULES_BY_TIER`; historical persisted Specter rows are
+  preserved as explicit non-effective tombstones.
 
 ### 33.7 Verification evidence
 

@@ -21,9 +21,6 @@ try {
       'api-src/*': [path.join(distRoot, '*')],
       'api-db': [path.join(distRoot, 'db.js')],
       'api-types': [path.join(distRoot, 'types.js')],
-      'modules-specter/*': [
-        path.join(repoRoot, 'modules/specter/dist/*'),
-      ],
     },
   });
 

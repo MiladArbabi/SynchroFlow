@@ -66,12 +66,12 @@ function adapterSource(): string {
 // (see nav-surface-parity.test.tsx for why the frontend project mirrors).
 const GROWTH_MODULES = [
   'overview', 'order-nexus', 'fulfillment', 'alerts', 'shopify_integration',
-  'specter_sdk_free', 'wms', 'barcodes', 'suppliers-portal', 'returns', 'products',
-  'problem-center', 'customers', 'finances', 'demand', 'specter', 'floor-planning',
+  'wms', 'barcodes', 'suppliers-portal', 'returns', 'products',
+  'problem-center', 'customers', 'finances', 'demand', 'floor-planning',
 ];
 const GROWTH_FLAGS = [
   'wms.analytics', 'demand.forecasting', 'alerts.rules', 'returns.analysis',
-  'exports.column_selection', 'specter.full_capture',
+  'exports.column_selection',
 ];
 
 // ===========================================================================

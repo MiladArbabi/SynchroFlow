@@ -9,20 +9,11 @@ import {
   ReadinessSignalValue
 } from '@lasyncro/shared';
 
-import { specterOnboardingSignalProvider } from './providers/specter.provider.js';
 import { financesOnboardingSignalProvider } from './providers/finances.provider.js';
 
 import { UserStateService } from '../services/user-state.service.js';
 import { deriveKnownCount } from './utils/deriveKnownCount.js';
 import { devReadinessOverrideProvider } from './providers/dev-readiness.provider.js';
-
-// canonical module IDs the provider will try to resolve (exported so tests can mock them)
- export const SPECTER_STORE_CANDIDATES = [
-   'modules-specter/store/session-store',
-   '../../../../modules/specter/src/store/session-store',
-   `${process.cwd()}/modules/specter/src/store/session-store`,
-   `${process.cwd()}/modules/specter/dist/store/session-store`
- ];
 
 const makeSignal = (
   name: ReadinessSignalName,
@@ -256,8 +247,6 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   orderNexusOnboardingSignalProvider,
   // existing sku-os provider if you already added it earlier:
   skuOsOnboardingSignalProvider,
-  // new CNS spine providers:
-  specterOnboardingSignalProvider,
   financesOnboardingSignalProvider,
   returnNexusOnboardingSignalProvider,
   wmsOnboardingSignalProvider,

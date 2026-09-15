@@ -54,7 +54,6 @@ Overview FT2 may compose **only FT2-safe snapshots**:
 - Orders → OrderNexus FT2
 - Products → Products FT2
 - Customers → Customers FT2
-- Specter → Specter FT2
 - Trust → Trust FT2 (hard dependency)
 
 ### Forbidden Actions

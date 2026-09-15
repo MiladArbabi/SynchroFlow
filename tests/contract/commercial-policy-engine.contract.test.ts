@@ -373,7 +373,6 @@ describe('A1-C10 — disabled / legacy surfaces are not active paid capabilities
     const cls = (CP as any).MODULE_CLASSIFICATION ?? {};
     expect((CP as any).MODULE_CLASSIFICATION).toBeDefined();
     expect(cls['shopify_integration']).toBe('internal');
-    expect(cls['specter_sdk_free']).toBe('internal');
     expect(cls['barcodes']).toBe('internal');
     expect(['standard']).toContain(cls['wms']);
     expect(['standard']).toContain(cls['suppliers-portal']);

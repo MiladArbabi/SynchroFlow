@@ -33,8 +33,7 @@ export type FT2RangeInput =
 // resolved `from` boundary to the tier's window when the tier is more
 // restrictive than the requested range. `tier` defaults to 'starter'
 // (most restrictive) so existing callers that don't yet pass a real
-// tier — currently only the frozen Customers/Specter modules — fail
-// safe rather than silently keeping the old unlimited behavior.
+// tier fail safe rather than silently keeping the old unlimited behavior.
 export function resolveFt2Range(range: FT2RangeInput, tier: Tier = 'starter') {
   type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
 

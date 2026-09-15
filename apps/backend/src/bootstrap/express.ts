@@ -17,7 +17,6 @@ import onboardingReadinessRouter from '../onboarding/readiness.router.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { registerActivationRoutes } from '../api/activation/activation.routes.js';
 import { handleShopifyInstall } from '../api/integrations/integration.controller.js';
-import specterRouter from '../api/specter/specter.routes.js';
 import customersFt2Routes from '../api/customers/customers.ft2.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
 import productsFt2Routes from '../api/products/products.ft2.routes.js';
@@ -144,9 +143,6 @@ export function createApp(): Express {
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);
-
-  // Mount Specter FT0 routes under /api/v1/specter
-  app.use('/api/v1/specter', specterRouter);
 
   app.get(
     '/api/v1/entitlements/me',

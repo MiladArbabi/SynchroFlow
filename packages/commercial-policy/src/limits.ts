@@ -27,12 +27,6 @@ export interface PlanLimits {
 
   /** Visible historical order window in days. Data beyond this is retained. */
   historyDays: number;
-
-  /**
-   * Legacy/deprecated Specter compatibility metric.
-   * Not part of the MON-REM-01B primary commercial model.
-   */
-  specterSessionCap: number;
 }
 
 export const PLAN_LIMITS: Readonly<Record<Tier, PlanLimits>> = Object.freeze({
@@ -42,7 +36,6 @@ export const PLAN_LIMITS: Readonly<Record<Tier, PlanLimits>> = Object.freeze({
     shippedOrderCap: 0,
     locationLimit: 1,
     historyDays: 30,
-    specterSessionCap: 500,
   },
   core: {
     seatLimit: 3,
@@ -50,7 +43,6 @@ export const PLAN_LIMITS: Readonly<Record<Tier, PlanLimits>> = Object.freeze({
     shippedOrderCap: 2000,
     locationLimit: 1,
     historyDays: 90,
-    specterSessionCap: 5000,
   },
   growth: {
     seatLimit: 10,
@@ -58,7 +50,6 @@ export const PLAN_LIMITS: Readonly<Record<Tier, PlanLimits>> = Object.freeze({
     shippedOrderCap: 7500,
     locationLimit: 3,
     historyDays: 365,
-    specterSessionCap: 25000,
   },
   scale: {
     seatLimit: 25,
@@ -66,8 +57,6 @@ export const PLAN_LIMITS: Readonly<Record<Tier, PlanLimits>> = Object.freeze({
     shippedOrderCap: 20000,
     locationLimit: 10,
     historyDays: 730,
-    // Deprecated compatibility metric; not a current monetization dimension.
-    specterSessionCap: Infinity,
   },
 });
 

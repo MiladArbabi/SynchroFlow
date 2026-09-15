@@ -134,22 +134,6 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
   },
 
   {
-  moduleId: 'specter',
-    displayName: 'Customer & Conversion (Specter)',
-    requiredSignals: [],
-    tasks: [
-      {
-        id: 'specter-sdk-installed',
-        label: 'Enable Specter tracking',
-        required: false,
-        completionRules: [
-          { signal: 'specter.sdkInstalled', expectedValue: true }
-        ]
-      }
-    ]
-  },
-
-  {
     moduleId: 'finances',
     displayName: 'Finances',
     requiredSignals: [

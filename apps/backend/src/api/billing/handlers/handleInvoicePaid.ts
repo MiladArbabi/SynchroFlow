@@ -70,7 +70,6 @@ export async function handleInvoicePaid(
     period_ends_at: null,
     ingested_orders: 0,
     shipped_orders: 0,
-    specter_sessions: 0,
     storage_bytes: 0,
     barcodes_generated: 0,
     pruned_rows: 0,

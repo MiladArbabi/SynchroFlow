@@ -84,8 +84,6 @@ async function start() {
    *
    * Required for:
    * - product_ingestion worker
-   * - specter ingestion worker
-   *
    * Without this call queues may accumulate messages silently.
    */
 

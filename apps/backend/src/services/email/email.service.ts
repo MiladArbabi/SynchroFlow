@@ -126,8 +126,8 @@ export async function sendTrialReminderEmail(params: SendTrialReminderParams): P
           Your free Growth trial expires on <strong>${expiryDate}</strong> — that's ${daysLeft} day${daysLeft > 1 ? 's' : ''} away.
         </p>
         <p style="color: #555;">
-          After expiry your account will move to the Starter plan and you'll lose access to
-          Cash Flow, LTV, Demand forecasting, and Specter intelligence.
+          After expiry your account will move to the Starter plan and Growth-only
+          features will no longer be available.
         </p>
         <a href="https://app.lasyncro.com/settings/billing" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#000;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
           Upgrade to Growth
@@ -173,11 +173,10 @@ export async function sendTrialExpiryEmail(params: SendTrialExpiryParams): Promi
           Your 14-day Growth trial has expired. Your account is now on the Starter plan.
         </p>
         <p style="color: #555;">
-          Upgrade to Growth to restore access to Cash Flow, LTV, Demand forecasting,
-          and Specter — intelligence that pays for itself in a single prevented stockout.
+          Upgrade to Growth to restore access to Growth plan capabilities.
         </p>
         <a href="https://app.lasyncro.com/settings/billing" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#000;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
-          Upgrade to Growth — $179/mo
+          Upgrade to Growth
         </a>
         <p style="color: #aaa; font-size: 12px; margin-top: 32px;">
           LaSyncro · Operational intelligence for growing merchants

@@ -77,9 +77,6 @@ const PLAN_FEATURES = {
   // Alerts
   'alerts.inbox':              'core',
   'alerts.rules':              'growth',
-
-  // Specter
-  'specter.full_capture':      'growth',
 } as const satisfies Record<string, Tier>;
 
 export type PlanFeature = keyof typeof PLAN_FEATURES;

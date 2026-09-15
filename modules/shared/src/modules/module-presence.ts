@@ -1,6 +1,5 @@
 // packages/shared/src/modules/module-presence.ts
 export interface ModulePresence {
-  specter: boolean;
   finance: boolean;
   skuOs: boolean;
   wmsLite: boolean;

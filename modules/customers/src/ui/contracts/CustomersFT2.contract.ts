@@ -5,7 +5,7 @@
  *
  * IMPORTANT:
  * - Must exist at runtime for ESM analyzers (Vite/Rollup)
- * - Shape mirrors Specter FT2 exactly
+ * - Shape remains stable for Customers FT2 consumers
  * - No logic, no defaults, no semantics
  */
 export type CustomersFT2Contract = {

@@ -11,7 +11,6 @@ import PermissionsSettings from '../account-settings/PermissionsSettings';
 import BillingSettings from '../../pages/account-settings/BillingSettings';
 
 import IconComponent from 'components/Icon';
-import { SpecterConfigPanel } from 'components/specter/SpecterConfigPanel';
 
 // ==============================|| TAB PANEL HELPER ||============================== //
 
@@ -68,8 +67,6 @@ const AccountSettingsPage: React.FC = () => {
           return 1;
         case 'security':
           return 2;
-        case 'specter':
-          return 3;
         default:
           return 0;
       }
@@ -106,22 +103,16 @@ const AccountSettingsPage: React.FC = () => {
               {...a11yProps(2)}
             />
             <Tab
-              label="Specter"
-              icon={<IconComponent name="Ghost" size="small" />}
-              iconPosition="start"
-              {...a11yProps(3)}
-            />
-            <Tab
               label="Permissions"
               icon={<IconComponent name="Shield" size="small" />}
               iconPosition="start"
-              {...a11yProps(4)}
+              {...a11yProps(3)}
             />
             <Tab
               label="Billing"
               icon={<IconComponent name="CreditCard" size="small" />}
               iconPosition="start"
-              {...a11yProps(5)}
+              {...a11yProps(4)}
             />
           </Tabs>
 
@@ -135,13 +126,10 @@ const AccountSettingsPage: React.FC = () => {
         <TabPanel value={value} index={2}>
           <Typography>Security settings placeholder. (e.g., change password, 2FA)</Typography>
         </TabPanel>
-         <TabPanel value={value} index={3}>
-          <SpecterConfigPanel />
-        </TabPanel>
-        <TabPanel value={value} index={4}>
+        <TabPanel value={value} index={3}>
           <PermissionsSettings />
         </TabPanel>
-        <TabPanel value={value} index={5}>
+        <TabPanel value={value} index={4}>
           <BillingSettings />
         </TabPanel>
       </Box>

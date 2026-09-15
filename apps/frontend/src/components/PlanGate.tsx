@@ -48,7 +48,6 @@ const FEATURE_LABELS: Partial<Record<PlanFeature, string>> = {
   'wms.problem_center':        'WMS Problem Center',
   'problem-center.analytics':  'Problem Center Analytics',
   'alerts.inbox':              'Alerts',
-  'specter.full_capture':      'Full Analytics',
 };
 
 interface PlanGateProps {

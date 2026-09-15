@@ -11,10 +11,6 @@ describe('OrderNexusCanonicalIngestionService', () => {
     const mockChannel = { sendToQueue };
     jest.doMock('api-src/queue', () => ({ getQueueChannel: () => mockChannel }));
 
-    // Arrange: mock appendEvent
-    const mockAppendEvent = jest.fn().mockResolvedValue(undefined);
-    jest.doMock('modules-specter/store/session-store', () => ({ appendEvent: mockAppendEvent }));
-
     // Arrange: stub db to return an order row and line items
     const orderRow = {
       id: 'ord-1',
@@ -96,12 +92,6 @@ describe('OrderNexusCanonicalIngestionService', () => {
         ]
       }
     });
-
-    // Assert: specter appendEvent recorded
-    expect(mockAppendEvent).toHaveBeenCalledWith(11, expect.objectContaining({
-      type: 'canonical.ingested',
-      canonicalOrderId: 'ord-1'
-    }));
   });
 
   test('FT0: no-op when canonical order missing', async () => {
@@ -119,8 +109,6 @@ describe('OrderNexusCanonicalIngestionService', () => {
       })
     }));
     jest.doMock('api-src/db', () => mockDb);
-    jest.doMock('modules-specter/store/session-store', () => ({ appendEvent: jest.fn() }));
-
     const { OrderNexusCanonicalIngestionService } = await import('api-src/services/order-nexus-canonical-ingestion.service');
     const svc = new OrderNexusCanonicalIngestionService();
     await svc.enqueueOrderForOrderNexus(99, 'missing-order');

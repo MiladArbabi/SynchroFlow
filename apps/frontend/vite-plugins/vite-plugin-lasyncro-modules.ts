@@ -24,7 +24,6 @@ export default function lasyncroModulesPlugin(): Plugin {
 
     const modulePkgs = fs
       .readdirSync(modulesDir)
-      .filter((name) => name !== 'specter')
       .filter((name) => name !== 'my-test-module')
       .filter((name) => {
         const entryTsx = path.join(modulesDir, name, 'src/ui/ModuleEntry.tsx');

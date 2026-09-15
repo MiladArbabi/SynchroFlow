@@ -11,7 +11,6 @@ export type ModuleId =
   | 'order-nexus'
   | 'return-nexus'
   | 'finances'
-  | 'specter'
   | 'sku-os'
   | 'wms'
   | 'problem-center'

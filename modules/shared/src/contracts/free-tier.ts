@@ -71,18 +71,6 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
     resetPeriod: 'monthly'
   },
 
-  // Specter – 1 nudge/day (~30/month) – we track monthly, policy is “about 1/day”
-  specter: {
-    enabled: true,
-    maxUnits: 30,
-    metric: 'nudges',
-    softWarningThreshold: 0.8,
-    upgradeRoute: '/upgrade/specter',
-    lockedMessage:
-      'You have reached the Free tier limit for Specter nudges. Upgrade to unlock continuous CNS intelligence.',
-    resetPeriod: 'monthly'
-  },
-
   // Finances – diagnostic only in FT1, no free-tier gating
   finances: {
     enabled: false,

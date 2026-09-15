@@ -45,7 +45,7 @@ Every deploy prints this, and it has never once been real. Do not audit it again
      /.fly/hallpass │ [fdaa:...]:22
 
 **Why:** `apps/backend/src/server.ts` opens the socket *last*. `start()` awaits
-`initRedisClient` → `initSpecterStore` → `runSchemaGuard` → `initQueue` →
+`initRedisClient` → `runSchemaGuard` → `initQueue` →
 `declareTopology` → `startWorkers` before reaching `app.listen` (line 34). Redis,
 RabbitMQ topology, the schema guard and every background worker must finish
 first — ~1.5s on v247. Fly probes listening sockets the moment the machine

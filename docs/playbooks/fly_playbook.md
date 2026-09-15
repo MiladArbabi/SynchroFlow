@@ -129,11 +129,10 @@ The correct boot order in `server.ts`:
 ```
 assertRuntimeDatabaseIdentity()
 initRedisClient()
-initSpecterStore()
 runSchemaGuard()
 initQueue()           ← waits for RabbitMQ connect event (25s timeout)
-app.listen()          ← HTTP server starts immediately after queue connects
-declareTopology()     ← async, runs after listen
+declareTopology()
+app.listen()          ← HTTP server starts after topology declaration
 startWorkers()        ← chained after topology
 ```
 

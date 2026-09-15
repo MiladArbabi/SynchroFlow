@@ -2,7 +2,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import { createApp } from './bootstrap/express.js';
-import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store.js';
 import { initQueue, closeQueue } from './bootstrap/queue.js';
 import { declareTopology } from './queue.topology.js';
 import { startWorkers } from './bootstrap/workers.js';
@@ -29,7 +28,6 @@ async function start() {
   // runtime is connected with the privileged migration identity.
   await assertRuntimeDatabaseIdentity();
   await initRedisClient();
-  await initSpecterStore();
   // schema verification FIRST
   await runSchemaGuard();
   // infrastructure SECOND
@@ -64,7 +62,6 @@ async function shutdown(sig?: string) {
   console.log('[server] shutdown triggered', sig || '');
   try { await flushAnalytics(); } catch (e) { /* non-fatal — flush remaining PostHog events */ }
   try { await closeRedisClient(); } catch (e) { /* ignore */ }
-  try { await closeSpecterStore(); } catch (e) { /* ignore */ }
   try { await closeQueue(); } catch (e) { /* ignore */ }
 
   if (server) {

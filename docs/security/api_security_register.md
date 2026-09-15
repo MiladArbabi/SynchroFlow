@@ -99,9 +99,9 @@ Implementation:
 - deleted the obsolete unit test that certified the vulnerable `200` response
   (`tests/unit/backend/specter/specter-ft2.controller.test.ts`)
 
-The authenticated Specter `/state` and `/config` routes remain **untouched**,
-pending `DEPRECATED-FEATURE-RETIREMENT-01`. No broader Specter retirement was
-performed here.
+Superseded by COMMERCIAL-DEAD-SURFACE-01D-2: the authenticated Specter `/state`
+and `/config` routes were later removed as part of the broader Specter runtime
+retirement.
 
 ### Permanent regression protection
 
@@ -114,8 +114,9 @@ Together they prove:
 
 - `/ft2` is **absent, not merely gated** — 404 asserted for all four caller shapes
 - no executable production `x-test-shop-id` tenant-selection path remains
-- the mounted Specter router is still present, so the still-live `/state` and
-  `/config` keep working
+- original non-vacuity controls asserted `/state` + `/config` survived this
+  narrower security fix; those routes were later removed by
+  COMMERCIAL-DEAD-SURFACE-01D-2
 - scanner controls prevent vacuous static passes: the AST analyzer is verified
   against a synthetic router that DOES register `/ft2` (must detect it) and one
   where the registration and symbol appear only in comments (must not), and a
@@ -144,9 +145,10 @@ Together they prove:
 - executable `req.headers['x-test-shop-id']` production search: **0 occurrences**
 - `git diff --check`: clean
 
-### Unresolved unrelated evidence
+### Historical unrelated evidence
 
-Two surviving deprecated-Specter suites currently fail 12 / 12:
+At the time of this narrower security fix, two surviving deprecated-Specter
+suites failed 12 / 12:
 
 - `tests/unit/backend/specter/specter-ft2.provider.test.ts`
 - `tests/unit/backend/specter/specterFtep.service.test.ts`
@@ -159,8 +161,9 @@ contract and backend TSC are green. This slice changed only the route
 registration, the deleted controller, and the deleted obsolete controller test —
 none of which those suites exercise.
 
-Do **not** repair those suites under `SEC-SPECTER-FT2-UNAUTH-01`. They belong to
-`DEPRECATED-FEATURE-RETIREMENT-01` / existing Specter test debt.
+Do **not** repair those suites under `SEC-SPECTER-FT2-UNAUTH-01`. Superseded by
+COMMERCIAL-DEAD-SURFACE-01D-2: the deprecated Specter runtime/test surface was
+later gutted.
 
 ### Production certification — PASSED
 
@@ -183,8 +186,8 @@ Production behavior verified after Fly v638 completed deployment:
 
 The unauthenticated tenant-selectable Specter FT2 endpoint is absent in
 production, including when the former client-controlled tenant header is
-supplied, while the surviving Specter state route remains authentication
-protected.
+supplied. Superseded by COMMERCIAL-DEAD-SURFACE-01D-2: the remaining Specter
+runtime routes were later removed.
 
 The first production certification attempt occurred before the new Fly
 deployment completed and still observed the previous vulnerable behavior.

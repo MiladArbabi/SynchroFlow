@@ -10,7 +10,6 @@ import productsRoutes from '../api/products/products.routes.js';
 import customersRoutes from '../api/customers/customers.routes.js';
 import userStateRoutes from '../api/user-state/user-state.routes.js';
 import onboardingReadinessRouter from '../onboarding/readiness.router.js';
-import specterRouter from '../api/specter/specter.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
 import overviewRoutes from './overview.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
@@ -52,9 +51,6 @@ router.use('/v1/alerts', alertsRoutes);
 router.use('/v1/aha', ahaRoutes);
 // Returns intelligence — refund summary + per-variant breakdown
 router.use('/v1/modules/returns', returnsRoutes);
-
-// Mount under /api/v1/specter -> final path: GET /api/v1/specter/:shopId/state
-router.use('/v1/specter', specterRouter);
 
 /**
  * System Health API

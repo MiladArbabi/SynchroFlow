@@ -19,7 +19,6 @@ export interface LegacyTierConfig {
   seatLimit: number;
   monthlyOrderCap: number;
   shippedOrderCap: number;
-  specterSessionCap: number;
   modules: readonly string[];
   flags: readonly string[];
 }
@@ -31,7 +30,6 @@ const LEGACY_GROWTH_FLAGS: readonly string[] = [
   'orders.advanced_filters',
   'customers.segmentation',
   'exports.column_selection',
-  'specter.full_capture',
   'returns.analysis',
   'problem-center.analytics',
 ];
@@ -51,7 +49,6 @@ function build(tier: Tier): LegacyTierConfig {
     seatLimit: l.seatLimit,
     monthlyOrderCap: l.monthlyOrderCap,
     shippedOrderCap: l.shippedOrderCap,
-    specterSessionCap: l.specterSessionCap,
     modules: LEGACY_MODULES_BY_TIER[tier],
     flags: LEGACY_FLAGS_BY_TIER[tier],
   };

@@ -1,1 +1,0 @@
-export * from './specterIntelligence.service.js';

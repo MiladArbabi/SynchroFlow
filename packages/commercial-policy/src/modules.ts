@@ -39,12 +39,10 @@ export const MODULE_CLASSIFICATION = Object.freeze({
   'problem-center':    'standard',
   customers:           'standard',
   demand:              'standard',
-  specter:             'standard',
   'floor-planning':    'standard',
   'suppliers-portal':  'standard',
 
   shopify_integration: 'internal',
-  specter_sdk_free:    'internal',
   barcodes:            'internal',
   shared:              'internal',
 
@@ -82,11 +80,10 @@ const STANDARD_CORE = [
 
 // Growth adds optimization and intelligence surfaces.
 //
-// `customers`, `finances` and `specter` are deliberately ABSENT: Finances is
-// PAUSED and Customers/Specter are DEPRECATED (see catalog.ts). A paused or
+// `customers` and `finances` are deliberately ABSENT: Finances is
+// PAUSED and Customers is DEPRECATED (see catalog.ts). A paused or
 // deprecated area must never be sold as a standard grant at any tier, even
-// implicitly through a tier module set. Their implementation is intentionally
-// left in place — cleanup is a separate future program.
+// implicitly through a tier module set.
 const STANDARD_GROWTH = [
   ...STANDARD_CORE, 'demand', 'floor-planning', 'problem-center', 'suppliers-portal',
 ] as const;
@@ -113,11 +110,11 @@ export function modulesForTier(tier: Tier): ReadonlySet<string> {
 // ---------------------------------------------------------------------------
 const LEGACY_STARTER = [
   'overview', 'order-nexus', 'fulfillment', 'alerts',
-  'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes',
+  'shopify_integration', 'wms', 'barcodes',
 ] as const;
 const LEGACY_CORE = [...LEGACY_STARTER, 'returns', 'products', 'problem-center'] as const;
 const LEGACY_GROWTH = [
-  ...LEGACY_CORE, 'customers', 'finances', 'demand', 'specter', 'floor-planning',
+  ...LEGACY_CORE, 'customers', 'finances', 'demand', 'floor-planning',
 ] as const;
 const LEGACY_SCALE = [...LEGACY_GROWTH] as const;
 

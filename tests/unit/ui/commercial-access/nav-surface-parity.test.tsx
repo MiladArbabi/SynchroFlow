@@ -98,10 +98,10 @@ import { INVENTORY_MODULE_TABS } from 'pages/ft2-pages/inventoryModuleTabs';
 // P0-A3-5: `suppliers-portal` is a CORE-floor module, never Starter.
 const STARTER_MODULES = [
   'overview', 'order-nexus', 'fulfillment', 'alerts',
-  'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes',
+  'shopify_integration', 'wms', 'barcodes',
 ];
 const CORE_MODULES = [...STARTER_MODULES, 'returns', 'products', 'problem-center', 'suppliers-portal'];
-const GROWTH_MODULES = [...CORE_MODULES, 'customers', 'finances', 'demand', 'specter', 'floor-planning'];
+const GROWTH_MODULES = [...CORE_MODULES, 'customers', 'finances', 'demand', 'floor-planning'];
 const SCALE_MODULES = [...GROWTH_MODULES];
 const GRANTED: Record<string, Set<string>> = {
   starter: new Set(STARTER_MODULES),

@@ -8,7 +8,6 @@ import { AuthProvider, useAuth } from 'contexts/AuthContext';
 
 import { IntegrationProvider } from 'contexts/integration/IntegrationProvider';
 import { EntitlementsProvider } from 'contexts/EntitlementsContext';
-import { SpecterConfigProvider } from 'contexts/SpecterConfigContext';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import { RuntimeRoutesProvider } from 'runtime/RuntimeRoutesProvider';
@@ -181,15 +180,13 @@ function AuthenticatedAppShell() {
           <IntegrationProvider>
             <ThemeCustomization>
               <EntitlementsProvider>
-                <SpecterConfigProvider>
-                  <IntlErrorBoundary>
-                    <LifecycleProvider>
-                      <ShopLifecycleShell>
-                        <LifecycleGuardedApp />
-                      </ShopLifecycleShell>
-                    </LifecycleProvider>
-                  </IntlErrorBoundary>
-                </SpecterConfigProvider>
+                <IntlErrorBoundary>
+                  <LifecycleProvider>
+                    <ShopLifecycleShell>
+                      <LifecycleGuardedApp />
+                    </ShopLifecycleShell>
+                  </LifecycleProvider>
+                </IntlErrorBoundary>
               </EntitlementsProvider>
             </ThemeCustomization>
           </IntegrationProvider>

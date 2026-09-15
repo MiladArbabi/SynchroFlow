@@ -1237,7 +1237,6 @@ The current HTTP startup order is:
 ```text
 assertRuntimeDatabaseIdentity
 initRedisClient
-initSpecterStore
 runSchemaGuard
 initQueue
 declareTopology
@@ -1520,7 +1519,6 @@ The current authoritative order is:
 ```text
 assertRuntimeDatabaseIdentity
 initRedisClient
-initSpecterStore
 runSchemaGuard
 initQueue
 declareTopology
