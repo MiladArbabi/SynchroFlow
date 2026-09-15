@@ -518,11 +518,14 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 
 `apps/backend/src/api/members/members.controller.ts` → `createMember`
 
-- Reads `req.user.tier` from JWT
-- Calls `getTierConfig(tier).seatLimit`
-- Counts active non-owner `shop_memberships` rows (`owner` is excluded)
-- Starter base limit = 0 non-owner seats; Core = 2; Growth = 5; Scale = unlimited
-- For Core/Growth, effective limit = `seatLimit + extra_seats` from `shop_subscriptions`
+- Uses the shared backend `resolveSeatCapacity(...)` resolver
+- Reads the live `shop_subscriptions.tier` rather than JWT tier for commercial capacity
+- Invalid/missing subscription tier fails safely to Starter
+- Canonical base limits are Starter 0, Core 3, Growth 10, Scale 25 non-owner seats
+- Core/Growth capacity includes valid `extra_seats`; Starter/Scale ignore legacy add-on values
+- Counts active non-owner `shop_memberships` rows; owners and revoked memberships are excluded
+- `POST /members` resolves capacity with the subscription row locked for serialization
+- `GET /members` exposes the same truth as `seat_capacity`
 - Returns `403 SEAT_LIMIT_REACHED` with `{ current, limit, base_limit, extra_seats, tier }` if at cap
 - Ordinary member creation accepts only `admin` or `operator`; `owner` returns `400 INVALID_ROLE`
 - Ordinary role changes likewise cannot promote a member to `owner`
@@ -2607,9 +2610,18 @@ limit is `Infinity`.
 > `standardLimits(tier).shippedOrderCap` from
 > `@lasyncro/commercial-policy`.
 >
-> `TIER_SEAT_LIMIT` remains legacy frontend compatibility debt and is handled
-> separately by FINAL-RECON-01B. The legacy ingestion-cap surface is also
-> separate from this slice and belongs to FINAL-RECON-01C.
+> **Updated 2026-09-15 by FINAL-RECON-01B:** Team seat capacity is now
+> server-owned. `TIER_SEAT_LIMIT` was removed from the frontend;
+> `GET /api/v1/members` returns authoritative `seat_capacity` from the shared
+> backend `resolveSeatCapacity(...)` resolver, and `POST /api/v1/members`
+> enforces the same resolver under the subscription serialization lock.
+> Active owners and revoked memberships do not consume seats; Core/Growth
+> purchased `extra_seats` extend capacity; Scale remains finite at 25.
+>
+> FINAL-RECON-01B is implemented and technically verified here; commit,
+> deployment, and live-browser certification remain pending.
+> The legacy ingestion-cap surface remains separate and belongs to
+> FINAL-RECON-01C.
 
 **Module registry.** Typed `ModuleId` + `MODULE_CLASSIFICATION`
 (`standard` / `grant_only` / `internal` / `legacy`). `wms` is canonical;

@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/members/useMembers.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import type { Tier } from '../../config/tiers';
 
 export type MemberRole = 'owner' | 'admin' | 'operator';
 
@@ -15,6 +16,15 @@ export type Member = {
 
 export type MembersResponse = {
   members: Member[];
+  seat_capacity: SeatCapacity;
+};
+
+export type SeatCapacity = {
+  tier: Tier;
+  current: number;
+  base_limit: number;
+  extra_seats: number;
+  limit: number;
 };
 
 /**

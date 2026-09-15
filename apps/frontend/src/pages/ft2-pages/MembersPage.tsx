@@ -15,13 +15,12 @@ import {
   Stack,
 } from '@mui/material';
 import { UserPlus } from 'lucide-react';
-import { useMembers, useUpdateMemberRole, useCreateMember, type MemberRole } from '../members/useMembers';
+import { useMembers, useUpdateMemberRole, useCreateMember, type MemberRole, type SeatCapacity } from '../members/useMembers';
 import { useUiEvents } from '../../analytics/useUiEvents';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { AddSeatsModal } from '../../components/AddSeatsModal';
 import { LinearProgress } from '@mui/material';
-import { TIER_SEAT_LIMIT, type Tier } from '../../config/tiers';
 import { SettingsShellHeader } from './SettingsShellHeader';
 
 /**
@@ -60,8 +59,14 @@ const EMPTY_FORM: CreateMemberForm = {
   role: '',
 };
 
+function resolveUpgradeTier(seatCapacity: SeatCapacity | undefined): 'core' | 'growth' | 'scale' {
+  if (seatCapacity?.tier === 'core') return 'growth';
+  if (seatCapacity?.tier === 'growth') return 'scale';
+  return 'core';
+}
+
 export default function MembersPage() {
-  const { data, isLoading, isError, error } = useMembers();
+  const { data, isLoading, isError, error, refetch } = useMembers();
   const is403 = (error as Error & { response?: { status?: number } })?.response?.status === 403;
 
   const { mutate: updateRole, isPending: isUpdating } = useUpdateMemberRole();
@@ -77,17 +82,31 @@ export default function MembersPage() {
 
   const navigate = useNavigate();
   const members = data?.members ?? [];
+  const seatCapacity = data?.seat_capacity;
   const { emit } = useUiEvents();
   // SHB-03/SHB-05 interim: Shopify-billed shops have no pay-per-order path
   // (Managed Pricing has no usage add-on built yet) — hard cap + upgrade only.
-  const { tier, billingProvider } = useEntitlements();
-  const rawSeatLimit = TIER_SEAT_LIMIT[tier as Tier] ?? 1;
-  const seatLimit = rawSeatLimit === Infinity ? null : rawSeatLimit;
-  const seatCount = members.length;
-  const seatUsagePct = seatLimit ? (seatCount / seatLimit) * 100 : 0;
-  const atSeatLimit = seatLimit !== null && seatCount >= seatLimit;
-  const nearSeatLimit = seatLimit !== null && seatUsagePct >= 80 && !atSeatLimit;
+  const { billingProvider } = useEntitlements();
+  const seatUsagePct = seatCapacity && seatCapacity.limit > 0
+    ? (seatCapacity.current / seatCapacity.limit) * 100
+    : 100;
+  const remainingSeats = seatCapacity
+    ? Math.max(0, seatCapacity.limit - seatCapacity.current)
+    : 0;
+  const atSeatLimit = !seatCapacity || seatCapacity.current >= seatCapacity.limit;
+  const nearSeatLimit =
+    !!seatCapacity &&
+    seatCapacity.limit > 0 &&
+    seatUsagePct >= 80 &&
+    !atSeatLimit;
   const [seatLimitModalOpen, setSeatLimitModalOpen] = useState(false);
+  const showAddSeatsModal =
+    !!seatCapacity &&
+    (seatCapacity.tier === 'core' || seatCapacity.tier === 'growth') &&
+    billingProvider !== 'shopify';
+  const showScaleCapacityDialog = seatCapacity?.tier === 'scale';
+  const showUnresolvedCapacityDialog = !seatCapacity;
+  const upgradeTier = resolveUpgradeTier(seatCapacity);
 
   const openModal = () => {
     setForm(EMPTY_FORM);
@@ -95,6 +114,10 @@ export default function MembersPage() {
     setSuccessEmail(null);
     resetCreate();
     setModalOpen(true);
+  };
+
+  const openCapacityResolution = () => {
+    setSeatLimitModalOpen(true);
   };
 
   const closeModal = () => {
@@ -126,11 +149,12 @@ export default function MembersPage() {
             workspace_operator_total: members.length + 1,
           });
         },
-        onError: (err: Error & { response?: { data?: { error?: string } } }) => {
+        onError: async (err: Error & { response?: { data?: { error?: string } } }) => {
           const msg = err?.response?.data?.error;
           if (msg === 'SEAT_LIMIT_REACHED') {
             closeModal();
-            setSeatLimitModalOpen(true);
+            await refetch();
+            openCapacityResolution();
             return;
           }
           setFormError(
@@ -162,7 +186,7 @@ export default function MembersPage() {
           <Button
             variant="contained"
             startIcon={<UserPlus size={16} />}
-            onClick={atSeatLimit ? () => setSeatLimitModalOpen(true) : openModal}
+            onClick={atSeatLimit ? openCapacityResolution : openModal}
             size="small"
             sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           >
@@ -172,14 +196,14 @@ export default function MembersPage() {
       </Box>
 
       {/* SEAT USAGE */}
-      {seatLimit !== null && (
+      {seatCapacity && (
         <Box sx={{ mb: 3, p: 2, borderRadius: '8px', border: '1px solid', borderColor: atSeatLimit ? 'error.light' : nearSeatLimit ? 'warning.light' : 'divider' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
               Team seats
             </Typography>
             <Typography sx={{ fontSize: 12, fontWeight: 600, color: atSeatLimit ? 'error.main' : 'text.primary' }}>
-              {seatCount} of {seatLimit} used
+              {seatCapacity.current} of {seatCapacity.limit} used
             </Typography>
           </Box>
           <LinearProgress
@@ -190,9 +214,19 @@ export default function MembersPage() {
           />
           {atSeatLimit && (
             <Typography sx={{ fontSize: 11, color: 'error.main', mt: 1 }}>
-              Seat limit reached. Upgrade your plan to add more team members.
+              Seat limit reached. Free a seat or increase capacity to add another team member.
             </Typography>
           )}
+          {!atSeatLimit && (
+            <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 1 }}>
+              {seatCapacity.extra_seats > 0
+                ? `${seatCapacity.base_limit} included + ${seatCapacity.extra_seats} additional · ${remainingSeats} available`
+                : `${remainingSeats} seat${remainingSeats === 1 ? '' : 's'} available`}
+            </Typography>
+          )}
+          <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5 }}>
+            Owner accounts do not use a seat.
+          </Typography>
         </Box>
       )}
 
@@ -202,14 +236,52 @@ export default function MembersPage() {
       {/* SHB-05 interim: AUD-C16 seat add-on is a Stripe subscriptionItem —
           no Managed Pricing equivalent. Shopify-billed shops get the
           tier-upgrade prompt instead. */}
-      {(tier === 'core' || tier === 'growth') && billingProvider !== 'shopify' ? (
+      {showAddSeatsModal ? (
         <AddSeatsModal
           open={seatLimitModalOpen}
           onClose={() => setSeatLimitModalOpen(false)}
         />
+      ) : showScaleCapacityDialog ? (
+        <Dialog
+          open={seatLimitModalOpen}
+          onClose={() => setSeatLimitModalOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Seat limit reached</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Scale includes 25 non-owner seats. To add another person, revoke an existing member's access.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSeatLimitModalOpen(false)} size="small">
+              Review team
+            </Button>
+          </DialogActions>
+        </Dialog>
+      ) : showUnresolvedCapacityDialog ? (
+        <Dialog
+          open={seatLimitModalOpen}
+          onClose={() => setSeatLimitModalOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Seat capacity unavailable</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Seat capacity is still loading. Try again once the Team page has finished loading.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSeatLimitModalOpen(false)} size="small">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
       ) : (
         <UpgradePrompt
-          requiredTier="core"
+          requiredTier={upgradeTier}
           mode="modal"
           featureName="Additional team seats"
           open={seatLimitModalOpen}
@@ -352,9 +424,21 @@ export default function MembersPage() {
               )}
 
               {/* REMAINING SLOTS HINT */}
-              <Typography variant="caption" color="text.disabled" sx={{ textAlign: 'center' }}>
-                {members.length} member{members.length !== 1 ? 's' : ''} in this shop
-              </Typography>
+              {seatCapacity && (
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="caption" color="text.disabled" sx={{ display: 'block' }}>
+                    {remainingSeats} of {seatCapacity.limit} seats available
+                  </Typography>
+                  {seatCapacity.extra_seats > 0 && (
+                    <Typography variant="caption" color="text.disabled" sx={{ display: 'block' }}>
+                      {seatCapacity.base_limit} included + {seatCapacity.extra_seats} additional
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.disabled" sx={{ display: 'block' }}>
+                    Owner accounts do not use a seat.
+                  </Typography>
+                </Box>
+              )}
             </Stack>
           )}
         </DialogContent>

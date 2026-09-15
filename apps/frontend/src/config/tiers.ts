@@ -18,20 +18,12 @@ export function isValidTier(value: unknown): value is Tier {
   return TIERS.includes(value as Tier);
 }
 
-// --- UI display thresholds (mirrors TierConfig values in backend-core) ---
-// Used for upgrade prompts and usage indicators only. Never for enforcement.
+// --- UI display thresholds ---
 // Used for upgrade prompt thresholds and usage indicator UI only.
 // Never use for enforcement — enforcement is backend-only.
 export const TIER_MONTHLY_ORDER_CAP: Record<Tier, number> = {
   starter: 50,
   core: 2000,
   growth: 10000,
-  scale: Infinity,
-};
-
-export const TIER_SEAT_LIMIT: Record<Tier, number> = {
-  starter: 1,
-  core: 3,
-  growth: 5,
   scale: Infinity,
 };

@@ -4,7 +4,7 @@ import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { authEmailExists } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import bcrypt from 'bcrypt';
 import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
-import { isValidTier, standardLimits } from '@lasyncro/commercial-policy';
+import { resolveSeatCapacity, type SeatCapacity } from '../../services/billing/seat-capacity.service.js';
 
 /**
  * MEMBERS CONTROLLER
@@ -19,6 +19,16 @@ import { isValidTier, standardLimits } from '@lasyncro/commercial-policy';
  * (resolved at login/refresh via shop-resolution.service.ts)
  */
 
+function serializeSeatCapacity(capacity: SeatCapacity) {
+  return {
+    tier: capacity.tier,
+    current: capacity.current,
+    base_limit: capacity.baseLimit,
+    extra_seats: capacity.extraSeats,
+    limit: capacity.limit,
+  };
+}
+
 /**
  * GET /api/v1/members
  * Returns all active shop members with their role.
@@ -28,8 +38,8 @@ export const listMembers = async (req: Request, res: Response) => {
   try {
     const shopId = req.user!.shopId;
 
-    const members = await withTenant(shopId!, (trx) =>
-      trx('shop_memberships as sm')
+    const { members, seatCapacity } = await withTenant(shopId!, async (trx) => {
+      const members = await trx('shop_memberships as sm')
         .join('users as u', 'u.id', 'sm.user_id')
         .where('sm.shop_id', shopId)
         .whereNull('sm.revoked_at')
@@ -40,10 +50,17 @@ export const listMembers = async (req: Request, res: Response) => {
           'u.last_name',
           'sm.role',
           'sm.created_at as member_since',
-        )
-    );
+        );
 
-    return res.json({ members });
+      const seatCapacity = await resolveSeatCapacity(trx, shopId!);
+
+      return { members, seatCapacity };
+    });
+
+    return res.json({
+      members,
+      seat_capacity: serializeSeatCapacity(seatCapacity),
+    });
   } catch (err) {
     console.error('[MEMBERS] listMembers failed:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -177,50 +194,15 @@ export const createMember = async (req: Request, res: Response) => {
 
     let newUser: { id: number; email: string };
 
-    // MON-REM-01B-3:
-    // shop_subscriptions is unique per shop and is the serialization point for
-    // seat-capacity mutations. Tier capacity is live commercial truth, never
-    // the potentially stale JWT tier.
     const created = await withTenant(shopId, async (trx) => {
-      const subscription = await trx('shop_subscriptions')
-        .where({ shop_id: shopId })
-        .select('tier', 'extra_seats')
-        .forUpdate()
-        .first();
+      const seatCapacity = await resolveSeatCapacity(trx, shopId, {
+        lockSubscription: true,
+      });
 
-      const rawTier = subscription?.tier ?? 'starter';
-      const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
-      const { seatLimit: baseSeatLimit } = standardLimits(currentTier);
-
-      // Core/Growth retain their purchased seat add-ons. Starter has none.
-      // Scale is finite at its canonical included allowance and currently has
-      // no self-serve extra-seat SKU.
-      const extraSeats =
-        currentTier === 'core' || currentTier === 'growth'
-          ? Math.max(0, Number(subscription?.extra_seats ?? 0))
-          : 0;
-
-      const effectiveSeatLimit = baseSeatLimit + extraSeats;
-
-      const activeSeatCount = await trx('shop_memberships')
-        .where({ shop_id: shopId })
-        .whereNull('revoked_at')
-        .whereNot('role', 'owner')
-        .count('id as count')
-        .first();
-
-      const currentSeats = Number(activeSeatCount?.count ?? 0);
-
-      if (currentSeats >= effectiveSeatLimit) {
+      if (seatCapacity.current >= seatCapacity.limit) {
         throw Object.assign(new Error('SEAT_LIMIT_REACHED'), {
           code: 'SEAT_LIMIT_REACHED',
-          details: {
-            current: currentSeats,
-            limit: effectiveSeatLimit,
-            base_limit: baseSeatLimit,
-            extra_seats: extraSeats,
-            tier: currentTier,
-          },
+          details: serializeSeatCapacity(seatCapacity),
         });
       }
 
