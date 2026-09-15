@@ -219,8 +219,93 @@ active export route must carry both `exports.core` capability enforcement and
 Deeper Finances / Cash Flow / Margin architecture, product value, UX, data-model,
 and reactivation work is deferred to GitHub #1117.
 
-01D-4 remains pending commit/deploy/production 404 certification. This does not
-close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
+01D-4 is **CLOSED / PRODUCTION CERTIFIED**.
+
+Production certification confirmed:
+
+- `/health` → `200`;
+- `/api/v1/modules/finances/ft2` → `404`;
+- `/api/v1/modules/cashflow` → `404`;
+- `/api/v1/modules/cashflow/settings` → `404`;
+- `/api/v1/exports/finances` → `404`.
+
+Deeper Finances / Cash Flow / Margin architecture remains deferred under GitHub
+#1117. This does not close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
+
+---
+
+## 1.5 COMMERCIAL-DEAD-SURFACE-01D-5 — Historical entitlement repair (2026-09-15)
+
+01D-5 repairs stale historical `shop_module_entitlements` rows whose identities
+are already non-effective under the deployed canonical commercial policy.
+
+### Production audit
+
+A privileged **read-only** production census was executed directly against the
+`synchroflow` database.
+
+At audit time:
+
+- `289` total persisted entitlement rows existed;
+- `130` rows were temporally active;
+- the dead/paused candidate set contained `82` rows total;
+- `59` candidate rows were already historically closed;
+- `23` candidate rows remained active/open;
+- no candidate rows had future-dated closures.
+
+The `23` active/open rows were historical grants for already non-effective
+identities, including Specter, `specter_sdk_free`, Echo Hub, Customers, and
+paused Finances identities.
+
+Closing these persisted grants does **not** resolve the deferred Customers PCD /
+domain architecture in GitHub #1116 and does **not** reactivate or redesign
+Finances under GitHub #1117. It only aligns persisted temporal history with the
+commercial policy that already makes these identities non-effective.
+
+### Repair contract
+
+Migration `0178_close_historical_non_effective_entitlements` is an
+UPDATE-only, forward-only repair.
+
+It closes only rows that:
+
+- have already started (`valid_from <= repair timestamp`);
+- are still open (`valid_until IS NULL`);
+- match the canonical non-effective module or non-active flag identity set.
+
+The repair deliberately:
+
+- never deletes entitlement history;
+- preserves already-closed rows;
+- preserves future-not-started rows;
+- preserves unrelated live grants;
+- is idempotent on rerun;
+- uses an intentionally no-op `down()` so rollback cannot resurrect historical
+  access.
+
+### Permanent verification
+
+The disposable PostgreSQL integration contract proves:
+
+- eligible historical rows close at one repair timestamp;
+- already-closed rows remain unchanged;
+- future-not-started candidate rows remain open;
+- unrelated live grants remain unchanged;
+- a second execution is a no-op;
+- `down()` does not reopen repaired grants.
+
+Neighbour verification also proves:
+
+- entitlement integration regression: **10 / 10 PASS**;
+- commercial dead-surface contract: **17 / 17 PASS**;
+- migration TypeScript no-emit: **PASS**;
+- migration/RLS disposable-DB lifecycle: **PASS**;
+- `git diff --check`: **PASS**.
+
+01D-5 is implemented and technically verified but remains pending commit,
+deployment, migration execution, and post-deploy production census.
+
+This does not close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
 
 ---
 
