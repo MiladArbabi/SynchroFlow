@@ -12,7 +12,7 @@
 //   POST /api/v1/billing/checkout     → Stripe/Shopify checkout redirect
 //   POST /api/v1/billing/portal       → Stripe customer portal redirect
 
-import { TIER_ORDER } from '@lasyncro/commercial-policy';
+import { standardLimits, TIER_ORDER } from '@lasyncro/commercial-policy';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Box, Typography, Button, Alert, CircularProgress, Divider,
@@ -20,9 +20,7 @@ import {
 import { useTheme, alpha } from '@mui/material/styles';
 import { ExternalLink, Check, Users } from 'lucide-react';
 import { axiosInstance } from '../../api/axiosConfig';
-import {
-  TIER_SHIPPED_ORDER_CAP, type Tier,
-} from '../../config/tiers';
+import type { Tier } from '../../config/tiers';
 import {
   PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency,
 } from '../../config/pricingDisplay';
@@ -861,7 +859,7 @@ const BillingSettings: React.FC = () => {
   const isShopifyBilled  = sub?.billing_provider === 'shopify';
   const manageBillingUrl = sub?.manage_billing_url ?? null;
 
-  const shippedCap  = TIER_SHIPPED_ORDER_CAP[tier as Tier] ?? 0;
+  const shippedCap = standardLimits(tier as Tier).shippedOrderCap;
 
   const periodLabel = usage?.period_starts_at && sub?.current_period_end
     ? `${fmtShortDate(usage.period_starts_at)} – ${fmtShortDate(sub.current_period_end)}, ${new Date(sub.current_period_end).getFullYear()}`

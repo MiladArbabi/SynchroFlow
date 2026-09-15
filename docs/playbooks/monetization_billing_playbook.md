@@ -2599,10 +2599,17 @@ limit is `Infinity`.
 > **Updated 2026-09-15 by COMMERCIAL-DEAD-SURFACE-01D-2 (§1.2):**
 > `specterSessionCap` is no longer a live commercial policy limit.
 
-> The frontend legacy display constants in `apps/frontend/src/config/tiers.ts`
-> (`TIER_SHIPPED_ORDER_CAP` core 200 / growth 1000; `TIER_SEAT_LIMIT` starter 1 /
-> core 3) **still drift** from these and are **not migrated in P0-A1** — tracked
-> compatibility debt for P0-A2/A3.
+> **Updated 2026-09-15 by FINAL-RECON-01A:** processed-order allowance
+> ownership is no longer duplicated in the frontend.
+> `TIER_SHIPPED_ORDER_CAP` was removed from
+> `apps/frontend/src/config/tiers.ts`; `ShippedOrderCapBanner` and
+> `BillingSettings` now consume canonical
+> `standardLimits(tier).shippedOrderCap` from
+> `@lasyncro/commercial-policy`.
+>
+> `TIER_SEAT_LIMIT` remains legacy frontend compatibility debt and is handled
+> separately by FINAL-RECON-01B. The legacy ingestion-cap surface is also
+> separate from this slice and belongs to FINAL-RECON-01C.
 
 **Module registry.** Typed `ModuleId` + `MODULE_CLASSIFICATION`
 (`standard` / `grant_only` / `internal` / `legacy`). `wms` is canonical;

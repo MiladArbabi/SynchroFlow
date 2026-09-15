@@ -1,14 +1,14 @@
 // apps/frontend/src/config/tiers.ts
 //
-// Frontend-local tier type + UI cap constants.
+// Frontend-local tier type + remaining legacy UI cap constants.
 //
 // SCOPE: UI-only — types, tier ordering, and display thresholds.
 // ENFORCEMENT (module grants, flag lists, pricing) lives exclusively
 // in packages/backend-core/src/config/tiers.ts — do NOT duplicate here.
 //
 // CHANGE POLICY:
-//   - Adding a new tier → update TIERS + all three cap records here AND backend-core.
-//   - Changing a cap value → update here AND backend-core/config/tiers.ts TierConfig.
+//   - Adding a new tier → update TIERS + remaining local UI records here as needed.
+//   - Processed-order allowances must come from @lasyncro/commercial-policy.
 //   - Module grants / flags → backend-core ONLY. Never add those here.
 
 export const TIERS = ['starter', 'core', 'growth', 'scale'] as const;
@@ -26,13 +26,6 @@ export const TIER_MONTHLY_ORDER_CAP: Record<Tier, number> = {
   starter: 50,
   core: 2000,
   growth: 10000,
-  scale: Infinity,
-};
-
-export const TIER_SHIPPED_ORDER_CAP: Record<Tier, number> = {
-  starter: 50,
-  core: 200,
-  growth: 1000,
   scale: Infinity,
 };
 

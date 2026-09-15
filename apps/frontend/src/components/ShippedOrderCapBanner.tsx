@@ -9,9 +9,12 @@ import { useEffect, useState } from 'react';
 import { Box, Typography, useTheme, alpha } from '@mui/material';
 import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { PLAN_PROCESSED_ORDER_OVERAGE_CENTS } from '@lasyncro/commercial-policy';
+import {
+  PLAN_PROCESSED_ORDER_OVERAGE_CENTS,
+  standardLimits,
+} from '@lasyncro/commercial-policy';
 import { useEntitlements } from '../contexts/EntitlementsContext';
-import { TIER_SHIPPED_ORDER_CAP, type Tier } from '../config/tiers';
+import type { Tier } from '../config/tiers';
 import { axiosInstance } from '../api/axiosConfig';
 
 interface UsageSummary {
@@ -38,7 +41,7 @@ export function ShippedOrderCapBanner() {
   if (!usage || !tier || tier === 'starter') return null;
 
   const paidTier = tier as Tier;
-  const included = TIER_SHIPPED_ORDER_CAP[paidTier];
+  const { shippedOrderCap: included } = standardLimits(paidTier);
   const overageCents =
     PLAN_PROCESSED_ORDER_OVERAGE_CENTS[
       paidTier as keyof typeof PLAN_PROCESSED_ORDER_OVERAGE_CENTS
