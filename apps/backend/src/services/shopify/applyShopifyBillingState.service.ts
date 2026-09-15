@@ -43,6 +43,8 @@ export async function applyShopifyBillingState(
   // merge list and is therefore always asserted here — a shop reconciled
   // against Shopify's live billing state is, by definition, Shopify-billed.
   // current_period_end remains an accompanying non-authoritative field.
+  // Partner API omission is not evidence that an already-known billing boundary
+  // disappeared, so a null provider value must not erase the stored boundary.
   //
   // No externalEventId/idempotencyKey: this function is called by redirect
   // reconciliation, the periodic reconciliation sweep, and legacy/secondary
@@ -53,7 +55,10 @@ export async function applyShopifyBillingState(
     {
       shopId,
       to: { tier, status: billingState.status, billingProvider: 'shopify' },
-      fields: { current_period_end: billingState.currentPeriodEnd },
+      fields:
+        billingState.currentPeriodEnd === null
+          ? {}
+          : { current_period_end: billingState.currentPeriodEnd },
       source: 'shopify_billing_reconciliation',
       reason: 'shopify_billing_state_applied',
       actorType: 'shopify',

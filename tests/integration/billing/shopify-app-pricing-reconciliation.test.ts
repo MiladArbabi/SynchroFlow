@@ -84,7 +84,7 @@ async function subscription(shopId: number) {
   return withTenant(shopId, (trx) =>
     trx('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('tier', 'status', 'billing_provider'),
+      .first('tier', 'status', 'billing_provider', 'current_period_end'),
   );
 }
 
@@ -123,17 +123,58 @@ describe('MON-REM-01B-4 — Shopify App Pricing redirect reconciliation API', ()
       expected_plan_handle: 'growth',
       authoritative_plan_handle: 'core',
     });
-    expect(await subscription(f.shopId)).toMatchObject({
+    const persisted = await subscription(f.shopId);
+
+    expect(persisted).toMatchObject({
       tier: 'core',
       status: 'active',
       billing_provider: 'shopify',
     });
+
+    expect(new Date(persisted.current_period_end).toISOString())
+      .toBe('2026-10-01T00:00:00.000Z');
+  });
+
+  it('preserves a known period end when Partner API omits the cycle boundary', async () => {
+    const f = await fixture();
+    const knownPeriodEnd = new Date('2026-10-15T00:00:00.000Z');
+
+    await withTenant(f.shopId, (trx) =>
+      trx('shop_subscriptions')
+        .where({ shop_id: f.shopId })
+        .update({ current_period_end: knownPeriodEnd }),
+    );
+
+    programPartnerActiveSubscription({
+      shopGid: f.shopGid,
+      commercialHandle: 'core',
+      currentBillingCycleEnd: null,
+    });
+
+    const res = await request(app)
+      .post('/api/v1/billing/shopify/reconcile')
+      .set('Authorization', `Bearer ${f.token}`)
+      .send({ expected_plan_handle: 'core' });
+
+    expect(res.status).toBe(200);
+
+    const persisted = await subscription(f.shopId);
+
+    expect(persisted).toMatchObject({
+      tier: 'core',
+      status: 'active',
+      billing_provider: 'shopify',
+    });
+
+    expect(new Date(persisted.current_period_end).toISOString())
+      .toBe(knownPeriodEnd.toISOString());
   });
 });
 
 function programPartnerActiveSubscription(input: {
   shopGid: string;
   commercialHandle: 'core' | 'growth' | 'scale' | 'starter' | 'early-access';
+  currentBillingCycleEnd?: string | null;
 }) {
   partnerFetch.mockImplementation(async (url: unknown, init?: RequestInit) => {
     const href = String(url);
@@ -156,7 +197,10 @@ function programPartnerActiveSubscription(input: {
             trialEndsAt: null,
             currentBillingCycle: {
               startTime: '2026-09-01T00:00:00Z',
-              endTime: '2026-10-01T00:00:00Z',
+              endTime:
+                input.currentBillingCycleEnd === undefined
+                  ? '2026-10-01T00:00:00Z'
+                  : input.currentBillingCycleEnd,
             },
             items: [
               {

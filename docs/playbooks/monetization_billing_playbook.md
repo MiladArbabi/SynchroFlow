@@ -1717,6 +1717,28 @@ Original plan: `handleAppUninstalled` would call the same live `fetchShopifyBill
 - **`apps/backend/src/api/shopify/handlers/appUninstalled.handler.ts`** (wrapper) — updated to pass `envelope.shopId` (populated since the SHB-16 router fix) instead of `envelope.shopDomain`, and to call the new two-argument `handleAppUninstalled` signature.
 - **`apps/backend/src/services/shopify/shopifyUninstallGrace.service.ts`** + **`apps/backend/src/workers/shopifyUninstallGrace.worker.ts`** (new) — mirrors `trial-expiry.service.ts`/`.worker.ts` exactly: 6-hour poll, per-shop error isolation, DB-only sweep for `billing_provider: 'shopify'` shops with `status IN ('canceled', 'past_due')`, non-`starter` tier, and `current_period_end` in the past. Registered in `apps/backend/src/bootstrap/workers.ts` following the identical registration pattern as the trial-expiry worker.
 
+### MON-REM-01B-FINAL-01 — Shopify billing period-boundary preservation
+
+`applyShopifyBillingState()` treats Shopify Partner API
+`currentBillingCycle.endTime` as an accompanying provider fact, not as a
+destructive null assertion.
+
+- When Partner API supplies a current billing-cycle end, reconciliation writes
+  that value to `shop_subscriptions.current_period_end`.
+- When Partner API omits the boundary and normalization returns `null`,
+  reconciliation leaves any already-known `current_period_end` unchanged.
+- A missing cycle boundary is **not** derived from `trialEndsAt`; trial state
+  remains a separate lifecycle concern.
+- This preservation matters because uninstall/grace handling consumes the stored
+  `current_period_end`; erasing a known future boundary could otherwise make an
+  uninstall look like there is no paid grace remaining and trigger an immediate
+  Starter downgrade.
+
+Permanent regression coverage:
+`tests/integration/billing/shopify-app-pricing-reconciliation.test.ts` verifies
+both provider-supplied boundary persistence and omission-preserves-known-value
+semantics.
+
 ### Grace-period status scope (product decision, confirmed)
 
 Only `CANCELLED` (explicit cancel or uninstall, which auto-cancels the charge) and `FROZEN` (payment failure on a previously-active subscription — same semantics as Stripe's `past_due`, conventionally given a dunning/grace window) get the paid-until-period-end treatment. `DECLINED` and `EXPIRED` mean the merchant never completed approval in the first place — no period was ever actually purchased — so those downgrade immediately via `shopifyBillingReconciliation.service.ts`'s existing logic (§24), unrelated to the uninstall-specific grace mechanics documented here.
