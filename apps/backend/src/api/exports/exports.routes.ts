@@ -19,7 +19,6 @@ import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   exportOrders,
   exportReturns,
-  exportFinances,
   exportProducts,
   exportColumns,
 } from './exports.controller.js';
@@ -52,14 +51,6 @@ router.post(
   requireCapability('exports.core'),
   requireAction('exports:read'),
   exportReturns
-);
-
-router.post(
-  '/finances',
-  authenticateToken,
-  requireCapability('exports.core'),
-  requireAction('exports:read'),
-  exportFinances
 );
 
 router.post(

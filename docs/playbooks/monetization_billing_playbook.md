@@ -148,8 +148,8 @@ Facts recorded by this slice:
 - Historical migrations were not rewritten.
 - Historical entitlement row cleanup belongs to 01D-5.
 - No Shopify external pricing/dashboard changes were made.
-- Customers product gut remains 01D-3.
-- Finances remains paused and belongs to 01D-4.
+- 01D-3 Customers product gut is **DEFERRED** under GitHub #1116 pending a dedicated Shopify PCD/privacy and customer-domain architecture audit.
+- 01D-4 Finances pause containment is implemented and technically verified; deeper Finances / Cash Flow / Margin architecture remains deferred under GitHub #1117.
 
 Verification evidence:
 
@@ -163,6 +163,64 @@ Verification evidence:
 - `git diff --check`: **PASS**
 
 This does not close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
+
+---
+
+## 1.3 COMMERCIAL-DEAD-SURFACE-01D-3 — Customers product/domain review (DEFERRED)
+
+01D-3 is intentionally deferred rather than treated as complete.
+
+The audit surfaced a larger Shopify Protected Customer Data (PCD) and legacy
+Customers-domain architecture question that should not be mixed into the current
+commercial cleanup. GitHub #1116 is the canonical backlog item for that work.
+
+Current decision:
+
+- leave the existing Customers wiring unchanged for now;
+- do not treat the current Customers architecture as approved or final;
+- do not expand customer-data access or add new customer-derived product behavior;
+- preserve historical schema/migrations until a dedicated privacy/data-model audit;
+- later decide explicitly between full Customers-domain retirement and a separately
+  reviewed compliant redesign.
+
+01D-3 is therefore **DEFERRED**, not closed.
+
+---
+
+## 1.4 COMMERCIAL-DEAD-SURFACE-01D-4 — Finances pause containment (2026-09-15)
+
+Finances, Cash Flow, and Margin remain **PAUSED**, not deprecated. Their
+implementation and historical schema/data are intentionally preserved for a
+possible future product review.
+
+The immediate containment slice removed merchant-facing runtime reachability:
+
+- `/api/v1/modules/finances` is no longer mounted;
+- `/api/v1/modules/cashflow` is no longer mounted;
+- the duplicate `/v1/modules/finances` mount is removed;
+- `/api/v1/exports/finances` is no longer registered.
+
+The underlying Finances / Cash Flow / Margin implementation, services, modules,
+onboarding/activation definitions, schema, migrations, and historical data remain
+untouched.
+
+Permanent verification:
+
+- paused-runtime containment contract: **5 / 5 PASS**;
+- export commercial-access contract: **18 / 18 PASS**;
+- commercial dead-surface seal: **17 / 17 PASS**;
+- backend TypeScript no-emit: **PASS**;
+- `git diff --check`: **PASS**.
+
+The export commercial-access neighbour contract was also strengthened so every
+active export route must carry both `exports.core` capability enforcement and
+`exports:read` RBAC, rather than relying on a hard-coded route count.
+
+Deeper Finances / Cash Flow / Margin architecture, product value, UX, data-model,
+and reactivation work is deferred to GitHub #1117.
+
+01D-4 remains pending commit/deploy/production 404 certification. This does not
+close full COMMERCIAL-DEAD-SURFACE-01 or MON-REM-01B.
 
 ---
 

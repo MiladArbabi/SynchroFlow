@@ -15,7 +15,6 @@ import overviewRoutes from './overview.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
 import ahaRoutes from '../api/aha/aha.routes.js';
 import returnsRoutes from '../api/returns/returns.routes.js';
-import financesRoutes from '../api/finances/index.js';
 import systemRoutes from '../api/system/system.routes.js';
 
 const router = Router();
@@ -43,7 +42,6 @@ router.use('/user-state', userStateRoutes);
 router.use('/onboarding', onboardingReadinessRouter);
 
 router.use('/v1/modules/order-nexus', orderNexusRoutes);
-router.use('/v1/modules/finances', financesRoutes);
 router.use('/v1/modules/overview', overviewRoutes);
 // Alerts inbox — ranked operator signals, auto-resolved per snapshot cycle
 router.use('/v1/alerts', alertsRoutes);

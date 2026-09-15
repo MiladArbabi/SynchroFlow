@@ -152,15 +152,35 @@ describe('A3E-C5 — exports.routes.ts uses requireCapability(exports.core)', ()
   });
 
   it('EXPECTED RED: every active export route uses requireCapability(\'exports.core\')', () => {
-    const requireCapabilityCount = (src.match(/requireCapability\(\s*'exports\.core'\s*\)/g) || []).length;
-    // /columns, /orders, /returns, /finances, /products — 5 route
-    // registrations in the current file.
-    expect(requireCapabilityCount).toBeGreaterThanOrEqual(5);
+    const routeBlocks = [
+      ...src.matchAll(
+        /router\.(?:get|post)\(\s*['"][^'"]+['"][\s\S]*?\n\);/g
+      ),
+    ].map((match) => match[0]);
+
+    expect(routeBlocks.length).toBeGreaterThan(0);
+
+    for (const routeBlock of routeBlocks) {
+      expect(routeBlock).toMatch(
+        /requireCapability\(\s*['"]exports\.core['"]\s*\)/
+      );
+    }
   });
 
-  it('GREEN CONTROL: requireAction(\'exports:read\') RBAC is preserved, not weakened', () => {
-    const requireActionCount = (src.match(/requireAction\(\s*'exports:read'\s*\)/g) || []).length;
-    expect(requireActionCount).toBeGreaterThanOrEqual(5);
+  it('GREEN CONTROL: every active export route preserves exports:read RBAC', () => {
+    const routeBlocks = [
+      ...src.matchAll(
+        /router\.(?:get|post)\(\s*['"][^'"]+['"][\s\S]*?\n\);/g
+      ),
+    ].map((match) => match[0]);
+
+    expect(routeBlocks.length).toBeGreaterThan(0);
+
+    for (const routeBlock of routeBlocks) {
+      expect(routeBlock).toMatch(
+        /requireAction\(\s*['"]exports:read['"]\s*\)/
+      );
+    }
   });
 });
 
