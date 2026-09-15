@@ -43,9 +43,34 @@ describe('A2A-C6 — effective union is a derived resolver, no schema / no deny 
 
   it('GREEN CONTROL: no migration introduces a capability / effective-entitlement / deny table', () => {
     const migDir = path.join(REPO, 'apps/backend/migrations');
+    const forbidden =
+      /capabilit|effective.*entitlement|entitlement.*deny|deny.*entitlement/i;
+
     const bad = fs
       .readdirSync(migDir)
-      .filter((f) => /capabilit|effective.*entitlement|entitlement.*deny|deny.*entitlement/i.test(f));
+      .filter((f) => /\.(?:ts|js)$/.test(f))
+      .flatMap((f) => {
+        const src = fs.readFileSync(path.join(migDir, f), 'utf8');
+
+        const knexCreatedTables = Array.from(
+          src.matchAll(
+            /\bcreateTable(?:IfNotExists)?\s*\(\s*['"`]([^'"`]+)['"`]/g,
+          ),
+          (match) => match[1],
+        );
+
+        const rawSqlCreatedTables = Array.from(
+          src.matchAll(
+            /\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+["`]?([A-Za-z0-9_.-]+)["`]?/gi,
+          ),
+          (match) => match[1],
+        );
+
+        return [...knexCreatedTables, ...rawSqlCreatedTables]
+          .filter((tableName) => forbidden.test(tableName))
+          .map((tableName) => `${f}:${tableName}`);
+      });
+
     expect(bad).toEqual([]);
   });
 
