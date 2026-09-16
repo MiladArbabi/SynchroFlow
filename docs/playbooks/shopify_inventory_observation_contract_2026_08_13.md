@@ -81,7 +81,7 @@ The observation-only contract prevents this feedback loop.
 
 Inventory drift detection is a separate concern from webhook ingestion.
 
-A future reconciliation workflow may compare:
+The implemented reconciliation workflow may compare:
 
 - Shopify availability
 - laSyncro expected sellable availability
@@ -89,7 +89,22 @@ A future reconciliation workflow may compare:
 - Shopify Location identity
 - variant identity
 
-but detecting drift MUST NOT automatically manufacture physical stock.
+and webhook orchestration may open a durable reconciliation incident when a
+genuine external Shopify fulfillment is valid commerce truth but LaSyncro
+cannot safely determine one internal physical location.
+
+That ambiguity MUST NOT automatically manufacture physical stock or guess a
+bin. The fulfillment advances commerce truth without writing a guessed
+`fulfillment_removal`.
+
+Physical evidence is gathered through the canonical blind inventory recount.
+A zero-variance recount verifies current truth; an accepted non-zero variance
+is corrected only by `commitRecount()` through a traceable
+`reconciliation_correction`.
+
+The recount repairs or verifies current physical truth. It does not establish
+which bin historically supplied the external Shopify fulfillment, so the
+reconciliation does not invent historical location attribution.
 
 Any physical correction must originate from an explicit, traceable warehouse
 inventory event or approved reconciliation action.

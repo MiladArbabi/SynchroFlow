@@ -30,7 +30,8 @@ export type ProblemCenterSource =
   | 'stow'
   | 'receive'
   | 'pack'
-  | 'returns';
+  | 'returns'
+  | 'reconciliation';
 
 export interface CreateProblemCenterTaskInput {
   shopId: number;
@@ -75,15 +76,28 @@ export async function createProblemCenterTask(
     throw new Error('PROBLEM_TASK_QUANTITY_INVALID');
   }
 
-  const findExisting = async () =>
-    sourcePickExceptionId
-      ? trx('problem_center_tasks')
-          .where({
-            shop_id: shopId,
-            source_pick_exception_id: sourcePickExceptionId,
-          })
-          .first('problem_task_id', 'problem_bin_location')
-      : undefined;
+  const findExisting = async () => {
+    if (sourcePickExceptionId) {
+      return trx('problem_center_tasks')
+        .where({
+          shop_id: shopId,
+          source_pick_exception_id: sourcePickExceptionId,
+        })
+        .first('problem_task_id', 'problem_bin_location');
+    }
+
+    if (source === 'reconciliation') {
+      return trx('problem_center_tasks')
+        .where({
+          shop_id: shopId,
+          source: 'reconciliation',
+          source_exception_id: sourceExceptionId,
+        })
+        .first('problem_task_id', 'problem_bin_location');
+    }
+
+    return undefined;
+  };
 
   const existing = await findExisting();
 
@@ -110,7 +124,7 @@ export async function createProblemCenterTask(
    * aborting the caller's transaction. Rows with a NULL
    * source_pick_exception_id are outside the index and insert normally.
    */
-  const inserted = await trx('problem_center_tasks')
+  const insertQuery = trx('problem_center_tasks')
     .insert({
       shop_id: shopId,
       status: 'open',
@@ -122,14 +136,33 @@ export async function createProblemCenterTask(
       exception_type: exceptionType,
       problem_bin_location: problemBinLocation,
       notes: notes ?? null,
-    })
-    .onConflict(
-      trx.raw(
-        '(shop_id, source_pick_exception_id) WHERE source_pick_exception_id IS NOT NULL'
-      ) as unknown as string
-    )
-    .ignore()
-    .returning(['problem_task_id', 'problem_bin_location']);
+    });
+
+  /**
+   * Pick keeps its dedicated partial-unique target.
+   *
+   * Reconciliation uses ON CONFLICT DO NOTHING without a target so PostgreSQL
+   * can use the reconciliation partial unique index added by migration 0181.
+   * Generic/manual sources retain their previous insertion semantics.
+   */
+  const replaySafeInsert =
+    sourcePickExceptionId
+      ? insertQuery
+          .onConflict(
+            trx.raw(
+              '(shop_id, source_pick_exception_id) WHERE source_pick_exception_id IS NOT NULL'
+            ) as unknown as string
+          )
+          .ignore()
+      : source === 'reconciliation'
+        ? insertQuery.onConflict().ignore()
+        : insertQuery;
+
+  const inserted =
+    await replaySafeInsert.returning([
+      'problem_task_id',
+      'problem_bin_location',
+    ]);
 
   if (inserted.length === 1) {
     return {

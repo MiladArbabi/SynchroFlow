@@ -428,3 +428,34 @@ Endpoint: `GET /api/v1/modules/products/wms-readiness` (separate from operator-s
 **A real reversal on Problem Center, but on better evidence.** §15 already shows Direction A's Problem Center recommendation was overridden once before, for friction reasons. This session's move to a new Returns & Resolution Center (not WMS) is grounded in something neither prior decision had: `returnJobs.service.ts` writes directly into `problem_center_tasks` on `repackable` condition and quantity shortfalls — confirmed via code, not inferred. See `ReturnsResolutionModule.md` §2.5.
 
 **Genuinely undecided, by either document:** whether §8's "Inventory delegates, never duplicates" principle needs new wording now that Data Quality sits back in Inventory. The principle holds; only its example changed.
+
+## 18. External Shopify Fulfillment Reconciliation (2026-09-16)
+
+External commerce truth and internal physical-location truth are separate
+authority layers.
+
+For a genuine post-baseline Shopify fulfillment, LaSyncro may know that the
+order was fulfilled while still lacking enough evidence to determine which
+internal bin physically supplied the unit. In that state the system must not
+convert uncertainty into a guessed inventory movement.
+
+The durable architecture is:
+
+`external Shopify fulfillment`
+→ commerce truth advances
+→ exact LaSyncro fulfillment echo check
+→ physical-location resolution
+→ unresolved/ambiguous location becomes a durable reconciliation conflict
+→ targeted blind recount of real candidate bins
+→ current physical truth verified or corrected
+→ reconciliation incident resolved
+
+A zero-variance recount resolves the incident as
+`physical_recount_verified`. An accepted non-zero variance is written by the
+existing recount ledger path as `reconciliation_correction` and resolves the
+incident as `physical_recount_corrected`.
+
+The reconciliation finalizer never writes stock itself, and this path never
+adds a second `fulfillment_removal`. Physical recount evidence repairs current
+truth; it does not manufacture historical proof of which bin fulfilled the
+Shopify order.

@@ -23,10 +23,57 @@ import orderFulfillmentIngestionService
   from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
 import { debugLog } from '../projection.utils.js';
-import { applyFulfillmentPhysicalRemoval }
-  from '../../services/wms/fulfillmentPhysicalRemoval.service.js';
+import {
+  applyFulfillmentPhysicalRemoval,
+  FulfillmentPhysicalLocationConflict,
+} from '../../services/wms/fulfillmentPhysicalRemoval.service.js';
+import { createFulfillmentReconciliationConflict }
+  from '../../services/wms/fulfillmentReconciliationConflict.service.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
+
+function normalizeShopifyFulfillmentId(
+  value: unknown
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const raw = String(value).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  return raw.split('/').pop() ?? raw;
+}
+
+async function isLasyncroFulfillmentEcho(
+  trx: Knex.Transaction,
+  lasyncroOrderId: string,
+  payloadFulfillmentId: unknown
+): Promise<boolean> {
+  const incomingId =
+    normalizeShopifyFulfillmentId(payloadFulfillmentId);
+
+  if (!incomingId) {
+    return false;
+  }
+
+  const warehouseStatus =
+    await trx('order_warehouse_status')
+      .where({
+        lasyncro_order_id: lasyncroOrderId,
+      })
+      .first('shopify_fulfillment_id');
+
+  const writtenId =
+    normalizeShopifyFulfillmentId(
+      warehouseStatus?.shopify_fulfillment_id
+    );
+
+  return writtenId !== null && writtenId === incomingId;
+}
 
 export async function handleOrdersFulfilled({
   domainEvent,
@@ -304,12 +351,58 @@ export async function handleOrdersFulfilled({
      * so inventory constraints continue to reflect unfulfilled units.
      */
     if (isFulfilled) {
-      await applyFulfillmentPhysicalRemoval(
-        trx,
-        domainEvent.shop_id,
-        lasyncroOrderId,
-        canonicalEventTime
-      );
+      const lasyncroEcho =
+        await isLasyncroFulfillmentEcho(
+          trx,
+          lasyncroOrderId,
+          payload.id
+        );
+
+      if (lasyncroEcho) {
+        debugLog('[FULFILLMENT_LASYNCRO_ECHO_PHYSICAL_SKIP]', {
+          eventId: domain_event_id,
+          lasyncroOrderId,
+          shopifyFulfillmentId: payload.id,
+        });
+      } else {
+        try {
+          /**
+           * PHYSICAL APPLICATION SAVEPOINT
+           * ------------------------------
+           * applyFulfillmentPhysicalRemoval may have already touched earlier
+           * lines before a later line proves ambiguous.
+           *
+           * A nested Knex transaction maps to a PostgreSQL savepoint. Any
+           * physical writes made before the diagnostic are rolled back before
+           * the outer projection transaction records the reconciliation issue.
+           */
+          await trx.transaction(async (physicalTrx) => {
+            await applyFulfillmentPhysicalRemoval(
+              physicalTrx,
+              domainEvent.shop_id,
+              lasyncroOrderId,
+              canonicalEventTime
+            );
+          });
+        } catch (error) {
+          if (
+            !(error instanceof FulfillmentPhysicalLocationConflict)
+          ) {
+            throw error;
+          }
+
+          await createFulfillmentReconciliationConflict(
+            trx,
+            {
+              shopId: domainEvent.shop_id,
+              sourceDomainEventId: domain_event_id,
+              lasyncroOrderId,
+              occurredAt: canonicalEventTime,
+              conflict: error,
+            }
+          );
+        }
+      }
 
       await trx('order_revenue_units')
         .where({ lasyncro_order_id: lasyncroOrderId })

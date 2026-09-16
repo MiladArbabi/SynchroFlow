@@ -884,3 +884,106 @@ creation succeeded.
 - `WMS-READINESS-NAV-44` — `ProductsWmsReadinessPage.tsx` uses the same
   Router-less `runtime.navigate` fallback at two call sites and likely
   carries the identical no-op route-swap defect.
+
+## External Shopify fulfillment reconciliation — P1D, 2026-09-16
+
+### Trigger and authority boundary
+
+A genuine post-baseline Shopify fulfillment may be valid commerce truth while
+still lacking enough trustworthy LaSyncro evidence to identify one internal
+bin that physically supplied the unit.
+
+When the physical resolver reports an ambiguous internal location:
+
+- commerce fulfillment truth is allowed to advance;
+- LaSyncro MUST NOT guess a bin;
+- LaSyncro MUST NOT write a `fulfillment_removal`;
+- one durable `inventory_reconciliation_conflicts` incident is opened;
+- the incident owns one reconciliation Problem Center task and one active
+  `inventory_reconciliation_conflict` alert.
+
+A Shopify fulfillment previously written by LaSyncro and identified by the
+stored Shopify fulfillment ID is an echo, not a second physical action, and
+does not enter this reconciliation path.
+
+### Targeted physical reconciliation
+
+The reconciliation incident may request one linked blind recount through
+`requestFulfillmentReconciliationRecount()`.
+
+The request:
+
+- is idempotently linked through `recount_task_id`;
+- targets real, active candidate bins only;
+- requires the candidate bins to belong to one warehouse;
+- creates the canonical recount with `scope='locations'`;
+- does not resolve the parent reconciliation incident.
+
+The recount remains blind. Expected quantities are system evidence and are
+not exposed to the counting operator.
+
+### Resolution lifecycle
+
+There are two terminal evidence outcomes.
+
+**Verified current truth**
+
+If every active recount line is counted, no line is skipped or contested, and
+all variances are zero, `closeCount()` commits the recount. The recount HTTP
+controller then finalizes the linked reconciliation in the same database
+transaction as:
+
+`physical_recount_verified`
+
+**Corrected current truth**
+
+A non-zero variance sends the recount to `manual_review`. An accepted variance
+must carry a `variance_reason`. `commitRecount()` remains the sole inventory
+writer and creates the canonical `reconciliation_correction` movement for each
+accepted non-zero variance. After that commit, the recount HTTP controller
+finalizes the linked reconciliation in the same transaction as:
+
+`physical_recount_corrected`
+
+The reconciliation finalizer itself writes no inventory movement.
+
+### Accounting and historical-attribution invariant
+
+Physical reconciliation verifies or repairs **current physical truth**. It
+does not prove which bin historically supplied the earlier Shopify
+fulfillment.
+
+Therefore:
+
+- `resolution_location_code` remains null;
+- the accepted recount correction is the ledger repair;
+- no additional `fulfillment_removal` may be manufactured after recount;
+- a count must never cause the Shopify fulfillment to debit inventory a
+  second time.
+
+This preserves the distinction between a valid external commerce event and
+the later physical evidence used to restore trustworthy warehouse state.
+
+### Ordinary recount compatibility
+
+The terminal orchestration lives at the recount HTTP boundary rather than
+inside `inventoryRecount.service.ts`. This avoids a circular dependency between
+generic recount logic and fulfillment reconciliation.
+
+For a normal recount with no linked reconciliation conflict,
+`finalizeFulfillmentReconciliationRecount()` is a no-op. Existing recount
+behavior and response shapes remain unchanged.
+
+### Permanent verification
+
+Certified on 2026-09-16:
+
+- fulfillment reconciliation integration contracts: 7/7 PASS;
+- ordinary recount neighbour contracts: 25/25 PASS across multi-location and
+  reassignment suites;
+- backend TypeScript build: PASS;
+- `git diff --check`: PASS.
+
+The permanent regression suite covers durable conflict creation, idempotent
+recount linkage, complete physical-evidence finalization, corrected-inventory
+accounting, zero `fulfillment_removal`, and both real HTTP terminal paths.

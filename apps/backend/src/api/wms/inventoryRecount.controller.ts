@@ -20,6 +20,9 @@ import {
   resolveDefaultWarehouseId,
   type RecountFindingType,
 } from '../../services/wms/inventoryRecount.service.js';
+import {
+  finalizeFulfillmentReconciliationRecount,
+} from '../../services/wms/fulfillmentReconciliationConflict.service.js';
 
 /**
  * Inventory recount HTTP boundary.
@@ -494,6 +497,17 @@ export const httpCloseRecountTask = async (req: Request, res: Response) => {
 
       const closed = await closeCount(trx, shopId, recountTaskId, userId);
 
+      if (closed.status === 'committed') {
+        await finalizeFulfillmentReconciliationRecount(
+          trx,
+          {
+            shopId,
+            recountTaskId,
+            resolvedBy: userId,
+          }
+        );
+      }
+
       await writeAuditLog(trx, {
         shopId,
         operatorId: userId,
@@ -604,7 +618,24 @@ export const httpCommitRecountTask = async (req: Request, res: Response) => {
   try {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return commitRecount(trx, shopId, recountTaskId, userId);
+
+      const committed = await commitRecount(
+        trx,
+        shopId,
+        recountTaskId,
+        userId
+      );
+
+      await finalizeFulfillmentReconciliationRecount(
+        trx,
+        {
+          shopId,
+          recountTaskId,
+          resolvedBy: userId,
+        }
+      );
+
+      return committed;
     });
 
     return res.status(200).json(result);

@@ -5,6 +5,87 @@ import { v5 as uuidv5 } from 'uuid';
 const FULFILLMENT_REMOVAL_NAMESPACE =
   'da62cc94-65a7-4afb-a819-e79ce724d86e';
 
+export type FulfillmentPhysicalLocationConflictCode =
+  | 'LOCATION_NOT_FOUND'
+  | 'LOCATION_AMBIGUOUS';
+
+export type FulfillmentPhysicalCandidateLocation = {
+  location_code: string;
+  on_hand_quantity: string;
+};
+
+/**
+ * Structured diagnostic for Shopify fulfillment when commerce truth is known
+ * but one safe LaSyncro physical location cannot be established.
+ *
+ * The Error message deliberately preserves the historical contract used by
+ * existing direct-service regression tests and operational logs.
+ */
+export class FulfillmentPhysicalLocationConflict extends Error {
+  readonly code: FulfillmentPhysicalLocationConflictCode;
+  readonly lasyncroLineItemId: string;
+  readonly lasyncroVariantId: string;
+  readonly quantity: number;
+  readonly candidateLocations: FulfillmentPhysicalCandidateLocation[];
+
+  constructor(input: {
+    code: FulfillmentPhysicalLocationConflictCode;
+    lasyncroLineItemId: string;
+    lasyncroVariantId: string;
+    quantity: number;
+    candidateLocations: FulfillmentPhysicalCandidateLocation[];
+  }) {
+    super(
+      `[FULFILLMENT_PHYSICAL_REMOVAL] ${input.code} line=${input.lasyncroLineItemId}`
+    );
+
+    this.name = 'FulfillmentPhysicalLocationConflict';
+    this.code = input.code;
+    this.lasyncroLineItemId = input.lasyncroLineItemId;
+    this.lasyncroVariantId = input.lasyncroVariantId;
+    this.quantity = input.quantity;
+    this.candidateLocations = input.candidateLocations;
+  }
+}
+
+/**
+ * Physical inventory semantics must match rebuildInventoryProjection.
+ *
+ * Economic order-ingestion `sale` rows are not physical debits.
+ * Historical pre-0147 pick_scan sales remain the compatibility exception.
+ * Canonical-repair bookkeeping compensators are physically neutral.
+ */
+const PHYSICAL_ON_HAND_CASE_SQL = `
+  CASE
+    WHEN movement_type = 'sale'
+      AND triggered_by = 'pick_scan'
+      THEN quantity_delta
+
+    WHEN movement_type = 'reconciliation_correction'
+      AND COALESCE(reference_type, '') <> 'canonical_repair'
+      AND NOT (
+        COALESCE(triggered_by, '') = 'inv_sale_backfill_01'
+        AND reference_type = 'inventory_movement'
+      )
+      THEN quantity_delta
+
+    WHEN movement_type IN (
+      'inbound_purchase',
+      'refund_return',
+      'manual_adjustment',
+      'opening_balance',
+      'location_transfer',
+      'pick_removal',
+      'fulfillment_removal',
+      'damage',
+      'shrinkage'
+    )
+      THEN quantity_delta
+
+    ELSE 0
+  END
+`;
+
 export async function applyFulfillmentPhysicalRemoval(
   trx: Knex.Transaction,
   shopId: number,
@@ -23,6 +104,58 @@ export async function applyFulfillmentPhysicalRemoval(
     const lasyncroLineItemId = String(line.lasyncro_line_item_id);
     const lasyncroVariantId = String(line.lasyncro_variant_id);
     const orderedQuantity = Number(line.quantity);
+
+    /**
+     * SHOPIFY → LASYNCRO PHYSICAL AUTHORITY CUTOVER
+     * ---------------------------------------------
+     * Initial Shopify sync establishes the variant's physical baseline through
+     * its Shopify opening_balance. Fulfillments whose event-time predates that
+     * baseline are historical Shopify truth already reflected in the baseline.
+     *
+     * Replaying their physical debit would double-apply history.
+     *
+     * We still reconstruct the warehouse/order state as shipped, but we do not
+     * infer a LaSyncro bin/location or write fulfillment_removal.
+     */
+    const shopifyBaselineRow =
+      await trx('inventory_movements')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: lasyncroVariantId,
+          movement_type: 'opening_balance',
+          platform: 'shopify',
+        })
+        .min('occurred_at as occurred_at')
+        .first();
+
+    const shopifyBaselineAt =
+      shopifyBaselineRow?.occurred_at
+        ? new Date(shopifyBaselineRow.occurred_at)
+        : null;
+
+    if (
+      shopifyBaselineAt &&
+      fulfilledAt.getTime() < shopifyBaselineAt.getTime()
+    ) {
+      console.info('[FULFILLMENT_PRE_BASELINE_PHYSICAL_SKIP]', {
+        shopId,
+        lasyncroOrderId,
+        lasyncroLineItemId,
+        lasyncroVariantId,
+        fulfilledAt,
+        shopifyBaselineAt,
+      });
+
+      await markLineShipped(
+        trx,
+        shopId,
+        lasyncroOrderId,
+        lasyncroLineItemId,
+        fulfilledAt
+      );
+
+      continue;
+    }
 
     const warehouseState =
       await trx('order_line_item_warehouse_status')
@@ -253,23 +386,42 @@ export async function applyFulfillmentPhysicalRemoval(
             shop_id: shopId,
             lasyncro_variant_id: lasyncroVariantId,
           })
+          /**
+           * EVENT-TIME CAUSALITY
+           * --------------------
+           * Future stock must never be used to explain an earlier fulfillment.
+           */
+          .andWhere('occurred_at', '<=', fulfilledAt)
           .groupBy('location_code')
-          .havingRaw('SUM(quantity_delta) >= ?', [remainingQuantity])
+          .havingRaw(
+            `SUM(${PHYSICAL_ON_HAND_CASE_SQL}) >= ?`,
+            [remainingQuantity]
+          )
           .select<{ location_code: string; on_hand_quantity: string }[]>(
             'location_code',
-            trx.raw('SUM(quantity_delta) as on_hand_quantity')
+            trx.raw(
+              `SUM(${PHYSICAL_ON_HAND_CASE_SQL}) as on_hand_quantity`
+            )
           );
 
       if (stockLocations.length === 0) {
-        throw new Error(
-          `[FULFILLMENT_PHYSICAL_REMOVAL] LOCATION_NOT_FOUND line=${lasyncroLineItemId}`
-        );
+        throw new FulfillmentPhysicalLocationConflict({
+          code: 'LOCATION_NOT_FOUND',
+          lasyncroLineItemId,
+          lasyncroVariantId,
+          quantity: remainingQuantity,
+          candidateLocations: stockLocations,
+        });
       }
 
       if (stockLocations.length > 1) {
-        throw new Error(
-          `[FULFILLMENT_PHYSICAL_REMOVAL] LOCATION_AMBIGUOUS line=${lasyncroLineItemId}`
-        );
+        throw new FulfillmentPhysicalLocationConflict({
+          code: 'LOCATION_AMBIGUOUS',
+          lasyncroLineItemId,
+          lasyncroVariantId,
+          quantity: remainingQuantity,
+          candidateLocations: stockLocations,
+        });
       }
 
       const [stockLocation] = stockLocations;

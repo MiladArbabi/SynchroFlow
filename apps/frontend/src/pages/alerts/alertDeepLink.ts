@@ -24,6 +24,7 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   wms_batch_released:      { route: '/wms',            label: 'Warehouse' },
   wms_receive_arrived:     { route: '/wms',            label: 'Warehouse' },
   wms_receive_exception:   { route: '/problem-center', label: 'Problem Center' },
+  inventory_reconciliation_conflict: { route: '/problem-center', label: 'Problem Center' },
   // FIX (2026-06-30): was routing to /demand — Sourcing module didn't
   // exist when this was written. Real path confirmed in
   // purchasingSubTabs.ts. alertDeepLink() already appends ?variantId=
