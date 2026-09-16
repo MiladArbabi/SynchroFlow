@@ -13,7 +13,15 @@
 // Credentials: merchant's own Shippo account token. Decrypted by
 // carrierLabel.service.ts before this method is called.
 
-import type { ICarrierProvider, GenerateLabelInput, GenerateLabelResult, CarrierCredentials } from './ICarrierProvider.js';
+import type {
+  ICarrierProvider,
+  GenerateLabelInput,
+  GenerateLabelResult,
+  CarrierCredentials,
+  CarrierTrackingObservationInput,
+  ProviderTrackingResult,
+  ICarrierTrackingProvider,
+} from './ICarrierProvider.js';
 
 const SHIPPO_API_BASE = 'https://api.goshippo.com';
 
@@ -31,7 +39,7 @@ interface ShippoSenderAddress {
   phone: string;
 }
 
-export class ShippoCarrierService implements ICarrierProvider {
+export class ShippoCarrierService implements ICarrierProvider, ICarrierTrackingProvider {
   readonly carrierCode = 'shippo';
 
   async generateLabel(
@@ -161,7 +169,141 @@ export class ShippoCarrierService implements ICarrierProvider {
       shippingCostExclVat: cheapest.amount != null ? Number(cheapest.amount) : null,
       shippingCostCurrency: cheapest.currency ?? null,
       carrierZone: cheapest.provider ?? null,
+      providerCarrierAccountId: cheapest.carrier_account ?? null,
     };
+  }
+
+  async getTracking(
+    input: CarrierTrackingObservationInput,
+    credentials: CarrierCredentials
+  ): Promise<ProviderTrackingResult> {
+    if (!credentials.apiToken) {
+      throw new Error('[SHIPPO] Missing API token credential');
+    }
+
+    if (!input.providerCarrierCode) {
+      throw new Error(
+        '[SHIPPO] providerCarrierCode is required for tracking reads'
+      );
+    }
+
+    if (!input.trackingNumber) {
+      throw new Error(
+        '[SHIPPO] trackingNumber is required for tracking reads'
+      );
+    }
+
+    const authHeader = `ShippoToken ${credentials.apiToken}`;
+
+    const url =
+      `${SHIPPO_API_BASE}/tracks/` +
+      `${encodeURIComponent(input.providerCarrierCode)}/` +
+      `${encodeURIComponent(input.trackingNumber)}`;
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'no body');
+      throw new Error(
+        `[SHIPPO] Tracking HTTP ${res.status}: ${body}`
+      );
+    }
+
+    const json: any = await res.json();
+    const status = json?.tracking_status;
+
+    if (!status?.status) {
+      throw new Error(
+        '[SHIPPO] Tracking response missing tracking_status.status'
+      );
+    }
+
+    if (!status?.status_date) {
+      throw new Error(
+        '[SHIPPO] Tracking response missing tracking_status.status_date'
+      );
+    }
+
+    const eventTimestamp = new Date(status.status_date);
+
+    if (Number.isNaN(eventTimestamp.getTime())) {
+      throw new Error(
+        '[SHIPPO] Tracking response has invalid status_date'
+      );
+    }
+
+    const location = status.location
+      ? [
+          status.location.city,
+          status.location.state,
+          status.location.country,
+        ]
+          .filter(Boolean)
+          .join(', ') || null
+      : null;
+
+    return {
+      rawStatus: status.status,
+      eventTimestamp,
+      location,
+      rawPayload: json,
+    };
+  }
+
+  /**
+   * #1114 STEP 5C — resolves a Shippo carrier_account id (captured at label
+   * purchase time as GenerateLabelResult.providerCarrierAccountId, from
+   * rate.carrier_account) to the canonical Shippo carrier token (e.g.
+   * 'usps') that GET /tracks/{carrier}/{trackingNumber} requires. Reads
+   * ONLY the response's `carrier` field — never carrier_zone, rate.provider,
+   * the tracking number, the account id, or any display-text field, all of
+   * which are free-text and not guaranteed to match Shippo's canonical
+   * carrier tokens.
+   *
+   * Shippo-specific by design: not part of ICarrierProvider or
+   * ICarrierTrackingProvider — Sendcloud has no equivalent concept, and this
+   * is not a general provider-capability registry (#1112 territory).
+   */
+  async resolveCarrierCodeFromAccount(
+    providerCarrierAccountId: string,
+    credentials: CarrierCredentials
+  ): Promise<string> {
+    if (!credentials.apiToken) {
+      throw new Error('[SHIPPO] Missing API token credential');
+    }
+    if (!providerCarrierAccountId) {
+      throw new Error('[SHIPPO] providerCarrierAccountId is required to resolve a canonical carrier token');
+    }
+
+    const authHeader = `ShippoToken ${credentials.apiToken}`;
+    const url = `${SHIPPO_API_BASE}/carrier_accounts/${encodeURIComponent(providerCarrierAccountId)}`;
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'no body');
+      throw new Error(`[SHIPPO] Carrier account lookup HTTP ${res.status}: ${body}`);
+    }
+
+    const json: any = await res.json();
+    const carrier = json?.carrier;
+
+    if (typeof carrier !== 'string' || carrier.length === 0) {
+      throw new Error('[SHIPPO] Carrier account response missing a non-empty carrier field');
+    }
+
+    return carrier;
   }
 }
 

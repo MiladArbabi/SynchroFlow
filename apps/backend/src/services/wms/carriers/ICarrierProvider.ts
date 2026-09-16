@@ -47,6 +47,27 @@ export interface GenerateLabelResult {
   shippingCostExclVat: number | null;
   shippingCostCurrency: string | null;
   carrierZone: string | null;
+  providerCarrierAccountId?: string | null;
+}
+
+export interface CarrierTrackingObservationInput {
+  trackingNumber: string;
+  /**
+   * Provider-native carrier token required by providers whose tracking
+   * endpoint is carrier-scoped (Shippo). Not required by Sendcloud.
+   */
+  providerCarrierCode?: string | null;
+}
+
+export interface ProviderTrackingResult {
+  rawStatus: string;
+  /**
+   * Null only when the provider genuinely supplies no per-event timestamp.
+   * Callers must never fabricate chronology with receipt time.
+   */
+  eventTimestamp: Date | null;
+  location: string | null;
+  rawPayload: unknown;
 }
 
 export interface CarrierCredentials {
@@ -61,4 +82,12 @@ export interface ICarrierProvider {
     input: GenerateLabelInput,
     credentials: CarrierCredentials
   ): Promise<GenerateLabelResult>;
+}
+
+export interface ICarrierTrackingProvider {
+  readonly carrierCode: string;
+  getTracking(
+    input: CarrierTrackingObservationInput,
+    credentials: CarrierCredentials
+  ): Promise<ProviderTrackingResult>;
 }

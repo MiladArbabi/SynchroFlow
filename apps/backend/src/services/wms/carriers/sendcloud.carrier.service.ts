@@ -18,11 +18,20 @@
 // Testing: use Sendcloud's "Unstamped letter" shipping_method_id (8)
 // to generate labels without charge in sandbox.
 
-import type { ICarrierProvider, GenerateLabelInput, GenerateLabelResult, CarrierCredentials } from './ICarrierProvider.js';
+import type {
+  ICarrierProvider,
+  GenerateLabelInput,
+  GenerateLabelResult,
+  CarrierCredentials,
+  CarrierTrackingObservationInput,
+  ProviderTrackingResult,
+  ICarrierTrackingProvider,
+} from './ICarrierProvider.js';
 
 const SENDCLOUD_API_BASE = 'https://panel.sendcloud.sc/api/v2';
+const SENDCLOUD_TRACKING_API_BASE = 'https://panel.sendcloud.sc/api/v3';
 
-export class SendcloudCarrierService implements ICarrierProvider {
+export class SendcloudCarrierService implements ICarrierProvider, ICarrierTrackingProvider {
   readonly carrierCode = 'sendcloud';
 
   async generateLabel(
@@ -114,6 +123,101 @@ export class SendcloudCarrierService implements ICarrierProvider {
       carrierZone,
     };
   }
+
+  async getTracking(
+    input: CarrierTrackingObservationInput,
+    credentials: CarrierCredentials
+  ): Promise<ProviderTrackingResult> {
+    if (!credentials.publicKey || !credentials.privateKey) {
+      throw new Error(
+        '[SENDCLOUD] Missing public/private key credentials'
+      );
+    }
+
+    if (!input.trackingNumber) {
+      throw new Error(
+        '[SENDCLOUD] trackingNumber is required for tracking reads'
+      );
+    }
+
+    const authHeader =
+      'Basic ' +
+      Buffer.from(
+        `${credentials.publicKey}:${credentials.privateKey}`
+      ).toString('base64');
+
+    const url =
+      `${SENDCLOUD_TRACKING_API_BASE}/parcels/tracking/` +
+      encodeURIComponent(input.trackingNumber);
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'no body');
+      throw new Error(
+        `[SENDCLOUD] Tracking HTTP ${res.status}: ${body}`
+      );
+    }
+
+    const json: any = await res.json();
+
+    if (
+      typeof json?.parent_status !== 'string' ||
+      json.parent_status.length === 0
+    ) {
+      throw new Error(
+        '[SENDCLOUD] Tracking response missing parent_status'
+      );
+    }
+
+    const events: any[] = Array.isArray(json?.events)
+      ? json.events
+      : [];
+
+    const validEvents = events
+      .map((event) => ({
+        timestamp:
+          typeof event?.event_at === 'string'
+            ? new Date(event.event_at)
+            : null,
+      }))
+      .filter(
+        (
+          item
+        ): item is {
+          timestamp: Date;
+        } =>
+          item.timestamp instanceof Date &&
+          !Number.isNaN(item.timestamp.getTime())
+      )
+      .sort(
+        (a, b) =>
+          a.timestamp.getTime() - b.timestamp.getTime()
+      );
+
+    const latestEvent = validEvents.at(-1);
+
+    if (!latestEvent) {
+      throw new Error(
+        '[SENDCLOUD] Tracking response has no valid events[].event_at timestamp'
+      );
+    }
+
+    return {
+      rawStatus: json.parent_status,
+      eventTimestamp: latestEvent.timestamp,
+      location: null,
+      rawPayload: json,
+    };
+  }
+
 }
 
 export const sendcloudCarrierService = new SendcloudCarrierService();

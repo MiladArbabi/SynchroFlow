@@ -430,6 +430,28 @@ export async function startWorkers(): Promise<void> {
     );
   }
   
+  // start #1114 carrier tracking reconciliation worker (fallback/self-healing
+  // path for the same canonical carrier-truth pipeline webhooks feed —
+  // webhooks remain primary, this repairs truth when one was missed)
+  try {
+    const carrierTrackingReconciliation = await import('../workers/carrier-tracking-reconciliation.worker.js');
+    if (typeof carrierTrackingReconciliation.startCarrierTrackingReconciliationWorker === 'function') {
+      superviseWorker(
+        'carrier-tracking-reconciliation',
+        () => carrierTrackingReconciliation.startCarrierTrackingReconciliationWorker()
+      );
+      if (typeof carrierTrackingReconciliation.stopCarrierTrackingReconciliationWorker === 'function') {
+        workerStopFns.push(async () => carrierTrackingReconciliation.stopCarrierTrackingReconciliationWorker());
+      }
+      console.log('[bootstrap/workers] Carrier tracking reconciliation worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Carrier tracking reconciliation worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+
   // start morning brief worker (OVR-02)
   try {
     const morningBrief = await import('../workers/morning-brief.worker.js');

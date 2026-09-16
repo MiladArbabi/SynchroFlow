@@ -100,7 +100,7 @@ LaSyncro already has or can capture:
 | Parcel dimensions | 🔜 WM-43 | Operator inputs at pack, or per-variant default |
 | Volumetric weight | 🔜 WM-43 | Computed: `(L×W×H) / DIM_factor` |
 | Carrier zone | ✅ WM-39 | From Sendcloud API response |
-| Tracking events | 🔜 WM-40 | From Sendcloud webhooks |
+| Tracking events | ✅ WM-40 | From carrier webhooks (Sendcloud, Shippo), self-healed by reconciliation |
 | Carrier transit time | 🔜 WM-41 | Aggregated from tracking events |
 | Return rate by SKU | 🔜 WM-41 | Aggregated from return tracking events |
 
@@ -443,6 +443,109 @@ feature.** `webhook_secret` was added to `shop_carrier_settings` in
 `column already exists` failure on fresh `db:reset`. When a feature
 spans multiple migrations, grep the earlier ones for the column name
 before adding it again.
+
+#### Missed-webhook reconciliation and self-healing (#1114, 2026-09-16)
+
+**Webhooks remain primary.** Carrier webhooks are still the primary
+tracking ingestion path described above. The reconciliation worker below
+is a fallback/self-healing path for missed webhook deliveries — it is not
+a replacement polling architecture, and it never bypasses or duplicates
+the ingestion rules a webhook delivery goes through.
+
+**Shared ingestion seam.** Both webhook handlers
+(`sendcloud.tracking.handler.ts`, `shippo.tracking.handler.ts`) and the
+reconciliation worker delegate every carrier observation — regardless of
+origin — through one function:
+
+`apps/backend/src/api/webhooks/ingestCarrierTrackingObservation.ts`
+
+This shared seam is the sole owner of:
+
+- `carrier_status_map` normalization
+- append-only `parcel_tracking_events` evidence
+- idempotency
+- projection/staleness/terminal guards
+- carrier exception/unknown/return alerts
+- Return Job creation for returned parcels
+- carrier handoff shipment confirmation
+
+The reconciliation worker never re-implements or duplicates any of these
+rules — it only discovers candidates, re-fetches them tenant-scoped,
+resolves credentials, and calls a provider's tracking read before handing
+the result to this same seam.
+
+**Provider tracking reads.** Tracking capability is separated from label
+capability through `ICarrierTrackingProvider`. Current implementations:
+Shippo and Sendcloud.
+
+- Shippo tracking reads require the canonical provider carrier token
+  (`provider_carrier_code`) persisted with the shipment — Shippo's
+  tracking endpoint is carrier-scoped.
+- Sendcloud reconciliation uses business carrier identity `sendcloud` for
+  every persisted artifact, but looks up `carrier_status_map` under a
+  separate normalization namespace, `sendcloud_v3`. `sendcloud_v3` is a
+  lookup key only and must never leak into a business-facing
+  carrier/source value.
+
+**Shippo metadata.** `order_shipment_tracking` now stores two nullable
+columns: `provider_carrier_account_id` and `provider_carrier_code`. At
+Shippo label purchase, `rate.carrier_account` is persisted synchronously,
+and the canonical provider carrier code is resolved best-effort from the
+carrier account endpoint. A resolution failure at this step must not fail
+an already-successful label purchase. Historical Shippo rows missing
+`provider_carrier_code` are never guessed from `carrier_zone` or other
+display metadata.
+
+**Credentials.** The shared resolver `resolveCarrierCredentials(trx,
+shopId, carrierCode)` queries the exact `(shop_id, carrier_code,
+is_active=true)` tuple and decrypts that shop's configured carrier
+credentials. There is no cross-carrier fallback.
+
+**Reconciliation eligibility.** The authoritative selector is
+`public.list_reconcilable_shipment_tenants()`, a `SECURITY DEFINER`
+function (`PUBLIC` execute revoked, `sf_app` execute granted) that
+returns only `(id, shop_id)` — no tracking data, credentials, or status.
+Eligibility:
+
+- `tracking_number IS NOT NULL`
+- `carrier_code IN ('shippo', 'sendcloud')`
+- an exact active `shop_carrier_settings` row exists for that shop and
+  carrier
+- `latest_status IS DISTINCT FROM 'returned'`
+- age signal is `COALESCE(latest_event_at, created_at)`
+- every candidate row must be newer than 60 days on that signal
+- delivered rows must additionally be newer than 14 days on that signal
+- Shippo rows additionally require `provider_carrier_code IS NOT NULL`
+
+There is no 30-day eligibility rule anywhere in this selector.
+
+**Tenant isolation.** Cross-tenant discovery via
+`list_reconcilable_shipment_tenants()` uses `systemQuery` only to fetch
+locator rows (`id`, `shop_id`). The actual shipment re-fetch and every
+ingestion write happen inside `withTenant(shop_id, ...)`.
+
+**Provider timestamp honesty.** If a provider returns no event
+timestamp, reconciliation does not fabricate one with `new Date()`, does
+not write evidence, and does not mutate shipment truth for that
+candidate — it is skipped.
+
+**Worker.** `apps/backend/src/workers/carrier-tracking-reconciliation.worker.ts`:
+
+- fires an immediate first cycle on start
+- polls every 30 minutes thereafter
+- module-level overlap guard — an interval tick that fires while a cycle
+  is still in flight is skipped, not queued
+- cycle-level failure containment — a cycle's failure is caught and
+  logged, never rethrown to the poller
+- no retry inside the worker; the next scheduled cycle is the retry
+- registered at bootstrap through `superviseWorker`, with start/stop
+  lifecycle support
+
+**Returned parcels.** Returned-alert creation and Return Job creation
+remain independent of whether the incoming event is allowed to advance
+the current shipment projection — this is preserved unchanged by the
+shared ingestion seam regardless of whether the event arrived via
+webhook or reconciliation.
 
 ---
 
