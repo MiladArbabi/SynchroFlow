@@ -14,19 +14,19 @@ requirements, and `evaluateAccess()`. As of P0-A1 (2026-09-04)
 `packages/backend-core/src/config/tiers.ts` is a **compatibility re-export layer**
 over that package, not an independent owner (see §32). Values below are unchanged.
 
-| Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
-|---|---|---|---|---|
-| Starter | Free | Owner only (0 non-owner seats) | 50 | 50 |
-| Core | $79 | 2 non-owner seats | 2,000 | 500 |
-| Growth | $179 | 5 non-owner seats | 10,000 | 2,500 |
-| Scale | $349 | Unlimited | Unlimited | Unlimited |
+| Tier | Price (USD/mo) | Seats | Warehouse-processed allowance | Overage | Locations | History |
+|---|---:|---|---|---:|---:|---|
+| Starter | Free | Owner only (0 non-owner seats) | 0 processed orders | — | 1 | 30-day history |
+| Core | $99 | 3 non-owner seats | 2,000 processed orders | $0.08/order | 1 | 90-day history |
+| Growth | $249 | 10 non-owner seats | 7,500 processed orders | $0.06/order | 3 | 365-day history |
+| Scale | $599 | 25 non-owner seats | 20,000 processed orders | $0.04/order | 10 | 730-day history |
 
-- Seat count excludes the shop owner — limits apply to operators/admins only
-- Core includes 2 non-owner seats; Growth includes 5. Purchased extra seats are additive to those base limits
-- Ordinary member invitation and role-change flows cannot create or promote another `owner`; ownership transfer requires a separate explicit flow
-- Annual billing = 20% discount (varies slightly per currency — see Stripe actuals)
-- Extra seats purchasable above base limit: Core $15/seat/mo, Growth $12/seat/mo
-- Shipped order overage: $0.08/unit for finite-cap Stripe-billed tiers. Starter includes 50 WMS-completed orders/month. Stripe/direct Starter shops with a saved PPO payment method may continue above 50 and meter overage; Shopify-billed Starter shops must upgrade through Shopify once the allowance is exhausted.
+- Seat limits exclude the shop owner.
+- Core and Growth may add valid purchased `extra_seats`; Starter and Scale use their finite included capacities.
+- New self-service purchases are USD monthly only. Existing legacy annual/GBP/EUR provider subscriptions remain recognizable but do not define the new-purchase PLG model.
+- Shopify order truth is always ingested. `monthlyOrderCap` is internal telemetry only and is never a merchant-facing ingestion allowance.
+- The merchant-facing usage meter is warehouse-processed orders. Paid tiers continue above the included allowance using their configured overage economics; Starter has no WMS processed-order allowance.
+- Ordinary member invitation and role-change flows cannot create or promote another `owner`; ownership transfer requires a separate explicit flow.
 
 **Module access by tier:**
 
@@ -42,10 +42,11 @@ over that package, not an independent owner (see §32). Values below are unchang
 - Growth+: `overview.live_map`, `inventory.live_map`, `orders.live_map`, `returns.analysis`, `demand.forecasting`, `warehouse.floor_planning`, `warehouse.problem_center`, `purchasing.core`, `purchasing.sourcing`, `alerts.rules`, `exports.column_selection`
 - Scale: inherits Growth capabilities; no Scale-exclusive capability IDs were added in MON-REM-01A
 
-**Order history data window:**
+**Order history visibility window:**
 
-- Enforced at query layer in `orders.service.ts`, exports, and the FT2 snapshot clamp via `tierDataWindowSince()` utility
-- Starter: 60 days · Core: 180 days · Growth+: unlimited
+- Enforced at query layer in `orders.service.ts`, exports, and the FT2 snapshot clamp via `tierDataWindowSince()` utility.
+- Starter: 30 days · Core: 90 days · Growth: 365 days · Scale: 730 days.
+- This is a visibility horizon only; canonical historical data is retained.
 - Source: `packages/backend-core/src/utils/tierDataWindow.ts`
 
 **Rule:** Never hardcode tier logic anywhere. Standard commercial access must
@@ -405,29 +406,20 @@ Registration
       └── INSERT shop_subscriptions { tier: 'growth', status: 'trialing',
                                       billing_currency, trial_ends_at: +14d }
 
-Pay-Per-Order Setup (SEG-022-B)
-  └── billing.controller.ts → createSetupSession
-      └── POST /api/v1/billing/setup-payment-method
-      └── no tier gate — Starter is the primary caller (via
-          ShippedOrderCapBanner "Enable pay-per-order" CTA)
-      └── reuses stripe_customer_id if present, else creates one
-      └── stripe.checkout.sessions.create({ mode: 'setup', ... })
-      └── card saved, no subscription, no charge
+Historical Pay-Per-Order Setup (SEG-022-B) — RETIRED by MON-REM-01B
+  └── billing.controller.ts → createSetupSession existed as the setup-mode
+      Stripe Checkout primitive for the old Starter PPO design
+  └── POST /api/v1/billing/setup-payment-method no longer enables Starter PPO
+      and must not be documented as the merchant-facing current allowance path
+  └── createSetupSession may remain only as a provider payment-setup primitive;
+      current processed-order economics are defined by MON-REM-01B below
 
-Stripe Webhook → handleCheckoutSetupComplete
-  └── fires on checkout.session.completed
-  └── guard: only acts if session.mode === 'setup' AND
-      session.metadata.purpose === 'pay_per_order_setup'
-      (this event type also fires for ordinary subscription
-      checkouts — already handled via customer.subscription.created)
-  └── persists stripe_customer_id to shop_subscriptions
-  └── writes inside db.transaction + SET LOCAL "app.current_tenant"
-      (RLS-protected table — session-level SET is not reliable
-      across pooled connections, must be transaction-scoped)
-  └── once stripe_customer_id is set, reportShippedOrderOverage's
-      early-return (`if (!sub?.stripe_customer_id) return`) no longer applies
-  └── PPO does not change tier or ingestion behavior; Shopify order truth
-      is always ingested regardless of commercial allowance
+Historical Stripe setup webhook — RETIRED by MON-REM-01B
+  └── handleCheckoutSetupComplete persisted stripe_customer_id for the old
+      setup-mode PPO path
+  └── a saved Stripe customer is no longer a Starter PPO capability
+  └── Shopify order truth remains unconditional ingestion, independent of
+      commercial allowance
 
 JWT issuance (token.service.ts)
   └── resolveTierForShop(shopId) → reads shop_subscriptions.tier
@@ -445,25 +437,22 @@ WMS Pack-Complete → httpCompletePack
   └── counts non-cancelled billable orders before mutating fulfillment state
   └── getOrRotateOpenUsagePeriod() serializes the shop usage period
   └── locks the exact open shop_usage_metrics row FOR UPDATE
-  └── Starter execution guard:
-      ├── projected shipped_orders <= 50 → continue
-      ├── projected shipped_orders > 50 + Stripe billing + saved Stripe customer → PPO continues
-      └── projected shipped_orders > 50 without Stripe PPO capability → HTTP 403 SHIPPED_ORDER_CAP_REACHED
-  └── Shopify billing never uses a stray stripe_customer_id as PPO bypass
+  └── Current MON-REM-01B commercial model:
+      ├── Starter has no WMS processed-order allowance
+      ├── Core/Growth/Scale have finite processed-order allowances
+      ├── paid tiers continue above allowance using automatic overage economics
+      └── `allow_overage` preference and Starter PPO capability are retired
   └── rejected batches remain packing; usage and ready-to-ship alert state are unchanged
   └── accepted batch → status pack_complete + increment shop_usage_metrics.shipped_orders
   └── after transaction commits → reportShippedOrderOverage(shopId, billableCount)
-      └── reads shop_subscriptions.tier + stripe_customer_id
+      └── reads shop_subscriptions.tier + provider facts
       └── reads shop_usage_metrics.shipped_orders (current period total)
-      └── calculates units newly crossing above shippedOrderCap
-      └── stripe.billing.meterEvents.create({ event_name: 'overage', value: overageUnits })
+      └── calculates units newly crossing above the paid-tier included allowance
+      └── reports overage through the provider-specific billing path
       └── non-fatal — billing failure never blocks fulfillment
-      └── skips if no stripe_customer_id
-      └── Stripe/direct Starter with a saved PPO payment method can report
-          shipped units above its shippedOrderCap
-      └── Shopify-billed Starter is blocked at pack-complete above the cap
-          and must use the Shopify upgrade path
-      └── skips if Scale tier (shippedOrderCap = Infinity)
+      └── Starter has no paid processed-order overage
+      └── Scale is finite and participates in paid-tier overage above its
+          current included allowance
 
 Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
   └── resolves shopId from envelope + reads current tier from shop_subscriptions
@@ -546,7 +535,10 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 - Falls back to the Starter tier configuration if no subscription row exists
 - Canonical telemetry thresholds are Starter 50, Core 2,000, Growth 10,000, Scale 50,000
 - WMS execution and processed-order billing enforcement belong downstream of ingestion and must not be moved back into the Shopify ingestion boundary
-- Starter shipped-order enforcement is implemented atomically at WMS `pack-complete`; see MON-PPO-03 below
+- Current processed-order commercial enforcement belongs to the MON-REM-01B model:
+  Starter has no WMS processed-order allowance, paid tiers use finite included
+  allowances with automatic overage economics, and merchant `allow_overage` /
+  Starter PPO paths are retired.
 
 ### MON-PPO-02 runtime proof — 2026-08-21
 
@@ -566,9 +558,13 @@ After the fix:
 
 `domain_events` is intentionally append-only, so the implementation-test event remains in the local canonical log. Mutable test subscription, usage, and Shopify-installation state was restored afterward.
 
-### MON-PPO-03 — Starter WMS execution enforcement (historical; superseded by MON-ALLOW-04)
+### MON-PPO-03 — Starter WMS execution enforcement (historical; superseded by MON-ALLOW-04, then MON-REM-01B)
 
-> **Superseded commercial behavior:** this section records the earlier Starter PPO design and its 2026-08-21 verification. The current contract is defined by MON-ALLOW-04 in §29: Starter always hard-stops above its included 50 fulfilled orders; configurable overage applies only to Core and Growth.
+> **HISTORICAL / SUPERSEDED commercial behavior:** this section records the
+> earlier Starter PPO design and its 2026-08-21 verification. MON-PPO-03 was
+> later superseded by MON-ALLOW-04 (§29), and MON-ALLOW-04 was later
+> superseded by MON-REM-01B. Current commercial authority is §1 and the
+> MON-REM-01B processed-order model in §33.4–33.5.
 
 `apps/backend/src/api/wms/wms.controller.ts` → `httpCompletePack`
 
@@ -1692,6 +1688,10 @@ Full cycle tested against dev store `development-store-15820042357` through the 
 
 ### Known open items, carried forward
 
+These bullets record the open state at the 2026-07-18 verification point.
+Later sections may close or supersede them; they are not current MON-REM-01B
+commercial authority.
+
 - **SHB-02** — dormant `handleShopifyCallback` (dead code from the retired direct-charge flow) still omits `billing_provider` from its upsert. Low priority, unreachable code path.
 - **SHB-03/SHB-04** — frontend has zero `billing_provider` awareness. `ShippedOrderCapBanner` and `BillingSettings` are Stripe-only; correctly 403 via existing `APP_STORE_MERCHANT` guards for Shopify-billed shops, but present no fallback UI routing to Shopify's hosted pricing page.
 - **SHB-05** — pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent designed (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`). Product decision pending.
@@ -1784,7 +1784,11 @@ Full round trip tested against `development-store-15820042357` through the real 
 
 ### Known open items, carried forward
 
-- **SHB-05** — pay-per-order and extra-seat Managed Pricing equivalents remain undesigned; current state is intentionally hard-cap-only for Shopify-billed shops.
+These bullets record the open state at the 2026-07-18 frontend-awareness
+verification point. Later MON-REM-01B sections supersede the pay-per-order /
+hard-cap commercial framing for current authority.
+
+- **SHB-05** — pay-per-order and extra-seat Managed Pricing equivalents remained undesigned at this verification point; the then-current state was intentionally hard-cap-only for Shopify-billed shops.
 - **SHB-14** — Stripe-side equivalent of §24's SHB-13 fix; `handleSubscriptionUpsert` does not yet force `tier: starter` on Stripe cancellation/`past_due`. Next priority.
 - **SHB-20** — duplicate `SHOPIFY_API_VERSION` in `apps/backend/.env`, deferred.
 - **ShippedOrderCapBanner Shopify-billed path** — verified via code review and tsc only; not yet visually exercised in-browser (requires a shop at ≥75% of its shipped-order cap). Will be exercised naturally during the pre-submit full uninstall/reinstall cycle test (SHB-08a).
@@ -1821,6 +1825,11 @@ Both files were confirmed gitignored with no git history (`git log --all -- .env
 
 ## 27. Shopify App Events Usage Reporting — SHB-05-C/D/E/F (verified 2026-07-18)
 
+> **HISTORICAL / SUPERSEDED by MON-REM-01B.** This section preserves the
+> Shopify App Events implementation and verification state from 2026-07-18.
+> Its allowance values and Scale-unlimited treatment are not current commercial
+> truth. Current processed-order economics are defined in §1 and §33.4.
+
 Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID, app-level client credentials, a published meter handle, and deterministic event submission. The persistence and isolated reporting layers are implemented. Durable provider dispatch is now implemented through the billing outbox path documented in §28. Controlled worker/state-machine acceptance is complete; one controlled live provider billing validation remains separate.
 
 ### Database and OAuth persistence
@@ -1836,18 +1845,18 @@ Shopify App Events usage reporting requires the merchant’s canonical GraphQL S
 
 - The billing event handle is `shipped-order`.
 - Early-access, Core, and Growth charge `$0.08` per reported unit.
-- Current canonical allowances are Starter/Early-access `50`, Core `500`, and Growth `2,500` fulfilled orders per billing period.
-- Scale remains unlimited and has no shipped-order usage meter.
+- Allowances verified at that time were Starter/Early-access `50`, Core `500`, and Growth `2,500` fulfilled orders per billing period.
+- Scale was treated as unlimited and had no shipped-order usage meter at that verification point.
 - Core, Growth, and Scale use a 14-day trial; the free Early-access plan does not require a trial.
 
 ### Reporter behaviour
 
-`apps/backend/src/api/billing/shopify.events.service.ts` now:
+At that verification point, `apps/backend/src/api/billing/shopify.events.service.ts`:
 
 - obtains app-level bearer tokens from `POST https://api.shopify.com/auth/access_token`;
 - caches tokens with a five-minute refresh buffer and uses Shopify’s documented 60-minute TTL when `expires_in` is omitted;
 - reads subscription provider, tier, active Shop GID, and open usage-period state inside a tenant-scoped transaction;
-- skips non-Shopify subscriptions and the unlimited Scale tier;
+- skipped non-Shopify subscriptions and the then-unlimited Scale tier;
 - submits positive overage units to `POST https://api.shopify.com/app/unstable/events`;
 - uses deterministic idempotency keys derived from shop, usage period, and cumulative shipped total;
 - retries one HTTP `401` with a fresh token;
@@ -1959,12 +1968,18 @@ The broader `MON-ALLOW-04` WMS five-case commercial runtime matrix also remains 
 
 ## 29. MON-ALLOW-04 — Fulfilled-Order Allowances and Merchant Overage Preference
 
+> **SUPERSEDED by MON-REM-01B.** This section preserves the commercial
+> enforcement model and runtime evidence verified on 2026-08-25/26. Its
+> allowance numbers, Scale treatment, and merchant `allow_overage` behavior are
+> historical and must not be read as the current commercial model. Current
+> allowances and economics are defined in §1 and §33.4–33.5.
+
 - **Runtime verified:** 2026-08-25
 - **Automated regression verified:** 2026-08-26
 
-### Current commercial contract
+### Historical commercial contract (superseded)
 
-Canonical fulfilled-order allowances are:
+The fulfilled-order allowances verified at that time were:
 
 | Tier | Included fulfilled orders / period | Beyond allowance |
 |---|---:|---|
@@ -1977,7 +1992,7 @@ Starter does not participate in configurable paid overage. `allow_overage` is re
 
 At `pack-complete`, the projected usage is evaluated atomically inside the same transaction that updates the batch, usage counter, ready-to-ship alert, and any `billing/overage` event.
 
-Current behavior:
+Historical behavior verified under that contract:
 
 - Starter within 50 → allow completion.
 - Starter above 50 → `403 SHIPPED_ORDER_CAP_REACHED`.
@@ -5146,7 +5161,6 @@ mutated column set, including `onConflict().merge([...])` lists.
 
 Explicit non-transition exceptions, outside this boundary by design:
 
-- `allow_overage` preference (`billing.controller.ts :: updateOveragePreference`)
 - the `stripe_customer_id`-only checkout-setup write
   (`handleCheckoutSetupComplete.ts`)
 - `scripts/seed_reviewer.ts` — non-runtime operator script

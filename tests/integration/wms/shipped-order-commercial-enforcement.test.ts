@@ -13,8 +13,8 @@
 // read-only preflight for this slice:
 //   - Tier for the cap decision is read live from shop_subscriptions.tier
 //     inside the transaction, never the JWT (wms.controller.ts:1559-1568).
-//   - TIER_CONFIG.shippedOrderCap: starter=50, core=500, growth=2500
-//     (packages/backend-core/src/config/tiers.ts).
+//   - Canonical shippedOrderCap: starter=0, core=2000, growth=7500,
+//     scale=20000 (via @lasyncro/commercial-policy compatibility exports).
 //   - Reaching the cap exactly is never billable: overageUnits is only
 //     > 0 strictly beyond shippedOrderCap (wms.controller.ts:1622-1630).
 //   - A rejection throws before any mutation in the same transaction
@@ -506,9 +506,10 @@ describe('Shipped-order commercial enforcement (MON-REM-01B-2)', () => {
 
 describe('PACK-COMPLETE-GUARD-01', () => {
   async function rejectsWithoutEffects(physicalEvidence: FixtureInput['physicalEvidence']) {
-    // Core over allowance would bill on the old successful path.
+    // Core is seeded exactly at its current included allowance, so a
+    // physically valid completion would create one billable overage unit.
     const fixture = await createCommercialFixture('physical-guard', {
-      tier: 'core', usageBefore: 500, allowOverage: true,
+      tier: 'core', usageBefore: 2000, allowOverage: true,
       stripeCustomerId: 'cus_pack_guard_synthetic', physicalEvidence,
     });
     const { shopId, userId, batchId, usagePeriodId } = fixture;
@@ -521,7 +522,7 @@ describe('PACK-COMPLETE-GUARD-01', () => {
         .where({ shop_id: shopId, alert_key: `wms:batch:ready_to_ship:${batchId}` }).select('id')),
     });
     const before = await snapshot();
-    expect(before).toEqual({ batch: { status: 'packing', pack_completed_at: null }, usage: 500, events: 0, outbox: 0, alerts: [] });
+    expect(before).toEqual({ batch: { status: 'packing', pack_completed_at: null }, usage: 2000, events: 0, outbox: 0, alerts: [] });
     mockDispatchNotification.mockClear();
     const response = await packComplete(shopId, userId, batchId);
     const after = await snapshot();

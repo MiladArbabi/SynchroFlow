@@ -1,5 +1,6 @@
-// OVERAGE_DISABLED is resolved by changing the merchant's allow_overage
-// preference, not by upgrading. Telling that merchant to upgrade would be wrong.
+// OVERAGE_DISABLED is a legacy commercial error code from the superseded
+// allow_overage model. Current paid-tier execution does not use it, and it is
+// intentionally not classified as an entitlement denial.
 // ACTION_FORBIDDEN / NO_ROLE_ASSIGNED / FORBIDDEN / CANNOT_REVOKE_OWNER are
 // role denials. Upgrading does not resolve them. Tracked as
 // ENT-MEMBERS-403-BLANK-151.

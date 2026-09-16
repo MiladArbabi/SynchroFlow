@@ -434,16 +434,16 @@ Each module gets a dedicated section. The structure is: **outcome headline → o
 
 **Tier names and headlines:**
 
-- **Starter — Free:** "See what you've been missing." The demand funnel. 50 orders/month, 1 operator. No intelligence features.
-- **Core — £79/month:** "Your first warehouse operator tier." WMS, POs, and the foundation — 2 seats, 500 orders.
-- **Growth — £179/month:** "Where intelligence unlocks." Cash flow projection, demand intelligence, LTV signals, 5 seats. This is where most merchants land permanently.
-- **Scale — £349/month:** "Serious volume, no limits." Unlimited everything, floor planning, barcode generation, custom DPA.
+- **Starter — Free:** "See what needs attention." Owner-only visibility, 1 location, 30-day history, and no warehouse-processed order allowance.
+- **Core — $99/month:** "Run the warehouse with structure." 2,000 processed orders/month, $0.08 per additional processed order, 3 non-owner seats, 1 location, and 90-day history.
+- **Growth — $249/month:** "Predict and optimize before problems compound." 7,500 processed orders/month, $0.06 per additional processed order, 10 non-owner seats, 3 locations, and 365-day history.
+- **Scale — $599/month:** "Run higher-volume operations with more capacity." 20,000 processed orders/month, $0.04 per additional processed order, 25 non-owner seats, 10 locations, 730-day history, and Priority support.
 
 **Pricing reassurance line (below the tier table):**
-> Annual billing saves 20% — that's two months free. All plans include a 14-day Growth trial. No credit card required to start.
+> New self-service purchases are USD monthly. A 14-day Growth trial is available, and no credit card is required to start the trial.
 
 **ROI anchor line:**
-> At £179/month, LaSyncro costs less per day than a single unplanned stockout costs in lost revenue.
+> At $249/month, Growth costs less than many single operational mistakes while adding the capacity and intelligence needed to prevent them.
 
 ---
 
@@ -884,7 +884,7 @@ On Core tier, intelligence features (cash flow projection, demand intelligence, 
 
 **Demand intelligence — blurred (Core tier):**
 > LaSyncro has calculated demand velocity for [X] of your SKUs. [X] are showing restock risk this week. Upgrade to Growth to see which ones.
-> [Upgrade to Growth — £179/month]
+> [Upgrade to Growth — $249/month]
 
 **Supplier rating intelligence — blurred (Core tier, more than 5 suppliers):**
 > You have [X] suppliers rated. [X] have a fill rate below 90%. Upgrade to Growth to see the full rankings and restock recommendations.
@@ -1061,11 +1061,11 @@ Your 14-day Growth trial ends on [date]. After that, you'll move to the free Sta
 - Unlimited WMS sessions
 - Supplier performance ratings
 
-**What Growth costs:** £179/month. Or £143/month on annual billing — two months free.
+**What Growth costs:** $249/month for new self-service subscriptions.
 
 If LaSyncro has already shown you a stock-out risk you didn't know about, or surfaced a supplier problem before it became a customer complaint, it's paid for itself this month.
 
-→ [Keep Growth — £179/month]
+→ [Keep Growth — $249/month]
 → [See all plans]
 
 If you're not ready to commit, the free Starter tier stays available — you won't lose your data or your configuration.
@@ -1074,7 +1074,7 @@ If you're not ready to commit, the free Starter tier stays available — you won
 
 ---
 
-**Writing note for Email 5:** "What you'd lose" framing is more effective than "what you'd gain" for trial conversion. Loss aversion is stronger than acquisition desire. The annual billing nudge belongs in this email — this is the moment of highest motivation in the entire sequence.
+**Writing note for Email 5:** "What you'd lose" framing is more effective than "what you'd gain" for trial conversion. Loss aversion is stronger than acquisition desire. Keep the commercial CTA aligned with the current USD-monthly self-service model; legacy annual/provider pricing must not be presented as the current purchase path.
 
 ---
 
@@ -1192,35 +1192,35 @@ Watch: [Supplier] — [X]% on-time (below your 90% threshold)
 > Pricing that grows with your operation
 
 **Subheading:**
-> Start free. Upgrade when you're ready. Every plan includes your first 14 days of Growth — the full intelligence tier — at no charge.
+> Start with a 14-day Growth trial. Upgrade when you're ready; no credit card is required to start the trial.
 
 ---
 
 ### 12.2 Tier Copy
 
 **Starter — Free**
-> For merchants getting started with operational structure.
-> 50 orders/month · 1 operator seat · 3 POs/month · Basic fulfillment queue
-> No financial intelligence · No supplier ratings · No demand signals
-> *The demand funnel — enough to see what LaSyncro does, not enough to run on permanently.*
+> For merchants who need operational visibility before warehouse execution.
+> Owner only · 1 location · 30-day history · No warehouse-processed order allowance
+> Overview, inventory visibility, and alerts form the operational foundation.
+> *See what is happening before committing to warehouse execution.*
 
-**Core — £79/month**
-> For merchants who've hired their first warehouse person.
-> 500 orders/month · 2 operator seats · 20 POs/month · Full WMS (pick, pack, receive, stow)
-> Intelligence features blurred — you can see the shape of your cash flow and demand curves, but not the numbers.
-> *The "first warehouse hire" tier — structured workflows, without the full intelligence layer.*
+**Core — $99/month**
+> For merchants ready to run structured warehouse execution.
+> 2,000 processed orders/month · $0.08 per additional processed order · 3 non-owner seats · 1 location · 90-day history
+> Receive · stow · pick · pack · ship · barcode scanning
+> *The execution tier — structured workflows for the warehouse floor.*
 
-**Growth — £179/month** *(Most merchants end up here)*
-> For merchants where intelligence drives the next decision.
-> 2,000 orders/month · 5 operator seats · 100 POs/month
-> Cash flow projection · Demand intelligence · LTV signals · Supplier ratings (full) · Unlimited WMS sessions
-> *Where the product pays for itself. The first prevented stockout covers the month.*
+**Growth — $249/month** *(Most merchants end up here)*
+> For growing teams that need more capacity plus prediction and optimization.
+> 7,500 processed orders/month · $0.06 per additional processed order · 10 non-owner seats · 3 locations · 365-day history
+> Demand forecasting · floor planning · advanced operational intelligence
+> *Use operational signals to prevent problems instead of only reacting to them.*
 
-**Scale — £349/month**
-> For high-volume operations that need no limits.
-> Unlimited orders · Unlimited seats · Unlimited POs
-> Floor planning · Barcode generation · Custom DPA · 99.9% SLA · Dedicated support
-> *Built for merchants doing £5M+ who need enterprise-grade reliability without enterprise-grade complexity.*
+**Scale — $599/month**
+> For higher-volume operations that need greater capacity without a separate capability wall.
+> 20,000 processed orders/month · $0.04 per additional processed order · 25 non-owner seats · 10 locations · 730-day history
+> Everything in Growth · Priority support
+> *Growth capability with substantially higher operating capacity.*
 
 ---
 
@@ -1236,7 +1236,7 @@ Watch: [Supplier] — [X]% on-time (below your 90% threshold)
 > Your data is retained for 30 days after cancellation. You can export everything (orders, POs, inventory records, supplier data) as CSV or JSON from your settings. After 30 days, it is cryptographically deleted.
 
 **Q: Do you take a cut of my Shopify revenue?**
-> No. LaSyncro charges a flat monthly subscription. We never take a percentage of orders or revenue.
+> No. LaSyncro never takes a percentage of Shopify revenue. Paid plans combine a monthly subscription with processed-order overage above the included allowance.
 
 **Q: What's the difference between operator seats and admin seats?**
 > Operators access WMS functions only — pick, pack, receive, stow. They cannot see financial data, settings, or supplier intelligence. Admins have full operational access but cannot manage billing or delete the shop. Owners have all permissions.
@@ -1408,7 +1408,7 @@ Apply this checklist to every piece of copy before it is published, deployed, or
 > LaSyncro is built for Shopify merchants doing serious volume from their own warehouse — typically £500K to £10M+ in revenue, with high SKU complexity and a small warehouse team.
 
 **The pricing ROI anchor:**
-> At £179/month, LaSyncro costs less per day than a single unplanned stockout costs in lost revenue.
+> At $249/month, Growth costs less per day than a single unplanned stockout costs in lost revenue.
 
 ---
 

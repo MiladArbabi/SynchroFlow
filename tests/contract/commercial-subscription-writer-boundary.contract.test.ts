@@ -87,11 +87,6 @@ const KNOWN_NON_AUTHORITATIVE_WRITERS: Array<{
   allowedColumns: string[];
 }> = [
   {
-    file: 'apps/backend/src/api/billing/billing.controller.ts',
-    symbol: 'updateOveragePreference',
-    allowedColumns: ['allow_overage', 'updated_at'],
-  },
-  {
     file: 'apps/backend/src/api/billing/handlers/handleCheckoutSetupComplete.ts',
     symbol: 'handleCheckoutSetupComplete',
     allowedColumns: ['stripe_customer_id', 'updated_at'],

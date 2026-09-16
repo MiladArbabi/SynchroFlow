@@ -165,16 +165,15 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(checkout).not.toMatch(/\bgetStripePriceId\s*\(/);
   });
 
-  it('obsolete allow_overage merchant API is removed from subscription and routing surfaces', () => {
+  it('obsolete allow_overage merchant API and writer are removed from production billing surfaces', () => {
     expect(billingRoutes).not.toMatch(/['"]\/overage['"]/);
     expect(billingRoutes).not.toMatch(/updateOveragePreference/);
+    expect(billingController).not.toMatch(
+      /export async function updateOveragePreference/
+    );
 
     const start = billingController.indexOf('export async function getSubscription');
-    const end = billingController.indexOf(
-      'export async function updateOveragePreference',
-      start
-    );
-    const subscription = billingController.slice(start, end);
+    const subscription = billingController.slice(start);
 
     expect(subscription).not.toMatch(/allow_overage/);
   });
@@ -185,5 +184,189 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(help).not.toMatch(/at the limit|hard limit|paused/i);
     expect(help).toMatch(/processed order/i);
     expect(help).toMatch(/priority support/i);
+  });
+});
+
+describe('MON-REM-01B-FINAL-02 — current commercial truth residue', () => {
+  const limits = read('packages/commercial-policy/src/limits.ts');
+  const pricingConfig = read('packages/backend-core/src/config/pricing.config.ts');
+  const llms = read('packages/landing-page/llms.txt');
+  const playbook = read('docs/playbooks/monetization_billing_playbook.md');
+  const shopifySubmission = read('docs/playbooks/shopify_submission_playbook.md');
+  const billingController = read('apps/backend/src/api/billing/billing.controller.ts');
+  const shopifyReporter = read('apps/backend/src/api/billing/shopify.events.service.ts');
+
+  function section(src: string, start: string, end?: string): string {
+    const from = src.indexOf(start);
+    if (from < 0) throw new Error(`Section start not found: ${start}`);
+
+    if (!end) return src.slice(from);
+
+    const to = src.indexOf(end, from + start.length);
+    return src.slice(from, to < 0 ? src.length : to);
+  }
+
+  it('canonical source comments describe finite self-service Scale, not private/contact Scale', () => {
+    expect(limits).not.toMatch(
+      /internal\/private commercial anchor|Contact\s*\/\s*negotiated/i
+    );
+    expect(limits).toMatch(/scale:\s*59900/);
+
+    expect(pricingConfig).not.toMatch(
+      /USD:\s*Core \$79\s*\/\s*Growth \$179\s*\/\s*Scale \$349/i
+    );
+
+    expect(pricingConfig).toMatch(
+      /scale:[\s\S]{0,250}USD:\s*\{\s*monthly:\s*59900\b/
+    );
+  });
+
+  it('public llms pricing matches the finite $99 / $249 / $599 PLG model', () => {
+    const pricing = section(llms, '## Pricing', '## Key pages');
+
+    expect(pricing).toMatch(/Core:\s*\$99\/month/i);
+    expect(pricing).toMatch(/Growth:\s*\$249\/month/i);
+    expect(pricing).toMatch(/Scale:\s*\$599\/month/i);
+
+    expect(pricing).toMatch(/20,000[\s\S]{0,100}processed orders/i);
+    expect(pricing).toMatch(/25[\s-]*non-owner seats/i);
+    expect(pricing).toMatch(/10 locations/i);
+    expect(pricing).toMatch(/730[- ]day history/i);
+    expect(pricing).toMatch(/Priority support/i);
+
+    expect(pricing).not.toMatch(/\bunlimited\b/i);
+    expect(pricing).not.toMatch(/dedicated support/i);
+    expect(pricing).not.toMatch(/\$79|\$179|\$349/);
+  });
+
+  it('current playbook tier architecture reflects the canonical finite commercial model', () => {
+    const current = section(
+      playbook,
+      '## 1. Tier Architecture',
+      '## 1.1 MON-REM-01A'
+    );
+
+    expect(current).toMatch(/\$99/);
+    expect(current).toMatch(/\$249/);
+    expect(current).toMatch(/\$599/);
+
+    expect(current).toMatch(/Core[\s\S]{0,160}3 non-owner seats/i);
+    expect(current).toMatch(/Growth[\s\S]{0,160}10 non-owner seats/i);
+    expect(current).toMatch(/Scale[\s\S]{0,160}25 non-owner seats/i);
+
+    expect(current).toMatch(/Starter[\s\S]{0,200}0[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Core[\s\S]{0,200}2,000[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Growth[\s\S]{0,200}7,500[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Scale[\s\S]{0,200}20,000[\s\S]{0,120}processed/i);
+
+    expect(current).toMatch(/30[- ]day history/i);
+    expect(current).toMatch(/90[- ]day history/i);
+    expect(current).toMatch(/365[- ]day history/i);
+    expect(current).toMatch(/730[- ]day history/i);
+
+    expect(current).not.toMatch(/\bunlimited\b/i);
+    expect(current).not.toMatch(/\$79|\$179|\$349/);
+  });
+
+  it('playbook current architecture no longer presents Starter PPO as active commercial truth', () => {
+    const current = section(
+      playbook,
+      '## 1. Tier Architecture',
+      '## 1.1 MON-REM-01A'
+    );
+    const backendFlow = section(
+      playbook,
+      '## 5. Backend Data Flow',
+      '## 6. Shopify App Store Billing Path'
+    );
+    const ppo03 = section(
+      playbook,
+      '### MON-PPO-03',
+      '### MON-PPO-03 runtime proof'
+    );
+    const monAllow04 = section(
+      playbook,
+      '## 29. MON-ALLOW-04',
+      '## 30.'
+    );
+
+    expect(current).toMatch(/Starter[\s\S]{0,200}0[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Core[\s\S]{0,200}2,000[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Growth[\s\S]{0,200}7,500[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/Scale[\s\S]{0,200}20,000[\s\S]{0,120}processed/i);
+    expect(current).toMatch(/\$99/);
+    expect(current).toMatch(/\$249/);
+    expect(current).toMatch(/\$599/);
+    expect(current).not.toMatch(/\bunlimited\b/i);
+
+    expect(backendFlow).toMatch(/Historical Pay-Per-Order Setup[\s\S]{0,120}RETIRED by MON-REM-01B/i);
+    expect(backendFlow).toMatch(/POST \/api\/v1\/billing\/setup-payment-method no longer enables Starter PPO/i);
+    expect(backendFlow).toMatch(/Starter has no WMS processed-order allowance/i);
+    expect(backendFlow).toMatch(/paid tiers continue above allowance using automatic overage economics/i);
+    expect(backendFlow).not.toMatch(/Starter is the primary caller/i);
+    expect(backendFlow).not.toMatch(/Enable pay-per-order/i);
+    expect(backendFlow).not.toMatch(/PPO continues/i);
+
+    expect(ppo03).toMatch(/HISTORICAL[\s\S]{0,80}SUPERSEDED/i);
+    expect(ppo03).toMatch(/MON-PPO-03[\s\S]{0,120}superseded by MON-ALLOW-04/i);
+    expect(ppo03).toMatch(/MON-ALLOW-04[\s\S]{0,120}superseded by MON-REM-01B/i);
+    expect(ppo03).toMatch(/Current commercial authority[\s\S]{0,120}MON-REM-01B/i);
+    expect(ppo03).not.toMatch(/current contract is defined by MON-ALLOW-04/i);
+
+    expect(monAllow04).toMatch(/SUPERSEDED by MON-REM-01B/i);
+  });
+
+  it('legacy MON-ALLOW-04 commercial values are explicitly superseded, not labelled current', () => {
+    const legacy = section(
+      playbook,
+      '## 29. MON-ALLOW-04',
+      '## 30.'
+    );
+
+    expect(legacy).toMatch(/SUPERSEDED[\s\S]{0,300}MON-REM-01B/i);
+    expect(legacy).not.toMatch(/### Current commercial contract/i);
+  });
+
+  it('historical Shopify App Events commercial values are explicitly superseded', () => {
+    const monetizationEvents = section(
+      playbook,
+      '## 27. Shopify App Events Usage Reporting',
+      '## 28.'
+    );
+
+    const submissionEvents = section(
+      shopifySubmission,
+      '### Shopify App Events usage billing',
+      '## Fly.io Deployment Notes'
+    );
+
+    expect(monetizationEvents).toMatch(
+      /HISTORICAL[\s\S]{0,160}SUPERSEDED by MON-REM-01B/i
+    );
+
+    expect(submissionEvents).toMatch(
+      /HISTORICAL[\s\S]{0,160}SUPERSEDED by MON-REM-01B/i
+    );
+  });
+
+  it('GREEN CONTROL: runtime already supports self-service finite Scale and does not skip Scale overage', () => {
+    const checkoutStart = billingController.indexOf(
+      'export async function createCheckoutSession'
+    );
+    const checkoutEnd = billingController.indexOf(
+      'export async function createSetupSession',
+      checkoutStart
+    );
+    const checkout = billingController.slice(checkoutStart, checkoutEnd);
+
+    expect(checkout).toMatch(/core[\s\S]{0,120}growth[\s\S]{0,120}scale/i);
+    expect(checkout).not.toMatch(/tier\s*===\s*['"]scale['"]/);
+
+    expect(shopifyReporter).not.toMatch(
+      /context\.tier\s*===\s*['"]scale['"]/
+    );
+    expect(shopifyReporter).not.toContain(
+      'scale_has_unlimited_shipped_orders'
+    );
   });
 });

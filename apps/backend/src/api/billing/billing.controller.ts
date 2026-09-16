@@ -161,12 +161,12 @@ export async function createCheckoutSession(req: Request, res: Response) {
 /**
  * POST /api/v1/billing/setup-payment-method
  *
- * Creates a Stripe Checkout session in 'setup' mode — saves a card,
- * no subscription, no charge. Used by Starter shops opting into
- * pay-per-order overage (SEG-022-B) without buying a paid tier.
+ * Creates a Stripe Checkout session in 'setup' mode — saves a card
+ * without creating a subscription or charge.
  *
- * Reuses createCheckoutSession's customer-resolution pattern but
- * intentionally does NOT gate on tier — Starter is the primary caller.
+ * This is a Stripe billing primitive retained for provider-specific payment
+ * setup. MON-REM-01B retired the Starter pay-per-order commercial model, so
+ * this endpoint must not be described as enabling Starter overage.
  */
 export async function createSetupSession(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
@@ -224,9 +224,9 @@ export async function createSetupSession(req: Request, res: Response) {
  * POST /api/v1/billing/add-seats
  *
  * Adds N extra seats to the shop's existing Stripe subscription as a
- * new subscription item (AUD-C16). Requires an active paid subscription
- * — Starter has no subscription to attach to, and Scale has unlimited
- * seats already.
+ * new subscription item (AUD-C16). Requires an active paid subscription.
+ * Under the current commercial model, Core and Growth may add valid purchased
+ * extra seats; Starter and Scale use their finite included seat capacities.
  *
  * Body: { quantity: number } — total extra seats desired (not delta).
  * Stripe subscriptionItems.create is called once if no seat item exists
@@ -457,75 +457,5 @@ export async function getSubscription(req: Request, res: Response) {
   } catch (err: any) {
     console.error('[billing] getSubscription failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'SUBSCRIPTION_FETCH_FAILED' });
-  }
-}
-
-/**
- * PATCH /api/v1/billing/overage
- *
- * MON-ALLOW-04
- * Core/Growth merchants may choose whether fulfillment may continue beyond
- * the included shipped-order allowance.
- *
- * This endpoint persists preference only. WMS enforcement is separate.
- */
-export async function updateOveragePreference(req: Request, res: Response) {
-  const shopId = req.user!.shopId!;
-  const allowOverage = req.body?.allow_overage;
-
-  if (typeof allowOverage !== 'boolean') {
-    return res.status(400).json({
-      error: 'INVALID_ALLOW_OVERAGE',
-      message: 'allow_overage must be a boolean.',
-    });
-  }
-
-  try {
-    const result = await withTenant(shopId, async (trx) => {
-      const subscription = await trx('shop_subscriptions')
-        .where({ shop_id: shopId })
-        .first('tier');
-
-      const rawTier = subscription?.tier ?? 'starter';
-      const tier = isValidTier(rawTier) ? rawTier : 'starter';
-
-      if (tier !== 'core' && tier !== 'growth') {
-        return {
-          kind: 'not_configurable' as const,
-          tier,
-        };
-      }
-
-      await trx('shop_subscriptions')
-        .where({ shop_id: shopId })
-        .update({
-          allow_overage: allowOverage,
-          updated_at: new Date(),
-        });
-
-      return {
-        kind: 'updated' as const,
-      };
-    });
-
-    if (result.kind === 'not_configurable') {
-      return res.status(409).json({
-        error: 'OVERAGE_NOT_CONFIGURABLE',
-        tier: result.tier,
-      });
-    }
-
-    return res.json({
-      allow_overage: allowOverage,
-    });
-  } catch (err: any) {
-    console.error('[billing] updateOveragePreference failed', {
-      shopId,
-      err: err.message,
-    });
-
-    return res.status(500).json({
-      error: 'OVERAGE_PREFERENCE_UPDATE_FAILED',
-    });
   }
 }

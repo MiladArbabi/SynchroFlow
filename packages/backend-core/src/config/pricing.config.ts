@@ -44,11 +44,13 @@ export const CURRENCY_LOCALES: Record<BillingCurrency, string> = {
 };
 
 // Display prices in minor units (pence / cents).
-// Annual = monthly × 0.8 (20% discount).
 //
-// GBP: Core £59.66 / Growth £133.99 / Scale £289.90
-// USD: Core $79    / Growth $179    / Scale $349
-// EUR: Core €69.99 / Growth €154.99 / Scale €328.50
+// New self-service purchases are USD monthly only:
+// Core $99 / Growth $249 / Scale $599.
+//
+// Existing GBP, EUR, and annual values below remain legacy provider
+// display/recognition values for subscriptions created under those price
+// objects. They must not be recomputed from the new USD monthly PLG anchors.
 // Annual amounts are total charged per year (not monthly equivalent).
 export const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency, {
   monthly: number;  // minor units

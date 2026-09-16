@@ -76,25 +76,26 @@ Direct file stream with appropriate `Content-Type` and `Content-Disposition` hea
 
 ## 4. Tier Gating
 
-| Tier    | Format     | Date Range  | Column Selection       | Scheduled |
-|---------|------------|-------------|------------------------|-----------|
-| Starter | None       | —           | —                      | —         |
-| Core    | CSV only   | 6 months    | Fixed set              | —         |
-| Growth  | CSV only   | Unlimited   | Full column picker     | —         |
-| Scale   | CSV only   | Unlimited   | Full + scheduled       | Daily/Weekly/Monthly |
+| Tier    | Format     | Date Range | Column Selection       | Scheduled |
+|---------|------------|------------|------------------------|-----------|
+| Starter | None       | —          | —                      | —         |
+| Core    | CSV only   | 90 days    | Fixed set              | —         |
+| Growth  | CSV only   | 365 days   | Full column picker     | —         |
+| Scale   | CSV only   | 730 days   | Full + scheduled       | Daily/Weekly/Monthly |
 
 ### Date Window Enforcement
-```ts
-// Core: 6-month rolling window
-const tierDataWindowSince = (tier: Tier): Date | null => {
-  if (tier === 'core') {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    return d;
-  }
-  return null; // growth/scale = unlimited
-};
-```
+Exports use the shared canonical visibility-window utility:
+`@lasyncro/backend-core/utils/tierDataWindow.js`.
+
+Current visibility horizons:
+
+- Starter: 30 days (no export capability)
+- Core: 90 days
+- Growth: 365 days
+- Scale: 730 days
+
+These are visibility windows for export access, not deletion or retention
+windows for canonical historical data.
 
 ---
 
@@ -325,14 +326,16 @@ duplicate summaries already available inside the product.
   now just opens `ExportDrawer` with `reportIds={['orders-outbound']}`;
   visual styling was already correct Tier 2 ghost pill, untouched.
 - **2026-07-17** — Core-tier date window updated from 12 months to 6
-  months, matching a broader Starter/Core window revision (see
-  `monetization_billing_playbook.md`). Also fixed: this controller had
+  months, matching the commercial truth at that time for a broader
+  Starter/Core window revision (see `monetization_billing_playbook.md`).
+  The 6-month value was later superseded by MON-REM-01B; see the current
+  §4 table and Date Window Enforcement values. Also fixed: this controller had
   its own private, hardcoded `tierDataWindowSince()` duplicate instead
   of importing the shared `@lasyncro/backend-core/utils/tierDataWindow.js`
   utility — meant it had silently drifted out of sync and was still
   enforcing the old 12-month window even after the canonical constant
   changed. Replaced with an import; §4 table and inline code comment
-  both updated to reflect 6 months.
+  both updated to reflect the then-current 6-month window.
 
 ## Unlocated sales (INV-SALE-LOCATION-19)
 

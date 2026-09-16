@@ -66,10 +66,11 @@ export function standardLimits(tier: Tier): PlanLimits {
 }
 
 /**
- * Ratified USD monthly commercial anchors in cents.
+ * Ratified USD monthly self-service commercial prices in cents.
  *
- * Scale's 59900 value is an internal/private commercial anchor.
- * Scale remains Contact / negotiated on merchant-facing self-service surfaces.
+ * Scale is a finite, self-service PLG tier at $599/month.
+ * Merchant-facing capacity comes from PLAN_LIMITS and must never be described
+ * as unlimited.
  */
 export const PLAN_PRICING_CENTS: Readonly<Record<Tier, number>> = Object.freeze({
   starter: 0,
