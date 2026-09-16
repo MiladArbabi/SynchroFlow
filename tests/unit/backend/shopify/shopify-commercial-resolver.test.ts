@@ -107,7 +107,6 @@ describe('P0-B3 — Shopify commercial resolver', () => {
   describe('SHOPIFY-01: planHandle is the authoritative tier key', () => {
     it.each([
       ['starter', 'starter'],
-      ['early-access', 'starter'],
       ['core', 'core'],
       ['growth', 'growth'],
       ['scale', 'scale'],
@@ -151,6 +150,16 @@ describe('P0-B3 — Shopify commercial resolver', () => {
     it('rejects an unmapped plan handle', () => {
       const resolver = loadResolver();
       expect(() => resolver.resolveShopifyPlanHandle('enterprise-2027')).toThrow();
+    });
+
+    // GH-1128: `early-access` was a pre-launch Shopify public plan, since
+    // deleted from the Partner Dashboard. It has no customer-migration
+    // purpose (LaSyncro has not launched) and must fail closed like any
+    // other retired/unrecognized commercial handle — not silently resolve
+    // to starter.
+    it('rejects the retired early-access handle (GH-1128)', () => {
+      const resolver = loadResolver();
+      expect(() => resolver.resolveShopifyPlanHandle('early-access')).toThrow();
     });
 
     it('rejects a subscription whose handle is unmapped, even when the name looks valid', () => {

@@ -60,12 +60,14 @@ describe('MON-REM-01B-4 — Partner API activeSubscription normalization', () =>
     });
   });
 
-  it('normalizes legacy early-access handle to starter', () => {
+  // GH-1128: `early-access` was a pre-launch Shopify public plan, since
+  // deleted from the Partner Dashboard (LaSyncro has not launched — there is
+  // no customer-migration purpose to preserve). It must fail closed like any
+  // other retired/unrecognized commercial handle, never silently normalize
+  // to starter.
+  it('fails closed for the retired early-access handle (GH-1128)', () => {
     const normalize = loadNormalizer();
-    expect(normalize(activeSubscription(['early-access']))).toMatchObject({
-      tier: 'starter',
-      planHandle: 'early-access',
-    });
+    expect(() => normalize(activeSubscription(['early-access']))).toThrow();
   });
 
   it('fails closed for unknown commercial plan handles', () => {

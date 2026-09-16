@@ -169,6 +169,38 @@ describe('MON-REM-01B-4 — Shopify App Pricing redirect reconciliation API', ()
     expect(new Date(persisted.current_period_end).toISOString())
       .toBe(knownPeriodEnd.toISOString());
   });
+
+  // GH-1128: `early-access` was a pre-launch Shopify public plan, since
+  // deleted from the Partner Dashboard. LaSyncro has not launched — there is
+  // no subscriber to migrate — so it must not remain a valid commercial
+  // provider fact. Prove Partner API truth reporting `early-access` is
+  // rejected fail-closed, and that authoritative commercial state is left
+  // untouched by the rejected fact.
+  it('rejects Partner API truth reporting the retired early-access handle (GH-1128)', async () => {
+    const f = await fixture();
+    programPartnerActiveSubscription({ shopGid: f.shopGid, commercialHandle: 'early-access' });
+
+    const before = await subscription(f.shopId);
+    const transitionsBefore = await withTenant(f.shopId, (trx) =>
+      trx('shop_subscription_transitions').where({ shop_id: f.shopId }).count('* as count').first(),
+    );
+
+    const res = await request(app)
+      .post('/api/v1/billing/shopify/reconcile')
+      .set('Authorization', `Bearer ${f.token}`)
+      .send({ expected_plan_handle: 'early-access' });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'SHOPIFY_PARTNER_PLAN_UNRESOLVED' });
+
+    const after = await subscription(f.shopId);
+    expect(after).toEqual(before);
+
+    const transitionsAfter = await withTenant(f.shopId, (trx) =>
+      trx('shop_subscription_transitions').where({ shop_id: f.shopId }).count('* as count').first(),
+    );
+    expect(Number(transitionsAfter?.count)).toBe(Number(transitionsBefore?.count));
+  });
 });
 
 function programPartnerActiveSubscription(input: {

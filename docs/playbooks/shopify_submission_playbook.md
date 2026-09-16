@@ -165,13 +165,15 @@ Only recognized commercial handles determine tier:
 | Partner item handle | Canonical tier |
 |---|---|
 | `starter` | starter |
-| `early-access` | starter (legacy compatibility) |
 | `core` | core |
 | `growth` | growth |
 | `scale` | scale |
 
 `shipped-order` is a usage item handle only. It must never determine tier.
-Unknown or unrecognized commercial state fails closed.
+Unknown or unrecognized commercial state fails closed. The pre-launch
+`early-access` handle has been deleted from the Partner Dashboard (GH-1128)
+and is no longer a valid commercial provider fact — it fails closed like any
+other unrecognized handle.
 
 Pricing fields returned by Partner API are provider facts for provenance and
 cross-checking. They are not tier authority.

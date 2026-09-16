@@ -5432,7 +5432,6 @@ shop domain.
 | Partner item handle | tier |
 |---|---|
 | `starter` | starter |
-| `early-access` | starter (legacy compatibility) |
 | `core` | core |
 | `growth` | growth |
 | `scale` | scale |
@@ -5440,6 +5439,9 @@ shop domain.
 - `shipped-order` is usage only and must never determine tier.
 - Unknown or unrecognized commercial state fails closed; there is no fallback
   to display names or request parameters.
+- The pre-launch `early-access` handle has been deleted from the Partner
+  Dashboard (GH-1128) and is no longer a valid commercial provider fact — it
+  fails closed like any other unrecognized handle.
 - Partner pricing fields are carried as provider facts for provenance and
   cross-checking. They are not tier authority.
 - `activeSubscription = null` resolves safely to Starter / no active Shopify
