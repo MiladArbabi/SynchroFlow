@@ -12,7 +12,7 @@
 //   POST /api/v1/billing/checkout     → Stripe/Shopify checkout redirect
 //   POST /api/v1/billing/portal       → Stripe customer portal redirect
 
-import { standardLimits, TIER_ORDER } from '@lasyncro/commercial-policy';
+import { TIER_ORDER } from '@lasyncro/commercial-policy';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Box, Typography, Button, Alert, CircularProgress, Divider,
@@ -26,6 +26,8 @@ import {
 } from '../../config/pricingDisplay';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useCapStatus } from '../../hooks/useCapStatus';
+import { useAuth } from '../../contexts/AuthContext';
+import { useBillingUsage, type BillingUsageData } from '../../hooks/useBillingUsage';
 
 // ─────────────────────────────────────────────
 // Static plan metadata (aligns with design system)
@@ -40,8 +42,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   ],
   core: [
     'Everything in Starter',
-    '2,000 processed orders / month',
-    '$0.08 per additional processed order',
+    'Processed-order allowance with automatic overage',
     '3 non-owner seats',
     '1 location',
     '90-day history',
@@ -50,8 +51,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   ],
   growth: [
     'Everything in Core',
-    '7,500 processed orders / month',
-    '$0.06 per additional processed order',
+    'Higher processed-order allowance with automatic overage',
     '10 non-owner seats',
     '3 locations',
     '365-day history',
@@ -60,8 +60,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   ],
   scale: [
     'Everything in Growth',
-    '20,000 processed orders / month',
-    '$0.04 per additional processed order',
+    'Highest self-service processed-order allowance',
     '25 non-owner seats',
     '10 locations',
     '730-day history',
@@ -108,12 +107,7 @@ interface SubscriptionData {
   manage_billing_url?: string | null;
 }
 
-interface UsageData {
-  ingested_orders: number;
-  shipped_orders: number;
-  tier: string;
-  period_starts_at: string | null;
-}
+type UsageData = BillingUsageData;
 
 // ─────────────────────────────────────────────
 // Date helpers
@@ -129,6 +123,10 @@ function fmtDate(dateStr: string): string {
 
 function fmtShortDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 // ─────────────────────────────────────────────
@@ -512,13 +510,15 @@ function TierCard({
 // ─────────────────────────────────────────────
 
 function PlanHeader({
-  sub, currentTier, onPortal, openingPortal, onUpgrade,
+  sub, currentTier, onPortal, openingPortal, onUpgrade, manageLabel, manageDisabled,
 }: {
   sub: SubscriptionData;
   currentTier: string;
   onPortal: () => void;
   openingPortal: boolean;
   onUpgrade: (tierId: string) => void;
+  manageLabel?: string;
+  manageDisabled?: boolean;
 }) {
   const theme = useTheme();
   const tierLabel   = currentTier.charAt(0).toUpperCase() + currentTier.slice(1);
@@ -567,7 +567,7 @@ function PlanHeader({
         <Button
           size="small" variant="outlined"
           startIcon={<ExternalLink size={14} />}
-          disabled={openingPortal}
+          disabled={openingPortal || manageDisabled}
           onClick={onPortal}
           sx={{
             flexShrink: 0, height: 40, borderRadius: '8px', fontWeight: 600, fontSize: 13,
@@ -575,7 +575,7 @@ function PlanHeader({
             '&:hover': { borderColor: 'text.disabled' },
           }}
         >
-          {openingPortal ? 'Opening…' : 'Manage billing'}
+          {openingPortal ? 'Opening…' : manageLabel ?? 'Manage billing'}
         </Button>
       </Box>
 
@@ -696,16 +696,18 @@ function BillingToggle({
 
 const BillingSettings: React.FC = () => {
   const { tier: currentTier, refresh: refreshEntitlements } = useEntitlements();
+  const { user } = useAuth();
   const currency: BillingCurrency = 'USD';
 
   const [sub, setSub]                   = useState<SubscriptionData | null>(null);
-  const [usage, setUsage]               = useState<UsageData | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
   const billingInterval = 'monthly' as const;
   const [upgrading, setUpgrading]       = useState<string | null>(null);
   const [openingPortal, setOpPortal]    = useState(false);
   const planCardsRef                    = useRef<HTMLDivElement>(null);
+  const canSeeBillingUsage = user?.role === 'owner';
+  const { data: usage } = useBillingUsage({ enabled: canSeeBillingUsage });
 
   useEffect(() => {
     let cancelled = false;
@@ -754,14 +756,6 @@ const BillingSettings: React.FC = () => {
 
     void loadBilling();
 
-    axiosInstance.get('/api/v1/billing/usage')
-      .then((r) => {
-        if (!cancelled) {
-          setUsage(r.data);
-        }
-      })
-      .catch(() => {}); // non-fatal
-
     return () => {
       cancelled = true;
     };
@@ -781,7 +775,7 @@ const BillingSettings: React.FC = () => {
     }
 
     if (sub?.billing_provider !== 'stripe') {
-      setError('Billing is temporarily unavailable. Please contact support.');
+      setError('Billing setup is incomplete. Please contact support.');
       return;
     }
 
@@ -818,7 +812,7 @@ const BillingSettings: React.FC = () => {
     }
 
     if (sub?.billing_provider !== 'stripe') {
-      setError('Billing is temporarily unavailable. Please contact support.');
+      setError('Billing setup is incomplete. Please contact support.');
       return;
     }
 
@@ -843,6 +837,22 @@ const BillingSettings: React.FC = () => {
     }
   };
 
+  const handleSetupBilling = async () => {
+    if (sub?.billing_provider !== 'stripe') {
+      setError('Billing setup is incomplete. Please contact support.');
+      return;
+    }
+
+    setOpPortal(true);
+    try {
+      const { data } = await axiosInstance.post('/api/v1/billing/setup-payment-method');
+      if (data.url) window.location.href = data.url;
+    } catch {
+      setError('Failed to start billing setup.');
+      setOpPortal(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -858,11 +868,15 @@ const BillingSettings: React.FC = () => {
   // hosted Managed Pricing page — all Stripe CTAs retarget or hide.
   const isShopifyBilled  = sub?.billing_provider === 'shopify';
   const manageBillingUrl = sub?.manage_billing_url ?? null;
+  const isStripeBilled = sub?.billing_provider === 'stripe';
+  const billingProviderKnown = isShopifyBilled || isStripeBilled;
+  const canOpenManageBilling =
+    (isShopifyBilled && Boolean(manageBillingUrl)) ||
+    (isStripeBilled && Boolean(sub?.current_period_start));
+  const shouldSetupStripeBilling = isStripeBilled && !sub?.current_period_start;
 
-  const shippedCap = standardLimits(tier as Tier).shippedOrderCap;
-
-  const periodLabel = usage?.period_starts_at && sub?.current_period_end
-    ? `${fmtShortDate(usage.period_starts_at)} – ${fmtShortDate(sub.current_period_end)}, ${new Date(sub.current_period_end).getFullYear()}`
+  const periodLabel = usage?.period_starts_at && usage.period_ends_at
+    ? `${fmtShortDate(usage.period_starts_at)} – ${fmtShortDate(usage.period_ends_at)}, ${new Date(usage.period_ends_at).getFullYear()}`
     : null;
 
   return (
@@ -877,19 +891,33 @@ const BillingSettings: React.FC = () => {
         <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>
       )}
 
+      {sub && !billingProviderKnown && (
+        <Alert severity="info">
+          Billing setup incomplete. Plan management will appear once your billing provider is confirmed.
+        </Alert>
+      )}
+
+      {isStripeBilled && !sub?.current_period_start && (
+        <Alert severity="info">
+          Billing setup incomplete. Set up billing before managing a Stripe billing account.
+        </Alert>
+      )}
+
       {/* Plan header — status-aware */}
       {sub && (
         <PlanHeader
           sub={sub}
           currentTier={tier}
-          onPortal={handlePortal}
+          onPortal={shouldSetupStripeBilling ? handleSetupBilling : handlePortal}
           openingPortal={openingPortal}
           onUpgrade={handleUpgrade}
+          manageLabel={shouldSetupStripeBilling ? 'Set up billing' : 'Manage billing'}
+          manageDisabled={!canOpenManageBilling && !shouldSetupStripeBilling}
         />
       )}
 
       {/* Two-column: usage meters + recommended upgrade */}
-      {usage && (
+      {canSeeBillingUsage && usage && (
         <Box sx={{
           border: '0.5px solid var(--rule)',
           borderRadius: '16px', overflow: 'hidden',
@@ -910,13 +938,49 @@ const BillingSettings: React.FC = () => {
             </Box>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              {shippedCap > 0 && (
+              {usage.included_allowance > 0 && (
                 <UsageMeter
                   label="Processed orders"
-                  used={usage.shipped_orders}
-                  cap={shippedCap}
+                  used={usage.processed_orders}
+                  cap={usage.included_allowance}
                   unit="orders"
                 />
+              )}
+              {usage.included_allowance > 0 && (
+                <Box sx={{ display: 'grid', gap: 1.25 }}>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    {usage.remaining_included.toLocaleString('en-US')} included processed orders remaining before overage.
+                  </Typography>
+                  <Divider />
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>
+                    Overage billing
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    Automatic
+                    {usage.overage_rate_cents != null
+                      ? ` · ${formatCents(usage.overage_rate_cents)} per additional processed order`
+                      : ''}
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    Processing continues normally after your included allowance is used.
+                  </Typography>
+                  {usage.overage_units > 0 && (
+                    <Box sx={{ display: 'grid', gap: 0.5, mt: 0.5 }}>
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        Total processed: {usage.processed_orders.toLocaleString('en-US')}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        Included: {usage.included_allowance.toLocaleString('en-US')}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        Additional: {usage.overage_units.toLocaleString('en-US')}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'text.primary' }}>
+                        Estimated overage: {formatCents(usage.estimated_overage_cents)}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
               )}
             </Box>
 

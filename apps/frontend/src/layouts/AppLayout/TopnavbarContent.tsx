@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useState } from "react";
-import { useLocation, Link as RouterLink } from "react-router-dom";
+import { useLocation, Link as RouterLink, useNavigate } from "react-router-dom";
 import { getBreadcrumbLabel } from "runtime/registerNav";
 import {
   Box, IconButton, Typography, Breadcrumbs as MuiBreadcrumbs,
@@ -16,6 +16,8 @@ import { useAlerts } from '../../pages/alerts/useAlerts';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useIntegration } from '../../contexts/integration/useIntegration';
 import { axiosInstance } from "api/axiosConfig";
+import { useAuth } from '../../contexts/AuthContext';
+import { useBillingUsage } from '../../hooks/useBillingUsage';
 
 // ─── TOPNAV COMPONENT ─────────────────────────────────────────────────────────
 
@@ -28,9 +30,13 @@ interface TopnavbarContentProps {
 
 const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) => {
   const location  = useLocation();
+  const navigate = useNavigate();
   const { mode, setMode } = useColorScheme();
+  const { user } = useAuth();
   const { phase } = useShopLifecycle();
   const isFt2     = phase === 'FT2_READY';
+  const isOwner = user?.role === 'owner';
+  const [usageAnchor, setUsageAnchor] = useState<null | HTMLElement>(null);
 
   // Alerts is an FT2-protected surface, and the topnav remains the SINGLE
   // shell-level owner of the live inbox poll. The bell popover that used to
@@ -50,6 +56,10 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
   const allInbox     = alertsData?.data ?? [];
 
   const { isSyncComplete, integrationId, refresh } = useIntegration();
+  const { data: billingUsage } = useBillingUsage({
+    enabled: isFt2 && isOwner,
+    poll: isFt2 && isOwner,
+  });
   const isLive = isSyncComplete;
   const [resyncing, setResyncing] = useState(false);
   const [syncAnchor, setSyncAnchor] = useState<null | HTMLElement>(null);
@@ -97,6 +107,20 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
   };
+
+  const formatMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const isBillingOverage = Boolean(billingUsage && billingUsage.overage_units > 0);
+  const isBillingAllowanceUsed = Boolean(
+    billingUsage &&
+    billingUsage.overage_units === 0 &&
+    billingUsage.processed_orders >= billingUsage.included_allowance
+  );
+  const showBillingUsage =
+    isFt2 &&
+    isOwner &&
+    Boolean(billingUsage) &&
+    billingUsage!.included_allowance > 0 &&
+    (billingUsage!.usage_percent >= 60 || billingUsage!.overage_units > 0);
 
   // ISS-095/DEC-04: breadcrumb resolves against the registered nav tree
   // (title + optional parentId), not by splitting/capitalizing the URL.
@@ -151,6 +175,84 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
             <OpsConsoleButton alerts={allInbox} />
 
             <TrialCountdownChip />
+
+            {showBillingUsage && billingUsage && (
+              <>
+                <Tooltip title={`${billingUsage.usage_percent}% of included processed orders used`}>
+                  <Box
+                    onClick={(e) => setUsageAnchor(e.currentTarget)}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 0.45,
+                      px: 1, py: 0.375, borderRadius: '20px', flexShrink: 0,
+                      bgcolor: 'rgba(99,102,241,0.08)',
+                      border: '0.5px solid rgba(99,102,241,0.28)',
+                      cursor: 'pointer',
+                      color: 'var(--accent)',
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 12, lineHeight: 1 }}>◔</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>
+                      {billingUsage.overage_units > 0 ? '100%' : `${billingUsage.usage_percent}%`}
+                    </Typography>
+                  </Box>
+                </Tooltip>
+
+                <Popover
+                  open={Boolean(usageAnchor)}
+                  anchorEl={usageAnchor}
+                  onClose={() => setUsageAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                  slotProps={{ paper: {
+                    sx: { mt: 1, width: 280, borderRadius: '10px', p: 2,
+                      bgcolor: 'background.paper', boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }
+                  }}}
+                >
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 1 }}>
+                    {isBillingOverage ? 'Overage active' : isBillingAllowanceUsed ? 'Included allowance used' : billingUsage.usage_percent >= 90 ? 'Approaching your allowance' : 'Processed orders'}
+                  </Typography>
+                  <Box sx={{ display: 'grid', gap: 0.75 }}>
+                    {isBillingOverage ? (
+                      <>
+                        <Typography sx={{ fontSize: 12 }}>{billingUsage.processed_orders.toLocaleString('en-US')} processed orders</Typography>
+                        <Typography sx={{ fontSize: 12 }}>{billingUsage.overage_units.toLocaleString('en-US')} additional</Typography>
+                        <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Estimated overage {formatMoney(billingUsage.estimated_overage_cents)}</Typography>
+                      </>
+                    ) : isBillingAllowanceUsed ? (
+                      <>
+                        <Typography sx={{ fontSize: 12 }}>{billingUsage.processed_orders.toLocaleString('en-US')} / {billingUsage.included_allowance.toLocaleString('en-US')}</Typography>
+                        <Typography sx={{ fontSize: 12 }}>Your included processed-order allowance has been used.</Typography>
+                        <Typography sx={{ fontSize: 12 }}>Processing continues normally.</Typography>
+                      </>
+                    ) : (
+                      <>
+                        <Typography sx={{ fontSize: 12 }}>{billingUsage.processed_orders.toLocaleString('en-US')} / {billingUsage.included_allowance.toLocaleString('en-US')}</Typography>
+                        <Typography sx={{ fontSize: 12 }}>{billingUsage.remaining_included.toLocaleString('en-US')} remaining</Typography>
+                      </>
+                    )}
+                    {billingUsage.period_ends_at && (
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        Resets {new Date(billingUsage.period_ends_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Typography>
+                    )}
+                    {billingUsage.overage_rate_cents != null && (
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        {isBillingAllowanceUsed ? 'Additional orders' : 'Additional orders after allowance'}: {formatMoney(billingUsage.overage_rate_cents)} each
+                      </Typography>
+                    )}
+                    <Box
+                      onClick={() => {
+                        setUsageAnchor(null);
+                        navigate('/settings/billing');
+                      }}
+                      sx={{ mt: 0.5, fontSize: 12, fontWeight: 700, color: 'var(--accent)', cursor: 'pointer' }}
+                    >
+                      Go to billing →
+                    </Box>
+                  </Box>
+                </Popover>
+              </>
+            )}
 
             <Tooltip title="Light mode">
               <IconButton

@@ -304,6 +304,14 @@ async function getBillingOverageEventPayload(shopId: number): Promise<Record<str
   return row.event_payload as Record<string, unknown>;
 }
 
+async function readBillingUsageThresholdAlerts(shopId: number) {
+  return withTenant(shopId, (trx) =>
+    trx('alerts')
+      .where({ shop_id: shopId, alert_type: 'billing_usage_threshold' })
+      .select('alert_key', 'title', 'message', 'source', 'severity', 'category', 'audience')
+  );
+}
+
 async function packComplete(shopId: number, userId: number, batchId: string) {
   const subscription = await withTenant(shopId, (trx) =>
     trx('shop_subscriptions')
@@ -383,6 +391,51 @@ describe('Shipped-order commercial enforcement (MON-REM-01B-2)', () => {
       expect(payload.billing_provider).toBe('stripe');
       expect(payload.overage_units).toBe(1);
       expect(payload.stripe_customer_id).toBe(stripeCustomerId);
+    });
+  });
+
+  describe('GH-1127: pack-complete creates owner billing usage threshold alert', () => {
+    it('1499 -> 1500 persists the 75% threshold artifact with usage advancement', async () => {
+      mockDispatchNotification.mockClear();
+      const { shopId, userId, batchId, usagePeriodId } =
+        await createCommercialFixture('gh1127-threshold', {
+          tier: 'core',
+          usageBefore: 1499,
+          allowOverage: false,
+          billingProvider: 'stripe',
+          stripeCustomerId: 'cus_test_fixture_threshold',
+        });
+
+      const res = await packComplete(shopId, userId, batchId);
+
+      expect(res.status).toBe(200);
+      expect(await readShippedOrders(shopId, usagePeriodId)).toBe(1500);
+
+      const alerts = await readBillingUsageThresholdAlerts(shopId);
+      expect(alerts).toEqual([
+        expect.objectContaining({
+          alert_key: `billing_usage:${usagePeriodId}:75`,
+          title: 'Processed-order usage reached 75%',
+          source: 'billing',
+          severity: 'info',
+          category: 'money_margin',
+          audience: 'owner',
+        }),
+      ]);
+      expect(alerts[0].message).toContain('500 remain this period');
+      expect(mockDispatchNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shopId,
+          broadcastToRole: 'owner',
+          payload: expect.objectContaining({
+            title: 'Processed-order usage reached 75%',
+            data: expect.objectContaining({
+              route: '/settings/billing',
+              alert_type: 'billing_usage_threshold',
+            }),
+          }),
+        })
+      );
     });
   });
 

@@ -25,6 +25,10 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import {
+  PLAN_PROCESSED_ORDER_OVERAGE_CENTS,
+  standardLimits,
+} from '@lasyncro/commercial-policy';
 import { 
   getSelfServeStripePriceId,
   getSeatPriceId, 
@@ -377,17 +381,43 @@ export async function getUsage(req: Request, res: Response) {
     // context, so RLS silently returned zero rows for the shop's own
     // data. withTenant() sets SET LOCAL app.current_tenant for this
     // transaction only, matching RLS_blueprint.md §3.
-    const usage = await withTenant(shopId, async (trx) => {
+    const { usage, subscription } = await withTenant(shopId, async (trx) => {
       // Reads also rotate stale Starter periods so an idle shop sees a
       // fresh monthly allowance before its next order or shipment.
-      return getOrRotateOpenUsagePeriod(trx, shopId);
+      const usage = await getOrRotateOpenUsagePeriod(trx, shopId);
+      const subscription = await trx('shop_subscriptions')
+        .where({ shop_id: shopId })
+        .first('tier', 'current_period_start', 'current_period_end');
+      return { usage, subscription };
     });
+
+    const rawTier = subscription?.tier ?? usage?.tier_at_period_start ?? 'starter';
+    const tier = isValidTier(rawTier) ? rawTier : 'starter';
+    const processedOrders = Number(usage?.shipped_orders ?? 0);
+    const includedAllowance = standardLimits(tier).shippedOrderCap;
+    const remainingIncluded = Math.max(0, includedAllowance - processedOrders);
+    const overageUnits = Math.max(0, processedOrders - includedAllowance);
+    const overageRateCents = PLAN_PROCESSED_ORDER_OVERAGE_CENTS[tier];
+    const estimatedOverageCents =
+      overageRateCents == null ? 0 : overageUnits * overageRateCents;
+    const usagePercent =
+      includedAllowance > 0
+        ? Math.min(100, Math.floor((processedOrders / includedAllowance) * 100))
+        : 0;
 
     return res.json({
       ingested_orders: usage?.ingested_orders ?? 0,
-      shipped_orders: usage?.shipped_orders ?? 0,
-      tier: usage?.tier_at_period_start ?? 'starter',
+      shipped_orders: processedOrders,
+      processed_orders: processedOrders,
+      tier,
+      included_allowance: includedAllowance,
+      remaining_included: remainingIncluded,
+      usage_percent: usagePercent,
+      overage_units: overageUnits,
+      overage_rate_cents: overageRateCents,
+      estimated_overage_cents: estimatedOverageCents,
       period_starts_at: usage?.period_starts_at ?? null,
+      period_ends_at: subscription?.current_period_end ?? null,
     });
   } catch (err: any) {
     console.error('[billing] getUsage failed', { shopId, err: err.message });

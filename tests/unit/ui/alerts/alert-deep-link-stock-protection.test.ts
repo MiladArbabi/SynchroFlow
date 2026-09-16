@@ -102,6 +102,21 @@ describe('alertDeepLink — stock_protection backend-action precedence', () => {
     });
   });
 
+  it('C3: billing_usage_threshold routes to canonical billing settings', () => {
+    const a = alert({
+      alert_type: 'billing_usage_threshold',
+      entity_type: 'shop_usage_period',
+      entity_id: 'usage-period-1',
+      treatment: undefined,
+      action: undefined,
+    });
+
+    expect(alertDeepLink(a)).toEqual({
+      route: '/settings/billing',
+      label: 'Billing',
+    });
+  });
+
   it('a backend action on a legacy alert type would still take precedence (future-proofing, no special-case needed)', () => {
     const a = alert({
       alert_type: 'stockout_risk',

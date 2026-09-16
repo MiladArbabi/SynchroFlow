@@ -73,6 +73,11 @@ import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.servic
 import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
 import { STOW_TASK_OPEN_STATUSES } from '@lasyncro/shared';
 import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
+import {
+  persistBillingUsageThresholdAlert,
+  type BillingUsageNotificationIntent,
+} from '../../services/billing/billingUsageThreshold.service.js';
+import { dispatchNotification } from '../../services/notifications/notificationDispatch.service.js';
 
 class ShippedOrderCapReachedError extends Error {
   constructor(
@@ -1737,6 +1742,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
   let billableCount = 0;
+  let billingUsageNotification: BillingUsageNotificationIntent | null = null;
 
   let pendingOverageEvent: {
     billingProvider: 'stripe' | 'shopify';
@@ -1985,6 +1991,14 @@ export const httpCompletePack = async (req: Request, res: Response) => {
             }
           }
         }
+
+        billingUsageNotification = await persistBillingUsageThresholdAlert(trx, {
+          shopId,
+          tier,
+          usagePeriodId: usagePeriod.id,
+          previousProcessed: currentShipped,
+          projectedProcessed: projectedShipped,
+        });
       }
 
       // Only mutate fulfillment state after commercial eligibility succeeds.
@@ -2077,6 +2091,30 @@ export const httpCompletePack = async (req: Request, res: Response) => {
         shopId,
       });
     });
+
+    const notification =
+      billingUsageNotification as BillingUsageNotificationIntent | null;
+
+    if (notification) {
+      void dispatchNotification({
+        shopId,
+        broadcastToRole: 'owner',
+        payload: {
+          title: notification.title,
+          body: notification.body,
+          data: {
+            route: notification.route,
+            alert_type: 'billing_usage_threshold',
+          },
+        },
+      }).catch((err) => {
+        console.error('[WMS_PACK_COMPLETE][BILLING_USAGE_NOTIFICATION_FAILED]', {
+          shopId,
+          batchId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     return res.status(200).json({
       pick_batch_id: batchId,

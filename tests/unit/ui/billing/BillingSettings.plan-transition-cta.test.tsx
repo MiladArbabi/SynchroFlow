@@ -4,6 +4,27 @@ import type { Tier } from '@lasyncro/commercial-policy';
 import BillingSettings from 'pages/account-settings/BillingSettings';
 
 let mockTier: Tier = 'growth';
+jest.mock('contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1, role: 'owner' } }),
+}));
+jest.mock('hooks/useBillingUsage', () => ({
+  useBillingUsage: () => ({
+    data: {
+      tier: mockTier,
+      ingested_orders: 0,
+      shipped_orders: 0,
+      processed_orders: 0,
+      included_allowance: 2000,
+      remaining_included: 2000,
+      usage_percent: 0,
+      overage_units: 0,
+      overage_rate_cents: 8,
+      estimated_overage_cents: 0,
+      period_starts_at: null,
+      period_ends_at: null,
+    },
+  }),
+}));
 jest.mock('contexts/EntitlementsContext', () => ({
   useEntitlements: () => ({ tier: mockTier, billingCurrency: 'USD' }),
 }));

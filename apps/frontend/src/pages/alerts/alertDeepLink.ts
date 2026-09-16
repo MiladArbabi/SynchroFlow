@@ -41,6 +41,7 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
   missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
+  billing_usage_threshold: { route: '/settings/billing', label: 'Billing' },
 
   // ── OPS-CONSOLE-02: three previously unmapped families ────────────────────
   // These had no destination, so the Ops Console rendered them as dead ends.
