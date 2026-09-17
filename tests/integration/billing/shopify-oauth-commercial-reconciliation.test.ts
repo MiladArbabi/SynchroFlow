@@ -495,36 +495,76 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
     }
   });
 
-  it('install: fresh App Store tenant starts starter/canceled/shopify with no trial growth grant', async () => {
+  // GH-1132: supersedes the prior "starter/canceled with no trial" contract.
+  // A genuinely fresh Shopify App Store install now automatically receives
+  // an app-granted 14-day Growth onboarding trial — never a fabricated
+  // Shopify subscription, never Stripe. This is asserted immediately after
+  // handleShopifyInstall, before any OAuth callback runs.
+  it('install: fresh App Store tenant starts growth/trialing/shopify with a 14-day trial (GH-1132)', async () => {
     const shopDomain = `oauth-billing-install-${Date.now()}.myshopify.com`;
+    const beforeInstall = new Date();
     const { shopId, userId } = await installFreshShop(shopDomain);
+    const afterInstall = new Date();
 
-    expect(await subscriptionRow(shopId)).toMatchObject({
-      tier: 'starter',
-      status: 'canceled',
+    const sub = await subscriptionRow(shopId);
+    expect(sub).toMatchObject({
+      tier: 'growth',
+      status: 'trialing',
       billing_provider: 'shopify',
-      trial_ends_at: null,
     });
+    expect(sub!.trial_ends_at).not.toBeNull();
+    const trialEndsAt = new Date(sub!.trial_ends_at).getTime();
+    expect(trialEndsAt).toBeGreaterThanOrEqual(
+      beforeInstall.getTime() + 14 * 24 * 60 * 60 * 1000 - 5_000
+    );
+    expect(trialEndsAt).toBeLessThanOrEqual(
+      afterInstall.getTime() + 14 * 24 * 60 * 60 * 1000 + 5_000
+    );
 
     const usage = await withTenant(shopId, (trx) =>
       trx('shop_usage_metrics').where({ shop_id: shopId }).first('tier_at_period_start')
     );
-    expect(usage).toMatchObject({ tier_at_period_start: 'starter' });
+    expect(usage).toMatchObject({ tier_at_period_start: 'growth' });
 
+    // Growth canonical effective entitlement exists, and at least one
+    // Growth-only capability (something Starter never grants) is present.
     const access = await EntitlementsService.getForUser(userId);
     expect(access).toBeTruthy();
-    expect(access!.modules).toEqual(expect.arrayContaining([...modulesForTier('starter' as never)]));
+    expect(access!.modules).toEqual(expect.arrayContaining([...modulesForTier('growth' as never)]));
     const growthOnlyModule = [...modulesForTier('growth' as never)].find(
       (moduleKey) => !modulesForTier('starter' as never).has(moduleKey)
     );
-    if (growthOnlyModule) {
-      expect(access!.modules).not.toContain(growthOnlyModule);
-    }
+    expect(growthOnlyModule).toBeTruthy();
+    expect(access!.modules).toContain(growthOnlyModule);
+
+    // Creation ledger row: NULL -> growth/trialing/shopify, with provenance
+    // identifying this as a fresh App Store Growth trial (not a bootstrap
+    // with no contract, and not any other source).
+    const creationRow = await withTenant(shopId, (trx) =>
+      trx(LEDGER_TABLE).where({ shop_id: shopId }).orderBy('id', 'asc').first()
+    );
+    expect(creationRow).toMatchObject({
+      from_tier: null,
+      from_status: null,
+      from_billing_provider: null,
+      to_tier: 'growth',
+      to_status: 'trialing',
+      to_billing_provider: 'shopify',
+      source: 'shopify_app_store_install',
+      reason: 'app_store_install_growth_trial',
+      actor_type: 'shopify',
+    });
   });
 
-  it('install callback: fresh App Store shop with no active Shopify contract redirects to required billing entry with starter token', async () => {
+  // GH-1132: supersedes the prior "redirects to required billing entry with
+  // starter token" contract. A fresh install now has a valid local Growth
+  // trial the instant it's created, so the OAuth callback that immediately
+  // follows must not force hosted pricing — it issues a Growth session and
+  // continues into the normal app path.
+  it('install callback: fresh App Store shop with no active Shopify contract issues a Growth session, no billing entry required (GH-1132)', async () => {
     const shopDomain = `oauth-billing-entry-${Date.now()}.myshopify.com`;
     const { shopId, userId } = await installFreshShop(shopDomain);
+    const trialEndsAtBefore = (await subscriptionRow(shopId))!.trial_ends_at;
 
     programAxios(shopDomain);
     programBilling({ kind: 'graphql', body: noActiveSubscriptions });
@@ -535,17 +575,104 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
     expect(res.status).toBe(302);
     const redirect = new URL(String(res.headers.location));
     expect(redirect.origin).toBe(process.env.FRONTEND_URL);
-    expect(redirect.pathname).toBe('/settings/billing');
+    // Continues into the normal LaSyncro app path — not hosted pricing.
+    expect(redirect.pathname).toBe('/');
     expect(redirect.searchParams.get('connect')).toBe('app_store');
-    expect(redirect.searchParams.get('billing_entry')).toBe('required');
+    expect(redirect.searchParams.get('billing_entry')).toBeNull();
     expect(redirect.searchParams.get('token')).toBeTruthy();
     expect(String(res.headers.location)).not.toContain('stripe');
-    expect(tierClaimFrom(String(res.headers.location))).toBe('starter');
-    expect(await subscriptionRow(shopId)).toMatchObject({
-      tier: 'starter',
-      status: 'canceled',
+    expect(tierClaimFrom(String(res.headers.location))).toBe('growth');
+
+    const after = await subscriptionRow(shopId);
+    expect(after).toMatchObject({
+      tier: 'growth',
+      status: 'trialing',
       billing_provider: 'shopify',
     });
+    // Partner reconciliation ran (Partner truth was consulted) but a null
+    // Partner subscription must not have disturbed the original trial window.
+    expect(new Date(after!.trial_ends_at).toISOString()).toBe(
+      new Date(trialEndsAtBefore).toISOString()
+    );
+  });
+
+  // GH-1132 (6): reconnect must never reset or extend an already-running
+  // Growth trial. Fixed trial_ends_at proves exact preservation, not just
+  // "still trialing".
+  it('reconnect with null Partner subscription preserves the exact original trial_ends_at (GH-1132)', async () => {
+    const shopDomain = `oauth-billing-reconnect-trial-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+
+    // First completed OAuth persists the credential the reconnect will
+    // later replace, exactly like establishInstalledShopAt's pattern.
+    programAxios(shopDomain);
+    programBilling({ kind: 'graphql', body: noActiveSubscriptions });
+    const state1 = await readOAuthState(userId);
+    const first = await callback({ code: 'code-initial', state: state1, shop: shopDomain });
+    expect(first.status).toBe(302);
+
+    // Pin an exact, deterministic trial_ends_at so preservation can be
+    // proven byte-for-byte rather than merely "still in the future".
+    const fixedTrialEndsAt = new Date('2026-10-15T12:00:00.000Z');
+    await withTenant(shopId, (trx) =>
+      trx('shop_subscriptions').where({ shop_id: shopId }).update({
+        trial_ends_at: fixedTrialEndsAt,
+        updated_at: new Date(),
+      })
+    );
+    expect(await subscriptionRow(shopId)).toMatchObject({
+      tier: 'growth',
+      status: 'trialing',
+      billing_provider: 'shopify',
+    });
+
+    programAxios(shopDomain);
+    programBilling({ kind: 'graphql', body: noActiveSubscriptions });
+    const state2 = `reconnect-trial-preserve-${Date.now()}`;
+    await seedOAuthState({ userId, shopDomain, state: state2, installSource: 'reconnect' });
+    const second = await callback({ code: 'code-reconnect', state: state2, shop: shopDomain });
+    expect(second.status).toBe(302);
+
+    const after = await subscriptionRow(shopId);
+    expect(after).toMatchObject({
+      tier: 'growth',
+      status: 'trialing',
+      billing_provider: 'shopify',
+    });
+    expect(new Date(after!.trial_ends_at).toISOString()).toBe(fixedTrialEndsAt.toISOString());
+
+    // Second install of the SAME shop domain does not create another trial
+    // window or extend the original — reinstall reuses the existing owner.
+    // Verified via the known shopId directly: by this point the completed
+    // OAuth callbacks above have already replaced the ghost user's
+    // @lasyncro.internal placeholder email with the real Shopify identity
+    // (see handleOAuthCallback's ghost-email-replacement step), so
+    // installFreshShop's ghost-email lookup can no longer resolve this shop.
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const params = { shop: shopDomain, timestamp };
+    const message = Object.keys(params)
+      .sort()
+      .map((k) => `${k}=${params[k as keyof typeof params]}`)
+      .join('&');
+    const hmac = crypto
+      .createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(message)
+      .digest('hex');
+    const reinstall = await request(app)
+      .get('/api/v1/integrations/shopify/install')
+      .query({ ...params, hmac })
+      .redirects(0);
+    expect(reinstall.status).toBe(302);
+
+    const afterReinstall = await subscriptionRow(shopId);
+    expect(afterReinstall).toMatchObject({
+      tier: 'growth',
+      status: 'trialing',
+      billing_provider: 'shopify',
+    });
+    expect(new Date(afterReinstall!.trial_ends_at).toISOString()).toBe(
+      fixedTrialEndsAt.toISOString()
+    );
   });
 
   // ── A. PRODUCTION REPRODUCTION ────────────────────────────────────────────

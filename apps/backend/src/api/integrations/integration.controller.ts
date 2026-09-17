@@ -736,6 +736,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       });
     }
 
+    // GH-1132 — the redirect's billing-entry decision must reflect effective
+    // LOCAL post-reconciliation state, not the raw Partner API planHandle.
+    // A fresh install (or a preserved app-granted Growth trial) has
+    // planHandle=null yet must NOT be sent to hosted pricing. Read fresh
+    // rather than captured out of the reconciliation closure above, so this
+    // reflects exactly what was just committed.
+    const effectiveLocalSubscription = await withTenant(result.shopId, (trx) =>
+      trx('shop_subscriptions')
+        .where({ shop_id: result.shopId })
+        .first('tier', 'status', 'billing_provider', 'trial_ends_at')
+    );
+
     // 🔒 Security invariants
     if (!oauthContext.userId) {
       throw new Error('OAUTH_INVARIANT_VIOLATION: missing userId');
@@ -796,8 +808,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     });
 
     const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
+    // GH-1132 — 'canceled' is the only effective local state with no
+    // Growth-trial or real-plan access: no active Shopify plan and no valid
+    // local onboarding trial (never granted, already expired, or already
+    // superseded). 'trialing' (fresh or preserved trial) and 'active' (real
+    // Shopify plan) must never be sent to hosted pricing.
     const requiresBillingEntry =
-      oauthContext.installSource === 'app_store' && shopifyBillingState?.planHandle == null;
+      oauthContext.installSource === 'app_store' &&
+      effectiveLocalSubscription?.status === 'canceled';
     const redirectPath = requiresBillingEntry ? '/settings/billing' : '/';
     const redirectParams = new URLSearchParams({
       connect: connectParam,
@@ -1023,22 +1041,30 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         // billing_provider: 'shopify' stamped at birth — never routes to Stripe
         //
+        // GH-1132 — a genuinely fresh Shopify App Store install automatically
+        // receives an app-granted 14-day Growth onboarding trial. This is NOT
+        // a fabricated Shopify subscription: billing_provider is still
+        // 'shopify' (never Stripe), but the tier/status/trial window are
+        // granted locally, independent of whether the merchant has purchased
+        // a real Shopify App Pricing plan yet. If a real plan becomes active
+        // during the trial, applyShopifyBillingState supersedes it and clears
+        // trial_ends_at (see applyShopifyBillingState.service.ts).
+        //
         // BILL-ENTITLEMENT-01: creation establishes all three entitlement-
         // authoritative dimensions, so it routes through the canonical
         // transition service and is recorded as a creation transition with
-        // NULL from_* values. Fresh App Store installs begin fail-closed:
-        // Starter/canceled/Shopify until Partner API proves an active contract.
+        // NULL from_* values.
         await transitionShopSubscription(
           {
             shopId,
-            to: { tier: 'starter', status: 'canceled', billingProvider: 'shopify' },
+            to: { tier: 'growth', status: 'trialing', billingProvider: 'shopify' },
             fields: {
               billing_interval: 'monthly',
               billing_currency: 'USD',
-              trial_ends_at: null,
+              trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
             },
             source: 'shopify_app_store_install',
-            reason: 'app_store_install_no_contract_bootstrap',
+            reason: 'app_store_install_growth_trial',
             actorType: 'shopify',
             // P0-B3: creation — the shop has no prior row, so this is
             // first-provider initialization, never a switch.
@@ -1049,7 +1075,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         await trx('shop_usage_metrics').insert({
           shop_id: shopId,
-          tier_at_period_start: 'starter',
+          tier_at_period_start: 'growth',
           period_starts_at: new Date(),
           period_ends_at: null,
         });
@@ -1064,17 +1090,19 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           .onConflict('shop_id')
           .ignore();
 
-        const moduleRows = [...modulesForTier('starter')].map((moduleKey) => ({
+        // GH-1132 — seed canonical Growth entitlements to match the Growth
+        // trial granted above, not Starter.
+        const moduleRows = [...modulesForTier('growth')].map((moduleKey) => ({
           shop_id: shopId,
           module_key: moduleKey,
           flag_key: null as string | null,
-          source: 'shopify_app_store_install:starter',
+          source: 'shopify_app_store_install:growth',
         }));
-        const flagRows = [...flagsForTier('starter')].map((flagKey) => ({
+        const flagRows = [...flagsForTier('growth')].map((flagKey) => ({
           shop_id: shopId,
           module_key: flagKey.split('.')[0],
           flag_key: flagKey,
-          source: 'shopify_app_store_install:starter',
+          source: 'shopify_app_store_install:growth',
         }));
         await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
 

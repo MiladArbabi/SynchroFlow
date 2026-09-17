@@ -25,15 +25,45 @@ export async function applyShopifyBillingState(
   trx: Knex.Transaction
 ): Promise<ShopifyBillingState> {
   const billingState = await fetchShopifyBillingState(shopId);
+
+  // Prior state for downgrade-diff revocation (mirrors ISS-C19) AND for the
+  // GH-1132 local-trial-preservation check below.
+  const priorRow = await trx('shop_subscriptions')
+    .where({ shop_id: shopId })
+    .first('tier', 'status', 'billing_provider', 'trial_ends_at');
+  const priorTier = priorRow?.tier as Tier | undefined;
+
+  // GH-1132 — a null Partner commercial plan must not revoke a still-valid
+  // local, app-granted Shopify Growth onboarding trial. Provider fact
+  // (billingState, normalized starter/canceled/planHandle=null when Partner
+  // reports no activeSubscription — see
+  // normalizePartnerActiveSubscriptionToBillingState) and effective
+  // onboarding access are intentionally distinct during this trial: a null
+  // Partner subscription is the EXPECTED state for a merchant who has not
+  // yet purchased a real Shopify App Pricing plan, not evidence the trial
+  // should be revoked. This guard runs on every caller of this function
+  // (OAuth callback, webhooks, the periodic reconciliation sweep) since it
+  // sits at the single canonical entry point.
+  const now = new Date();
+  const hasValidLocalGrowthTrial =
+    billingState.planHandle == null &&
+    priorRow?.billing_provider === 'shopify' &&
+    priorRow?.tier === 'growth' &&
+    priorRow?.status === 'trialing' &&
+    priorRow?.trial_ends_at != null &&
+    new Date(priorRow.trial_ends_at) > now;
+
+  if (hasValidLocalGrowthTrial) {
+    console.log('[shopify][billing_state_applied] preserved valid local Growth trial', {
+      shopId,
+      trialEndsAt: priorRow!.trial_ends_at,
+    });
+    return billingState;
+  }
+
   const tier = billingState.tier;
   const tierModules = [...modulesForTier(tier)];
   const tierFlags = [...flagsForTier(tier)];
-
-  // Prior tier for downgrade-diff revocation (mirrors ISS-C19)
-  const priorRow = await trx('shop_subscriptions')
-    .where({ shop_id: shopId })
-    .first('tier');
-  const priorTier = priorRow?.tier as Tier | undefined;
 
   // 1. Upsert subscription record — billing_provider explicitly stamped (SHB-02)
   //
@@ -55,10 +85,17 @@ export async function applyShopifyBillingState(
     {
       shopId,
       to: { tier, status: billingState.status, billingProvider: 'shopify' },
-      fields:
-        billingState.currentPeriodEnd === null
+      fields: {
+        ...(billingState.currentPeriodEnd === null
           ? {}
-          : { current_period_end: billingState.currentPeriodEnd },
+          : { current_period_end: billingState.currentPeriodEnd }),
+        // GH-1132 — this line only runs once the local-trial-preservation
+        // check above has already decided NOT to preserve a trial (real
+        // Shopify plan superseding it, or the trial itself has expired).
+        // Either way a previously-set trial_ends_at must not survive as a
+        // stale future date once we're writing real provider-derived state.
+        ...(priorRow?.trial_ends_at != null ? { trial_ends_at: null } : {}),
+      },
       source: 'shopify_billing_reconciliation',
       reason: 'shopify_billing_state_applied',
       actorType: 'shopify',

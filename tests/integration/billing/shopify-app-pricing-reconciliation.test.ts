@@ -9,6 +9,9 @@ import db, {
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { issueTestToken } from '../../unit/helpers/auth';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
+import { applyShopifyBillingState } from 'api-src/services/shopify/applyShopifyBillingState.service';
 
 const app = createApp();
 const realFetch = global.fetch;
@@ -76,6 +79,7 @@ async function fixture() {
   return {
     shopId,
     shopGid,
+    userId,
     token: issueTestToken({ userId, shopId, tier: 'starter', roles: ['owner'] }),
   };
 }
@@ -84,7 +88,62 @@ async function subscription(shopId: number) {
   return withTenant(shopId, (trx) =>
     trx('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('tier', 'status', 'billing_provider', 'current_period_end'),
+      .first('tier', 'status', 'billing_provider', 'current_period_end', 'trial_ends_at'),
+  );
+}
+
+/**
+ * GH-1132 — seeds the exact local state an app-granted Growth onboarding
+ * trial leaves behind: growth/trialing/shopify with a trial_ends_at, plus
+ * the Growth entitlement rows handleShopifyInstall would have seeded.
+ */
+async function seedGrowthTrial(shopId: number, trialEndsAt: Date) {
+  await withTenant(shopId, async (trx) => {
+    await trx('shop_subscriptions').where({ shop_id: shopId }).update({
+      tier: 'growth',
+      status: 'trialing',
+      billing_provider: 'shopify',
+      trial_ends_at: trialEndsAt,
+      updated_at: new Date(),
+    });
+
+    const moduleRows = [...modulesForTier('growth' as never)].map((moduleKey) => ({
+      shop_id: shopId,
+      module_key: moduleKey,
+      flag_key: null as string | null,
+      source: 'shopify_app_store_install:growth',
+    }));
+    const flagRows = [...flagsForTier('growth' as never)].map((flagKey) => ({
+      shop_id: shopId,
+      module_key: flagKey.split('.')[0],
+      flag_key: flagKey,
+      source: 'shopify_app_store_install:growth',
+    }));
+    await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+  });
+}
+
+/** The production condition: merchant has no live Shopify subscription. */
+function programPartnerNoActiveSubscription() {
+  partnerFetch.mockImplementation(async (url: unknown) => {
+    const href = String(url);
+    if (href !== 'https://partners.shopify.com/123/api/2026-07/graphql.json') {
+      throw new Error(`PROVIDER_NETWORK_ESCAPE_BLOCKED:${href}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { activeSubscription: null } }),
+    };
+  });
+}
+
+async function ledgerRow(shopId: number) {
+  return withTenant(shopId, (trx) =>
+    trx('shop_subscription_transitions')
+      .where({ shop_id: shopId })
+      .orderBy('id', 'desc')
+      .first('from_tier', 'from_status', 'from_billing_provider', 'to_tier', 'to_status', 'to_billing_provider'),
   );
 }
 
@@ -200,6 +259,101 @@ describe('MON-REM-01B-4 — Shopify App Pricing redirect reconciliation API', ()
       trx('shop_subscription_transitions').where({ shop_id: f.shopId }).count('* as count').first(),
     );
     expect(Number(transitionsAfter?.count)).toBe(Number(transitionsBefore?.count));
+  });
+
+  // GH-1132 (2): a null Partner commercial plan is the EXPECTED state for a
+  // merchant on an app-granted trial who has not yet purchased a real
+  // Shopify App Pricing plan — it must not revoke a still-valid local trial.
+  it('preserves a valid local Growth trial when Partner reports no active subscription (GH-1132)', async () => {
+    const f = await fixture();
+    const trialEndsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    await seedGrowthTrial(f.shopId, trialEndsAt);
+    programPartnerNoActiveSubscription();
+
+    const before = await subscription(f.shopId);
+    expect(before).toMatchObject({ tier: 'growth', status: 'trialing', billing_provider: 'shopify' });
+
+    await withTenant(f.shopId, (trx) => applyShopifyBillingState(f.shopId, trx));
+
+    const after = await subscription(f.shopId);
+    expect(after).toMatchObject({ tier: 'growth', status: 'trialing', billing_provider: 'shopify' });
+    expect(new Date(after.trial_ends_at).toISOString()).toBe(trialEndsAt.toISOString());
+
+    const access = await EntitlementsService.getForUser(f.userId);
+    expect(access!.modules).toEqual(expect.arrayContaining([...modulesForTier('growth' as never)]));
+
+    // Repeated reconciliation remains stable — no drift on replay.
+    await withTenant(f.shopId, (trx) => applyShopifyBillingState(f.shopId, trx));
+    const afterAgain = await subscription(f.shopId);
+    expect(afterAgain).toEqual(after);
+  });
+
+  // GH-1132 (4): a real Shopify commercial plan becoming active must
+  // supersede the local trial immediately, clear trial_ends_at, and revoke
+  // Growth-only grants Core does not provide.
+  it('an active Shopify Core plan supersedes the local Growth trial (GH-1132)', async () => {
+    const f = await fixture();
+    const trialEndsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    await seedGrowthTrial(f.shopId, trialEndsAt);
+
+    const growthOnlyModule = [...modulesForTier('growth' as never)].find(
+      (m) => !modulesForTier('core' as never).has(m)
+    );
+    expect(growthOnlyModule).toBeTruthy();
+    const before = await EntitlementsService.getForUser(f.userId);
+    expect(before!.modules).toContain(growthOnlyModule);
+
+    programPartnerActiveSubscription({ shopGid: f.shopGid, commercialHandle: 'core' });
+
+    const res = await request(app)
+      .post('/api/v1/billing/shopify/reconcile')
+      .set('Authorization', `Bearer ${f.token}`)
+      .send({ expected_plan_handle: 'core' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ tier: 'core', status: 'active', billing_provider: 'shopify' });
+
+    const persisted = await subscription(f.shopId);
+    expect(persisted).toMatchObject({ tier: 'core', status: 'active', billing_provider: 'shopify' });
+    expect(persisted.trial_ends_at).toBeNull();
+
+    const after = await EntitlementsService.getForUser(f.userId);
+    expect(after!.modules).toEqual(expect.arrayContaining([...modulesForTier('core' as never)]));
+    expect(after!.modules).not.toContain(growthOnlyModule);
+
+    expect(await ledgerRow(f.shopId)).toMatchObject({
+      from_tier: 'growth',
+      from_status: 'trialing',
+      from_billing_provider: 'shopify',
+      to_tier: 'core',
+      to_status: 'active',
+      to_billing_provider: 'shopify',
+    });
+  });
+
+  // GH-1132 (5): a null Partner subscription only preserves a FUTURE valid
+  // trial. An already-expired trial must fall back to Starter like any
+  // other no-contract state, with Growth-only entitlements revoked.
+  it('an expired local Growth trial with no Shopify plan falls back to Starter (GH-1132)', async () => {
+    const f = await fixture();
+    const expiredTrialEndsAt = new Date(Date.now() - 60_000);
+    await seedGrowthTrial(f.shopId, expiredTrialEndsAt);
+    programPartnerNoActiveSubscription();
+
+    const growthOnlyModule = [...modulesForTier('growth' as never)].find(
+      (m) => !modulesForTier('starter' as never).has(m)
+    );
+    expect(growthOnlyModule).toBeTruthy();
+
+    await withTenant(f.shopId, (trx) => applyShopifyBillingState(f.shopId, trx));
+
+    const after = await subscription(f.shopId);
+    expect(after).toMatchObject({ tier: 'starter', status: 'canceled', billing_provider: 'shopify' });
+    expect(after.trial_ends_at).toBeNull();
+
+    const access = await EntitlementsService.getForUser(f.userId);
+    expect(access!.modules).not.toContain(growthOnlyModule);
+    expect(access!.modules).toEqual(expect.arrayContaining([...modulesForTier('starter' as never)]));
   });
 });
 
