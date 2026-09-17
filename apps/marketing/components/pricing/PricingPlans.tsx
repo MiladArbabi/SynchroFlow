@@ -73,7 +73,7 @@ const plans: Plan[] = [
   {
     tier: 'Scale',
     monthly: 599,
-    desc: 'High-capacity warehouse operations with priority support.',
+    desc: 'High-capacity warehouse operations for higher-volume teams.',
     features: [
       'Everything in Growth',
       '20,000 warehouse-processed orders / month included',
@@ -81,7 +81,6 @@ const plans: Plan[] = [
       '25 non-owner seats included',
       '10 locations',
       '730-day history',
-      'Priority support',
     ],
     featured: false,
     badge: null,

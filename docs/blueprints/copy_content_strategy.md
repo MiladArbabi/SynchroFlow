@@ -437,7 +437,7 @@ Each module gets a dedicated section. The structure is: **outcome headline → o
 - **Starter — Free:** "See what needs attention." Owner-only visibility, 1 location, 30-day history, and no warehouse-processed order allowance.
 - **Core — $99/month:** "Run the warehouse with structure." 2,000 processed orders/month, $0.08 per additional processed order, 3 non-owner seats, 1 location, and 90-day history.
 - **Growth — $249/month:** "Predict and optimize before problems compound." 7,500 processed orders/month, $0.06 per additional processed order, 10 non-owner seats, 3 locations, and 365-day history.
-- **Scale — $599/month:** "Run higher-volume operations with more capacity." 20,000 processed orders/month, $0.04 per additional processed order, 25 non-owner seats, 10 locations, 730-day history, and Priority support.
+- **Scale — $599/month:** "Run higher-volume operations with more capacity." 20,000 processed orders/month, $0.04 per additional processed order, 25 non-owner seats, 10 locations, and 730-day history.
 
 **Pricing reassurance line (below the tier table):**
 > New self-service purchases are USD monthly. A 14-day Growth trial is available, and no credit card is required to start the trial.
@@ -1219,7 +1219,7 @@ Watch: [Supplier] — [X]% on-time (below your 90% threshold)
 **Scale — $599/month**
 > For higher-volume operations that need greater capacity without a separate capability wall.
 > 20,000 processed orders/month · $0.04 per additional processed order · 25 non-owner seats · 10 locations · 730-day history
-> Everything in Growth · Priority support
+> Everything in Growth
 > *Growth capability with substantially higher operating capacity.*
 
 ---

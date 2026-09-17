@@ -64,7 +64,6 @@ const PLAN_FEATURES: Record<string, string[]> = {
     '25 non-owner seats',
     '10 locations',
     '730-day history',
-    'Priority support',
   ],
 };
 
@@ -72,7 +71,7 @@ const PLAN_BLURBS: Record<string, string> = {
   starter: 'Inventory visibility for shops getting operational control.',
   core: 'Run structured warehouse execution with barcode workflows.',
   growth: 'More capacity and operational intelligence for growing teams.',
-  scale: 'High-capacity warehouse operations with priority support.',
+  scale: 'High-capacity warehouse operations for higher-volume teams.',
 };
 
 const PLAN_SEATS: Record<string, string> = {
@@ -822,14 +821,14 @@ const BillingSettings: React.FC = () => {
       if (data.url) window.location.href = data.url;
     } catch (err) {
       // NO_STRIPE_CUSTOMER = trial user, no payment added yet — direct to checkout
-      // APP_STORE_MERCHANT = no Shopify-side paid plans exist yet (Starter is free fallback)
+      // APP_STORE_MERCHANT = Stripe portal endpoint is not valid for Shopify-billed stores
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (code === 'NO_STRIPE_CUSTOMER') {
         setOpPortal(false);
         setError('No billing account yet — add a payment method first.');
       } else if (code === 'APP_STORE_MERCHANT') {
         setOpPortal(false);
-        setError("Paid plans aren't available yet for stores installed via the Shopify App Store — you'll keep full access on the Starter plan in the meantime.");
+        setError('This store is billed through Shopify. Manage your plan through Shopify.');
       } else {
         setError('Failed to open billing portal.');
         setOpPortal(false);

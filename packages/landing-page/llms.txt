@@ -22,7 +22,7 @@ Shopify merchants doing $500K–$10M+ revenue, operating from their own warehous
 - Starter: Free — owner only, 1 location, 30-day history, no WMS processed-order allowance
 - Core: $99/month — 2,000 processed orders, $0.08 per additional processed order, 3 non-owner seats, 1 location, 90-day history
 - Growth: $249/month — 7,500 processed orders, $0.06 per additional processed order, 10 non-owner seats, 3 locations, 365-day history
-- Scale: $599/month — 20,000 processed orders, $0.04 per additional processed order, 25 non-owner seats, 10 locations, 730-day history, Priority support
+- Scale: $599/month — 20,000 processed orders, $0.04 per additional processed order, 25 non-owner seats, 10 locations, 730-day history
 - New self-service purchases are USD monthly. A 14-day Growth trial is available; no credit card is required to start the trial.
 
 ## Key pages

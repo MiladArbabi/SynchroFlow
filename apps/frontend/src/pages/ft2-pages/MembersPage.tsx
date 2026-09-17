@@ -233,9 +233,9 @@ export default function MembersPage() {
       {/* SEAT LIMIT MODAL (AUD-C16) — Core/Growth get the seat add-on
           stepper; Starter has no seat add-on product, keeps the
           generic tier-upgrade-only modal. */}
-      {/* SHB-05 interim: AUD-C16 seat add-on is a Stripe subscriptionItem —
-          no Managed Pricing equivalent. Shopify-billed shops get the
-          tier-upgrade prompt instead. */}
+      {/* SHB-05 interim: AUD-C16 seat add-on is a Stripe subscriptionItem.
+          Shopify-billed shops currently have no configured extra-seat
+          purchase flow; they receive the tier-upgrade path instead. */}
       {showAddSeatsModal ? (
         <AddSeatsModal
           open={seatLimitModalOpen}

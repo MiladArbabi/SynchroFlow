@@ -54,7 +54,7 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(scale).toMatch(/25 non-owner seats/i);
     expect(scale).toMatch(/10 locations/i);
     expect(scale).toMatch(/730[- ]day history/i);
-    expect(scale).toMatch(/priority support/i);
+    expect(scale).not.toMatch(/priority support/i);
   });
 
   it('public pricing is monthly-only and never markets unlimited capacity', () => {
@@ -74,7 +74,10 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(billing).not.toMatch(/\bunlimited\b/i);
     expect(billing).toMatch(/growth:\s*['"][^'"]*10 non-owner seats/i);
     expect(billing).toMatch(/scale:\s*['"][^'"]*25 non-owner seats/i);
-    expect(billing).toMatch(/priority support/i);
+    expect(billing).not.toMatch(/priority support/i);
+    expect(billing).not.toMatch(/Paid plans aren't available yet/i);
+    expect(billing).not.toMatch(/no Shopify-side paid plans exist yet/i);
+    expect(billing).toMatch(/Plan changes for Shopify-billed stores are managed through Shopify/i);
 
     // New self-service purchase selection is monthly-only.
     expect(billing).not.toMatch(/<BillingToggle\b/);
@@ -90,7 +93,11 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(postTrial).not.toMatch(/\bunlimited\b/i);
     expect(postTrial).not.toMatch(/\b5 seats\b/i);
     expect(postTrial).toMatch(/\b10 seats\b/i);
-    expect(postTrial).toMatch(/priority support/i);
+    expect(postTrial).toMatch(/20,000 processed orders/i);
+    expect(postTrial).toMatch(/25 seats/i);
+    expect(postTrial).toMatch(/10 locations/i);
+    expect(postTrial).toMatch(/730[- ]day history/i);
+    expect(postTrial).not.toMatch(/priority support/i);
   });
 
   it('processed-order usage UX never claims paid fulfillment is paused or requires opt-in overage', () => {
@@ -183,7 +190,7 @@ describe('MON-REM-01B-4 — commercial surface parity', () => {
     expect(help).not.toMatch(/orders ingested/i);
     expect(help).not.toMatch(/at the limit|hard limit|paused/i);
     expect(help).toMatch(/processed order/i);
-    expect(help).toMatch(/priority support/i);
+    expect(help).not.toMatch(/priority support/i);
   });
 });
 
@@ -232,7 +239,7 @@ describe('MON-REM-01B-FINAL-02 — current commercial truth residue', () => {
     expect(pricing).toMatch(/25[\s-]*non-owner seats/i);
     expect(pricing).toMatch(/10 locations/i);
     expect(pricing).toMatch(/730[- ]day history/i);
-    expect(pricing).toMatch(/Priority support/i);
+    expect(pricing).not.toMatch(/Priority support/i);
 
     expect(pricing).not.toMatch(/\bunlimited\b/i);
     expect(pricing).not.toMatch(/dedicated support/i);

@@ -1401,9 +1401,11 @@ features they already pay for presented as new reasons to upgrade.
 Specter is additionally deprecated/frozen, so this was also selling a
 dead feature.
 
-Corrected to reflect Scale's actual differentiation, which is capacity
-only: `'Everything in Growth', 'Unlimited seats', 'No order or
-shipment caps', 'Priority support'`.
+Corrected at that historical point to reflect Scale's then-described
+differentiation: `'Everything in Growth', 'Unlimited seats', 'No order
+or shipment caps', 'Priority support'`.
+
+Superseded 2026-09-17 / GH-1128: processed-order overage parity is now closed through Shopify App Pricing usage charges using the shipped-order event. The Shopify extra-seat add-on gap remains separate. Priority support is not current Scale commercial truth.
 
 Product note, not a code issue: with the misattribution removed,
 Scale's genuine value proposition is thin — three capacity-only
@@ -1695,6 +1697,7 @@ commercial authority.
 - **SHB-02** — dormant `handleShopifyCallback` (dead code from the retired direct-charge flow) still omits `billing_provider` from its upsert. Low priority, unreachable code path.
 - **SHB-03/SHB-04** — frontend has zero `billing_provider` awareness. `ShippedOrderCapBanner` and `BillingSettings` are Stripe-only; correctly 403 via existing `APP_STORE_MERCHANT` guards for Shopify-billed shops, but present no fallback UI routing to Shopify's hosted pricing page.
 - **SHB-05** — pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent designed (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`). Product decision pending.
+- Superseded 2026-09-17 / GH-1128: processed-order overage parity is now closed through Shopify App Pricing usage charges using the shipped-order event. The Shopify extra-seat add-on gap remains separate.
 - **SHB-08** — `app/uninstalled` handler (`handleAppUninstalled.ts`) is an empty stub. Uninstall does not downgrade `shop_subscriptions` or revoke entitlements, despite Shopify auto-cancelling the underlying charge. Next priority.
 - **SHB-09** — `manualSync.controller.ts` writes `uninstalled_at` to a column that doesn't exist on `integrations` per live schema query; unresolved, needs verification against the correct table before SHB-08 work begins.
 - **SHB-14** — see above; Stripe-side equivalent of SHB-13, not yet fixed.
@@ -1776,7 +1779,7 @@ Note the operational gotcha hit while wiring this: `apps/backend/.env` (loaded v
 
 `BillingSettings.tsx`: `handleUpgrade` and `handlePortal` now check `sub.billing_provider` first — Shopify-billed shops open `manage_billing_url` in a new tab (preserving the app's session rather than a full-page redirect) instead of hitting Stripe checkout/portal. The Monthly/Annual interval toggle and the "Switch to annual" savings callout are hidden entirely for Shopify-billed shops, since interval selection lives on Shopify's hosted page, not in-app. A footer-placed guidance line (**SHB-18**) tells Shopify-billed merchants they can cancel via plan change on the hosted page or by uninstalling from their store's app settings (URL derived from `manage_billing_url` by replacing the `/charges/...` suffix — no new backend field needed) — placed at the bottom of the tab by design decision, so cancellation guidance doesn't compete visually with upgrade CTAs.
 
-`ShippedOrderCapBanner.tsx` and `MembersPage.tsx`'s seat-limit modal implement the **SHB-05 interim decision**: pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`), so both surfaces are suppressed for Shopify-billed shops in favor of a hard cap plus an upgrade-plan CTA. This is explicitly parity-minus, not parity — Growth/Scale merchants on Shopify billing have no seat-add-on path and Starter merchants on Shopify billing have no pay-per-order overage path until a real Managed Pricing usage-charge design is scoped.
+`ShippedOrderCapBanner.tsx` and `MembersPage.tsx`'s seat-limit modal implement the **SHB-05 interim decision**: pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`), so both surfaces are suppressed for Shopify-billed shops in favor of a hard cap plus an upgrade-plan CTA. Superseded 2026-09-17 / GH-1128: processed-order overage parity is now closed through Shopify App Pricing usage charges using the shipped-order event. The Shopify extra-seat add-on gap remains separate.
 
 ### Live verification (2026-07-18)
 

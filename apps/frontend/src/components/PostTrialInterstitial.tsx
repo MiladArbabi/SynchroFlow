@@ -223,7 +223,7 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
               Scale
             </Typography>
             <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'text.secondary', mt: '2px' }}>
-              20,000 processed orders · 25 seats · 10 locations · 730-day history · Priority support
+              20,000 processed orders · 25 seats · 10 locations · 730-day history
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
