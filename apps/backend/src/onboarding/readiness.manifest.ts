@@ -50,7 +50,8 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     displayName: 'Warehouse Operations',
     requiredSignals: [
       'wms.zonesConfigured',
-      'wms.barcodesPrinted'
+      'wms.barcodesPrinted',
+      'wms.carrierConfigured'
     ],
     tasks: [
       {
@@ -70,6 +71,15 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
           { signal: 'wms.barcodesPrinted', expectedValue: true }
         ],
         action: { type: 'navigate', target: '/floor-planning' }
+      },
+      {
+        id: 'connect-carrier',
+        label: 'Connect your shipping carrier',
+        required: false,
+        completionRules: [
+          { signal: 'wms.carrierConfigured', expectedValue: true }
+        ],
+        action: { type: 'navigate', target: '/settings/carriers' }
       }
     ]
   },

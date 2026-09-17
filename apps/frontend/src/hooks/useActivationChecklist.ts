@@ -81,6 +81,12 @@ export function useActivationChecklist() {
       actionRoute:  '/floor-planning',
     },
     {
+      key:          'connect-carrier',
+      label:        'Connect your shipping carrier',
+      complete:     findTask(modules, 'wms', 'connect-carrier'),
+      actionRoute:  '/settings/carriers',
+    },
+    {
       key:          'wave-released',
       label:        'Release your first batch',
       complete:     events.data?.wave_released ?? false,

@@ -218,10 +218,33 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
       .first();
     const barcodesPrinted = Number(printedRow?.count ?? 0) > 0;
 
+    /**
+     * Existence-only check: selects carrier_code alone so no encrypted
+     * credential material (public_key/private_key/api_token) is ever
+     * fetched into application memory. This signal means CONFIGURED, not
+     * externally verified — it never decrypts or calls the carrier API.
+     */
+    const carrierRow = await db('shop_carrier_settings')
+      .where({ shop_id: shopId, is_active: true })
+      .where((qb) => {
+        qb.where((sendcloud) =>
+          sendcloud
+            .where('carrier_code', 'sendcloud')
+            .whereNotNull('public_key')
+            .whereNotNull('private_key')
+        ).orWhere((shippo) =>
+          shippo.where('carrier_code', 'shippo').whereNotNull('api_token')
+        );
+      })
+      .select('carrier_code')
+      .first();
+    const carrierConfigured = !!carrierRow;
+
     return [
       { name: 'wms.enabled', value: zonesConfigured },
       { name: 'wms.zonesConfigured', value: zonesConfigured },
-      { name: 'wms.barcodesPrinted', value: barcodesPrinted }
+      { name: 'wms.barcodesPrinted', value: barcodesPrinted },
+      { name: 'wms.carrierConfigured', value: carrierConfigured }
     ];
   }
 };

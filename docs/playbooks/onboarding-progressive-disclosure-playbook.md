@@ -92,7 +92,8 @@ authority for setup state.
 | 3 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
 | 4 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
 | 5 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning` |
-| 6 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
+| 6 | Connect your shipping carrier | readiness `wms / connect-carrier` | `/settings/carriers` |
+| 7 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
 
 The old `Export your first brief` checklist item is no longer part of the Layer
 1 setup contract.
@@ -101,8 +102,15 @@ The old `Export your first brief` checklist item is no longer part of the Layer
 Opening a destination does not complete a setup item.
 
 Incomplete items remain individually actionable. Completed items are visually
-subordinate/collapsible. When all six are complete, the section collapses to a
-compact `Setup complete · 6/6` state rather than rendering six permanent rows.
+subordinate/collapsible. When all seven are complete, the section collapses to a
+compact `Setup complete · 7/7` state rather than rendering seven permanent rows.
+
+`wms.carrierConfigured` represents configuration readiness, not live provider
+verification. It is true only when the shop has at least one active supported
+carrier configuration with the required persisted credential material:
+Sendcloud requires both `public_key` and `private_key`; Shippo requires
+`api_token`. The readiness check does not decrypt credentials or call the
+carrier provider. Visiting `/settings/carriers` alone never completes the task.
 
 The legacy per-user `checklist:completed` flag remains readable for backward
 compatibility. It may suppress already-completed SETUP content, but it must
