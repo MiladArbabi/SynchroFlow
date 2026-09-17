@@ -695,7 +695,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       oauthContext.installSource === 'app_store' ||
       oauthContext.installSource === 'reconnect'
     ) {
-      await withTenant(result.shopId, async (trx) => {
+      shopifyBillingState = await withTenant(result.shopId, async (trx) => {
         const existing = await trx('shop_subscriptions')
           .where({ shop_id: result.shopId })
           .first('shop_id');
@@ -732,7 +732,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
          * as first-provider creation, which is exactly right for a tenant whose
          * ownership this callback has just established.
          */
-        shopifyBillingState = await applyShopifyBillingState(result.shopId, trx);
+        return applyShopifyBillingState(result.shopId, trx);
       });
     }
 
