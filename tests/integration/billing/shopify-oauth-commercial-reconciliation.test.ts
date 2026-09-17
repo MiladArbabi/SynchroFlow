@@ -426,7 +426,7 @@ async function subscriptionRow(shopId: number) {
   return withTenant(shopId, (trx) =>
     trx('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('tier', 'status', 'billing_provider')
+      .first('tier', 'status', 'billing_provider', 'trial_ends_at')
   );
 }
 
@@ -493,6 +493,59 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
       const url = String(call[0]);
       expect(url.includes(TOKEN_URL_FRAGMENT) || url.includes(GRAPHQL_URL_FRAGMENT)).toBe(true);
     }
+  });
+
+  it('install: fresh App Store tenant starts starter/canceled/shopify with no trial growth grant', async () => {
+    const shopDomain = `oauth-billing-install-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+
+    expect(await subscriptionRow(shopId)).toMatchObject({
+      tier: 'starter',
+      status: 'canceled',
+      billing_provider: 'shopify',
+      trial_ends_at: null,
+    });
+
+    const usage = await withTenant(shopId, (trx) =>
+      trx('shop_usage_metrics').where({ shop_id: shopId }).first('tier_at_period_start')
+    );
+    expect(usage).toMatchObject({ tier_at_period_start: 'starter' });
+
+    const access = await EntitlementsService.getForUser(userId);
+    expect(access).toBeTruthy();
+    expect(access!.modules).toEqual(expect.arrayContaining([...modulesForTier('starter' as never)]));
+    const growthOnlyModule = [...modulesForTier('growth' as never)].find(
+      (moduleKey) => !modulesForTier('starter' as never).has(moduleKey)
+    );
+    if (growthOnlyModule) {
+      expect(access!.modules).not.toContain(growthOnlyModule);
+    }
+  });
+
+  it('install callback: fresh App Store shop with no active Shopify contract redirects to required billing entry with starter token', async () => {
+    const shopDomain = `oauth-billing-entry-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+
+    programAxios(shopDomain);
+    programBilling({ kind: 'graphql', body: noActiveSubscriptions });
+
+    const state = await readOAuthState(userId);
+    const res = await callback({ code: 'code-billing-entry', state, shop: shopDomain });
+
+    expect(res.status).toBe(302);
+    const redirect = new URL(String(res.headers.location));
+    expect(redirect.origin).toBe(process.env.FRONTEND_URL);
+    expect(redirect.pathname).toBe('/settings/billing');
+    expect(redirect.searchParams.get('connect')).toBe('app_store');
+    expect(redirect.searchParams.get('billing_entry')).toBe('required');
+    expect(redirect.searchParams.get('token')).toBeTruthy();
+    expect(String(res.headers.location)).not.toContain('stripe');
+    expect(tierClaimFrom(String(res.headers.location))).toBe('starter');
+    expect(await subscriptionRow(shopId)).toMatchObject({
+      tier: 'starter',
+      status: 'canceled',
+      billing_provider: 'shopify',
+    });
   });
 
   // ── A. PRODUCTION REPRODUCTION ────────────────────────────────────────────

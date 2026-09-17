@@ -80,8 +80,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         accessToken: tokenFromUrl,
       });
 
-      // Clean URL (critical)
-      window.history.replaceState({}, document.title, '/');
+      // Clean URL secrets while preserving the destination route and safe handoff params.
+      params.delete('token');
+      params.delete('connect');
+      const search = params.toString();
+      window.history.replaceState(
+        {},
+        document.title,
+        `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`,
+      );
 
       return;
     }

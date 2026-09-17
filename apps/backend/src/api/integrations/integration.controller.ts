@@ -689,6 +689,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
      * live billing fetch or the mapping fails, the takeover rolls back with it
      * rather than leaving a tenant marked Shopify-owned but never reconciled.
      */
+    let shopifyBillingState: Awaited<ReturnType<typeof applyShopifyBillingState>> | null = null;
+
     if (
       oauthContext.installSource === 'app_store' ||
       oauthContext.installSource === 'reconnect'
@@ -730,7 +732,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
          * as first-provider creation, which is exactly right for a tenant whose
          * ownership this callback has just established.
          */
-        await applyShopifyBillingState(result.shopId, trx);
+        shopifyBillingState = await applyShopifyBillingState(result.shopId, trx);
       });
     }
 
@@ -794,8 +796,19 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     });
 
     const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
+    const requiresBillingEntry =
+      oauthContext.installSource === 'app_store' && shopifyBillingState?.planHandle == null;
+    const redirectPath = requiresBillingEntry ? '/settings/billing' : '/';
+    const redirectParams = new URLSearchParams({
+      connect: connectParam,
+      token: userJwt,
+    });
+    if (requiresBillingEntry) {
+      redirectParams.set('billing_entry', 'required');
+    }
+
     return res.redirect(
-      `${process.env.FRONTEND_URL}/?connect=${connectParam}&token=${userJwt}`
+      `${process.env.FRONTEND_URL}${redirectPath}?${redirectParams.toString()}`
     );
   } catch (err) {
     console.error('[OAuth] Integration persistence failed', err);
@@ -1008,25 +1021,24 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           trx
         );
 
-        const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-
         // billing_provider: 'shopify' stamped at birth — never routes to Stripe
         //
         // BILL-ENTITLEMENT-01: creation establishes all three entitlement-
         // authoritative dimensions, so it routes through the canonical
         // transition service and is recorded as a creation transition with
-        // NULL from_* values. The Growth/trialing/shopify grant is unchanged.
+        // NULL from_* values. Fresh App Store installs begin fail-closed:
+        // Starter/canceled/Shopify until Partner API proves an active contract.
         await transitionShopSubscription(
           {
             shopId,
-            to: { tier: 'growth', status: 'trialing', billingProvider: 'shopify' },
+            to: { tier: 'starter', status: 'canceled', billingProvider: 'shopify' },
             fields: {
               billing_interval: 'monthly',
               billing_currency: 'USD',
-              trial_ends_at: trialEndsAt,
+              trial_ends_at: null,
             },
             source: 'shopify_app_store_install',
-            reason: 'app_store_install_trial_grant',
+            reason: 'app_store_install_no_contract_bootstrap',
             actorType: 'shopify',
             // P0-B3: creation — the shop has no prior row, so this is
             // first-provider initialization, never a switch.
@@ -1037,7 +1049,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         await trx('shop_usage_metrics').insert({
           shop_id: shopId,
-          tier_at_period_start: 'growth',
+          tier_at_period_start: 'starter',
           period_starts_at: new Date(),
           period_ends_at: null,
         });
@@ -1052,17 +1064,17 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           .onConflict('shop_id')
           .ignore();
 
-        const moduleRows = [...modulesForTier('growth')].map((moduleKey) => ({
+        const moduleRows = [...modulesForTier('starter')].map((moduleKey) => ({
           shop_id: shopId,
           module_key: moduleKey,
           flag_key: null as string | null,
-          source: 'trial:growth',
+          source: 'shopify_app_store_install:starter',
         }));
-        const flagRows = [...flagsForTier('growth')].map((flagKey) => ({
+        const flagRows = [...flagsForTier('starter')].map((flagKey) => ({
           shop_id: shopId,
           module_key: flagKey.split('.')[0],
           flag_key: flagKey,
-          source: 'trial:growth',
+          source: 'shopify_app_store_install:starter',
         }));
         await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
 

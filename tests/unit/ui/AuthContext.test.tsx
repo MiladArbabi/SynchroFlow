@@ -1,7 +1,13 @@
 // tests/unit/ui/AuthContext.test.tsx
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from 'contexts/AuthContext'; // Use alias
 import React from 'react';
+
+function fakeJwt(payload: Record<string, unknown>) {
+  const encode = (value: unknown) =>
+    btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${encode({ alg: 'none', typ: 'JWT' })}.${encode(payload)}.sig`;
+}
 
 describe('AuthContext', () => {
   // Helper to wrap the hook call with the provider
@@ -62,5 +68,34 @@ describe('AuthContext', () => {
      });
 
      expect(result.current.accessToken).toBe(newToken);
+   });
+
+   it('preserves billing handoff params while removing OAuth token from the URL', async () => {
+     const token = fakeJwt({
+       user_id: 42,
+       shop_id: 77,
+       plan: 'starter',
+       shop_roles: ['owner'],
+       email: 'owner@example.test',
+     });
+     window.history.replaceState(
+       {},
+       '',
+       `/settings/billing?connect=app_store&token=${token}&billing_entry=required&safe=1#handoff`,
+     );
+
+     const { result } = renderHook(() => useAuth(), { wrapper });
+
+     await waitFor(() => {
+       expect(result.current.isLoggedIn).toBe(true);
+     });
+     expect(result.current.accessToken).toBe(token);
+     expect(localStorage.getItem('accessToken')).toBe(token);
+     expect(window.location.pathname).toBe('/settings/billing');
+     expect(window.location.search).toContain('billing_entry=required');
+     expect(window.location.search).toContain('safe=1');
+     expect(window.location.search).not.toContain('token=');
+     expect(window.location.search).not.toContain('connect=');
+     expect(window.location.hash).toBe('#handoff');
    });
 });

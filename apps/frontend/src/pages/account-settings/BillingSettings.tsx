@@ -108,6 +108,10 @@ interface SubscriptionData {
 
 type UsageData = BillingUsageData;
 
+export const __billingSettingsTestHooks = {
+  navigateSameTab: (url: string) => window.location.assign(url),
+};
+
 // ─────────────────────────────────────────────
 // Date helpers
 // ─────────────────────────────────────────────
@@ -705,17 +709,54 @@ const BillingSettings: React.FC = () => {
   const [upgrading, setUpgrading]       = useState<string | null>(null);
   const [openingPortal, setOpPortal]    = useState(false);
   const planCardsRef                    = useRef<HTMLDivElement>(null);
+  const billingEntryRedirectedRef       = useRef(false);
   const canSeeBillingUsage = user?.role === 'owner';
   const { data: usage } = useBillingUsage({ enabled: canSeeBillingUsage });
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadSubscription = async (commit: boolean) => {
+    const cleanBillingEntryParam = () => {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('billing_entry');
+      const search = params.toString();
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`,
+      );
+    };
+
+    const loadSubscription = async (commit: boolean): Promise<SubscriptionData> => {
       const r = await axiosInstance.get('/api/v1/billing/subscription');
       if (commit && !cancelled) {
         setSub(r.data);
       }
+      return r.data;
+    };
+
+    const handleRequiredBillingEntry = (subscription: SubscriptionData, required: boolean) => {
+      if (!required || cancelled) return;
+
+      if (
+        subscription.billing_provider !== 'shopify' ||
+        subscription.tier !== 'starter' ||
+        subscription.status !== 'canceled'
+      ) {
+        cleanBillingEntryParam();
+        return;
+      }
+
+      if (!subscription.manage_billing_url) {
+        cleanBillingEntryParam();
+        setError('Unable to open Shopify billing — please contact support.');
+        return;
+      }
+
+      if (billingEntryRedirectedRef.current) return;
+      billingEntryRedirectedRef.current = true;
+      cleanBillingEntryParam();
+      __billingSettingsTestHooks.navigateSameTab(subscription.manage_billing_url);
     };
 
     const reconcileShopifyReturn = async (planHandle: string) => {
@@ -738,10 +779,12 @@ const BillingSettings: React.FC = () => {
       try {
         const params = new URLSearchParams(window.location.search);
         const planHandle = params.get('plan_handle');
+        const billingEntryRequired = params.get('billing_entry') === 'required';
         if (planHandle) {
           await reconcileShopifyReturn(planHandle);
         }
-        await loadSubscription(true);
+        const subscription = await loadSubscription(true);
+        handleRequiredBillingEntry(subscription, billingEntryRequired);
       } catch {
         if (!cancelled) {
           setError('Failed to load billing information.');

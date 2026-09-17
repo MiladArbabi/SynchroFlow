@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import BillingSettings from 'pages/account-settings/BillingSettings';
+import BillingSettings, { __billingSettingsTestHooks } from 'pages/account-settings/BillingSettings';
 import { axiosInstance } from 'api/axiosConfig';
 
 const mockRefreshEntitlements = jest.fn();
@@ -82,11 +82,41 @@ jest.mock('api/axiosConfig', () => ({
 const mockedAxios = axiosInstance as jest.Mocked<typeof axiosInstance>;
 
 describe('MON-REM-01B-4 — BillingSettings Shopify App Pricing return reconciliation', () => {
+  let assignSpy: jest.Mock;
+
+  const mockDefaultGet = () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.endsWith('/subscription')
+          ? {
+              tier: 'core',
+              status: 'active',
+              billing_interval: 'monthly',
+              billing_provider: 'shopify',
+              manage_billing_url: 'https://admin.shopify.com/store/test/charges',
+            }
+          : {
+              tier: 'starter',
+              ingested_orders: 0,
+              shipped_orders: 0,
+              period_starts_at: null,
+            },
+      }),
+    );
+  };
+
   beforeEach(() => {
     mockedAxios.get.mockClear();
     mockedAxios.post.mockClear();
+    mockDefaultGet();
     mockRefreshEntitlements.mockClear();
+    assignSpy = jest.fn();
+    __billingSettingsTestHooks.navigateSameTab = assignSpy;
     window.history.replaceState({}, '', '/settings/billing');
+  });
+
+  afterEach(() => {
+    __billingSettingsTestHooks.navigateSameTab = (url: string) => window.location.assign(url);
   });
 
   it('reconciles plan_handle returns, refreshes entitlements, then refetches billing state', async () => {
@@ -117,5 +147,74 @@ describe('MON-REM-01B-4 — BillingSettings Shopify App Pricing return reconcili
     expect(mockedAxios.post).not.toHaveBeenCalled();
     expect(mockRefreshEntitlements).not.toHaveBeenCalled();
     expect(mockedAxios.get.mock.calls.filter(([url]) => url === '/api/v1/billing/subscription')).toHaveLength(1);
+  });
+
+  it('opens Shopify managed pricing in the same tab when billing_entry is required for starter/canceled Shopify installs', async () => {
+    window.history.replaceState({}, '', '/settings/billing?billing_entry=required');
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.endsWith('/subscription')
+          ? {
+              tier: 'starter',
+              status: 'canceled',
+              billing_interval: 'monthly',
+              billing_provider: 'shopify',
+              manage_billing_url: 'https://admin.shopify.com/store/test/charges/app-pricing',
+            }
+          : {
+              tier: 'starter',
+              ingested_orders: 0,
+              shipped_orders: 0,
+              period_starts_at: null,
+            },
+      }),
+    );
+
+    render(<BillingSettings />);
+
+    await waitFor(() => {
+      expect(assignSpy).toHaveBeenCalledWith('https://admin.shopify.com/store/test/charges/app-pricing');
+    });
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(window.location.search).not.toContain('billing_entry');
+  });
+
+  it('clears billing_entry without redirect when Shopify subscription is already active', async () => {
+    window.history.replaceState({}, '', '/settings/billing?billing_entry=required');
+
+    render(<BillingSettings />);
+
+    expect(await screen.findByText('Usage this period')).toBeInTheDocument();
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(window.location.search).not.toContain('billing_entry');
+  });
+
+  it('shows a visible error and does not call Stripe when required Shopify billing URL is missing', async () => {
+    window.history.replaceState({}, '', '/settings/billing?billing_entry=required');
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.endsWith('/subscription')
+          ? {
+              tier: 'starter',
+              status: 'canceled',
+              billing_interval: 'monthly',
+              billing_provider: 'shopify',
+              manage_billing_url: null,
+            }
+          : {
+              tier: 'starter',
+              ingested_orders: 0,
+              shipped_orders: 0,
+              period_starts_at: null,
+            },
+      }),
+    );
+
+    render(<BillingSettings />);
+
+    expect(await screen.findByText('Unable to open Shopify billing — please contact support.')).toBeInTheDocument();
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 });
