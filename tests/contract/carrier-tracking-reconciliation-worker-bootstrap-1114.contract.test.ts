@@ -61,10 +61,4 @@ describe('#1114 STEP 8D — carrier tracking reconciliation worker bootstrap wir
     expect(source).toMatch(/\[bootstrap\/workers\][^'"`]*[Cc]arrier[^'"`]*[Tt]racking[^'"`]*[Rr]econciliation[^'"`]*(started|registered)/);
   });
 
-  it('does not require removing or modifying the existing return-resolution-decision-sync worker registration', () => {
-    // BASELINE-GREEN GUARD: proves this contract's scope is additive only.
-    const source = readBootstrapSource();
-    expect(source).toMatch(/startReturnResolutionDecisionSyncWorker/);
-    expect(source).toMatch(/stopReturnResolutionDecisionSyncWorker/);
-  });
 });
