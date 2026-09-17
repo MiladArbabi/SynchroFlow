@@ -78,7 +78,7 @@ export function useActivationChecklist() {
       key:          'print-barcodes',
       label:        'Print your first location barcode',
       complete:     findTask(modules, 'wms', 'print-barcodes'),
-      actionRoute:  '/floor-planning',
+      actionRoute:  '/floor-planning?tab=barcodes',
     },
     {
       key:          'connect-carrier',

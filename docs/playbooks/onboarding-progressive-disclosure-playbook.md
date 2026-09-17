@@ -91,7 +91,7 @@ authority for setup state.
 | 2 | Complete your first sync | readiness `platform / complete-sync` | none |
 | 3 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
 | 4 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
-| 5 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning` |
+| 5 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning?tab=barcodes` |
 | 6 | Connect your shipping carrier | readiness `wms / connect-carrier` | `/settings/carriers` |
 | 7 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
 
