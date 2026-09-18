@@ -3,6 +3,11 @@ on:
   push:
     paths:
       - 'modules/**'
+      - 'packages/**'
+      - 'package.json'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'Dockerfile'
       - 'scripts/**'
       - 'tests/contract/**'
       - 'apps/frontend/**'
@@ -10,6 +15,11 @@ on:
   pull_request:
     paths:
       - 'modules/**'
+      - 'packages/**'
+      - 'package.json'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'Dockerfile'
       - 'scripts/**'
       - 'tests/contract/**'
       - 'apps/frontend/**'
@@ -32,6 +42,12 @@ jobs:
 
       - name: Install deps
         run: npm ci
+
+      - name: Build workspace dependencies
+        run: npm run build:deps
+
+      - name: Validate generated artifact ownership
+        run: npm run check:generated-artifacts
 
       - name: Validate module descriptors
         run: node scripts/validate-modules.js

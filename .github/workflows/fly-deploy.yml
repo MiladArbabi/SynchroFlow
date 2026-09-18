@@ -22,9 +22,13 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
+      - name: Validate generated artifact ownership
+        run: npm run check:generated-artifacts
+
       - name: Build migration runner
         run: |
           npm run build -w modules/shared
+          npm run build -w packages/epistemic
           npm run build -w packages/commercial-policy
           npm run build -w packages/backend-core
           SKIP_DEPS=1 npm run build -w apps/backend
