@@ -542,6 +542,92 @@ COMPLETE / PASS, not yet committed or deployed.**
 
 ---
 
+### 2026-09-18 — `CARRIER-SETTINGS-SCHEMA-DRIFT-01`: `0113` amended after prod applied it (the §1 root cause, again)
+
+Textbook §1, on a different table. `20260603141001_0113_carrier_integration`
+had already been applied to production in its **original** shape:
+
+| Column | Production (as-applied) | Canonical head (post-amendment) |
+|---|---|---|
+| `public_key` | `text NOT NULL` | `text NULL` |
+| `private_key` | `text NOT NULL` | `text NULL` |
+| `api_token` | **absent** | `text NULL` |
+
+`0113` was later amended in source so fresh installs receive all three columns
+nullable, including `api_token`. Knex had already recorded `0113` as complete,
+so it never re-ran and that amendment never reached production. This drift was
+already flagged as an open item in §6 ("carrier_integration-type table:
+`public_key`/`private_key`/`api_token` are `NOT NULL` in prod but nullable in
+canonical") before it became a confirmed live incident.
+
+**Confirmed production incident.** `GET /api/v1/onboarding/readiness` returned
+HTTP 500. Production log root cause: `shop_carrier_settings.api_token does not
+exist`. The failing query was the carrier-readiness query used to compute
+`wms.carrierConfigured`.
+
+Forward fix:
+`apps/backend/migrations/20260918100000_0186_repair_carrier_settings_schema_drift.ts`,
+carrying the stable marker `CARRIER-SETTINGS-SCHEMA-DRIFT-01`. `0113` was
+**not** edited.
+
+`0186` behaviour, against the §5 checklist:
+
+- **fail-closed shape validation before any ALTER** — confirms
+  `public.shop_carrier_settings` exists and that `public_key`/`private_key`
+  are `text`; if `api_token` is present but not `text`, the migration refuses
+  to proceed rather than coercing, dropping, or recreating it;
+- **converges only the confirmed drift** — `ADD COLUMN IF NOT EXISTS api_token
+  text`, `ALTER COLUMN public_key DROP NOT NULL`,
+  `ALTER COLUMN private_key DROP NOT NULL`; no default added, no credential
+  backfill or rewrite;
+- **preserves** the composite `(shop_id, carrier_code)` primary key,
+  `is_active`, `created_at`, `updated_at`, `webhook_secret`, all indexes and
+  foreign keys, RLS enabled **and** forced, and
+  `shop_carrier_settings_tenant_isolation_policy` — none of these are
+  referenced or altered;
+- validates the final canonical shape (`text`, nullable) for all three owned
+  columns and throws rather than leaving a half-repaired schema;
+- **idempotent** — exact drifted shape repairs, canonical/fresh DB is a no-op,
+  `up()` twice is safe.
+
+`down()` is intentionally a **no-op**. `public_key`/`private_key`/`api_token`
+nullability is a convergence between two previously-existing schema histories,
+not a structure `0186` introduced. Re-adding `NOT NULL` or dropping
+`api_token` on rollback would reproduce this exact production incident and
+could destroy valid Shippo `api_token` configuration written after the
+repair — and `0186` has no way to know which historical shape any given
+database originally had, so there is no single correct rollback target.
+
+Permanent regression contract:
+`tests/integration/wms/carrier-settings-schema-drift-01.test.ts`. Locates the
+repair migration by marker (never by number), reproduces the confirmed
+production-shaped drift inside a rolled-back transaction, invokes the real
+compiled migration against it, and proves: `api_token`/`public_key`/`private_key`
+all `text`/nullable after repair; canonical fresh-DB no-op; `up()`
+idempotency; sentinel credential values (sendcloud-style
+`public_key`/`private_key`, shippo-style `api_token`) untouched by the repair;
+preservation of the primary key, `is_active`, `created_at`, `updated_at`,
+`webhook_secret`, indexes, foreign keys, RLS/FORCE RLS and the tenant policy
+compared by *definition*; and non-destructive `down()`.
+
+- RED before repair: 0 matching forward migrations,
+  `CARRIER_SCHEMA_DRIFT_RED_STATUS=1`.
+- GREEN after repair: 11/11 tests passed,
+  `CARRIER_SCHEMA_DRIFT_GREEN_STATUS=0`.
+- Neighbour regression — carrier schema-drift + `readiness-wms-carrier-setup`:
+  2 suites / 18 tests passed, `CARRIER_READINESS_NEIGHBOUR_STATUS=0`.
+- Local runtime HTTP verification: POST login succeeded, `GET
+  /api/v1/onboarding/readiness` returned HTTP 200,
+  `LOCAL_HTTP_READINESS_VERIFY_STATUS=0`.
+
+**Status at the time of writing: implementation and local verification
+COMPLETE / GREEN. Production repair deployment is PENDING. Production Ops
+Console SETUP certification remains BLOCKED until deployment and a production
+readiness-endpoint re-verification.** Do not read this entry as confirmation
+that production has been fixed or deployed.
+
+---
+
 ## 8. Standing Workflow Reminder
 
 This playbook supplements, not replaces, the existing AUDIT → IMPLEMENT → DOCUMENT → COMMIT workflow. The addition is:
