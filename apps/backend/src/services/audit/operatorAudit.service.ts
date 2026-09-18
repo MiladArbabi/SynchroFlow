@@ -25,6 +25,7 @@ export type AuditActionType =
   | 'receive_close'
   | 'barcode_print'
   | 'stow_claim'
+  | 'stow_assign'
   | 'stow_exception'
   | 'stow_confirm'
   | 'pick_claim'
