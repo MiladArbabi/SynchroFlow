@@ -316,9 +316,8 @@ unchanged by this note.
 
 #### 2026-09-18 — NOW V1 certification
 
-**Local certification only.** This section documents the ratified `NOW`
-architecture and its LOCAL verification evidence. It does not claim
-production certification.
+This section documents the ratified `NOW` architecture, its LOCAL
+verification evidence, and its subsequent production certification.
 
 **NOW means:** merchant/operator intervention is required now, there is
 canonical unresolved truth behind it, and there is a concrete remediation
@@ -382,11 +381,53 @@ Decision Feed remains a separate canonical `NOW` source. Phase-1
   `operational` NOW row; no normal WMS progression rows; SETUP remained
   separate with 3 remaining / 2 completed.
 
-**NOW V1 certification (LOCAL): COMPLETE / GREEN.**
-
 **Non-blocking follow-up observation:** Overview copy showed "5 decisions
 pending" while Ops Console `NOW` showed 8. This is not treated as a NOW V1
 blocker; it is flagged for a later Overview copy/semantics audit.
+
+**Production certification:**
+
+- deployment commit: `a01e6c83e61c097749b73425cb22ebc0722e697f`
+  — `fix(ops-console): ratify now v1 policy`;
+- CI: GREEN;
+- deployment: GREEN;
+- production browser certification, after hard reload: `NOW` count = 4.
+
+Observed `NOW` rows:
+
+- 19 orders past Fulfillment SLA
+- Stock protection needs reorder
+- 6 orders with address issues
+- 3 orders out of stock
+
+These correspond to approved NOW V1 families:
+
+- `sla_breach`
+- `stock_protection`
+- `customer`
+- `inventory`
+
+Certified absent from `NOW`:
+
+- `revenue_at_risk`
+- `operational`
+- `missing_cogs`
+- normal WMS progression rows
+
+SETUP remained separate:
+
+| State | Rows |
+|---|---|
+| Remaining (3) | Fix missing product costs · Print your first location barcode · Connect your shipping carrier |
+| Completed (2) | Map your warehouse zones · Release your first batch |
+
+**Operational observation:** the first production view after deployment
+still showed the previous `NOW` composition until the browser performed a
+hard reload. After hard reload, the deployed NOW V1 composition rendered
+correctly. Treat this as a stale cached frontend/AppLayout bundle
+observation, not evidence of a NOW V1 semantic defect.
+
+**NOW V1 production certification: COMPLETE / GREEN.**
 
 ---
 
