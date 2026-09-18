@@ -2,9 +2,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { runWithTenantContext } from '../tenant-context.js';
+import { resolveTierForShop } from '../services/shop-resolution.service.js';
 
 /**
- * Canonical Auth Context extracted from JWT.
+ * Canonical Auth Context extracted from JWT + resolved at request time.
  * This is the ONLY trusted identity surface for downstream services.
  */
 export interface AuthContext {
@@ -13,9 +14,12 @@ export interface AuthContext {
   actorType?: 'shop_user' | 'system_service' | 'support_admin';
   roles?: string[];
   /**
-   * Subscription tier from JWT claim (MON-03).
-   * Set by token.service.ts at issuance. Falls back to 'starter'.
-   * Use for middleware gating only — never trust for billing decisions.
+   * GH-1136 — CURRENT authoritative subscription tier, re-resolved from
+   * shop_subscriptions on every authenticated request via
+   * resolveTierForShop(shopId). The JWT's own `tier` claim is issuance-time
+   * only (a session hint token.service.ts stamps at login) and is
+   * deliberately NOT trusted here — a shop downgraded mid-session must lose
+   * paid access before its access token expires, not after.
    */
   tier?: string;
 }
@@ -44,7 +48,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return res.status(500).json({ error: 'Internal server error: JWT secret missing.' });
   }
 
-  jwt.verify(token, jwtSecret, (err: any, user: any) => {
+  jwt.verify(token, jwtSecret, async (err: any, user: any) => {
     if (err) {
       // 🔒 Token is structurally invalid (tampered / wrong secret)
       if (err.name !== 'TokenExpiredError') {
@@ -71,21 +75,48 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // ✅ Canonical auth context
-    req.user = {
-      userId: payload.user_id,
-      shopId: payload.shop_id,
-      actorType: payload.actor_type,
-      roles: payload.shop_roles,
-      tier: payload.tier ?? 'starter',
-    };
+    // ✅ Identity + tenant invariants preserved from the JWT exactly as before.
+    const shopId = payload.shop_id;
 
-    if (!Number.isInteger(req.user.shopId) || Number(req.user.shopId) <= 0) {
+    if (!Number.isInteger(shopId) || Number(shopId) <= 0) {
       return res.status(401).json({
         error: 'INVALID_TOKEN_TENANT',
         action: 'LOGOUT_REQUIRED',
       });
     }
+
+    // GH-1136 — resolve CURRENT authoritative tier from shop_subscriptions
+    // rather than trusting the JWT's issuance-time tier claim. This is the
+    // one place request-time commercial authority is established; downstream
+    // middleware (requireTier/requireCapability/meetsTier) keeps reading
+    // req.user.tier unchanged, it just now reads a freshly resolved value.
+    //
+    // FAIL-CLOSED: a resolution failure must never fall back to the JWT's
+    // paid tier claim — that would silently readmit exactly the stale-access
+    // window this change exists to close. Return 503 and let the client retry
+    // rather than authorize on unverifiable commercial state.
+    let currentTier: string;
+    try {
+      currentTier = await resolveTierForShop(Number(shopId));
+    } catch (resolutionError) {
+      console.error('[auth] Failed to resolve authoritative tier for shop', {
+        shopId,
+        error: resolutionError instanceof Error ? resolutionError.message : resolutionError,
+      });
+      return res.status(503).json({
+        error: 'COMMERCIAL_STATE_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+
+    // ✅ Canonical auth context
+    req.user = {
+      userId: payload.user_id,
+      shopId,
+      actorType: payload.actor_type,
+      roles: payload.shop_roles,
+      tier: currentTier,
+    };
 
     return runWithTenantContext(Number(req.user.shopId), next);
   });

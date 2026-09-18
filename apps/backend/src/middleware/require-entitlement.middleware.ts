@@ -4,7 +4,10 @@
 // --------------------------------
 // Replaces requireRole for module-level access control.
 //
-// Gates access by subscription tier (from JWT claim).
+// Gates access by subscription tier. GH-1136: authenticateToken has already
+// resolved this to the CURRENT authoritative shop_subscriptions tier before
+// this middleware runs — req.user.tier is no longer the JWT's issuance-time
+// claim verbatim (see packages/backend-core/src/middleware/auth.middleware.ts).
 // Does NOT replace role checks for permission levels (owner/admin/operator) —
 // role checks are handled by requireAction middleware (WM-19).
 //
@@ -36,7 +39,8 @@ import { captureEvent } from '../utils/analytics.js';
 /**
  * Middleware: require a minimum subscription tier.
  *
- * Reads tier from req.user.tier (set by authenticateToken from JWT claim).
+ * Reads tier from req.user.tier — set by authenticateToken from the CURRENT
+ * authoritative shop_subscriptions tier (GH-1136), not the JWT claim verbatim.
  * Fails closed: missing or unrecognized tier is treated as 'starter'.
  */
 /**
@@ -102,19 +106,24 @@ export function requireTier(minimumTier: Tier) {
 /**
  * COMMERCIAL-ACCESS-ARCH-01 P0-A2A — capability-level commercial decision.
  *
- * Resolves the acting request's tier from the JWT claim (`resolveTier(req)` —
- * no DB round-trip) and evaluates the canonical
- * `CAPABILITY_REQUIREMENTS[capabilityId]` from @lasyncro/commercial-policy
- * against a STANDARD context for that tier (`modulesForTier` / `flagsForTier`).
+ * Resolves the acting request's tier via `resolveTier(req)` and evaluates the
+ * canonical `CAPABILITY_REQUIREMENTS[capabilityId]` from
+ * @lasyncro/commercial-policy against a STANDARD context for that tier
+ * (`modulesForTier` / `flagsForTier`).
  *
  * TRANSITIONAL BOUNDARY (P0-A2A/A3-1): standard-plan capabilities only.
  * Persisted `shop_module_entitlements` rows are deliberately NOT loaded here
  * — every migrated capability so far is a standard-plan capability. Bespoke
  * row-based backend capability grants land in P0-A3.
  *
- * JWT TIER BOUNDARY: the decision follows `req.user.tier` verbatim. No
- * subscription-table round-trip — this preserves the current <= access-token
- * lifetime staleness profile. Commercial-state freshness is P0-B.
+ * TIER FRESHNESS (GH-1136, formerly P0-B): this function itself makes no DB
+ * round-trip — it still follows `req.user.tier` verbatim, unchanged. What
+ * changed is where that value comes from: authenticateToken now re-resolves
+ * it from the CURRENT authoritative shop_subscriptions row on every request
+ * (packages/backend-core/src/middleware/auth.middleware.ts), rather than
+ * trusting the JWT's issuance-time tier claim. A shop downgraded mid-session
+ * therefore loses paid access on its very next request, not only after its
+ * access token expires.
  *
  * This is the ONE shared primitive both route-level `requireCapability` and
  * field-level controller checks (e.g. exports' filters.columns ->

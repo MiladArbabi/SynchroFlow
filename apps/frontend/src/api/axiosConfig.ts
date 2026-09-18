@@ -12,12 +12,21 @@ import { getToken, setToken, clearToken, notifyTokenRefreshed } from 'utils/auth
  *
  * WHEN A REFRESH IS TRIGGERED (response interceptor):
  * - 401 on any non-auth route → always refreshable (token expired/invalid)
- * - 403 TIER_INSUFFICIENT → refreshable (ENT-01): the access token's `tier`
- *   claim can go stale the moment a shop upgrades/downgrades, even though
- *   the token is otherwise still valid for its full 15-min window.
- *   requireTier() (backend) reads tier straight off the JWT claim, so the
- *   only way to pick up a plan change without a full re-login is to force
- *   a refresh, which re-resolves tier fresh via resolveTierForShop().
+ * - 403 TIER_INSUFFICIENT → refreshable (ENT-01, legacy stale-tier path):
+ *   the access token's `tier` claim can go stale the moment a shop
+ *   upgrades/downgrades, even though the token is otherwise still valid for
+ *   its full 15-min window. requireTier() (backend) reads tier straight off
+ *   the JWT claim, so the only way to pick up a plan change without a full
+ *   re-login is to force a refresh, which re-resolves tier fresh via
+ *   resolveTierForShop().
+ * - 403 COMMERCIAL_ACCESS_DENIED (GH-1136) → refreshable ONLY when the held
+ *   access token's `tier` claim differs from the backend's authoritative
+ *   currentTier in the denial body. authenticateToken now independently
+ *   re-resolves the CURRENT DB tier on every request, so this denial can
+ *   mean either "the client is holding a stale pre-downgrade/upgrade
+ *   token" (refresh fixes it) or "the shop's current plan genuinely lacks
+ *   this capability" (an ordinary same-tier paywall denial — refreshing
+ *   changes nothing and must not be attempted).
  * - 403 from requireAction/requireRole (permission/role denial) → NOT
  *   refreshable. Refreshing re-derives tier and identity, not permissions —
  *   retrying cannot change who the user is, so this must stay excluded or
@@ -236,6 +245,57 @@ axiosInstance.interceptors.request.use(
 );
 
 // ─────────────────────────────────────────────────────────────
+// Commercial-tier claim inspection (GH-1136)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Recognized commercial tiers. Anything else (undefined, unrecognized
+ * string, etc.) is treated as "unknown" and never drives a refresh decision.
+ */
+type CommercialTier = 'starter' | 'core' | 'growth' | 'scale';
+
+function isCommercialTier(value: unknown): value is CommercialTier {
+  return (
+    value === 'starter' ||
+    value === 'core' ||
+    value === 'growth' ||
+    value === 'scale'
+  );
+}
+
+/**
+ * Reads the `tier` claim out of an access JWT's payload WITHOUT verifying
+ * the signature. This is only used to detect stale client-side commercial
+ * metadata (does this token's tier claim disagree with the backend's
+ * authoritative currentTier?) — it is never used for authorization. Backend
+ * authorization (authenticateToken re-resolving tier from the DB) remains
+ * the sole source of truth.
+ */
+function readCommercialTierFromAccessToken(token: string | null): CommercialTier | null {
+  if (!token) return null;
+
+  try {
+    const payloadSegment = token.split('.')[1];
+    if (!payloadSegment) return null;
+
+    const base64 = payloadSegment
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      '='
+    );
+
+    const payload = JSON.parse(atob(padded));
+
+    return isCommercialTier(payload?.tier) ? payload.tier : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Response interceptor — silent refresh on 401
 // ─────────────────────────────────────────────────────────────
 
@@ -259,15 +319,39 @@ axiosInstance.interceptors.response.use(
     }
 
     /**
-     * ENT-01: a 403 TIER_INSUFFICIENT means the access token's tier claim is
-     * stale (e.g. shop just upgraded) even though the token itself is still
-     * valid — refreshing re-resolves tier fresh from the DB (see
-     * entitlements.controller.ts / requireTier). Other 403s (role/permission
-     * denials from requireAction/requireRole) are NOT refreshable — retrying
-     * won't change who the user is, so they must stay excluded here.
+     * ENT-01 (legacy path): a 403 TIER_INSUFFICIENT means the access token's
+     * tier claim is stale (e.g. shop just upgraded) even though the token
+     * itself is still valid — refreshing re-resolves tier fresh from the DB
+     * (see entitlements.controller.ts / requireTier). Other 403s (role/
+     * permission denials from requireAction/requireRole) are NOT
+     * refreshable — retrying won't change who the user is, so they must
+     * stay excluded here.
      */
     const isStaleTier = status === 403 && error?.response?.data?.error === 'TIER_INSUFFICIENT';
-    const isRefreshable = status === 401 || isStaleTier;
+
+    /**
+     * GH-1136: 403 COMMERCIAL_ACCESS_DENIED means authenticateToken
+     * independently re-resolved the CURRENT DB tier and found the caller's
+     * capability insufficient. That is refreshable ONLY when it represents
+     * stale client-side metadata — the held access token's `tier` claim
+     * disagrees with the backend's authoritative currentTier (e.g. the shop
+     * was downgraded mid-session and the client is still presenting the
+     * pre-downgrade token). If the token's tier already matches
+     * currentTier, this is an ordinary same-tier paywall denial and must
+     * NOT trigger a refresh — refreshing cannot change a plan denial that
+     * both sides already agree on.
+     */
+    const tokenTier = readCommercialTierFromAccessToken(getToken());
+    const authoritativeTier = error?.response?.data?.currentTier;
+
+    const isCanonicalStaleCommercialState =
+      status === 403 &&
+      error?.response?.data?.error === 'COMMERCIAL_ACCESS_DENIED' &&
+      isCommercialTier(authoritativeTier) &&
+      tokenTier !== null &&
+      tokenTier !== authoritativeTier;
+
+    const isRefreshable = status === 401 || isStaleTier || isCanonicalStaleCommercialState;
 
     if (!isRefreshable || originalRequest._retry || isAuthRoute(url)) {
       return Promise.reject(error);

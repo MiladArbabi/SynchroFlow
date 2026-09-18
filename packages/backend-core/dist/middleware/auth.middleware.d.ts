@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 /**
- * Canonical Auth Context extracted from JWT.
+ * Canonical Auth Context extracted from JWT + resolved at request time.
  * This is the ONLY trusted identity surface for downstream services.
  */
 export interface AuthContext {
@@ -9,9 +9,12 @@ export interface AuthContext {
     actorType?: 'shop_user' | 'system_service' | 'support_admin';
     roles?: string[];
     /**
-     * Subscription tier from JWT claim (MON-03).
-     * Set by token.service.ts at issuance. Falls back to 'starter'.
-     * Use for middleware gating only — never trust for billing decisions.
+     * GH-1136 — CURRENT authoritative subscription tier, re-resolved from
+     * shop_subscriptions on every authenticated request via
+     * resolveTierForShop(shopId). The JWT's own `tier` claim is issuance-time
+     * only (a session hint token.service.ts stamps at login) and is
+     * deliberately NOT trusted here — a shop downgraded mid-session must lose
+     * paid access before its access token expires, not after.
      */
     tier?: string;
 }

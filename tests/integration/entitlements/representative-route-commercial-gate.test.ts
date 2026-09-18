@@ -33,6 +33,7 @@ import db, {
   setTenantContext,
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
+import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 const app = createApp();
@@ -88,7 +89,37 @@ afterAll(async () => {
   await db.destroy();
 });
 
-function get(pathname: string, tier: Tier, roles: string[] = ['owner']) {
+/**
+ * GH-1136 — authenticateToken now re-resolves tier from the AUTHORITATIVE
+ * shop_subscriptions row on every request (packages/backend-core/src/
+ * middleware/auth.middleware.ts), rather than trusting the JWT's issuance-time
+ * `tier` claim. This file's entire matrix varies "tier under test" purely via
+ * the token, with no shop_subscriptions row ever seeded for SHOP_ID — under
+ * the new behavior that authoritative-row-less shop resolves to 'starter' on
+ * every request (resolveTierForShop's documented no-row fallback), regardless
+ * of what the token claims.
+ *
+ * Every case in this file funnels through this one helper, so establishing
+ * the authoritative tier here — via the canonical transitionShopSubscription,
+ * never a direct UPDATE — repairs the whole matrix without touching each of
+ * the 30+ individual test cases. Tests in this file run serially
+ * (--runInBand) against one shared SHOP_ID, so sequentially re-transitioning
+ * it before each request is safe.
+ */
+async function get(pathname: string, tier: Tier, roles: string[] = ['owner']) {
+  await withTenant(SHOP_ID, (trx) =>
+    transitionShopSubscription(
+      {
+        shopId: SHOP_ID,
+        to: { tier, status: 'active', billingProvider: 'shopify' },
+        source: 'commercial_gate_test',
+        reason: 'test_tier_fixture',
+        actorType: 'shopify',
+        actingProvider: 'shopify',
+      },
+      trx,
+    ),
+  );
   const token = issueTestToken({ userId: USER_ID, shopId: SHOP_ID, tier, roles });
   return request(app).get(pathname).set('Authorization', `Bearer ${token}`);
 }
@@ -454,6 +485,21 @@ describe('Scale clears every migrated commercial gate', () => {
 // ===========================================================================
 describe('RBAC stays with requireAction — POST /api/v1/suppliers/ as operator @ Growth', () => {
   it('403 is a role denial (ACTION_FORBIDDEN), not COMMERCIAL_ACCESS_DENIED', async () => {
+    // GH-1136 — see the get() helper's comment: the authoritative tier must
+    // be established for real, not only claimed by the JWT.
+    await withTenant(SHOP_ID, (trx) =>
+      transitionShopSubscription(
+        {
+          shopId: SHOP_ID,
+          to: { tier: 'growth', status: 'active', billingProvider: 'shopify' },
+          source: 'commercial_gate_test',
+          reason: 'test_tier_fixture',
+          actorType: 'shopify',
+          actingProvider: 'shopify',
+        },
+        trx,
+      ),
+    );
     const token = issueTestToken({
       userId: USER_ID,
       shopId: SHOP_ID,
