@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, memo, useEffect, useRef, type ReactNode } from 'react';
+import { useState, memo, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import {
   Box,
   Typography,
@@ -11,10 +11,12 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Menu,
   MenuItem,
   Collapse,
+  IconButton,
 } from '@mui/material';
-import { ScanBarcode, Package, ChevronDown, ChevronUp, ArrowUp } from 'lucide-react';
+import { ScanBarcode, Package, ChevronDown, ChevronUp, ArrowUp, MoreVertical } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
@@ -29,7 +31,7 @@ import PackSessionPage, {
 import ReceiveSessionPage, {
 type ReceiveJobLine,
 } from './ReceiveSessionPage.js';
-import StowSessionPage from './StowSessionPage.js';
+import StowSessionPage, { type StowPlacement } from './StowSessionPage.js';
 import CountingSessionPage, {
   type CountingLine,
   type CountingSkipReason,
@@ -105,6 +107,10 @@ export type WmsStowTask = {
   location_code: string | null;
   status: 'pending' | 'in_progress';
   trigger: string;
+  // STOW-LIFECYCLE-02 — optional owner/admin dispatch. null means
+  // "first one to claim"; narrows claim eligibility when set.
+  assigned_operator_id: number | null;
+  assigned_operator_name: string | null;
   claimed_by: number | null;
   claimed_at: string | null;
   created_at: string;
@@ -135,16 +141,27 @@ export type WmsModuleFT2Props = {
   onFetchReceiveJob?: (jobId: string) => Promise<{
     job: {
       po_id: string;
+      po_number?: number | null;
       supplier_name: string;
+      status?: string;
+      assigned_operator_id?: number | null;
       closed_at?: string | null;
       actual_delivery_date?: string | null;
     };
     lines: ReceiveJobLine[];
   }>;
+  onClaimReceiveJob?: (jobId: string) => Promise<void>;
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
   onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
+  /**
+   * WAREHOUSE-FOCUS-SHELL-01A — ReceiveSessionPage reports whether the
+   * operator is actively executing (sessionPhase !== 'brief') for the
+   * named job; the parent (WmsOperationsPage) uses this to add/remove
+   * warehouseFocus in the URL without removing receiveJobId.
+   */
+  onReceiveSessionFocusChange?: (jobId: string, focused: boolean) => void;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
   /**
    * GH-1085 — REQUIRED, deliberately not optional. This module is a pure
@@ -208,23 +225,40 @@ export type WmsModuleFT2Props = {
   onFetchStowTasks?: () => Promise<WmsStowTask[]>;
   onResolveLocation?: (scannedValue: string) => Promise<{ location_code: string } | null>;
   onAssignStowLocation?: (taskId: string, locationCode: string) => Promise<void>;
+  // STOW-UX-SCAN-RAIL-01 — canonical current-bin activity trace, task-scoped.
+  onFetchStowPlacements?: (taskId: string) => Promise<StowPlacement[]>;
+  // STOW-LIFECYCLE-02 — owner/admin optional dispatch. UI gating here is
+  // advisory only; wms:stow:assign remains backend-authoritative (see J).
+  canAssignStow?: boolean;
+  onFetchStowAssignees?: () => Promise<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>;
+  onAssignStowTask?: (taskId: string, assignedOperatorId: number | null) => Promise<void>;
   isOnline: boolean;
   queuedCount: number;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
   pendingReceiveSession?: {
     receiveJobId: string;
     poId: string;
+    poNumber?: number | null;
     supplierName: string;
+    jobStatus?: string;
+    assignedOperatorId?: number | null;
     closedAt?: string | null;
     actualDeliveryDate?: string | null;
     lines: ReceiveJobLine[];
   } | null;
   /** Stow task ID from URL param — auto-enters stow session on mount. */
   pendingStowTaskId?: string | null;
+  pendingStowStep?: 'location' | null;
   /** Return job ID from URL param — auto-enters the existing return session on mount. */
   pendingReturnJobId?: string | null;
   /** Called when operator claims a stow task — parent sets URL param for refresh recovery. */
   onStowSessionEnter?: (taskId: string) => void;
+  onStowSessionStepChange?: (taskId: string, step: 'location' | null) => void;
   /** Pick batch ID from URL param — auto-enters pick session on mount. */
   pendingPickBatchId?: string | null;
   /** Called when operator enters a pick session — parent sets URL param for refresh recovery. */
@@ -266,6 +300,21 @@ export type WmsModuleFT2Props = {
    * matching readyToPackOrders/readyToPackCount.
    */
   openReceiveJobCount?: number;
+  /** Canonical open Receive jobs projected by useWms(). */
+  openReceiveJobs?: Array<{
+    receive_job_id: string;
+    status: string;
+    assigned_operator_id: number | null;
+    started_at?: string | null;
+    closed_at?: string | null;
+    supplier_name: string;
+    po_id: string;
+    po_number?: number | null;
+    total_units: number;
+    total_variants: number;
+  }>;
+  /** Persists Receive session identity in the URL for refresh recovery. */
+  onReceiveSessionEnter?: (jobId: string) => void;
   /** True when the count routes returned 403 — Core tier required. */
   recountLocked?: boolean;
   onRecountUpgrade?: () => void;
@@ -539,12 +588,33 @@ const BatchCard = memo(function BatchCard({
  * Displays a pending stow task — stock that needs to be put away.
  * Triggered by: inbound receive close, cancelled order mid-pick.
  */
+/**
+ * STOW-LIFECYCLE-02 — assignment status copy.
+ * Visibility filtering (WmsModuleFT2Inner) already ensures an operator only
+ * ever receives a card they may act on; this only decides the exact wording.
+ */
+function describeStowAssignment(task: WmsStowTask, currentUserId?: number | null): string {
+  if (task.status === 'in_progress') return 'In progress';
+  if (task.assigned_operator_id === null) return 'First one to claim';
+  if (task.assigned_operator_id === currentUserId) return 'Assigned to you';
+  return `Assigned to ${task.assigned_operator_name ?? 'operator'}`;
+}
+
 const StowTaskCard = memo(function StowTaskCard({
   task,
+  currentUserId,
+  canAssignStow,
   onOpen,
+  onAssignRequest,
+  onMakeFirstToClaim,
 }: {
   task: WmsStowTask;
+  currentUserId?: number | null;
+  /** Advisory only — backend wms:stow:assign remains authoritative (see J). */
+  canAssignStow?: boolean;
   onOpen: (taskId: string) => void;
+  onAssignRequest?: (task: WmsStowTask) => void;
+  onMakeFirstToClaim?: (task: WmsStowTask) => void;
 }) {
   const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
 
@@ -562,6 +632,19 @@ const StowTaskCard = memo(function StowTaskCard({
   // location-scan step, which is why the old 'Claim & stow' label was
   // describing the session, not this button.
   const isClaimed = task.status === 'in_progress';
+
+  // STOW-LIFECYCLE-02 — an operator must never see a Start button for a task
+  // assigned to somebody else. Visibility filtering keeps this card off an
+  // operator's list entirely for that case; owner/admin may still see it (to
+  // manage assignment) but gets no execution CTA either — assignment is not
+  // a takeover path.
+  const assignedToOther =
+    task.status === 'pending' &&
+    task.assigned_operator_id !== null &&
+    task.assigned_operator_id !== currentUserId;
+
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const showMenu = Boolean(canAssignStow) && task.status === 'pending';
 
   return (
     <Box sx={{
@@ -589,8 +672,59 @@ const StowTaskCard = memo(function StowTaskCard({
           )}
         </Box>
         <Box sx={{ px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>{isClaimed ? 'In progress' : 'Stow pending'}</Typography>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>
+            {describeStowAssignment(task, currentUserId)}
+          </Typography>
         </Box>
+
+        {showMenu && (
+          <>
+            <IconButton
+              size="small"
+              aria-label="Stow task options"
+              data-testid={`stow-task-menu-${task.stow_task_id}`}
+              onClick={(e) => setMenuAnchor(e.currentTarget)}
+              sx={{ flexShrink: 0, ml: 0.5 }}
+            >
+              <MoreVertical size={16} />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={() => setMenuAnchor(null)}
+            >
+              {task.assigned_operator_id === null ? (
+                <MenuItem
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onAssignRequest?.(task);
+                  }}
+                >
+                  Assign to…
+                </MenuItem>
+              ) : [
+                <MenuItem
+                  key="reassign"
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onAssignRequest?.(task);
+                  }}
+                >
+                  Reassign…
+                </MenuItem>,
+                <MenuItem
+                  key="unassign"
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onMakeFirstToClaim?.(task);
+                  }}
+                >
+                  Make first one to claim
+                </MenuItem>,
+              ]}
+            </Menu>
+          </>
+        )}
       </Box>
 
       {/* METADATA */}
@@ -600,21 +734,24 @@ const StowTaskCard = memo(function StowTaskCard({
         <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Source: {triggerLabel}</Typography>
       </Box>
 
-      {/* CTA */}
-      <Box
-        component="button"
-        onClick={() => onOpen(task.stow_task_id)}
-        sx={{
-          width: '100%', fontSize: 12, fontWeight: 600,
-          color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
-          border: 'none', borderRadius: '8px',
-          py: 1.25, cursor: 'pointer',
-          '&:hover': { opacity: 0.88 },
-          transition: 'opacity 0.15s ease',
-        }}
-      >
-        {isClaimed ? 'Resume stow →' : 'Start stow →'}
-      </Box>
+      {/* CTA — withheld for a task assigned to somebody else (see J: never a
+          silent takeover path). Owner/admin manage such a task only via ⋮. */}
+      {!assignedToOther && (
+        <Box
+          component="button"
+          onClick={() => onOpen(task.stow_task_id)}
+          sx={{
+            width: '100%', fontSize: 12, fontWeight: 600,
+            color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+            border: 'none', borderRadius: '8px',
+            py: 1.25, cursor: 'pointer',
+            '&:hover': { opacity: 0.88 },
+            transition: 'opacity 0.15s ease',
+          }}
+        >
+          {isClaimed ? 'Resume stow →' : 'Start stow →'}
+        </Box>
+      )}
     </Box>
   );
 });
@@ -848,7 +985,10 @@ type ActiveSession =
       type: 'receive';
       receiveJobId: string;
       poId: string;
+      poNumber?: number | null;
       supplierName: string;
+      jobStatus?: string;
+      assignedOperatorId?: number | null;
       closedAt?: string | null;
       actualDeliveryDate?: string | null;
       lines: ReceiveJobLine[];
@@ -865,10 +1005,12 @@ function WmsModuleFT2Inner({
 
   onCreateReceiveJob,
   onFetchReceiveJob,
+  onClaimReceiveJob,
   onInspectReceiveLine,
   onPersistReceiveLineProgress,
   onReportReceiveException,
   onCloseReceiveJob,
+  onReceiveSessionFocusChange,
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
 
@@ -899,11 +1041,17 @@ function WmsModuleFT2Inner({
   onFetchStowTasks,
   onResolveLocation,
   onAssignStowLocation,
+  onFetchStowPlacements,
+  canAssignStow,
+  onFetchStowAssignees,
+  onAssignStowTask,
   gridLocations,
   pendingReceiveSession,
   pendingStowTaskId,
+  pendingStowStep,
   pendingReturnJobId,
   onStowSessionEnter,
+  onStowSessionStepChange,
   pendingPickBatchId,
   onPickSessionEnter,
   pendingPackBatchId,
@@ -918,6 +1066,8 @@ function WmsModuleFT2Inner({
   readyToPackOrders,
   readyToPackCount,
   openReceiveJobCount,
+  openReceiveJobs,
+  onReceiveSessionEnter,
   recountLocked,
   recountTasks,
   onRecountUpgrade,
@@ -1006,6 +1156,83 @@ function WmsModuleFT2Inner({
     }
   };
 
+  // STOW-LIFECYCLE-02 — owner/admin optional dispatch. Mirrors the recount
+  // reassign dialog above; assignment is separate from claim/execution.
+  const [stowAssignTask, setStowAssignTask] = useState<WmsStowTask | null>(null);
+  const [stowAssignees, setStowAssignees] = useState<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>([]);
+  const [stowAssignLoading, setStowAssignLoading] = useState(false);
+  const [stowAssignError, setStowAssignError] = useState<string | null>(null);
+  const [stowAssignTargetId, setStowAssignTargetId] = useState<number | ''>('');
+  const [stowAssignSubmitting, setStowAssignSubmitting] = useState(false);
+
+  const openStowAssignDialog = async (task: WmsStowTask) => {
+    setStowAssignTask(task);
+    setStowAssignTargetId('');
+    setStowAssignError(null);
+    setStowAssignLoading(true);
+    try {
+      const targets = (await onFetchStowAssignees?.()) ?? [];
+      setStowAssignees(targets);
+    } catch (error) {
+      setStowAssignError(
+        error instanceof Error ? error.message : 'Failed to load team operators.'
+      );
+    } finally {
+      setStowAssignLoading(false);
+    }
+  };
+
+  const closeStowAssignDialog = () => {
+    setStowAssignTask(null);
+    setStowAssignTargetId('');
+    setStowAssignError(null);
+  };
+
+  const submitStowAssign = async () => {
+    if (!stowAssignTask || stowAssignTargetId === '') return;
+    setStowAssignSubmitting(true);
+    setStowAssignError(null);
+    try {
+      await onAssignStowTask?.(stowAssignTask.stow_task_id, stowAssignTargetId);
+      onRefresh();
+      closeStowAssignDialog();
+    } catch (error: any) {
+      // H — a 409 means the task was claimed concurrently: no stale
+      // assignment UI, refresh so the card reflects the real current state.
+      const status = error?.response?.status;
+      if (status === 409) {
+        setStowAssignError(
+          'This task was just claimed by an operator and can no longer be assigned.'
+        );
+        onRefresh();
+      } else {
+        setStowAssignError(
+          error instanceof Error ? error.message : 'Assignment failed. Try again.'
+        );
+      }
+    } finally {
+      setStowAssignSubmitting(false);
+    }
+  };
+
+  const makeStowFirstToClaim = async (task: WmsStowTask) => {
+    try {
+      await onAssignStowTask?.(task.stow_task_id, null);
+      onRefresh();
+    } catch (error: any) {
+      if (error?.response?.status === 409) {
+        onRefresh();
+      }
+      // Advisory-only UI action (see J) — the card re-renders from the
+      // refreshed list either way; no separate error surface needed here.
+    }
+  };
+
   const openCountDialog = async () => {
     setCountDialogOpen(true);
     setCountDialogLoading(true);
@@ -1091,6 +1318,49 @@ function WmsModuleFT2Inner({
     }
   }, [pendingReceiveSession]);
 
+  // RECEIVE-FOCUS-EXIT-02 — ReceiveSessionPage's execution-focus effect
+  // (WAREHOUSE-FOCUS-SHELL-01A) is keyed on
+  // [sessionPhase, onExecutionFocusChange]. The `onExecutionFocusChange`
+  // prop passed to <ReceiveSessionPage> below used to be a fresh inline
+  // arrow function on EVERY WmsModuleFT2 render — including renders
+  // triggered by the exit sequence itself (setActiveSession(null),
+  // onSessionExit's setSearchParams, onRefresh's refetch). Because that
+  // identity changed even though sessionPhase hadn't, the child effect
+  // could re-fire and re-report focused=true for the just-exited session,
+  // racing with (and landing after) onSessionExit's URL cleanup and
+  // rewriting warehouseFocus/receiveJobId back into the URL.
+  //
+  // Fix is two-layered, matching "stabilize callback identity AND make
+  // parent/session-exit state authoritative":
+  //   1. activeSessionRef/onReceiveSessionFocusChangeRef track the latest
+  //      values without being useCallback dependencies, so the callback
+  //      handed to ReceiveSessionPage has a STABLE identity for the whole
+  //      lifetime of this component — the child effect then only re-fires
+  //      when sessionPhase itself genuinely changes, never merely because
+  //      this parent re-rendered.
+  //   2. handleReceiveExecutionFocusChange reads activeSessionRef live at
+  //      call time and no-ops unless the CURRENT active session is still
+  //      the receive session being reported for — exitSession's
+  //      setActiveSession(null) is synchronous and always the first thing
+  //      it does, so by the time any stale/delayed report could arrive,
+  //      activeSessionRef.current is already not 'receive' and the report
+  //      is dropped instead of reaching the URL.
+  const activeSessionRef = useRef(activeSession);
+  useEffect(() => {
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
+
+  const onReceiveSessionFocusChangeRef = useRef(onReceiveSessionFocusChange);
+  useEffect(() => {
+    onReceiveSessionFocusChangeRef.current = onReceiveSessionFocusChange;
+  }, [onReceiveSessionFocusChange]);
+
+  const handleReceiveExecutionFocusChange = useCallback((focused: boolean) => {
+    const current = activeSessionRef.current;
+    if (current?.type !== 'receive') return;
+    onReceiveSessionFocusChangeRef.current?.(current.receiveJobId, focused);
+  }, []);
+
   useEffect(() => {
     if (pendingStowTaskId) {
       setActiveSession({ type: 'stow', taskId: pendingStowTaskId });
@@ -1145,6 +1415,37 @@ function WmsModuleFT2Inner({
 
   const batches = data?.batches ?? [];
 
+  // GH-1109 — Operations is an assigned-work queue, never an unassigned pool.
+  // Derive cards and tally from this exact same projection so the two cannot
+  // drift. Owner/admin broader API visibility does not broaden floor work:
+  // this surface still shows only work assigned to the authenticated operator.
+  const receiveWorkJobs = (openReceiveJobs ?? []).filter(
+    (job) =>
+      job.assigned_operator_id === currentUserId &&
+      (job.status === 'pending' || job.status === 'in_progress') &&
+      !job.closed_at
+  );
+
+  // STOW-LIFECYCLE-02 (Part E) — an operator sees only unassigned pending
+  // work, work assigned to them, and work they themselves claimed.
+  // Owner/admin additionally sees pending work assigned to someone else, so
+  // the ⋮ menu has something to manage — never another operator's active
+  // in_progress claim (no takeover path here; out of scope for this slice).
+  // Tally and rendered cards both read this one array so they cannot drift.
+  const visibleStowTasks = (stowTasks ?? []).filter((task) => {
+    if (task.status === 'pending') {
+      return (
+        task.assigned_operator_id === null ||
+        task.assigned_operator_id === currentUserId ||
+        Boolean(canAssignStow)
+      );
+    }
+    if (task.status === 'in_progress') {
+      return task.claimed_by === currentUserId;
+    }
+    return false;
+  });
+
   // Warehouse execution owns only physical counting work.
   // manual_review belongs to the owner decision surface, not this floor list.
   const countingTasks = (recountTasks ?? []).filter(
@@ -1153,6 +1454,47 @@ function WmsModuleFT2Inner({
       task.status === 'claimed' ||
       task.status === 'counting'
   );
+
+  const enterReceiveSession = async (jobId: string) => {
+    if (!onFetchReceiveJob) {
+      setSessionError(
+        'Receive work is unavailable. Refresh Operations and try again.'
+      );
+      return;
+    }
+
+    setLoadingSession(true);
+    setSessionError(null);
+
+    // Persist identity before the fetch so a refresh/retry reconstructs the
+    // same canonical Receive session instead of dropping the operator's work.
+    onReceiveSessionEnter?.(jobId);
+
+    try {
+      const result = await onFetchReceiveJob(jobId);
+
+      setActiveSession({
+        type: 'receive',
+        receiveJobId: jobId,
+        poId: result.job.po_id,
+        poNumber: result.job.po_number ?? null,
+        supplierName: result.job.supplier_name,
+        jobStatus: result.job.status,
+        assignedOperatorId: result.job.assigned_operator_id ?? null,
+        closedAt: result.job.closed_at ?? null,
+        actualDeliveryDate: result.job.actual_delivery_date ?? null,
+        lines: result.lines,
+      });
+    } catch (error) {
+      setSessionError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to open Receive work.'
+      );
+    } finally {
+      setLoadingSession(false);
+    }
+  };
 
   const enterPickSession = async (batchId: string, claim: boolean) => {
     setLoadingSession(true);
@@ -1173,6 +1515,7 @@ function WmsModuleFT2Inner({
   const [packScanError, setPackScanError] = useState<string | null>(null);
   const [readyToPackOpen, setReadyToPackOpen] = useState(false);
   const [pickPackExpanded, setPickPackExpanded] = useState(true);
+  const [receivingExpanded, setReceivingExpanded] = useState(true);
   const [puttingAwayExpanded, setPuttingAwayExpanded] = useState(false);
   const [inventoryChecksExpanded, setInventoryChecksExpanded] = useState(false);
   const [showAllInventoryChecks, setShowAllInventoryChecks] = useState(false);
@@ -1221,7 +1564,17 @@ function WmsModuleFT2Inner({
     setActiveSession(null);
     onRefresh();
     onSessionExit?.();
-    if (finishedLabel) {
+    // RECEIVE-COMPLETE-EXIT-01 — exitSession is passed directly as
+    // `onComplete` to every session page (Pick/Pack/Receive/Stow/Return),
+    // several of which wire it straight to a Button's onClick. A bare
+    // `onClick={onComplete}` at any of those call sites makes React invoke
+    // this function with a SyntheticEvent, not a string — `if (finishedLabel)`
+    // alone treated that as truthy and forwarded the event object into
+    // onCountFinished -> setFinishedCountLabel -> rendered as a child,
+    // crashing the page. Require an actual non-empty string so any such
+    // call-site mistake, present or future, can never leak a MouseEvent (or
+    // any other non-string value) into session-exit state.
+    if (typeof finishedLabel === 'string' && finishedLabel) {
       onCountFinished?.(finishedLabel);
     }
   };
@@ -1270,7 +1623,10 @@ function WmsModuleFT2Inner({
         type: 'receive',
         receiveJobId: activeSession.receiveJobId,
         poId: latest.job.po_id,
+        poNumber: latest.job.po_number ?? activeSession.poNumber ?? null,
         supplierName: latest.job.supplier_name,
+        jobStatus: latest.job.status,
+        assignedOperatorId: latest.job.assigned_operator_id ?? null,
         closedAt: latest.job.closed_at ?? null,
         actualDeliveryDate: latest.job.actual_delivery_date ?? null,
         lines: latest.lines,
@@ -1281,10 +1637,20 @@ function WmsModuleFT2Inner({
       <ReceiveSessionPage
         receiveJobId={activeSession.receiveJobId}
         poId={activeSession.poId}
+        poNumber={activeSession.poNumber}
         supplierName={activeSession.supplierName}
+        jobStatus={activeSession.jobStatus}
+        assignedOperatorId={activeSession.assignedOperatorId}
+        currentUserId={currentUserId}
         closedAt={activeSession.closedAt}
         actualDeliveryDate={activeSession.actualDeliveryDate}
         lines={activeSession.lines}
+        onClaimJob={() =>
+          onClaimReceiveJob?.(activeSession.receiveJobId) ??
+          Promise.reject(
+            new Error('Receive claim is unavailable. Return to Operations and try again.')
+          )
+        }
         onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve()}
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
@@ -1294,6 +1660,7 @@ function WmsModuleFT2Inner({
         onPrintUnitLabels={onPrintUnitLabels}
         onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
         onRefresh={refreshReceiveSession}
+        onExecutionFocusChange={handleReceiveExecutionFocusChange}
       />
     );
   }
@@ -1303,7 +1670,26 @@ function WmsModuleFT2Inner({
     return (
       <StowSessionPage
         initialTaskId={activeSession.taskId}
+        initialStep={pendingStowStep}
+        currentUserId={currentUserId}
         onComplete={exitSession}
+        // STOW-SESSION-TRANSITION-01 — the child reports its OWN current task
+        // ID with every call (same-task step change, or an automatic
+        // advance to a different task). Never derive taskId from the
+        // activeSession closure captured when this element was created —
+        // that was the root cause of the stale-URL/stale-parent-session
+        // defect: activeSession.taskId still pointed at a just-completed
+        // task after StowSessionPage silently advanced to the next one.
+        // Both the local session identity and the persisted URL must move
+        // together to the task the child actually reports.
+        onActiveTaskChange={(taskId, step) => {
+          setActiveSession((session) =>
+            session?.type === 'stow' && session.taskId !== taskId
+              ? { type: 'stow', taskId }
+              : session
+          );
+          onStowSessionStepChange?.(taskId, step);
+        }}
         onFetchTasks={onFetchStowTasks ?? (() => Promise.resolve([]))}
         onResolveLocation={onResolveLocation ?? (() => Promise.resolve(null))}
         onAssignLocation={(taskId, locationCode) =>
@@ -1323,6 +1709,9 @@ function WmsModuleFT2Inner({
               'Stow confirmation is unavailable. Return to Operations and try again.'
             )
           )
+        }
+        onFetchPlacements={(taskId) =>
+          onFetchStowPlacements?.(taskId) ?? Promise.resolve([])
         }
       />
     );
@@ -1370,8 +1759,8 @@ function WmsModuleFT2Inner({
       (b) => Number(b.units_picked) < Number(b.total_units)
     ).length,
     packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
-    puttingAway: (stowTasks ?? []).length,
-    receiving: openReceiveJobCount ?? 0,
+    puttingAway: visibleStowTasks.length,
+    receiving: receiveWorkJobs.length,
     counting: recountLocked ? 0 : countingTasks.length,
   };
 
@@ -1753,6 +2142,87 @@ function WmsModuleFT2Inner({
         </DialogActions>
       </Dialog>
 
+      {/* STOW-LIFECYCLE-02 — Assign / Reassign Stow task. Owner/admin only
+          (advisory gate; wms:stow:assign is backend-authoritative). Mirrors
+          the recount reassign dialog above: explicit operator choice, no
+          silent takeover. "Make first one to claim" skips this dialog
+          entirely — it PATCHes { assigned_operator_id: null } directly. */}
+      <Dialog
+        open={stowAssignTask !== null}
+        onClose={stowAssignSubmitting ? undefined : closeStowAssignDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>
+          {stowAssignTask?.assigned_operator_id === null ? 'Assign Stow task' : 'Reassign Stow task'}
+        </DialogTitle>
+
+        <DialogContent>
+          {stowAssignError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {stowAssignError}
+            </Alert>
+          )}
+
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Assign to"
+            value={stowAssignTargetId}
+            disabled={stowAssignLoading || stowAssignSubmitting}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStowAssignTargetId(value === '' ? '' : Number(value));
+            }}
+          >
+            <MenuItem value="" disabled>
+              {stowAssignLoading ? 'Loading operators…' : 'Select an operator'}
+            </MenuItem>
+            {stowAssignees.map((operator) => {
+              const name =
+                `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                `Operator ${operator.user_id}`;
+
+              return (
+                <MenuItem key={operator.user_id} value={operator.user_id}>
+                  {name} · {operator.role}
+                </MenuItem>
+              );
+            })}
+          </TextField>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={closeStowAssignDialog}
+            disabled={stowAssignSubmitting}
+            sx={{ color: 'var(--accent)' }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => void submitStowAssign()}
+            disabled={stowAssignTargetId === '' || stowAssignSubmitting}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            {stowAssignSubmitting
+              ? 'Saving…'
+              : stowAssignTask?.assigned_operator_id === null
+                ? 'Assign'
+                : 'Reassign'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* LOADING */}
       {(isLoading || loadingSession) && (
         <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
@@ -1983,18 +2453,142 @@ function WmsModuleFT2Inner({
 
             </WorkQueueFamily>
 
+            {/* GH-1109 — assigned Receive work only. Assignment is dispatch;
+                pending work opens Brief and claims from inside the session. */}
+            <WorkQueueFamily
+              title="Receiving"
+              summary={`${receiveWorkJobs.length} ${
+                receiveWorkJobs.length === 1 ? 'shipment' : 'shipments'
+              }`}
+              expanded={receivingExpanded}
+              onToggle={() =>
+                setReceivingExpanded((value) => !value)
+              }
+            >
+              {receiveWorkJobs.map((job) => {
+                const started =
+                  job.status === 'in_progress' ||
+                  Boolean(job.started_at);
+
+                return (
+                  <Box
+                    key={job.receive_job_id}
+                    data-testid={`receive-work-card-${job.receive_job_id}`}
+                    sx={{
+                      border: '1px solid var(--rule)',
+                      borderRadius: '10px',
+                      bgcolor: 'var(--surface)',
+                      px: 2,
+                      py: 1.5,
+                      mb: 1,
+                      '&:last-child': { mb: 0 },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: 2,
+                      }}
+                    >
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography
+                          sx={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: 'var(--ink)',
+                          }}
+                        >
+                          {job.supplier_name}
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            mt: 0.25,
+                            fontSize: 12,
+                            color: 'var(--ink-3)',
+                          }}
+                        >
+                          {job.po_number == null ? 'PO reference unavailable' : `PO-${job.po_number}`}
+                          {' · '}
+                          {job.total_variants}{' '}
+                          {job.total_variants === 1
+                            ? 'product'
+                            : 'products'}
+                          {' · '}
+                          {job.total_units}{' '}
+                          {job.total_units === 1 ? 'unit' : 'units'}
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            mt: 0.75,
+                            fontSize: 11.5,
+                            fontWeight: 500,
+                            color: 'var(--ink-3)',
+                          }}
+                        >
+                          {started
+                            ? 'Assigned to you · In progress'
+                            : 'Assigned to you · Not started'}
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            mt: 0.25,
+                            fontSize: 11.5,
+                            color: 'var(--ink-4)',
+                          }}
+                        >
+                          {started
+                            ? 'Continue receiving shipment'
+                            : 'Review shipment and claim Receive'}
+                        </Typography>
+                      </Box>
+
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() =>
+                          void enterReceiveSession(
+                            job.receive_job_id
+                          )
+                        }
+                        sx={{
+                          flexShrink: 0,
+                          borderColor: 'var(--rule)',
+                          color: 'var(--accent)',
+                          borderRadius: '6px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {started
+                          ? 'Resume receive'
+                          : 'Open receive'}
+                      </Button>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </WorkQueueFamily>
+
       {/* STOW TASKS */}
             <WorkQueueFamily
               title="Putting away"
-              summary={`${(stowTasks ?? []).length} ${(stowTasks ?? []).length === 1 ? 'task' : 'tasks'}`}
+              summary={`${visibleStowTasks.length} ${visibleStowTasks.length === 1 ? 'task' : 'tasks'}`}
               expanded={puttingAwayExpanded}
               onToggle={() => setPuttingAwayExpanded((value) => !value)}
             >
-          {(stowTasks ?? []).map((task) => (
+          {visibleStowTasks.map((task) => (
             <StowTaskCard
               key={task.stow_task_id}
               task={task}
+              currentUserId={currentUserId}
+              canAssignStow={canAssignStow}
               onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
+              onAssignRequest={(t) => void openStowAssignDialog(t)}
+              onMakeFirstToClaim={(t) => void makeStowFirstToClaim(t)}
             />
           ))}
             </WorkQueueFamily>

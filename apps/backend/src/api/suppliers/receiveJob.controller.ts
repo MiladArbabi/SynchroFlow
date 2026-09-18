@@ -10,6 +10,8 @@ import {
 } from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
 import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBarcodeReadiness.service.js';
+import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 
 /**
  * RECEIVE JOB CONTROLLER (FEAT-004)
@@ -21,12 +23,68 @@ import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBa
  * POST   /api/v1/suppliers/receive-jobs/:jobId/close                  — close + create stow tasks
  */
 
+async function assertReceiveAssignee(
+  shopId: number,
+  dispatcherUserId: number,
+  assignedOperatorId: unknown
+): Promise<number> {
+  if (
+    assignedOperatorId == null ||
+    !Number.isInteger(Number(assignedOperatorId)) ||
+    Number(assignedOperatorId) <= 0
+  ) {
+    throw Object.assign(new Error('ASSIGNED_OPERATOR_REQUIRED'), {
+      statusCode: 400,
+    });
+  }
+
+  const userId = Number(assignedOperatorId);
+  const context = await resolveShopContextForUser(userId);
+
+  if (
+    !context ||
+    context.shopId !== shopId ||
+    (
+      context.role !== 'operator' &&
+      userId !== dispatcherUserId
+    )
+  ) {
+    throw Object.assign(new Error('INVALID_RECEIVE_ASSIGNEE'), {
+      statusCode: 400,
+    });
+  }
+
+  const receiveExecutionActions = [
+    'receive-job:read',
+    'receive-job:inspect',
+    'receive-job:close',
+    'receive-job:exception',
+  ] as const;
+
+  const permissionDecisions = await Promise.all(
+    receiveExecutionActions.map((action) =>
+      isActionAllowed(shopId, action, context.role)
+    )
+  );
+
+  if (!permissionDecisions.every(Boolean)) {
+    throw Object.assign(new Error('INVALID_RECEIVE_ASSIGNEE'), {
+      statusCode: 400,
+    });
+  }
+
+  return userId;
+}
+
 // ─────────────────────────────────────────
 // POST /purchase-orders/:poId/receive-jobs
 // ─────────────────────────────────────────
 export async function httpCreateReceiveJob(req: Request, res: Response) {
   const shopId = req.user?.shopId;
-  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  const dispatcherUserId = req.user?.userId;
+  if (!shopId || !dispatcherUserId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   const poId = req.params.poId as string;
 
@@ -56,11 +114,18 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
         );
       }
 
-      return createReceiveJob(trx, { shopId, poId, operatorId: assigned_operator_id ?? null });
+      const operatorId = await assertReceiveAssignee(
+        shopId,
+        dispatcherUserId,
+        assigned_operator_id
+      );
+
+      return createReceiveJob(trx, { shopId, poId, operatorId });
     });
 
     return res.status(201).json({ receive_job_id: jobId });
   } catch (err: any) {
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
     if (err.statusCode === 404) return res.status(404).json({ error: err.message });
     if (err.statusCode === 409) return res.status(409).json({ error: err.message, receive_job_id: err.receive_job_id });
     console.error('[RECEIVE_JOB_CREATE_FAILED]', { shopId, poId, error: err.message });
@@ -105,6 +170,7 @@ export async function httpListReceiveJobs(req: Request, res: Response) {
           'rj.created_at',
           's.name as supplier_name',
           'po.id as po_id',
+          'po.po_number',
           'po.expected_delivery_date',
           trx.raw(`COALESCE(u.first_name || ' ' || COALESCE(u.last_name, ''), u.email) as operator_name`),
         )
@@ -114,12 +180,10 @@ export async function httpListReceiveJobs(req: Request, res: Response) {
         query = query.whereIn('rj.status', statusFilter);
       }
 
-      // Operators only see jobs assigned to them or unassigned (pool)
+      // Operators only see jobs assigned to them. There is no operator-visible
+      // unassigned Receive pool; dispatch assignment is required first.
       if (roles.includes('operator') && !roles.includes('owner') && !roles.includes('admin')) {
-        query = query.where(function () {
-          this.whereNull('rj.assigned_operator_id')
-            .orWhere('rj.assigned_operator_id', userId);
-        });
+        query = query.where('rj.assigned_operator_id', userId);
       }
 
       return query;
@@ -152,6 +216,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
         .select(
           'rj.*',
           's.name as supplier_name',
+          'po.po_number',
           'po.expected_delivery_date',
           'po.actual_delivery_date',
         )
@@ -261,39 +326,218 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
 export async function httpClaimReceiveJob(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
-  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  if (!shopId || !userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { jobId } = req.params;
+
   try {
     await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      const job = await trx('receive_jobs')
-        .where({ receive_job_id: jobId, shop_id: shopId })
-        .select('status', 'assigned_operator_id', 'started_at')
-        .first();
-      if (!job) throw Object.assign(new Error('JOB_NOT_FOUND'), { statusCode: 404 });
-      if (!['pending', 'in_progress'].includes(job.status)) {
-        throw Object.assign(new Error('JOB_NOT_CLAIMABLE'), { statusCode: 409 });
-      }
-      // Allow re-claim by same operator, reject if claimed by someone else
-      if (job.assigned_operator_id && job.assigned_operator_id !== userId) {
-        throw Object.assign(new Error('JOB_CLAIMED_BY_OTHER'), { statusCode: 409 });
-      }
-      await trx('receive_jobs')
-        .where({ receive_job_id: jobId })
+      await trx.raw(
+        `SET LOCAL "app.current_tenant" = '${shopId}'`
+      );
+
+      // Atomic claim:
+      // PostgreSQL re-checks this predicate after any row-lock wait. Claim can
+      // only start work already assigned to this operator; it never assigns.
+      const [claimed] = await trx('receive_jobs')
+        .where({
+          receive_job_id: jobId,
+          shop_id: shopId,
+        })
+        .whereIn('status', ['pending', 'in_progress'])
+        .andWhere('assigned_operator_id', userId)
         .update({
           status: 'in_progress',
-          assigned_operator_id: userId,
-          started_at: job.started_at ?? new Date(),
+          started_at: trx.raw(
+            'COALESCE(started_at, NOW())'
+          ),
           updated_at: new Date(),
+        })
+        .returning([
+          'receive_job_id',
+          'assigned_operator_id',
+          'started_at',
+        ]);
+
+      if (claimed) {
+        console.info('[RECEIVE_JOB_CLAIMED]', {
+          jobId,
+          userId,
+          shopId,
         });
-      console.info('[RECEIVE_JOB_CLAIMED]', { jobId, userId, shopId });
+        return;
+      }
+
+      const job = await trx('receive_jobs')
+        .where({
+          receive_job_id: jobId,
+          shop_id: shopId,
+        })
+        .first(
+          'status',
+          'assigned_operator_id',
+          'started_at'
+        );
+
+      if (!job) {
+        throw Object.assign(
+          new Error('JOB_NOT_FOUND'),
+          { statusCode: 404 }
+        );
+      }
+
+      if (
+        !['pending', 'in_progress'].includes(job.status)
+      ) {
+        throw Object.assign(
+          new Error('JOB_NOT_CLAIMABLE'),
+          { statusCode: 409 }
+        );
+      }
+
+      if (
+        !job.assigned_operator_id
+      ) {
+        throw Object.assign(
+          new Error('JOB_NOT_ASSIGNED'),
+          { statusCode: 409 }
+        );
+      }
+
+      if (
+        job.assigned_operator_id &&
+        job.assigned_operator_id !== userId
+      ) {
+        throw Object.assign(
+          new Error('JOB_CLAIMED_BY_OTHER'),
+          { statusCode: 409 }
+        );
+      }
+
+      throw Object.assign(
+        new Error('JOB_CLAIM_CONFLICT'),
+        { statusCode: 409 }
+      );
     });
-    return res.json({ success: true, receive_job_id: jobId });
+
+    return res.json({
+      success: true,
+      receive_job_id: jobId,
+    });
   } catch (err: any) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({
+        error: 'Job not found',
+      });
+    }
+
+    if (err.statusCode === 409) {
+      return res.status(409).json({
+        error: err.message,
+      });
+    }
+
+    console.error(
+      '[RECEIVE_JOB_CLAIM_FAILED]',
+      {
+        jobId,
+        userId,
+        error: err.message,
+      }
+    );
+
+    return res.status(500).json({
+      error: 'Failed to claim receive job',
+    });
+  }
+}
+
+// PATCH /receive-jobs/:jobId/assignment
+// Dispatcher recovery for pending, unstarted Receive work only.
+export async function httpAssignReceiveJob(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  const dispatcherUserId = req.user?.userId;
+  if (!shopId || !dispatcherUserId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const jobId = req.params.jobId as string;
+  const { assigned_operator_id } = req.body ?? {};
+
+  try {
+    const job = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const operatorId = await assertReceiveAssignee(
+        shopId,
+        dispatcherUserId,
+        assigned_operator_id
+      );
+
+      const current = await trx('receive_jobs')
+        .where({
+          shop_id: shopId,
+          receive_job_id: jobId,
+        })
+        .first('receive_job_id', 'status', 'started_at', 'closed_at');
+
+      if (!current) {
+        throw Object.assign(new Error('JOB_NOT_FOUND'), {
+          statusCode: 404,
+        });
+      }
+
+      if (current.status !== 'pending' || current.started_at || current.closed_at) {
+        throw Object.assign(new Error('JOB_NOT_REASSIGNABLE'), {
+          statusCode: 409,
+        });
+      }
+
+      const [updated] = await trx('receive_jobs')
+        .where({
+          shop_id: shopId,
+          receive_job_id: jobId,
+          status: 'pending',
+        })
+        .whereNull('started_at')
+        .whereNull('closed_at')
+        .update({
+          assigned_operator_id: operatorId,
+          updated_at: new Date(),
+        })
+        .returning([
+          'receive_job_id',
+          'status',
+          'assigned_operator_id',
+          'started_at',
+        ]);
+
+      // The row may have transitioned after the read above (for example, the
+      // assigned operator claimed it concurrently). Never allow assignment to
+      // overwrite ownership once execution has started.
+      if (!updated) {
+        throw Object.assign(new Error('JOB_NOT_REASSIGNABLE'), {
+          statusCode: 409,
+        });
+      }
+
+      return updated;
+    });
+
+    return res.json({ receive_job: job });
+  } catch (err: any) {
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
     if (err.statusCode === 404) return res.status(404).json({ error: 'Job not found' });
     if (err.statusCode === 409) return res.status(409).json({ error: err.message });
-    console.error('[RECEIVE_JOB_CLAIM_FAILED]', { jobId, userId, error: err.message });
-    return res.status(500).json({ error: 'Failed to claim receive job' });
+
+    console.error('[RECEIVE_JOB_ASSIGNMENT_FAILED]', {
+      shopId,
+      jobId,
+      error: err.message,
+    });
+    return res.status(500).json({ error: 'Failed to assign receive job' });
   }
 }
 

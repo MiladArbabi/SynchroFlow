@@ -9,7 +9,6 @@ import {
   CheckCircle,
   MapPin,
   Package,
-  PackageOpen,
   ArrowLeft,
 } from 'lucide-react';
 import type {
@@ -18,18 +17,22 @@ import type {
 } from './WmsModuleFT2.js';
 
 /**
- * STOW SESSION PAGE — WEB-STOW-UNIT-01 / STOW-SPLIT-01
+ * STOW SESSION PAGE — WEB-STOW-UNIT-01 / STOW-SPLIT-01 / STOW-UX-SCAN-RAIL-01
+ * / STOW-ACTIVE-LOCATION-01
  * -----------------------------------------------------
- * Location-first flow with a sticky active bin:
+ * Location-first flow with a mutable, sticky active bin:
  *
  *   brief → location_scan → item_scan ↺ → complete
  *
- * Location is established before any unit is handled. This mirrors the
- * operator's physical position in the warehouse and allows one task to be
- * split safely across multiple bins.
- *
- * Once active, the location persists across unit confirmations and task
- * advancement until the operator explicitly scans a different bin.
+ * STOW-ACTIVE-LOCATION-01 superseded "one Stow task = one immutable
+ * destination": currentTask.location_code / confirmedLocation is the
+ * CURRENT / most-recently-activated destination, not a frozen one. While a
+ * task is active (item_scan), scanning a different valid bin switches the
+ * active destination for units confirmed AFTER that point — see
+ * handleItemScan below. It does not rewrite where already-committed units
+ * physically are; that exact history remains in inventory_movements /
+ * inventory_units.current_location_code and is surfaced task-wide by the
+ * activity panel, never bin-scoped.
  *
  * STOW-SPLIT-01 — every accepted physical-unit scan commits exactly one unit.
  * There is intentionally no quantity-confirm or review phase: the successful
@@ -42,9 +45,38 @@ export type BarcodeResolveResult = {
   unit_status?: string;
 };
 
+/** Canonical placement projection — see stow.service.ts#getStowTaskPlacements. */
+export type StowPlacement = {
+  lasyncro_unit_id: string;
+  lasyncro_variant_id: string;
+  product_title: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  location_code: string;
+  operator_id: number | null;
+  operator_name: string | null;
+  occurred_at: string;
+};
+
 export interface StowSessionPageProps {
   initialTaskId: string;
+  initialStep?: 'location' | null;
+  currentUserId?: number | null;
   onComplete: () => void;
+  /**
+   * STOW-SESSION-TRANSITION-01 — the single source of truth for "which task
+   * is active and what phase is it in", reported to the parent with the
+   * EXACT task ID it applies to. This replaces the earlier `onStepChange?:
+   * (step) => void`, whose implicit subject was always whatever task ID the
+   * parent's own closure happened to capture — correct for a same-task step
+   * change, but silently wrong the moment advanceToNext() moves the session
+   * to a different task, since the parent had no way to learn the new ID.
+   * Called both for a same-task phase change and for an automatic task
+   * transition; the parent must persist taskId as the new canonical active
+   * session identity (URL + activeSession state) on every call, never derive
+   * it from a previously captured value.
+   */
+  onActiveTaskChange?: (taskId: string, step: 'location' | null) => void;
   onFetchTasks: () => Promise<WmsStowTask[]>;
   onResolveLocation: (scannedValue: string) => Promise<{ location_code: string } | null>;
   onAssignLocation: (taskId: string, locationCode: string) => Promise<void>;
@@ -55,6 +87,8 @@ export interface StowSessionPageProps {
     quantityPlaced: number,
     lasyncroUnitId?: string
   ) => Promise<WmsStowConfirmResult>;
+  /** STOW-UX-SCAN-RAIL-01 — canonical current-bin activity trace, task-scoped. */
+  onFetchPlacements?: (taskId: string) => Promise<StowPlacement[]>;
 }
 
 // STOW-SPLIT-01 — only phases that remain reachable in the per-unit scanner
@@ -76,6 +110,33 @@ type StowScanFeedback = {
   severity: 'success' | 'info';
   message: string;
 };
+
+function triggerLabel(trigger: string): string {
+  if (trigger === 'inbound_stock') return 'Inbound receive';
+  if (trigger === 'order_cancelled_mid_pick') return 'Cancelled pick';
+  if (trigger === 'return_restock') return 'Return restock';
+  if (trigger === 'problem_center') return 'Problem center';
+  return trigger.replace(/_/g, ' ');
+}
+
+/** STOW-UX-SCAN-RAIL-01 — visual shortening only; full LSU stays accessible
+ * via the `title` attribute on the element rendering this string. */
+function shortenLsu(lasyncroUnitId: string): string {
+  return lasyncroUnitId.length > 13
+    ? `${lasyncroUnitId.slice(0, 10)}…`
+    : lasyncroUnitId;
+}
+
+function formatPlacementTimestamp(occurredAt: string): string {
+  return new Date(occurredAt).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
 /**
  * STOW-SPLIT-01 — backend errors are diagnostic evidence, not operator copy.
@@ -271,13 +332,17 @@ function ScanInput({ hint, onSubmit, error, disabled = false }: {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function StowSessionPage({
   initialTaskId,
+  initialStep = null,
+  currentUserId = null,
   onComplete,
+  onActiveTaskChange,
   onFetchTasks,
   onResolveLocation,
   onAssignLocation,
   onClaimTask,
   onResolveBarcode,
   onConfirmStow,
+  onFetchPlacements,
 }: StowSessionPageProps) {
   const theme = useTheme();
 
@@ -332,7 +397,57 @@ export default function StowSessionPage({
   // Quantity-entry, shortfall and review state belonged to the retired bulk flow.
   const [remainingQty, setRemainingQty] = useState(0);
 
+  // STOW-UX-SCAN-RAIL-01 — the exact LSU just committed, for the rail's
+  // transient "✓ ITEM / ✓ REGISTERED" acknowledgement. Cleared at the start
+  // of the next scanner action alongside scanFeedback, so the two surfaces
+  // never disagree about whether a "just registered" state is showing.
+  const [lastConfirmedLsu, setLastConfirmedLsu] = useState<string | null>(null);
+
+  // STOW-UX-SCAN-RAIL-01 — current-bin activity trace, task-scoped. Read-only
+  // canonical projection; never locally fabricated (no optimistic rows).
+  const [placements, setPlacements] = useState<StowPlacement[]>([]);
+  const [placementsError, setPlacementsError] = useState<string | null>(null);
+
   const currentTask = tasks[currentIndex] ?? null;
+
+  // STOW-UX-SCAN-RAIL-01 — fetch canonical placements for the active task.
+  // A read failure here is a trace-outage, not an inventory-execution outage:
+  // it must never block or alter Stow scanning, only the activity panel.
+  const refreshPlacements = useCallback(async (taskId: string) => {
+    if (!onFetchPlacements) return;
+    try {
+      const rows = await onFetchPlacements(taskId);
+      setPlacements(rows);
+      setPlacementsError(null);
+    } catch (err: unknown) {
+      setPlacements([]);
+      setPlacementsError(
+        err instanceof Error ? err.message : 'Failed to load current-bin activity.'
+      );
+    }
+  }, [onFetchPlacements]);
+
+  // Task-scoped: refetch whenever the active task changes (including task
+  // advancement), so Task 1's activity never leaks into Task 2's panel.
+  useEffect(() => {
+    if (!currentTask) {
+      setPlacements([]);
+      setPlacementsError(null);
+      return;
+    }
+    void refreshPlacements(currentTask.stow_task_id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTask?.stow_task_id]);
+
+  // STOW-UX-SCAN-RAIL-01 / STOW-SESSION-TRANSITION-01 — parent adapters may
+  // be recreated during normal warehouse polling/rerenders. Keep the latest
+  // task-identity callback available without making callback identity a
+  // session-bootstrap dependency.
+  const onActiveTaskChangeRef = useRef(onActiveTaskChange);
+
+  useEffect(() => {
+    onActiveTaskChangeRef.current = onActiveTaskChange;
+  }, [onActiveTaskChange]);
 
   // ── Load tasks ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -340,7 +455,22 @@ export default function StowSessionPage({
       setLoading(true);
       try {
         const all = await onFetchTasks();
-        const active = all.filter(t => t.status === 'pending' || t.status === 'in_progress');
+        const active = all.filter((task) => {
+          if (task.status === 'pending') {
+            return (
+              task.stow_task_id === initialTaskId ||
+              task.assigned_operator_id == null ||
+              task.assigned_operator_id === currentUserId
+            );
+          }
+          if (task.status === 'in_progress') {
+            return (
+              task.stow_task_id === initialTaskId ||
+              task.claimed_by === currentUserId
+            );
+          }
+          return false;
+        });
         const tapped = active.find(t => t.stow_task_id === initialTaskId);
         const rest   = active.filter(t => t.stow_task_id !== initialTaskId);
         const ordered = tapped ? [tapped, ...rest] : active;
@@ -348,15 +478,38 @@ export default function StowSessionPage({
         setTasks(ordered);
 
         if (ordered.length > 0) {
+          const firstTask = ordered[0];
+
           // STOW-SPLIT-01 — resume from committed database progress. A partially
           // completed task must not revert to its original total quantity after
           // refresh, reconnect or Fast Refresh.
           setRemainingQty(
             Math.max(
-              ordered[0].quantity - ordered[0].quantity_placed,
+              firstTask.quantity - firstTask.quantity_placed,
               0
             )
           );
+
+          if (tapped?.status === 'in_progress') {
+            if (tapped.location_code) {
+              setConfirmedLocation(tapped.location_code);
+              setPlacedHereCount(tapped.quantity_placed);
+              setPhase('item_scan');
+              onActiveTaskChangeRef.current?.(tapped.stow_task_id, null);
+            } else {
+              setConfirmedLocation(null);
+              setSubmitError('Scan a bin barcode first, then scan the unit.');
+              setPhase('location_scan');
+            }
+          } else if (tapped?.status === 'pending' && initialStep === 'location') {
+            setConfirmedLocation(null);
+            setPlacedHereCount(0);
+            setPhase('location_scan');
+          } else {
+            setConfirmedLocation(null);
+            setPlacedHereCount(0);
+            setPhase('brief');
+          }
         }
       } catch (err: unknown) {
         // STOW-SPLIT-01 — session bootstrap failures must preserve the concrete
@@ -374,32 +527,84 @@ export default function StowSessionPage({
         setLoading(false);
       }
     })();
+  // STOW-SESSION-TRANSITION-01 — initialTaskId/initialStep are intentionally
+  // NOT dependencies here. They only need to drive bootstrap once, at the
+  // mount that starts a session for a given task; the parent's own
+  // component-identity rules guarantee a genuine new task selection remounts
+  // this component fresh (see WmsModuleFT2's `activeSession?.type === 'stow'`
+  // conditional render). Once mounted, advanceToNext() reports the new
+  // active task to the parent via onActiveTaskChange purely so the parent
+  // can persist identity (URL/activeSession) for REFRESH recovery — that
+  // parent-state sync then echoes back down as a changed initialTaskId prop
+  // on this already-mounted instance. Listing it as a dependency would
+  // re-run this whole fetch-and-reconstruct effect on every automatic
+  // advance, an extra "backend call merely for transition identity" that
+  // could also stomp the tasks array ordering out from under the currentIndex
+  // advanceToNext just set. currentUserId legitimately re-runs bootstrap
+  // (e.g. auth resolving after mount); when it does, the closure below still
+  // reads whatever initialTaskId/initialStep this render currently holds.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialTaskId]);
+  }, [currentUserId]);
 
   // ── Advance to next task ────────────────────────────────────────────────────
   const advanceToNext = useCallback(() => {
-  const next = currentIndex + 1;
-  if (next >= tasks.length) {
-    setPhase('complete');
-  } else {
+    const next = currentIndex + 1;
+
+    if (next >= tasks.length) {
+      setPhase('complete');
+      return;
+    }
+
+    const nextTask = tasks[next];
+
     setCurrentIndex(next);
-    // STOW-SPLIT-01 — a queued active task may already be partially placed.
-    // Auto-advance therefore reconstructs only its persisted remaining work
-    // instead of assuming its original task quantity is still outstanding.
+
     setRemainingQty(
       Math.max(
-        tasks[next].quantity - tasks[next].quantity_placed,
+        nextTask.quantity - nextTask.quantity_placed,
         0
       )
     );
 
-    // STOW-SPLIT-01 — the active bin is session-level state, not task-level
-    // state. Auto-advance therefore changes only the active task and its
-    // remaining count; no retired quantity/review state exists to reset.
-    setPhase('item_scan');
-  }
-}, [currentIndex, tasks]);
+    setScanFeedback(null);
+    setSubmitError(null);
+    setLastConfirmedLsu(null);
+
+    // STOW-SESSION-TRANSITION-01 — Task B (nextTask), not Task A, becomes the
+    // canonical active session identity the instant the session advances.
+    // Report it BEFORE relying on local phase state alone, so the parent's
+    // activeSession.taskId and the persisted URL never lag one task behind
+    // what this component is actually rendering. No claim or inventory
+    // mutation happens here — this call only carries identity/phase.
+
+    // STOW-UX-SCAN-RAIL-01 — destination is sticky only within one Stow task.
+    // A newly selected pending task must establish/scan its own destination.
+    // Never carry the previous task's confirmed bin into the next task.
+    if (nextTask.status === 'pending') {
+      setConfirmedLocation(null);
+      setPlacedHereCount(0);
+      setPhase('location_scan');
+      onActiveTaskChange?.(nextTask.stow_task_id, 'location');
+      return;
+    }
+
+    // A task already owned by this operator may resume from its persisted
+    // destination and committed progress.
+    if (nextTask.status === 'in_progress' && nextTask.location_code) {
+      setConfirmedLocation(nextTask.location_code);
+      setPlacedHereCount(nextTask.quantity_placed);
+      setPhase('item_scan');
+      onActiveTaskChange?.(nextTask.stow_task_id, null);
+      return;
+    }
+
+    // Defensive recovery for an impossible/incomplete in-progress state.
+    setConfirmedLocation(null);
+    setPlacedHereCount(nextTask.quantity_placed);
+    setSubmitError('Scan a bin barcode first, then scan the unit.');
+    setPhase('location_scan');
+    onActiveTaskChange?.(nextTask.stow_task_id, 'location');
+  }, [currentIndex, tasks, onActiveTaskChange]);
 
   // ── Node 1: Item scan ───────────────────────────────────────────────────────
   const handleItemScan = useCallback(async (scannedValue: string) => {
@@ -418,6 +623,7 @@ export default function StowSessionPage({
 
     setSubmitError(null);
     setScanFeedback(null);
+    setLastConfirmedLsu(null);
 
     // STOW-SPLIT-01 — every new scan starts with a clean feedback surface.
     // The previous success remains visible until this point, then this scan owns
@@ -429,22 +635,57 @@ export default function StowSessionPage({
     const resolvedLocation = await onResolveLocation(scannedValue);
 
     if (resolvedLocation?.location_code) {
-      const isPhysicalBinChange =
+      const isSameActiveLocation =
         Boolean(confirmedLocation) &&
-        resolvedLocation.location_code !== confirmedLocation;
+        resolvedLocation.location_code === confirmedLocation;
 
+      if (isSameActiveLocation) {
+        // STOW-ACTIVE-LOCATION-01 — re-scanning the already-active bin is a
+        // no-op: remain active, no unnecessary claim, no unnecessary
+        // location mutation.
+        setScanFeedback(null);
+        setPhase('item_scan');
+        return;
+      }
+
+      if (confirmedLocation) {
+        // STOW-ACTIVE-LOCATION-01 — supersedes the earlier "one Stow task =
+        // one immutable destination" rule. stow_tasks.location_code is now
+        // the CURRENT / STICKY destination: the claiming operator may switch
+        // it mid-task. This never rewrites where units already committed to
+        // the previous bin physically are — that exact history stays in
+        // inventory_movements / inventory_units.current_location_code and
+        // remains visible in the task-wide activity panel. Only units
+        // confirmed AFTER this point land at the new bin. Never call
+        // onClaimTask or onConfirmStow here — a bin switch alone must not
+        // claim again or commit any unit.
+        await onAssignLocation(
+          currentTask.stow_task_id,
+          resolvedLocation.location_code
+        );
+
+        setTasks(prev => prev.map((task, index) =>
+          index === currentIndex
+            ? { ...task, location_code: resolvedLocation.location_code }
+            : task
+        ));
+
+        setConfirmedLocation(resolvedLocation.location_code);
+        setScanFeedback({
+          severity: 'success',
+          message: `${resolvedLocation.location_code} is now active`,
+        });
+        setPhase('item_scan');
+        return;
+      }
+
+      // No active destination yet for this task — first bin scan
+      // establishes and claims it (unchanged pre-claim behavior).
       if (resolvedLocation.location_code !== currentTask.location_code) {
         await onAssignLocation(
           currentTask.stow_task_id,
           resolvedLocation.location_code
         );
-      }
-
-      // STOW-SPLIT-01 — placedHereCount describes the operator's physical active
-      // bin, not the task's persisted destination. Reset it only when the operator
-      // has actually scanned a different physical bin.
-      if (isPhysicalBinChange) {
-        setPlacedHereCount(0);
       }
 
       await onClaimTask(currentTask.stow_task_id);
@@ -460,6 +701,7 @@ export default function StowSessionPage({
       ));
 
       setConfirmedLocation(resolvedLocation.location_code);
+      onActiveTaskChange?.(currentTask.stow_task_id, null);
 
       // STOW-SPLIT-01 — the active-bin card is the authoritative destination state.
       // A physical bin switch already updates that card and resets placedHereCount,
@@ -589,10 +831,22 @@ export default function StowSessionPage({
       severity: 'success',
       message: `Unit placed · ${resolved.lasyncro_unit_id}`,
     });
+    // STOW-UX-SCAN-RAIL-01 — drives the rail's transient ✓ ITEM / ✓ REGISTERED
+    // acknowledgement; only ever set after onConfirmStow has already resolved.
+    setLastConfirmedLsu(resolved.lasyncro_unit_id);
 
     if (!confirmResult.is_fully_placed) {
       setRemainingQty(authoritativeRemaining);
       setSubmitError(null);
+
+      // Reload canonical placements so the current-bin activity panel
+      // reflects this commit — never an optimistic local row. Scoped to the
+      // "more units to go" branch only: when this confirm completes the
+      // task (else branch), advanceToNext changes currentTask.stow_task_id,
+      // which the task-scoped effect above already refetches for. Firing
+      // both here would race two concurrent fetches for two different task
+      // ids against the same setPlacements call.
+      void refreshPlacements(currentTask.stow_task_id);
 
       // Unit identity is scoped to this scanner event. Once the caller releases
       // the lock, the scanner is immediately ready for the next unit or bin.
@@ -615,6 +869,8 @@ export default function StowSessionPage({
   onClaimTask,
   onResolveBarcode,
   onConfirmStow,
+  onActiveTaskChange,
+  refreshPlacements,
 ]);
 
   // ── Node 2: Location scan ───────────────────────────────────────────────────
@@ -673,6 +929,7 @@ export default function StowSessionPage({
     ));
 
     setConfirmedLocation(resolved.location_code);
+    onActiveTaskChange?.(currentTask.stow_task_id, null);
     // STOW-SPLIT-01 — the active-bin card immediately reflects the newly scanned
     // destination and its reset placed-here count. Do not duplicate that state
     // with a second informational message below the scanner.
@@ -687,6 +944,7 @@ export default function StowSessionPage({
   onResolveLocation,
   onAssignLocation,
   onClaimTask,
+  onActiveTaskChange,
 ]);
 
   // STOW-SPLIT-01 — task position remains useful navigation context, but workflow
@@ -696,102 +954,236 @@ export default function StowSessionPage({
     ? `Stow ${currentIndex + 1} of ${tasks.length}`
     : '';
 
-  // STOW-SPLIT-01 — one physical visual anchor replaces abstract progress UI.
-  // A closed box means no destination is active. Once a bin is scanned, the box
-  // opens and stays open while that sticky bin is accepting units. Location,
-  // placed-here count, remaining work and the next scanner action all live here
-  // so those facts do not need to be repeated elsewhere on the session screen.
-  const activeBinCard = (
+  const nextAction =
+    phase === 'brief'
+      ? 'Review task'
+      : phase === 'location_scan'
+        ? 'Scan destination bin'
+        : phase === 'item_scan'
+          ? 'Scan item'
+          : 'Task complete';
+  const destinationLabel =
+    confirmedLocation ??
+    currentTask?.location_code ??
+    'Scan location';
+  const taskProgressLabel = currentTask
+    ? `${currentTask.quantity_placed} / ${currentTask.quantity}`
+    : '0 / 0';
+
+  const identityBanner = currentTask ? (
     <Paper
       variant="outlined"
       sx={{
         p: 2,
         mb: 2,
         borderRadius: '6px',
-        borderColor: confirmedLocation
-          ? theme.palette.success.main
-          : theme.palette.error.main,
-        bgcolor: confirmedLocation
-          ? alpha(theme.palette.success.main, 0.08)
-          : alpha(theme.palette.error.main, 0.06),
+        bgcolor: 'background.paper',
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(6, minmax(0, 1fr))' },
+        gap: 1,
       }}
     >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-        }}
-      >
-        <Box
-          sx={{
-            width: 48,
-            height: 48,
-            borderRadius: '6px',
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: confirmedLocation
-              ? alpha(theme.palette.success.main, 0.12)
-              : theme.palette.action.hover,
-            color: confirmedLocation
-              ? 'var(--good-ink)'
-              : 'var(--critical-ink)',
-          }}
-        >
-          {confirmedLocation ? (
-            <PackageOpen size={28} />
-          ) : (
-            <Package size={28} />
-          )}
+      {[
+        ['Source', triggerLabel(currentTask.trigger)],
+        ['Task', tasks.length > 1 ? `${currentIndex + 1} / ${tasks.length}` : '1 / 1'],
+        ['Item', currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'],
+        ['SKU', currentTask.sku ?? 'SKU unavailable'],
+        ['Progress', taskProgressLabel],
+        ['Destination', destinationLabel],
+      ].map(([label, value]) => (
+        <Box key={label} sx={{ minWidth: 0 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
+            {label}
+          </Typography>
+          <Typography variant="body2" noWrap sx={{ fontWeight: 650 }}>
+            {value}
+          </Typography>
         </Box>
-
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'baseline',
-              flexWrap: 'wrap',
-              gap: 0.75,
-            }}
-          >
-            <Typography variant="subtitle1" fontWeight={700}>
-              {confirmedLocation ?? 'No active bin'}
-            </Typography>
-
-            <Typography
-              variant="caption"
-              fontWeight={700}
-              sx={{
-                color: confirmedLocation
-                  ? 'var(--good-ink)'
-                  : 'var(--critical-ink)',
-              }}
-            >
-              {confirmedLocation ? 'ACTIVE' : 'INACTIVE'}
-            </Typography>
-          </Box>
-
-          {confirmedLocation ? (
-            <>
-              <Typography variant="body2" color="text.secondary">
-                {placedHereCount} placed here · {remainingQty} remaining
-              </Typography>
-
-              <Typography variant="caption" color="text.secondary">
-                Scan a unit, or scan another bin to move.
-              </Typography>
-            </>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Scan a bin barcode to begin.
-            </Typography>
-          )}
-        </Box>
+      ))}
+      <Box sx={{ minWidth: 0, gridColumn: { xs: '1 / -1', md: 'auto' } }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
+          Next
+        </Typography>
+        <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: 'var(--accent)' }}>
+          {nextAction}
+        </Typography>
       </Box>
     </Paper>
+  ) : null;
+
+  // STOW-UX-SCAN-RAIL-01 — LOCATION -> ITEM -> REGISTERED is the single
+  // primary execution rail. "items"/"complete" test ids are preserved
+  // exactly (StowSessionFocusUx.test.tsx already asserts on them) even
+  // though the visible copy now reads "Item" — the id is a stable contract,
+  // the label is presentation.
+  const justRegistered = Boolean(lastConfirmedLsu);
+  const hasStartedThisTask = Boolean(currentTask && currentTask.quantity_placed > 0);
+  const registeredMeta = justRegistered
+    ? `${currentTask?.product_title ?? currentTask?.sku ?? 'Item'} → ${confirmedLocation ?? ''}`
+    : phase === 'complete'
+      ? 'Task complete'
+      : currentTask
+        ? `${currentTask.quantity_placed} / ${currentTask.quantity} placed`
+        : 'Waiting';
+
+  const stageRail = (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 1.5,
+        mb: 2,
+        borderRadius: '6px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        gap: 1,
+        bgcolor: 'background.paper',
+      }}
+    >
+      {[
+        {
+          id: 'location',
+          label: 'Location',
+          meta: confirmedLocation ?? currentTask?.location_code ?? 'Scan destination',
+          state: (phase === 'brief' || phase === 'location_scan'
+            ? 'active'
+            : confirmedLocation
+              ? 'complete'
+              : 'pending') as 'active' | 'complete' | 'pending',
+          // Guidance only, never authoritative — the confirmed destination
+          // always wins once it exists.
+          pulse: (phase === 'brief' || phase === 'location_scan') && !confirmedLocation,
+        },
+        {
+          id: 'items',
+          label: 'Item',
+          meta: justRegistered
+            ? lastConfirmedLsu!
+            : phase === 'item_scan'
+              ? (hasStartedThisTask ? 'Scan next item' : 'Scan item')
+              : phase === 'complete'
+                ? 'Task complete'
+                : 'Waiting',
+          state: (justRegistered
+            ? 'complete'
+            : phase === 'item_scan'
+              ? 'active'
+              : phase === 'complete'
+                ? 'complete'
+                : 'pending') as 'active' | 'complete' | 'pending',
+          pulse: phase === 'item_scan' && !justRegistered,
+        },
+        {
+          id: 'complete',
+          label: 'Registered',
+          meta: registeredMeta,
+          // This must only ever flip to complete after onConfirmStow has
+          // actually resolved (justRegistered) — never on barcode
+          // recognition alone.
+          state: (justRegistered || phase === 'complete' ? 'complete' : 'pending') as 'active' | 'complete' | 'pending',
+          pulse: false,
+        },
+      ].map((stage) => {
+        const isComplete = stage.state === 'complete';
+        const isActive = stage.state === 'active';
+        return (
+          <Box
+            key={stage.id}
+            data-testid={`stow-stage-${stage.id}`}
+            data-state={stage.state}
+            sx={{
+              minWidth: 0,
+              p: 1,
+              borderRadius: '6px',
+              bgcolor: isActive
+                ? 'var(--accent-ghost)'
+                : isComplete
+                  ? alpha(theme.palette.success.main, 0.08)
+                  : 'transparent',
+              border: '0.5px solid',
+              borderColor: isActive
+                ? 'var(--accent-border)'
+                : isComplete
+                  ? theme.palette.success.main
+                  : 'var(--rule)',
+              animation: stage.pulse ? 'stowRailPulse 1.6s ease-in-out infinite' : 'none',
+              '@keyframes stowRailPulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.6 },
+              },
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 750,
+                color: isComplete
+                  ? 'var(--good-ink)'
+                  : isActive
+                    ? 'var(--accent)'
+                    : 'text.secondary',
+              }}
+            >
+              {isComplete ? '✓' : isActive ? '●' : '○'} {stage.label}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap title={stage.meta}>
+              {stage.meta}
+            </Typography>
+          </Box>
+        );
+      })}
+    </Paper>
   );
+
+  // STOW-UX-SCAN-RAIL-01 / STOW-ACTIVE-LOCATION-01 — the identity banner +
+  // rail already carry destination/progress state (see Section C: remove
+  // duplicated active UI). This panel exists to show something the rail does
+  // NOT: the canonical, server-committed history of everything registered by
+  // this task. Read-only, server-authoritative — never an optimistic local
+  // row, never a client-generated operator name or timestamp.
+  //
+  // STOW-ACTIVE-LOCATION-01 — this is task-wide, not current-bin-only: since
+  // the active destination is now mutable mid-task, a row placed at a bin
+  // the operator has since switched away from must still be shown here. The
+  // title is deliberately neutral (not "<bin> ACTIVE") because the rows
+  // below it may legitimately span more than one bin.
+  const currentBinActivity = confirmedLocation ? (
+    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: '6px' }} data-testid="stow-bin-activity">
+      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+        Stow activity · {placements.length} registered
+      </Typography>
+
+      {placementsError ? (
+        <Typography variant="caption" color="text.secondary">
+          Activity history is unavailable right now. Stow scanning is unaffected.
+        </Typography>
+      ) : placements.length === 0 ? (
+        <Typography variant="caption" color="text.secondary">
+          No units registered here yet.
+        </Typography>
+      ) : (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {placements.map((p) => (
+            <Box key={p.lasyncro_unit_id}>
+              <Typography variant="body2" fontWeight={600}>
+                ✓ {p.product_title ?? p.variant_title ?? p.sku ?? 'Item'} ·{' '}
+                <Box
+                  component="span"
+                  title={p.lasyncro_unit_id}
+                  sx={{ fontFamily: 'monospace' }}
+                >
+                  {shortenLsu(p.lasyncro_unit_id)}
+                </Box>{' '}
+                registered in {p.location_code}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                by {p.operator_name ?? 'Unknown operator'} · {formatPlacementTimestamp(p.occurred_at)}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Paper>
+  ) : null;
 
   // ── BRIEF ───────────────────────────────────────────────────────────────────
   if (phase === 'brief') {
@@ -810,14 +1202,25 @@ export default function StowSessionPage({
             <Box sx={{ mb: 3 }}>
               <Typography variant="h6" fontWeight={600}>Stow Session</Typography>
               <Typography variant="body2" color="text.secondary">
-                Review your tasks below, then start stowing.
+                Review the selected task, then scan a destination bin to claim it.
               </Typography>
             </Box>
+            {identityBanner}
+            {/* STOW-BRIEF-DECLUTTER-01 — the LOCATION/ITEM/REGISTERED
+                execution rail (stageRail) is active-execution UI and must
+                not render on Brief: execution has not started yet, so a box
+                showing "Location: active" / a pulsing scan target here would
+                lie about session state. identityBanner already carries the
+                pre-execution summary (source, task position, product, SKU,
+                progress, suggested destination); stageRail begins rendering
+                again once the operator actually starts/resumes (see the
+                location_scan / item_scan / complete phases below, all
+                unchanged). */}
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               {[
-                { label: 'SKUs',      value: tasks.length },
-                { label: 'Units',     value: tasks.reduce((s, t) => s + t.quantity, 0) },
-                { label: 'Locations', value: new Set(tasks.map(t => t.location_code).filter(Boolean)).size },
+                { label: 'Task',      value: `${currentIndex + 1}/${tasks.length}` },
+                { label: 'Units',     value: currentTask?.quantity ?? 0 },
+                { label: 'Remaining', value: remainingQty },
               ].map(({ label, value }) => (
                 <Paper key={label} variant="outlined" sx={{ flex: 1, p: 2, textAlign: 'center', borderRadius: 2 }}>
                   <Typography variant="h5" fontWeight={600} color="warning.main">{value}</Typography>
@@ -826,7 +1229,7 @@ export default function StowSessionPage({
               ))}
             </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
-              {tasks.map((t) => (
+              {(currentTask ? [currentTask] : []).map((t) => (
                 <Paper key={t.stow_task_id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     {t.image_url ? (
@@ -863,9 +1266,12 @@ export default function StowSessionPage({
                 color: 'var(--accent-ink)',
                 '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
               }}
-              onClick={() => setPhase('location_scan')}
+              onClick={() => {
+                if (currentTask) onActiveTaskChange?.(currentTask.stow_task_id, 'location');
+                setPhase('location_scan');
+              }}
             >
-              Start Stowing
+              {currentTask?.status === 'in_progress' ? 'Resume stowing' : 'Claim & start stowing'}
             </Button>
           </>
         )}
@@ -879,13 +1285,16 @@ export default function StowSessionPage({
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 4, textAlign: 'center', minHeight: 400 }}>
         <CheckCircle size={56} color={theme.palette.success.main} />
         <Typography variant="h5" fontWeight={600} sx={{ mt: 2 }}>Stow complete</Typography>
+        <Box sx={{ width: '100%', maxWidth: 720, mt: 2 }}>
+          {stageRail}
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 4 }}>
           {tasks.length} SKU{tasks.length !== 1 ? 's' : ''} stowed. Inventory updated.
         </Typography>
         <Button variant="contained" size="large"
           sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={onComplete}>
-          Back to operations
+          Exit Stow
         </Button>
       </Box>
     );
@@ -918,28 +1327,13 @@ if (phase === 'item_scan') {
           </Typography>
         </Box>
 
-        {/* STOW-SPLIT-01 — the open bin is the single visual anchor while this
-            sticky destination is accepting physical units. */}
-        {activeBinCard}
+        {identityBanner}
+        {stageRail}
 
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
-          {currentTask.image_url ? (
-            <Box component="img" src={currentTask.image_url} alt={currentTask.variant_title ?? ''}
-              sx={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 1, flexShrink: 0, border: `1px solid ${theme.palette.divider}` }} />
-          ) : (
-            <Box sx={{ width: 64, height: 64, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Package size={28} color={theme.palette.text.disabled} />
-            </Box>
-          )}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>{currentTask.product_title ?? currentTask.variant_title ?? '—'}</Typography>
-            {currentTask.sku && (
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
-                {currentTask.sku}
-              </Typography>
-            )}
-          </Box>
-        </Paper>
+        {/* STOW-UX-SCAN-RAIL-01 (Section C) — the separate large ACTIVE
+            destination card and the separate large product/action card were
+            removed: identityBanner already carries destination/item/SKU and
+            the rail already carries Location/Item/Registered state. */}
 
         <ScanInput
           hint="Scan item barcode (LSU- or product barcode)"
@@ -972,6 +1366,10 @@ if (phase === 'item_scan') {
             {submitError}
           </Alert>
         )}
+
+        <Box sx={{ mt: 2 }}>
+          {currentBinActivity}
+        </Box>
       </Box>
     );
   }
@@ -997,9 +1395,13 @@ if (phase === 'item_scan') {
           </Typography>
         </Box>
 
-        {/* STOW-SPLIT-01 — the closed box is sufficient instruction before the
-            first location scan; a second activation message would duplicate it. */}
-        {activeBinCard}
+        {identityBanner}
+        {stageRail}
+
+        {/* STOW-UX-SCAN-RAIL-01 — the rail already shows Location as
+            active/pending with a "Scan destination" prompt; no destination
+            is confirmed yet in this phase, so there is nothing for the
+            current-bin activity panel to show either. */}
 
         {/* STOW-SPLIT-01 — location is activated before any physical item scan.
             Do not show an item-confirmed state here: at this point no unit has been

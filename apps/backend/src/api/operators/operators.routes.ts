@@ -6,7 +6,9 @@ import {
   httpUpsertAvailability,
   httpGetTeamAvailability,
   httpGetTeamOperators,
+  httpGetReceiveAssignableOperators,
 } from './operators.controller.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 
 const router = Router();
 
@@ -29,5 +31,16 @@ router.get('/team-availability', authenticateToken, httpGetTeamAvailability);
  * GET /api/v1/operators/team
  */
 router.get('/team', authenticateToken, httpGetTeamOperators);
+
+/**
+ * Owner/admin fetches only operators eligible to execute the full Receive flow.
+ * GET /api/v1/operators/receive-assignees
+ */
+router.get(
+  '/receive-assignees',
+  authenticateToken,
+  requireAction('receive-job:assign'),
+  httpGetReceiveAssignableOperators
+);
 
 export default router;

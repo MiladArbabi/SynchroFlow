@@ -1,5 +1,6 @@
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { axiosInstance } from "api/axiosConfig";
 import { Box } from "@mui/material";
 import SidenavContent from "./SidenavContent";
@@ -30,6 +31,27 @@ const SIDENAV_WIDTH_COMPACT = 56;
 const AppLayout = (props: AppLayoutProps) => {
 
   const { phase } = useShopLifecycle();
+
+  /**
+   * WAREHOUSE-FOCUS-SHELL-01A — URL-backed execution-focus state.
+   * No React context: AppLayout derives focus directly from the current
+   * location's search params, so a hard refresh reconstructs the same
+   * shell state the URL already encodes, with nothing else to rehydrate.
+   *
+   * Valid only on /wms routes, and only when warehouseFocus names the
+   * matching session identity — a bare warehouseFocus param with no
+   * matching task/job id (e.g. a stale/edited URL) must not hide chrome
+   * for a session that isn't actually there.
+   */
+  const location = useLocation();
+  const isExecutionFocused = React.useMemo(() => {
+    if (!location.pathname.startsWith('/wms')) return false;
+    const params = new URLSearchParams(location.search);
+    const warehouseFocus = params.get('warehouseFocus');
+    if (warehouseFocus === 'stow') return Boolean(params.get('stowTaskId'));
+    if (warehouseFocus === 'receive') return Boolean(params.get('receiveJobId'));
+    return false;
+  }, [location.pathname, location.search]);
   const [isConnected, setIsConnected] = useState(false);
   const { trialEndsAt, tier } = useEntitlements();
   // Post-trial: trial ended within last 7 days and user is now on starter
@@ -129,25 +151,33 @@ const AppLayout = (props: AppLayoutProps) => {
     <ToastProvider>
       <Box sx={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", bgcolor: "var(--bg)" }}>
 
-        {/* TOP NAVBAR — full width, always on top */}
-        <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "0.5px solid var(--rule)", zIndex: 1200, display: "flex", alignItems: "center" }}>
-          <TopnavbarContent
-            isEditing={false}
-            onEditToggle={() => {}}
-            onAddWidget={() => {}}
-            onToggleSidenav={
-              isSidenavAllowed
-                ? () => setSidenavState(prev => prev === 'EXPANDED' ? 'COMPACT' : 'EXPANDED')
-                : () => { console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase }); }
-            }
-          />
-        </Box>
+        {/* TOP NAVBAR — full width, always on top. Hidden while an
+            operator is actively executing a Stow/Receive session
+            (WAREHOUSE-FOCUS-SHELL-01A) — presentation only, not an
+            authorization boundary. */}
+        {!isExecutionFocused && (
+          <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "0.5px solid var(--rule)", zIndex: 1200, display: "flex", alignItems: "center" }}>
+            <TopnavbarContent
+              isEditing={false}
+              onEditToggle={() => {}}
+              onAddWidget={() => {}}
+              onToggleSidenav={
+                isSidenavAllowed
+                  ? () => setSidenavState(prev => prev === 'EXPANDED' ? 'COMPACT' : 'EXPANDED')
+                  : () => { console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase }); }
+              }
+            />
+          </Box>
+        )}
 
         {/* BELOW TOPNAV — sidenav + content side by side */}
         <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
 
-          {/* SIDENAV — below topnav, full remaining height */}
-          {isSidenavAllowed && (
+          {/* SIDENAV — below topnav, full remaining height. Hidden while
+              execution-focused, same as the topnav above. Does not mutate
+              the saved sidenavState preference — it reappears exactly as
+              the operator left it once focus clears. */}
+          {isSidenavAllowed && !isExecutionFocused && (
             <Box
               sx={{
                 width: `${sidenavWidth}px`,

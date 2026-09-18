@@ -119,13 +119,17 @@ export default function WmsOperationsPage() {
   const { data: gridData } = useWarehouseGrid();
 
   const { user } = useAuth();
-  const userRole = user?.role ?? 'operator';
+  const userRole =
+    (user as { role?: string } | null)?.role ?? 'operator';
   const currentUserId =
     user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
   // RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only — backend
   // requireAction('wms:recount:reassign') is the real authority.
   const canReassignRecount = userRole === 'owner' || userRole === 'admin';
+  // STOW-LIFECYCLE-02: advisory UI gate only — backend
+  // requireAction('wms:stow:assign') is the real authority (see J).
+  const canAssignStow = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
     await axiosInstance.post(url, body);
@@ -149,7 +153,10 @@ export default function WmsOperationsPage() {
   const [pendingReceiveSession, setPendingReceiveSession] = useState<{
     receiveJobId: string;
     poId: string;
+    poNumber?: number | null;
     supplierName: string;
+    jobStatus?: string;
+    assignedOperatorId?: number | null;
     closedAt?: string | null;
     actualDeliveryDate?: string | null;
     lines: import('@lasyncro/wms').ReceiveJobLine[];
@@ -168,7 +175,10 @@ export default function WmsOperationsPage() {
         setPendingReceiveSession({
           receiveJobId,
           poId: result.job.po_id,
+          poNumber: result.job.po_number ?? null,
           supplierName: result.job.supplier_name,
+          jobStatus: result.job.status,
+          assignedOperatorId: result.job.assigned_operator_id ?? null,
           closedAt: result.job.closed_at ?? null,
           actualDeliveryDate: result.job.actual_delivery_date ?? null,
           lines: result.lines,
@@ -390,6 +400,12 @@ export default function WmsOperationsPage() {
     return data;
   }, []);
 
+  const handleClaimReceiveJob = useCallback(async (jobId: string) => {
+    await axiosInstance.post(
+      `/api/v1/suppliers/receive-jobs/${jobId}/claim`
+    );
+  }, []);
+
   const handleInspectReceiveLine = useCallback(async (
     jobId: string,
     params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }
@@ -455,6 +471,12 @@ export default function WmsOperationsPage() {
     return data.stow_tasks ?? [];
   }, []);
 
+  // STOW-UX-SCAN-RAIL-01 — canonical current-bin activity trace, task-scoped.
+  const handleFetchStowPlacements = useCallback(async (taskId: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/wms/stow-tasks/${taskId}/placements`);
+    return data.placements ?? [];
+  }, []);
+
   const handleResolveLocation = useCallback(async (scannedValue: string) => {
     try {
       const { data } = await axiosInstance.post('/api/v1/wms/location/resolve', {
@@ -469,6 +491,15 @@ export default function WmsOperationsPage() {
   const handleAssignStowLocation = useCallback(async (taskId: string, locationCode: string) => {
     await axiosInstance.patch(`/api/v1/wms/stow-tasks/${taskId}/location`, {
       location_code: locationCode,
+    });
+  }, []);
+
+  // STOW-LIFECYCLE-02: owner/admin optional dispatch. null clears
+  // assignment ("Make first one to claim"); the existing PATCH assignment
+  // route and wms:stow:assign permission are reused unchanged.
+  const handleAssignStowTask = useCallback(async (taskId: string, operatorId: number | null) => {
+    await axiosInstance.patch(`/api/v1/wms/stow-tasks/${taskId}/assignment`, {
+      assigned_operator_id: operatorId,
     });
   }, []);
 
@@ -673,6 +704,13 @@ export default function WmsOperationsPage() {
       readyToPackOrders={readyToPackQuery.data?.orders}
       readyToPackCount={readyToPackQuery.data?.orderCount}
       openReceiveJobCount={openReceiveJobs.length}
+      openReceiveJobs={openReceiveJobs}
+      onReceiveSessionEnter={(id) =>
+        setSearchParams(
+          { receiveJobId: id },
+          { replace: true }
+        )
+      }
       recountLocked={recountLocked}
       recountTasks={recountTasks}
       onRecountUpgrade={() => setRecountUpgradeOpen(true)}
@@ -697,10 +735,24 @@ export default function WmsOperationsPage() {
       onSetupBinsClick={handleSetupBinsClick}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
+      onClaimReceiveJob={handleClaimReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}
       onPersistReceiveLineProgress={handlePersistReceiveLineProgress}
       onReportReceiveException={handleReportReceiveException}
       onCloseReceiveJob={handleCloseReceiveJob}
+      // WAREHOUSE-FOCUS-SHELL-01A — ReceiveSessionPage reports focused
+      // (sessionPhase !== 'brief') for the exact job it's showing.
+      // receiveJobId is never removed here — only explicit session exit
+      // (onSessionExit above) clears it — so refresh recovery is preserved
+      // in both the focused and unfocused state.
+      onReceiveSessionFocusChange={(jobId, focused) =>
+        setSearchParams(
+          focused
+            ? { receiveJobId: jobId, warehouseFocus: 'receive' }
+            : { receiveJobId: jobId },
+          { replace: true }
+        )
+      }
       onClaimBatch={handleClaimBatch}
       onFetchLineItems={handleFetchLineItems}
       onResolveBarcode={handleResolveBarcode}
@@ -726,8 +778,27 @@ export default function WmsOperationsPage() {
       gridLocations={gridData?.locations}
       pendingReceiveSession={pendingReceiveSession}
       pendingStowTaskId={searchParams.get('stowTaskId')}
+      pendingStowStep={searchParams.get('stowStep') === 'location' ? 'location' : null}
       pendingReturnJobId={searchParams.get('returnJobId')}
+      // WAREHOUSE-FOCUS-SHELL-01A — opening a task writes stowTaskId ONLY.
+      // No warehouseFocus here: the Brief is pre-execution and keeps the
+      // normal application shell.
       onStowSessionEnter={(id) => setSearchParams({ stowTaskId: id }, { replace: true })}
+      // Any actual execution transition (reported via onActiveTaskChange in
+      // StowSessionPage, forwarded here as onStowSessionStepChange) adds
+      // warehouseFocus=stow so AppLayout hides topnav+sidenav. Fires on
+      // every step change — including the transition INTO execution, a
+      // same-task phase change, and Task A -> Task B auto-advance — so
+      // focus stays continuous exactly as long as an execution phase is
+      // reported, without introducing any state beyond the URL.
+      onStowSessionStepChange={(id, step) =>
+        setSearchParams(
+          step === 'location'
+            ? { stowTaskId: id, stowStep: 'location', warehouseFocus: 'stow' }
+            : { stowTaskId: id, warehouseFocus: 'stow' },
+          { replace: true }
+        )
+      }
       pendingPickBatchId={searchParams.get('batchId')}
       onPickSessionEnter={(id) => setSearchParams({ batchId: id }, { replace: true })}
       pendingPackBatchId={searchParams.get('packBatchId')}
@@ -738,8 +809,12 @@ export default function WmsOperationsPage() {
       onClaimStowTask={handleClaimStowTask}
       onConfirmStow={handleConfirmStow}
       onFetchStowTasks={handleFetchStowTasks}
+      onFetchStowPlacements={handleFetchStowPlacements}
       onResolveLocation={handleResolveLocation}
       onAssignStowLocation={handleAssignStowLocation}
+      canAssignStow={canAssignStow}
+      onFetchStowAssignees={handleFetchCountingAssignees}
+      onAssignStowTask={handleAssignStowTask}
       onFetchReturnJob={handleFetchReturnJob}
       onAddReturnLine={handleAddReturnLine}
       onProcessReturnLine={handleProcessReturnLine}

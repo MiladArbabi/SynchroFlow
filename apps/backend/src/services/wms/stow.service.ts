@@ -47,6 +47,7 @@ export interface CreateStowTaskInput {
   pickBatchId?: string;
   lasyncroOrderId?: string;
   poId?: string;                // populated when trigger = inbound_stock (FEAT-004)
+  receiveJobLineId?: string;    // exact Receive line for inbound_stock handoff
 }
 
 export interface StowConfirmInput {
@@ -55,6 +56,14 @@ export interface StowConfirmInput {
   claimedBy: number;
   quantityPlaced?: number;   // partial stow support
   lasyncroUnitId?: string;   // WEB-STOW-UNIT-01: LSU- unit ID resolved at scan time; optional for legacy fallback path
+}
+
+export interface AssignStowTaskInput {
+  stowTaskId: string;
+  shopId: number;
+  /** null clears assignment — task returns to "first one to claim" (STOW-LIFECYCLE-02). */
+  assignedOperatorId: number | null;
+  assignedBy: number;
 }
 
 export async function createStowTask(
@@ -70,7 +79,12 @@ export async function createStowTask(
     pickBatchId,
     lasyncroOrderId,
     poId,
+    receiveJobLineId,
   } = input;
+
+  if (trigger === 'inbound_stock' && !receiveJobLineId) {
+    throw new Error('[STOW_CREATE] INBOUND_RECEIVE_LINE_REQUIRED');
+  }
 
   const result = await trx('stow_tasks')
     .insert({
@@ -83,6 +97,7 @@ export async function createStowTask(
       trigger,
       pick_batch_id: pickBatchId ?? null,
       lasyncro_order_id: lasyncroOrderId ?? null,
+      receive_job_line_id: receiveJobLineId ?? null,
     })
     .returning('stow_task_id');
 
@@ -106,38 +121,159 @@ export async function claimStowTask(
   shopId: number,
   userId: number
 ): Promise<void> {
-  const task = await trx('stow_tasks')
-    .where({ stow_task_id: stowTaskId, shop_id: shopId })
-    .select('status', 'claimed_by', 'location_code')
-    .first();
-
-  if (!task) throw new Error(`[STOW_CLAIM] Task not found: ${stowTaskId}`);
-  // Allow operator to re-claim their own in-progress task (e.g. after navigating back)
-  if (task.status === 'in_progress' && task.claimed_by === userId) return;
-  if (task.status !== 'pending') throw new Error(`[STOW_CLAIM] Task not claimable: ${task.status}`);
-  if (!task.location_code) throw new Error(`[STOW_CLAIM] Cannot claim stow task without assigned location: ${stowTaskId}`);
-  if (task.claimed_by !== null) throw new Error('[STOW_CLAIM] Task already claimed');
-
-  const now = new Date();
-
-  await trx('stow_tasks')
-    .where({ stow_task_id: stowTaskId })
+  // STOW-LIFECYCLE-02: first-one-to-claim is the default. Assignment merely
+  // narrows eligibility — an unassigned (assigned_operator_id IS NULL) task
+  // is claimable by any eligible operator, same as one assigned to userId.
+  // One guarded UPDATE stays the sole ownership-transition write; no
+  // read-then-update gap between deciding eligibility and taking ownership.
+  const [claimed] = await trx('stow_tasks')
+    .where({
+      stow_task_id: stowTaskId,
+      shop_id: shopId,
+      status: 'pending',
+    })
+    .where((eligible) =>
+      eligible.whereNull('assigned_operator_id').orWhere('assigned_operator_id', userId)
+    )
+    .whereNull('claimed_by')
+    .whereNotNull('location_code')
+    // STOW-LEGACY-LINEAGE-01 — trigger='inbound_stock' MUST imply
+    // receive_job_line_id IS NOT NULL. Fold the guard directly into this
+    // one atomic UPDATE (rather than a read-before-update lineage check)
+    // so a legacy inbound row without lineage can never match and be
+    // claimed, with no race window between inspecting lineage and taking
+    // ownership. Grouped OR so non-inbound triggers (which legitimately
+    // have receive_job_line_id = NULL) are never accidentally excluded.
+    .where((lineage) =>
+      lineage.whereNot('trigger', 'inbound_stock').orWhereNotNull('receive_job_line_id')
+    )
     .update({
       status: 'in_progress',
       claimed_by: userId,
-      claimed_at: now,
-      updated_at: now,
-    });
+      claimed_at: trx.raw('NOW()'),
+      updated_at: trx.raw('NOW()'),
+    })
+    .returning(['stow_task_id', 'location_code']);
 
-  console.info('[STOW_TASK_CLAIMED]', { stowTaskId, userId, shopId });
-  await writeAuditLog(trx, {
-    shopId,
-    operatorId: userId,
-    actionType: 'stow_claim',
-    entityType: 'stow_task',
-    entityId: stowTaskId,
-    metadata: { location_code: task.location_code },
-  });
+  if (claimed) {
+    console.info('[STOW_TASK_CLAIMED]', { stowTaskId, userId, shopId });
+    await writeAuditLog(trx, {
+      shopId,
+      operatorId: userId,
+      actionType: 'stow_claim',
+      entityType: 'stow_task',
+      entityId: stowTaskId,
+      metadata: { location_code: claimed.location_code },
+    });
+    return;
+  }
+
+  const task = await trx('stow_tasks')
+    .where({ stow_task_id: stowTaskId, shop_id: shopId })
+    .select(
+      'status',
+      'claimed_by',
+      'assigned_operator_id',
+      'location_code',
+      'trigger',
+      'receive_job_line_id'
+    )
+    .first();
+
+  if (!task) throw new Error('[STOW_CLAIM] TASK_NOT_FOUND');
+
+  // STOW-LEGACY-LINEAGE-01 — enforced BEFORE the same-owner in_progress
+  // idempotent-success short circuit below, so an already-claimed legacy
+  // inbound task cannot "resume" through the claim contract either.
+  if (task.trigger === 'inbound_stock' && !task.receive_job_line_id) {
+    throw new Error('[STOW_CLAIM] INBOUND_RECEIVE_LINE_REQUIRED');
+  }
+
+  if (task.status === 'in_progress' && task.claimed_by === userId) return;
+  if (task.status !== 'pending') throw new Error('[STOW_CLAIM] TASK_NOT_CLAIMABLE');
+  if (!task.location_code) throw new Error('[STOW_CLAIM] LOCATION_REQUIRED');
+  if (task.assigned_operator_id !== null && task.assigned_operator_id !== userId) {
+    throw new Error('[STOW_CLAIM] TASK_ASSIGNED_TO_OTHER');
+  }
+  if (task.claimed_by !== null) throw new Error('[STOW_CLAIM] TASK_ALREADY_CLAIMED');
+
+  throw new Error('[STOW_CLAIM] TASK_CLAIM_CONFLICT');
+}
+
+export async function assignStowTask(
+  trx: Knex.Transaction,
+  input: AssignStowTaskInput
+): Promise<{
+  stow_task_id: string;
+  status: string;
+  assigned_operator_id: number | null;
+}> {
+  const current = await trx('stow_tasks')
+    .where({
+      stow_task_id: input.stowTaskId,
+      shop_id: input.shopId,
+    })
+    .first(
+      'stow_task_id',
+      'status',
+      'assigned_operator_id',
+      'claimed_by',
+      'claimed_at',
+      'trigger',
+      'receive_job_line_id'
+    );
+
+  if (!current) throw new Error('[STOW_ASSIGN] TASK_NOT_FOUND');
+  if (
+    current.status !== 'pending' ||
+    current.claimed_by !== null ||
+    current.claimed_at !== null
+  ) {
+    throw new Error('[STOW_ASSIGN] TASK_NOT_REASSIGNABLE');
+  }
+
+  // STOW-LEGACY-LINEAGE-01 — an owner/admin must not be able to dispatch an
+  // invalid legacy inbound task. Checked before any mutation, so a rejected
+  // assignment leaves the row untouched.
+  if (current.trigger === 'inbound_stock' && !current.receive_job_line_id) {
+    throw new Error('[STOW_ASSIGN] INBOUND_RECEIVE_LINE_REQUIRED');
+  }
+
+  const [updated] = await trx('stow_tasks')
+    .where({
+      stow_task_id: input.stowTaskId,
+      shop_id: input.shopId,
+      status: 'pending',
+    })
+    .whereNull('claimed_by')
+    .whereNull('claimed_at')
+    .update({
+      assigned_operator_id: input.assignedOperatorId,
+      updated_at: trx.raw('NOW()'),
+    })
+    .returning([
+      'stow_task_id',
+      'status',
+      'assigned_operator_id',
+    ]);
+
+  if (!updated) throw new Error('[STOW_ASSIGN] TASK_NOT_REASSIGNABLE');
+
+  if (current.assigned_operator_id !== input.assignedOperatorId) {
+    await writeAuditLog(trx, {
+      shopId: input.shopId,
+      operatorId: input.assignedBy,
+      actionType: 'stow_assign',
+      entityType: 'stow_task',
+      entityId: input.stowTaskId,
+      metadata: {
+        previous_assigned_operator_id: current.assigned_operator_id,
+        assigned_operator_id: input.assignedOperatorId,
+      },
+    });
+  }
+
+  return updated;
 }
 
 export async function confirmStow(
@@ -148,12 +284,26 @@ export async function confirmStow(
     quantityPlaced: number;
     quantityTotal: number;
     placedNow: number;
+    locationCode: string;
   }> {
   const { stowTaskId, shopId, claimedBy, quantityPlaced, lasyncroUnitId } = input;
 
   // 1. Validate task
+  //
+  // STOW-ACTIVE-LOCATION-01 — stow_tasks.location_code is now the CURRENT /
+  // STICKY destination, mutable by the claiming operator mid-task (see
+  // httpAssignStowLocation). A location switch and this confirmation must
+  // never race ambiguously: FOR UPDATE locks this row for the lifetime of
+  // the transaction, so a concurrent location switch (which also locks this
+  // row with FOR UPDATE before mutating) either already committed its new
+  // destination before this SELECT returns, or blocks until this whole
+  // confirm transaction commits/rolls back. `task` below is therefore a
+  // consistent snapshot — every truth mutation in this function must use
+  // `task.location_code` from THIS snapshot, never re-read the mutable
+  // column later.
   const task = await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId, shop_id: shopId })
+    .forUpdate()
     .select(
       'status',
       'claimed_by',
@@ -161,7 +311,8 @@ export async function confirmStow(
       'quantity',
       'location_code',
       'trigger',
-      'source_task_id'
+      'source_task_id',
+      'receive_job_line_id'
     )
     .first();
 
@@ -175,6 +326,10 @@ export async function confirmStow(
     const isInboundStock = task.trigger === 'inbound_stock';
 
     if (isInboundStock) {
+      if (!task.receive_job_line_id) {
+        throw new Error('[STOW_CONFIRM] INBOUND_RECEIVE_LINE_REQUIRED');
+      }
+
       if (!lasyncroUnitId) {
         throw new Error('[STOW_CONFIRM] INBOUND_LSU_REQUIRED');
       }
@@ -188,6 +343,7 @@ export async function confirmStow(
           shop_id: shopId,
           lasyncro_unit_id: lasyncroUnitId,
           lasyncro_variant_id: task.lasyncro_variant_id,
+          receive_job_line_id: task.receive_job_line_id,
           status: 'received',
         })
         .whereNull('current_location_code')
@@ -742,5 +898,96 @@ export async function confirmStow(
     quantityPlaced: updatedTask.quantity_placed,
     quantityTotal: updatedTask.quantity,
     placedNow,
+    // STOW-ACTIVE-LOCATION-01 — the exact destination THIS transaction
+    // committed to, taken from the FOR UPDATE-locked snapshot above. Callers
+    // (Shopify sync in particular) must use this instead of re-reading
+    // stow_tasks.location_code after the transaction, which may already
+    // reflect a later location switch.
+    locationCode: task.location_code,
   };
+}
+
+export interface StowTaskPlacement {
+  lasyncro_unit_id: string;
+  lasyncro_variant_id: string;
+  product_title: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  location_code: string;
+  operator_id: number | null;
+  operator_name: string | null;
+  occurred_at: Date;
+}
+
+/**
+ * STOW-UX-SCAN-RAIL-01 / STOW-ACTIVE-LOCATION-01 — canonical placement read
+ * projection.
+ *
+ * Read-only. Derives ONE logical placement event per successfully committed
+ * physical unit from the existing canonical ledger — never a second
+ * source-of-truth table.
+ *
+ * confirmStow (above) writes TWO inventory_movements rows per unit for an
+ * inbound_stock transfer: a debit (-1) at the ROOT source and a credit (+1)
+ * at the destination bin ACTIVE at the moment that unit was confirmed, both
+ * referencing the SAME inventory_units.id (reference_id). Selecting only
+ * quantity_delta = 1 rows keeps exactly the destination-arrival leg — the
+ * debit is never fetched, so there is no risk of surfacing one physical unit
+ * as two UI events.
+ *
+ * STOW-ACTIVE-LOCATION-01 superseded "one Stow task = one immutable
+ * destination": stow_tasks.location_code is now the CURRENT / STICKY active
+ * destination, not every unit's historical destination. This projection is
+ * therefore task-wide, not current-bin-only — it must NOT filter on
+ * task.location_code, or units already committed at a bin the operator has
+ * since switched away from would silently disappear from their own task's
+ * history. movement_type = 'location_transfer' and triggered_by = 'stow'
+ * scope the read to exactly the credit legs confirmStow's inbound path
+ * writes, so an ordinary positive inventory row from an unrelated flow
+ * cannot leak in merely by sharing a receive_job_line_id.
+ *
+ * Task correlation: inbound_stock is the only trigger with a
+ * receive_job_line_id (STOW-HANDOFF-01's exact Receive-line lineage), and
+ * that column is unique per stow task by construction — filtering
+ * inventory_units by it, rather than by task_id (no such column exists on
+ * inventory_movements), is the precise, existing-evidence-only correlation
+ * key. Non-inbound triggers (no receive_job_line_id) return an empty list
+ * here rather than a fabricated one.
+ */
+export async function getStowTaskPlacements(
+  trx: Knex.Transaction,
+  input: { shopId: number; stowTaskId: string }
+): Promise<StowTaskPlacement[]> {
+  const task = await trx('stow_tasks')
+    .where({ stow_task_id: input.stowTaskId, shop_id: input.shopId })
+    .first('receive_job_line_id');
+
+  if (!task) throw new Error('[STOW_PLACEMENTS] TASK_NOT_FOUND');
+  if (!task.receive_job_line_id) return [];
+
+  const rows = await trx('inventory_movements as im')
+    .join('inventory_units as iu', 'iu.id', 'im.reference_id')
+    .leftJoin('variants as v', 'v.lasyncro_variant_id', 'im.lasyncro_variant_id')
+    .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+    .leftJoin('users as u', 'u.id', 'im.operator_id')
+    .where('im.shop_id', input.shopId)
+    .where('im.reference_type', 'inventory_unit')
+    .where('im.quantity_delta', 1)
+    .where('im.movement_type', 'location_transfer')
+    .where('im.triggered_by', 'stow')
+    .where('iu.receive_job_line_id', task.receive_job_line_id)
+    .orderBy('im.occurred_at', 'asc')
+    .select(
+      'iu.lasyncro_unit_id',
+      'im.lasyncro_variant_id',
+      'p.title as product_title',
+      'v.title as variant_title',
+      'v.sku',
+      'im.location_code',
+      'im.operator_id',
+      trx.raw(`COALESCE(u.first_name || ' ' || COALESCE(u.last_name, ''), u.email) as operator_name`),
+      'im.occurred_at'
+    );
+
+  return rows as StowTaskPlacement[];
 }

@@ -4,6 +4,7 @@ import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middle
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
+import { requireReceiveJobOwner } from '../../middleware/require-receive-job-owner.middleware.js';
 import {
   httpGetSuppliers,
   httpCreateSupplier,
@@ -33,6 +34,7 @@ import {
   httpCreateReceiveJob,
   httpGetReceiveJob,
   httpClaimReceiveJob,
+  httpAssignReceiveJob,
   httpUpdateReceiveJobLineProgress,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
@@ -172,6 +174,10 @@ router.post(
   requireFt2,
   requireCapability('purchasing.core'),
   requireAction('receive-job:create'),
+  // Dispatch authority is deliberately separate from execution authority.
+  // Existing shops may retain historical receive-job:create permission rows,
+  // so the new immutable assignment action is the hard owner/admin boundary.
+  requireAction('receive-job:assign'),
   httpCreateReceiveJob
 );
 router.get(
@@ -191,11 +197,20 @@ router.post(
   httpClaimReceiveJob
 );
 router.patch(
+  '/receive-jobs/:jobId/assignment',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:assign'),
+  httpAssignReceiveJob
+);
+router.patch(
   '/receive-jobs/:jobId/lines/:lineId/progress',
   authenticateToken,
   requireFt2,
   requireCapability('purchasing.core'),
   requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
   httpUpdateReceiveJobLineProgress
 );
 router.post(
@@ -204,6 +219,7 @@ router.post(
   requireFt2,
   requireCapability('purchasing.core'),
   requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
   httpInspectReceiveJobLine
 );
 router.post(
@@ -212,6 +228,7 @@ router.post(
   requireFt2,
   requireCapability('purchasing.core'),
   requireAction('receive-job:close'),
+  requireReceiveJobOwner,
   httpCloseReceiveJob
 );
 
@@ -221,6 +238,7 @@ router.post(
   requireFt2,
   requireCapability('purchasing.core'),
   requireAction('receive-job:exception'),
+  requireReceiveJobOwner,
   httpReportReceiveException
 );
 

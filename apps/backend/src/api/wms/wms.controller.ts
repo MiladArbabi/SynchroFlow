@@ -49,8 +49,10 @@ import {
   PACK_QUANTITY_EXCEEDS_PICK_EVIDENCE,
 } from '../../services/wms/packEligibility.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
-import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
+import { createStowTask, claimStowTask, confirmStow, assignStowTask, getStowTaskPlacements } from '../../services/wms/stow.service.js';
 import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
+import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 import {
   firePickExceptionAlert,
   fireStowTaskAlert,
@@ -78,6 +80,57 @@ import {
   type BillingUsageNotificationIntent,
 } from '../../services/billing/billingUsageThreshold.service.js';
 import { dispatchNotification } from '../../services/notifications/notificationDispatch.service.js';
+
+async function assertStowAssignee(
+  shopId: number,
+  dispatcherUserId: number,
+  assignedOperatorId: unknown
+): Promise<number> {
+  if (
+    assignedOperatorId == null ||
+    !Number.isInteger(Number(assignedOperatorId)) ||
+    Number(assignedOperatorId) <= 0
+  ) {
+    throw Object.assign(new Error('INVALID_STOW_ASSIGNEE'), {
+      statusCode: 400,
+    });
+  }
+
+  const userId = Number(assignedOperatorId);
+  const context = await resolveShopContextForUser(userId);
+
+  if (
+    !context ||
+    context.shopId !== shopId ||
+    (
+      context.role !== 'operator' &&
+      userId !== dispatcherUserId
+    )
+  ) {
+    throw Object.assign(new Error('INVALID_STOW_ASSIGNEE'), {
+      statusCode: 400,
+    });
+  }
+
+  const stowExecutionActions = [
+    'wms:stow:claim',
+    'wms:stow:confirm',
+  ] as const;
+
+  const permissionDecisions = await Promise.all(
+    stowExecutionActions.map((action) =>
+      isActionAllowed(shopId, action, context.role)
+    )
+  );
+
+  if (!permissionDecisions.every(Boolean)) {
+    throw Object.assign(new Error('INVALID_STOW_ASSIGNEE'), {
+      statusCode: 400,
+    });
+  }
+
+  return userId;
+}
 
 class ShippedOrderCapReachedError extends Error {
   constructor(
@@ -2249,6 +2302,21 @@ export const httpConfirmShipment = async (req: Request, res: Response) => {
   }
 };
 
+// STOW-LEGACY-LINEAGE-01 — one stable operational error/status shared by the
+// claim, assignment, and location routes for a legacy inbound Stow task
+// missing Receive lineage. Factual, no internal detail; 409 (a state/
+// precondition conflict), never 500.
+const STOW_INBOUND_LINEAGE_ERROR_CODE = 'STOW_INBOUND_RECEIVE_LINE_REQUIRED';
+const STOW_INBOUND_LINEAGE_ERROR_MESSAGE =
+  'This inbound Stow task is missing Receive lineage and cannot be executed.';
+
+function respondStowInboundLineageRequired(res: Response) {
+  return res.status(409).json({
+    error: STOW_INBOUND_LINEAGE_ERROR_MESSAGE,
+    code: STOW_INBOUND_LINEAGE_ERROR_CODE,
+  });
+}
+
 // ─────────────────────────────────────────
 // GET /api/v1/wms/stow-tasks
 // ─────────────────────────────────────────
@@ -2263,8 +2331,25 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
       return trx('stow_tasks as st')
         .leftJoin('variants as v', 'v.lasyncro_variant_id', 'st.lasyncro_variant_id')
         .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .leftJoin('users as au', 'au.id', 'st.assigned_operator_id')
         .where('st.shop_id', shopId)
         .whereIn('st.status', ['pending', 'in_progress'])
+        // STOW-LEGACY-LINEAGE-01 — the canonical rule is
+        // trigger='inbound_stock' MUST imply receive_job_line_id IS NOT
+        // NULL. Legacy inbound rows written before that lineage was
+        // required may still exist for historical/audit purposes, but this
+        // endpoint is the active EXECUTION projection: an inbound row
+        // without lineage can never be claimed, assigned, located, or
+        // confirmed (see claimStowTask/assignStowTask/httpAssignStowLocation
+        // /confirmStow), so it must never be offered as executable work in
+        // the first place. Grouped OR form so a non-inbound task (which
+        // legitimately has receive_job_line_id = NULL) can never be
+        // accidentally excluded by this predicate.
+        .where((qb) =>
+          qb
+            .whereNot('st.trigger', 'inbound_stock')
+            .orWhereNotNull('st.receive_job_line_id')
+        )
         .orderBy('st.created_at', 'asc')
         .select(
           'st.stow_task_id',
@@ -2280,9 +2365,11 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'st.status',
           'st.trigger',
           'st.pick_batch_id',
+          'st.assigned_operator_id',
           'st.claimed_by',
           'st.claimed_at',
           'st.created_at',
+          trx.raw(`COALESCE(au.first_name || ' ' || COALESCE(au.last_name, ''), au.email) as assigned_operator_name`),
           'v.title as variant_title',
           'v.sku',
           'v.image_url',
@@ -2301,6 +2388,15 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           // stow.service.ts confirmStow (picked + NULL location). Kept in SQL
           // rather than widening barcodeResolution.service.ts, which is shared
           // by receive and pick and must not surface picked units globally.
+          //
+          // STOW-LEGACY-LINEAGE-01 — inbound_stock must scope candidate units
+          // to the EXACT Receive line that owns the task
+          // (inventory_units.receive_job_line_id = st.receive_job_line_id),
+          // not merely "any received unit of this variant, shop-wide". Two
+          // Receive lines for the same variant each produce their own
+          // received LSUs; without this scope, Task A (line A) could surface
+          // line B's sibling units as expected LSUs. order_cancelled_mid_pick
+          // keeps its existing specific-unit contract unchanged.
           trx.raw(`
             (SELECT array_agg(iu.lasyncro_unit_id ORDER BY iu.received_at)
              FROM (
@@ -2311,6 +2407,9 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
                AND CASE
                      WHEN st.trigger = 'order_cancelled_mid_pick'
                        THEN status = 'picked' AND current_location_code IS NULL
+                     WHEN st.trigger = 'inbound_stock'
+                       THEN status = 'received'
+                         AND receive_job_line_id = st.receive_job_line_id
                      ELSE status = 'received'
                    END
                LIMIT st.quantity
@@ -2374,11 +2473,76 @@ export const httpCreateStowTask = async (req: Request, res: Response) => {
   }
 };
 
-// ISSUE-003/FEAT-004: Assigns a location to a pending stow task created without one.
-// Required before an operator can claim an inbound_stock stow task (location unknown at creation).
+// ─────────────────────────────────────────
+// PATCH /api/v1/wms/stow-tasks/:taskId/assignment
+// ─────────────────────────────────────────
+export const httpAssignStowTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const assignedBy = req.user?.userId;
+  if (!shopId || !assignedBy) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+  const { assigned_operator_id } = req.body ?? {};
+  if (!taskId) return res.status(400).json({ error: 'taskId is required' });
+
+  try {
+    const task = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      // STOW-LIFECYCLE-02: explicit null is "return to shared pool", not an
+      // invalid operator — never routed through assertStowAssignee.
+      const assignedOperatorId =
+        assigned_operator_id === null
+          ? null
+          : await assertStowAssignee(shopId, assignedBy, assigned_operator_id);
+
+      return assignStowTask(trx, {
+        stowTaskId: taskId,
+        shopId,
+        assignedOperatorId,
+        assignedBy,
+      });
+    });
+
+    return res.status(200).json({ stow_task: task });
+  } catch (error: any) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (error?.statusCode === 400 || message.includes('INVALID_STOW_ASSIGNEE')) {
+      return res.status(400).json({ error: 'INVALID_STOW_ASSIGNEE' });
+    }
+    if (message.includes('TASK_NOT_FOUND')) {
+      return res.status(404).json({ error: 'Stow task not found' });
+    }
+    if (message.includes('INBOUND_RECEIVE_LINE_REQUIRED')) {
+      return respondStowInboundLineageRequired(res);
+    }
+    if (message.includes('TASK_NOT_REASSIGNABLE')) {
+      return res.status(409).json({ error: 'STOW_TASK_NOT_REASSIGNABLE' });
+    }
+    console.error('[WMS_STOW_ASSIGN_FAILED]', { shopId, assignedBy, taskId, error: message });
+    return res.status(500).json({ error: 'Failed to assign stow task' });
+  }
+};
+
+// ISSUE-003/FEAT-004 / STOW-ACTIVE-LOCATION-01: Establishes or switches the
+// CURRENT / STICKY active destination of a stow task.
+//
+// Two valid states:
+//   1. PENDING / PRE-CLAIM — establish/change the destination before claim
+//      (original ISSUE-003/FEAT-004 behavior, unchanged).
+//   2. IN_PROGRESS / CLAIMED — the CLAIMING operator may switch the active
+//      destination mid-task. This does NOT rewrite where already-committed
+//      units physically are: their exact destination remains permanently in
+//      inventory_movements / inventory_units.current_location_code. Only the
+//      task's current/most-recently-activated destination changes, and only
+//      units confirmed AFTER the switch land at the new bin.
+//
+// STOW-ACTIVE-LOCATION-01 / Section C: FOR UPDATE locks the SAME stow_tasks
+// row confirmStow locks, so a location switch and an in-flight confirmation
+// serialize rather than racing ambiguously.
 export async function httpAssignStowLocation(req: Request, res: Response) {
   const shopId = req.user?.shopId;
-  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
   const taskId = req.params.taskId as string;
   const { location_code } = req.body;
@@ -2395,11 +2559,41 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
 
     const task = await trx('stow_tasks')
       .where({ stow_task_id: taskId, shop_id: shopId })
-      .whereIn('status', ['pending', 'in_progress'])
-      .select('trigger', 'source_task_id')
+      .forUpdate()
+      .select('trigger', 'source_task_id', 'status', 'claimed_by', 'claimed_at', 'location_code', 'receive_job_line_id')
       .first();
 
-    if (!task) throw new Error('Stow task not found or not assignable');
+    if (!task) throw new Error('STOW_LOCATION_TASK_NOT_FOUND');
+
+    const isPendingPreClaim =
+      task.status === 'pending' && task.claimed_by === null && task.claimed_at === null;
+
+    // STOW-ACTIVE-LOCATION-01 — the claiming operator, and only the claiming
+    // operator, may switch an in-progress task's active destination.
+    const isInProgressClaimedSwitch = task.status === 'in_progress' && task.claimed_by !== null;
+
+    if (!isPendingPreClaim && !isInProgressClaimedSwitch) {
+      // Covers completed tasks and any other non-reassignable state —
+      // reject, zero mutation.
+      throw new Error('STOW_LOCATION_NOT_REASSIGNABLE');
+    }
+
+    if (isInProgressClaimedSwitch && task.claimed_by !== userId) {
+      // Different operator — reject, zero mutation.
+      throw new Error('STOW_LOCATION_WRONG_OPERATOR');
+    }
+
+    // STOW-LEGACY-LINEAGE-01 — a legacy inbound task without Receive
+    // lineage may never receive/change a destination, whether it is still
+    // pending or already claimed/in_progress. Checked before both the
+    // location-existence lookup and the same-location idempotent return
+    // below, so a stale legacy row can never mutate location_code by any
+    // path through this handler. Does not weaken the ownership/state
+    // guards above — those still run first and take priority for their own
+    // rejection reasons (wrong operator, non-reassignable state).
+    if (task.trigger === 'inbound_stock' && !task.receive_job_line_id) {
+      throw new Error('STOW_INBOUND_RECEIVE_LINE_REQUIRED');
+    }
 
     const location = await trx('warehouse_locations')
     .where({ shop_id: shopId, location_code: destination })
@@ -2432,19 +2626,61 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
       }
     }
 
-      await trx('stow_tasks')
-        .where({ stow_task_id: taskId, shop_id: shopId })
-        .whereIn('status', ['pending', 'in_progress'])
-        .update({ location_code: destination, updated_at: new Date() });
+    // Same active destination — idempotent success, no destructive side
+    // effect. Validation above (location exists, re-stow guards) still ran.
+    if (task.location_code === destination) {
+      return;
+    }
+
+      const updateQuery = trx('stow_tasks').where({
+        stow_task_id: taskId,
+        shop_id: shopId,
+        status: task.status,
+      });
+
+      if (isPendingPreClaim) {
+        updateQuery.whereNull('claimed_by').whereNull('claimed_at');
+      } else {
+        // IN_PROGRESS switch — ownership already verified above. The guard
+        // here re-asserts it inside the same guarded UPDATE so status/
+        // claimed_by cannot have changed between the SELECT ... FOR UPDATE
+        // and this write.
+        updateQuery.where('claimed_by', userId);
+      }
+
+      const updated = await updateQuery.update({
+        location_code: destination,
+        updated_at: new Date(),
+      });
+
+      if (updated !== 1) {
+        throw new Error('STOW_LOCATION_NOT_REASSIGNABLE');
+      }
     });
 
-    console.info('[STOW_LOCATION_ASSIGNED]', { shopId, taskId, location_code });
+    console.info('[STOW_LOCATION_ASSIGNED]', { shopId, userId, taskId, location_code });
     return res.json({ success: true });
     } catch (err: unknown) {
     const message = getErrorMessage(err);
 
     if (message === 'LOCATION_NOT_FOUND') {
       return res.status(404).json({ error: 'Location not found' });
+    }
+
+    if (message === 'STOW_LOCATION_TASK_NOT_FOUND') {
+      return res.status(404).json({ error: 'Stow task not found' });
+    }
+
+    if (message === 'STOW_LOCATION_NOT_REASSIGNABLE') {
+      return res.status(409).json({ error: 'STOW_LOCATION_NOT_REASSIGNABLE' });
+    }
+
+    if (message === 'STOW_LOCATION_WRONG_OPERATOR') {
+      return res.status(403).json({ error: 'Stow task owned by different operator' });
+    }
+
+    if (message === STOW_INBOUND_LINEAGE_ERROR_CODE) {
+      return respondStowInboundLineageRequired(res);
     }
 
     if (message === 'INVALID_RESTOW_DESTINATION') {
@@ -2493,6 +2729,13 @@ export const httpClaimStowTask = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
     if (message.includes('already claimed')) return res.status(409).json({ error: 'Stow task already claimed' });
+    // STOW-LEGACY-LINEAGE-01 — checked before the generic 'not claimable'
+    // fallback below (claimStowTask throws this same INBOUND_RECEIVE_LINE_
+    // REQUIRED error for a legacy pending task and for an already-claimed
+    // one attempting to resume, so this one check covers both).
+    if (message.includes('INBOUND_RECEIVE_LINE_REQUIRED')) {
+      return respondStowInboundLineageRequired(res);
+    }
     if (message.includes('not claimable')) return res.status(409).json({ error: `Stow task not claimable: ${message}` });
     console.error('[WMS_STOW_CLAIM_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Stow claim failed: ${message}` });
@@ -2657,16 +2900,26 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     // CASCADE: Sync stowed quantity to Shopify OUTSIDE transaction —
     // external HTTP call must not hold DB connection open.
     // Failure is logged but does not fail the stow confirmation.
+    //
+    // STOW-ACTIVE-LOCATION-01 — stow_tasks.location_code is now mutable
+    // post-commit (the operator may switch the active destination the
+    // instant after this transaction commits). Re-reading it here would race:
+    // by the time this query runs, the task may already point at a
+    // DIFFERENT bin than the one this confirm actually committed the unit
+    // to, and Shopify would receive the wrong location for this delta. Only
+    // variant identity is read post-transaction; the destination comes
+    // exclusively from confirmResult.locationCode, the exact FOR UPDATE-
+    // locked destination this transaction used.
     const stowedTask = await db('stow_tasks')
       .where({ stow_task_id: taskId, shop_id: shopId })
-      .select('lasyncro_variant_id', 'location_code')
+      .select('lasyncro_variant_id')
       .first();
 
-    if (stowedTask?.lasyncro_variant_id && stowedTask?.location_code) {
+    if (stowedTask?.lasyncro_variant_id && confirmResult.locationCode) {
       syncStowedQuantityToShopify(db as any, {
         shopId,
         lasyncroVariantId: stowedTask.lasyncro_variant_id,
-        locationCode: stowedTask.location_code,
+        locationCode: confirmResult.locationCode,
 
         // STOW-SPLIT-01 — each confirm moves exactly the physical units committed
         // by this transaction. Using the task total here would double-count a task
@@ -2699,6 +2952,13 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
         if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });
         if (message.includes('different operator')) return res.status(403).json({ error: 'Stow task owned by different operator' });
+        // STOW-LEGACY-LINEAGE-01 — confirmStow already fails closed with
+        // INBOUND_RECEIVE_LINE_REQUIRED (preserved, unweakened). Map it to
+        // the same stable 409 contract as claim/assignment/location rather
+        // than falling through to the generic 500 below.
+        if (message.includes('INBOUND_RECEIVE_LINE_REQUIRED')) {
+          return respondStowInboundLineageRequired(res);
+        }
         if (message.includes('Insufficient source stock')) {
           return res.status(409).json({ error: 'Insufficient stock at stow source' });
         }
@@ -2707,6 +2967,35 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         }
         console.error('[WMS_STOW_CONFIRM_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Stow confirmation failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/stow-tasks/:taskId/placements
+// STOW-UX-SCAN-RAIL-01 — read-only canonical placement projection for the
+// active-bin activity trace. Never mutates state.
+// ─────────────────────────────────────────
+export const httpGetStowTaskPlacements = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+  if (!taskId) return res.status(400).json({ error: 'taskId is required' });
+
+  try {
+    const placements = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return getStowTaskPlacements(trx, { shopId, stowTaskId: taskId });
+    });
+
+    return res.status(200).json({ placements });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    if (message.includes('TASK_NOT_FOUND')) {
+      return res.status(404).json({ error: 'Stow task not found' });
+    }
+    console.error('[WMS_STOW_PLACEMENTS_FAILED]', { shopId, taskId, error: message });
+    return res.status(500).json({ error: 'Failed to load stow task placements' });
   }
 };
 
@@ -4342,9 +4631,16 @@ export const httpScanResolve = async (req: Request, res: Response) => {
             'it.available_quantity',
           );
 
+        // STOW-LEGACY-LINEAGE-01 — this count means "executable active Stow
+        // work at this bin"; a legacy inbound row without Receive lineage
+        // can never actually be worked (see claimStowTask et al.), so it
+        // must not inflate an operational count an operator will act on.
         const activeSowTasks = await trx('stow_tasks')
           .where({ shop_id: shopId, location_code: location.location_code })
           .whereIn('status', ['pending', 'in_progress'])
+          .where((qb) =>
+            qb.whereNot('trigger', 'inbound_stock').orWhereNotNull('receive_job_line_id')
+          )
           .count('* as count')
           .first();
 
@@ -4406,10 +4702,17 @@ export const httpScanResolve = async (req: Request, res: Response) => {
           .select('pb.pick_batch_id', 'pb.status')
           .first();
 
-        // Active stow task
+        // Active stow task — STOW-LEGACY-LINEAGE-01: excludes a legacy
+        // inbound row without Receive lineage. This drives the 'stow_pending'
+        // /'stowing' stage derivation below and the active_stow field an
+        // operator would act on; an unexecutable legacy row must not be
+        // reported as the shop's active Stow work for this variant.
         const activeStow = await trx('stow_tasks')
           .where({ shop_id: shopId, lasyncro_variant_id: lasyncroVariantId })
           .whereIn('status', ['pending', 'in_progress'])
+          .where((qb) =>
+            qb.whereNot('trigger', 'inbound_stock').orWhereNotNull('receive_job_line_id')
+          )
           .select('stow_task_id', 'status', 'location_code', 'quantity')
           .first();
 

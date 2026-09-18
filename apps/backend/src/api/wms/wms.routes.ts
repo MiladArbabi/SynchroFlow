@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
+import { requireReceiveJobOwnerFromLine } from '../../middleware/require-receive-job-owner.middleware.js';
 import { requireTier, requireCapability } from '../../middleware/require-entitlement.middleware.js';
 import {
   httpGetBatches,
@@ -25,7 +26,8 @@ import {
   httpGetStowTasks,
   httpClaimStowTask,
   httpConfirmStow,
-  httpCreateStowTask,
+  httpGetStowTaskPlacements,
+  httpAssignStowTask,
   httpAssignStowLocation,
   httpGetPackingSlipUrl,
   httpGetOrderInvoice,
@@ -216,6 +218,16 @@ router.get(
   requireAction('wms:read'),
   httpGetStowTasks
 );
+// STOW-UX-SCAN-RAIL-01 — read-only canonical placement trace for the active
+// Stow session's current-bin activity panel.
+router.get(
+  '/stow-tasks/:taskId/placements',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:read'),
+  httpGetStowTaskPlacements
+);
 router.post(
   '/pack/scan',
   authenticateToken,
@@ -311,14 +323,6 @@ router.post(
   httpConfirmShipment
 );
 router.post(
-  '/stow-tasks',
-  authenticateToken,
-  requireFt2,
-  requireCapability('warehouse.operations'),
-  requireAction('wms:stow:location'),
-  httpCreateStowTask
-);
-router.post(
   '/stow-tasks/:taskId/claim',
   authenticateToken,
   requireFt2,
@@ -333,6 +337,15 @@ router.post(
   requireCapability('warehouse.operations'),
   requireAction('wms:stow:confirm'),
   httpConfirmStow
+);
+
+router.patch(
+  '/stow-tasks/:taskId/assignment',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:stow:assign'),
+  httpAssignStowTask
 );
 
 router.patch(
@@ -654,6 +667,7 @@ router.post(
   requireFt2,
   requireCapability('warehouse.operations'),
   requireAction('receive-job:inspect'),
+  requireReceiveJobOwnerFromLine,
   httpAcknowledgeUnitLabelsPrinted
 );
 router.get(

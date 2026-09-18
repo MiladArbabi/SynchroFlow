@@ -29,9 +29,24 @@ import type {
 type FetchSourcingWorklist = SuppliersPortalPageProps['onFetchSourcingWorklist'];
 type SourcingWorklistParams = Parameters<FetchSourcingWorklist>[0];
 type SourcingWorklistResult = Awaited<ReturnType<FetchSourcingWorklist>>;
+
+type ReceiveTeamMember = {
+  user_id: number;
+  first_name: string | null;
+  last_name: string | null;
+  role: string;
+};
+
+type ExistingReceiveJob = {
+  receive_job_id: string;
+  status: string;
+  assigned_operator_id: number | null;
+  started_at: string | null;
+};
 import { useSuppliersPortal } from '../suppliers-portal/useSuppliersPortal';
 import { isAxiosError } from 'axios';
 import { axiosInstance } from 'api/axiosConfig';
+import { useAuth } from 'contexts/AuthContext';
 
 /**
  * SUPPLIERS PORTAL GATE PAGE
@@ -43,7 +58,44 @@ import { axiosInstance } from 'api/axiosConfig';
  */
 export default function SuppliersPortalPage() {
   const { data, isLoading, isError, refetch } = useSuppliersPortal();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const currentUserId =
+    user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
+  const currentUserRole =
+    (user as { role?: string } | null)?.role ?? 'operator';
+
+  const receiveTeam = useQuery<{ operators: ReceiveTeamMember[] }>({
+    queryKey: ['operators', 'team'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/operators/receive-assignees');
+      return data;
+    },
+    enabled:
+      currentUserId != null &&
+      (currentUserRole === 'owner' || currentUserRole === 'admin'),
+    staleTime: 5 * 60_000,
+  });
+
+  // GH-1109: assignment choices are deliberately narrow:
+  // authenticated dispatcher ("Me") + warehouse operators.
+  // Other owners/admins are not presented as generic assignment targets.
+  const teamAssignableOperators = (receiveTeam.data?.operators ?? [])
+    .filter(
+      (member) =>
+        member.user_id === currentUserId ||
+        member.role === 'operator'
+    )
+    .map((member) => ({
+      id: member.user_id,
+      name:
+        [member.first_name, member.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || `Operator ${member.user_id}`,
+      role: member.role,
+    }));
   const autoOpenRef = useRef(false);
   // §8: lives here so it survives the refetch re-render triggered by convert
   const [lastConvertedPoId, setLastConvertedPoId] = useState<string | null>(null);
@@ -268,25 +320,74 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
   }, [refetch]);
 
   /**
-   * RECEIVE VIA WMS
-   * ---------------
-   * Creates a receive job for a shipped PO.
-   * Navigation to WMS receive session is handled by PoAccordion → handleReceive.
+   * RECEIVE DISPATCH
+   * ----------------
+   * Normal creation requires an assignee.
+   *
+   * A 409 with an existing job is not automatically success: legacy pending,
+   * unstarted work may be recovered through the assignment endpoint, but work
+   * that has already started must never be silently reassigned or opened under
+   * a newly selected operator.
    */
-  const handleCreateReceiveJob = useCallback(async (poId: string) => {
+  const handleCreateReceiveJob = useCallback(async (
+    poId: string,
+    input: { assigned_operator_id: number }
+  ): Promise<{ receive_job_id: string }> => {
     try {
       const { data } = await axiosInstance.post(
-        `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
+        `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`,
+        input
       );
       return data;
     } catch (err: unknown) {
-      // 409 = active job already exists — treat as success, navigate to existing job
-      const status = (err as { response?: { status?: number; data?: { receive_job_id?: string } } })?.response?.status;
-      const existingJobId = (err as { response?: { data?: { receive_job_id?: string } } })?.response?.data?.receive_job_id;
-      if (status === 409 && existingJobId) {
+      if (!isAxiosError<{ receive_job_id?: string; error?: string }>(err)) {
+        throw err;
+      }
+
+      const existingJobId = err.response?.data?.receive_job_id;
+      if (err.response?.status !== 409 || !existingJobId) {
+        throw err;
+      }
+
+      const { data: existingData } = await axiosInstance.get<{
+        job: ExistingReceiveJob;
+      }>(
+        `/api/v1/suppliers/receive-jobs/${existingJobId}`
+      );
+
+      const existing = existingData.job;
+
+      if (
+        existing.status !== 'pending' ||
+        existing.started_at != null
+      ) {
+        throw new Error(
+          'Receive work has already started and cannot be reassigned.'
+        );
+      }
+
+      if (
+        existing.assigned_operator_id ===
+        input.assigned_operator_id
+      ) {
         return { receive_job_id: existingJobId };
       }
-      throw err;
+
+      if (existing.assigned_operator_id != null) {
+        throw new Error(
+          'Receive work is already assigned to another operator.'
+        );
+      }
+
+      // Legacy recovery only. Unassigned pending work may be assigned here.
+      // The backend repeats the pending/unstarted check atomically, so a
+      // concurrent claim or reassignment still wins safely.
+      await axiosInstance.patch(
+        `/api/v1/suppliers/receive-jobs/${existingJobId}/assignment`,
+        input
+      );
+
+      return { receive_job_id: existingJobId };
     }
   }, []);
 
@@ -306,6 +407,8 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onDeleteSupplier: handleDeleteSupplier,
     onCreatePo: handleCreatePo,
     onCreateReceiveJob: handleCreateReceiveJob,
+    currentUserId,
+    teamAssignableOperators,
     onSearchVariants: handleSearchVariants,
     onFetchSourcingRecommendations: handleFetchSourcingRecommendations,
     onFetchSourcingWorklist: handleFetchSourcingWorklist,

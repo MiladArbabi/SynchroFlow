@@ -1,6 +1,7 @@
 // apps/backend/src/api/operators/operators.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 
 /**
  * OPERATOR AVAILABILITY API (PP10-03)
@@ -123,6 +124,7 @@ export const httpGetTeamOperators = async (req: Request, res: Response) => {
   try {
     const operators = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
       return trx('shop_memberships as sm')
         .join('users as u', 'u.id', 'sm.user_id')
         .where('sm.shop_id', shopId)
@@ -140,7 +142,99 @@ export const httpGetTeamOperators = async (req: Request, res: Response) => {
 
     return res.json({ operators });
   } catch (err: any) {
-    console.error('[TEAM_OPERATORS_LIST_FAILED]', { shopId, error: err.message });
-    return res.status(500).json({ error: 'Failed to fetch team operators' });
+    console.error('[TEAM_OPERATORS_LIST_FAILED]', {
+      shopId,
+      error: err.message,
+    });
+
+    return res.status(500).json({
+      error: 'Failed to fetch team operators',
+    });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/operators/receive-assignees
+// ─────────────────────────────────────────
+export const httpGetReceiveAssignableOperators = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const dispatcherUserId = req.user?.userId;
+  if (!shopId || !dispatcherUserId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const members = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return trx('shop_memberships as sm')
+        .join('users as u', 'u.id', 'sm.user_id')
+        .where('sm.shop_id', shopId)
+        .whereNull('sm.revoked_at')
+        .whereIn('sm.role', ['operator', 'admin', 'owner'])
+        .select(
+          'u.id as user_id',
+          'u.first_name',
+          'u.last_name',
+          'sm.role',
+        )
+        .orderBy('sm.role')
+        .orderBy('u.first_name');
+    });
+
+    // GH-1109: Receive dispatch targets are the acting dispatcher ("Me")
+    // plus warehouse operators. Another owner/admin is not floor execution.
+    const dispatchTargets = members.filter(
+      (member: { user_id: number; role: string }) =>
+        member.role === 'operator' ||
+        member.user_id === dispatcherUserId
+    );
+
+    // Only expose targets who can execute the full consequential Receive flow.
+    // A valid target must be able to inspect, report exceptions, and close.
+    const receiveExecutionActions = [
+      'receive-job:read',
+      'receive-job:inspect',
+      'receive-job:close',
+      'receive-job:exception',
+    ] as const;
+
+    const roles = [
+      ...new Set(
+        dispatchTargets.map(
+          (member: { role: string }) => member.role
+        )
+      ),
+    ];
+
+    const eligibilityEntries = await Promise.all(
+      roles.map(async (role) => {
+        const decisions = await Promise.all(
+          receiveExecutionActions.map((action) =>
+            isActionAllowed(shopId, action, role)
+          )
+        );
+
+        return [role, decisions.every(Boolean)] as const;
+      })
+    );
+
+    const eligibleByRole = new Map(eligibilityEntries);
+
+    const operators = dispatchTargets.filter(
+      (member: { role: string }) =>
+        eligibleByRole.get(member.role) === true
+    );
+
+    return res.json({ operators });
+  } catch (err: any) {
+    console.error('[TEAM_OPERATORS_LIST_FAILED]', {
+      shopId,
+      error: err.message,
+    });
+
+    return res.status(500).json({
+      error: 'Failed to fetch team operators',
+    });
   }
 };

@@ -13,6 +13,7 @@ import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 import { Ionicons } from '@expo/vector-icons';
 import { BarcodeScannerView, type BarcodeScanEvent } from '../ui';
+import { useAuth } from '../hooks/useAuth';
 
 type ReceiveJobLine = {
   receive_job_line_id: string;
@@ -29,6 +30,7 @@ type ReceiveJobLine = {
 type ReceiveJob = {
   receive_job_id: string;
   status: string;
+  assigned_operator_id: number | null;
   supplier_name: string;
   total_variants: number;
   total_units: number;
@@ -61,6 +63,7 @@ const EXCEPTION_TYPES = [
 function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').TaskStackParamList['ReceiveJob']['task'] }) {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
   const { newEventId } = useSession();
+  const { userId } = useAuth();
 
   const [job, setJob] = useState<ReceiveJob | null>(null);
   const [lines, setLines] = useState<ReceiveJobLine[]>([]);
@@ -112,17 +115,44 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
   useEffect(() => { void load(); }, [load]);
 
   const handleClaim = useCallback(async (mode: InspectMode = 'count') => {
+    if (!job) return;
+
+    if (job.assigned_operator_id == null) {
+      Alert.alert('Receive not assigned', 'This Receive job must be assigned before it can be started.');
+      return;
+    }
+
+    if (job.assigned_operator_id !== userId) {
+      Alert.alert('Assigned to another operator', 'Only the assigned operator can run this Receive job.');
+      return;
+    }
+
+    if (job.status === 'in_progress' || job.status === 'inspection') {
+      setInspectMode(mode);
+      setScreenPhase(mode === 'scan' ? 'scan' : 'inspect');
+      return;
+    }
+
     setClaiming(true);
     try {
       await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/claim`);
+      setJob(prev => prev ? { ...prev, status: 'in_progress' } : prev);
+      setInspectMode(mode);
       setScreenPhase(mode === 'scan' ? 'scan' : 'inspect');
     } catch (err: any) {
       const code = err?.response?.data?.error;
-      Alert.alert('Error', code === 'JOB_CLAIMED_BY_OTHER' ? 'This job has been claimed by another operator.' : 'Failed to claim job.');
+
+      if (code === 'JOB_NOT_ASSIGNED') {
+        Alert.alert('Receive not assigned', 'This Receive job must be assigned before it can be started.');
+      } else if (code === 'JOB_CLAIMED_BY_OTHER') {
+        Alert.alert('Assigned to another operator', 'Only the assigned operator can run this Receive job.');
+      } else {
+        Alert.alert('Error', 'Failed to start Receive.');
+      }
     } finally {
       setClaiming(false);
     }
-  }, [task.id]);
+  }, [job, task.id, userId]);
 
   // Confirm a line — called after operator types qty and taps Confirm
   const handleConfirmLine = useCallback(async (line: ReceiveJobLine) => {
@@ -423,20 +453,44 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                 <Text style={styles.briefLineMeta}>{line.sku ? `SKU: ${line.sku} · ` : ''}{line.quantity_expected} units expected</Text>
               </Card>
             ))}
-            <Button
-              label={claiming ? 'Claiming…' : 'Scan items'}
-              onPress={() => void handleClaim('scan')}
-              variant="primary"
-              style={{ marginTop: spacing.lg }}
-              disabled={claiming}
-            />
-            <Button
-              label={claiming ? 'Claiming…' : 'Count by hand'}
-              onPress={() => void handleClaim('count')}
-              variant="secondary"
-              style={{ marginTop: spacing.sm }}
-              disabled={claiming}
-            />
+            {job.assigned_operator_id == null ? (
+              <Text style={[styles.briefMeta, { marginTop: spacing.lg }]}>
+                Dispatch needed · This Receive job must be assigned before it can start.
+              </Text>
+            ) : job.assigned_operator_id !== userId ? (
+              <Text style={[styles.briefMeta, { marginTop: spacing.lg }]}>
+                Assigned to another operator · Only the assigned operator can run this Receive.
+              </Text>
+            ) : (
+              <>
+                <Button
+                  label={
+                    claiming
+                      ? 'Starting…'
+                      : job.status === 'in_progress' || job.status === 'inspection'
+                        ? 'Resume Receive · Scan items'
+                        : 'Claim & Start Receive · Scan items'
+                  }
+                  onPress={() => void handleClaim('scan')}
+                  variant="primary"
+                  style={{ marginTop: spacing.lg }}
+                  disabled={claiming}
+                />
+                <Button
+                  label={
+                    claiming
+                      ? 'Starting…'
+                      : job.status === 'in_progress' || job.status === 'inspection'
+                        ? 'Resume Receive · Count by hand'
+                        : 'Claim & Start Receive · Count by hand'
+                  }
+                  onPress={() => void handleClaim('count')}
+                  variant="secondary"
+                  style={{ marginTop: spacing.sm }}
+                  disabled={claiming}
+                />
+              </>
+            )}
           </ScrollView>
         ) : null}
       </Screen>

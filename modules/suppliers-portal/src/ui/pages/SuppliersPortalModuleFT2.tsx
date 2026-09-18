@@ -26,6 +26,7 @@ import {
   TextField,
   MenuItem,
   IconButton,
+  Radio,
 } from '@mui/material';
 import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
 import { 
@@ -59,6 +60,7 @@ export type PurchaseOrderStatus =
 
 export type PurchaseOrder = {
   id: string;
+  po_number?: number | null;
   supplier_name: string;
   supplier_contact_email: string | null;
   supplier_contact_name: string | null;
@@ -75,7 +77,14 @@ export type PurchaseOrder = {
   document_url: string | null;
   created_at: string;
   first_line_description: string | null;
+  receive_job_id?: string | null;
+  receive_status?: string | null;
+  receive_assigned_operator_id?: number | null;
+  receive_assigned_operator_name?: string | null;
 };
+
+const formatPoDisplay = (po: Pick<PurchaseOrder, 'po_number'>) =>
+  po.po_number == null ? 'PO reference unavailable' : `PO-${po.po_number}`;
 
 export type PoLineItem = {
   id: string;
@@ -345,6 +354,12 @@ export type SuppliersPortalData = {
   never_ordered_count: number;
 } | null;
 
+export type ReceiveAssignableOperator = {
+  id: number;
+  name: string;
+  role?: string;
+};
+
 export type SuppliersPortalPageProps = {
   /** Which half of the Purchasing surface to render. Tab routing lives in the ft2-pages wrapper, not here. */
   view: 'pos' | 'suppliers' | 'sourcing';
@@ -358,8 +373,15 @@ export type SuppliersPortalPageProps = {
   onUpdateSupplier: (id: number, input: CreateSupplierInput) => Promise<Supplier>;
   onDeleteSupplier: (id: number) => Promise<void>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
-  /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
-  onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
+  /** Creates dispatched Receive work for a shipped PO. */
+  onCreateReceiveJob: (
+    poId: string,
+    input: { assigned_operator_id: number }
+  ) => Promise<{ receive_job_id: string }>;
+  /** Candidates already filtered by the app wrapper for Receive assignment. */
+  teamAssignableOperators?: ReceiveAssignableOperator[];
+  /** Explicit authenticated identity. Never infer "Me" from array order. */
+  currentUserId?: number | null;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
   /** Sourcing (Thread C): ranked supplier recommendations for onevariant, fetched on demand. */
   // SRC-03: neededQty removed — the server derives it. Passing it in was the
@@ -409,6 +431,8 @@ export type SuppliersPortalPageProps = {
   };
   /** When true, auto-opens the Create PO dialog on mount */
   autoOpenCreatePo?: boolean;
+  /** PO targeted by action=receive deep-link. Uses the canonical assignment dialog. */
+  autoOpenReceivePoId?: string;
   /** Pre-filled line item from demand module handoff */
   prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
 };
@@ -1190,12 +1214,20 @@ function PoAccordion({
   onFetchLineItems,
   onUpdatePoStatus,
   onCreateReceiveJob,
+  teamAssignableOperators,
+  currentUserId,
+  autoOpenReceive = false,
 }: {
   po: PurchaseOrder;
   onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
   onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
-  /** Creates a receive job for this PO and navigates to the WMS receive session. */
-  onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
+  onCreateReceiveJob: (
+    poId: string,
+    input: { assigned_operator_id: number }
+  ) => Promise<{ receive_job_id: string }>;
+  teamAssignableOperators: ReceiveAssignableOperator[];
+  currentUserId: number | null;
+  autoOpenReceive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [lineItems, setLineItems] = useState<PoLineItem[] | null>(null);
@@ -1205,6 +1237,16 @@ function PoAccordion({
   // §Gap2: controls PO send preview modal — status only transitions after merchant confirms
   const [sendPreviewOpen, setSendPreviewOpen] = useState(false);
   const [loadingSend, setLoadingSend] = useState(false);
+
+  // GH-1109: dispatch happens before execution. Assignment does not claim work.
+  const [assignReceiveOpen, setAssignReceiveOpen] = useState(false);
+  const [selectedReceiveOperatorId, setSelectedReceiveOperatorId] =
+    useState<number | null>(null);
+  const [assigningReceive, setAssigningReceive] = useState(false);
+  const [receiveDispatchError, setReceiveDispatchError] =
+    useState<string | null>(null);
+  const [receiveAssignmentConfirmation, setReceiveAssignmentConfirmation] =
+    useState<string | null>(null);
 
   // §Gap2: load line items if not yet fetched, then open preview modal
   const handleOpenSendPreview = async () => {
@@ -1223,25 +1265,96 @@ function PoAccordion({
   const navigate = useNavigate();
 
   /**
-   * RECEIVE VIA WMS
-   * ---------------
-   * Creates a receive job for this PO, then navigates to the WMS page
-   * with the job ID as a query param. WmsPage reads receiveJobId and
-   * auto-enters the receive session — no manual navigation needed.
+   * RECEIVE DISPATCH
+   * ----------------
+   * Opening Receive does not create or claim work. The dispatcher must choose
+   * an assignee first. Claim remains an explicit action on the Receive Brief.
    */
-  const handleReceive = useCallback(async () => {
-    try {
-      const { receive_job_id } = await onCreateReceiveJob(po.id);
-      navigate(`/wms?receiveJobId=${receive_job_id}`);
-    } catch {
-      setError('Failed to start receive session. Please try again.');
+  const handleReceive = useCallback(() => {
+    setSelectedReceiveOperatorId(null);
+    setReceiveDispatchError(null);
+    setReceiveAssignmentConfirmation(null);
+    setAssignReceiveOpen(true);
+  }, []);
+
+  const autoReceiveOpenedRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      !autoOpenReceive ||
+      autoReceiveOpenedRef.current ||
+      (po.status !== 'shipped' && po.status !== 'partially_received')
+    ) {
+      return;
     }
-  }, [onCreateReceiveJob, po.id, navigate]);
+
+    autoReceiveOpenedRef.current = true;
+    handleReceive();
+  }, [autoOpenReceive, handleReceive, po.status]);
+
+  const handleCloseReceiveAssignment = () => {
+    if (assigningReceive) return;
+    setAssignReceiveOpen(false);
+    setSelectedReceiveOperatorId(null);
+    setReceiveDispatchError(null);
+  };
+
+  const handleAssignReceive = async () => {
+    if (selectedReceiveOperatorId == null) return;
+
+    setAssigningReceive(true);
+    setReceiveDispatchError(null);
+
+    try {
+      const { receive_job_id } = await onCreateReceiveJob(po.id, {
+        assigned_operator_id: selectedReceiveOperatorId,
+      });
+
+      const selectedOperator = teamAssignableOperators.find(
+        (operator) => operator.id === selectedReceiveOperatorId
+      );
+
+      setAssignReceiveOpen(false);
+      setSelectedReceiveOperatorId(null);
+
+      if (selectedReceiveOperatorId === currentUserId) {
+        setReceiveAssignmentConfirmation(null);
+        navigate(`/wms?receiveJobId=${receive_job_id}`);
+        return;
+      }
+
+      setReceiveAssignmentConfirmation(
+        `Receive assigned to ${selectedOperator?.name ?? 'operator'}.`
+      );
+    } catch (err) {
+      // Keep the dialog open and preserve the selected assignee for retry.
+      setReceiveDispatchError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to assign Receive work. Please try again.'
+      );
+    } finally {
+      setAssigningReceive(false);
+    }
+  };
 
   const status = STATUS_CONFIG[po.status];
   const eta = po.expected_delivery_date
     ? new Date(po.expected_delivery_date).toLocaleDateString()
     : '—';
+
+  const isReceiveEligible =
+    po.status === 'shipped' || po.status === 'partially_received';
+
+  const receiveAssignmentLabel = isReceiveEligible
+    ? po.receive_job_id && po.receive_assigned_operator_id != null
+      ? `Receive: Assigned to ${
+          po.receive_assigned_operator_name?.trim() ||
+          `Operator #${po.receive_assigned_operator_id}`
+        }`
+      : 'Receive: Not assigned'
+    : null;
+  const poDisplay = formatPoDisplay(po);
 
   const handleExpand = async () => {
     setExpanded((v) => !v);
@@ -1288,7 +1401,10 @@ function PoAccordion({
               <Typography variant="body2" fontWeight={700}>{po.supplier_name}</Typography>
               <Chip label={status.label} size="small" color={status.color} />
             </Box>
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Typography variant="caption" color="text.secondary">
+                  {poDisplay}
+                </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Clock size={12} />
                   <Typography variant="caption" color="text.secondary">ETA: {eta}</Typography>
@@ -1305,6 +1421,15 @@ function PoAccordion({
                   </Typography>
                 )}
             </Box>
+            {receiveAssignmentLabel && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 0.25 }}
+              >
+                {receiveAssignmentLabel}
+              </Typography>
+            )}
           </Box>
         </Box>
       </AccordionSummary>
@@ -1313,6 +1438,11 @@ function PoAccordion({
         <Divider sx={{ mb: 2 }} />
         <PoProgressTrack status={po.status} />
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {receiveAssignmentConfirmation && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {receiveAssignmentConfirmation}
+          </Alert>
+        )}
 
         {loadingItems && <ModuleLoadingSkeleton rows={1} height={20} />}
 
@@ -1403,6 +1533,165 @@ function PoAccordion({
             Notes: {po.notes}
           </Typography>
         )}
+
+        <Dialog
+          open={assignReceiveOpen}
+          onClose={handleCloseReceiveAssignment}
+          aria-labelledby="assign-receive-title"
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle id="assign-receive-title">
+            Assign Receive
+          </DialogTitle>
+
+          <DialogContent>
+            <Typography variant="body2" fontWeight={700}>
+              {po.supplier_name}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {poDisplay}
+            </Typography>
+
+            <Box sx={{ mt: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              >
+                Receive work
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {po.line_items_count} {Number(po.line_items_count) === 1 ? 'product' : 'products'}
+                {' · '}
+                {po.total_units_ordered} units
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Expected delivery:{' '}
+                {po.expected_delivery_date
+                  ? new Date(po.expected_delivery_date).toLocaleDateString()
+                  : '—'}
+              </Typography>
+            </Box>
+
+            <Box sx={{ mt: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              >
+                Assign to
+              </Typography>
+
+              <Box
+                role="radiogroup"
+                aria-label="Assign Receive to"
+                sx={{ mt: 0.75, display: 'grid', gap: 0.5 }}
+              >
+                {teamAssignableOperators.map((operator) => {
+                  const isSelected = selectedReceiveOperatorId === operator.id;
+                  const isSelf = operator.id === currentUserId;
+
+                  return (
+                    <Box
+                      key={operator.id}
+                      role="radio"
+                      aria-checked={isSelected}
+                      tabIndex={0}
+                      onClick={() => setSelectedReceiveOperatorId(operator.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedReceiveOperatorId(operator.id);
+                        }
+                      }}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        px: 1,
+                        py: 0.75,
+                        border: '1px solid',
+                        borderColor: isSelected ? 'var(--accent)' : 'divider',
+                        borderRadius: 1,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Radio
+                        checked={isSelected}
+                        readOnly
+                        size="small"
+                        tabIndex={-1}
+                      />
+                      <Box>
+                        <Typography variant="body2" fontWeight={600}>
+                          {operator.name}{isSelf ? ' — Me' : ''}
+                        </Typography>
+                        {operator.role && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ textTransform: 'capitalize' }}
+                          >
+                            {operator.role}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            <Paper
+              variant="outlined"
+              sx={{ mt: 2, p: 1.25, borderRadius: 1 }}
+            >
+              <Typography variant="caption" fontWeight={700}>
+                Work identity
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                Action: Receive shipment
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                Reference: {poDisplay}
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                Supplier: {po.supplier_name}
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                Qty: {po.total_units_ordered} units
+              </Typography>
+              <Typography variant="caption" display="block" color="text.secondary">
+                Next: Assigned operator claims & starts Receive
+              </Typography>
+            </Paper>
+
+            {receiveDispatchError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {receiveDispatchError}
+              </Alert>
+            )}
+          </DialogContent>
+
+          <DialogActions>
+            <Button
+              onClick={handleCloseReceiveAssignment}
+              disabled={assigningReceive}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              disabled={
+                selectedReceiveOperatorId == null || assigningReceive
+              }
+              onClick={() => void handleAssignReceive()}
+            >
+              {assigningReceive ? 'Assigning…' : 'Assign Receive'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* §Gap2: PO send preview modal — copy-only, no status transition inside */}
         {sendPreviewOpen && lineItems && (
@@ -1581,7 +1870,9 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
 function PurchasingPosView({
   data, isLoading, isError, onRefresh,
   onFetchLineItems, onUpdatePoStatus, onCreateSupplier, onCreatePo,
-  onCreateReceiveJob, onSearchVariants, autoOpenCreatePo = false, prefilledLineItem,
+  onCreateReceiveJob, onSearchVariants, autoOpenCreatePo = false,
+  autoOpenReceivePoId, prefilledLineItem,
+  teamAssignableOperators = [], currentUserId = null,
   spotlights,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
@@ -1673,6 +1964,9 @@ function PurchasingPosView({
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
                   onCreateReceiveJob={onCreateReceiveJob}
+                  teamAssignableOperators={teamAssignableOperators}
+                  currentUserId={currentUserId}
+                  autoOpenReceive={autoOpenReceivePoId === po.id}
                 />
               ))
             )}
@@ -1700,6 +1994,8 @@ function PurchasingPosView({
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
                   onCreateReceiveJob={onCreateReceiveJob}
+                  teamAssignableOperators={teamAssignableOperators}
+                  currentUserId={currentUserId}
                 />
               ))}
             </Box>
@@ -3634,6 +3930,10 @@ function SuppliersPortalModuleFT2Inner(props: SuppliersPortalPageProps) {
 export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {
   const [searchParams] = useSearchParams();
   const autoOpenCreatePo = searchParams.get('action') === 'create-po';
+  const autoOpenReceivePoId =
+    searchParams.get('action') === 'receive'
+      ? searchParams.get('poId') ?? undefined
+      : undefined;
   const prefilledLineItem = autoOpenCreatePo
     ? {
         description: searchParams.get('description') ?? searchParams.get('sku') ?? '',
@@ -3643,7 +3943,12 @@ export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps
     : undefined;
   return (
     <ModuleErrorBoundary moduleName="suppliers-portal">
-      <SuppliersPortalModuleFT2Inner {...props} autoOpenCreatePo={autoOpenCreatePo} prefilledLineItem={prefilledLineItem} />
+      <SuppliersPortalModuleFT2Inner
+        {...props}
+        autoOpenCreatePo={autoOpenCreatePo}
+        autoOpenReceivePoId={autoOpenReceivePoId}
+        prefilledLineItem={prefilledLineItem}
+      />
     </ModuleErrorBoundary>
   );
 }

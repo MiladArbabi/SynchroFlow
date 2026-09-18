@@ -195,7 +195,7 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
         .groupBy('po.id', 's.name', 's.on_time_rate', 's.fill_rate', 's.avg_delivery_days', 's.contact_email', 's.contact_name', 's.moq')
         .orderBy('po.created_at', 'desc')
         .select(
-          'po.id', 'po.status', 'po.expected_delivery_date', 'po.actual_delivery_date',
+          'po.id', 'po.po_number', 'po.status', 'po.expected_delivery_date', 'po.actual_delivery_date',
           'po.notes', 'po.receive_notes', 'po.document_url', 'po.created_at',
           's.name as supplier_name',
           's.contact_email as supplier_contact_email',
@@ -204,6 +204,51 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
           's.on_time_rate as supplier_on_time_rate',
           's.fill_rate as supplier_fill_rate',
           's.avg_delivery_days as supplier_avg_delivery_days',
+          // GH-1109: durable Receive dispatch projection for collapsed PO identity.
+          // Correlated subqueries preserve one purchase-order row despite the
+          // existing line-item aggregation. Closed/cancelled work is not active.
+          trx.raw(`(
+            SELECT rj.receive_job_id
+            FROM receive_jobs rj
+            WHERE rj.po_id = po.id
+              AND rj.shop_id = po.shop_id
+              AND rj.status NOT IN ('closed', 'cancelled')
+            ORDER BY rj.created_at DESC, rj.receive_job_id DESC
+            LIMIT 1
+          ) as receive_job_id`),
+          trx.raw(`(
+            SELECT rj.status
+            FROM receive_jobs rj
+            WHERE rj.po_id = po.id
+              AND rj.shop_id = po.shop_id
+              AND rj.status NOT IN ('closed', 'cancelled')
+            ORDER BY rj.created_at DESC, rj.receive_job_id DESC
+            LIMIT 1
+          ) as receive_status`),
+          trx.raw(`(
+            SELECT rj.assigned_operator_id
+            FROM receive_jobs rj
+            WHERE rj.po_id = po.id
+              AND rj.shop_id = po.shop_id
+              AND rj.status NOT IN ('closed', 'cancelled')
+            ORDER BY rj.created_at DESC, rj.receive_job_id DESC
+            LIMIT 1
+          ) as receive_assigned_operator_id`),
+          trx.raw(`(
+            SELECT COALESCE(
+              NULLIF(BTRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''),
+              u.email
+            )
+            FROM receive_jobs rj
+            LEFT JOIN users u
+              ON u.id = rj.assigned_operator_id
+             AND u.shop_id = rj.shop_id
+            WHERE rj.po_id = po.id
+              AND rj.shop_id = po.shop_id
+              AND rj.status NOT IN ('closed', 'cancelled')
+            ORDER BY rj.created_at DESC, rj.receive_job_id DESC
+            LIMIT 1
+          ) as receive_assigned_operator_name`),
           // First line item name for PO summary row — avoids expanding to identify PO
           trx.raw('(SELECT description FROM purchase_order_line_items WHERE po_id = po.id LIMIT 1) as first_line_description'),
           trx.raw('COUNT(li.id) as line_items_count'),

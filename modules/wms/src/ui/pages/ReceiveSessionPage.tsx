@@ -32,6 +32,13 @@ import {
 type SessionPhase = 'brief' | 'inspect' | 'reconcile' | 'review' | 'handoff';
 type LineAction = 'scan' | 'count';
 
+const ACTIVE_RECEIVE_JOB_STATUSES = new Set([
+  'in_progress',
+  'inspection',
+  'barcode_assignment',
+  'stow_ready',
+]);
+
 export interface ReceiveJobLine {
   receive_job_line_id: string;
   lasyncro_variant_id: string | null;
@@ -81,10 +88,15 @@ export interface ReceiveReportedProblem {
 export interface ReceiveSessionPageProps {
   receiveJobId: string;
   poId: string;
+  poNumber?: number | null;
   supplierName: string;
+  jobStatus?: string;
+  assignedOperatorId?: number | null;
+  currentUserId?: number | null;
   closedAt?: string | null;
   actualDeliveryDate?: string | null;
   lines: ReceiveJobLine[];
+  onClaimJob?: () => Promise<void>;
   onInspectLine: (params: {
     lasyncro_variant_id: string | null;
     receive_job_line_id: string;
@@ -109,6 +121,17 @@ export interface ReceiveSessionPageProps {
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
   onRefresh?: () => Promise<void> | void;
+  /**
+   * WAREHOUSE-FOCUS-SHELL-01A — reports whether the operator is actively
+   * executing this Receive job (sessionPhase !== 'brief') versus still on
+   * the pre-execution Brief. Driven by an effect over sessionPhase rather
+   * than called ad hoc from individual handlers, so every path that can
+   * change sessionPhase — successful claim/start, a canonical in_progress
+   * job initializing straight into 'inspect' on refresh, reconcile/review/
+   * handoff — reports focus consistently, and a failed claim (which never
+   * calls setSessionPhase) never does.
+   */
+  onExecutionFocusChange?: (focused: boolean) => void;
 }
 
 type ProblemType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'missing_item' | 'extra_item' | 'barcode_mismatch' | 'other';
@@ -479,10 +502,15 @@ function ReportedProblemSummary({
 export default function ReceiveSessionPage({
   receiveJobId,
   poId,
+  poNumber = null,
   supplierName,
+  jobStatus,
+  assignedOperatorId,
+  currentUserId,
   closedAt,
   actualDeliveryDate,
   lines,
+  onClaimJob,
   onInspectLine,
   onReportException,
   onPersistLineProgress,
@@ -492,11 +520,40 @@ export default function ReceiveSessionPage({
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
   onRefresh,
+  onExecutionFocusChange,
 }: ReceiveSessionPageProps) {
+  const poDisplay = poNumber == null ? 'PO reference unavailable' : `PO-${poNumber}`;
   const theme = useTheme();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const progressPersistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const progressPersistErrorRef = useRef<Error | null>(null);
+
+  const hasCanonicalJobStatus = typeof jobStatus === 'string';
+  const isPendingJob = jobStatus === 'pending';
+  const isActiveJob = jobStatus != null && ACTIVE_RECEIVE_JOB_STATUSES.has(jobStatus);
+  const assignedToCurrentUser =
+    assignedOperatorId != null &&
+    currentUserId != null &&
+    assignedOperatorId === currentUserId;
+  const assignedToOther =
+    assignedOperatorId != null &&
+    (currentUserId == null || assignedOperatorId !== currentUserId);
+  const requiresClaim =
+    isPendingJob &&
+    assignedToCurrentUser;
+  const ownedActiveJob =
+    isActiveJob &&
+    assignedToCurrentUser;
+  const blockedByOwnership =
+    (isPendingJob || isActiveJob) &&
+    assignedToOther;
+  const blockedUnassigned =
+    (isPendingJob || isActiveJob) &&
+    assignedOperatorId == null;
+  const blockedLifecycle =
+    blockedByOwnership ||
+    blockedUnassigned ||
+    jobStatus === 'cancelled';
 
   const initialComplete = useMemo(
     () => new Set(lines.filter((line) => line.inspection_complete).map((line) => line.receive_job_line_id)),
@@ -536,15 +593,17 @@ export default function ReceiveSessionPage({
     : null;
 
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
-    closedAt
+    closedAt || jobStatus === 'closed'
       ? 'handoff'
-      : startsComplete
-        ? 'review'
-        : firstReconciliationIndex >= 0
-          ? 'reconcile'
-          : hasResumeState
-            ? 'inspect'
-            : 'brief'
+      : isPendingJob || blockedLifecycle
+        ? 'brief'
+        : startsComplete
+          ? 'review'
+          : firstReconciliationIndex >= 0
+            ? 'reconcile'
+            : hasResumeState || ownedActiveJob
+              ? 'inspect'
+              : 'brief'
   );
   const [currentIndex, setCurrentIndex] = useState(initialCurrentIndex);
   const [lineAction, setLineAction] = useState<LineAction>('count');
@@ -559,6 +618,8 @@ export default function ReceiveSessionPage({
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [scanInputValue, setScanInputValue] = useState('');
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProcessing, setScanProcessing] = useState(false);
@@ -600,6 +661,18 @@ export default function ReceiveSessionPage({
 
   const totalExpected = lines.reduce((sum, line) => sum + line.quantity_expected, 0);
   const currentLine = lines[currentIndex] ?? null;
+
+  // WAREHOUSE-FOCUS-SHELL-01A — execution-focus is derived purely from
+  // sessionPhase, not called individually from handleStart/handleClaim/etc.
+  // This makes every phase transition report consistently: brief -> false;
+  // inspect/reconcile/review/handoff -> true. A failed claim never calls
+  // setSessionPhase, so it never fires this effect with a change, and a
+  // refresh that initializes sessionPhase straight into 'inspect' (a
+  // canonical in_progress job) or 'handoff' fires it on mount, same as any
+  // other sessionPhase change.
+  useEffect(() => {
+    onExecutionFocusChange?.(sessionPhase !== 'brief');
+  }, [sessionPhase, onExecutionFocusChange]);
 
   const isLineComplete = useCallback((line: ReceiveJobLine) => (
     completeLines.has(line.receive_job_line_id) || !!line.inspection_complete
@@ -759,14 +832,58 @@ export default function ReceiveSessionPage({
     }
   }, [inspectAndResolveReadiness, moveToNextLineOrReview]);
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
+    if (blockedLifecycle) return;
+
+    setClaimError(null);
+
+    if (requiresClaim) {
+      if (!onClaimJob) {
+        setClaimError(
+          'Receive claim is unavailable. Return to Operations and try again.'
+        );
+        return;
+      }
+
+      setClaiming(true);
+      try {
+        await onClaimJob();
+      } catch (err: any) {
+        const code =
+          err?.response?.data?.error ??
+          err?.message ??
+          'RECEIVE_CLAIM_FAILED';
+
+        setClaimError(
+          code === 'JOB_CLAIMED_BY_OTHER'
+            ? 'This Receive is already claimed by another operator.'
+            : 'Could not claim this Receive job. Please retry.'
+        );
+        return;
+      } finally {
+        setClaiming(false);
+      }
+    }
+
     const firstOpen = lines.findIndex((line) => !isLineDone(line));
     setCurrentIndex(firstOpen >= 0 ? firstOpen : 0);
+
     if (firstOpen >= 0) {
-      void persistLineProgress(lines[firstOpen], projectedSellable(lines[firstOpen]));
+      void persistLineProgress(
+        lines[firstOpen],
+        projectedSellable(lines[firstOpen])
+      );
     }
+
     setSessionPhase(firstOpen >= 0 ? 'inspect' : 'review');
-  }, [isLineDone, lines, persistLineProgress]);
+  }, [
+    blockedLifecycle,
+    isLineDone,
+    lines,
+    onClaimJob,
+    persistLineProgress,
+    requiresClaim,
+  ]);
 
   const handleCountConfirm = useCallback(async () => {
     if (!currentLine || currentComplete || currentAwaitingLabel) return;
@@ -1175,7 +1292,15 @@ export default function ReceiveSessionPage({
         : `${activeAccepted}/${currentLine.quantity_expected}${activeAccepted > currentLine.quantity_expected ? `, +${activeAccepted - currentLine.quantity_expected} extra` : ''}${activeRejected ? `, ${activeRejected} problem` : ''}`
       : `${completedCount}/${lines.length} lines`;
     const nextStep = sessionPhase === 'brief'
-      ? 'start receive'
+      ? blockedByOwnership
+        ? 'assigned operator continues'
+        : blockedUnassigned
+          ? 'assignment required'
+          : jobStatus === 'cancelled'
+            ? 'receive unavailable'
+            : requiresClaim
+              ? 'claim & start receive'
+              : 'start receive'
       : sessionPhase === 'review'
         ? 'close receive'
         : sessionPhase === 'handoff'
@@ -1183,10 +1308,10 @@ export default function ReceiveSessionPage({
           : sessionPhase === 'reconcile'
             ? 'account shortfall'
             : currentAwaitingLabel
-            ? 'attach LSU labels'
-            : lineAction === 'scan'
-              ? 'scan or count locally'
-              : 'finish count';
+              ? 'attach LSU labels'
+              : lineAction === 'scan'
+                ? 'scan or count locally'
+                : 'finish count';
 
     const workNoteFields = sessionPhase === 'handoff'
       ? [
@@ -1194,19 +1319,19 @@ export default function ReceiveSessionPage({
           ['Status', 'CLOSED'],
           ['Closed at', formatOpsTimestamp(closedAt)],
           ['Actual delivery', formatOpsDate(actualDeliveryDate)],
-          ['Reference', poId],
+          ['Reference', poDisplay],
           ['Item', item],
           ['Qty', quantity],
-          ['Source', supplierName],
+          ['Supplier', supplierName],
           ['Identity', identity],
           ['Next', nextStep],
         ]
       : [
           ['Action', action],
-          ['Reference', poId],
+          ['Reference', poDisplay],
           ['Item', item],
           ['Qty', quantity],
-          ['Source', supplierName],
+          ['Supplier', supplierName],
           ['Identity', identity],
           ['Next', nextStep],
         ];
@@ -1237,7 +1362,7 @@ export default function ReceiveSessionPage({
             <Typography
               variant="body2"
               noWrap
-              sx={{ ...(label === 'Item' || label === 'Source' ? {} : monoSx), fontWeight: 650 }}
+              sx={{ ...(label === 'Item' || label === 'Supplier' ? {} : monoSx), fontWeight: 650 }}
             >
               {value}
             </Typography>
@@ -1262,7 +1387,7 @@ export default function ReceiveSessionPage({
       <Box>
         <Typography variant="h5" fontWeight={750}>Receive from {supplierName}</Typography>
         <Typography variant="body2" color="text.secondary">
-          PO <Box component="span" sx={monoSx}>{poId}</Box> · Receive <Box component="span" sx={monoSx}>{receiveJobId}</Box>
+          <Box component="span" sx={monoSx}>{poDisplay}</Box> · Receive <Box component="span" sx={monoSx}>{receiveJobId}</Box>
         </Typography>
       </Box>
 
@@ -1317,18 +1442,49 @@ export default function ReceiveSessionPage({
         </Table>
       </Paper>
 
+      {claimError && (
+        <Alert severity="error">
+          {claimError}
+        </Alert>
+      )}
+
+      {blockedByOwnership && (
+        <Alert severity="warning">
+          This Receive is assigned to another operator. Only the assigned operator can continue this job.
+        </Alert>
+      )}
+
+      {blockedUnassigned && (
+        <Alert severity="warning">
+          This Receive must be assigned before it can be started or continued.
+        </Alert>
+      )}
+
+      {jobStatus === 'cancelled' && (
+        <Alert severity="warning">
+          This Receive job has been cancelled and cannot be started.
+        </Alert>
+      )}
+
       <Alert severity="info">
         Barcode-capable lines can scan continuously or be counted locally. Barcode-less lines are counted, then held until LSU labels are printed and attached.
       </Alert>
 
-      <Button
-        variant="contained"
-        size="large"
-        onClick={handleStart}
-        sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
-      >
-        Start Receive
-      </Button>
+      {!blockedLifecycle && (requiresClaim || !hasCanonicalJobStatus) && (
+        <Button
+          variant="contained"
+          size="large"
+          onClick={handleStart}
+          disabled={claiming}
+          sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+        >
+          {claiming
+            ? 'Claiming…'
+            : requiresClaim
+              ? 'Claim & Start Receive'
+              : 'Start Receive'}
+        </Button>
+      )}
     </Box>
   );
 
@@ -2053,7 +2209,15 @@ export default function ReceiveSessionPage({
       </Typography>
       <Button
         variant="contained"
-        onClick={onComplete}
+        // RECEIVE-COMPLETE-EXIT-01 — onComplete is a zero-argument domain
+        // callback (exitSession upstream), not a MouseEvent handler. React
+        // calls onClick with the SyntheticEvent regardless of the handler's
+        // declared arity, so `onClick={onComplete}` forwarded that event as
+        // exitSession's optional `finishedLabel: string` argument — a truthy
+        // object that then reached onCountFinished/setFinishedCountLabel and
+        // crashed WmsOperationsPage trying to render it as a child ("Objects
+        // are not valid as a React child"). Call it explicitly instead.
+        onClick={() => onComplete()}
         sx={{ mt: 3, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
       >
         Back to WMS

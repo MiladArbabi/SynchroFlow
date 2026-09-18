@@ -720,6 +720,7 @@ export async function closeReceiveJob(
       quantity: line.quantity_accepted,
       trigger: 'inbound_stock',
       poId: job.po_id,
+      receiveJobLineId: line.receive_job_line_id,
       // WM-36: use suggested location from receive_job_lines if available.
       // Operator can still override via PATCH /stow-tasks/:taskId/location.
       locationCode: line.suggested_location_code ?? undefined,

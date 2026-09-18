@@ -2,7 +2,7 @@ export { default as WmsModuleFT2 } from './pages/WmsModuleFT2.js';
 export { default as ReceiveSessionPage } from './pages/ReceiveSessionPage.js';
 export type { ReceiveSessionPageProps, ReceiveJobLine } from './pages/ReceiveSessionPage.js';
 export { default as StowSessionPage } from './pages/StowSessionPage.js';
-export type { StowSessionPageProps } from './pages/StowSessionPage.js';
+export type { StowSessionPageProps, StowPlacement } from './pages/StowSessionPage.js';
 export { default as CountingSessionPage } from './pages/CountingSessionPage.js';
 export type {
   CountingSessionPageProps,
