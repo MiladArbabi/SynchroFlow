@@ -147,7 +147,10 @@ export default function OverviewPageFT2() {
   // eligible_order_count → bar height, summary.blocked_count → red sub-bar.
   // Semantics: orders waiting to be released to the floor, not yet released.
   // Consumed by the `stations` prop below → IsometricCanvas (OV-13).
-  const orderPool = useOrderPool();
+  // GH-1130: acquisition follows the same canonical overview.live_map
+  // decision as the other map hooks above — no fetch/poll while
+  // hasMapAccess is unresolved or denied.
+  const orderPool = useOrderPool(hasMapAccess);
 
   // OV-41: unresolved physical problems stay attached to their recorded
   // problem_bin_location. Null means unknown — never invent a floor location.

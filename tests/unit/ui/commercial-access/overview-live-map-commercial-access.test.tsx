@@ -31,6 +31,7 @@ const mockUseWmsLiveActivity = jest.fn();
 const mockUseOccupancy = jest.fn();
 const mockUseIdleAlerts = jest.fn();
 const mockUseProblemCenter = jest.fn();
+const mockUseOrderPool = jest.fn();
 const mockEmit = jest.fn();
 
 // Exposes the props the production page cannot be observed through
@@ -154,14 +155,17 @@ jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
 }));
 
 jest.mock('pages/wms/useOrderPool', () => ({
-  useOrderPool: () => ({
-    data: {
-      eligible_order_count: 0,
-      summary: { blocked_count: 0 },
-    },
-    isPending: false,
-    isError: false,
-  }),
+  useOrderPool: (enabled?: boolean) => {
+    mockUseOrderPool(enabled);
+    return {
+      data: {
+        eligible_order_count: 0,
+        summary: { blocked_count: 0 },
+      },
+      isPending: false,
+      isError: false,
+    };
+  },
 }));
 
 jest.mock('pages/wms/useWmsLiveActivity', () => ({
@@ -283,6 +287,7 @@ describe('OVLM-A — canonical overview.live_map DENY wins over a permissive leg
     expect(mockUseOccupancy).toHaveBeenLastCalledWith(false);
     expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(false);
     expect(mockUseProblemCenter).toHaveBeenLastCalledWith(false);
+    expect(mockUseOrderPool).toHaveBeenLastCalledWith(false);
   });
 
   it('legacy tier scale, canonical DENY — same authority requirement', () => {
@@ -301,6 +306,7 @@ describe('OVLM-A — canonical overview.live_map DENY wins over a permissive leg
     expect(mockUseOccupancy).toHaveBeenLastCalledWith(false);
     expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(false);
     expect(mockUseProblemCenter).toHaveBeenLastCalledWith(false);
+    expect(mockUseOrderPool).toHaveBeenLastCalledWith(false);
   });
 
   it('GREEN CONTROL: Pulse and Decisions continuity survive a commercial denial', () => {
@@ -331,6 +337,7 @@ describe('OVLM-B — canonical overview.live_map ALLOW wins over a restrictive l
     expect(mockUseOccupancy).toHaveBeenLastCalledWith(true);
     expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(true);
     expect(mockUseProblemCenter).toHaveBeenLastCalledWith(true);
+    expect(mockUseOrderPool).toHaveBeenLastCalledWith(true);
   });
 
   it('legacy tier core, canonical ALLOW — same authority requirement', () => {
@@ -346,6 +353,7 @@ describe('OVLM-B — canonical overview.live_map ALLOW wins over a restrictive l
     expect(mockUseOccupancy).toHaveBeenLastCalledWith(true);
     expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(true);
     expect(mockUseProblemCenter).toHaveBeenLastCalledWith(true);
+    expect(mockUseOrderPool).toHaveBeenLastCalledWith(true);
   });
 });
 

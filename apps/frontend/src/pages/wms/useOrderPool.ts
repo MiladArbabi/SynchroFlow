@@ -103,8 +103,17 @@ export interface ReleaseBatchResult {
   newly_blocked_orders: NewlyBlockedOrder[];
 }
 
-export function useOrderPool() {
+/**
+ * GH-1130: `enabled` is an acquisition boundary, not a business rule — this
+ * hook never imports useEntitlements/useCommercialAccess itself. Default
+ * true preserves existing ReleaseQueuePage / OrderFlowPage behavior for
+ * callers that omit the argument. Commercial callers such as Overview may
+ * pass their own canonical AccessDecision (e.g. hasMapAccess) to disable
+ * acquisition while the decision is unresolved/denied.
+ */
+export function useOrderPool(enabled = true) {
   return useQuery<OrderPool>({
+    enabled,
     queryKey: ['wms', 'order-pool'],
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/wms/order-pool');
