@@ -5,7 +5,10 @@ export const devReadinessOverrideProvider: OnboardingSignalProvider = {
   moduleId: 'platform',
 
   async getSignals(): Promise<ReadinessSignal[]> {
-    if (process.env.NODE_ENV !== 'development') {
+    if (
+      process.env.NODE_ENV !== 'development' ||
+      process.env.DEV_READINESS_OVERRIDE_ENABLED !== 'true'
+    ) {
       return [];
     }
 

@@ -1,6 +1,6 @@
 # LaSyncro — Onboarding & Progressive Disclosure Playbook
 
-> **Status:** v1.1 — 2026-09-10
+> **Status:** v1.2 — 2026-09-18
 > **Author:** Product + Engineering session (ISS-RQ series)
 > **Reading order:** Read `lifecycle_playbook.md` and `modules-ux-playbook.md` before this.
 > **Purpose:** Canonical reference for onboarding, Ops Console setup guidance, spotlight coaching,
@@ -82,28 +82,44 @@ only when a shop-wide authoritative intervention/verification source exists.
 
 #### Setup contract
 
-`useActivationChecklist` remains the single frontend assembler and completion
-authority for setup state.
+**PRE-APP onboarding vs. Ops Console SETUP.** Connecting Shopify and completing
+the initial sync happen before the merchant can reach the authenticated
+application shell — they are lifecycle prerequisites, not Ops Console SETUP
+rows:
+
+- `FT_MINUS_ONE` owns Shopify connection / reconnect through `ConnectStorePage`.
+- `FT0` / `FT0_PREPARING` own initial sync through `SyncAnimationPage`.
+
+Ops Console does not own or render either of those workflows. `useActivationChecklist`
+remains the single frontend assembler and completion authority for the five
+in-app setup rows below.
 
 | # | Label | Authoritative condition | Action |
 |---|---|---|---|
-| 1 | Connect your store | readiness `platform / connect-store` | none |
-| 2 | Complete your first sync | readiness `platform / complete-sync` | none |
-| 3 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
-| 4 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
-| 5 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning?tab=barcodes` |
-| 6 | Connect your shipping carrier | readiness `wms / connect-carrier` | `/settings/carriers` |
-| 7 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
+| 1 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
+| 2 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
+| 3 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning?tab=barcodes` |
+| 4 | Connect your shipping carrier | readiness `wms / connect-carrier` | `/settings/carriers` |
+| 5 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
 
 The old `Export your first brief` checklist item is no longer part of the Layer
-1 setup contract.
+1 setup contract. Backend/platform readiness (`platform / connect-store`,
+`platform / complete-sync`) still exists and remains valid for lifecycle/pre-app
+consumers — those definitions were not removed, only excluded from this
+Ops Console checklist assembler.
+
+**Development readiness.** Normal development uses canonical onboarding
+readiness. A synthetic platform connected/synced readiness override is
+disabled by default and is available only when `NODE_ENV=development` AND
+`DEV_READINESS_OVERRIDE_ENABLED=true`. Production must never enable the
+synthetic readiness provider.
 
 **Completion rule:** activation remains data-state, never click-tracking.
 Opening a destination does not complete a setup item.
 
 Incomplete items remain individually actionable. Completed items are visually
-subordinate/collapsible. When all seven are complete, the section collapses to a
-compact `Setup complete · 7/7` state rather than rendering seven permanent rows.
+subordinate/collapsible. When all five are complete, the section collapses to a
+compact `Setup complete · 5/5` state rather than rendering five permanent rows.
 
 `wms.carrierConfigured` represents configuration readiness, not live provider
 verification. It is true only when the shop has at least one active supported

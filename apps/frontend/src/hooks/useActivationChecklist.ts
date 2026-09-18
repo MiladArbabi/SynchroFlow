@@ -2,8 +2,8 @@
 //
 // T5 — onboarding activation checklist hook.
 // Assembles 5 checklist items from two endpoints:
-//   1. GET /api/v1/onboarding/readiness  — items 1–3
-//   2. GET /api/v1/user-state/activation-events — items 4–5
+//   1. GET /api/v1/onboarding/readiness  — items 1–4
+//   2. GET /api/v1/user-state/activation-events — item 5
 //
 // See docs/playbooks/onboarding-progressive-disclosure-playbook.md §2 Layer 1.
 
@@ -52,16 +52,6 @@ export function useActivationChecklist() {
   const modules = readiness.data?.modules ?? [];
 
   const items: ChecklistItem[] = [
-    {
-      key:          'connect-store',
-      label:        'Connect your store',
-      complete:     findTask(modules, 'platform', 'connect-store'),
-    },
-    {
-      key:          'complete-sync',
-      label:        'Complete your first sync',
-      complete:     findTask(modules, 'platform', 'complete-sync'),
-    },
     {
       key:          'fix-costs',
       label:        'Fix missing product costs',
