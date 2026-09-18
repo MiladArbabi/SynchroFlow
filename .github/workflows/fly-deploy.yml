@@ -22,6 +22,9 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
+      - name: Validate generated artifact ownership
+        run: npm run check:generated-artifacts
+
       - name: Build migration runner
         run: |
           npm run build -w modules/shared

@@ -1,1 +1,0 @@
-export { BlindnessVisual } from './BlindnessVisual.js';

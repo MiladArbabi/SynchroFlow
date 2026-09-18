@@ -85,6 +85,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Validate generated artifact ownership
+        run: npm run check:generated-artifacts
+
       - name: Build security boundary
         run: |
           npm run build -w modules/shared

@@ -7,8 +7,10 @@ apps/mobile/
 apps/integration-service/
 
 # Build artifacts & caches (monorepo-wide)
-# App-level build artifacts only — modules/*/dist and packages/*/dist
-# are required for TS resolution and must reach the Docker build context.
+# BUILD-02: workspace dist is generated from source inside the Docker build.
+# Do not send local/generated package or module dist into the build context.
+packages/*/dist/
+modules/*/dist/
 apps/*/dist/
 apps/**/dist/
 **/build/

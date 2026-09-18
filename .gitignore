@@ -125,3 +125,11 @@ apps/marketing/next-env.d.ts
 # Local dev-store playbook — contains the dev store domain, local
 # credentials and full auth walkthroughs. Deliberately never committed.
 docs/playbooks/shopify-local-dev-store-playbook.md
+
+# ----------------------------------------------------------------------
+# Workspace-generated build artifacts
+# BUILD-02: source is authoritative; package/module dist is rebuilt locally,
+# in CI, and in production. Never commit generated workspace dist output.
+# ----------------------------------------------------------------------
+/packages/*/dist/
+/modules/*/dist/
