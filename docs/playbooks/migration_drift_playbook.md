@@ -621,10 +621,44 @@ compared by *definition*; and non-destructive `down()`.
   `LOCAL_HTTP_READINESS_VERIFY_STATUS=0`.
 
 **Status at the time of writing: implementation and local verification
-COMPLETE / GREEN. Production repair deployment is PENDING. Production Ops
-Console SETUP certification remains BLOCKED until deployment and a production
-readiness-endpoint re-verification.** Do not read this entry as confirmation
-that production has been fixed or deployed.
+COMPLETE / GREEN.**
+
+> **PRODUCTION CERTIFIED 2026-09-18 — supersedes the paragraph above.**
+> Shipped in commit `bdd496c9b79ec737a45df61d14511cfd55a72fe6`
+> (`fix(onboarding): repair carrier settings schema drift`), pushed to remote
+> `main` successfully. CI / RLS Security Boundary: **GREEN**. Fly Deploy:
+> **GREEN**.
+>
+> Production readiness endpoint re-verified directly:
+> `GET https://app.lasyncro.com/api/v1/onboarding/readiness` → **HTTP 200**.
+>
+> Production `wms` signals observed:
+>
+> | Signal | Value |
+> |---|---|
+> | `wms.zonesConfigured` | `true` |
+> | `wms.barcodesPrinted` | `false` |
+> | `wms.carrierConfigured` | `false` |
+>
+> `wms.carrierConfigured = false` and `wms.barcodesPrinted = false` are
+> unrelated, still-outstanding onboarding tasks, not evidence of unfixed
+> drift — the drift was the endpoint being unable to compute `wms.*` at all
+> (HTTP 500). It now computes all three signals correctly, including the two
+> that are legitimately still incomplete for this shop.
+>
+> Production platform signals observed:
+> `integration.connected = true`, `integration.syncCompleted = true`,
+> `ft1.isComplete = true`.
+>
+> Production `orderNexus.missingCostCount = 25` — a separate, pre-existing
+> product-cost data-completeness signal, unrelated to this schema-drift fix.
+>
+> `CARRIER-SETTINGS-SCHEMA-DRIFT-01` — **forward repair DEPLOYED. Production
+> schema-drift incident FIXED / CERTIFIED. Production onboarding readiness
+> endpoint: GREEN.** This closes the schema/endpoint-availability defect only.
+> It does not certify carrier onboarding UX/completion — connecting a shipping
+> carrier remains an outstanding, unrelated setup task for this shop
+> (`wms.carrierConfigured = false` above).
 
 ---
 

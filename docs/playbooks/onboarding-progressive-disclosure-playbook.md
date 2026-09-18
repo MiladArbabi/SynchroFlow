@@ -280,6 +280,39 @@ Automated recovery coverage includes the Ops Console model and surface contracts
 Overview address-resolution wiring, commercial-access boundary, session-state
 contract and existing Order Detail address treatment.
 
+#### 2026-09-18 SETUP V1 production certification
+
+Production Ops Console `SETUP` was directly observed rendering exactly the five
+journeys defined in the §2 setup contract table above, in order:
+
+1. Fix missing product costs
+2. Map your warehouse zones
+3. Print your first location barcode
+4. Connect your shipping carrier
+5. Release your first batch
+
+Observed production state for the certifying shop:
+
+| State | Rows |
+|---|---|
+| Remaining | Fix missing product costs · Print your first location barcode · Connect your shipping carrier |
+| Completed | Map your warehouse zones · Release your first batch |
+
+Certified:
+
+- no `Setup status unavailable` row rendered;
+- no `Connect your Shopify store` row rendered;
+- no `Complete your first data sync` row rendered;
+- Shopify connection and initial sync correctly remain PRE-APP lifecycle
+  responsibilities (`FT_MINUS_ONE` / `FT0`, per the Setup contract section
+  above) and are not rendered as Ops Console SETUP rows.
+
+**SETUP V1 production certification: COMPLETE / GREEN.**
+
+`NOW` rows were visible in production during this certification, but `NOW`
+semantics were **not** certified by this SETUP slice and remain the next
+separate product layer to certify. The five-row SETUP contract itself is
+unchanged by this note.
 
 ---
 
