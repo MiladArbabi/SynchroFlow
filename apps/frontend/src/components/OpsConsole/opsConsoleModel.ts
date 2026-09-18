@@ -136,7 +136,7 @@ export function relativeAgeLabel(iso: string | null, now: number = Date.now()): 
  * alert stays an open NOW row and only carries an 'acked' qualifier.
  */
 /**
- * NOW ELIGIBILITY POLICY
+ * NOW ELIGIBILITY POLICY — NOW V1 ratified allowlist
  * ----------------------
  * An allow-list by alert_type, deliberately NOT "anything with a route".
  *
@@ -146,11 +146,11 @@ export function relativeAgeLabel(iso: string | null, now: number = Date.now()): 
  * unrecognised is exclusion, so the queue cannot silently fill with whatever
  * the backend starts emitting next.
  *
- * Severity is NOT the criterion. ready_to_pack / ready_to_ship / stow_pending /
- * receive_arrived are info-severity but each represents real floor work, so all
- * four are eligible. Conversely wms_batch_released is excluded despite having a
- * perfectly valid route: it records that work was released to the floor — a
- * progress event, not a new decision or intervention for the merchant.
+ * Severity is NOT the criterion by itself, but it is not sufficient either:
+ * the WMS work-queue states (stow_pending, receive_arrived,
+ * batch_ready_to_pack, batch_ready_to_ship) are normal workflow progression —
+ * the same class of event as wms_batch_released — and are ratified OUT of NOW
+ * V1 for that reason, despite each having a perfectly valid route.
  *
  * Excluded types are not lost: they stay authoritative in the alerts subsystem
  * and are managed at /alerts.
@@ -158,13 +158,10 @@ export function relativeAgeLabel(iso: string | null, now: number = Date.now()): 
 export const NOW_ACTIONABLE_ALERT_TYPES: ReadonlySet<string> = new Set([
   // Order signals
   'sla_breach',
-  'operational',
   'inventory',
   'customer',
-  'revenue_at_risk',
   // Demand signals
   'stockout_risk',
-  'reorder_warning',
   'low_stock_reorder',
   // STOCK-PROTECT-03 Slice 3B: canonical Stock Protection. Actionability is
   // still gated by deepLink() resolving non-null — a complete_setup row or
@@ -172,19 +169,16 @@ export const NOW_ACTIONABLE_ALERT_TYPES: ReadonlySet<string> = new Set([
   // never re-inferred here) and is correctly excluded from NOW by the
   // existing rule below, exactly like any other unresolvable alert.
   'stock_protection',
-  // Money signals
-  'missing_cogs',
   // WMS exceptions
   'wms_pick_exception',
   'wms_pack_exception',
   'wms_stow_exception',
   'wms_receive_exception',
-  // WMS work queues — info severity, but real operational work
-  'wms_stow_pending',
-  'wms_receive_arrived',
-  'wms_batch_ready_to_pack',
-  'wms_batch_ready_to_ship',
-  // DELIBERATELY ABSENT: 'wms_batch_released' — progress/informational only.
+  // DELIBERATELY ABSENT (NOW V1): 'operational', 'revenue_at_risk',
+  // 'missing_cogs', 'reorder_warning' — duplicate/summary signals, not a new
+  // decision. 'wms_stow_pending', 'wms_receive_arrived',
+  // 'wms_batch_ready_to_pack', 'wms_batch_ready_to_ship',
+  // 'wms_batch_released' — normal workflow progression, not an intervention.
 ]);
 
 /** True only for an alert_type explicitly classified as operationally actionable. */

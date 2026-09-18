@@ -40,7 +40,7 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
   revenue_at_risk:         { route: '/overview',      label: 'Overview' },
   operational:             { route: '/orders',         label: 'Orders' },
-  sla_breach:              { route: '/orders',         label: 'Orders' },
+  sla_breach:              { route: '/orders/flow?urgency=sla_breach', label: 'Orders' },
   missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
   billing_usage_threshold: { route: '/settings/billing', label: 'Billing' },
 

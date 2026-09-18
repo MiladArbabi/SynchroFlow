@@ -708,7 +708,7 @@ describe('alert deep-link mapping', () => {
       reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
       revenue_at_risk:         { route: '/overview',       label: 'Overview' },
       operational:             { route: '/orders',         label: 'Orders' },
-      sla_breach:              { route: '/orders',         label: 'Orders' },
+      sla_breach:              { route: '/orders/flow?urgency=sla_breach', label: 'Orders' },
       missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
     };
 
@@ -732,14 +732,14 @@ describe('alert deep-link mapping', () => {
   it('routes a NOW row through the shared resolver by default (no prop supplied)', () => {
     render(
       <OpsConsolePanel
-        alerts={[alert({ id: 'a1', alert_type: 'missing_cogs' })]}
+        alerts={[alert({ id: 'a1', alert_type: 'inventory' })]}
         open
         onClose={jest.fn()}
       />,
     );
 
-    fireEvent.click(within(screen.getByTestId('ops-row-alert:a1')).getByRole('button', { name: /Costs/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/inventory/costs');
+    fireEvent.click(within(screen.getByTestId('ops-row-alert:a1')).getByRole('button', { name: /Resolve stockouts/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/orders/flow?constraint=inventory');
   });
 });
 
@@ -870,7 +870,7 @@ describe('xs responsive layout', () => {
     expect(cta.textContent).toBe('Orders →');
     expect(cta.textContent).not.toMatch(/…|\.\.\./);
     fireEvent.click(cta);
-    expect(mockNavigate).toHaveBeenCalledWith('/orders');
+    expect(mockNavigate).toHaveBeenCalledWith('/orders/flow?urgency=sla_breach');
   });
 
   it('keeps a long subject complete in the DOM so wrapping, not clipping, applies', () => {

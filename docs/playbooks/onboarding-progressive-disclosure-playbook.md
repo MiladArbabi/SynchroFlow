@@ -314,6 +314,80 @@ semantics were **not** certified by this SETUP slice and remain the next
 separate product layer to certify. The five-row SETUP contract itself is
 unchanged by this note.
 
+#### 2026-09-18 — NOW V1 certification
+
+**Local certification only.** This section documents the ratified `NOW`
+architecture and its LOCAL verification evidence. It does not claim
+production certification.
+
+**NOW means:** merchant/operator intervention is required now, there is
+canonical unresolved truth behind it, and there is a concrete remediation
+destination.
+
+**NOW does NOT mean:**
+
+- ordinary workflow progression;
+- setup debt;
+- duplicate summary alerts;
+- speculative/future alert families merely because they have a route.
+
+**Alert-backed NOW V1 allowlist** (exact):
+
+- `sla_breach`
+- `inventory`
+- `customer`
+- `stockout_risk`
+- `low_stock_reorder`
+- `stock_protection`
+- `wms_pick_exception`
+- `wms_pack_exception`
+- `wms_stow_exception`
+- `wms_receive_exception`
+
+Decision Feed remains a separate canonical `NOW` source. Phase-1
+`review_return_resolution` rows are composed before alert-backed `NOW` rows.
+
+**Ratified exclusions** (not `NOW` in V1):
+
+- `operational`
+- `revenue_at_risk`
+- `missing_cogs`
+- `reorder_warning`
+- `wms_stow_pending`
+- `wms_receive_arrived`
+- `wms_batch_ready_to_pack`
+- `wms_batch_ready_to_ship`
+- `wms_batch_released` remains excluded as progress-only
+
+**Boundaries:**
+
+- `missing_cogs` remains represented by SETUP "Fix missing product costs" in
+  V1, not duplicated into `NOW`;
+- normal WMS queue/progression states do not consume `NOW` slots;
+- unknown/new alert types fail closed;
+- eligible alert-backed rows still require a real deep link/action;
+- acknowledgement is not resolution;
+- `NOW` visible limit remains 5; the count represents all actionable `NOW`
+  rows, not only the visible five;
+- `stock_protection` continues to trust backend-derived `alert.action`;
+- `sla_breach` routes to `/orders/flow?urgency=sla_breach`.
+
+**Verification evidence:**
+
+- focused NOW V1 contract: 2 suites / 47 tests GREEN;
+- neighbour regression: 5 suites / 157 tests GREEN,
+  `NOW_V1_NEIGHBOUR_STATUS=0`;
+- live local browser certification: `NOW` showed 8 valid rows from approved
+  families; no `missing_cogs` NOW row; no `revenue_at_risk` NOW row; no
+  `operational` NOW row; no normal WMS progression rows; SETUP remained
+  separate with 3 remaining / 2 completed.
+
+**NOW V1 certification (LOCAL): COMPLETE / GREEN.**
+
+**Non-blocking follow-up observation:** Overview copy showed "5 decisions
+pending" while Ops Console `NOW` showed 8. This is not treated as a NOW V1
+blocker; it is flagged for a later Overview copy/semantics audit.
+
 ---
 
 ### Layer 2 — First-Visit Spotlights (anchored coach marks)

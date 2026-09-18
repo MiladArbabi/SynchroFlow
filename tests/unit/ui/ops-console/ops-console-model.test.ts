@@ -195,25 +195,64 @@ describe('NOW rows', () => {
 
 // ─── NOW ELIGIBILITY POLICY ──────────────────────────────────────────────────
 
-describe('NOW eligibility policy', () => {
+describe('NOW eligibility policy — NOW V1 ratified allowlist', () => {
   // Every type resolves to a route, so the route is NOT what decides.
   const routeForAll = () => ({ route: '/wms', label: 'Warehouse' });
 
+  // RATIFIED NOW V1 — exactly these 10 alert types. Anything else, however
+  // routable, is not "a decision to make" and must not consume a NOW slot.
   const ACTIONABLE = [
-    'sla_breach', 'operational', 'inventory', 'customer', 'revenue_at_risk',
-    'stockout_risk', 'reorder_warning', 'low_stock_reorder', 'missing_cogs',
-    'wms_pick_exception', 'wms_pack_exception', 'wms_stow_exception',
-    'wms_receive_exception', 'wms_stow_pending', 'wms_receive_arrived',
-    'wms_batch_ready_to_pack', 'wms_batch_ready_to_ship',
-    'stock_protection', // STOCK-PROTECT-03 Slice 3B
+    'sla_breach',
+    'inventory',
+    'customer',
+    'stockout_risk',
+    'low_stock_reorder',
+    'stock_protection',
+    'wms_pick_exception',
+    'wms_pack_exception',
+    'wms_stow_exception',
+    'wms_receive_exception',
   ];
 
-  it('classifies exactly the ratified actionable set', () => {
+  // Ratified as explicitly NOT NOW-actionable, even though each currently
+  // resolves to a real route. These are normal workflow progression /
+  // duplicate summary / setup-debt signals, not new merchant decisions.
+  const NOT_ACTIONABLE = [
+    'operational',
+    'revenue_at_risk',
+    'missing_cogs',
+    'reorder_warning',
+    'wms_stow_pending',
+    'wms_receive_arrived',
+    'wms_batch_ready_to_pack',
+    'wms_batch_ready_to_ship',
+  ];
+
+  it('A: classifies exactly the ratified 10-item actionable set', () => {
     expect([...NOW_ACTIONABLE_ALERT_TYPES].sort()).toEqual([...ACTIONABLE].sort());
+    expect(NOW_ACTIONABLE_ALERT_TYPES.size).toBe(10);
     for (const alert_type of ACTIONABLE) {
       expect(isNowActionable(alert({ alert_type }))).toBe(true);
     }
   });
+
+  it.each(NOT_ACTIONABLE)(
+    'B: %s is NOT NOW-actionable under NOW V1',
+    (alert_type) => {
+      expect(isNowActionable(alert({ alert_type }))).toBe(false);
+    },
+  );
+
+  it.each(NOT_ACTIONABLE)(
+    'C: %s stays excluded from NOW even with a perfectly valid route',
+    (alert_type) => {
+      const row = alert({ alert_type });
+
+      // Proof the exclusion is POLICY, not a missing destination.
+      expect(routeForAll()).toEqual({ route: '/wms', label: 'Warehouse' });
+      expect(buildNowRows([row], routeForAll)).toEqual([]);
+    },
+  );
 
   it('excludes wms_batch_released even though its route is perfectly valid', () => {
     const released = alert({ alert_type: 'wms_batch_released' });
@@ -222,19 +261,6 @@ describe('NOW eligibility policy', () => {
     expect(routeForAll()).toEqual({ route: '/wms', label: 'Warehouse' });
     expect(isNowActionable(released)).toBe(false);
     expect(buildNowRows([released], routeForAll)).toEqual([]);
-  });
-
-  it.each([
-    'wms_batch_ready_to_pack',
-    'wms_batch_ready_to_ship',
-    'wms_stow_pending',
-    'wms_receive_arrived',
-  ])('keeps %s actionable despite info severity — severity is not actionability', (alert_type) => {
-    const rows = buildNowRows([alert({ alert_type, severity: 'info' })], routeForAll);
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0].tone).toBe('info');
-    expect(rows[0].status).toBe('actionable');
   });
 
   it('excludes an unknown alert type by default, route or not', () => {
@@ -254,9 +280,9 @@ describe('NOW eligibility policy', () => {
   it('preserves backend order among eligible rows and lets excluded ones consume nothing', () => {
     const inbox = [
       alert({ id: 'a1', alert_type: 'sla_breach' }),
-      alert({ id: 'x1', alert_type: 'wms_batch_released' }),   // excluded
-      alert({ id: 'a2', alert_type: 'operational' }),
-      alert({ id: 'x2', alert_type: 'unknown_type' }),         // excluded
+      alert({ id: 'x1', alert_type: 'wms_batch_released' }),   // excluded (both policies)
+      alert({ id: 'a2', alert_type: 'customer' }),
+      alert({ id: 'x2', alert_type: 'operational' }),          // excluded (NOW V1 only)
       alert({ id: 'a3', alert_type: 'inventory' }),
     ];
     const rows = buildNowRows(inbox, routeForAll);
@@ -273,13 +299,13 @@ describe('NOW eligibility policy', () => {
     const inbox = [
       alert({ id: 'a1', alert_type: 'sla_breach' }),
       alert({ id: 'x1', alert_type: 'wms_batch_released' }),
-      alert({ id: 'a2', alert_type: 'operational' }),
+      alert({ id: 'a2', alert_type: 'inventory' }),
       alert({ id: 'x2', alert_type: 'wms_batch_released' }),
-      alert({ id: 'a3', alert_type: 'inventory' }),
+      alert({ id: 'a3', alert_type: 'customer' }),
       alert({ id: 'x3', alert_type: 'wms_batch_released' }),
-      alert({ id: 'a4', alert_type: 'customer' }),
+      alert({ id: 'a4', alert_type: 'stockout_risk' }),
       alert({ id: 'x4', alert_type: 'unknown_type' }),
-      alert({ id: 'a5', alert_type: 'missing_cogs' }),
+      alert({ id: 'a5', alert_type: 'low_stock_reorder' }),
     ];
     const rows = buildNowRows(inbox, routeForAll);
 
