@@ -1429,11 +1429,10 @@ correction, are both CLOSED / VERIFIED — see §13.19–13.24. There is no Slic
 3. The following adjacent issues retain their existing states and are **not**
 closed or redefined by Slice 1B, Slice 2, or Slice 2B:
 
-- `BUILD-02` | P1 | **PARKED** — internal module source/dist integrity.
-  Neither Slice 2 nor Slice 2B resolved this issue; both regenerated the four
-  `SuppliersPortalModuleFT2` dist artifacts from source in this worktree
-  exactly as Slices 1A/1B did, and runtime module resolution continues to
-  require verifying source/dist parity on every change — see §13.21, §13.24;
+- `BUILD-02` | P1 | **CLOSED 2026-09-18 via #1140** — workspace `dist`
+  is generated-only and untracked. Package/module outputs are produced by
+  explicit workspace builds (`build:deps` or the owning workspace build), and
+  CI/repository guards prevent generated `dist` from being committed again;
 - `TEST-ORDER-NEXUS-MODULEENTRY-01` | P2 | OPEN;
 - `INV-ACTION-ARCH-01` | P2 | OPEN;
 - `ORD-FIXTURE-INVMULTI-01` | P2 | OPEN;

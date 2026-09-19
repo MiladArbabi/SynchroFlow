@@ -574,10 +574,10 @@ targeted **View inbound** still does not preserve variant context after
 navigation (Level 2; see `sourcing-recommendation-playbook.md` §13.16,
 §13.18). Slice 2B's `covered_inbound` worklist action reuses this same
 context-free navigation and does not claim to fix it. `BUILD-02` | P1 |
-**PARKED** — neither Slice 2 nor Slice 2B resolved this issue; both
-regenerated the suppliers-portal dist artifacts from source in this worktree,
-and runtime verification continues to require source/dist parity on every
-change.
+**CLOSED 2026-09-18 via #1140** — workspace `dist` is now generated-only
+and untracked. Runtime/type verification relies on explicit workspace builds,
+with CI and repository guards preventing generated `dist` from returning to
+Git.
 
 ---
 

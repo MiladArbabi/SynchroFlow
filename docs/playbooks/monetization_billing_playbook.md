@@ -3990,10 +3990,12 @@ Static / safety at certification:
 
 #### Generated package surface
 
-`packages/commercial-policy` is a **built** package whose committed `dist` is part
-of its package surface, so P0-A3-3 necessarily includes generated changes to
-`packages/commercial-policy/dist/capabilities.d.ts` and
-`packages/commercial-policy/dist/capabilities.js` alongside the `src` change.
+At the time of P0-A3-3, `packages/commercial-policy` was a **built**
+package whose generated `dist` was committed alongside source changes.
+Since BUILD-02 (#1140, 2026-09-18), `dist` remains generated package output
+used by package resolution but is ignored and untracked. Equivalent changes
+now update authoritative source and regenerate the package through the
+workspace build; generated `dist` must not be staged.
 
 > *Local verification environment only — not a product fact, and not shipped
 > files:* the A3-3 worktree initially inherited `node_modules` resolution from
