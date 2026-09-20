@@ -12,6 +12,7 @@ describe('CanvasEditor canonical component registry boundary', () => {
     expect(canvasSource).toMatch(/from '\.\/floorPlanningComponents\.js'/);
     expect(canvasSource).toContain('FLOOR_PLANNING_COMPONENTS');
     expect(canvasSource).not.toContain('PALETTE_ITEMS');
+    expect(canvasSource).not.toMatch(/const\s+.*DEFAULT.*(?:width|depth|rack)/i);
   });
 
   it('keeps visual token selection driven by structural type and zone_type', () => {
@@ -22,5 +23,16 @@ describe('CanvasEditor canonical component registry boundary', () => {
 
   it('does not designate a WMS problem bin during palette creation', () => {
     expect(canvasSource).not.toMatch(/problem_bin_location|wms_settings/i);
+  });
+
+  it('contains no rejected ghost-placement state or rendering', () => {
+    expect(canvasSource).not.toMatch(/pendingPlacement|pending-placement-ghost|placePendingComponent|movePendingPlacement/);
+    expect(canvasSource).not.toContain('floorPlanningDimensions');
+  });
+
+  it('retains the existing canvas drag and resize interaction owners', () => {
+    expect(canvasSource).toContain('function onRackMouseDown');
+    expect(canvasSource).toContain('resizeRef.current');
+    expect(canvasSource).toMatch(/onUpdateZone\(r\.locationCode, \{ width: local\.w, depth: local\.h \}\)/);
   });
 });

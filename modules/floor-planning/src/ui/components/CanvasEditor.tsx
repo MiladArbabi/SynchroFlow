@@ -139,13 +139,12 @@ interface CanvasEditorProps {
   onViewIn3D?: () => void;
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, canvasCentreX, canvasCentreY }: {
+function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent }: {
   zones: WarehouseZone[];
+  codeSourceZones: readonly Pick<WarehouseZone, 'location_code'>[];
   unpositionedZones: WarehouseZone[];
   onPlace: (zone: WarehouseZone) => void;
-  onCreateZone?: CanvasEditorProps['onCreateZone'];
-  canvasCentreX: number;
-  canvasCentreY: number;
+  onCreateComponent: (item: FloorPlanningComponentDefinition, locationCode: string) => Promise<void>;
 }) {
   // Layout health — real checks computed from live zone state (WMS-FP-06).
   const healthIssues: string[] = [];
@@ -156,29 +155,28 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
   const unbarcoded = zones.filter((z) => z.type !== 'warehouse' && z.barcode == null).length;
   if (unbarcoded > 0) healthIssues.push(`${unbarcoded} location${unbarcoded !== 1 ? 's' : ''} without a barcode`);
   const [activeItem, setActiveItem] = useState<string | null>(null);
+  const [locationCode, setLocationCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleCreate(item: FloorPlanningComponentDefinition) {
-    if (!onCreateZone || creating) return;
-    const locationCode = nextFloorPlanningLocationCode(item.codePrefix, zones);
+  function openCreate(item: FloorPlanningComponentDefinition) {
+    if (creating) return;
     setActiveItem(item.id);
+    setLocationCode(nextFloorPlanningLocationCode(item.codePrefix, codeSourceZones));
+    setError(null);
+  }
+
+  async function handleCreate(item: FloorPlanningComponentDefinition) {
+    const normalizedCode = locationCode.trim().toUpperCase();
+    if (!normalizedCode || creating) return;
     setCreating(true);
     setError(null);
     try {
-      await onCreateZone({
-        location_code: locationCode,
-        type: item.type,
-        zone_type: item.zone_type,
-        position_x: canvasCentreX,
-        position_y: canvasCentreY,
-        width: item.defaultW,
-        depth: item.defaultD,
-        rack_levels: item.defaultRackLevels ?? undefined,
-      });
+      await onCreateComponent(item, normalizedCode);
       setActiveItem(null);
-    } catch (e: any) {
-      setError(e?.response?.data?.error ?? 'Failed to create');
+      setLocationCode('');
+    } catch (createError: any) {
+      setError(createError?.response?.data?.error ?? 'Failed to create');
     } finally {
       setCreating(false);
     }
@@ -213,9 +211,9 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
                     tabIndex={0}
                     aria-label={`Add ${item.label}`}
                     aria-disabled={creating}
-                    onClick={() => void handleCreate(item)}
+                    onClick={() => openCreate(item)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') void handleCreate(item);
+                      if (event.key === 'Enter' || event.key === ' ') openCreate(item);
                     }}
                     sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${isActive ? 'var(--accent)' : stroke}`,
                       bgcolor: isActive ? 'var(--accent-ghost)' : fill, cursor: creating ? 'wait' : 'pointer',
@@ -225,11 +223,37 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
                     <Typography sx={{ fontSize: 9, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
                       {item.label}
                     </Typography>
-                    {isActive && creating && (
-                      <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>Adding…</Typography>
-                    )}
-                    {isActive && error && (
-                      <Typography role="alert" sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', textAlign: 'center' }}>{error}</Typography>
+                    {isActive && (
+                      <Box sx={{ width: '100%', mt: 0.5 }} onClick={(event) => event.stopPropagation()}>
+                        <Typography component="label" htmlFor={`location-code-${item.id}`} sx={{ display: 'block', fontSize: 8, color: 'var(--ink-4)', mb: 0.25 }}>
+                          Location code
+                        </Typography>
+                        <input
+                          id={`location-code-${item.id}`}
+                          autoFocus
+                          required
+                          value={locationCode}
+                          placeholder={`${item.codePrefix}-02`}
+                          onChange={(event) => setLocationCode(event.target.value.toUpperCase())}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key === 'Enter') void handleCreate(item);
+                          }}
+                          style={{ width: '100%', fontSize: 9, fontFamily: 'monospace', padding: '3px 4px', borderRadius: 3, border: '1px solid var(--rule)', background: 'var(--bg)', color: 'var(--ink)', boxSizing: 'border-box' }}
+                        />
+                        {error && (
+                          <Typography role="alert" sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', mt: 0.25, textAlign: 'center' }}>{error}</Typography>
+                        )}
+                        <Button
+                          size="small"
+                          variant="contained"
+                          disabled={creating || !locationCode.trim()}
+                          onClick={() => void handleCreate(item)}
+                          sx={{ width: '100%', minWidth: 0, mt: 0.5, py: 0.25, fontSize: 8 }}
+                        >
+                          {creating ? 'Adding…' : 'Add'}
+                        </Button>
+                      </Box>
                     )}
                   </Box>
                 );
@@ -300,6 +324,9 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
   onCreateZone?: CanvasEditorProps['onCreateZone'];
 }) {
   const zoneColor = ZONE_STROKE[zone.zone_type ?? 'storage'] ?? ZONE_STROKE.storage;
+  const roleLabel = FLOOR_PLANNING_COMPONENTS.find(
+    (item) => item.type === zone.type && item.zone_type === zone.zone_type,
+  )?.label ?? zone.zone_type ?? zone.type;
   const [saving, setSaving]           = useState(false);
   const [deleteOpen, setDeleteOpen]   = useState(false);
   const [editW, setEditW]   = useState(String(zone.width  ?? ''));
@@ -392,13 +419,13 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             <Typography sx={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{zone.location_code}</Typography>
           </Box>
         </Box>
-        {zone.zone_type && (
+        <Box>
+          <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>Role</Typography>
           <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+            <Chip label={roleLabel} size="small" sx={{ fontSize: 10, height: 20, bgcolor: zone.zone_type ? ZONE_COLORS[zone.zone_type] : 'transparent', color: zoneColor, border: `1px solid ${zoneColor}` }} />
             <Chip label={zone.type} size="small" sx={{ fontSize: 10, height: 20 }} />
-            <Chip label={zone.zone_type} size="small"
-              sx={{ fontSize: 10, height: 20, bgcolor: ZONE_COLORS[zone.zone_type] ?? 'transparent', color: zoneColor, border: `1px solid ${zoneColor}` }} />
           </Box>
-        )}
+        </Box>
         <Divider />
         <Box>
           <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>Dimensions</Typography>
@@ -412,10 +439,10 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               <Box key={field}>
                 <Typography sx={{ fontSize: 9, color: 'var(--ink-4)', mb: 0.25, fontWeight: 500 }}>{label}</Typography>
                 <TextField size="small" value={value} onChange={(e) => set(e.target.value)}
-                  onBlur={() => commitField(field, value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') commitField(field, value); }}
+                  onBlur={() => void commitField(field, value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void commitField(field, value); }}
                   disabled={saving}
-                  inputProps={{ style: { fontFamily: 'monospace', fontSize: 12, padding: '4px 8px' } }}
+                  inputProps={{ 'aria-label': label, style: { fontFamily: 'monospace', fontSize: 12, padding: '4px 8px' } }}
                   InputProps={{ endAdornment: <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>m</Typography> }}
                   sx={{ width: '100%' }} />
               </Box>
@@ -614,6 +641,7 @@ export function CanvasEditor({
   const [zoom, setZoom]         = useState(1);
   const [offset, setOffset]     = useState({ x: 40, y: 40 });
   const [selected, setSelected] = useState<string | null>(null);
+  const [optimisticCreatedZones, setOptimisticCreatedZones] = useState<WarehouseZone[]>([]);
   const [flipped, setFlipped]   = useState(false); // angle preset: standard vs mirrored
   const [localPositions, setLocalPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [localSizes, setLocalSizes]         = useState<Record<string, { w: number; h: number }>>({});
@@ -643,7 +671,15 @@ export function CanvasEditor({
       position_x: placedCoords[z.location_code].x,
       position_y: placedCoords[z.location_code].y,
     })),
+    ...optimisticCreatedZones.filter(
+      (optimisticZone) => !zones.some((zone) => zone.location_code === optimisticZone.location_code),
+    ),
   ];
+  useEffect(() => {
+    setOptimisticCreatedZones((current) => current.filter(
+      (optimisticZone) => !zones.some((zone) => zone.location_code === optimisticZone.location_code),
+    ));
+  }, [zones]);
   // Refs for latest values — avoids stale closure captures inside useEffect mousemove handler
   const positionedZonesRef = useRef(positionedZones);
   const localSizesRef      = useRef(localSizes);
@@ -662,6 +698,41 @@ export function CanvasEditor({
     : null;
 
   const toSvg = useCallback((metres: number) => metres * SCALE * zoom, [zoom]);
+
+  async function createPaletteComponent(item: FloorPlanningComponentDefinition, locationCode: string) {
+    if (!onCreateZone) return;
+    const x = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
+    const y = snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)));
+    await onCreateZone({
+      location_code: locationCode,
+      type: item.type,
+      zone_type: item.zone_type,
+      position_x: x,
+      position_y: y,
+      width: item.defaultW,
+      depth: item.defaultD,
+      rack_levels: item.defaultRackLevels ?? undefined,
+    });
+    const createdZone: WarehouseZone = {
+      location_code: locationCode,
+      type: item.type,
+      parent_location_code: null,
+      barcode: null,
+      active: true,
+      children_count: 0,
+      position_x: x,
+      position_y: y,
+      width: item.defaultW,
+      depth: item.defaultD,
+      orientation: 0,
+      rack_levels: item.defaultRackLevels,
+      zone_type: item.zone_type,
+      last_printed_at: null,
+      warehouse_name: null,
+    };
+    setOptimisticCreatedZones((current) => [...current, createdZone]);
+    setSelected(locationCode);
+  }
 
   /**
    * Clamp position so zone (code, w, h) doesn't overlap any other zone.
@@ -1095,6 +1166,7 @@ export function CanvasEditor({
       {/* LEFT — palette */}
       <ComponentPalette
         zones={zones}
+        codeSourceZones={[...zones, ...optimisticCreatedZones]}
         unpositionedZones={zones.filter(z => z.position_x == null)}
         onPlace={(zone) => {
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
@@ -1102,9 +1174,7 @@ export function CanvasEditor({
           setPlacedCoords(prev => ({ ...prev, [zone.location_code]: { x: centreX, y: centreY } }));
           onUpdateZone?.(zone.location_code, { position_x: centreX, position_y: centreY });
         }}
-        onCreateZone={onCreateZone}
-        canvasCentreX={snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)))}
-        canvasCentreY={snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)))}
+        onCreateComponent={createPaletteComponent}
       />
 
       {/* CENTER — canvas */}
@@ -1169,6 +1239,7 @@ export function CanvasEditor({
             </Box>
             <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               <svg ref={svgRef} width="100%" height="100%"
+                data-testid="floor-planning-canvas"
                 style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
                 onMouseDown={onCanvasMouseDown}>
                 <g transform={`translate(${offset.x},${offset.y})`}>
