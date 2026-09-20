@@ -20,6 +20,12 @@ import { X, Layers, RotateCw, Copy, Trash2, Tag } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
 import { IsometricCanvas } from './IsometricCanvas.js';
+import {
+  FLOOR_PLANNING_COMPONENT_GROUPS,
+  FLOOR_PLANNING_COMPONENTS,
+  nextFloorPlanningLocationCode,
+  type FloorPlanningComponentDefinition,
+} from './floorPlanningComponents.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SCALE      = 60;
@@ -68,18 +74,6 @@ export const ZONE_STROKE: Record<string, string> = {
   kitting:    zoneRGBA('kitting', 0.85),
   storage:    zoneRGBA('storage', 0.60),
 };
-
-// Palette items — frame zones (lane) have no collision, operational zones (bin) are clamped
-const PALETTE_ITEMS = [
-  { type: 'lane', label: 'Aisle',      zone_type: 'pick',      defaultW: 4.4, defaultD: 1.0, defaultRackLevels: null },
-  { type: 'bin',  label: 'Pick',       zone_type: 'pick',      defaultW: 1.0, defaultD: 0.5, defaultRackLevels: 3    },
-  { type: 'bin',  label: 'Pack',       zone_type: 'pack',      defaultW: 2.0, defaultD: 1.5, defaultRackLevels: 2    },
-  { type: 'bin',  label: 'Receive',    zone_type: 'receive',   defaultW: 3.0, defaultD: 3.0, defaultRackLevels: 1    },
-  { type: 'bin',  label: 'Ship',       zone_type: 'ship',      defaultW: 4.0, defaultD: 3.0, defaultRackLevels: 1    },
-  { type: 'bin',  label: 'Returns',    zone_type: 'returns',   defaultW: 3.0, defaultD: 2.0, defaultRackLevels: 1    },
-  { type: 'bin',  label: 'Quarantine', zone_type: 'quarantine',defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1    },
-  { type: 'bin',  label: 'Materials',  zone_type: 'kitting',   defaultW: 2.0, defaultD: 1.0, defaultRackLevels: 2    },
-] as const;
 
 function snapV(v: number): number {
   return Math.round(v / SNAP) * SNAP;
@@ -162,17 +156,18 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
   const unbarcoded = zones.filter((z) => z.type !== 'warehouse' && z.barcode == null).length;
   if (unbarcoded > 0) healthIssues.push(`${unbarcoded} location${unbarcoded !== 1 ? 's' : ''} without a barcode`);
   const [activeItem, setActiveItem] = useState<string | null>(null);
-  const [locationCode, setLocationCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleCreate(item: typeof PALETTE_ITEMS[number]) {
-    if (!locationCode.trim() || !onCreateZone) return;
+  async function handleCreate(item: FloorPlanningComponentDefinition) {
+    if (!onCreateZone || creating) return;
+    const locationCode = nextFloorPlanningLocationCode(item.codePrefix, zones);
+    setActiveItem(item.id);
     setCreating(true);
     setError(null);
     try {
       await onCreateZone({
-        location_code: locationCode.trim().toUpperCase(),
+        location_code: locationCode,
         type: item.type,
         zone_type: item.zone_type,
         position_x: canvasCentreX,
@@ -182,7 +177,6 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
         rack_levels: item.defaultRackLevels ?? undefined,
       });
       setActiveItem(null);
-      setLocationCode('');
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to create');
     } finally {
@@ -200,43 +194,49 @@ function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, can
           Click to add
         </Typography>
       </Box>
-      <Box sx={{ p: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, overflowY: 'auto' }}>
-        {PALETTE_ITEMS.map((item) => {
-          // Frame types (lane) use type-based colour — matches canvas render
-          const colorKey = item.type === 'lane' ? 'lane' : item.zone_type;
-          const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
-          const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-          return (
-            <Box key={item.label}
-              onClick={() => { setActiveItem(item.label); setLocationCode(''); setError(null); }}
-              sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${activeItem === item.label ? 'var(--accent)' : stroke}`,
-                bgcolor: activeItem === item.label ? 'var(--accent-ghost)' : fill, cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, userSelect: 'none',
-                '&:hover': { opacity: 0.8 }, transition: 'all 0.12s' }}>
-              <Box sx={{ width: '100%', height: 20, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill }} />
-              <Typography sx={{ fontSize: 9, fontWeight: 600, color: activeItem === item.label ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
-                {item.label}
-              </Typography>
-              {activeItem === item.label && (
-                <Box sx={{ width: '100%', mt: 0.5 }} onClick={e => e.stopPropagation()}>
-                  <input
-                    autoFocus
-                    placeholder="Code e.g. D-1"
-                    value={locationCode}
-                    onChange={e => setLocationCode(e.target.value.toUpperCase())}
-                    onKeyDown={e => { if (e.key === 'Enter') void handleCreate(item); if (e.key === 'Escape') setActiveItem(null); }}
-                    style={{ width: '100%', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--rule)', background: 'var(--bg)', color: 'var(--ink)', boxSizing: 'border-box' }}
-                  />
-                  {error && <Typography sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', mt: 0.25 }}>{error}</Typography>}
-                  <Box onClick={() => void handleCreate(item)}
-                    sx={{ mt: 0.5, py: 0.25, borderRadius: 1, bgcolor: creating ? 'var(--ink-4)' : 'var(--accent)', color: '#fff', fontSize: 8, fontWeight: 600, textAlign: 'center', cursor: 'pointer' }}>
-                    {creating ? '…' : 'Add'}
+      <Box sx={{ p: 1, overflowY: 'auto' }}>
+        {FLOOR_PLANNING_COMPONENT_GROUPS.map((group) => (
+          <Box key={group} sx={{ mb: 1.25 }}>
+            <Typography sx={{ px: 0.25, mb: 0.5, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--ink-4)' }}>
+              {group}
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
+              {FLOOR_PLANNING_COMPONENTS.filter((item) => item.group === group).map((item) => {
+                // Frame types (lane) use type-based colour — matches canvas render.
+                const colorKey = item.type === 'lane' ? 'lane' : item.zone_type;
+                const fill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+                const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
+                const isActive = activeItem === item.id;
+                return (
+                  <Box key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Add ${item.label}`}
+                    aria-disabled={creating}
+                    onClick={() => void handleCreate(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') void handleCreate(item);
+                    }}
+                    sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${isActive ? 'var(--accent)' : stroke}`,
+                      bgcolor: isActive ? 'var(--accent-ghost)' : fill, cursor: creating ? 'wait' : 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, userSelect: 'none',
+                      '&:hover': { opacity: creating ? 1 : 0.8 }, transition: 'all 0.12s' }}>
+                    <Box sx={{ width: '100%', height: 20, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill }} />
+                    <Typography sx={{ fontSize: 9, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
+                      {item.label}
+                    </Typography>
+                    {isActive && creating && (
+                      <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>Adding…</Typography>
+                    )}
+                    {isActive && error && (
+                      <Typography role="alert" sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', textAlign: 'center' }}>{error}</Typography>
+                    )}
                   </Box>
-                </Box>
-              )}
+                );
+              })}
             </Box>
-          );
-        })}
+          </Box>
+        ))}
       </Box>
 
       {/* Unpositioned zones — click to place at canvas centre */}
