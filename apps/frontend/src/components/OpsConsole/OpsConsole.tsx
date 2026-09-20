@@ -19,7 +19,9 @@
 //   NOW     — canonical live alert inbox, passed down from the topnav, which
 //             is the single shell-level owner of that poll. No second poll is
 //             created here. ACTIONABLE-ONLY and capped at five by default.
-//   WAITING — omitted in V1: no shop-wide intervention/verification read exists.
+//   WAITING — canonical shop-wide WAITING feed (GET /api/v1/operations/waiting,
+//             see useWaiting.ts), mapped verbatim by buildWaitingRows — no
+//             local lifecycle inference. Empty feed renders no section.
 //   SETUP   — existing useActivationChecklist assembler, unchanged. Secondary:
 //             collapsed until asked for, and always rendered below NOW.
 //   HISTORY — its own tab, never in OPEN: alerts the backend closed
@@ -43,6 +45,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useActivationChecklist } from '../../hooks/useActivationChecklist';
 import { useAlerts, type Alert } from '../../pages/alerts/useAlerts';
 import { alertDeepLink } from '../../pages/alerts/alertDeepLink';
+import { useWaiting, type WaitingItem } from '../../pages/operations/useWaiting';
 import { OrderDetailModalBody } from '../../pages/orders/OrderDetailModalBody';
 import { BatchDetailModalBody } from '../../pages/ft2-pages/BatchDetailModalBody';
 import { VariantDetailModalHost } from '../../pages/ft2-pages/VariantDetailModalHost';
@@ -234,6 +237,14 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
         }}
       >
         {row.label}
+        {row.subtitle && (
+          <Box
+            component="span"
+            sx={{ display: 'block', fontSize: 10, color: pal.ink3, fontWeight: 400 }}
+          >
+            {row.subtitle}
+          </Box>
+        )}
       </Typography>
 
       {/* COL 3 — meta. Always present so the grid columns never shift. */}
@@ -569,6 +580,12 @@ export interface OpsConsoleProps {
   deepLink?: (alert: Alert) => { route: string; label: string } | null;
   open: boolean;
   onClose: () => void;
+  /**
+   * OPS-CONSOLE-WAITING-01 — canonical shop-wide WAITING feed. Owned and
+   * fetched internally via useWaiting() by default; overridable for tests
+   * only, mirroring `deepLink`.
+   */
+  waitingItems?: WaitingItem[];
 }
 
 export function OpsConsolePanel({
@@ -576,6 +593,7 @@ export function OpsConsolePanel({
   deepLink = alertDeepLink,
   open,
   onClose,
+  waitingItems,
 }: OpsConsoleProps) {
   const pal = useAppTheme();
   const nav = useNavigate();
@@ -645,7 +663,13 @@ export function OpsConsolePanel({
 
   // Actionable-only, in backend rank order — no client-side sorting anywhere.
   const nowRows = useMemo(() => buildNowRows(alerts, deepLink), [alerts, deepLink]);
-  const waitingRows = buildWaitingRows();
+  // OPS-CONSOLE-WAITING-01 — canonical shop-wide WAITING feed. `waitingItems`
+  // is override-only (tests); production always reads the live query result.
+  // A loading/error/empty feed resolves to [] and therefore never renders a
+  // WAITING section — no synthesized rows.
+  const waitingQuery = useWaiting();
+  const resolvedWaitingItems = waitingItems ?? waitingQuery.data?.items ?? [];
+  const waitingRows = useMemo(() => buildWaitingRows(resolvedWaitingItems), [resolvedWaitingItems]);
   const setupRows = useMemo(() => (setupDismissed ? [] : buildSetupRows(items)), [items, setupDismissed]);
   const historyRows = useMemo(() => buildAlertHistoryRows(resolvedAlerts), [resolvedAlerts]);
 
@@ -964,7 +988,6 @@ export function OpsConsoleButton({
   const { items } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
-
   // Open attention is still computed from exactly one authority (isOpenRow over
   // NOW + SETUP), but the trigger no longer PRINTS it: the alerts bell already
   // shows a number for largely the same inbox, and two adjacent counters read as

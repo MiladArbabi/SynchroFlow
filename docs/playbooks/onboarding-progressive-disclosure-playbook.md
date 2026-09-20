@@ -65,7 +65,7 @@ NOW
 
 WAITING
   persisted interventions awaiting canonical verification
-  [absent in V1 because no shop-wide authoritative read exists]
+  [live — GET /api/v1/operations/waiting; see "WAITING V1 certification" below]
 
 SETUP
   incomplete onboarding/configuration work
@@ -428,6 +428,129 @@ correctly. Treat this as a stale cached frontend/AppLayout bundle
 observation, not evidence of a NOW V1 semantic defect.
 
 **NOW V1 production certification: COMPLETE / GREEN.**
+
+#### 2026-09-20 — WAITING V1 certification
+
+This section documents the ratified `WAITING` architecture, its correction
+pass, its verification evidence, and its local runtime certification status.
+
+**WAITING means:** a durable merchant/operator intervention has already
+happened, the underlying problem is no longer asking for another decision,
+and canonical domain truth says the result is still awaiting
+verification/completion.
+
+**Boundary:**
+
+```text
+NOW      = I still need you to do something.
+WAITING  = You already did it. We are waiting for the result to become
+           canonically true.
+HISTORY  = The result became canonically complete.
+```
+
+**V1 treatments** (exact, no others):
+
+- `address_correction`
+- `inventory_reorder_intent`
+
+**Valid treatment/constraint pairings** (exact):
+
+| Treatment | constraintType | blockType |
+|---|---|---|
+| `address_correction` | `customer` | `incomplete_address` |
+| `inventory_reorder_intent` | `inventory` | `oversell` |
+
+Any other pairing — either V1 treatment against an `operational` constraint,
+or crossed with the other treatment's constraint type — fails closed: it is
+never `WAITING`, and it must never suppress `NOW`.
+
+**Current-state projection (correction pass).** `decision_interventions`
+remains append-only provenance; canonical per-order intervention readers
+(`readOrderInterventionOutcomes`) remain undeduplicated. The shop-wide
+`WAITING` surface is a separate CURRENT STATE projection built on top of that
+provenance: it renders at most ONE row per current constraint episode. When
+multiple valid `pending_verification` interventions exist against the same
+still-active episode, the latest `occurredAt` wins; `interventionId` is the
+deterministic tie-break on an exact timestamp tie.
+
+**NOW reconciliation** (per exact constraint episode, never per whole
+shop/order/type):
+
+```text
+pending_verification    → WAITING;     exact current episode excluded from NOW
+verified_resolved       → not WAITING; HISTORY later
+unknown/stale/re-raised → not WAITING; must NOT suppress NOW
+```
+
+**API / frontend ownership.** `GET /api/v1/operations/waiting` — the backend
+owns lifecycle classification, pairing eligibility, presentation copy, and
+routing; the frontend is projection-only (renders the backend feed verbatim,
+with no local re-derivation of copy, route, or business meaning). Locked
+routes:
+
+```text
+address_correction         → /overview?resolution=address
+inventory_reorder_intent   → /orders/flow?constraint=inventory
+```
+
+`WAITING` does NOT contribute to the Ops Console attention badge — `NOW` =
+needs attention, `WAITING` = already acted / no attention count.
+
+**Verification evidence:**
+
+- backend WAITING integration contract: **15 / 15 GREEN**;
+- canonical outcome unit: **2 / 2 GREEN**;
+- frontend WAITING/model/surface: **148 / 148 GREEN**;
+- Decision Feed / Ops Console neighbour regression: **169 / 169 GREEN**;
+- address + inventory outcome attribution: **11 / 11 GREEN**;
+- address writer neighbours: **19 / 19 GREEN**;
+- backend bounded TypeScript: **0 errors**;
+- WAITING frontend files (`opsConsoleModel.ts`, `OpsConsole.tsx`,
+  `useWaiting.ts`): **0 TypeScript errors**.
+
+One inventory-treatment neighbour test (`INV-TREAT-01-08`) has a confirmed
+pre-existing failure, traced to `orders.decision-by-order.controller.ts` (no
+import path to any WAITING-touched file; both the test and the controller
+were already dirty before WAITING work began). It is unrelated to WAITING
+correctness and is not caused by it.
+
+**Local runtime status: RUNTIME-SMOKE-CERTIFIED WITH FIXTURE LIMITATION —
+NOT production-certified.**
+
+Observed locally:
+
+- local API, worker, and Vite UI booted successfully;
+- `GET /api/v1/operations/waiting` unauthenticated returned `401` as expected;
+- the real Ops Console loaded successfully;
+- real database/customer `NOW` state matched the UI: 3 address-issue orders;
+- real inventory `NOW` state matched current constraint data;
+- the address-correction flow was inspected through the actual UI;
+- stockout treatments were inspected through the actual UI and behaved
+  according to canonical purchasing context — existing committed inbound
+  surfaced "Review incoming stock"; no supplier surfaced "Find a supplier";
+- no merchant action was forced merely to manufacture a `WAITING` row.
+
+**Caveat:** the dev fixture data contained no naturally actionable inventory
+case that could create a durable `inventory_reorder_intent` while leaving the
+underlying constraint pending long enough to observe a manual `NOW → WAITING`
+transition. Address correction is capable of resolving the customer
+constraint immediately, which also makes it unsuitable as a guaranteed
+durable `WAITING` demonstration. **No live visual `NOW → WAITING` transition
+was observed** — this remains open for a future certification pass with
+purpose-built fixture data.
+
+**Non-blocking follow-up observation (UX, not a WAITING V1 correctness
+blocker):** Ops Console resolution journeys could be more contextually
+connected to the Overview live map, Orders Overview / Order Flow, Inventory
+Intelligence, and onboarding spotlight/contextual guidance. This is
+enhancement scope, not designed or implemented here.
+
+**Unrelated observation (DevEx, not mixed into WAITING correctness):** a
+separate GitHub issue already tracks local build/startup artifact and
+resource problems (stale `tsbuildinfo` / missing `dist` behavior, and
+deprecated/paused module startup cost). Not addressed here.
+
+**WAITING V1 status: RUNTIME-SMOKE-CERTIFIED WITH FIXTURE LIMITATION.**
 
 ---
 

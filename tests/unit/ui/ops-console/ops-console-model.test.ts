@@ -359,11 +359,147 @@ describe('NOW eligibility policy — NOW V1 ratified allowlist', () => {
   });
 });
 
-// ─── WAITING — DELIBERATELY EMPTY ────────────────────────────────────────────
+// ─── WAITING V1 — BACKEND-CLASSIFIED PENDING ITEMS ONLY (RED CONTRACT) ───────
+//
+// OPS-CONSOLE-WAITING-01. SUPERSEDES the prior "WAITING rows / DELIBERATELY
+// EMPTY" block above, which asserted buildWaitingRows() was permanently and
+// unconditionally [] — that specific claim is now WRONG under the ratified
+// V1 contract (WAITING renders backend-classified pending_verification
+// items once a shop-wide read model exists). The invariant that block
+// actually protected — this file must never locally DERIVE 'waiting' from
+// raw constraint/intervention fields, only render what the backend already
+// classified — is carried forward below (the "no local derivation" source
+// check) rather than dropped.
+//
+// buildWaitingRows(items) is EXPECTED to accept the backend's WAITING feed,
+// exactly mirroring how buildDecisionNowRows(decisions) already maps the
+// canonical Decision Feed above. It does not have that shape yet —
+// buildWaitingRows() currently takes no parameters and always returns [] —
+// so every populated-input case below is RED until that shape exists.
+//
+// Row-id convention: `waiting:${interventionId}`, matching the existing
+// `alert:${id}` / `decision:${decisionId}` / `setup:${key}` /
+// `history:${id}` convention already used by the sibling builders.
+//
+// COPY IS NOT RATIFIED (correction pass, 2026-09-18). Fixture title /
+// subtitle / actionLabel below are DELIBERATELY distinctive nonsense —
+// unrelated to `treatment`'s wording — so a passing assertion can only mean
+// the builder rendered backend copy VERBATIM, never that it happened to
+// regenerate plausible-sounding address/inventory copy of its own. Only
+// routing.route is a ratified, real, exact string.
 
-describe('WAITING rows', () => {
-  it('are empty: no shop-wide intervention/verification read model exists to source them', () => {
-    expect(buildWaitingRows()).toEqual([]);
+interface WaitingApiItemFixture {
+  interventionId: string;
+  treatment: 'address_correction' | 'inventory_reorder_intent' | string;
+  lasyncroOrderId: string;
+  externalOrderId: string | null;
+  constraintId: string;
+  constraintType: 'customer' | 'inventory';
+  blockType: string;
+  occurredAt: string;
+  outcome: 'pending_verification';
+  presentation: { title: string; subtitle: string; actionLabel: string };
+  routing: { route: string };
+}
+
+function waitingItem(over: Partial<WaitingApiItemFixture> = {}): WaitingApiItemFixture {
+  return {
+    interventionId: 'intv-1',
+    treatment: 'address_correction',
+    lasyncroOrderId: 'order-1',
+    externalOrderId: '#1001',
+    constraintId: 'constraint-1',
+    constraintType: 'customer',
+    blockType: 'incomplete_address',
+    occurredAt: '2026-09-18T10:00:00.000Z',
+    outcome: 'pending_verification',
+    // Deliberately distinctive/unrelated to `treatment` — see note above.
+    presentation: {
+      title: 'ZZQ-7 marker',
+      subtitle: 'backend-supplied waiting copy #482',
+      actionLabel: 'Do the thing',
+    },
+    routing: { route: '/overview?resolution=address' },
+    ...over,
+  };
+}
+
+describe('WAITING rows — V1 backend-classified contract (supersedes the prior "always empty" contract)', () => {
+  it('an empty backend feed still renders nothing — this part of the prior contract survives V1 unchanged', () => {
+    expect((buildWaitingRows as unknown as (items: WaitingApiItemFixture[]) => unknown[])([])).toEqual([]);
+  });
+
+  it('maps one backend pending_verification item into exactly one status=\'waiting\' row, verbatim from backend presentation/routing', () => {
+    const item = waitingItem();
+    const rows = (buildWaitingRows as unknown as (items: WaitingApiItemFixture[]) => any[])([item]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        id: `waiting:${item.interventionId}`,
+        section: 'WAITING',
+        status: 'waiting',
+        label: item.presentation.title,
+        subtitle: item.presentation.subtitle,
+        action: { label: item.presentation.actionLabel, route: item.routing.route },
+      })
+    );
+  });
+
+  it('preserves backend feed order — no client-side re-sorting, matching the buildDecisionNowRows/buildNowRows convention', () => {
+    const first = waitingItem({ interventionId: 'intv-a', constraintId: 'c-a' });
+    const second = waitingItem({ interventionId: 'intv-b', constraintId: 'c-b' });
+    const rows = (buildWaitingRows as unknown as (items: WaitingApiItemFixture[]) => any[])([second, first]);
+    expect(rows.map((r) => r.id)).toEqual(['waiting:intv-b', 'waiting:intv-a']);
+  });
+
+  it('excludes any backend item whose treatment is outside the V1 allowlist (defence in depth — the backend contract should never emit one, e.g. a stock_protection-tagged entry)', () => {
+    const allowed = waitingItem({ interventionId: 'intv-ok' });
+    const outOfScope = waitingItem({ interventionId: 'intv-oos', treatment: 'stock_protection' });
+    const rows = (buildWaitingRows as unknown as (items: WaitingApiItemFixture[]) => any[])([
+      allowed,
+      outOfScope,
+    ]);
+    expect(rows.map((r) => r.id)).toEqual(['waiting:intv-ok']);
+  });
+
+  it('renders two same-treatment items with their own distinct backend copy verbatim — proves no treatment-keyed copy table exists on the frontend', () => {
+    const addr1 = waitingItem({
+      interventionId: 'intv-addr-1',
+      treatment: 'address_correction',
+      presentation: { title: 'Nautilus', subtitle: 'copy-one', actionLabel: 'Go one' },
+    });
+    const addr2 = waitingItem({
+      interventionId: 'intv-addr-2',
+      treatment: 'address_correction',
+      presentation: { title: 'Periscope', subtitle: 'copy-two', actionLabel: 'Go two' },
+    });
+    const rows = (buildWaitingRows as unknown as (items: WaitingApiItemFixture[]) => any[])([
+      addr1,
+      addr2,
+    ]);
+    expect(rows[0]).toEqual(expect.objectContaining({ label: 'Nautilus', subtitle: 'copy-one' }));
+    expect(rows[1]).toEqual(expect.objectContaining({ label: 'Periscope', subtitle: 'copy-two' }));
+  });
+
+  /**
+   * SUPPLEMENTAL ONLY — not the primary proof of the architecture. The
+   * primary proof is behavioural (the cases above: output is exactly and
+   * only what the backend fixture supplied, nothing recomputed, nothing
+   * treatment-keyed). This source-text check is defence in depth against a
+   * future regression re-adding local derivation logic; it is not itself
+   * evidence that today's (nonexistent) implementation is correct.
+   */
+  it('[supplemental] the model file contains no local episode/chronology derivation vocabulary — that stays backend-only, in interventionOutcome.service.ts', () => {
+    const source = require('fs').readFileSync(
+      require('path').join(
+        __dirname,
+        '../../../../apps/frontend/src/components/OpsConsole/opsConsoleModel.ts'
+      ),
+      'utf8'
+    );
+    expect(source).not.toMatch(/constraint_is_active/);
+    expect(source).not.toMatch(/resolutionLatencyMs/);
+    expect(source).not.toMatch(/deriveOutcome/);
   });
 });
 

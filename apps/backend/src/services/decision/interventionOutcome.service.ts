@@ -27,15 +27,57 @@
 // does not and must not depend on it: nothing here writes, and nothing in the
 // constraint pipeline imports it.
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 
 export type InterventionOutcomeStatus =
   | 'pending_verification'
   | 'verified_resolved'
   | 'unknown';
 
+/**
+ * OPS-CONSOLE-WAITING-01 — WAITING V1 ratified treatment allowlist.
+ * The single source of truth for which treatments the shop-wide WAITING
+ * surface (and its NOW anti-join, see alerts.aggregator.ts) considers.
+ * Exported so callers never hand-roll their own duplicate list.
+ */
+export const WAITING_V1_TREATMENTS = ['address_correction', 'inventory_reorder_intent'] as const;
+
+/**
+ * OPS-CONSOLE-WAITING-01 CORRECTION 2 — WAITING V1 ratified treatment/
+ * constraint pairings. A treatment appearing in WAITING_V1_TREATMENTS is
+ * necessary but NOT sufficient: it must also be paired with the EXACT
+ * constraintType/blockType it was built to treat. Any other pairing
+ * (including either V1 treatment against an operational constraint, or a
+ * treatment crossed with the other's constraint type) fails closed — never
+ * WAITING, and never excluded from NOW. Single source of truth, consumed
+ * only by readCurrentWaitingV1Records() below — no caller may hand-roll a
+ * second copy of this table.
+ */
+const WAITING_V1_PAIRINGS: Record<
+  (typeof WAITING_V1_TREATMENTS)[number],
+  { constraintType: string; blockType: string }
+> = {
+  address_correction: { constraintType: 'customer', blockType: 'incomplete_address' },
+  inventory_reorder_intent: { constraintType: 'inventory', blockType: 'oversell' },
+};
+
+function isWaitingV1EligiblePairing(
+  treatment: string,
+  constraintType: string | null,
+  blockType: string | null
+): boolean {
+  const pairing = WAITING_V1_PAIRINGS[treatment as (typeof WAITING_V1_TREATMENTS)[number]];
+  if (!pairing) return false;
+  return constraintType === pairing.constraintType && blockType === pairing.blockType;
+}
+
 export interface InterventionOutcomeRecord {
   interventionId: string;
   constraintId: string | null;
+  /** order_constraints.constraint_type for the correlated episode, if any. */
+  constraintType: string | null;
+  /** order_constraints.block_type for the correlated episode, if any. */
+  blockType: string | null;
   shopId: number;
   lasyncroOrderId: string;
   treatment: string;
@@ -77,6 +119,58 @@ interface InterventionRow {
   constraint_resolved_at: Date | string | null;
   constraint_started_at: Date | string | null;
   constraint_order_id: string | null;
+  constraint_type: string | null;
+  block_type: string | null;
+}
+
+/**
+ * Exact column set both readers select. A single list so the shop-wide
+ * WAITING reader (readShopInterventionOutcomes) can never drift into a
+ * second, approximate interpretation of the same join.
+ */
+const INTERVENTION_OUTCOME_COLUMNS = [
+  'i.id',
+  'i.shop_id',
+  'i.entity_id',
+  'i.constraint_id',
+  'i.treatment_key',
+  'i.action_key',
+  'i.actor_type',
+  'i.actor_user_id',
+  'i.source_surface',
+  'i.occurred_at',
+  'i.metadata',
+  'c.is_active as constraint_is_active',
+  'c.resolved_at as constraint_resolved_at',
+  'c.started_at as constraint_started_at',
+  'c.lasyncro_order_id as constraint_order_id',
+  'c.constraint_type as constraint_type',
+  'c.block_type as block_type',
+] as const;
+
+/** Shared row -> canonical outcome record mapping. Used by every reader. */
+function toOutcomeRecord(row: InterventionRow): InterventionOutcomeRecord {
+  const occurredAt = asDate(row.occurred_at) as Date;
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  const correctionSource = metadata.correction_source;
+
+  return {
+    interventionId: row.id,
+    constraintId: row.constraint_id,
+    constraintType: row.constraint_type,
+    blockType: row.block_type,
+    shopId: Number(row.shop_id),
+    lasyncroOrderId: row.entity_id,
+    treatment: row.treatment_key,
+    actionKey: row.action_key,
+    actorType: row.actor_type,
+    actorUserId: row.actor_user_id === null ? null : Number(row.actor_user_id),
+    sourceSurface: row.source_surface,
+    correctionSource: typeof correctionSource === 'string' ? correctionSource : null,
+    occurredAt,
+    metadata: row.metadata ?? {},
+    outcome: deriveOutcome(row, occurredAt),
+  };
 }
 
 /**
@@ -248,44 +342,132 @@ export async function readOrderInterventionOutcomes(input: {
       })
       .orderBy('i.occurred_at', 'asc')
       .orderBy('i.id', 'asc')
-      .select(
-        'i.id',
-        'i.shop_id',
-        'i.entity_id',
-        'i.constraint_id',
-        'i.treatment_key',
-        'i.action_key',
-        'i.actor_type',
-        'i.actor_user_id',
-        'i.source_surface',
-        'i.occurred_at',
-        'i.metadata',
-        'c.is_active as constraint_is_active',
-        'c.resolved_at as constraint_resolved_at',
-        'c.started_at as constraint_started_at',
-        'c.lasyncro_order_id as constraint_order_id'
-      )
+      .select(...INTERVENTION_OUTCOME_COLUMNS)
   );
 
-  return rows.map((row) => {
-    const occurredAt = asDate(row.occurred_at) as Date;
-    const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-    const correctionSource = metadata.correction_source;
+  return rows.map(toOutcomeRecord);
+}
 
-    return {
-      interventionId: row.id,
-      constraintId: row.constraint_id,
-      shopId: Number(row.shop_id),
-      lasyncroOrderId: row.entity_id,
-      treatment: row.treatment_key,
-      actionKey: row.action_key,
-      actorType: row.actor_type,
-      actorUserId: row.actor_user_id === null ? null : Number(row.actor_user_id),
-      sourceSurface: row.source_surface,
-      correctionSource: typeof correctionSource === 'string' ? correctionSource : null,
-      occurredAt,
-      metadata: row.metadata ?? {},
-      outcome: deriveOutcome(row, occurredAt),
-    };
-  });
+/**
+ * Reads every durable V1-treatment intervention recorded shop-wide, with
+ * outcome derived from the SAME canonical order_constraints truth and the
+ * SAME deriveOutcome() branch as readOrderInterventionOutcomes() above —
+ * this is the one and only outcome derivation in the codebase; nothing here
+ * re-implements or approximates it.
+ *
+ * Backs both the shop-wide WAITING read (GET /api/v1/operations/waiting)
+ * and the NOW aggregate's per-episode exclusion
+ * (alerts.aggregator.ts#aggregateConstraintAlerts) — one shared query shape,
+ * two consumers.
+ *
+ * `trx`, when supplied, runs the read against that already-tenant-scoped
+ * transaction instead of opening a second one (alerts.aggregator.ts already
+ * holds a `SET LOCAL app.current_tenant` transaction for the shop). Omitting
+ * it opens its own withTenant transaction, matching every other reader here.
+ */
+export async function readShopInterventionOutcomes(
+  input: { shopId: number; treatments?: readonly string[] },
+  trx?: Knex.Transaction
+): Promise<InterventionOutcomeRecord[]> {
+  const { shopId, treatments } = input;
+
+  const run = (t: Knex.Transaction) => {
+    let query = t('decision_interventions as i')
+      .leftJoin('order_constraints as c', 'c.constraint_id', 'i.constraint_id')
+      .where({ 'i.shop_id': shopId, 'i.entity_type': 'order' })
+      .orderBy('i.occurred_at', 'asc')
+      .orderBy('i.id', 'asc');
+
+    if (treatments && treatments.length > 0) {
+      query = query.whereIn('i.treatment_key', treatments as string[]);
+    }
+
+    return query.select(...INTERVENTION_OUTCOME_COLUMNS);
+  };
+
+  const rows: InterventionRow[] = trx ? await run(trx) : await withTenant(shopId, run);
+
+  return rows.map(toOutcomeRecord);
+}
+
+/**
+ * True iff `candidate` should replace `current` as the winning intervention
+ * for one constraint episode: strictly later occurredAt, or — on an exact
+ * tie — the lexicographically greater interventionId (deterministic,
+ * ordering-independent of insertion order).
+ */
+function isLaterWaitingV1Intervention(
+  candidate: InterventionOutcomeRecord,
+  current: InterventionOutcomeRecord
+): boolean {
+  const candidateTime = candidate.occurredAt.getTime();
+  const currentTime = current.occurredAt.getTime();
+  if (candidateTime !== currentTime) return candidateTime > currentTime;
+  return candidate.interventionId > current.interventionId;
+}
+
+/**
+ * OPS-CONSOLE-WAITING-01 CORRECTION 1 & 2 — the ONE shared shop-wide
+ * "current WAITING V1" projection. decision_interventions stays append-only
+ * provenance (readOrderInterventionOutcomes()/readShopInterventionOutcomes()
+ * above are untouched and never deduplicate); this is a separate CURRENT
+ * STATE view built on top of them:
+ *
+ *   1. treatment allowlist            — WAITING_V1_TREATMENTS
+ *   2. outcome === pending_verification (deriveOutcome(), unmodified)
+ *   3. treatment/constraint pairing   — WAITING_V1_PAIRINGS (correction 2):
+ *      an eligible outcome's constraintType/blockType must exactly match
+ *      the pairing its own treatment declares. Anything else — either V1
+ *      treatment against operational, or crossed with the other's
+ *      constraint type — fails closed and is dropped entirely, both from
+ *      this projection AND (by construction, since callers derive NOW
+ *      exclusion from this same result) from NOW suppression.
+ *   4. latest-per-current-episode     — (correction 1): pending_verification
+ *      already proves an outcome belongs to the CURRENT episode (an
+ *      old/re-raised-episode intervention derives 'unknown' in deriveOutcome
+ *      and is filtered out at step 2, before it ever reaches this grouping),
+ *      so grouping the survivors by constraintId and keeping only the one
+ *      with the latest occurredAt (interventionId tie-break) is sufficient —
+ *      no second episode-identity check is needed here.
+ *
+ * The single shared result both WAITING consumers must read from:
+ *   - GET /api/v1/operations/waiting (operations.controller.ts) maps this
+ *     directly to presentation/API items.
+ *   - aggregateConstraintAlerts() (alerts.aggregator.ts) derives its NOW
+ *     exclusion set from this same result's constraintIds.
+ * Neither consumer may re-filter, re-derive pairing eligibility, or
+ * re-deduplicate independently.
+ *
+ * Returned in occurredAt ASC, interventionId ASC order — the same order
+ * readShopInterventionOutcomes() already establishes and the existing
+ * WAITING endpoint already relies on — so grouping never lets Map insertion
+ * order leak into the result.
+ */
+export async function readCurrentWaitingV1Records(
+  input: { shopId: number },
+  trx?: Knex.Transaction
+): Promise<InterventionOutcomeRecord[]> {
+  const records = await readShopInterventionOutcomes(
+    { shopId: input.shopId, treatments: WAITING_V1_TREATMENTS },
+    trx
+  );
+
+  const winnerByConstraintId = new Map<string, InterventionOutcomeRecord>();
+
+  for (const record of records) {
+    if (record.outcome.status !== 'pending_verification' || record.constraintId === null) continue;
+    if (!isWaitingV1EligiblePairing(record.treatment, record.constraintType, record.blockType)) continue;
+
+    const constraintId = record.constraintId;
+    const current = winnerByConstraintId.get(constraintId);
+    if (!current || isLaterWaitingV1Intervention(record, current)) {
+      winnerByConstraintId.set(constraintId, record);
+    }
+  }
+
+  return Array.from(winnerByConstraintId.values()).sort(
+    (a, b) =>
+      a.occurredAt.getTime() - b.occurredAt.getTime() ||
+      (a.interventionId < b.interventionId ? -1 : a.interventionId > b.interventionId ? 1 : 0)
+  );
 }

@@ -27,6 +27,7 @@ import {
 const mockNavigate = jest.fn();
 const mockUseActivationChecklist = jest.fn();
 const mockUseAlerts = jest.fn();
+const mockUseWaiting = jest.fn();
 
 jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
 
@@ -36,6 +37,16 @@ jest.mock('hooks/useActivationChecklist', () => ({
 
 jest.mock('pages/alerts/useAlerts', () => ({
   useAlerts: (...args: unknown[]) => mockUseAlerts(...args),
+}));
+
+// OPS-CONSOLE-WAITING-01 — badge/WAITING boundary (correction pass, item D).
+// Not consumed by OpsConsoleButton today (it has no waitingItems prop and
+// never calls useWaiting), so this mock is inert for every existing test in
+// this file. It exists so the new 'open badge' case below can populate the
+// WAITING feed and prove the badge stays unaffected regardless of whether a
+// future wiring change ever routes WAITING data through this hook.
+jest.mock('pages/operations/useWaiting', () => ({
+  useWaiting: (...args: unknown[]) => mockUseWaiting(...args),
 }));
 
 jest.mock('pages/wms/usePickBatches', () => ({
@@ -131,6 +142,10 @@ beforeEach(() => {
   mockUseAlerts.mockReturnValue({
     data: { data: [alert({ id: 'r1', title: 'Resolved one', resolved_at: '2026-09-08T09:00:00.000Z' })],
             meta: { total: 1, status: 'resolved' } },
+    isLoading: false, isError: false,
+  });
+  mockUseWaiting.mockReturnValue({
+    data: { items: [] },
     isLoading: false, isError: false,
   });
 });
@@ -272,6 +287,47 @@ describe('open badge', () => {
 
     expect(screen.getByRole('button', { name: 'Ops Console — 2 open' })).toBeInTheDocument();
   });
+
+  // OPS-CONSOLE-WAITING-01 correction pass — badge/WAITING boundary (item D).
+  // NOW = needs attention; WAITING = already acted / no attention count. A
+  // populated WAITING feed must never make the trigger's badge non-zero.
+  // This is expected to already be GREEN: OpsConsoleButton's badge formula
+  // never spreads buildWaitingRows(...) into openAttentionCount's input.
+  it('a populated WAITING feed does not make the badge non-zero when NOW/SETUP are both empty', () => {
+    mockUseActivationChecklist.mockReturnValue({
+      items: [{ key: 'connect-store', label: 'Connect your store', complete: true }],
+      completedCount: 1, allComplete: true, isLoading: false, isError: false,
+    });
+    mockUseWaiting.mockReturnValue({
+      data: {
+        items: [
+          {
+            interventionId: 'intv-badge-1',
+            treatment: 'address_correction',
+            lasyncroOrderId: 'order-badge-1',
+            externalOrderId: '#9001',
+            constraintId: 'constraint-badge-1',
+            constraintType: 'customer',
+            blockType: 'incomplete_address',
+            occurredAt: '2026-09-18T10:00:00.000Z',
+            outcome: 'pending_verification',
+            presentation: {
+              title: 'Address correction submitted',
+              subtitle: 'Waiting on canonical verification.',
+              actionLabel: 'Review address',
+            },
+            routing: { route: '/overview?resolution=address' },
+          },
+        ],
+      },
+      isLoading: false, isError: false,
+    });
+
+    render(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+
+    expect(screen.getByRole('button', { name: 'Ops Console — 0 open' })).toBeInTheDocument();
+    expect(document.querySelector('.MuiBadge-badge')).toHaveClass('MuiBadge-invisible');
+  });
 });
 
 // ─── 7 — NOW USES CANONICAL ALERT DATA, NO SECOND INBOX POLL ─────────────────
@@ -333,7 +389,13 @@ describe('OPEN | HISTORY filter', () => {
     expect(screen.getByTestId('ops-setup-toggle')).toHaveTextContent('SETUP · 1 remaining');
   });
 
-  it('renders WAITING only when authoritative rows exist — absent in V1', () => {
+  // WORDING NOTE (OPS-CONSOLE-WAITING-01 correction, 2026-09-18): WAITING V1
+  // now exists as a contract (see ops-console-waiting-v1-contract.test.tsx
+  // and ops-console-model.test.ts's WAITING V1 block) — "absent in V1" would
+  // now be misleading. This test's behavior is unchanged: no waitingItems
+  // prop is passed here, and no authoritative WAITING items means no WAITING
+  // section, exactly as before.
+  it('renders WAITING only when the backend supplies authoritative pending items — no items means no section', () => {
     renderPanel();
     expect(screen.queryByText('WAITING')).not.toBeInTheDocument();
     expect(document.querySelectorAll('[data-status="waiting"]')).toHaveLength(0);

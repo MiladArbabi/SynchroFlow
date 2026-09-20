@@ -26,6 +26,7 @@ import systemRoutes from '../api/system/system.routes.js';
 import alertsRoutes from '../api/alerts/alerts.routes.js';
 import ahaRoutes from '../api/aha/aha.routes.js';
 import returnsRoutes from '../api/returns/returns.routes.js';
+import operationsRoutes from '../api/operations/operations.routes.js';
 import customersLtvRoutes from '../api/customers/customers.ltv.routes.js';
 import demandRoutes from '../api/demand/demand.routes.js';
 import wmsRoutes from '../api/wms/wms.routes.js';
@@ -116,6 +117,8 @@ export function createApp(): Express {
   app.use('/api/v1/alerts', alertsRoutes);
   app.use('/api/v1/aha', ahaRoutes);
   app.use('/api/v1/modules/returns', returnsRoutes);
+  // OPS-CONSOLE-WAITING-01 — canonical shop-wide WAITING read
+  app.use('/api/v1/operations', operationsRoutes);
   app.use('/api/v1/modules/customers', customersLtvRoutes);
   app.use('/api/v1/modules/demand', demandRoutes);
   app.use('/api/v1/wms', wmsRoutes);

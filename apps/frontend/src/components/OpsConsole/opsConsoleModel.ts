@@ -22,6 +22,7 @@
 
 import type { Alert } from '../../pages/alerts/useAlerts';
 import type { ChecklistItem } from '../../hooks/useActivationChecklist';
+import type { WaitingItem } from '../../pages/operations/useWaiting';
 
 /** Ratified status semantics — glyph column of the console. */
 export type OpsRowStatus =
@@ -55,6 +56,13 @@ export interface OpsRow {
   section: OpsSectionKey;
   status: OpsRowStatus;
   label: string;
+  /**
+   * Secondary context line, rendered under the label when present. Introduced
+   * for #1114 canonical Decision Feed rows (backend `presentation.subtitle`)
+   * — existing alert/setup/history rows never set this, so their rendering is
+   * unchanged.
+   */
+  subtitle?: string;
   /** Short right-aligned qualifier (age, severity, acknowledgement). */
   meta?: string;
   /** One primary action per row. Navigation only in V1. */
@@ -218,19 +226,36 @@ export const NOW_VISIBLE_LIMIT = 5;
 // ─── WAITING ──────────────────────────────────────────────────────────────────
 
 /**
- * WAITING is empty in V1 — deliberately, not accidentally.
+ * OPS-CONSOLE-WAITING-01 — V1 backend-classified WAITING rows.
  *
- * decision_interventions IS persisted, and services/decision/
- * interventionOutcome.service.ts derives pending_verification from
- * order_constraints. But that read model is an internal, per-order seam with no
- * HTTP surface: there is no shop-wide "interventions awaiting verification"
- * endpoint for the shell to read. Synthesising this section from alerts,
- * navigation or local state would manufacture exactly the claim the read model
- * refuses to persist, so the section renders only once a canonical global
- * source exists.
+ * The backend (`GET /api/v1/operations/waiting`) already classifies every
+ * item as canonically pending_verification, already supplies
+ * presentation/routing, and already scopes to the V1 treatment allowlist.
+ * This builder performs ZERO lifecycle inference of its own: no reading of
+ * is_active/resolved_at/latency/episode metadata, no local outcome
+ * re-derivation, no treatment-keyed copy table. It maps the feed verbatim
+ * and preserves backend order, exactly like buildDecisionNowRows does for
+ * the canonical Decision Feed.
+ *
+ * The V1 treatment allowlist filter here is defence in depth only — the
+ * backend contract should never emit anything outside it.
  */
-export function buildWaitingRows(): OpsRow[] {
-  return [];
+const WAITING_V1_TREATMENTS: ReadonlySet<string> = new Set([
+  'address_correction',
+  'inventory_reorder_intent',
+]);
+
+export function buildWaitingRows(items: WaitingItem[]): OpsRow[] {
+  return items
+    .filter((item) => WAITING_V1_TREATMENTS.has(item.treatment))
+    .map((item) => ({
+      id: `waiting:${item.interventionId}`,
+      section: 'WAITING' as const,
+      status: 'waiting' as const,
+      label: item.presentation.title,
+      subtitle: item.presentation.subtitle,
+      action: { label: item.presentation.actionLabel, route: item.routing.route },
+    }));
 }
 
 // ─── SETUP ────────────────────────────────────────────────────────────────────

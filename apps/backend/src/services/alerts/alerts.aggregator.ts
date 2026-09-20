@@ -3,6 +3,7 @@ import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 import { buildSlaBreachAlertCopy, buildBlockedRevenueAlertCopy } from './alerts.copy.js';
 import { syncStockProtectionAlertsForShop } from './stockProtectionAlertSynchronizer.js';
+import { readCurrentWaitingV1Records } from '../decision/interventionOutcome.service.js';
 
 /**
  * ALERTS AGGREGATOR SERVICE (AL-01)
@@ -176,10 +177,33 @@ async function aggregateConstraintAlerts(
   trx: Knex.Transaction,
   shopId: number
 ): Promise<AlertUpsert[]> {
+  /**
+   * WAITING V1 — per-episode NOW exclusion (OPS-CONSOLE-WAITING-01, corrections
+   * 1 & 2).
+   *
+   * Only an exact CURRENT constraint episode with a valid-pairing, canonically
+   * pending_verification intervention is excluded — never the whole
+   * constraint_type aggregate, and never an episode whose only intervention
+   * has an invalid treatment/constraint pairing (that episode stays fully
+   * NOW-eligible). readCurrentWaitingV1Records() is the SAME shared seam
+   * GET /api/v1/operations/waiting reads from — one shop-wide "current
+   * WAITING" projection, two consumers, never two independent
+   * interpretations of "waiting". It already collapses repeated
+   * interventions against one still-active episode to a single winner, so
+   * the resulting constraintIds are already unique.
+   */
+  const currentWaitingRecords = await readCurrentWaitingV1Records({ shopId }, trx);
+  const excludedConstraintIds = currentWaitingRecords.map((record) => record.constraintId as string);
+
   const rows = await trx('order_constraints as oc')
     .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
     .where('oc.is_active', true)
     .where('o.shop_id', shopId)
+    .modify((qb) => {
+      if (excludedConstraintIds.length > 0) {
+        qb.whereNotIn('oc.constraint_id', excludedConstraintIds);
+      }
+    })
     .groupBy('oc.constraint_type')
     .select(
       'oc.constraint_type',
