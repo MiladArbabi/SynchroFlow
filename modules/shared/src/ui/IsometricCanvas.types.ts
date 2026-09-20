@@ -2,6 +2,55 @@
 export type LocationType = 'warehouse' | 'lane' | 'shelf' | 'bin';
 export type DockFace = 'north' | 'south' | 'east' | 'west' | 'none';
 
+/**
+ * OVERVIEW-LIVE-MAP-01 Slice C — explicit, caller-resolved operational state
+ * for a rendered map object. Structurally identical to Overview's own
+ * OverviewOperationalState (apps/frontend/src/pages/overview/
+ * overviewOperationalState.ts) but defined independently here so the shared
+ * renderer layer never imports page-owned business logic. The renderer only
+ * paints this value — it never infers it.
+ */
+export type OperationalMapState =
+  | 'neutral'
+  | 'active'
+  | 'healthy'
+  | 'stale'
+  | 'warning'
+  | 'critical';
+
+/**
+ * OVERVIEW-LIVE-MAP-01 Slice D — the single merchant-facing badge a rendered
+ * map object may show. Primitive only: a pre-worded label and an optional
+ * count for sizing/testing. Which fact wins and how it reads is entirely
+ * Overview's decision — this type carries no reasoning or domain meaning.
+ */
+export interface OperationalMapBadge {
+  label: string;
+  count?: number;
+}
+
+/**
+ * Slice D — minimal presentation primitive the shared renderer consumes to
+ * paint at most one badge per object. `state` mirrors OperationalMapState so
+ * the renderer can colour the badge consistently with the Slice C treatment
+ * from a single caller-supplied value, with no second state computation in
+ * the renderer. Overview is the only writer of this value.
+ */
+export interface OperationalMapPresentation {
+  state: OperationalMapState;
+  primaryBadge?: OperationalMapBadge | null;
+  /**
+   * OVERVIEW-LIVE-MAP-01 Slice D.1 — whether the object's separate identity
+   * label (e.g. a synthetic station's name plate) should also render.
+   * A pure rendering instruction, carrying no business meaning: Overview
+   * decides identity is redundant with `primaryBadge` (e.g. "8 blocked
+   * orders" already says everything "Blocked" would) and sets this to
+   * false; the renderer never infers that from the station id itself.
+   * Undefined preserves the pre-Slice-D.1 default (identity always shown).
+   */
+  showIdentityLabel?: boolean;
+}
+
 export type WarehouseZone = {
   location_code: string;
   type: LocationType;
@@ -101,7 +150,7 @@ export interface SyntheticStation {
    * Defaults to 1.5 x 0.75 when omitted.
    */
   footprint?: { tw: number; td: number };
-  /** Deep-link on click — passed to onSelect. */
+  /** Optional route hint retained for legacy callers; Overview keeps routing outside the renderer. */
   deepLink?: string;
 }
 

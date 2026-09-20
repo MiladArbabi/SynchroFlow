@@ -22,7 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { LocationPulse, WarehouseZone } from './IsometricCanvas.types.js';
+import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation } from './IsometricCanvas.types.js';
 
 // ── IsometricZoneView ─────────────────────────────────────────────────────────
 /**
@@ -83,6 +83,47 @@ const ZONE_STROKE: Record<string, string> = Object.fromEntries(
   ])
 );
 
+// ── Operational state visual grammar ────────────────────────────────────────
+// OVERVIEW-LIVE-MAP-01 Slice C: the renderer paints an explicit,
+// caller-resolved OperationalMapState as an overlay/treatment on top of the
+// existing base and analytical fill — it never decides severity itself.
+// Pure and renderer-only so state→visual mapping stays testable without a
+// DOM render.
+export interface OperationalVisualTreatment {
+  /** Stroke/ring colour token for this state. */
+  stroke: string;
+  /** Fill opacity of the semantic ring overlay — quieter than active/critical for 'healthy'. */
+  ringOpacity: number;
+  /** Top-face outline width when this state applies and the object is not selected. */
+  strokeWidth: number;
+  /** Rack-level side-face outline width for the same state. */
+  sideStrokeWidth: number;
+}
+
+const OPERATIONAL_TREATMENT: Record<Exclude<OperationalMapState, 'neutral'>, OperationalVisualTreatment> = {
+  active:   { stroke: 'var(--space-azure)',  ringOpacity: 0.10, strokeWidth: 1.4, sideStrokeWidth: 0.6 },
+  // Quieter than active/critical by design — recent completion, not a permanent success banner.
+  healthy:  { stroke: 'var(--good-ink)',     ringOpacity: 0.07, strokeWidth: 1.2, sideStrokeWidth: 0.5 },
+  stale:    { stroke: 'var(--warning-ink)',  ringOpacity: 0.10, strokeWidth: 1.3, sideStrokeWidth: 0.6 },
+  // Same amber family as 'stale' but a stronger intensity, per the approved grammar.
+  warning:  { stroke: 'var(--warning-ink)',  ringOpacity: 0.16, strokeWidth: 1.7, sideStrokeWidth: 0.7 },
+  // Critical must clearly override every other treatment's visual emphasis.
+  critical: { stroke: 'var(--critical-ink)', ringOpacity: 0.18, strokeWidth: 1.8, sideStrokeWidth: 0.8 },
+};
+
+/**
+ * Resolves the explicit visual treatment for a non-neutral operational
+ * state. 'neutral' or undefined returns null, leaving base/analytical
+ * rendering completely unchanged — this is how backward compatibility for
+ * every caller that never passes an operational state is preserved.
+ */
+export function resolveOperationalVisualTreatment(
+  state: OperationalMapState | undefined
+): OperationalVisualTreatment | null {
+  if (!state || state === 'neutral') return null;
+  return OPERATIONAL_TREATMENT[state];
+}
+
 // ── Isometric projection ──────────────────────────────────────────────────────
 /**
  * Project a 3D world point to 2D screen coordinates.
@@ -126,6 +167,15 @@ function rotateScreenPoint(
  * stations. The same metrics drive SVG rendering and station fit bounds so a
  * detached plate can never be clipped or drift away from its measured area.
  */
+/**
+ * Shared text-width heuristic for every label plate in this renderer
+ * (identity edge plates and the Slice D.1 primary operational badge) so
+ * sizing logic is written once and stays visually consistent.
+ */
+function measureLabelPlateWidth(label: string, fontSize: number): number {
+  return label.length * (fontSize * 0.6 + 0.5);
+}
+
 function getEdgeLabelGeometry(
   label: string,
   start: ScreenPoint,
@@ -135,7 +185,7 @@ function getEdgeLabelGeometry(
   const angle =
     (Math.atan2(end.sy - start.sy, end.sx - start.sx) * 180) / Math.PI;
   const fontSize = Math.round(8 * zoom);
-  const textWidth = label.length * (fontSize * 0.6 + 0.5);
+  const textWidth = measureLabelPlateWidth(label, fontSize);
   const plateX = start.sx - 4 * zoom;
   const plateY = start.sy + 11 * zoom;
   const plateWidth = textWidth + 8 * zoom;
@@ -236,6 +286,13 @@ interface BoxProps {
   /** Operational critical state overlays the physical/analytical fill without replacing it. */
   isCritical?: boolean;
   /**
+   * OVERVIEW-LIVE-MAP-01 Slice C: explicit merchant-facing operational state,
+   * resolved entirely by the caller (e.g. Overview). Overlay only — never
+   * replaces base/analytical fill. 'critical' here and isCritical=true are
+   * treated identically; both come from independent, page-owned sources.
+   */
+  operationalState?: OperationalMapState;
+  /**
    * ZONE-SHAPE-01: carve a truck berth out of the top face on this building
    * edge. Derived in IsometricCanvas, which owns the world bbox — this is
    * geometry, not business truth, so the renderer resolves it.
@@ -278,15 +335,21 @@ function IsometricBox({
   occupancyFraction,
   focusTone,
   isCritical,
+  operationalState,
   dockBay,
 }: BoxProps) {
   const baseFill      = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke        = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
   const selStroke      = 'var(--accent)';
   const hoverStroke    = 'var(--ink-2)';
-  const criticalStroke = 'var(--critical-ink)';
-  const faceStroke     = isCritical
-    ? criticalStroke
+  // Legacy problemByLocation-derived isCritical and the new operationalState
+  // are independent inputs from the same page; either alone is enough to
+  // reach the highest-severity treatment.
+  const resolvedOperationalState: OperationalMapState | undefined =
+    isCritical || operationalState === 'critical' ? 'critical' : operationalState;
+  const operationalTreatment = resolveOperationalVisualTreatment(resolvedOperationalState);
+  const faceStroke     = operationalTreatment
+    ? operationalTreatment.stroke
     : isHovered
       ? hoverStroke
       : stroke;
@@ -364,8 +427,16 @@ function IsometricBox({
       // Notch bites into the wx edge.
       return [t00, t10, t11, t01, p(wx, y1), p(wx + bdx, y1), p(wx + bdx, y0), p(wx, y0)];
     }
-    // East: notch bites into the wx + ww edge.
-    return [t00, p(wx + ww, y0), p(wx + ww - bdx, y0), p(wx + ww - bdx, y1), p(wx + ww, y1), t10, t11, t01];
+    // East: notch bites into the wx + ww edge (the t10→t11 boundary segment).
+    // D.2 GEOMETRY FIX: t10 must lead the notch trace, not trail it — the
+    // previous point order (notch trace, then t10, then t11) crossed edge
+    // t00→p(wx+ww,y0) over edge p(wx+ww,y1)→t10, producing a self-intersecting
+    // top face whose outline no longer matched the (correctly computed) side
+    // walls below it — the "detached" RECEIVE-1/SHIP-1 faces. Every other
+    // direction already orders its untouched corners before its notch trace
+    // (north starts the trace at t00 itself; south lists t00,t10,t11 first;
+    // west lists all four corners first) — this mirrors that same rule.
+    return [t00, t10, p(wx + ww, y0), p(wx + ww - bdx, y0), p(wx + ww - bdx, y1), p(wx + ww, y1), t11, t01];
   })();
 
   // Darken side faces
@@ -403,8 +474,8 @@ function IsometricBox({
         strokeWidth={
           isSelected
             ? 2
-            : isCritical
-              ? 1.6
+            : operationalTreatment
+              ? operationalTreatment.strokeWidth
               : isHovered
                 ? 1.4
                 : 1
@@ -413,12 +484,12 @@ function IsometricBox({
         opacity={isFlat ? 0.6 : 1}
       />
 
-      {isCritical && (
+      {operationalTreatment && (
         <polygon
           points={pts(...topFacePoints)}
-          fill={criticalStroke}
-          fillOpacity={0.10}
-          stroke={criticalStroke}
+          fill={operationalTreatment.stroke}
+          fillOpacity={operationalTreatment.ringOpacity}
+          stroke={operationalTreatment.stroke}
           strokeWidth={1.2}
           style={{ pointerEvents: 'none' }}
         />
@@ -506,12 +577,76 @@ function IsometricBox({
                 points={pts(...f.pts)}
                 fill={f.fill}
                 stroke={faceStroke}
-                strokeWidth={isCritical ? 0.8 : 0.4}
+                strokeWidth={operationalTreatment ? operationalTreatment.sideStrokeWidth : 0.4}
               />
             ))}
           </g>
         );
       })}
+    </g>
+  );
+}
+
+// ── OperationalBadge ──────────────────────────────────────────────────────────
+/**
+ * OVERVIEW-LIVE-MAP-01 Slice D — the ONE compact badge a map object may show.
+ * Renders the already-resolved `primaryBadge` primitive from the caller (e.g.
+ * Overview) — this component decides only pixels (size/placement/colour
+ * token), never which fact wins. Reuses the existing pill-badge visual
+ * language already established by the problem/stow/dock markers below.
+ */
+function OperationalBadge({
+  pt,
+  zoom,
+  label,
+  ariaLabel,
+  fill,
+  strong,
+}: {
+  pt: ScreenPoint;
+  zoom: number;
+  label: string;
+  ariaLabel: string;
+  fill: string;
+  /** Slightly stronger visual weight — used for the critical state only. */
+  strong?: boolean;
+}) {
+  // OVERVIEW-LIVE-MAP-01 Slice D.2: modestly larger for comfortable scanning
+  // at normal Overview zoom (live-browser feedback: "8 blocked orders" read
+  // as technically legible but too small). Sized from label length via the
+  // SAME shared text-width heuristic the identity edge plate already uses
+  // (measureLabelPlateWidth) — one sizing rule driven by zoom + label
+  // length, not a per-station-id special case, so "20 ready" stays compact
+  // while "8 blocked orders" gets the width it needs. Still one line, still
+  // the same semantic fill token, still anchored above the object.
+  const baseFontSize = 7; // was 6 pre-D.2
+  const padX = 5; // was 4 pre-D.2
+  const h = 12; // was 10 pre-D.2
+  const w = Math.max(20, measureLabelPlateWidth(label, baseFontSize) + padX * 2);
+  return (
+    <g role="img" aria-label={ariaLabel} style={{ pointerEvents: 'none' }}>
+      <title>{ariaLabel}</title>
+      <rect
+        x={pt.sx - (w / 2) * zoom}
+        y={pt.sy - (h / 2) * zoom}
+        width={w * zoom}
+        height={h * zoom}
+        rx={2.5 * zoom}
+        fill={fill}
+        opacity={strong ? 1 : 0.9}
+      />
+      <text
+        x={pt.sx}
+        y={pt.sy}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize={Math.round(baseFontSize * zoom)}
+        fontWeight="700"
+        fill="var(--bg)"
+        fontFamily="monospace"
+      >
+        {label}
+      </text>
     </g>
   );
 }
@@ -522,6 +657,16 @@ export interface IsometricCanvasProps {
   onSelect?: (locationCode: string | null) => void;
   /** Fires for every physical-zone click without changing onSelect toggle semantics. */
   onZoneClick?: (locationCode: string) => void;
+  /** Controlled physical-zone selection for callers that own inspection state. */
+  selectedLocationCode?: string | null;
+  /** Generic synthetic station selection, kept separate from physical location codes. */
+  onStationSelect?: (stationId: string | null) => void;
+  /** Controlled synthetic-station selection for callers that own inspection state. */
+  selectedStationId?: string | null;
+  /** Generic action for the pinned pulse card; caller owns label and behavior. */
+  pinnedAction?: { label: string; onClick: () => void } | null;
+  /** Called when the pinned pulse close control clears selection. */
+  onPinnedClose?: () => void;
   filteredCodes?: Set<string>;
   highlightZoneTypes?: Set<string>;
   /**
@@ -544,6 +689,36 @@ export interface IsometricCanvasProps {
   /** Opt-in contrast for non-focused bins; default preserves existing rendering. */
   focusDimOpacity?: number;
   occupancy?: Record<string, { on_hand_quantity: number }>;
+  /**
+   * OVERVIEW-LIVE-MAP-01 Slice D.1: 'neutral' suppresses the occupancy-driven
+   * strong base-fill override (the red/orange/green heatmap in IsometricBox)
+   * so operational state (Slice C) owns the strong semantic colour channel
+   * instead of competing with it. Topology and the `occupancy` data itself
+   * are unaffected — a caller may still read `occupancy` for its own use
+   * (e.g. an "on hand" hover row) while opting the fill out. Absent or
+   * 'heatmap' preserves every existing caller's rendering exactly.
+   */
+  occupancyPresentation?: 'heatmap' | 'neutral';
+  /**
+   * OVERVIEW-LIVE-MAP-01 Slice C: explicit operational state per physical
+   * location_code, resolved entirely by the caller (Overview owns the
+   * business interpretation — this renderer only paints it). Absent key =
+   * 'neutral' = base/analytical rendering unchanged. Never inferred here.
+   */
+  operationalStateByLocation?: Record<string, import('./IsometricCanvas.types.js').OperationalMapState>;
+  /** Same contract as operationalStateByLocation, keyed by SyntheticStation.id. */
+  operationalStateByStation?: Record<string, import('./IsometricCanvas.types.js').OperationalMapState>;
+  /**
+   * OVERVIEW-LIVE-MAP-01 Slice D: the single already-resolved badge (plus its
+   * state, for colour) per physical location_code. When present for a given
+   * location, this renderer paints ONE unified badge from it and suppresses
+   * the older per-fact stow/problem/dock markers for that location only, so
+   * a merchant never sees two competing count badges on the same bin.
+   * Absent key = no badge, exactly like every pre-Slice-D caller today.
+   */
+  operationalPresentationByLocation?: Record<string, OperationalMapPresentation>;
+  /** Same contract as operationalPresentationByLocation, keyed by SyntheticStation.id. */
+  operationalPresentationByStation?: Record<string, OperationalMapPresentation>;
   showFloor?: boolean;
   showBins?: boolean;
   /** Override default zoom for embedded contexts (default: 0.9) */
@@ -668,6 +843,11 @@ export function IsometricCanvas({
     zones, 
     onSelect,
     onZoneClick,
+    selectedLocationCode,
+    onStationSelect,
+    selectedStationId,
+    pinnedAction,
+    onPinnedClose,
     filteredCodes, 
     highlightZoneTypes,
     enableHoverFocus = false,
@@ -677,7 +857,12 @@ export function IsometricCanvas({
     focusTone,
     focusDimOpacity = 0.25,
     occupancy,
-    showFloor = true, 
+    occupancyPresentation,
+    operationalStateByLocation,
+    operationalStateByStation,
+    operationalPresentationByLocation,
+    operationalPresentationByStation,
+    showFloor = true,
     showBins = true, 
     initialZoom = 0.9, 
     initialOffset = { x: 420, y: 120 },
@@ -710,12 +895,14 @@ export function IsometricCanvas({
   const [zoom, setZoom]         = useState(initialZoom);
   const [offset, setOffset]     = useState(initialOffset);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [hovered, setHovered]   = useState<string | null>(null);
   const [hoveredStationId, setHoveredStationId] = useState<string | null>(null);
   // OV-HOVER-02: projected anchor of the hovered object in SVG user units.
   // Captured at hover time because the plate is an HTML sibling of the <svg>
   // and cannot reach into the scene graph. offset is added at render.
   const [hoverAnchor, setHoverAnchor] = useState<{ x: number; y: number; leftX: number } | null>(null);
+  const [pinnedAnchor, setPinnedAnchor] = useState<{ x: number; y: number; leftX: number } | null>(null);
   const [flipped, setFlipped]   = useState(false);
   const [size, setSize]         = useState({ w: 0, h: 0 });
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
@@ -726,6 +913,8 @@ export function IsometricCanvas({
   zoomRef.current   = zoom;
   offsetRef.current = offset;
   sizeRef.current   = size;
+  const activeSelectedLocation = selectedLocationCode !== undefined ? selectedLocationCode : selected;
+  const activeSelectedStation = selectedStationId !== undefined ? selectedStationId : selectedStation;
 
    // Apply zone filter rail selection; if no filter provided, show all positioned zones.
   const isFrame = (z: WarehouseZone) => z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf';
@@ -809,12 +998,21 @@ export function IsometricCanvas({
       : null;
 
   // OV-HOVER-02: a physical bin outranks a rail block; only one plate at a time.
-  const activePulse: LocationPulse | null =
+  const hoverPulse: LocationPulse | null =
     activeHoveredCode != null
       ? locationPulseByCode?.[activeHoveredCode] ?? null
       : hoveredStationId != null
         ? stationPulseById?.[hoveredStationId] ?? null
         : null;
+  const pinnedPulse: LocationPulse | null =
+    activeSelectedLocation != null
+      ? locationPulseByCode?.[activeSelectedLocation] ?? null
+      : activeSelectedStation != null
+        ? stationPulseById?.[activeSelectedStation] ?? null
+        : null;
+  const activePulse = pinnedPulse ?? hoverPulse;
+  const activePulseAnchor = pinnedPulse ? pinnedAnchor : hoverAnchor;
+  const isPinnedPulse = pinnedPulse != null;
 
   // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
   // showBins so toggling display filters never changes what merchants are
@@ -1048,11 +1246,32 @@ export function IsometricCanvas({
     return flipped ? db - da : da - db;
   });
 
-  function handleSelect(code: string) {
+  function handleSelect(code: string, anchor?: { x: number; y: number; leftX: number }) {
     onZoneClick?.(code);
-    const next = selected === code ? null : code;
+    const next = activeSelectedLocation === code ? null : code;
     setSelected(next);
+    setSelectedStation(null);
+    setPinnedAnchor(next ? anchor ?? null : null);
+    onStationSelect?.(null);
     onSelect?.(next);
+  }
+
+  function handleStationSelect(stationId: string, anchor?: { x: number; y: number; leftX: number }) {
+    const next = activeSelectedStation === stationId ? null : stationId;
+    setSelectedStation(next);
+    setSelected(null);
+    setPinnedAnchor(next ? anchor ?? null : null);
+    onSelect?.(null);
+    onStationSelect?.(next);
+  }
+
+  function clearPinnedPulse() {
+    setSelected(null);
+    setSelectedStation(null);
+    setPinnedAnchor(null);
+    onSelect?.(null);
+    onStationSelect?.(null);
+    onPinnedClose?.();
   }
 
   // Clamp pan offset so at least one quarter of the active floor bbox remains visible.
@@ -1214,7 +1433,12 @@ export function IsometricCanvas({
             // it is out of service, so it reports no stock signal.
             const occ = !isFrame && zone.active && occupancy ? occupancy[zone.location_code] : undefined;
             const capacity = (zone.rack_levels ?? 1) * 10;
-            const occupancyFraction = !isFrame && zone.active && occupancy
+            // OVERVIEW-LIVE-MAP-01 Slice D.1: occupancyPresentation="neutral"
+            // suppresses the fill entirely at the source — IsometricBox never
+            // receives a fraction, so its existing fillOverride logic is
+            // untouched and every other caller's heatmap keeps rendering
+            // exactly as before.
+            const occupancyFraction = !isFrame && zone.active && occupancy && occupancyPresentation !== 'neutral'
               ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
               : undefined;
                         const activity = liveActivity?.[zone.location_code];
@@ -1254,6 +1478,14 @@ export function IsometricCanvas({
               ? project(wx + ww + 0.3, wy + wd / 2, wh + 0.35, zoom, flipped)
               : null;
 
+            // OVERVIEW-LIVE-MAP-01 Slice D: when the caller supplies one
+            // already-resolved presentation for this location, it owns the
+            // single badge below and the older per-fact stow/problem/dock
+            // markers are suppressed for THIS location only — never two
+            // competing count badges on the same bin. Callers that never
+            // pass operationalPresentationByLocation are unaffected.
+            const locationPresentation = operationalPresentationByLocation?.[zone.location_code];
+
             // OV-129: stow badge sits on the bin's top face — inside the box,
             // per the agreed split: identity stays inline, live state goes on
             // the face. Suppressed while an operator is present so the pick
@@ -1264,7 +1496,7 @@ export function IsometricCanvas({
             // badge anchored there buries the bin's identity. Bins are
             // 3-level towers here, hence a real collision rather than a
             // theoretical one.
-            const stowPt = (stowUnits ?? 0) > 0 && !activity?.hasActivePick
+            const stowPt = (stowUnits ?? 0) > 0 && !activity?.hasActivePick && !locationPresentation
               ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
               : null;
 
@@ -1274,7 +1506,7 @@ export function IsometricCanvas({
               !isFrame && zone.active && zone.type === 'bin'
                 ? problemByLocation?.[zone.location_code]
                 : undefined;
-            const problemPt = (problemCount ?? 0) > 0
+            const problemPt = (problemCount ?? 0) > 0 && !locationPresentation
               ? project(wx + ww * 0.18, wy + wd * 0.18, wh + 0.2, zoom, flipped)
               : null;
 
@@ -1285,8 +1517,15 @@ export function IsometricCanvas({
             // carries its own location label at centre, so 0.5 buries it.
             // Lower lift than stow (0.15 vs 0.35) because dock zones are flat:
             // there is no tower to clear.
-            const dockPt = (dockUnits ?? 0) > 0 && !activity?.hasActivePick
+            const dockPt = (dockUnits ?? 0) > 0 && !activity?.hasActivePick && !locationPresentation
               ? project(wx + ww * 0.82, wy + wd * 0.82, wh + 0.15, zoom, flipped)
+              : null;
+
+            // OVERVIEW-LIVE-MAP-01 Slice D: the one unified badge, anchored at
+            // the same corner problemPt used — free real estate once the
+            // per-fact markers above are suppressed for this location.
+            const operationalBadgePt = locationPresentation?.primaryBadge
+              ? project(wx + ww * 0.18, wy + wd * 0.18, wh + 0.2, zoom, flipped)
               : null;
 
             // Warehouse identity is rendered as screen-aligned UI chrome outside the SVG
@@ -1323,7 +1562,7 @@ export function IsometricCanvas({
                   wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
                   colorKey={colorKey}
                   dockBay={dockBayFor(zone)}
-                  isSelected={selected === zone.location_code}
+                  isSelected={activeSelectedLocation === zone.location_code}
                   isHovered={
                     !isFrame &&
                     activeHoveredCode === zone.location_code
@@ -1332,7 +1571,7 @@ export function IsometricCanvas({
                     !isFrame &&
                     (activeHoveredCode != null || hoveredStationId != null) &&
                     activeHoveredCode !== zone.location_code &&
-                    selected !== zone.location_code &&
+                    activeSelectedLocation !== zone.location_code &&
                     (problemCount ?? 0) === 0
                   }
                   isDimmed={
@@ -1354,13 +1593,20 @@ export function IsometricCanvas({
                       : undefined
                   }
                   isCritical={(problemCount ?? 0) > 0}
+                  operationalState={operationalStateByLocation?.[zone.location_code]}
                   isFrame={isFrame}
                   isInactive={!zone.active}
                   label={zone.type === 'warehouse' ? '' : zone.location_code}
                   rackLevels={rackLevels}
                   zoom={zoom}
                   flipped={flipped}
-                  onClick={() => handleSelect(zone.location_code)}
+                  onClick={() =>
+                    handleSelect(zone.location_code, {
+                      x: project(wx + ww, wy, wh, zoom, flipped).sx,
+                      y: project(wx + ww, wy, wh, zoom, flipped).sy,
+                      leftX: project(wx, wy + wd, 0, zoom, flipped).sx,
+                    })
+                  }
                   occupancyFraction={occupancyFraction}
                 />
                                 {/* OV-136: semantic operator pill replaces the ambiguous count dot. */}
@@ -1505,6 +1751,24 @@ export function IsometricCanvas({
                 </g>
               )}
 
+                {/* OVERVIEW-LIVE-MAP-01 Slice D: the one already-resolved
+                    badge for this location. Colour follows the same Slice C
+                    treatment tokens so badge and ring never disagree. */}
+                {operationalBadgePt && locationPresentation?.primaryBadge && (
+                  <OperationalBadge
+                    pt={operationalBadgePt}
+                    zoom={zoom}
+                    label={locationPresentation.primaryBadge.label}
+                    ariaLabel={`${locationPresentation.primaryBadge.label} at ${zone.location_code}`}
+                    fill={
+                      resolveOperationalVisualTreatment(
+                        locationPresentation.state === 'neutral' ? undefined : locationPresentation.state
+                      )?.stroke ?? 'var(--ink)'
+                    }
+                    strong={locationPresentation.state === 'critical'}
+                  />
+                )}
+
                 {/* OV-131: units physically at the dock. */}
                 {dockPt && (
                   <g style={{ pointerEvents: 'none' }}>
@@ -1597,6 +1861,20 @@ export function IsometricCanvas({
               zoom,
               flipped
             );
+            // OVERVIEW-LIVE-MAP-01 Slice D.1: the primary operational label
+            // (e.g. "8 blocked orders") sits well clear of the block's top
+            // face — countPt's +0.45 lift reads fine for a bare 1-2 digit
+            // count but a merchant-worded label at that height visually
+            // overlaps the coloured geometry. Anchored to the same footprint
+            // centre (not a fixed screen offset) so it still lands correctly
+            // when flipped or re-zoomed.
+            const primaryLabelPt = project(
+              wx + tw / 2,
+              wy + td / 2,
+              totalBarH + 1.1,
+              zoom,
+              flipped
+            );
             // OV-133: station identity belongs on the near footprint edge, not over
             // the variable-height bar. The projected endpoints also handle flipped mode.
             const labelPt = project(wx, wy + td, 0, zoom, flipped);
@@ -1605,11 +1883,35 @@ export function IsometricCanvas({
             // and count must stand alone for an operator who cannot tell these
             // hues apart — which is why each stage now has its own named block
             // rather than sharing one bar with a colour-coded sub-stack.
-            const isCritical = station.tone === 'critical';
-            const barFill = isCritical ? 'var(--critical-ink)' : 'var(--accent)';
+            // OVERVIEW-LIVE-MAP-01 Slice C: when the caller supplies an
+            // explicit operational state for this station id, it takes full
+            // precedence over the legacy `tone` field — e.g. 'staged' carries
+            // a hardcoded tone: 'critical' for alarm styling even though its
+            // resolved operational state is 'active'. Callers that never pass
+            // operationalStateByStation keep the original tone-only behaviour.
+            const stationOperationalState = operationalStateByStation?.[station.id];
+            const stationTreatment = stationOperationalState
+              ? resolveOperationalVisualTreatment(
+                  stationOperationalState === 'neutral' ? undefined : stationOperationalState
+                )
+              : resolveOperationalVisualTreatment(station.tone === 'critical' ? 'critical' : undefined);
+            const isCritical = stationOperationalState
+              ? stationOperationalState === 'critical'
+              : station.tone === 'critical';
+            const barFill = stationTreatment ? stationTreatment.stroke : 'var(--accent)';
+            // OVERVIEW-LIVE-MAP-01 Slice D: when supplied, the resolved badge
+            // label (merchant wording, e.g. "4 awaiting pickup") replaces the
+            // bare count in the same text slot — one label, no second badge
+            // stacked on an already-coloured block. Absent -> bare count,
+            // unchanged from every pre-Slice-D caller.
+            const stationPresentation = operationalPresentationByStation?.[station.id];
+            const stationBadgeLabel = stationPresentation?.primaryBadge?.label;
             const isHoveredStation =
               enableHoverFocus && hoveredStationId === station.id;
-            const stationStroke = isHoveredStation
+            const isSelectedStation = activeSelectedStation === station.id;
+            const stationStroke = isSelectedStation
+              ? 'var(--accent)'
+              : isHoveredStation
               ? 'var(--ink-2)'
               : 'transparent';
             const stationOpacity =
@@ -1618,7 +1920,7 @@ export function IsometricCanvas({
             return (
               <g
                 key={station.id}
-                style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
+                style={{ cursor: 'pointer' }}
                 opacity={stationOpacity}
                 onMouseEnter={
                   enableHoverFocus
@@ -1649,7 +1951,13 @@ export function IsometricCanvas({
                         }
                     : undefined
                 }
-                onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
+                onClick={() =>
+                  handleStationSelect(station.id, {
+                    x: t11.sx,
+                    y: t11.sy,
+                    leftX: b01.sx,
+                  })
+                }
               >
               {/* Stage bar — sides first, top face last (painter order).
                     OV-18: face planes match IsometricBox's level bands — one
@@ -1662,33 +1970,62 @@ export function IsometricCanvas({
                   fill={barFill}
                   fillOpacity={0.45}
                   stroke={stationStroke}
-                  strokeWidth={isHoveredStation ? 1.1 : 0}
+                  strokeWidth={isSelectedStation ? 2 : isHoveredStation ? 1.1 : 0}
+                  strokeDasharray={isSelectedStation ? '4 2' : undefined}
                 />
                 <polygon
                   points={pts(t10, b10, b11, t11)}
                   fill={barFill}
                   fillOpacity={0.32}
                   stroke={stationStroke}
-                  strokeWidth={isHoveredStation ? 1.1 : 0}
+                  strokeWidth={isSelectedStation ? 2 : isHoveredStation ? 1.1 : 0}
+                  strokeDasharray={isSelectedStation ? '4 2' : undefined}
                 />
                 <polygon
                   points={pts(t00, t10, t11, t01)}
                   fill={barFill}
                   fillOpacity={0.75}
                   stroke={stationStroke}
-                  strokeWidth={isHoveredStation ? 1.4 : 0}
+                  strokeWidth={isSelectedStation ? 2.2 : isHoveredStation ? 1.4 : 0}
+                  strokeDasharray={isSelectedStation ? '4 2' : undefined}
                 />
-                {/* Count badge */}
-                <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
-                  fontSize={Math.round(11 * zoom)} fontWeight="600" fill={barFill} fontFamily="monospace">
-                  {station.count}
-                </text>
-                <EdgeLabelPlate
-                  label={station.label}
-                  start={labelPt}
-                  end={labelEdgePt}
-                  zoom={zoom}
-                />
+                {/* OVERVIEW-LIVE-MAP-01 Slice D.1: merchant-worded primary
+                    label, painted as a badge plate clearly above the block
+                    (primaryLabelPt) instead of bare text over the geometry.
+                    Legacy callers with no presentation keep the original
+                    bare-count text at its original position, unchanged. */}
+                {stationBadgeLabel ? (
+                  <OperationalBadge
+                    pt={primaryLabelPt}
+                    zoom={zoom}
+                    label={stationBadgeLabel}
+                    ariaLabel={`${stationBadgeLabel} — ${station.label}`}
+                    fill={barFill}
+                    strong={isCritical}
+                  />
+                ) : (
+                  <text
+                    x={countPt.sx} y={countPt.sy} textAnchor="middle"
+                    fontSize={Math.round(11 * zoom)}
+                    fontWeight="600" fill={barFill} fontFamily="monospace"
+                  >
+                    {station.count}
+                  </text>
+                )}
+                {/* OVERVIEW-LIVE-MAP-01 Slice D.1: Overview decides when the
+                    separate identity plate is redundant with the primary
+                    label above (e.g. "8 blocked orders" already says
+                    everything "Blocked" would) via showIdentityLabel. No
+                    presentation supplied -> identity always shown, exactly
+                    as every caller before Slice D.1 already saw. */}
+                {(stationPresentation?.showIdentityLabel ?? true) && (
+                  <EdgeLabelPlate
+                    label={station.label}
+                    start={labelPt}
+                    end={labelEdgePt}
+                    zoom={zoom}
+                  />
+                )}
               </g>
             );
           })}
@@ -1739,37 +2076,76 @@ export function IsometricCanvas({
       {/* OV-HOVER-02: Location Pulse. Read-only, pointer-transparent, outside
           the projection bbox and auto-fit. Flips left near the right edge and
           clamps vertically so it never leaves the map container. */}
-      {activePulse && hoverAnchor && (() => {
+      {activePulse && activePulseAnchor && (() => {
         const PW = 228;
         const GAP = 14;
-        const ax = hoverAnchor.x + offset.x;
-        const ay = hoverAnchor.y + offset.y;
-        const alx = hoverAnchor.leftX + offset.x;
+        const rows = isPinnedPulse
+          ? activePulse.rows.filter(row => row.label !== 'State')
+          : activePulse.rows;
+        const stateLine = isPinnedPulse
+          ? activePulse.rows.find(row => row.label === 'State')?.value ?? activePulse.subtitle
+          : activePulse.subtitle;
+        const ax = activePulseAnchor.x + offset.x;
+        const ay = activePulseAnchor.y + offset.y;
+        const alx = activePulseAnchor.leftX + offset.x;
         const flipLeft = ax + GAP + PW > size.w - 8;
         const left = flipLeft ? Math.max(8, alx - GAP - PW) : ax + GAP;
-        const estH = 46 + activePulse.rows.length * 20;
+        const estH = 46 + rows.length * 20 + (pinnedAction && isPinnedPulse ? 34 : 0);
         const top = Math.max(8, Math.min(ay - estH / 2, size.h - estH - 8));
         return (
           <Box
-            aria-hidden
+            aria-hidden={!isPinnedPulse}
+            data-testid="isometric-pulse-card"
+            data-pinned={isPinnedPulse ? 'true' : 'false'}
             sx={{
               position: 'absolute', left, top, width: PW, zIndex: 3,
-              pointerEvents: 'none',
-              border: '1px solid var(--rule)', borderRadius: '6px',
-              bgcolor: 'var(--bg)', px: 1.25, py: 1,
-              boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
+              pointerEvents: isPinnedPulse ? 'auto' : 'none',
+              border: isPinnedPulse ? '1px solid rgba(255,255,255,0.24)' : '1px solid var(--rule)',
+              borderRadius: '6px',
+              bgcolor: isPinnedPulse ? 'var(--surface)' : 'var(--bg)',
+              px: 1.15,
+              py: 0.9,
+              boxShadow: isPinnedPulse ? 'none' : '0 4px 14px rgba(0,0,0,0.28)',
             }}
           >
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
-              {activePulse.title}
-            </Typography>
-            {activePulse.subtitle && (
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <Typography sx={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
+                {activePulse.title}
+              </Typography>
+              {isPinnedPulse && (
+                <Box
+                  component="button"
+                  type="button"
+                  aria-label="Close map inspection"
+                  onClick={clearPinnedPulse}
+                  sx={{
+                    width: 18,
+                    height: 18,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: 'none',
+                    bgcolor: 'transparent',
+                    color: 'var(--ink-3)',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    lineHeight: 1,
+                    p: 0,
+                    '&:hover': { color: 'var(--ink)' },
+                  }}
+                >
+                  ×
+                </Box>
+              )}
+            </Box>
+            {stateLine && (
               <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
-                {activePulse.subtitle}
+                {stateLine}
               </Typography>
             )}
             <Box sx={{ borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75 }}>
-              {activePulse.rows.map((r, i) => (
+              {rows.map((r, i) => (
                 <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, py: 0.25 }}>
                   <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>{r.label}</Typography>
                   <Typography sx={{
@@ -1782,6 +2158,26 @@ export function IsometricCanvas({
                 </Box>
               ))}
             </Box>
+            {isPinnedPulse && pinnedAction && (
+              <Box
+                component="button"
+                type="button"
+                onClick={pinnedAction.onClick}
+                sx={{
+                  mt: 0.9,
+                  border: 'none',
+                  bgcolor: 'transparent',
+                  color: 'var(--accent)',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  p: 0,
+                  '&:hover': { opacity: 0.78 },
+                }}
+              >
+                {pinnedAction.label}
+              </Box>
+            )}
           </Box>
         );
       })()}

@@ -1,6 +1,6 @@
 // File: apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 // Lines 1–12 (imports)
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUiEvents } from 'analytics/useUiEvents';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Typography } from '@mui/material';
@@ -27,9 +27,30 @@ import {
 } from '../orders/useAddressResolutionOrders';
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
+import {
+  deriveLocationOperationalPresentation,
+  deriveStationOperationalPresentation,
+  type OverviewOperationalState,
+  type OverviewOperationalPresentation,
+} from '../overview/overviewOperationalState';
+
+type MapInspectionSelection =
+  | { kind: 'location'; id: string }
+  | { kind: 'station'; id: string };
+
+export function overviewLocationPulseTitle(code: string, zoneType?: string | null): string {
+  const normalizedCode = code.trim();
+  const normalizedZoneType = zoneType?.trim();
+  if (!normalizedZoneType) return normalizedCode;
+  const zoneTypeLabel = normalizedZoneType.toUpperCase();
+  return normalizedCode.toUpperCase() === zoneTypeLabel
+    ? normalizedCode
+    : `${normalizedCode} · ${zoneTypeLabel}`;
+}
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
+  const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
   const { user, isLoading: authLoading } = useAuth();
 
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
@@ -399,13 +420,40 @@ export default function OverviewPageFT2() {
     const hrs = Math.floor(mins / 60);
     return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`;
   };
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  // OVERVIEW-LIVE-MAP-01 Slice B/C/D: one pass per location over the same
+  // canonical inputs (problemByLocation, liveActivity, stowPending,
+  // receiveAtDock) derives the pulse hover rows, the Slice C colour-treatment
+  // state, and the Slice D badge/reason presentation together — so the three
+  // can never drift out of sync and precedence is computed exactly once, via
+  // deriveLocationOperationalPresentation (which itself delegates state to
+  // deriveLocationOperationalState — no second precedence ruleset here).
   const locationPulseByCode: Record<string, LocationPulse> = {};
+  const overviewOperationalStateByLocation: Record<string, OverviewOperationalState> = {};
+  const overviewOperationalPresentationByLocation: Record<string, OverviewOperationalPresentation> = {};
   if (hasMapAccess) {
     for (const z of zones) {
       if (z.type !== 'bin' || !z.location_code) continue;
       const code = z.location_code;
       const act = liveActivity?.[code];
+      const operatorCount = act?.operatorCount ?? 0;
+      const staleOperatorCount = act?.staleCount ?? 0;
+      const problemCount = problemByLocation[code] ?? 0;
+      const stowUnits = stowPending[code] ?? 0;
+      const dockUnits = receiveAtDock[code] ?? 0;
+
+      const presentation = deriveLocationOperationalPresentation({
+        problemCount,
+        operatorCount,
+        staleOperatorCount,
+        stowUnits,
+        dockUnits,
+        recencyText: act?.lastActivityAt ? relativeTime(act.lastActivityAt) : undefined,
+      });
+      overviewOperationalStateByLocation[code] = presentation.state;
+      overviewOperationalPresentationByLocation[code] = presentation;
+
       const rows: LocationPulse['rows'] = [];
 
       // Always present: the one fact every bin can answer truthfully.
@@ -414,29 +462,42 @@ export default function OverviewPageFT2() {
         value: `${occupancyQuery.data?.occupancy?.[code]?.on_hand_quantity ?? 0} units`,
       });
 
-      if (act && act.operatorCount > 0) {
-        const phases = [
-          (act.pickingCount ?? 0) > 0 ? `${act.pickingCount} picking` : null,
-          (act.packingCount ?? 0) > 0 ? `${act.packingCount} packing` : null,
-        ].filter(Boolean).join(', ');
+      // STATE — the headline explanation, only when there is one to give.
+      if (presentation.state !== 'neutral') {
         rows.push({
-          label: 'Operators',
-          value: phases ? `${act.operatorCount} · ${phases}` : String(act.operatorCount),
-          tone: (act.staleCount ?? 0) > 0 ? 'warning' : 'default',
+          label: 'State',
+          value: `${capitalize(presentation.state)} — ${presentation.reason}`,
+          tone: presentation.state === 'critical'
+            ? 'critical'
+            : presentation.state === 'stale' || presentation.state === 'warning'
+              ? 'warning'
+              : 'default',
         });
       }
 
-      const problems = problemByLocation[code] ?? 0;
-      if (problems > 0) {
-        rows.push({ label: 'Open problems', value: String(problems), tone: 'critical' });
+      // WORK
+      if (operatorCount > 0) {
+        const phases = [
+          (act?.pickingCount ?? 0) > 0 ? `${act?.pickingCount} picking` : null,
+          (act?.packingCount ?? 0) > 0 ? `${act?.packingCount} packing` : null,
+        ].filter(Boolean).join(', ');
+        rows.push({
+          label: 'Operators',
+          value: phases ? `${operatorCount} · ${phases}` : String(operatorCount),
+          tone: staleOperatorCount > 0 ? 'warning' : 'default',
+        });
       }
+      if (stowUnits > 0) rows.push({ label: 'Awaiting stow', value: `${stowUnits} units` });
+      if (dockUnits > 0) rows.push({ label: 'At dock', value: `${dockUnits} units` });
 
-      const stow = stowPending[code] ?? 0;
-      if (stow > 0) rows.push({ label: 'Awaiting stow', value: `${stow} units` });
-
-      const dock = receiveAtDock[code] ?? 0;
-      if (dock > 0) rows.push({ label: 'At dock', value: `${dock} units` });
-
+      // IMPACT
+      if (problemCount > 0) {
+        rows.push({
+          label: problemCount === 1 ? 'Open issue' : 'Open issues',
+          value: String(problemCount),
+          tone: 'critical',
+        });
+      }
       // OUTBOUND-CONSOLIDATE-01: order-scoped outbound counts, shown only on
       // the zone that owns them. Orders, not units — never conflate the two.
       if (code === outboundZoneCode) {
@@ -453,14 +514,14 @@ export default function OverviewPageFT2() {
         }
       }
 
-      // Only when an operator row actually produced a clock. Absence of
-      // activity is silence, never "never".
+      // RECENCY — only when an operator row actually produced a clock.
+      // Absence of activity is silence, never "never".
       if (act?.lastActivityAt) {
         rows.push({ label: 'Last activity', value: relativeTime(act.lastActivityAt), tone: 'muted' });
       }
 
       locationPulseByCode[code] = {
-        title: z.zone_type ? `${code} · ${z.zone_type.toUpperCase()}` : code,
+        title: overviewLocationPulseTitle(code, z.zone_type),
         rows,
       };
     }
@@ -475,15 +536,43 @@ export default function OverviewPageFT2() {
     shipped: 'Shipped today',
   };
   const stationPulseById: Record<string, LocationPulse> = {};
+  const overviewOperationalStateByStation: Record<string, OverviewOperationalState> = {};
+  const overviewOperationalPresentationByStation: Record<string, OverviewOperationalPresentation> = {};
   for (const s of stations) {
+    const presentation = deriveStationOperationalPresentation({ id: s.id, count: s.count });
+    overviewOperationalStateByStation[s.id] = presentation.state;
+    overviewOperationalPresentationByStation[s.id] = presentation;
+
     stationPulseById[s.id] = {
       title: s.label.toUpperCase(),
       rows: [
-        { label: 'Orders', value: String(s.count), tone: s.tone === 'critical' ? 'critical' : 'default' },
+        {
+          label: 'Orders',
+          value: presentation.primaryBadge?.label ?? String(s.count),
+          tone: presentation.state === 'critical' ? 'critical' : 'default',
+        },
         { label: 'State', value: STATION_STATE[s.id] ?? '—', tone: 'muted' },
       ],
     };
   }
+
+  const selectedLocationCode =
+    mapInspection?.kind === 'location' ? mapInspection.id : null;
+  const selectedStationId =
+    mapInspection?.kind === 'station' ? mapInspection.id : null;
+  const selectedLocationPulse =
+    selectedLocationCode != null ? locationPulseByCode[selectedLocationCode] : null;
+  const selectedStationPulse =
+    selectedStationId != null ? stationPulseById[selectedStationId] : null;
+  const selectedLocationProblemCount =
+    selectedLocationCode != null ? problemByLocation[selectedLocationCode] ?? 0 : 0;
+  const selectedInspectionRoute =
+    selectedLocationPulse && selectedLocationProblemCount > 0
+      ? { to: '/problem-center', label: 'Open Problem Center →' }
+      : selectedStationPulse
+        ? { to: '/orders/flow', label: 'Open order flow →' }
+        : null;
+  const closeMapInspection = () => setMapInspection(null);
 
     // Three-branch gate — see playbook §3.
   // OV-ENTRY-001: Growth/Scale users must NEVER see Core triage layout,
@@ -679,10 +768,11 @@ export default function OverviewPageFT2() {
         minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
         borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)',
       }}>
-        <Box sx={{ flex: 1, minHeight: 0 }}>
+        <Box sx={{ flex: 1, minHeight: 360, minWidth: 0 }}>
           <IsometricCanvas
             zones={zones}
             occupancy={occupancyQuery.data?.occupancy}
+            occupancyPresentation="neutral"
             stations={stations}
             liveActivity={liveActivity}
             packQueueCount={packQueueCount}
@@ -693,6 +783,23 @@ export default function OverviewPageFT2() {
             stowPendingTotal={stowPendingTotal}
             receiveAtDock={receiveAtDock}
             receiveAtDockTotal={receiveAtDockTotal}
+            operationalStateByLocation={overviewOperationalStateByLocation}
+            operationalStateByStation={overviewOperationalStateByStation}
+            operationalPresentationByLocation={overviewOperationalPresentationByLocation}
+            operationalPresentationByStation={overviewOperationalPresentationByStation}
+            selectedLocationCode={selectedLocationCode}
+            selectedStationId={selectedStationId}
+            pinnedAction={selectedInspectionRoute ? {
+              label: selectedInspectionRoute.label,
+              onClick: () => navigate(selectedInspectionRoute.to),
+            } : null}
+            onPinnedClose={closeMapInspection}
+            onSelect={(locationCode) => {
+              setMapInspection(locationCode ? { kind: 'location', id: locationCode } : null);
+            }}
+            onStationSelect={(stationId) => {
+              setMapInspection(stationId ? { kind: 'station', id: stationId } : null);
+            }}
             showMarkerKey
             awaitingPackCount={awaitingPackCount}
             showLegend={false}
