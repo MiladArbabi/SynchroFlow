@@ -300,24 +300,6 @@ export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
   }));
 }
 
-// ─── HISTORY — ALERT LIFECYCLE ONLY ──────────────────────────────────────────
-
-/**
- * This section carries ALERT HISTORY, and nothing more.
- *
- * `resolved_at` is authoritative for the ALERT's own lifecycle (alerts.
- * controller.ts status='resolved'). It is NOT evidence that a Decision Engine
- * intervention was verified, that an order_constraints episode cleared, or that
- * anything the alert described was actually fixed — an alert can be resolved by
- * a rule re-evaluating, and interventionOutcome.service.ts deliberately refuses
- * to derive outcome from any source but order_constraints.
- *
- * So these rows take the neutral 'closed' status, never 'verified'. Green /
- * ✓ semantics stay reserved for sources that genuinely establish completion
- * (currently only onboarding SETUP). Row wording states that the alert closed
- * and asserts no cause. These rows are reachable ONLY from the HISTORY tab —
- * OPEN carries actionable work exclusively.
- */
 // ─── HISTORY V1 — BACKEND-CLASSIFIED VERIFIED-RESOLVED EPISODES ─────────────
 
 /**
