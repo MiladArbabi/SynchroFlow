@@ -514,8 +514,7 @@ import path to any WAITING-touched file; both the test and the controller
 were already dirty before WAITING work began). It is unrelated to WAITING
 correctness and is not caused by it.
 
-**Local runtime status: RUNTIME-SMOKE-CERTIFIED WITH FIXTURE LIMITATION —
-NOT production-certified.**
+**Local runtime status (pre-deploy): RUNTIME-SMOKE-CERTIFIED WITH FIXTURE LIMITATION.**
 
 Observed locally:
 
@@ -550,7 +549,9 @@ separate GitHub issue already tracks local build/startup artifact and
 resource problems (stale `tsbuildinfo` / missing `dist` behavior, and
 deprecated/paused module startup cost). Not addressed here.
 
-**WAITING V1 status: RUNTIME-SMOKE-CERTIFIED WITH FIXTURE LIMITATION.**
+**Production certification:** GREEN on 2026-09-20 after deployment of commit `96575bea` (`feat(ops-console): add waiting v1`). Production Ops Console loaded successfully, NOW and SETUP remained healthy, and `GET /api/v1/operations/waiting` returned successfully. No production WAITING transition was manufactured solely for certification.
+
+**WAITING V1 status: PRODUCTION-CERTIFIED — 2026-09-20.**
 
 ---
 
