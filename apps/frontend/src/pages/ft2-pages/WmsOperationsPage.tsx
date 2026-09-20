@@ -437,6 +437,28 @@ export default function WmsOperationsPage() {
     }
   }, []);
 
+  /**
+   * GH-1108 / RECEIVE-OVERCOUNT-01
+   * -------------------------------
+   * Persists the canonical overage approval — extra_item /
+   * accounting_role=overage — that inspectReceiveJobLine requires to already
+   * exist before it will commit an over-expected quantity_accepted. This is
+   * deliberately NOT handleReportReceiveException: that adapter always fires
+   * a Problem Center task, which is correct for the explicit "Report
+   * problem" choice but wrong here — choosing "Accept extra" approves the
+   * overage, it does not report a problem.
+   */
+  const handleApproveOverDelivery = useCallback(async (
+    jobId: string,
+    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_affected: number; notes: string }
+  ) => {
+    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, {
+      ...params,
+      exception_type: 'extra_item',
+      accounting_role: 'overage',
+    });
+  }, []);
+
   const handleCloseReceiveJob = useCallback(async (
     jobId: string,
     params: { actual_delivery_date?: string }
@@ -739,6 +761,7 @@ export default function WmsOperationsPage() {
       onInspectReceiveLine={handleInspectReceiveLine}
       onPersistReceiveLineProgress={handlePersistReceiveLineProgress}
       onReportReceiveException={handleReportReceiveException}
+      onApproveOverDelivery={handleApproveOverDelivery}
       onCloseReceiveJob={handleCloseReceiveJob}
       // WAREHOUSE-FOCUS-SHELL-01A — ReceiveSessionPage reports focused
       // (sessionPhase !== 'brief') for the exact job it's showing.

@@ -61,6 +61,7 @@ function renderSession(overrides: {
   mode?: 'count' | 'scan';
   onResolveBarcode?: jest.Mock;
   onReportException?: jest.Mock;
+  onApproveOverDelivery?: jest.Mock;
   onPersistLineProgress?: jest.Mock;
   onCloseJob?: jest.Mock;
   onRefresh?: jest.Mock;
@@ -79,6 +80,7 @@ function renderSession(overrides: {
     lines,
     onInspectLine: overrides.onInspectLine,
     onReportException: overrides.onReportException ?? jest.fn().mockResolvedValue(undefined),
+    onApproveOverDelivery: overrides.onApproveOverDelivery ?? jest.fn().mockResolvedValue(undefined),
     onPersistLineProgress: overrides.onPersistLineProgress,
     onCloseJob: overrides.onCloseJob ?? jest.fn().mockResolvedValue(undefined),
     onComplete: jest.fn(),
@@ -607,11 +609,18 @@ it('R11c — successful problem reporting refreshes from canonical receive-job s
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 
-it('R12 — expected plus one over-delivery is accepted by audited rule in count and scan paths', async () => {
+it('R12 — expected plus one over-delivery persists canonical overage approval before inspection in count and scan paths', async () => {
+  // GH-1108 / RECEIVE-OVERCOUNT-01 — "Accept extra" must persist the
+  // canonical overage evidence (extra_item / accounting_role=overage) BEFORE
+  // ever attempting the inspection, in both call order and outcome: the
+  // backend fails closed on an over-expected inspection without that
+  // evidence already existing.
   const countInspect = jest.fn().mockResolvedValue(undefined);
+  const countApprove = jest.fn().mockResolvedValue(undefined);
   renderSession({
     barcode: '5012345678900',
     onInspectLine: countInspect,
+    onApproveOverDelivery: countApprove,
     onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
   });
@@ -621,19 +630,29 @@ it('R12 — expected plus one over-delivery is accepted by audited rule in count
   fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+  expect(countApprove).toHaveBeenCalledWith(expect.objectContaining({
+    lasyncro_variant_id: VARIANT_ID,
+    receive_job_line_id: LINE_ID,
+    quantity_affected: 1,
+  }));
   await waitFor(() => expect(countInspect).toHaveBeenCalledWith(expect.objectContaining({
     quantity_accepted: 2,
     quantity_rejected: 0,
   })));
+  expect(countApprove.mock.invocationCallOrder[0])
+    .toBeLessThan(countInspect.mock.invocationCallOrder[0]);
 
   cleanup();
   sessionStorage.clear();
   const scanInspect = jest.fn().mockResolvedValue(undefined);
+  const scanApprove = jest.fn().mockResolvedValue(undefined);
   renderSession({
     barcode: '5012345678900',
     mode: 'scan',
     onResolveBarcode: jest.fn().mockResolvedValue({ lasyncro_variant_id: VARIANT_ID }),
     onInspectLine: scanInspect,
+    onApproveOverDelivery: scanApprove,
     onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
     lines: [
@@ -648,10 +667,189 @@ it('R12 — expected plus one over-delivery is accepted by audited rule in count
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
+  expect(scanApprove).toHaveBeenCalledWith(expect.objectContaining({
+    lasyncro_variant_id: VARIANT_ID,
+    receive_job_line_id: LINE_ID,
+    quantity_affected: 1,
+  }));
   await waitFor(() => expect(scanInspect).toHaveBeenCalledWith(expect.objectContaining({
     quantity_accepted: 2,
     quantity_rejected: 0,
   })));
+  expect(scanApprove.mock.invocationCallOrder[0])
+    .toBeLessThan(scanInspect.mock.invocationCallOrder[0]);
+});
+
+it('R12b — a rejected overage approval keeps the decision open, preserves the counted quantity, and never inspects', async () => {
+  const inspect = jest.fn().mockResolvedValue(undefined);
+  const approve = jest.fn().mockRejectedValue(new Error('overage approval failed'));
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: inspect,
+    onApproveOverDelivery: approve,
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+  });
+
+  await enterReceiveExecution('count');
+  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
+
+  await screen.findByText(/overage approval failed/i);
+
+  // No optimistic completion: the decision dialog stays open with the
+  // counted quantity intact, and inspect was never attempted.
+  const dialog = screen.getByRole('dialog', { name: /extra unit detected/i });
+  expect(within(dialog).getByText('2')).toBeTruthy();
+  expect(inspect).not.toHaveBeenCalled();
+
+  // Retryable: the same action can be invoked again.
+  expect(screen.getByRole('button', { name: /accept extra/i })).not.toBeDisabled();
+});
+
+it('R12c — "Do not receive extra" restores provisional quantity to expected and never approves or inspects the overage', async () => {
+  const inspect = jest.fn().mockResolvedValue(undefined);
+  const approve = jest.fn().mockResolvedValue(undefined);
+  const persistProgress = jest.fn().mockResolvedValue(undefined);
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: inspect,
+    onApproveOverDelivery: approve,
+    onPersistLineProgress: persistProgress,
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+  });
+
+  await enterReceiveExecution('count');
+  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  await screen.findByRole('dialog', { name: /extra unit detected/i });
+
+  fireEvent.click(screen.getByRole('button', { name: /do not receive extra/i }));
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(persistProgress).toHaveBeenCalledWith(
+    LINE_ID,
+    expect.objectContaining({ quantity_sellable_provisional: 1 }),
+  ));
+  expect(approve).not.toHaveBeenCalled();
+  expect(inspect).not.toHaveBeenCalled();
+});
+
+it('R12d — "Report problem" opens the explicit Problem Center report and never silently approves or inspects the overage', async () => {
+  const inspect = jest.fn().mockResolvedValue(undefined);
+  const approve = jest.fn().mockResolvedValue(undefined);
+  const reportException = jest.fn().mockResolvedValue(undefined);
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: inspect,
+    onApproveOverDelivery: approve,
+    onReportException: reportException,
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+  });
+
+  await enterReceiveExecution('count');
+  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  await screen.findByRole('dialog', { name: /extra unit detected/i });
+
+  fireEvent.click(screen.getByRole('button', { name: /report problem/i }));
+
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: /extra unit detected/i })).toBeNull());
+  expect(approve).not.toHaveBeenCalled();
+  expect(inspect).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: /report problem/i }));
+
+  await waitFor(() => expect(reportException).toHaveBeenCalledWith(expect.objectContaining({
+    receive_job_line_id: LINE_ID,
+    exception_type: 'extra_item',
+    quantity_affected: 1,
+  })));
+  expect(approve).not.toHaveBeenCalled();
+  expect(inspect).not.toHaveBeenCalled();
+});
+
+it('R12f — refresh/re-entry with a persisted overage approval reconstructs the approved over-delivery decision instead of relying on local UI state', async () => {
+  // GH-1108 / RECEIVE-OVERCOUNT-01 — acceptance: "Refresh/re-entry after
+  // persisted overage approval reconstructs the canonical over-delivery
+  // state rather than relying on local UI state." Simulates a fresh mount
+  // (the only way overDeliveryDecision's local state can exist at all) with
+  // exactly the canonical server shape a refresh would deliver: an
+  // uninspected line whose provisional count already exceeds expected and
+  // whose reconciliation carries the persisted overage_approved evidence.
+  const inspect = jest.fn().mockResolvedValue(undefined);
+  const approve = jest.fn().mockResolvedValue(undefined);
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: inspect,
+    onApproveOverDelivery: approve,
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+    lines: [line({
+      barcode: '5012345678900',
+      quantity_expected: 1,
+      quantity_accepted: 0,
+      quantity_sellable_provisional: 2,
+      inspection_complete: false,
+      reconciliation: {
+        expected: 1,
+        sellable: 2,
+        accounted: 0,
+        unaccounted: 0,
+        allocations: [],
+        overage_approved: true,
+      },
+    })],
+  });
+
+  // The approved over-delivery decision is restored on render, not left
+  // null awaiting a fresh over-count in this session.
+  const dialog = await screen.findByRole('dialog', { name: /extra unit detected/i });
+  expect(within(dialog).getByText('2')).toBeTruthy();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: /accept extra/i }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+  // Already-persisted approval must not be persisted again.
+  expect(approve).not.toHaveBeenCalled();
+  // The operator finishes the already-approved overage against the actual
+  // provisional quantity (expected 1 + 1).
+  await waitFor(() => expect(inspect).toHaveBeenCalledWith(expect.objectContaining({
+    receive_job_line_id: LINE_ID,
+    quantity_accepted: 2,
+    quantity_rejected: 0,
+  })));
+});
+
+it('R12e — Review truthfully reports expected, accepted, and extra for an approved over-delivery', async () => {
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: jest.fn().mockResolvedValue(undefined),
+    onApproveOverDelivery: jest.fn().mockResolvedValue(undefined),
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+  });
+
+  await enterReceiveExecution('count');
+  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+  expect(await screen.findByText(/review receive/i)).toBeTruthy();
+
+  const lineRow = screen
+    .getAllByText('GH1085 widget')
+    .map((node) => node.closest('tr'))
+    .find((row): row is HTMLTableRowElement => row !== null);
+  expect(lineRow).toBeTruthy();
+  // Line / Expected / Received / Extra / Problems / Status
+  expect(lineRow?.querySelectorAll('td')[1]?.textContent).toBe('1');
+  expect(lineRow?.querySelectorAll('td')[2]?.textContent).toBe('2');
+  expect(lineRow?.querySelectorAll('td')[3]?.textContent).toBe('1');
 });
 
 it('R13 — count and scan converge on equivalent review semantics', async () => {
@@ -1423,6 +1621,7 @@ const WMS_MODULE = '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSessionPage', () => {
   const onInspectReceiveLine = jest.fn().mockResolvedValue(undefined);
   const onReportReceiveException = jest.fn().mockResolvedValue(undefined);
+  const onApproveOverDelivery = jest.fn().mockResolvedValue(undefined);
   const onCloseReceiveJob = jest.fn().mockResolvedValue(undefined);
   const onResolveBarcode = jest.fn().mockResolvedValue(null);
   const onPrintUnitLabels = jest.fn().mockResolvedValue(undefined);
@@ -1470,6 +1669,7 @@ it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSess
       },
       onInspectReceiveLine,
       onReportReceiveException,
+      onApproveOverDelivery,
       onCloseReceiveJob,
       onResolveBarcode,
       onPrintUnitLabels,
@@ -1495,11 +1695,16 @@ it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSess
   // interactive while dropping the business event.
   void (forwarded.onInspectLine as Function)({ receive_job_line_id: LINE_ID });
   void (forwarded.onReportException as Function)({ receive_job_line_id: LINE_ID });
+  void (forwarded.onApproveOverDelivery as Function)({ receive_job_line_id: LINE_ID, quantity_affected: 1, notes: 'n' });
   void (forwarded.onCloseJob as Function)({ actual_delivery_date: '2026-09-12' });
   void (forwarded.onRefresh as Function)();
 
   expect(onInspectReceiveLine).toHaveBeenCalledWith(RECEIVE_JOB_ID, { receive_job_line_id: LINE_ID });
   expect(onReportReceiveException).toHaveBeenCalledWith(RECEIVE_JOB_ID, { receive_job_line_id: LINE_ID });
+  // GH-1108 / RECEIVE-OVERCOUNT-01 — a dropped wire here would silently no-op
+  // "Accept extra" and let the backend's fail-closed guard become the only
+  // thing standing in the way, rather than persisting real evidence.
+  expect(onApproveOverDelivery).toHaveBeenCalledWith(RECEIVE_JOB_ID, { receive_job_line_id: LINE_ID, quantity_affected: 1, notes: 'n' });
   expect(onCloseReceiveJob).toHaveBeenCalledWith(RECEIVE_JOB_ID, { actual_delivery_date: '2026-09-12' });
   expect(onFetchReceiveJob).toHaveBeenCalledWith(RECEIVE_JOB_ID);
 

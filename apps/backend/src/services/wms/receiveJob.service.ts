@@ -16,7 +16,6 @@ import {
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 
 const SHORTFALL_ACCOUNTING_TYPES = new Set(['defect', 'wrong_item', 'wrong_variant', 'missing_item', 'other']);
-const OVERAGE_ACCOUNTING_TYPES = new Set(['extra_item']);
 
 function shouldCountTowardShortfall(exception: any): boolean {
   if (exception.counts_toward_shortfall === true) return true;
@@ -25,9 +24,14 @@ function shouldCountTowardShortfall(exception: any): boolean {
     && exception.exception_type !== 'barcode_mismatch';
 }
 
+// GH-1108 / RECEIVE-OVERCOUNT-01 AUDIT CORRECTION — approval must be the
+// explicit canonical accounting_role='overage' evidence "Accept extra"
+// persists. exception_type='extra_item' alone is not approval: "Report
+// problem" can report an extra_item exception without accounting_role set
+// (see handleReportProblem's onReportException call, which never sends
+// accounting_role), and that must not unlock an over-expected inspection.
 function isPersistedOverageApproval(exception: any): boolean {
-  return exception.accounting_role === 'overage'
-    || OVERAGE_ACCOUNTING_TYPES.has(exception.exception_type);
+  return exception.accounting_role === 'overage';
 }
 
 export async function receiveLineReconciliationState(

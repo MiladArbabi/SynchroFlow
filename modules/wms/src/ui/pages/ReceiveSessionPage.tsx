@@ -72,6 +72,14 @@ export interface ReceiveJobLine {
     accounted: number;
     unaccounted: number;
     allocations: ReceiveReportedProblem[];
+    /**
+     * GH-1108 / RECEIVE-OVERCOUNT-01 — true once the canonical extra_item /
+     * accounting_role=overage exception has been persisted for this line
+     * (receiveLineReconciliationState's isPersistedOverageApproval). Lets a
+     * refreshed/re-entered session reconstruct an already-approved
+     * over-delivery decision from server data instead of local UI state.
+     */
+    overage_approved?: boolean;
   };
 }
 
@@ -110,6 +118,22 @@ export interface ReceiveSessionPageProps {
     quantity_affected: number;
     accounting_role?: string;
     notes?: string;
+  }) => Promise<void>;
+  /**
+   * GH-1108 / RECEIVE-OVERCOUNT-01 — persists the canonical overage approval
+   * (extra_item / accounting_role=overage) the backend requires to exist
+   * BEFORE an over-expected inspection can be committed
+   * (inspectReceiveJobLine fails closed on quantityAccepted > expected unless
+   * this evidence is already there). Deliberately separate from
+   * onReportException: reusing that adapter would route "Accept extra"
+   * through the Problem Center task creation side effect, which is only
+   * correct for the explicit "Report problem" choice.
+   */
+  onApproveOverDelivery: (params: {
+    lasyncro_variant_id: string | null;
+    receive_job_line_id: string;
+    quantity_affected: number;
+    notes: string;
   }) => Promise<void>;
   onPersistLineProgress?: (
     receiveJobLineId: string,
@@ -352,6 +376,16 @@ function projectedSellable(line: ReceiveJobLine): number {
   );
 }
 
+// GH-1108 / RECEIVE-OVERCOUNT-01 — refresh/re-entry contract: a line with an
+// uninspected over-expected provisional count and the canonical persisted
+// overage approval must reconstruct the approved over-delivery decision from
+// server data, not rely on local UI state that resets to null on reload.
+function hasApprovedOverage(line: ReceiveJobLine): boolean {
+  return !line.inspection_complete
+    && line.reconciliation?.overage_approved === true
+    && projectedSellable(line) > line.quantity_expected;
+}
+
 function hasProjectedReconciliation(line: ReceiveJobLine): boolean {
   if (!line.reconciliation) return false;
   return !!line.reconciliation_started_at
@@ -513,6 +547,7 @@ export default function ReceiveSessionPage({
   onClaimJob,
   onInspectLine,
   onReportException,
+  onApproveOverDelivery,
   onPersistLineProgress,
   onCloseJob,
   onComplete,
@@ -591,6 +626,14 @@ export default function ReceiveSessionPage({
   const initialReconciliationLine = firstReconciliationIndex >= 0
     ? projectedReconciliationState(lines[firstReconciliationIndex])
     : null;
+  const firstApprovedOverageIndex = lines.findIndex(hasApprovedOverage);
+  const initialOverDeliveryDecision = firstApprovedOverageIndex >= 0
+    ? {
+      line: lines[firstApprovedOverageIndex],
+      counted: projectedSellable(lines[firstApprovedOverageIndex]),
+      approved: true,
+    }
+    : null;
 
   const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
     closedAt || jobStatus === 'closed'
@@ -627,7 +670,16 @@ export default function ReceiveSessionPage({
   const [overDeliveryDecision, setOverDeliveryDecision] = useState<{
     line: ReceiveJobLine;
     counted: number;
-  } | null>(null);
+    /**
+     * GH-1108 / RECEIVE-OVERCOUNT-01 — true only when this decision was
+     * reconstructed from an already-persisted canonical overage approval
+     * (see initialOverDeliveryDecision / hasApprovedOverage), never when the
+     * operator just counted past expected in this session.
+     */
+    approved?: boolean;
+  } | null>(initialOverDeliveryDecision);
+  const [overDeliverySubmitting, setOverDeliverySubmitting] = useState(false);
+  const [overDeliveryError, setOverDeliveryError] = useState<string | null>(null);
 
   const [problemDialog, setProblemDialog] = useState(false);
   const [problemChoice, setProblemChoice] = useState<ProblemChoice | null>(null);
@@ -894,6 +946,7 @@ export default function ReceiveSessionPage({
       return;
     }
     if (accepted > currentLine.quantity_expected) {
+      setOverDeliveryError(null);
       setOverDeliveryDecision({ line: currentLine, counted: accepted });
       return;
     }
@@ -945,6 +998,7 @@ export default function ReceiveSessionPage({
 
       const next = activeAccepted + 1;
       if (next > currentLine.quantity_expected) {
+        setOverDeliveryError(null);
         setOverDeliveryDecision({ line: currentLine, counted: next });
         return;
       }
@@ -1186,18 +1240,59 @@ export default function ReceiveSessionPage({
     setProblemDialog(true);
   }, []);
 
+  // GH-1108 / RECEIVE-OVERCOUNT-01 — "Accept extra" previously dismissed this
+  // dialog and called completeLine (-> onInspectLine) immediately, before any
+  // canonical overage evidence existed. The backend fails closed on
+  // quantityAccepted > expected unless a persisted extra_item /
+  // accounting_role=overage exception already exists for this line, so that
+  // path always attempted an inspection the backend was guaranteed to reject.
+  // Required order: (1) persist the provisional sellable count, (2) persist
+  // the canonical overage approval, (3) only once approval succeeds, inspect
+  // the line with the actual accepted quantity, (4) only once that succeeds,
+  // dismiss the decision. A rejection at any step leaves the decision open,
+  // preserves the counted quantity, and surfaces a retryable error — no
+  // optimistic completion.
   const handleAcceptOverDelivery = useCallback(async () => {
     if (!overDeliveryDecision) return;
-    const { line, counted } = overDeliveryDecision;
-    setOverDeliveryDecision(null);
-    await persistLineProgress(line, counted);
-    await flushLineProgress();
-    await completeLine(line, counted, 0);
-  }, [completeLine, flushLineProgress, overDeliveryDecision, persistLineProgress]);
+    const { line, counted, approved } = overDeliveryDecision;
+    const extra = Math.max(0, counted - line.quantity_expected);
+
+    setOverDeliveryError(null);
+    setOverDeliverySubmitting(true);
+    try {
+      await persistLineProgress(line, counted);
+      await flushLineProgress();
+
+      // Refresh/re-entry contract (GH-1108): when this decision was
+      // reconstructed from an already-persisted canonical overage approval
+      // (initialOverDeliveryDecision), that evidence already exists on the
+      // server — do not persist it again.
+      if (!approved) {
+        await onApproveOverDelivery({
+          lasyncro_variant_id: line.lasyncro_variant_id,
+          receive_job_line_id: line.receive_job_line_id,
+          quantity_affected: extra,
+          notes: `Accepted ${extra} extra unit${extra === 1 ? '' : 's'} during receive — approved by operator.`,
+        });
+      }
+
+      const outcome = await inspectAndResolveReadiness(line, counted, 0);
+
+      setOverDeliveryDecision(null);
+      if (!outcome.awaitingLabelAck) {
+        moveToNextLineOrReview(line.receive_job_line_id);
+      }
+    } catch (err: any) {
+      setOverDeliveryError(err?.message ?? 'Could not approve the extra unit. Please retry.');
+    } finally {
+      setOverDeliverySubmitting(false);
+    }
+  }, [flushLineProgress, inspectAndResolveReadiness, moveToNextLineOrReview, onApproveOverDelivery, overDeliveryDecision, persistLineProgress]);
 
   const handleRejectOverDelivery = useCallback(() => {
     if (!overDeliveryDecision) return;
     void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
+    setOverDeliveryError(null);
     setOverDeliveryDecision(null);
   }, [overDeliveryDecision, persistLineProgress]);
 
@@ -1205,6 +1300,7 @@ export default function ReceiveSessionPage({
     if (!overDeliveryDecision) return;
     const extra = Math.max(1, overDeliveryDecision.counted - overDeliveryDecision.line.quantity_expected);
     void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
+    setOverDeliveryError(null);
     setOverDeliveryDecision(null);
     openProblemDialog({
       choice: 'extra_item',
@@ -1715,6 +1811,7 @@ export default function ReceiveSessionPage({
                         if (Number.isNaN(next) || next < 0) return;
                         void persistLineProgress(currentLine, next);
                         if (next > currentLine.quantity_expected) {
+                          setOverDeliveryError(null);
                           setOverDeliveryDecision({ line: currentLine, counted: next });
                           return;
                         }
@@ -1732,6 +1829,7 @@ export default function ReceiveSessionPage({
                         const next = accepted + 1;
                         void persistLineProgress(currentLine, next);
                         if (accepted >= currentLine.quantity_expected) {
+                          setOverDeliveryError(null);
                           setOverDeliveryDecision({ line: currentLine, counted: next });
                           return;
                         }
@@ -2385,17 +2483,21 @@ export default function ReceiveSessionPage({
                 </Paper>
               ))}
             </Box>
+            {overDeliveryError && <Alert severity="error">{overDeliveryError}</Alert>}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleRejectOverDelivery} color="inherit">Do not receive extra</Button>
-          <Button onClick={handleReportOverDelivery} color="warning">Report problem</Button>
+          <Button onClick={handleRejectOverDelivery} color="inherit" disabled={overDeliverySubmitting}>Do not receive extra</Button>
+          <Button onClick={handleReportOverDelivery} color="warning" disabled={overDeliverySubmitting}>Report problem</Button>
           <Button
             variant="contained"
             color="warning"
+            disabled={overDeliverySubmitting}
             onClick={() => void handleAcceptOverDelivery()}
           >
-            Accept extra unit{Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}
+            {overDeliverySubmitting
+              ? 'Approving...'
+              : `Accept extra unit${Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}`}
           </Button>
         </DialogActions>
       </Dialog>

@@ -225,6 +225,17 @@ async function receiveFixture(opts: {
     }
   );
 
+  // GH-1111: Receive execution mutations are protected until the assigned
+  // operator has explicitly claimed the job. This suite tests barcode
+  // readiness, not pre-claim ownership rejection, so establish the canonical
+  // claimed state through the real route before returning the fixture.
+  const claim = await request(app)
+    .post(`/api/v1/suppliers/receive-jobs/${receiveJobId}/claim`)
+    .set('Authorization', `Bearer ${shop.token}`)
+    .send({});
+
+  expect(claim.status).toBe(200);
+
   return {
     shopId: shop.shopId,
     userId: shop.userId,
@@ -834,6 +845,110 @@ it('B17 — overdelivery is not committed by direct line inspection without pers
   const persisted = await fetchReceiveJobLine(f);
   expect(Number(persisted.quantity_accepted)).toBe(0);
   expect(Boolean(persisted.inspection_complete)).toBe(false);
+});
+
+// GH-1108 / RECEIVE-OVERCOUNT-01 — the frontend "Accept extra" flow persists
+// canonical overage evidence (extra_item / accounting_role=overage) through
+// this exact real HTTP route BEFORE ever attempting inspection. This proves
+// the other half of the B17 contract: once that evidence genuinely exists,
+// the same real service call that B17 proved rejects now succeeds, and the
+// resulting canonical Receive state (accepted quantity, minted units, job
+// counters, and post-close inventory truth) truthfully reflects the
+// approved overage rather than a mocked stand-in for onInspectLine.
+it('B17b — persisted extra_item/overage evidence unlocks an expected+1 inspection, and canonical state reflects the accepted overage', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 1 });
+
+  const approval = await reportReceiveProblem(f, {
+    exception_type: 'extra_item',
+    quantity_affected: 1,
+    accounting_role: 'overage',
+    notes: 'Accepted 1 extra unit during receive — approved by operator.',
+  });
+  expect(approval.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).resolves.toBeUndefined();
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Number(persisted.quantity_accepted)).toBe(2);
+  expect(Number(persisted.quantity_rejected)).toBe(0);
+  expect(Boolean(persisted.inspection_complete)).toBe(true);
+  expect(persisted.reported_problems).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      receive_exception_id: approval.body.receive_exception_id,
+      exception_type: 'extra_item',
+      quantity_affected: 1,
+    }),
+  ]));
+
+  const s = await state(f);
+  expect(Number(s.line!.quantity_accepted)).toBe(2);
+  expect(Boolean(s.line!.inspection_complete)).toBe(true);
+  expect(s.units).toHaveLength(2);
+  expect(Number(s.job!.units_accepted)).toBe(2);
+  expect(s.job!.status).toBe('stow_ready');
+
+  await expect(close(f, '2026-09-15')).resolves.toBeUndefined();
+
+  const after = await state(f);
+  expect(after.job!.status).toBe('closed');
+  expect(Number(after.poLine!.quantity_received)).toBe(2);
+  expect(after.inboundMovements).toEqual([
+    expect.objectContaining({
+      lasyncro_variant_id: f.lasyncroVariantId,
+      quantity_delta: 2,
+      location_code: f.rootLocationCode,
+    }),
+  ]);
+  expect(Number(after.rootTruth!.on_hand_quantity)).toBe(2);
+  expect(after.stowTasks).toEqual([
+    expect.objectContaining({ quantity: 2, trigger: 'inbound_stock' }),
+  ]);
+});
+
+// GH-1108 AUDIT CORRECTION — isPersistedOverageApproval previously treated
+// exception_type='extra_item' alone as approval (OVERAGE_ACCOUNTING_TYPES
+// fallback), so merely reporting an extra-item problem — without the
+// operator ever choosing "Accept extra" — could satisfy overage_approved.
+// Approval must be the explicit accounting_role='overage' evidence only.
+it('B17c — an extra_item exception WITHOUT accounting_role=overage does not satisfy overage approval', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 1 });
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'extra_item',
+    quantity_affected: 1,
+    // Deliberately no accounting_role — exception_type alone must not approve.
+  });
+  expect(report.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).rejects.toThrow(/overdelivery|overage|approval/i);
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Number(persisted.quantity_accepted)).toBe(0);
+  expect(Boolean(persisted.inspection_complete)).toBe(false);
+});
+
+// The real "Report problem" frontend path never sends accounting_role for
+// any exception_type (ReceiveSessionPage.handleReportProblem's onReportException
+// call omits it entirely) — this mirrors that exact call shape rather than
+// asserting only the minimal API-level case above.
+it('B17d — the real Report Problem frontend call shape (extra_item, no accounting_role) never becomes overage approval', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 1 });
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'extra_item',
+    quantity_affected: 1,
+    notes: '1 extra unit found during receive',
+  });
+  expect(report.status).toBe(201);
+
+  await expect(inspect(f, 2, 0)).rejects.toThrow(/overdelivery|overage|approval/i);
+
+  const persisted = await fetchReceiveJobLine(f);
+  expect(Number(persisted.quantity_accepted)).toBe(0);
+  expect(Boolean(persisted.inspection_complete)).toBe(false);
+  expect(persisted.reported_problems).toEqual(expect.arrayContaining([
+    expect.objectContaining({ exception_type: 'extra_item', quantity_affected: 1 }),
+  ]));
 });
 
 it('B18 — quantity_rejected is not required to equal missing shortfall for reconciliation completion', async () => {

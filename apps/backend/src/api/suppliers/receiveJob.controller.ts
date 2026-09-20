@@ -705,12 +705,18 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         lasyncro_variant_id,
         exception_type,
         quantity_affected: quantity_affected ?? 1,
+        // GH-1108 AUDIT CORRECTION — exception_type='extra_item' must NOT
+        // imply accounting_role='overage' by default. Overage approval is
+        // the explicit evidence "Accept extra" persists (accounting_role
+        // sent explicitly); "Report problem" reports an extra_item without
+        // ever sending accounting_role and must not silently become
+        // approval. Only the shortfall types keep an inferred default —
+        // reconciliation accounting depends on it and those types have no
+        // "approval" meaning to accidentally grant.
         accounting_role: accounting_role ?? (
           ['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type)
             ? 'shortfall'
-            : exception_type === 'extra_item'
-              ? 'overage'
-              : null
+            : null
         ),
         counts_toward_shortfall: ['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type)
           || (exception_type === 'other' && accounting_role === 'shortfall'),

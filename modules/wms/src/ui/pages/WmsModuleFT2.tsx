@@ -154,6 +154,19 @@ export type WmsModuleFT2Props = {
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
   onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
+  /**
+   * GH-1108 / RECEIVE-OVERCOUNT-01 — REQUIRED, deliberately not optional,
+   * same reasoning as onConfirmUnitLabelsPrinted below. This module is a
+   * pure pass-through between WmsOperationsPage and ReceiveSessionPage; an
+   * optional prop dropped here fails OPEN — ReceiveSessionPage would treat a
+   * missing callback as "approval unavailable" only if it guards for
+   * undefined, but the whole point of this seam is that the canonical
+   * overage-approval persistence (extra_item / accounting_role=overage)
+   * must always actually happen before an over-expected line can be
+   * inspected. Requiring it here means a dropped wire is a compile error,
+   * not a silent no-op that lets "Accept extra" look like it worked.
+   */
+  onApproveOverDelivery: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_affected: number; notes: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
   /**
    * WAREHOUSE-FOCUS-SHELL-01A — ReceiveSessionPage reports whether the
@@ -1009,6 +1022,7 @@ function WmsModuleFT2Inner({
   onInspectReceiveLine,
   onPersistReceiveLineProgress,
   onReportReceiveException,
+  onApproveOverDelivery,
   onCloseReceiveJob,
   onReceiveSessionFocusChange,
   onPrintUnitLabels,
@@ -1654,6 +1668,7 @@ function WmsModuleFT2Inner({
         onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve()}
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onApproveOverDelivery={(params) => onApproveOverDelivery(activeSession.receiveJobId, params)}
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
