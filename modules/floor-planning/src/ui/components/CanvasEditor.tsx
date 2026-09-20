@@ -35,6 +35,63 @@ const MAX_ZOOM   = 3.0;
 const CANVAS_W   = 20;
 const CANVAS_H   = 15;
 const RULER_SIZE = 24;
+const DEFAULT_VIEWPORT = { zoom: 1, offset: { x: 40, y: 40 } };
+const VIEWPORT_PADDING_RATIO_PER_SIDE = 0.05;
+
+export type FloorPlanningViewport = {
+  zoom: number;
+  offset: { x: number; y: number };
+};
+
+type WarehouseBounds = Pick<WarehouseZone, 'position_x' | 'position_y' | 'width' | 'depth'>;
+
+function hasUsableWarehouseBounds(warehouse: WarehouseBounds | null | undefined): warehouse is WarehouseBounds {
+  return !!warehouse
+    && warehouse.position_x != null
+    && warehouse.position_y != null
+    && Number.isFinite(Number(warehouse.position_x))
+    && Number.isFinite(Number(warehouse.position_y))
+    && Number.isFinite(Number(warehouse.width))
+    && Number(warehouse.width) > 0
+    && Number.isFinite(Number(warehouse.depth))
+    && Number(warehouse.depth) > 0;
+}
+
+export function fitWarehouseToViewport(
+  warehouse: WarehouseBounds | null | undefined,
+  viewportWidth: number,
+  viewportHeight: number,
+): FloorPlanningViewport | null {
+  const x = Number(warehouse?.position_x);
+  const y = Number(warehouse?.position_y);
+  const width = Number(warehouse?.width);
+  const depth = Number(warehouse?.depth);
+  if (!hasUsableWarehouseBounds(warehouse)) {
+    return DEFAULT_VIEWPORT;
+  }
+
+  if (
+    !Number.isFinite(viewportWidth) || viewportWidth <= 0
+    || !Number.isFinite(viewportHeight) || viewportHeight <= 0
+  ) {
+    return null;
+  }
+
+  const usableWidth = viewportWidth * (1 - VIEWPORT_PADDING_RATIO_PER_SIDE * 2);
+  const usableHeight = viewportHeight * (1 - VIEWPORT_PADDING_RATIO_PER_SIDE * 2);
+  const zoom = Math.min(
+    MAX_ZOOM,
+    Math.max(MIN_ZOOM, Math.min(usableWidth / (width * SCALE), usableHeight / (depth * SCALE))),
+  );
+
+  return {
+    zoom,
+    offset: {
+      x: (viewportWidth - width * SCALE * zoom) / 2 - x * SCALE * zoom,
+      y: (viewportHeight - depth * SCALE * zoom) / 2 - y * SCALE * zoom,
+    },
+  };
+}
 
 // Setup and Map share the same live semantic tokens; only face opacity differs.
 function zoneRGBA(type: string, alpha: number): string {
@@ -655,6 +712,7 @@ export function CanvasEditor({
   const dragRef   = useRef<DragState | null>(null);
   const panRef    = useRef<PanState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
+  const initialViewportAppliedRef = useRef(false);
   const savingRef = useRef<Set<string>>(new Set());
   // FP-11: alignment guide lines, shown while dragging a frame zone
   // (warehouse/lane/shelf) if it lines up with a sibling frame zone's
@@ -696,6 +754,38 @@ export function CanvasEditor({
   const selectedZone = selected
     ? positionedZones.find(z => z.location_code === selected) ?? zones.find(z => z.location_code === selected)
     : null;
+
+  const warehouseRoots = positionedZones.filter((zone) => zone.type === 'warehouse');
+  const warehouseRoot = warehouseRoots.length === 1 ? warehouseRoots[0] : null;
+
+  const fitCurrentWarehouse = useCallback(() => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    const viewport = fitWarehouseToViewport(
+      warehouseRoot,
+      rect?.width ?? 0,
+      rect?.height ?? 0,
+    );
+    if (!viewport) return false;
+    setZoom(viewport.zoom);
+    setOffset(viewport.offset);
+    return true;
+  }, [warehouseRoot]);
+
+  useEffect(() => {
+    if (initialViewportAppliedRef.current) return;
+    if (!hasUsableWarehouseBounds(warehouseRoot)) return;
+
+    let animationFrame: number;
+    const applyWhenMeasurable = () => {
+      if (fitCurrentWarehouse()) {
+        initialViewportAppliedRef.current = true;
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(applyWhenMeasurable);
+    };
+    applyWhenMeasurable();
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fitCurrentWarehouse, warehouseRoot]);
 
   const toSvg = useCallback((metres: number) => metres * SCALE * zoom, [zoom]);
 
@@ -969,6 +1059,7 @@ export function CanvasEditor({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
+    if (zone.type === 'warehouse') return;
     // FP-06: mode branch removed — Select mode/marquee no longer exists,
     // so zone mousedown always starts a drag (previously "pan mode" only
     // behavior) and never lets the event bubble to canvas.
@@ -1219,7 +1310,7 @@ export function CanvasEditor({
             <Box sx={{ px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', fontFamily: 'monospace', minWidth: 40, justifyContent: 'center' }}>
               {Math.round(zoom * 100)}%
             </Box>
-            <Box onClick={() => { setZoom(1); setOffset({ x: 40, y: 40 }); }}
+            <Box onClick={fitCurrentWarehouse}
               sx={{ px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
               Reset
             </Box>
@@ -1242,7 +1333,7 @@ export function CanvasEditor({
                 data-testid="floor-planning-canvas"
                 style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
                 onMouseDown={onCanvasMouseDown}>
-                <g transform={`translate(${offset.x},${offset.y})`}>
+                <g data-testid="floor-plan-viewport" transform={`translate(${offset.x},${offset.y})`}>
                   <defs>
                     <pattern id="grid-dots" x="0" y="0" width={SCALE * zoom * SNAP} height={SCALE * zoom * SNAP} patternUnits="userSpaceOnUse">
                       <circle cx="1" cy="1" r="1" fill="var(--rule)" opacity="0.5" />
@@ -1270,13 +1361,17 @@ export function CanvasEditor({
                     const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
                     const isSelected = selected === zone.location_code;
                     const isDragging = dragRef.current?.locationCode === zone.location_code;
+                    const isWarehouse = zone.type === 'warehouse';
                     const HANDLE = 6;
 
                     return (
                       <g key={zone.location_code} transform={`translate(${px},${py})`}
-                        onMouseDown={(e) => onRackMouseDown(e, zone)}
-                        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
-                        {isSelected && (
+                        data-zone-code={zone.location_code}
+                        data-zone-type={zone.type}
+                        onMouseDown={isWarehouse ? undefined : (e) => onRackMouseDown(e, zone)}
+                        opacity={isWarehouse ? 0.55 : undefined}
+                        style={{ cursor: isWarehouse ? 'default' : isDragging ? 'grabbing' : 'grab', pointerEvents: isWarehouse ? 'none' : undefined }}>
+                        {isSelected && !isWarehouse && (
                           <rect x="-2" y="-2" width={pw + 4} height={ph + 4} rx="5"
                             fill="none" stroke="var(--accent)" strokeWidth="2" opacity="0.5" strokeDasharray="4 2" />
                         )}
@@ -1286,7 +1381,7 @@ export function CanvasEditor({
                         <rect x="0" y="0" width={pw} height={ph} rx="3"
                           fill={fill}
                           stroke={isSelected ? 'var(--accent)' : stroke}
-                          strokeWidth={isSelected ? 1.5 : 1}
+                          strokeWidth={isWarehouse ? 0.75 : isSelected ? 1.5 : 1}
                           strokeDasharray={zone.active === false ? '4 3' : undefined}
                           opacity={
                             savingRef.current.has(zone.location_code) ? 0.5
@@ -1297,7 +1392,7 @@ export function CanvasEditor({
                         {(zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? (
                           <>
                             <rect x="0" y="0" width={Math.min(pw, 48)} height={14} rx="3"
-                              fill={stroke} opacity={isSelected ? 0.9 : 0.7}
+                              fill={stroke} opacity={isWarehouse ? 0.45 : isSelected ? 0.9 : 0.7}
                               style={{ pointerEvents: 'none' }} />
                             <text x="6" y="7" dominantBaseline="middle"
                               fontSize="8" fontFamily="monospace" fontWeight={700}
@@ -1323,7 +1418,7 @@ export function CanvasEditor({
                           </text>
                         )}
                         {/* Resize handles — selected zone only */}
-                        {isSelected && (<>
+                        {isSelected && !isWarehouse && (<>
                           <rect x={pw - HANDLE / 2} y={ph / 2 - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ew-resize' }}
                             onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; }} />
@@ -1380,8 +1475,9 @@ export function CanvasEditor({
           </Typography>
           {positionedZones.filter(z => z.type === 'lane' || z.type === 'warehouse').map((z, i, arr) => (
             <Box key={z.location_code} sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <Box onClick={() => setSelected(z.location_code)}
-                sx={{ px: 1, py: 0.25, borderRadius: 0.75, cursor: 'pointer', fontSize: 10, fontFamily: 'monospace',
+              <Box onClick={z.type === 'warehouse' ? undefined : () => setSelected(z.location_code)}
+                sx={{ px: 1, py: 0.25, borderRadius: 0.75, cursor: z.type === 'warehouse' ? 'default' : 'pointer', fontSize: 10, fontFamily: 'monospace',
+                  opacity: z.type === 'warehouse' ? 0.55 : 1,
                   fontWeight: selected === z.location_code ? 700 : 400,
                   color: selected === z.location_code ? 'var(--accent)' : 'var(--ink-3)',
                   bgcolor: selected === z.location_code ? 'var(--accent-ghost)' : 'transparent',
