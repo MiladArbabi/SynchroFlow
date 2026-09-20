@@ -72,34 +72,30 @@ jest.mock('hooks/useActivationChecklist', () => ({
   }),
 }));
 
-jest.mock('pages/alerts/useAlerts', () => ({
-  useAlerts: () => ({
+// OPS-CONSOLE-HISTORY-01: the console's HISTORY tab now reads
+// useHistory() (backend-classified verified_resolved episodes), not
+// useAlerts({status:'resolved'}) — see opsConsoleModel.ts's buildHistoryRows.
+jest.mock('pages/operations/useHistory', () => ({
+  useHistory: () => ({
     data: {
-      data: [{
-        id: 'history-1',
-        alert_key: 'hk',
-        source: 'wms',
-        alert_type: 'wms_pick_exception',
-        severity: 'warning',
-        title: 'Closed alert',
-        message: 'Closed',
-        entity_id: null,
-        entity_type: null,
-        revenue_impact: null,
-        category: null,
-        audience: 'all',
-        is_active: false,
-        dismissed_at: null,
-        resolved_at: '2026-09-08T09:00:00.000Z',
-        acknowledged_at: null,
-        acknowledged_by: null,
-        snoozed_until: null,
-        escalated_at: null,
-        rule_id: null,
-        created_at: '2026-09-08T08:00:00.000Z',
-        updated_at: '2026-09-08T09:00:00.000Z',
+      items: [{
+        interventionId: 'history-1',
+        treatment: 'address_correction',
+        lasyncroOrderId: 'order-hist-1',
+        externalOrderId: '#2001',
+        constraintId: 'constraint-hist-1',
+        constraintType: 'customer',
+        blockType: 'incomplete_address',
+        occurredAt: '2026-09-08T08:00:00.000Z',
+        resolvedAt: '2026-09-08T09:00:00.000Z',
+        outcome: 'verified_resolved',
+        presentation: {
+          title: 'Resolved episode',
+          subtitle: 'Canonical verification confirmed the address block cleared.',
+          actionLabel: 'View order',
+        },
+        routing: { route: '/overview?resolution=address' },
       }],
-      meta: { total: 1, status: 'resolved' },
     },
     isLoading: false,
     isError: false,
@@ -143,6 +139,7 @@ function alert(over: Partial<Alert> = {}): Alert {
     acknowledged_at: null, acknowledged_by: null, snoozed_until: null,
     escalated_at: null, rule_id: null,
     created_at: '2026-09-09T10:00:00.000Z', updated_at: '2026-09-09T10:00:00.000Z',
+    treatment: null, action: null,
     ...over,
   };
 }
@@ -355,7 +352,7 @@ describe('Ops Console global search', () => {
 
     expect(screen.getByText('NOW')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
-    expect(screen.getByText('ALERT HISTORY')).toBeInTheDocument();
-    expect(screen.getByText('Closed alert')).toBeInTheDocument();
+    expect(within(screen.getByTestId('ops-console-body')).getByText('HISTORY')).toBeInTheDocument();
+    expect(screen.getByText('Resolved episode')).toBeInTheDocument();
   });
 });

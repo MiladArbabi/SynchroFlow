@@ -12,7 +12,6 @@ import type { ChecklistItem } from 'hooks/useActivationChecklist';
 import {
   OPS_STATUS_GLYPH,
   buildNowRows,
-  buildAlertHistoryRows,
   buildSetupRows,
   buildWaitingRows,
   isNowActionable,
@@ -334,7 +333,7 @@ describe('NOW eligibility policy — NOW V1 ratified allowlist', () => {
     const rows = buildNowRows([sp], spDeepLink);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].action).toEqual({ label: 'Reorder now', route: '/suppliers-portal/sourcing?variantId=v1' });
+    expect(rows[0].action).toEqual({ kind: 'navigate', label: 'Reorder now', route: '/suppliers-portal/sourcing?variantId=v1' });
   });
 
   it('G: stock_protection + action=null (e.g. complete_setup) -> excluded from NOW', () => {
@@ -440,7 +439,7 @@ describe('WAITING rows — V1 backend-classified contract (supersedes the prior 
         status: 'waiting',
         label: item.presentation.title,
         subtitle: item.presentation.subtitle,
-        action: { label: item.presentation.actionLabel, route: item.routing.route },
+        action: { kind: 'navigate', label: item.presentation.actionLabel, route: item.routing.route },
       })
     );
   });
@@ -523,72 +522,8 @@ describe('SETUP rows', () => {
 
   it('preserves the existing route on incomplete rows and offers no action once complete', () => {
     const rows = buildSetupRows(items);
-    expect(rows[1].action).toEqual({ label: 'Open', route: '/floor-planning' });
+    expect(rows[1].action).toEqual({ kind: 'navigate', label: 'Open', route: '/floor-planning' });
     expect(rows[0].action).toBeUndefined();
-  });
-});
-
-// ─── ALERT HISTORY — NEUTRAL, NEVER A VERIFIED OUTCOME ───────────────────────
-
-describe('RECENT / HISTORY rows', () => {
-  const resolved = [
-    alert({ id: 'r1', title: 'Resolved one', resolved_at: '2026-09-08T09:00:00.000Z' }),
-    alert({ id: 'r2', title: 'Resolved two', resolved_at: '2026-09-07T09:00:00.000Z' }),
-    alert({ id: 'r3', title: 'Resolved three', resolved_at: '2026-09-06T09:00:00.000Z' }),
-    alert({ id: 'r4', title: 'Resolved four', resolved_at: '2026-09-05T09:00:00.000Z' }),
-  ];
-
-  it('drops any row without a persisted resolved_at instead of showing it complete', () => {
-    const rows = buildAlertHistoryRows(
-      [...resolved, alert({ id: 'x1', title: 'Never resolved', resolved_at: null })],
-    );
-    expect(rows.map(r => r.id)).not.toContain('history:x1');
-    expect(rows).toHaveLength(4);
-    expect(rows.every(r => r.status === 'closed')).toBe(true);
-  });
-
-  it('NEVER presents a resolved alert as a verified Decision Engine outcome', () => {
-    const rows = buildAlertHistoryRows(resolved);
-
-    // resolved_at is authoritative for the ALERT's lifecycle only. It must not
-    // be promoted into the ✓ / verified vocabulary, which is reserved for
-    // sources that actually establish completion.
-    expect(rows.some(r => r.status === 'verified')).toBe(false);
-    expect(rows.every(r => r.status === 'closed')).toBe(true);
-    expect(rows.map(r => OPS_STATUS_GLYPH[r.status])).not.toContain('✓');
-
-    // And the row wording asserts no cause, resolution or prevention.
-    const words = rows.map(r => `${r.label} ${r.meta ?? ''}`.toLowerCase()).join(' ');
-    for (const causal of ['verified', 'resolved by', 'prevented', 'fixed', 'saved', 'intervention']) {
-      expect(words).not.toContain(causal);
-    }
-  });
-
-  it('shows chronology instead of repeating the word "closed"', () => {
-    const NOW = Date.parse('2026-09-09T12:00:00.000Z');
-    const rows = buildAlertHistoryRows(
-      [
-        alert({ id: 'c1', resolved_at: new Date(NOW - 28 * 60_000).toISOString() }),
-        alert({ id: 'c2', resolved_at: new Date(NOW - 2 * 3_600_000).toISOString() }),
-        alert({ id: 'c3', resolved_at: new Date(NOW - 40 * 3_600_000).toISOString() }),
-      ],
-      undefined, NOW,
-    );
-
-    expect(rows.map(r => r.meta)).toEqual(['28m', '2h', expect.stringMatching(/^[A-Z][a-z]{2} \d{2}$/)]);
-    expect(rows.map(r => r.meta)).not.toContain('closed');
-    // The closed fact still reaches assistive tech via the row's a11y label.
-    expect(rows.every(r => r.a11yLabel === 'alert closed')).toBe(true);
-  });
-
-  it('only ever produces HISTORY rows — RECENT no longer exists as a section', () => {
-    const rows = buildAlertHistoryRows(resolved);
-    expect(rows).toHaveLength(4);
-    expect(rows.every(r => r.section === 'HISTORY')).toBe(true);
-    expect(rows.map(r => r.section)).not.toContain('RECENT');
-    expect(rows.every(r => r.id.startsWith('history:'))).toBe(true);
-    // The optional limit still works, for HISTORY only.
-    expect(buildAlertHistoryRows(resolved, 2)).toHaveLength(2);
   });
 });
 
@@ -602,7 +537,7 @@ describe('openAttentionCount', () => {
         { key: 'a', label: 'Done', complete: true },                          // excluded
         { key: 'b', label: 'Todo', complete: false, actionRoute: '/x' },      // open
       ]),
-      ...buildAlertHistoryRows([alert({ id: 'r2', resolved_at: 'now' })]),  // excluded
+      { id: 'history:h1', section: 'HISTORY' as const, status: 'verified' as const, label: 'Resolved outcome' },  // excluded
     ];
 
     expect(rows).toHaveLength(4);

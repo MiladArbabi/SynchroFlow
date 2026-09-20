@@ -23,7 +23,10 @@ import type { Alert } from 'pages/alerts/useAlerts';
 
 const mockNavigate = jest.fn();
 const mockUseActivationChecklist = jest.fn();
-const mockUseAlerts = jest.fn();
+// OPS-CONSOLE-HISTORY-01: HISTORY is now backend-classified via useHistory(),
+// not useAlerts({status:'resolved'}) — the console no longer calls useAlerts
+// at all (see OpsConsole.tsx), so this mock replaces the former mockUseAlerts.
+const mockUseHistory = jest.fn();
 
 jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
 
@@ -31,8 +34,8 @@ jest.mock('hooks/useActivationChecklist', () => ({
   useActivationChecklist: () => mockUseActivationChecklist(),
 }));
 
-jest.mock('pages/alerts/useAlerts', () => ({
-  useAlerts: (...args: unknown[]) => mockUseAlerts(...args),
+jest.mock('pages/operations/useHistory', () => ({
+  useHistory: (...args: unknown[]) => mockUseHistory(...args),
 }));
 
 jest.mock('pages/wms/usePickBatches', () => ({
@@ -117,8 +120,8 @@ beforeEach(() => {
     items: SETUP_ITEMS, completedCount: 1, allComplete: true,
     isLoading: false, isError: false,
   });
-  mockUseAlerts.mockReturnValue({
-    data: { data: [], meta: { total: 0, status: 'resolved' } },
+  mockUseHistory.mockReturnValue({
+    data: { items: [] },
     isLoading: false, isError: false,
   });
 });
@@ -167,10 +170,26 @@ describe('WAITING V1 — does not alter SETUP or HISTORY composition (item 21)',
   });
 
   it('HISTORY tab composition is unaffected by WAITING items', () => {
-    mockUseAlerts.mockReturnValue({
+    mockUseHistory.mockReturnValue({
       data: {
-        data: [alert({ id: 'r1', resolved_at: '2026-09-08T09:00:00.000Z' })],
-        meta: { total: 1, status: 'resolved' },
+        items: [{
+          interventionId: 'r1',
+          treatment: 'address_correction',
+          lasyncroOrderId: 'order-hist-1',
+          externalOrderId: '#2001',
+          constraintId: 'constraint-hist-1',
+          constraintType: 'customer',
+          blockType: 'incomplete_address',
+          occurredAt: '2026-09-08T08:00:00.000Z',
+          resolvedAt: '2026-09-08T09:00:00.000Z',
+          outcome: 'verified_resolved',
+          presentation: {
+            title: 'Resolved episode',
+            subtitle: 'Canonical verification confirmed the address block cleared.',
+            actionLabel: 'View order',
+          },
+          routing: { route: '/overview?resolution=address' },
+        }],
       },
       isLoading: false, isError: false,
     });

@@ -395,6 +395,11 @@ export async function readShopInterventionOutcomes(
  * for one constraint episode: strictly later occurredAt, or — on an exact
  * tie — the lexicographically greater interventionId (deterministic,
  * ordering-independent of insertion order).
+ *
+ * Shared verbatim by both readCurrentWaitingV1Records() (below) and
+ * readCurrentHistoryV1Records() (OPS-CONSOLE-HISTORY-01, further below) —
+ * one deterministic winner rule for "latest intervention against this
+ * episode", regardless of which outcome status the caller is collapsing for.
  */
 function isLaterWaitingV1Intervention(
   candidate: InterventionOutcomeRecord,
@@ -470,4 +475,81 @@ export async function readCurrentWaitingV1Records(
       a.occurredAt.getTime() - b.occurredAt.getTime() ||
       (a.interventionId < b.interventionId ? -1 : a.interventionId > b.interventionId ? 1 : 0)
   );
+}
+
+/**
+ * OPS-CONSOLE-HISTORY-01 — HISTORY V1 eligible-outcome retention window, in
+ * days. Enforced inside readCurrentHistoryV1Records() so every caller gets
+ * the same window for free; not a controller-level filter.
+ */
+export const HISTORY_V1_RETENTION_DAYS = 30;
+
+/**
+ * OPS-CONSOLE-HISTORY-01 — the ONE shared shop-wide "resolved HISTORY V1"
+ * projection, built on the EXACT SAME seam readCurrentWaitingV1Records()
+ * above uses:
+ *   1. treatment allowlist            — WAITING_V1_TREATMENTS
+ *   2. treatment/constraint pairing   — WAITING_V1_PAIRINGS /
+ *      isWaitingV1EligiblePairing(), unmodified
+ *   3. canonical outcome derivation   — deriveOutcome(), unmodified
+ *   4. deterministic winner selection — isLaterWaitingV1Intervention(),
+ *      the SAME function readCurrentWaitingV1Records() uses
+ *
+ * The only branch point from the WAITING projection is which outcome status
+ * this one selects for: outcome.status === 'verified_resolved', never
+ * 'pending_verification'. Nothing here re-implements or approximates
+ * deriveOutcome() — this file remains the one and only outcome derivation.
+ *
+ * COLLAPSE: decision_interventions is append-only provenance and may
+ * legitimately carry N interventions against the SAME now-resolved
+ * constraint episode (a repeated correction before canonical resolution
+ * landed). This projection keeps exactly one row per constraintId — the
+ * winning (latest occurredAt, greatest interventionId tie-break)
+ * verified_resolved intervention — so exactly one merchant-facing HISTORY
+ * item is produced per resolved constraint episode, never per intervention
+ * attempt.
+ *
+ * RETENTION: an episode whose canonical constraintResolvedAt falls outside
+ * HISTORY_V1_RETENTION_DAYS of `now` is dropped from the result entirely.
+ *
+ * Returned in constraintResolvedAt DESC (newest first), with interventionId
+ * DESC as a deterministic tie-break — the exact ordering
+ * GET /api/v1/operations/history exposes.
+ */
+export async function readCurrentHistoryV1Records(
+  input: { shopId: number; now?: Date },
+  trx?: Knex.Transaction
+): Promise<InterventionOutcomeRecord[]> {
+  const records = await readShopInterventionOutcomes(
+    { shopId: input.shopId, treatments: WAITING_V1_TREATMENTS },
+    trx
+  );
+
+  const winnerByConstraintId = new Map<string, InterventionOutcomeRecord>();
+
+  for (const record of records) {
+    if (record.outcome.status !== 'verified_resolved' || record.constraintId === null) continue;
+    if (!isWaitingV1EligiblePairing(record.treatment, record.constraintType, record.blockType)) continue;
+
+    const constraintId = record.constraintId;
+    const current = winnerByConstraintId.get(constraintId);
+    if (!current || isLaterWaitingV1Intervention(record, current)) {
+      winnerByConstraintId.set(constraintId, record);
+    }
+  }
+
+  const now = input.now ?? new Date();
+  const retentionCutoffMs = now.getTime() - HISTORY_V1_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+  return Array.from(winnerByConstraintId.values())
+    .filter((record) => {
+      const resolvedAt = record.outcome.constraintResolvedAt;
+      return resolvedAt !== null && resolvedAt.getTime() >= retentionCutoffMs;
+    })
+    .sort((a, b) => {
+      const aResolvedAt = (a.outcome.constraintResolvedAt as Date).getTime();
+      const bResolvedAt = (b.outcome.constraintResolvedAt as Date).getTime();
+      if (aResolvedAt !== bResolvedAt) return bResolvedAt - aResolvedAt;
+      return a.interventionId < b.interventionId ? 1 : a.interventionId > b.interventionId ? -1 : 0;
+    });
 }

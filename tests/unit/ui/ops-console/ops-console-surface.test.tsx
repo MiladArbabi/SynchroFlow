@@ -26,8 +26,13 @@ import {
 
 const mockNavigate = jest.fn();
 const mockUseActivationChecklist = jest.fn();
-const mockUseAlerts = jest.fn();
 const mockUseWaiting = jest.fn();
+// OPS-CONSOLE-HISTORY-01 — HISTORY is now backend-classified, not
+// alert-resolved-status-classified. Resolved alerts remain Alerts' own
+// concern; the console no longer calls useAlerts at all (its only prior
+// call site, the resolvedQuery, was removed with buildAlertHistoryRows'
+// wiring), so no useAlerts mock is registered here any more.
+const mockUseHistory = jest.fn();
 
 jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
 
@@ -35,8 +40,8 @@ jest.mock('hooks/useActivationChecklist', () => ({
   useActivationChecklist: () => mockUseActivationChecklist(),
 }));
 
-jest.mock('pages/alerts/useAlerts', () => ({
-  useAlerts: (...args: unknown[]) => mockUseAlerts(...args),
+jest.mock('pages/operations/useHistory', () => ({
+  useHistory: (...args: unknown[]) => mockUseHistory(...args),
 }));
 
 // OPS-CONSOLE-WAITING-01 — badge/WAITING boundary (correction pass, item D).
@@ -47,6 +52,27 @@ jest.mock('pages/alerts/useAlerts', () => ({
 // future wiring change ever routes WAITING data through this hook.
 jest.mock('pages/operations/useWaiting', () => ({
   useWaiting: (...args: unknown[]) => mockUseWaiting(...args),
+}));
+
+// HISTORY-ORDER-ENTITY-01 — a HISTORY row's CTA now sets selectedOrderId and
+// renders the real OrderDetailModalBody, which needs providers (entitlements,
+// currency) this file never set up (no other existing test here previously
+// exercised that state). Mocked at the same seam
+// ops-console-global-search.test.tsx already uses, so the HISTORY-CTA test
+// below can assert "no navigation" without crashing on missing context.
+jest.mock('@lasyncro/shared/ui', () => ({
+  EntityDetailModal: ({ entityId, title, children }: any) =>
+    entityId ? (
+      <section data-testid="entity-detail-modal" aria-label={title}>
+        {children}
+      </section>
+    ) : null,
+}));
+
+jest.mock('pages/orders/OrderDetailModalBody', () => ({
+  OrderDetailModalBody: ({ orderId }: { orderId: string }) => (
+    <div data-testid="order-detail-body">ORDER:{orderId}</div>
+  ),
 }));
 
 jest.mock('pages/wms/usePickBatches', () => ({
@@ -122,6 +148,7 @@ function alert(over: Partial<Alert> = {}): Alert {
     acknowledged_at: null, acknowledged_by: null, snoozed_until: null,
     escalated_at: null, rule_id: null,
     created_at: '2026-09-09T10:00:00.000Z', updated_at: '2026-09-09T10:00:00.000Z',
+    treatment: null, action: null,
     ...over,
   };
 }
@@ -133,15 +160,45 @@ const SETUP_ITEMS = [
   { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning' },
 ];
 
+/**
+ * OPS-CONSOLE-HISTORY-01 — backend HISTORY V1 feed item fixture, mirroring
+ * the real GET /api/v1/operations/history contract verbatim (same shape as
+ * waitingItem() in ops-console-waiting-v1-contract.test.tsx, plus
+ * resolvedAt/outcome='verified_resolved'). `interventionId: 'r1'` keeps this
+ * default fixture's row id ('history:r1') identical to the row id every
+ * pre-existing HISTORY assertion in this file already targets.
+ */
+function historyItem(over: Record<string, unknown> = {}) {
+  return {
+    interventionId: 'r1',
+    treatment: 'address_correction',
+    lasyncroOrderId: 'order-hist-1',
+    externalOrderId: '#2001',
+    constraintId: 'constraint-hist-1',
+    constraintType: 'customer',
+    blockType: 'incomplete_address',
+    occurredAt: '2026-09-08T08:00:00.000Z',
+    resolvedAt: '2026-09-08T09:00:00.000Z',
+    outcome: 'verified_resolved',
+    presentation: {
+      title: 'Resolved one',
+      subtitle: 'Canonical verification confirmed the address block cleared.',
+      actionLabel: 'View order',
+    },
+    // HISTORY-ORDER-ENTITY-01 — order_entity, never a route.
+    routing: { kind: 'order_entity', lasyncroOrderId: 'order-hist-1' },
+    ...over,
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseActivationChecklist.mockReturnValue({
     items: SETUP_ITEMS, completedCount: 1, allComplete: false,
     isLoading: false, isError: false,
   });
-  mockUseAlerts.mockReturnValue({
-    data: { data: [alert({ id: 'r1', title: 'Resolved one', resolved_at: '2026-09-08T09:00:00.000Z' })],
-            meta: { total: 1, status: 'resolved' } },
+  mockUseHistory.mockReturnValue({
+    data: { items: [historyItem()] },
     isLoading: false, isError: false,
   });
   mockUseWaiting.mockReturnValue({
@@ -344,14 +401,14 @@ describe('NOW section', () => {
   it('never opens its own inbox query — the topnav stays the single poll owner', () => {
     renderPanel();
 
-    const statuses = mockUseAlerts.mock.calls.map(
-      ([filters]) => (filters as { status?: string } | undefined)?.status,
-    );
-    expect(statuses).not.toContain('inbox');
-    expect(statuses).toEqual(['resolved']);
-
+    // OPS-CONSOLE-HISTORY-01: the console's only former useAlerts call site
+    // (the resolvedQuery backing HISTORY) is gone — HISTORY now reads
+    // useHistory() instead, so there is no useAlerts mock left to assert
+    // against here. The invariant this test protects (no second inbox poll)
+    // is proved by the absence of `poll: true` in source, unchanged.
     const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
     expect(source).not.toMatch(/poll:\s*true/);
+    expect(source).not.toMatch(/useAlerts\(/);
   });
 });
 
@@ -369,7 +426,10 @@ describe('OPEN | HISTORY filter', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
-    expect(screen.getByTestId('ops-row-history:r1')).toHaveAttribute('data-status', 'closed');
+    // OPS-CONSOLE-HISTORY-01: HISTORY rows are now backend-classified
+    // verified_resolved outcomes, so the row status is 'verified', not the
+    // legacy alert-lifecycle 'closed'.
+    expect(screen.getByTestId('ops-row-history:r1')).toHaveAttribute('data-status', 'verified');
     expect(screen.queryByTestId('ops-row-alert:a1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-setup-toggle')).not.toBeInTheDocument();
 
@@ -409,16 +469,12 @@ describe('deliberate states', () => {
     mockUseActivationChecklist.mockReturnValue({
       items: [], completedCount: 0, allComplete: false, isLoading: true, isError: false,
     });
-    mockUseAlerts.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     const loading = renderPanel({ alerts: [] });
     expect(within(loading.container).getByText('Loading setup…')).toBeInTheDocument();
     loading.unmount();
 
     mockUseActivationChecklist.mockReturnValue({
       items: [], completedCount: 0, allComplete: false, isLoading: false, isError: false,
-    });
-    mockUseAlerts.mockReturnValue({
-      data: { data: [], meta: { total: 0, status: 'resolved' } }, isLoading: false, isError: false,
     });
     const empty = renderPanel({ alerts: [] });
     expect(within(empty.container).getByText('No operational items require action.')).toBeInTheDocument();
@@ -427,50 +483,83 @@ describe('deliberate states', () => {
     mockUseActivationChecklist.mockReturnValue({
       items: [], completedCount: 0, allComplete: false, isLoading: false, isError: true,
     });
-    mockUseAlerts.mockReturnValue({ data: undefined, isLoading: false, isError: true });
     const failed = renderPanel({ alerts: [] });
     expect(within(failed.container).getByText('Setup status unavailable.')).toBeInTheDocument();
     failed.unmount();
 
-    // History's own states live on the HISTORY tab.
-    mockUseAlerts.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    // History's own states live on the HISTORY tab. OPS-CONSOLE-HISTORY-01:
+    // this is now driven by useHistory(), not useAlerts({status:'resolved'}).
+    mockUseHistory.mockReturnValue({ data: undefined, isLoading: false, isError: true });
     const histFailed = renderPanel({ alerts: [] });
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
-    expect(within(histFailed.container).getByText('Alert history unavailable.')).toBeInTheDocument();
+    expect(within(histFailed.container).getByText('History unavailable.')).toBeInTheDocument();
   });
 });
 
-// ─── CORRECTION 1 — ALERT HISTORY IS NOT A VERIFIED OUTCOME ──────────────────
+// ─── OPS-CONSOLE-HISTORY-01 — HISTORY IS A BACKEND-CLASSIFIED VERIFIED OUTCOME
+//
+// SUPERSEDES the prior "alert history semantics" block (CORRECTION 1), which
+// asserted the OLD alert-resolved-status contract: neutral 'closed' rows
+// that must never claim verification. That contract governed
+// buildAlertHistoryRows()/resolved alerts, which no longer power this tab
+// (see opsConsoleModel.ts's buildHistoryRows docstring). Under HISTORY V1 a
+// row here IS a canonically verified_resolved Decision Engine outcome by
+// construction, so the inverse is now true: it correctly renders 'verified'.
 
-describe('alert history semantics', () => {
-  it('renders closed alerts neutrally — never with verified status, ✓ glyph or the confirm token', () => {
+describe('HISTORY V1 semantics — backend-classified verified outcome', () => {
+  it('renders a HISTORY row with verified status, backend copy verbatim, and no local derivation', () => {
     const { container } = renderPanel();
 
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
     const history = screen.getByTestId('ops-row-history:r1');
-    expect(history).toHaveAttribute('data-status', 'closed');
-    expect(history).not.toHaveTextContent('✓');
+    expect(history).toHaveAttribute('data-status', 'verified');
+    expect(history).toHaveAttribute('data-section', 'HISTORY');
+    expect(container.textContent).toMatch(/Resolved one/);
 
-    // No alert-history row may carry the completion status at all.
-    expect(container.querySelectorAll('[data-section="HISTORY"][data-status="verified"]'))
+    // No HISTORY row may carry the legacy neutral alert-lifecycle status.
+    expect(container.querySelectorAll('[data-section="HISTORY"][data-status="closed"]'))
       .toHaveLength(0);
   });
 
-  it('uses neutral wording that claims no causality or constraint resolution', () => {
-    const { container } = renderPanel();
+  // HISTORY-ORDER-ENTITY-01: HISTORY's CTA no longer navigates anywhere — it
+  // opens the canonical Order Entity Modal in place (action.kind ===
+  // 'order_entity'). The destination-specific proof (EntityDetailModal opens
+  // for the exact order) lives in ops-console-history-v1-contract.test.tsx,
+  // which mocks EntityDetailModal/OrderDetailModalBody; this file does not,
+  // so it asserts only the invariant that matters here: no page navigation,
+  // and certainly never to /alerts.
+  it('never navigates on a HISTORY row action — order_entity opens the modal in place, not a page', () => {
+    renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
-    const text = (container.textContent ?? '').toLowerCase();
-    for (const causal of ['verified', 'prevented', 'breach avoided', 'saved', 'intervention', 'outcome']) {
-      expect(text).not.toContain(causal);
-    }
-    expect(container.textContent).toMatch(/ALERT HISTORY/);
+    const row = screen.getByTestId('ops-row-history:r1');
+    const cta = within(row).getByRole('button');
+    fireEvent.click(cta);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('keeps the confirm/verified token reserved for onboarding truth in source', () => {
-    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
-    // 'closed' must not be routed to the confirm colour anywhere.
-    expect(source).not.toMatch(/'closed'\s*\?\s*'var\(--confirm-ink\)'/);
+  it('renders backend-supplied HISTORY presentation copy verbatim, not derived from treatment', () => {
+    mockUseHistory.mockReturnValue({
+      data: {
+        items: [
+          historyItem({
+            interventionId: 'hist-verbatim',
+            presentation: {
+              title: 'ZZQ-9 marker',
+              subtitle: 'backend-supplied history copy #713',
+              actionLabel: 'Do the resolved thing',
+            },
+          }),
+        ],
+      },
+      isLoading: false, isError: false,
+    });
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
+
+    expect(screen.getByText('ZZQ-9 marker')).toBeInTheDocument();
+    expect(screen.getByText('backend-supplied history copy #713')).toBeInTheDocument();
   });
 });
 
@@ -553,34 +642,32 @@ describe('setup completion and dismissal', () => {
 
 // ─── LIVE-BROWSER POLISH CONTRACTS ───────────────────────────────────────────
 
-describe('closed alert rows — readability and chronology', () => {
-  it('stay readable: no whole-row opacity, readable ink, neutral glyph, no confirm token', () => {
+describe('HISTORY V1 rows — readability and chronology', () => {
+  it('take the verified fade/quiet treatment: verified_resolved is a genuinely completed outcome', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
     const row = screen.getByTestId('ops-row-history:r1');
-    // The faded treatment is reserved for genuinely retired rows.
-    expect(row).toHaveStyle({ opacity: '1' });
-    expect(row).toHaveAttribute('data-status', 'closed');
+    // OPS-CONSOLE-HISTORY-01: a HISTORY V1 row's status is 'verified' — a
+    // canonically confirmed outcome, not merely an alert's own lifecycle
+    // closing — so it correctly takes the SAME fade/quiet treatment as any
+    // other verified row (unchanged OpsConsoleRow logic: `faded =
+    // row.status === 'verified' || row.status === 'dismissed'`).
+    expect(row).toHaveAttribute('data-status', 'verified');
+    expect(row).toHaveStyle({ opacity: '0.62' });
 
     const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
-    // Only 'verified' / 'dismissed' may fade a row.
     expect(source).toMatch(/const faded =\s*\n?\s*row\.status === 'verified' \|\| row\.status === 'dismissed';/);
-    expect(source).not.toMatch(/faded = .*'closed'/);
     // Label ink for a quiet row is pal.ink3, metadata is pal.ink4.
     expect(source).toMatch(/color: quiet \? pal\.ink3 : pal\.ink/);
   });
 
-  it('show relative chronology, not the redundant word "closed"', () => {
+  it('shows relative resolvedAt chronology', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
     const meta = screen.getByTestId('ops-row-meta-history:r1');
-    expect(meta.textContent).not.toBe('closed');
     expect(meta.textContent).toMatch(/^(just now|\d+m|\d+h|[A-Z][a-z]{2} \d{2})$/);
-
-    // And no visible node anywhere in the rail prints the bare word.
-    expect(screen.queryByText('closed')).not.toBeInTheDocument();
   });
 });
 
@@ -732,10 +819,6 @@ describe('top-nav consolidation', () => {
     renderPanel({ alerts: [alert({ id: 'a7', title: 'Handed-down alert' })] });
 
     expect(screen.getByTestId('ops-row-alert:a7')).toHaveTextContent('Handed-down alert');
-    const statuses = mockUseAlerts.mock.calls.map(
-      ([filters]) => (filters as { status?: string } | undefined)?.status,
-    );
-    expect(statuses).toEqual(['resolved']);
   });
 });
 
@@ -1001,19 +1084,17 @@ describe('OPEN is actionable work only', () => {
 });
 
 describe('HISTORY tab', () => {
-  it('is the only home for alert lifecycle, and stays neutral', () => {
+  it('is the only home for backend-classified verified-resolved episodes, and carries the ✓ glyph', () => {
     const { container } = renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
 
     const row = screen.getByTestId('ops-row-history:r1');
-    expect(row).toHaveAttribute('data-status', 'closed');
-    expect(container.textContent).toMatch(/ALERT HISTORY/);
-    // No completion or causal vocabulary.
-    expect(row).not.toHaveTextContent('✓');
-    const text = (container.textContent ?? '').toLowerCase();
-    for (const causal of ['verified', 'prevented', 'intervention', 'outcome']) {
-      expect(text).not.toContain(causal);
-    }
+    // OPS-CONSOLE-HISTORY-01: a HISTORY V1 row IS a canonically verified
+    // outcome, so it correctly carries 'verified' status and the ✓ glyph —
+    // the inverse of the retired alert-lifecycle 'closed'/neutral contract.
+    expect(row).toHaveAttribute('data-status', 'verified');
+    expect(row).toHaveTextContent('✓');
+    expect(container.textContent).toMatch(/HISTORY/);
   });
 });
 

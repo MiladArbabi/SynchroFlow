@@ -24,11 +24,15 @@
 //             local lifecycle inference. Empty feed renders no section.
 //   SETUP   — existing useActivationChecklist assembler, unchanged. Secondary:
 //             collapsed until asked for, and always rendered below NOW.
-//   HISTORY — its own tab, never in OPEN: alerts the backend closed
-//             (resolved_at), fetched only while the console is open; historical
-//             status never polls. These are alert-lifecycle facts, not verified
-//             Decision Engine outcomes, so they render neutral ('closed'),
-//             never green ✓.
+//   HISTORY — its own tab, never in OPEN. OPS-CONSOLE-HISTORY-01: canonical
+//             shop-wide HISTORY V1 feed (GET /api/v1/operations/history, see
+//             useHistory.ts), mapped verbatim by buildHistoryRows — no local
+//             lifecycle inference, fetched only while the console is open,
+//             never polls. A row here IS a canonically verified_resolved
+//             Decision Engine outcome (order_constraints.resolved_at), so it
+//             renders 'verified' (✓). Resolved alerts no longer power this
+//             tab — that was a stale contract; resolved alerts remain
+//             Alerts' own concern, not HISTORY's.
 //
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
@@ -43,9 +47,10 @@ import { EntityDetailModal } from '@lasyncro/shared/ui';
 import { axiosInstance } from '../../api/axiosConfig';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useActivationChecklist } from '../../hooks/useActivationChecklist';
-import { useAlerts, type Alert } from '../../pages/alerts/useAlerts';
+import { type Alert } from '../../pages/alerts/useAlerts';
 import { alertDeepLink } from '../../pages/alerts/alertDeepLink';
 import { useWaiting, type WaitingItem } from '../../pages/operations/useWaiting';
+import { useHistory, type HistoryItem } from '../../pages/operations/useHistory';
 import { OrderDetailModalBody } from '../../pages/orders/OrderDetailModalBody';
 import { BatchDetailModalBody } from '../../pages/ft2-pages/BatchDetailModalBody';
 import { VariantDetailModalHost } from '../../pages/ft2-pages/VariantDetailModalHost';
@@ -54,7 +59,7 @@ import { useBulkSetPriority } from '../../pages/wms/useOrderPool';
 import { useGlobalSearch, type GlobalSearchResult } from './useGlobalSearch';
 import {
   OPS_STATUS_GLYPH,
-  buildAlertHistoryRows,
+  buildHistoryRows,
   buildNowRows,
   buildSetupRows,
   buildWaitingRows,
@@ -117,7 +122,20 @@ function useChecklistDismissed() {
  * positions never shift and the CTA cannot slide into the meta column.
  * No absolute positioning is used for layout.
  */
-function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: string) => void }) {
+function OpsConsoleRow({
+  row,
+  onNavigate,
+  onOrderEntity,
+}: {
+  row: OpsRow;
+  onNavigate: (route: string) => void;
+  /**
+   * HISTORY-ORDER-ENTITY-01 — invoked for a `kind: 'order_entity'` action.
+   * Optional: every existing NOW/WAITING/SETUP/issue-1114 row is `kind:
+   * 'navigate'`, so most call sites never need it.
+   */
+  onOrderEntity?: (lasyncroOrderId: string) => void;
+}) {
   const pal = useAppTheme();
 
   // A closed alert row is quiet but must stay READABLE — dimming the whole row
@@ -268,7 +286,17 @@ function OpsConsoleRow({ row, onNavigate }: { row: OpsRow; onNavigate: (route: s
           <Box
             component="button"
             type="button"
-            onClick={() => onNavigate(row.action!.route)}
+            onClick={() => {
+              // HISTORY-ORDER-ENTITY-01: branch on the action's own kind —
+              // navigate is the existing V1 route CTA (NOW/WAITING/SETUP/
+              // issue 1114), order_entity opens the canonical Order Entity Modal.
+              const action = row.action!;
+              if (action.kind === 'order_entity') {
+                onOrderEntity?.(action.lasyncroOrderId);
+              } else {
+                onNavigate(action.route);
+              }
+            }}
             sx={{
               fontFamily: MONO, fontSize: 10, lineHeight: 1.5,
               px: '6px', py: '1px',
@@ -586,6 +614,12 @@ export interface OpsConsoleProps {
    * only, mirroring `deepLink`.
    */
   waitingItems?: WaitingItem[];
+  /**
+   * OPS-CONSOLE-HISTORY-01 — canonical shop-wide HISTORY V1 feed. Owned and
+   * fetched internally via useHistory() by default; overridable for tests
+   * only, mirroring `waitingItems`.
+   */
+  historyItems?: HistoryItem[];
 }
 
 export function OpsConsolePanel({
@@ -594,6 +628,7 @@ export function OpsConsolePanel({
   open,
   onClose,
   waitingItems,
+  historyItems,
 }: OpsConsoleProps) {
   const pal = useAppTheme();
   const nav = useNavigate();
@@ -656,10 +691,25 @@ export function OpsConsolePanel({
     setSelectedVariantId(result.id);
   }, [clearSearch]);
 
-  // Historical status never polls (useAlerts forces refetchInterval off for
-  // anything but the inbox); gated on `open` so a closed console costs nothing.
-  const resolvedQuery = useAlerts({ status: 'resolved' }, { enabled: open });
-  const resolvedAlerts = resolvedQuery.data?.data ?? [];
+  /**
+   * HISTORY-ORDER-ENTITY-01 — opens the SAME canonical Order Entity Modal
+   * (EntityDetailModal + OrderDetailModalBody, wired below) a HISTORY row's
+   * `kind: 'order_entity'` action targets. Mirrors activateSearchResult's
+   * own order branch: clear any other open entity selection first so only
+   * one modal is ever driven at a time.
+   */
+  const openOrderEntity = useCallback((lasyncroOrderId: string) => {
+    setSelectedBatchId(null);
+    setSelectedVariantId(null);
+    setSelectedOrderId(lasyncroOrderId);
+  }, []);
+
+  // OPS-CONSOLE-HISTORY-01 — canonical shop-wide HISTORY V1 feed. Never
+  // polls (useHistory forces refetchInterval off); gated on `open` so a
+  // closed console costs nothing. `historyItems` is override-only (tests);
+  // production always reads the live query result.
+  const historyQuery = useHistory({ enabled: open });
+  const resolvedHistoryItems = historyItems ?? historyQuery.data?.items ?? [];
 
   // Actionable-only, in backend rank order — no client-side sorting anywhere.
   const nowRows = useMemo(() => buildNowRows(alerts, deepLink), [alerts, deepLink]);
@@ -671,7 +721,7 @@ export function OpsConsolePanel({
   const resolvedWaitingItems = waitingItems ?? waitingQuery.data?.items ?? [];
   const waitingRows = useMemo(() => buildWaitingRows(resolvedWaitingItems), [resolvedWaitingItems]);
   const setupRows = useMemo(() => (setupDismissed ? [] : buildSetupRows(items)), [items, setupDismissed]);
-  const historyRows = useMemo(() => buildAlertHistoryRows(resolvedAlerts), [resolvedAlerts]);
+  const historyRows = useMemo(() => buildHistoryRows(resolvedHistoryItems), [resolvedHistoryItems]);
 
   // The cap is a rendering decision. The COUNT is always the full actionable
   // total, so a hidden row is never an uncounted row.
@@ -888,15 +938,17 @@ export function OpsConsolePanel({
           </>
         ) : (
           <>
-            <SectionHeader label="ALERT HISTORY" count={historyRows.length} />
-            {resolvedQuery.isError ? (
-              <StateLine>Alert history unavailable.</StateLine>
-            ) : resolvedQuery.isLoading ? (
-              <StateLine>Loading alert history…</StateLine>
+            <SectionHeader label="HISTORY" count={historyRows.length} />
+            {historyQuery.isError ? (
+              <StateLine>History unavailable.</StateLine>
+            ) : historyQuery.isLoading ? (
+              <StateLine>Loading history…</StateLine>
             ) : historyRows.length === 0 ? (
-              <StateLine>No closed alerts recorded.</StateLine>
+              <StateLine>Nothing verified resolved yet.</StateLine>
             ) : (
-              historyRows.map((row) => <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />)
+              historyRows.map((row) => (
+                <OpsConsoleRow key={row.id} row={row} onNavigate={goto} onOrderEntity={openOrderEntity} />
+              ))
             )}
           </>
         )}

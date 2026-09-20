@@ -70,11 +70,9 @@ WAITING
 SETUP
   incomplete onboarding/configuration work
 
-RECENT ALERTS
-  recently closed alert-lifecycle records
-
-ALERT HISTORY
-  older closed alert-lifecycle records
+HISTORY
+  canonically verified resolved operational episodes
+  [live — GET /api/v1/operations/history; see "HISTORY V1 certification" below]
 ```
 
 `WAITING` must not render merely to complete the visual design. It becomes valid
@@ -145,16 +143,18 @@ useAlerts({ status: 'inbox' }, { enabled: isFt2, poll: true })
 The inbox rows are passed into the Ops Console. The console must not create a
 second inbox polling owner.
 
-Resolved alerts may populate `RECENT ALERTS` / `ALERT HISTORY` only when the
-backend provides authoritative `resolved_at` state. Alert resolution is an
-**alert-lifecycle fact only** and is not evidence of a verified Decision Engine
-outcome.
+Resolved alerts do **not** populate Ops Console `HISTORY`.
+`alerts.resolved_at` is an alert-lifecycle fact only and is not evidence of a
+verified operational outcome. Resolved-alert archive/history remains owned by
+the Alerts workspace.
+
+Ops Console `HISTORY` is sourced only from canonically verified operational
+outcomes exposed by `GET /api/v1/operations/history`.
 
 Accordingly:
 
-- resolved alert rows use neutral `closed` state and glyph `·`;
-- closed alerts never receive green / `✓` verified-outcome treatment;
-- alert acknowledgement does not equal resolution;
+- `HISTORY` rows use `verified` state and glyph `✓`;
+- alert acknowledgement/resolution does not create a HISTORY row;
 - navigation does not equal intervention;
 - navigation does not manufacture WAITING or VERIFIED state.
 
@@ -552,6 +552,86 @@ deprecated/paused module startup cost). Not addressed here.
 **Production certification:** GREEN on 2026-09-20 after deployment of commit `96575bea` (`feat(ops-console): add waiting v1`). Production Ops Console loaded successfully, NOW and SETUP remained healthy, and `GET /api/v1/operations/waiting` returned successfully. No production WAITING transition was manufactured solely for certification.
 
 **WAITING V1 status: PRODUCTION-CERTIFIED — 2026-09-20.**
+
+#### 2026-09-20 — HISTORY V1 certification
+
+**HISTORY means:** a meaningful merchant/operator intervention occurred and
+canonical domain truth now confirms that the exact operational episode became
+resolved.
+
+V1 supports exactly:
+
+- `address_correction` ↔ `customer` ↔ `incomplete_address`
+- `inventory_reorder_intent` ↔ `inventory` ↔ `oversell`
+
+Required outcome: `verified_resolved`.
+
+`pending_verification` remains WAITING. `unknown`, stale, incoherent, invalidly
+paired, or re-raised episodes fail closed and do not enter HISTORY.
+
+Canonical completion authority remains the intervention-outcome seam over
+`order_constraints.is_active` + `order_constraints.resolved_at`. Execution
+success, `decisions.status`, frontend state, and alert resolution are not
+completion authority.
+
+The shop-wide HISTORY projection:
+
+- emits one row per canonically resolved constraint episode, not per
+  intervention attempt;
+- deterministically keeps the latest valid intervention as provenance
+  (`occurredAt`, then `interventionId` tie-break);
+- uses canonical `constraint.resolved_at` as `resolvedAt`;
+- orders newest resolved outcome first;
+- retains the most recent 30 days;
+- remains tenant-scoped.
+
+**API / frontend ownership.** `GET /api/v1/operations/history` owns lifecycle
+classification, eligibility, presentation, and entity target. HISTORY routing
+is backend-authored as:
+
+```text
+kind: order_entity
+lasyncroOrderId: <exact canonical LaSyncro order id>
+```
+
+`View order` opens the existing canonical `EntityDetailModal` +
+`OrderDetailModalBody` for that exact order in place. It does not navigate to
+the generic Address Issues or Inventory queue. WAITING keeps its existing
+workflow-resolution routes.
+
+Resolved alerts are explicitly excluded from Ops Console HISTORY. The retired
+`buildAlertHistoryRows()` path has been removed.
+
+**Verification evidence:**
+
+- backend HISTORY integration contract: **10 / 10 GREEN**;
+- frontend HISTORY model: **12 / 12 GREEN**;
+- frontend HISTORY surface contract: **6 / 6 GREEN**;
+- full targeted Ops Console frontend sweep: **186 / 186 GREEN**;
+- WAITING neighbour regression: **15 / 15 GREEN**;
+- Decision Feed neighbours: backend **4 / 4 GREEN**, frontend **11 / 11 GREEN**;
+- backend affected TypeScript: **0 errors**;
+- frontend HISTORY-target TypeScript: **0 errors**.
+
+**Local runtime / browser certification: GREEN.**
+
+Observed against real development data:
+
+- `GET /api/v1/operations/history` returned HTTP `200`;
+- two real `address_correction` HISTORY items were returned;
+- both exposed `kind=order_entity`;
+- each `routing.lasyncroOrderId` exactly matched its HISTORY item's
+  `lasyncroOrderId`;
+- both HISTORY CTAs opened the exact canonical Order Entity Modal;
+- canonical current order data loaded, including historical
+  `Shipping address corrected` activity;
+- URL remained on `/overview`;
+- no generic unresolved Address Issues queue was opened.
+
+Returns verification remains separate under #1122. Economic attribution /
+Recovered Value remains separate under #1142 and is not computed by HISTORY.
+
+**HISTORY V1 status: LOCAL-CERTIFIED / READY FOR COMMIT — 2026-09-20.**
 
 ---
 

@@ -7,10 +7,11 @@
 //
 // Every row's status is derived here from a persisted authoritative field and
 // nothing else:
-//   verified  <- onboarding readiness / activation-event completion ONLY
-//   closed    <- an alert whose backend set resolved_at. Neutral: the alert's
-//                own lifecycle ended. It is NOT a verified Decision Engine
-//                outcome and must never be styled or worded as one.
+//   verified  <- onboarding readiness / activation-event completion, OR
+//                OPS-CONSOLE-HISTORY-01: a backend-classified HISTORY V1 item
+//                (outcome === 'verified_resolved', canonical
+//                order_constraints.resolved_at — see buildHistoryRows)
+//   closed    <- neutral non-verified lifecycle status; HISTORY V1 never emits it.
 //   waiting   <- a durable intervention/verification record
 //   attention <- live alert severity
 // There is deliberately no code path from "the merchant opened this route" to
@@ -23,6 +24,7 @@
 import type { Alert } from '../../pages/alerts/useAlerts';
 import type { ChecklistItem } from '../../hooks/useActivationChecklist';
 import type { WaitingItem } from '../../pages/operations/useWaiting';
+import type { HistoryItem } from '../../pages/operations/useHistory';
 
 /** Ratified status semantics — glyph column of the console. */
 export type OpsRowStatus =
@@ -51,6 +53,15 @@ export const OPS_STATUS_GLYPH: Record<OpsRowStatus, string> = {
 // history lives in exactly one place.
 export type OpsSectionKey = 'NOW' | 'WAITING' | 'SETUP' | 'HISTORY';
 
+/**
+ * HISTORY-ORDER-ENTITY-01 — a row's CTA is one of two destination kinds.
+ * `navigate` is the pre-existing (and only) shape through OPS-CONSOLE-WAITING-01
+ * / #1114; `order_entity` is new and, today, produced only by buildHistoryRows.
+ */
+export type OpsRowAction =
+  | { kind: 'navigate'; label: string; route: string }
+  | { kind: 'order_entity'; label: string; lasyncroOrderId: string };
+
 export interface OpsRow {
   id: string;
   section: OpsSectionKey;
@@ -65,8 +76,16 @@ export interface OpsRow {
   subtitle?: string;
   /** Short right-aligned qualifier (age, severity, acknowledgement). */
   meta?: string;
-  /** One primary action per row. Navigation only in V1. */
-  action?: { label: string; route: string };
+  /**
+   * One primary action per row. Discriminated by `kind`:
+   *   navigate      <- a route (NOW/WAITING/SETUP/#1114 Decision Feed — the
+   *                     existing V1 destination, unchanged)
+   *   order_entity  <- HISTORY-ORDER-ENTITY-01: opens the canonical Order
+   *                     Entity Modal for `lasyncroOrderId` inside the
+   *                     console, never a page navigation. HISTORY is the
+   *                     only current producer.
+   */
+  action?: OpsRowAction;
   /** Severity tone, so 'attention' can pick --critical-ink vs --warning-ink. */
   tone?: 'critical' | 'warning' | 'info';
   /**
@@ -211,7 +230,7 @@ export function buildNowRows(
       // Severity is NOT visible text: it crowded out the subject. It stays in
       // a11yLabel and in the glyph colour, so the semantic is intact.
       meta: acked ? 'acked' : undefined,
-      action: { label: link.label, route: link.route },
+      action: { kind: 'navigate', label: link.label, route: link.route },
       tone: alert.severity,
       a11yLabel: acked
         ? `${alert.severity} severity, acknowledged`
@@ -254,7 +273,7 @@ export function buildWaitingRows(items: WaitingItem[]): OpsRow[] {
       status: 'waiting' as const,
       label: item.presentation.title,
       subtitle: item.presentation.subtitle,
-      action: { label: item.presentation.actionLabel, route: item.routing.route },
+      action: { kind: 'navigate', label: item.presentation.actionLabel, route: item.routing.route },
     }));
 }
 
@@ -276,7 +295,7 @@ export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
         : ('available' as const),
     label: item.label,
     action: !item.complete && item.actionRoute
-      ? { label: 'Open', route: item.actionRoute }
+      ? { kind: 'navigate', label: 'Open', route: item.actionRoute }
       : undefined,
   }));
 }
@@ -299,22 +318,58 @@ export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
  * and asserts no cause. These rows are reachable ONLY from the HISTORY tab —
  * OPEN carries actionable work exclusively.
  */
-export function buildAlertHistoryRows(
-  resolvedAlerts: Alert[],
-  limit?: number,
-  now: number = Date.now(),
-): OpsRow[] {
-  const rows = resolvedAlerts
-    .filter((alert) => alert.resolved_at !== null)
-    .map((alert) => ({
-      id: `history:${alert.id}`,
+// ─── HISTORY V1 — BACKEND-CLASSIFIED VERIFIED-RESOLVED EPISODES ─────────────
+
+/**
+ * OPS-CONSOLE-HISTORY-01 — V1 backend-classified HISTORY rows.
+ *
+ * The backend (`GET /api/v1/operations/history`) already classifies every
+ * item as canonically verified_resolved (order_constraints.resolved_at,
+ * via interventionOutcome.service.ts — never decisions.status, never
+ * execution success, never a resolved alert), already collapses repeated
+ * interventions against one resolved episode to its single winner, already
+ * supplies presentation/routing, and already scopes to the V1
+ * treatment/constraint pairing allowlist with 30-day retention and
+ * newest-resolvedAt-first ordering. This builder performs ZERO lifecycle
+ * inference of its own — no reading of is_active/resolved_at/latency/episode
+ * metadata, no local outcome re-derivation, no treatment-keyed copy table.
+ * It maps the feed verbatim and preserves backend order, exactly like
+ * buildWaitingRows does for the WAITING feed.
+ *
+ * Replaces the retired resolved-alert HISTORY source. Resolved alerts remain
+ * owned by Alerts and are not evidence of a canonically verified operational
+ * outcome.
+ *
+ * Status is 'verified' (not 'closed'): unlike an alert's own lifecycle
+ * closing, a HISTORY V1 row's resolvedAt IS a canonically verified Decision
+ * Engine outcome by construction — the backend only ever emits
+ * outcome === 'verified_resolved'.
+ *
+ * The V1 treatment allowlist filter here is defence in depth only — the
+ * backend contract should never emit anything outside it.
+ *
+ * HISTORY-ORDER-ENTITY-01 — the row's action is `kind: 'order_entity'`,
+ * mapping backend `routing.lasyncroOrderId` verbatim. HISTORY's episode
+ * already resolved, so its CTA opens the canonical Order Entity Modal
+ * (OrderDetailModalBody) inside the console rather than navigating anywhere
+ * — the same "no local derivation" rule applies to the DESTINATION KIND,
+ * not just the copy: this builder never invents a route for HISTORY.
+ */
+export function buildHistoryRows(items: HistoryItem[]): OpsRow[] {
+  return items
+    .filter((item) => WAITING_V1_TREATMENTS.has(item.treatment))
+    .map((item) => ({
+      id: `history:${item.interventionId}`,
       section: 'HISTORY' as const,
-      status: 'closed' as const,
-      label: alert.title,
-      // The '·' glyph already carries "closed"; the meta column is spent on
-      // chronology instead of repeating the word. Still alert lifecycle only.
-      meta: relativeAgeLabel(alert.resolved_at, now) ?? undefined,
-      a11yLabel: 'alert closed',
+      status: 'verified' as const,
+      label: item.presentation.title,
+      subtitle: item.presentation.subtitle,
+      meta: relativeAgeLabel(item.resolvedAt) ?? undefined,
+      action: {
+        kind: 'order_entity',
+        label: item.presentation.actionLabel,
+        lasyncroOrderId: item.routing.lasyncroOrderId,
+      },
+      a11yLabel: 'canonically verified',
     }));
-  return typeof limit === 'number' ? rows.slice(0, limit) : rows;
 }
