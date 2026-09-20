@@ -40,7 +40,7 @@ import CountingSessionPage, {
   type CountingFindingType,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
-import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import { IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark, WarehouseGrid } from '@lasyncro/shared/ui';
 import {
   classifyRecountBinAvailability,
   mapRecountPreviewBinsToCanvas,
@@ -407,6 +407,13 @@ export type WmsModuleFT2Props = {
    * create-count API call.
    */
   onSetupBinsClick: () => void;
+
+  /**
+   * GH-1109 residual: onboarding coach mark teaching an assigned operator
+   * that assignment reserves the work — claim/start is a separate step.
+   * Rendered inline above the Receiving cards, never as a modal.
+   */
+  receiveAssignedWorkSpotlight?: { isDismissed: boolean; dismiss: () => void };
 };
 
 const STATUS_LABELS: Record<string, {
@@ -1101,6 +1108,7 @@ function WmsModuleFT2Inner({
   pendingCountTaskId,
   onCountSessionEnter,
   onSetupBinsClick,
+  receiveAssignedWorkSpotlight,
 }: WmsModuleFT2Props) {
   const [countDialogOpen, setCountDialogOpen] = useState(false);
   const [countDialogLoading, setCountDialogLoading] = useState(false);
@@ -2480,6 +2488,16 @@ function WmsModuleFT2Inner({
                 setReceivingExpanded((value) => !value)
               }
             >
+              {receiveWorkJobs.length > 0 &&
+                receiveAssignedWorkSpotlight &&
+                !receiveAssignedWorkSpotlight.isDismissed && (
+                  <SpotlightCoachMark
+                    title="Receive work assigned to you"
+                    body="Open a shipment to review the Receive Brief, then Claim & Start Receive. Assignment reserves the work for you; it does not start the job."
+                    isDismissed={receiveAssignedWorkSpotlight.isDismissed}
+                    onDismiss={receiveAssignedWorkSpotlight.dismiss}
+                  />
+                )}
               {receiveWorkJobs.map((job) => {
                 const started =
                   job.status === 'in_progress' ||

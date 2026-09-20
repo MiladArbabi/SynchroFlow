@@ -43,6 +43,10 @@ jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
   useWarehouseGrid: () => ({ data: { locations: [] } }),
 }));
 
+jest.mock('hooks/useSpotlight', () => ({
+  useSpotlight: () => ({ isDismissed: false, isLoading: false, dismiss: jest.fn() }),
+}));
+
 jest.mock('@lasyncro/wms', () => {
   const React = require('react');
 

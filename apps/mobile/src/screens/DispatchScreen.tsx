@@ -19,6 +19,7 @@ import { useAuth } from '../hooks/useAuth';
 type ProcessTab = 'inbound' | 'outbound' | 'exceptions';
 
 type Operator = { id: number; name: string; email: string };
+type OperatorChoice = { id: number; label: string };
 type Batch = {
   pick_batch_id: string;
   status: string;
@@ -82,11 +83,12 @@ function getEtaLabel(dateStr: string | null): { label: string; variant: 'error' 
 }
 
 export default function DispatchScreen() {
-  const { logout } = useAuth();
+  const { logout, userId } = useAuth();
 
   const route = useRoute<any>();
   const [tab, setTab] = useState<ProcessTab>(route.params?.initialTab ?? 'inbound');
   const [operators, setOperators] = useState<Operator[]>([]);
+  const [receiveAssignees, setReceiveAssignees] = useState<OperatorChoice[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [stowTasks, setStowTasks] = useState<StowTask[]>([]);
   const [receiveJobs, setReceiveJobs] = useState<ReceiveJob[]>([]);
@@ -120,8 +122,18 @@ export default function DispatchScreen() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [opsRes, batchRes, stowRes, receiveRes, poRes, poolRes, problemRes] = await Promise.all([
+      const [
+        opsRes,
+        receiveAssigneesRes,
+        batchRes,
+        stowRes,
+        receiveRes,
+        poRes,
+        poolRes,
+        problemRes,
+      ] = await Promise.all([
         apiClient.get('/api/v1/operators/team'),
+        apiClient.get('/api/v1/operators/receive-assignees'),
         apiClient.get('/api/v1/wms/batches'),
         apiClient.get('/api/v1/wms/stow-tasks'),
         apiClient.get('/api/v1/suppliers/receive-jobs?status=pending,in_progress,inspection'),
@@ -131,6 +143,30 @@ export default function DispatchScreen() {
       ]);
 
       setOperators(opsRes.data.members ?? []);
+
+      setReceiveAssignees(
+        (receiveAssigneesRes.data.operators ?? []).map(
+          (member: {
+            user_id: number;
+            first_name: string | null;
+            last_name: string | null;
+          }) => {
+            const fullName = [member.first_name, member.last_name]
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+
+            return {
+              id: member.user_id,
+              label:
+                member.user_id === userId
+                  ? 'Me'
+                  : fullName || `Operator #${member.user_id}`,
+            };
+          }
+        )
+      );
+
       setBatches(batchRes.data.batches ?? []);
       setStowTasks(stowRes.data.stow_tasks ?? []);
       setReceiveJobs(receiveRes.data.receive_jobs ?? []);
@@ -150,7 +186,7 @@ export default function DispatchScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => { void load(); }, [load]);
   useFocusEffect(useCallback(() => { void load(true); }, [load]));
@@ -202,16 +238,28 @@ export default function DispatchScreen() {
 
   // ── Create receive job ────────────────────────────────────────────────────
   const handleCreateReceiveJob = useCallback(async () => {
-    if (!selectedPo) { Alert.alert('Select a PO first'); return; }
+    if (!selectedPo) {
+      Alert.alert('Select a PO first');
+      return;
+    }
+
+    if (selectedReceiveOperator == null) {
+      Alert.alert('Assign a Receive operator first');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await apiClient.post(`/api/v1/suppliers/purchase-orders/${selectedPo}/receive-jobs`, {
-        assigned_operator_id: selectedReceiveOperator ?? null,
+        assigned_operator_id: selectedReceiveOperator,
       });
       setSelectedPo(null);
       setSelectedReceiveOperator(null);
       void load(true);
-      Alert.alert('✓ Receive job created', 'Operators can now claim the job.');
+      Alert.alert(
+        '✓ Receive assigned',
+        'The assigned operator can open the job and claim & start Receive.'
+      );
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       const msg = (err as { response?: { data?: { error?: string } } })
@@ -224,31 +272,42 @@ export default function DispatchScreen() {
   }, [selectedPo, selectedReceiveOperator, load]);
 
   // ── Operator picker chip ──────────────────────────────────────────────────
-  const OperatorPicker = ({ label, selected, onSelect }: {
+  const OperatorPicker = ({
+    label,
+    selected,
+    onSelect,
+    choices,
+    allowPool = true,
+  }: {
     label: string;
     selected: number | null;
     onSelect: (id: number | null) => void;
+    choices: OperatorChoice[];
+    allowPool?: boolean;
   }) => (
     <View style={styles.operatorPicker}>
       <Text style={styles.operatorPickerLabel}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <Row style={styles.operatorChips}>
-          <TouchableOpacity
-            style={[styles.chip, selected === null && styles.chipSelected]}
-            onPress={() => onSelect(null)}
-          >
-            <Text style={[styles.chipText, selected === null && styles.chipTextSelected]}>
-              Pool
-            </Text>
-          </TouchableOpacity>
-          {operators.map(op => (
+          {allowPool && (
             <TouchableOpacity
-              key={op.id}
-              style={[styles.chip, selected === op.id && styles.chipSelected]}
-              onPress={() => onSelect(op.id)}
+              style={[styles.chip, selected === null && styles.chipSelected]}
+              onPress={() => onSelect(null)}
             >
-              <Text style={[styles.chipText, selected === op.id && styles.chipTextSelected]}>
-                {op.name ?? op.email.split('@')[0]}
+              <Text style={[styles.chipText, selected === null && styles.chipTextSelected]}>
+                Pool
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {choices.map(choice => (
+            <TouchableOpacity
+              key={choice.id}
+              style={[styles.chip, selected === choice.id && styles.chipSelected]}
+              onPress={() => onSelect(choice.id)}
+            >
+              <Text style={[styles.chipText, selected === choice.id && styles.chipTextSelected]}>
+                {choice.label}
               </Text>
             </TouchableOpacity>
           ))}
@@ -340,7 +399,9 @@ export default function DispatchScreen() {
                               ? `In progress · ${job.operator_name}`
                               : job.status === 'inspection'
                                 ? `Inspecting · ${job.operator_name ?? ''}`
-                                : 'Awaiting claim'}
+                                : job.assigned_operator_id
+                                  ? `Assigned${job.operator_name ? ` · ${job.operator_name}` : ''} · Not started`
+                                  : 'Dispatch needed'}
                           </Text>
                         </View>
                         <Badge
@@ -422,15 +483,21 @@ export default function DispatchScreen() {
               )}
 
               <OperatorPicker
-                label="Assign operator (optional)"
+                label="Assign Receive"
                 selected={selectedReceiveOperator}
                 onSelect={setSelectedReceiveOperator}
+                choices={receiveAssignees}
+                allowPool={false}
               />
 
               <Button
-                label={submitting ? 'Creating…' : 'Create receive job'}
+                label={submitting ? 'Assigning…' : 'Assign Receive'}
                 onPress={() => void handleCreateReceiveJob()}
-                variant={selectedPo ? 'primary' : 'ghost'}
+                variant={
+                  selectedPo && selectedReceiveOperator != null
+                    ? 'primary'
+                    : 'ghost'
+                }
                 style={{ marginTop: spacing.md }}
               />
 
@@ -562,6 +629,10 @@ export default function DispatchScreen() {
                 label="Assign picker (optional)"
                 selected={selectedPicker}
                 onSelect={setSelectedPicker}
+                choices={operators.map(op => ({
+                  id: op.id,
+                  label: op.name || op.email.split('@')[0],
+                }))}
               />
 
               <Button

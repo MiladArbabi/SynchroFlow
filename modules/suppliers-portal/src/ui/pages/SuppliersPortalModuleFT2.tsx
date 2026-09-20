@@ -428,6 +428,8 @@ export type SuppliersPortalPageProps = {
     alertTriggered: { isDismissed: boolean; dismiss: () => void };
     accumulator:    { isDismissed: boolean; dismiss: () => void };
     poSendFlow:     { isDismissed: boolean; dismiss: () => void };
+    /** GH-1109 residual: assignment vs claim/start onboarding in the Assign Receive dialog. */
+    receiveDispatchAssignment?: { isDismissed: boolean; dismiss: () => void };
   };
   /** When true, auto-opens the Create PO dialog on mount */
   autoOpenCreatePo?: boolean;
@@ -1217,6 +1219,7 @@ function PoAccordion({
   teamAssignableOperators,
   currentUserId,
   autoOpenReceive = false,
+  receiveDispatchAssignmentSpotlight,
 }: {
   po: PurchaseOrder;
   onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
@@ -1228,6 +1231,8 @@ function PoAccordion({
   teamAssignableOperators: ReceiveAssignableOperator[];
   currentUserId: number | null;
   autoOpenReceive?: boolean;
+  /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the Assign Receive dialog. */
+  receiveDispatchAssignmentSpotlight?: { isDismissed: boolean; dismiss: () => void };
 }) {
   const [expanded, setExpanded] = useState(false);
   const [lineItems, setLineItems] = useState<PoLineItem[] | null>(null);
@@ -1324,7 +1329,9 @@ function PoAccordion({
       }
 
       setReceiveAssignmentConfirmation(
-        `Receive assigned to ${selectedOperator?.name ?? 'operator'}.`
+        `Receive assigned to ${selectedOperator?.name ?? 'operator'}. ` +
+          'They can find it in Warehouse → Operations → Receiving ' +
+          'and claim & start it there.'
       );
     } catch (err) {
       // Keep the dialog open and preserve the selected assignee for retry.
@@ -1582,6 +1589,17 @@ function PoAccordion({
               >
                 Assign to
               </Typography>
+
+              {receiveDispatchAssignmentSpotlight && (
+                <Box sx={{ mt: 0.75 }}>
+                  <SpotlightCoachMark
+                    title="Assign Receive work"
+                    body={'Choose who should receive this shipment. Assignment sends the work to Warehouse → Operations → Receiving; it does not start the job. The assigned operator opens it there and claims & starts Receive.'}
+                    isDismissed={receiveDispatchAssignmentSpotlight.isDismissed}
+                    onDismiss={receiveDispatchAssignmentSpotlight.dismiss}
+                  />
+                </Box>
+              )}
 
               <Box
                 role="radiogroup"
@@ -1967,6 +1985,7 @@ function PurchasingPosView({
                   teamAssignableOperators={teamAssignableOperators}
                   currentUserId={currentUserId}
                   autoOpenReceive={autoOpenReceivePoId === po.id}
+                  receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
                 />
               ))
             )}

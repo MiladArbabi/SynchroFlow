@@ -86,6 +86,13 @@ function props(): SuppliersPortalPageProps & {
       { id: 7, name: 'Mila Owner', role: 'owner' },
       { id: 8, name: 'Avery Worker', role: 'operator' },
     ],
+    spotlights: {
+      neverOrdered: { isDismissed: true, dismiss: jest.fn() },
+      alertTriggered: { isDismissed: true, dismiss: jest.fn() },
+      accumulator: { isDismissed: true, dismiss: jest.fn() },
+      poSendFlow: { isDismissed: true, dismiss: jest.fn() },
+      receiveDispatchAssignment: { isDismissed: false, dismiss: jest.fn() },
+    },
   } as any;
 }
 
@@ -266,6 +273,78 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
         assigned_operator_id: 7,
       });
     });
+  });
+
+  it('GH-1109 residual: shows the Receive dispatch onboarding coach mark in the Assign Receive dialog when not dismissed', async () => {
+    const p = props();
+
+    render(
+      <MemoryRouter>
+        <SuppliersPortalModuleFT2 {...p} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
+
+    expect(within(dialog).getByText('Assign Receive work')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/warehouse.*operations.*receiving/i)
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/does not start the job/i)
+    ).toBeInTheDocument();
+  });
+
+  it('GH-1109 residual: does not render the Receive dispatch onboarding coach mark when dismissed', async () => {
+    const p = props();
+    p.spotlights = {
+      ...p.spotlights!,
+      receiveDispatchAssignment: { isDismissed: true, dismiss: jest.fn() },
+    };
+
+    render(
+      <MemoryRouter>
+        <SuppliersPortalModuleFT2 {...p} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
+
+    expect(within(dialog).queryByText('Assign Receive work')).not.toBeInTheDocument();
+  });
+
+  it('GH-1109 residual: assign-to-other confirmation identifies the Receiving queue handoff', async () => {
+    const p = props();
+
+    render(
+      <MemoryRouter>
+        <SuppliersPortalModuleFT2 {...p} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+    fireEvent.click(await screen.findByText(/avery worker/i));
+    fireEvent.click(screen.getByRole('button', { name: /assign/i }));
+
+    await waitFor(() => {
+      expect(p.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, {
+        assigned_operator_id: 8,
+      });
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    const confirmation = await screen.findByRole('alert');
+    expect(confirmation).toHaveTextContent(/receive assigned to avery worker/i);
+    expect(confirmation).toHaveTextContent(/warehouse.*operations.*receiving/i);
+    expect(confirmation).toHaveTextContent(/claim & start it there/i);
   });
 
 });

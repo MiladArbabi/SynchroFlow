@@ -58,6 +58,7 @@ function baseProps() {
     isError: false,
     currentUserId: 3,
     openReceiveJobs,
+    receiveAssignedWorkSpotlight: { isDismissed: false, dismiss: jest.fn() },
     onReceiveSessionEnter: jest.fn(),
     onCreateReceiveJob: jest.fn().mockResolvedValue({ receive_job_id: 'should-not-create' }),
     onFetchReceiveJob: jest.fn().mockResolvedValue({
@@ -174,5 +175,48 @@ describe('GH-1109 — WmsModuleFT2 Receive work queue', () => {
     expect(props.onReceiveSessionEnter).toHaveBeenCalledWith(
       'receive-active-self'
     );
+  });
+
+  it('GH-1109 residual: shows the Receive onboarding coach mark when assigned work exists and it is not dismissed', () => {
+    const props = baseProps();
+
+    render(<WmsModuleFT2 {...props} />);
+
+    expect(
+      screen.getByText('Receive work assigned to you')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/claim & start receive/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not start the job/i)
+    ).toBeInTheDocument();
+
+    // Existing queue copy remains unchanged alongside the coach mark.
+    const pending = screen.getByTestId('receive-work-card-receive-pending-self');
+    expect(pending).toHaveTextContent('Assigned to you · Not started');
+    expect(within(pending).getByRole('button', { name: /open receive/i })).toBeInTheDocument();
+  });
+
+  it('GH-1109 residual: does not show the Receive onboarding coach mark when dismissed', () => {
+    const props = baseProps();
+    props.receiveAssignedWorkSpotlight = { isDismissed: true, dismiss: jest.fn() };
+
+    render(<WmsModuleFT2 {...props} />);
+
+    expect(
+      screen.queryByText('Receive work assigned to you')
+    ).not.toBeInTheDocument();
+  });
+
+  it('GH-1109 residual: does not show the Receive onboarding coach mark when there is no Receive work', () => {
+    const props = baseProps();
+    props.openReceiveJobs = [];
+
+    render(<WmsModuleFT2 {...props} />);
+
+    expect(
+      screen.queryByText('Receive work assigned to you')
+    ).not.toBeInTheDocument();
   });
 });

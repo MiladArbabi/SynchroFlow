@@ -8,6 +8,7 @@ import {
   useWebPush,
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
+import { useSpotlight } from '../../hooks/useSpotlight';
 import { useReadyToPack } from '../wms/useReadyToPack';
 import { axiosInstance } from 'api/axiosConfig';
 import type {
@@ -124,6 +125,9 @@ export default function WmsOperationsPage() {
   const currentUserId =
     user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
+  // GH-1109 residual: teaches an assigned operator that assignment reserves
+  // Receive work but does not start it — claim/start is a distinct step.
+  const receiveAssignedWorkSpotlight = useSpotlight('receive_assigned_work');
   // RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only — backend
   // requireAction('wms:recount:reassign') is the real authority.
   const canReassignRecount = userRole === 'owner' || userRole === 'admin';
@@ -727,6 +731,10 @@ export default function WmsOperationsPage() {
       readyToPackCount={readyToPackQuery.data?.orderCount}
       openReceiveJobCount={openReceiveJobs.length}
       openReceiveJobs={openReceiveJobs}
+      receiveAssignedWorkSpotlight={{
+        isDismissed: receiveAssignedWorkSpotlight.isDismissed,
+        dismiss: receiveAssignedWorkSpotlight.dismiss,
+      }}
       onReceiveSessionEnter={(id) =>
         setSearchParams(
           { receiveJobId: id },

@@ -30,7 +30,12 @@ router.get('/team-availability', authenticateToken, httpGetTeamAvailability);
  * Owner/admin fetches list of all shop operators for task assignment.
  * GET /api/v1/operators/team
  */
-router.get('/team', authenticateToken, httpGetTeamOperators);
+router.get(
+  '/team',
+  authenticateToken,
+  requireAction('members:read'),
+  httpGetTeamOperators
+);
 
 /**
  * Owner/admin fetches only operators eligible to execute the full Receive flow.

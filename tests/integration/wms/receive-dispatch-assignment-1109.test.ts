@@ -33,11 +33,13 @@ type Fixture = {
   otherShopId: number;
   ownerId: number;
   otherOwnerId: number;
+  adminId: number;
   operatorAId: number;
   operatorBId: number;
   revokedOperatorId: number;
   crossShopOperatorId: number;
   ownerToken: string;
+  adminToken: string;
   operatorAToken: string;
 };
 
@@ -45,7 +47,7 @@ async function createUser(
   shopId: number,
   unique: string,
   label: string,
-  role: 'owner' | 'operator',
+  role: 'owner' | 'admin' | 'operator',
   revoked = false
 ): Promise<number> {
   const userId = await withTenant(shopId, async (trx) => {
@@ -96,6 +98,7 @@ async function createFixture(): Promise<Fixture> {
     'other-owner',
     'owner'
   );
+  const adminId = await createUser(shopId, unique, 'admin', 'admin');
   const operatorAId = await createUser(shopId, unique, 'operator-a', 'operator');
   const operatorBId = await createUser(shopId, unique, 'operator-b', 'operator');
   const revokedOperatorId = await createUser(shopId, unique, 'revoked', 'operator', true);
@@ -126,11 +129,13 @@ async function createFixture(): Promise<Fixture> {
     otherShopId,
     ownerId,
     otherOwnerId,
+    adminId,
     operatorAId,
     operatorBId,
     revokedOperatorId,
     crossShopOperatorId,
     ownerToken: issueTestToken({ userId: ownerId, shopId, tier: 'growth', roles: ['owner'] }),
+    adminToken: issueTestToken({ userId: adminId, shopId, tier: 'growth', roles: ['admin'] }),
     operatorAToken: issueTestToken({ userId: operatorAId, shopId, tier: 'growth', roles: ['operator'] }),
   };
 }
@@ -551,5 +556,87 @@ describe('GH-1109 — Receive dispatch assignment', () => {
       .send({ assigned_operator_id: fixture.operatorBId });
 
     expect(response.status).toBe(403);
+  });
+
+  describe('GH-1109 residual — Receive onboarding spotlight persistence', () => {
+    it.each([
+      'receive_dispatch_assignment',
+      'receive_assigned_work',
+    ])('persists dismissal for %s', async (key) => {
+      const dismissResponse = await request(app)
+        .post(`/api/v1/user-state/spotlight/${key}/dismiss`)
+        .set(auth(fixture.ownerToken));
+
+      expect(dismissResponse.status).toBe(200);
+      expect(dismissResponse.body).toEqual({
+        dismissed: true,
+        key,
+      });
+
+      const flagsResponse = await request(app)
+        .get('/api/v1/user-state/onboarding-flags')
+        .set(auth(fixture.ownerToken));
+
+      expect(flagsResponse.status).toBe(200);
+      expect(flagsResponse.body[`spotlight:dismissed:${key}`]).toBe(true);
+    });
+
+    it('continues to reject an unknown spotlight key', async () => {
+      const response = await request(app)
+        .post('/api/v1/user-state/spotlight/not_a_real_spotlight/dismiss')
+        .set(auth(fixture.ownerToken));
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('GH-1109 residual — GET /api/v1/operators/team authority', () => {
+    it('owner can GET /api/v1/operators/team -> 200', async () => {
+      const response = await request(app)
+        .get('/api/v1/operators/team')
+        .set(auth(fixture.ownerToken));
+
+      expect(response.status).toBe(200);
+    });
+
+    it('admin can GET /api/v1/operators/team -> 200', async () => {
+      const response = await request(app)
+        .get('/api/v1/operators/team')
+        .set(auth(fixture.adminToken));
+
+      expect(response.status).toBe(200);
+    });
+
+    it('pure operator cannot GET /api/v1/operators/team -> 403 ACTION_FORBIDDEN', async () => {
+      const response = await request(app)
+        .get('/api/v1/operators/team')
+        .set(auth(fixture.operatorAToken));
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('ACTION_FORBIDDEN');
+    });
+
+    it('unauthenticated request remains 401', async () => {
+      const response = await request(app).get('/api/v1/operators/team');
+
+      expect(response.status).toBe(401);
+    });
+
+    it('returned rows remain tenant-scoped: no cross-shop member exposure', async () => {
+      const response = await request(app)
+        .get('/api/v1/operators/team')
+        .set(auth(fixture.ownerToken));
+
+      expect(response.status).toBe(200);
+
+      const ids = response.body.operators.map(
+        (operator: { user_id: number }) => operator.user_id
+      );
+
+      expect(ids).toContain(fixture.ownerId);
+      expect(ids).toContain(fixture.adminId);
+      expect(ids).toContain(fixture.operatorAId);
+      expect(ids).not.toContain(fixture.crossShopOperatorId);
+    });
   });
 });

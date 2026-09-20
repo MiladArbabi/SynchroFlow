@@ -74,6 +74,10 @@ jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
   }),
 }));
 
+jest.mock('hooks/useSpotlight', () => ({
+  useSpotlight: () => ({ isDismissed: false, isLoading: false, dismiss: jest.fn() }),
+}));
+
 // DEVIATION (see report DEVIATIONS): jest.requireActual('@lasyncro/wms')
 // cannot load here — modules/shared/src/ui/index.ts (pulled in transitively
 // by the real WmsModuleFT2) uses NodeNext-style relative imports ending in

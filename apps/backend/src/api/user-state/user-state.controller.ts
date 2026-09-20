@@ -174,6 +174,8 @@ const VALID_SPOTLIGHT_KEYS = new Set([
   'sourcing_alert_triggered',
   'sourcing_accumulator',
   'po_send_flow',
+  'receive_dispatch_assignment',
+  'receive_assigned_work',
 ]);
 
 export const dismissSpotlight = async (req: Request, res: Response) => {

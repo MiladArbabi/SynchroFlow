@@ -105,6 +105,9 @@ export default function SuppliersPortalPage() {
   const spotlightAlertTriggered = useSpotlight('sourcing_alert_triggered');
   const spotlightAccumulator    = useSpotlight('sourcing_accumulator');
   const spotlightPoSendFlow     = useSpotlight('po_send_flow');
+  // GH-1109 residual: teaches dispatcher/owner/admin that assignment sends
+  // work to Warehouse → Operations → Receiving without starting it.
+  const spotlightReceiveDispatchAssignment = useSpotlight('receive_dispatch_assignment');
   // Read demand module handoff params — pre-open PO dialog with variant pre-filled
   const demandAction = searchParams.get('action');
   const demandVariantId = searchParams.get('variantId');
@@ -428,6 +431,10 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
       alertTriggered: { isDismissed: spotlightAlertTriggered.isDismissed, dismiss: spotlightAlertTriggered.dismiss },
       accumulator:    { isDismissed: spotlightAccumulator.isDismissed,    dismiss: spotlightAccumulator.dismiss },
       poSendFlow:     { isDismissed: spotlightPoSendFlow.isDismissed,     dismiss: spotlightPoSendFlow.dismiss },
+      receiveDispatchAssignment: {
+        isDismissed: spotlightReceiveDispatchAssignment.isDismissed,
+        dismiss: spotlightReceiveDispatchAssignment.dismiss,
+      },
     },
     autoOpenCreatePo: demandAction === 'create-po',
     prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
