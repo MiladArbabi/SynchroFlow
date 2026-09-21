@@ -23,9 +23,30 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact, PulseCard, ReorderTransitionList } from '@lasyncro/shared/ui';
+import type { OperationalMapState } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+import type { OperationalEpisodeProjection } from '@lasyncro/shared/contracts/operational-episode';
 
 // ─── PROPS ────────────────────────────────────────────────────
+
+/**
+ * D2B-RED — module-owned MINIMAL structural presentation contract for one
+ * order's dominant operational-episode visual. order-nexus must not import
+ * from apps/frontend (the D2A OrdersOperationalVisual type lives there), so
+ * this shape is defined here instead, built only from the canonical SHARED
+ * OperationalEpisodeProjection/OperationalMapState types — no second
+ * lifecycle/problem model is minted. The app-owned D2A
+ * OrdersOperationalVisual[] (apps/frontend/src/pages/orders/
+ * ordersOperationalEpisodeVisual.ts) is structurally assignable to this
+ * shape without any adapter/transformation, by construction.
+ */
+export interface OrdersOperationalEpisodeVisualInput {
+  readonly orderId: string;
+  readonly state: OperationalMapState;
+  readonly glyph: '!' | '◌' | '✓';
+  readonly episodeCount: number;
+  readonly dominant: Pick<OperationalEpisodeProjection, 'lifecycle' | 'problem'>;
+}
 
 export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   orders: {
@@ -113,6 +134,14 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
    * When absent, the triage-first layout is preserved for existing consumers.
    */
   mapContent?: ReactNode;
+
+  /**
+   * D2B-RED — additive operational-episode presentation seam (declaration
+   * only in this slice; NOT yet consumed by any rendering logic below).
+   * One entry per order, D1/D2A-aggregated and dominant-resolved by the
+   * caller — this module performs no lifecycle inference of its own.
+   */
+  operationalEpisodeVisuals?: readonly OrdersOperationalEpisodeVisualInput[] | null;
 
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
@@ -294,7 +323,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     onExport, 
     onOrderClick,
     mapContent,
-    onPriorityFlag 
+    onPriorityFlag,
+    operationalEpisodeVisuals
   } = props
 
   const fmt$ = (n: number | null | undefined): string =>
@@ -713,15 +743,133 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const stageTotal   = allStages.reduce((s, d) => s + d.count, 0) || 1;
 
   /**
+   * D2B — OPERATIONAL LIFECYCLE RECONCILIATION (Live Intelligence rail ONLY).
+   * ─────────────────────────────────────────────────────────────────────
+   * Applies strictly AFTER `criticalGroups` (above) is established, and only
+   * feeds the mapContent/Live-Intelligence `railGroups` built below — the
+   * no-mapContent triage-first fallback keeps reading `criticalGroups`
+   * directly, untouched, and never looks at `operationalEpisodeVisuals`.
+   *
+   * FAIL CLOSED: only a dominant problem of EXACTLY customer/
+   * incomplete_address or inventory/oversell is ever consumed. Any other
+   * problem/domain pair (in particular operational/returned_undelivered,
+   * which remains Returns-owned) is ignored outright — never rendered, never
+   * allowed to suppress the order's existing Orders-owned representation.
+   * Supported status is decided from `dominant.problem`, never inferred from
+   * `visual.glyph`.
+   *
+   * D1/D2A already resolve one dominant episode per order (no sibling
+   * re-resolution here) — `visual.dominant.lifecycle` is used verbatim.
+   *
+   * NON-SPATIAL: nothing here touches mapContent, IsometricCanvas props, or
+   * any location/bin/station/occupancy field.
+   */
+  const SUPPORTED_OPERATIONAL_EPISODE_LABELS: Record<string, string> = {
+    'customer:incomplete_address': 'Address issues',
+    'inventory:oversell': 'Out of stock',
+  };
+
+  function supportedOperationalEpisodeLabel(
+    visual: OrdersOperationalEpisodeVisualInput
+  ): string | null {
+    const key = `${visual.dominant.problem.domain}:${visual.dominant.problem.type}`;
+    return SUPPORTED_OPERATIONAL_EPISODE_LABELS[key] ?? null;
+  }
+
+  const supportedVisualByOrderId = new Map<string, OrdersOperationalEpisodeVisualInput>();
+  for (const visual of operationalEpisodeVisuals ?? []) {
+    if (supportedOperationalEpisodeLabel(visual)) {
+      supportedVisualByOrderId.set(visual.orderId, visual);
+    }
+  }
+
+  const verifyingOrderIds = new Set<string>();
+  const justResolvedOrderIds = new Set<string>();
+  for (const visual of supportedVisualByOrderId.values()) {
+    if (visual.dominant.lifecycle === 'verifying') verifyingOrderIds.add(visual.orderId);
+    else if (visual.dominant.lifecycle === 'just_resolved') justResolvedOrderIds.add(visual.orderId);
+  }
+
+  const isReconciledOutOfDecision = (orderId: string): boolean =>
+    verifyingOrderIds.has(orderId) || justResolvedOrderIds.has(orderId);
+
+  // Rail-only reconciled groups — a verifying/just_resolved order is removed
+  // from "Needs a decision" here. `criticalGroups` itself is never mutated.
+  const railCriticalGroups = criticalGroups
+    .map(group => ({
+      ...group,
+      orders: group.orders.filter(o => !isReconciledOutOfDecision(o.lasyncro_order_id)),
+    }))
+    .filter(group => group.orders.length > 0)
+    .map(group => ({
+      ...group,
+      revenue: group.orders.reduce((sum, order) => sum + (order.revenue ?? 0), 0),
+      oldestAgeHours: Math.max(...group.orders.map(order => order.ageHours)),
+    }));
+
+  const groupHasAttentionVisual = (orderIds: string[]): boolean =>
+    orderIds.some(id => supportedVisualByOrderId.get(id)?.dominant.lifecycle === 'attention');
+
+  /**
+   * Builds one rail group per supported problem label for a lifecycle
+   * population (verifying / just_resolved) — same group-not-order
+   * granularity as the existing rail, never a per-order row.
+   */
+  function buildLifecycleRailGroups(
+    orderIds: ReadonlySet<string>
+  ): Array<{ key: string; label: string; orderIds: string[] }> {
+    const byLabel = new Map<string, string[]>();
+    for (const orderId of orderIds) {
+      const visual = supportedVisualByOrderId.get(orderId);
+      const label = visual ? supportedOperationalEpisodeLabel(visual) : null;
+      if (!label) continue;
+      const existing = byLabel.get(label);
+      if (existing) existing.push(orderId);
+      else byLabel.set(label, [orderId]);
+    }
+    return [...byLabel.entries()].map(([label, ids]) => ({ key: label, label, orderIds: ids }));
+  }
+
+  const verifyingRailGroups = buildLifecycleRailGroups(verifyingOrderIds);
+  const justResolvedRailGroups = buildLifecycleRailGroups(justResolvedOrderIds);
+
+  /**
+   * D2B-GREEN FOLLOW-UP — CANONICAL ATTENTION INDEPENDENCE.
+   * ─────────────────────────────────────────────────────────────────────
+   * A supported ATTENTION episode must not depend on constrainedOrders/
+   * agingOrders independently containing the same order — operational
+   * episodes are canonical lifecycle truth on their own. `criticalGroups`
+   * (the ORIGINAL, pre-reconciliation population) is the dedupe authority:
+   * an order already represented there is never added again here. An order
+   * with a supported attention episode and NO legacy representation at all
+   * is admitted by orderId only — no revenue/age/SLA fact is fabricated for
+   * it, since none exists; `revenue`/`oldestAgeHours` stay `null` for a
+   * brand-new episode-only group so the rail never presents an invented
+   * fact as real.
+   */
+  const legacyOrderIdsInGroups = new Set(
+    criticalGroups.flatMap(group => group.orders.map(order => order.lasyncro_order_id))
+  );
+  const episodeOnlyAttentionOrderIds = new Set(
+    [...supportedVisualByOrderId.values()]
+      .filter(visual => visual.dominant.lifecycle === 'attention' && !legacyOrderIdsInGroups.has(visual.orderId))
+      .map(visual => visual.orderId)
+  );
+  const episodeOnlyAttentionGroups = buildLifecycleRailGroups(episodeOnlyAttentionOrderIds);
+
+  /**
    * ORD-UX-01 — GROUP summaries for the 280px Live Intelligence rail.
    *
-   * Reuses `criticalGroups` verbatim: same authoritative population, same
+   * Built from `railCriticalGroups` (D2B-reconciled — see above), same
    * commercial-consequence ordering (revenue at stake, descending), same
-   * labels. The rail only changes the PRESENTATION — one line per issue class,
-   * never per order. Aging is appended last because it is imminent risk rather
-   * than a realised blocker, matching the Watch band's meaning in the triage
-   * layout. No group is invented: each one only exists when its authoritative
-   * population is non-empty.
+   * labels, with a trailing "!" glyph appended only when the group contains
+   * a supported attention-lifecycle episode. Episode-only attention orders
+   * (no legacy representation) merge into the matching label's group by
+   * orderId, or — when no such group exists at all — form their own new
+   * group with honest null revenue/age. The rail only changes the
+   * PRESENTATION — one line per issue class, never per order. Aging is
+   * appended last because it is imminent risk rather than a realised
+   * blocker, matching the Watch band's meaning in the triage layout.
    */
   const railGroups: Array<{
     key: string;
@@ -730,26 +878,47 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     revenue: number | null;
     oldestAgeHours: number | null;
     orderIds: string[];
-  }> = [
-    ...criticalGroups.map(group => ({
+  }> = [];
+
+  const mergedEpisodeOnlyLabels = new Set<string>();
+  for (const group of railCriticalGroups) {
+    const legacyOrderIds = group.orders.map(o => o.lasyncro_order_id);
+    const episodeOnlyMatch = episodeOnlyAttentionGroups.find(g => g.label === group.label);
+    if (episodeOnlyMatch) mergedEpisodeOnlyLabels.add(episodeOnlyMatch.label);
+    const orderIds = episodeOnlyMatch ? [...legacyOrderIds, ...episodeOnlyMatch.orderIds] : legacyOrderIds;
+
+    railGroups.push({
       key: group.key,
-      label: group.label,
-      count: group.orders.length,
+      label: groupHasAttentionVisual(orderIds) ? `${group.label} !` : group.label,
+      count: orderIds.length,
       revenue: group.revenue,
       oldestAgeHours: group.oldestAgeHours,
-      orderIds: group.orders.map(o => o.lasyncro_order_id),
-    })),
-    ...(watchOrders.length > 0
-      ? [{
-          key: 'aging',
-          label: 'Aging — review soon',
-          count: watchOrders.length,
-          revenue: watchOrders.reduce((sum, o) => sum + (o.revenue ?? 0), 0),
-          oldestAgeHours: Math.max(...watchOrders.map(o => o.ageHours)),
-          orderIds: watchOrders.map(o => o.lasyncro_order_id),
-        }]
-      : []),
-  ];
+      orderIds,
+    });
+  }
+
+  for (const group of episodeOnlyAttentionGroups) {
+    if (mergedEpisodeOnlyLabels.has(group.label)) continue;
+    railGroups.push({
+      key: group.key,
+      label: `${group.label} !`,
+      count: group.orderIds.length,
+      revenue: null,
+      oldestAgeHours: null,
+      orderIds: group.orderIds,
+    });
+  }
+
+  if (watchOrders.length > 0) {
+    railGroups.push({
+      key: 'aging',
+      label: 'Aging — review soon',
+      count: watchOrders.length,
+      revenue: watchOrders.reduce((sum, o) => sum + (o.revenue ?? 0), 0),
+      oldestAgeHours: Math.max(...watchOrders.map(o => o.ageHours)),
+      orderIds: watchOrders.map(o => o.lasyncro_order_id),
+    });
+  }
 
   const RAIL_GROUP_PREVIEW_LIMIT = 3;
   const visibleRailGroups = showAllRailGroups
@@ -879,6 +1048,74 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                     </Typography>
                   </Box>
                 )}
+              </Box>
+            )}
+
+            {/* D2B — Verifying / Just resolved: contextual, non-actionable
+                lifecycle sections. One order -> inspectable via
+                onOrderClick; more than one -> informational group only, no
+                Order Flow navigation. Deliberately no workflow CTA. */}
+            {verifyingRailGroups.length > 0 && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Verifying
+                  </Typography>
+                </Box>
+                {verifyingRailGroups.map(group => {
+                  const singleOrder = group.orderIds.length === 1;
+                  const clickable = singleOrder && !!onOrderClick;
+                  return (
+                    <Box
+                      key={group.key}
+                      onClick={clickable ? () => onOrderClick!(group.orderIds[0]) : undefined}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 0.75,
+                        px: 1.75, py: 1.25,
+                        borderBottom: '0.5px solid var(--rule)',
+                        '&:last-of-type': { borderBottom: 'none' },
+                        cursor: clickable ? 'pointer' : 'default',
+                        '&:hover': clickable ? { bgcolor: 'action.hover' } : undefined,
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
+                        ◌ {group.orderIds.length} {group.label}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+            )}
+
+            {justResolvedRailGroups.length > 0 && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Just resolved
+                  </Typography>
+                </Box>
+                {justResolvedRailGroups.map(group => {
+                  const singleOrder = group.orderIds.length === 1;
+                  const clickable = singleOrder && !!onOrderClick;
+                  return (
+                    <Box
+                      key={group.key}
+                      onClick={clickable ? () => onOrderClick!(group.orderIds[0]) : undefined}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 0.75,
+                        px: 1.75, py: 1.25,
+                        borderBottom: '0.5px solid var(--rule)',
+                        '&:last-of-type': { borderBottom: 'none' },
+                        cursor: clickable ? 'pointer' : 'default',
+                        '&:hover': clickable ? { bgcolor: 'action.hover' } : undefined,
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
+                        ✓ {group.orderIds.length} {group.label}
+                      </Typography>
+                    </Box>
+                  );
+                })}
               </Box>
             )}
 

@@ -37,6 +37,9 @@ import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
 import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
 import { useConstrainedOrders } from '../orders/useConstrainedOrders';
+import { useOperationalEpisodes } from '../orders/useOperationalEpisodes';
+import { projectOrdersOperationalEpisodes } from '../orders/ordersOperationalEpisodeProjection';
+import { projectOrdersOperationalVisuals } from '../orders/ordersOperationalEpisodeVisual';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -71,6 +74,15 @@ export default function OrdersFT2Page() {
   // depend on the SLA/aging population. Same endpoint/hook the Blocked
   // surface already uses; no new query.
   const constrainedQuery = useConstrainedOrders({ limit: 50 });
+  // D2B — canonical operational-episode lifecycle (attention/verifying/
+  // just_resolved), presented as NON-SPATIAL context in OrdersModuleFT2's
+  // Live Intelligence rail only. D1 projection -> D2A visual, no second
+  // projection/adapter here.
+  const operationalEpisodesQuery = useOperationalEpisodes();
+  const operationalEpisodeAggregates = projectOrdersOperationalEpisodes(
+    operationalEpisodesQuery.data ?? []
+  );
+  const operationalEpisodeVisuals = projectOrdersOperationalVisuals(operationalEpisodeAggregates);
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
   const bulkSetPriority = useBulkSetPriority();
@@ -251,6 +263,7 @@ export default function OrdersFT2Page() {
         operationalControl={operationalControl}
         operatorSummary={operatorSummaryQuery.data ?? null}
         constrainedOrders={constrainedQuery.data?.data ?? null}
+        operationalEpisodeVisuals={operationalEpisodeVisuals}
         currency={{ displayCurrency, locale, rates }}
         onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}

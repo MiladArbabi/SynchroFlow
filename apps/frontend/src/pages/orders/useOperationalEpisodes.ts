@@ -16,6 +16,12 @@
 // 'attention' | 'verifying' today. The union is widened here now so the
 // frontend contract does not need a second migration when D3B ratifies a
 // recovery window and the endpoint begins emitting 'just_resolved'.
+//
+// D2B NOTE: refetchInterval/staleTime below lock the Orders live-refresh
+// cadence (matches the existing Orders live-activity surface). No
+// Date.now()/timer/lifecycle inference is added here — lifecycle remains
+// exactly what the backend sent (D3B's ratified 5-minute recovery window is
+// backend-owned, see operations.controller.ts).
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
@@ -66,6 +72,7 @@ export function useOperationalEpisodes() {
       );
       return data.items;
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }
