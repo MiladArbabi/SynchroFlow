@@ -1357,3 +1357,201 @@ describe('D3A — an invalid justResolved policy fails explicitly rather than in
     ).rejects.toThrow(/OPERATIONAL_EPISODE_JUST_RESOLVED_POLICY_INVALID/);
   }, 60_000);
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// SLICE D3B — ENABLE THE RATIFIED 5-MINUTE JUST_RESOLVED WINDOW ON THE
+// PRODUCTION ENDPOINT
+// ═════════════════════════════════════════════════════════════════════════
+//
+// Every D3B-* test below goes THROUGH GET /api/v1/operations/episodes
+// (getEpisodes) — operations.controller.ts now supplies
+// OPERATIONAL_EPISODE_JUST_RESOLVED_WINDOW_MS (5 * 60 * 1000) and a single
+// request-time `now`. D3A above already proved the exact inclusive
+// boundary, malformed policy, future timestamp, inverted chronology, and
+// active/inactive incoherence directly against the service — D3B does not
+// duplicate those here. Recent-resolution fixtures use `new Date()` (the
+// real evaluator/projection flow naturally produces a resolution well
+// inside the 5-minute window when materialised and read back-to-back).
+// Stale fixtures materialise resolved_at 6 minutes in the past (via the
+// real evaluator + projectOrderConstraints path, anchored with an explicit
+// past Date) — comfortably outside the 5-minute window without waiting on
+// wall-clock time and without risking 5m+1ms flakiness from endpoint
+// request latency.
+
+describe('D3B-01 — a recently resolved address_correction episode reads just_resolved through the HTTP endpoint (item 1)', () => {
+  it('lifecycle=just_resolved, occurredAt=canonical resolved_at, episodeId anchored to started_at, interventionId=null', async () => {
+    const { shopId, token } = await provisionTenant('d3b-address-just-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    const startedAt = new Date();
+    await materialiseCustomerConstraint(shopId, orderId, startedAt);
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    await materialiseCustomerConstraint(shopId, orderId, new Date());
+    const resolvedRow = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    )!;
+    expect(resolvedRow.is_active).toBe(false);
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    const item = episodeFor(res.body, constraint.constraint_id);
+    expect(item).toEqual(
+      expect.objectContaining({
+        constraintId: constraint.constraint_id,
+        lifecycle: 'just_resolved',
+        interventionId: null,
+      })
+    );
+    expect(new Date(item.occurredAt).getTime()).toBe(
+      new Date(resolvedRow.resolved_at as unknown as string).getTime()
+    );
+    expect(item.episodeId).toBe(`${constraint.constraint_id}:${startedAt.toISOString()}`);
+  }, 180_000);
+});
+
+describe('D3B-02 — a recently resolved inventory/oversell episode reads just_resolved through the HTTP endpoint with the exact targetId preserved (item 2)', () => {
+  it('lifecycle=just_resolved, targetId=the exact over-committed variant', async () => {
+    const { shopId, token } = await provisionTenant('d3b-inventory-just-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const constraint = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 10);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    const item = episodeFor(res.body, constraint.constraint_id);
+    expect(item).toEqual(
+      expect.objectContaining({
+        constraintId: constraint.constraint_id,
+        lifecycle: 'just_resolved',
+        targetId: catalogue.variantId,
+        interventionId: null,
+      })
+    );
+  }, 180_000);
+});
+
+describe('D3B-03 — a resolution older than the ratified 5-minute window is absent from the HTTP response (item 3)', () => {
+  it('a comfortably stale 6-minute-old resolution never surfaces as just_resolved', async () => {
+    const { shopId, token } = await provisionTenant('d3b-stale-resolution-absent');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    const startedAt = new Date(Date.now() - 7 * 60 * 1000);
+    await materialiseCustomerConstraint(shopId, orderId, startedAt);
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    const staleResolvedAt = new Date(Date.now() - 6 * 60 * 1000);
+    await materialiseCustomerConstraint(shopId, orderId, staleResolvedAt);
+    const resolvedRow = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    )!;
+    expect(resolvedRow.is_active).toBe(false);
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    expect(episodeFor(res.body, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+describe('D3B-04 — existing active attention endpoint behavior remains unchanged (item 4)', () => {
+  it('an active customer constraint with no intervention still reads attention through the HTTP endpoint', async () => {
+    const { shopId, token } = await provisionTenant('d3b-attention-unchanged');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date());
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    const item = episodeFor(res.body, constraint.constraint_id);
+    expect(item).toEqual(
+      expect.objectContaining({
+        constraintId: constraint.constraint_id,
+        lifecycle: 'attention',
+        interventionId: null,
+      })
+    );
+  }, 180_000);
+});
+
+describe('D3B-05 — existing active verifying endpoint behavior remains unchanged (item 5)', () => {
+  it('an active oversell constraint with a pending intervention still reads verifying through the HTTP endpoint', async () => {
+    const { shopId, token } = await provisionTenant('d3b-verifying-unchanged');
+    const catalogue = await seedCatalogue(shopId);
+    const supplierId = await seedSupplier(shopId, 'D3B Mills Ltd');
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const constraint = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    const reorder = await postReorder(token, {
+      lasyncro_variant_id: catalogue.variantId,
+      supplier_id: supplierId,
+      qty_requested: 10,
+      source: 'alert',
+      originating_order_id: orderId,
+    });
+    expect(reorder.status).toBe(201);
+
+    const intervention = await withTenant(shopId, (trx) =>
+      trx('decision_interventions')
+        .where({ shop_id: shopId, entity_id: orderId, constraint_id: constraint.constraint_id })
+        .first()
+    );
+    expect(intervention).toBeTruthy();
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    const item = episodeFor(res.body, constraint.constraint_id);
+    expect(item).toEqual(
+      expect.objectContaining({
+        constraintId: constraint.constraint_id,
+        lifecycle: 'verifying',
+        interventionId: intervention.id,
+      })
+    );
+  }, 180_000);
+});
+
+describe('D3B-06 — a current active re-raised episode does not surface the stale previous resolution as just_resolved (item 6)', () => {
+  it('the fresh active episode reads attention through the HTTP endpoint despite a genuine earlier resolution on the same constraint_id', async () => {
+    const { shopId, token } = await provisionTenant('d3b-reraise-no-stale-resolution');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+
+    // Episode A: active, then genuinely resolved (well inside the 5-minute
+    // window on its own — the point is it must never leak into episode B).
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const episodeA = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 10);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const resolvedA = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === episodeA.constraint_id
+    )!;
+    expect(resolvedA.is_active).toBe(false);
+
+    // Episode B: SAME deterministic constraint_id, re-raised active again,
+    // with no new intervention against it.
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const episodeB = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+    expect(episodeB.constraint_id).toBe(episodeA.constraint_id);
+
+    const res = await getEpisodes(token);
+    expect(res.status).toBe(200);
+    const items = (res.body.items ?? []).filter((r: any) => r.constraintId === episodeB.constraint_id);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual(
+      expect.objectContaining({ lifecycle: 'attention', interventionId: null })
+    );
+  }, 180_000);
+});

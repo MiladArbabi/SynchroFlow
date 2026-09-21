@@ -285,6 +285,14 @@ export const httpGetHistory = async (req: Request, res: Response) => {
 // Semantic truth only — no presentation copy, no severity colors, no
 // routes, no spatial inference. UI/map wiring is explicitly out of scope
 // for this slice.
+/**
+ * SLICE D3B — enables the D3A-capable JUST_RESOLVED recovery window on this
+ * endpoint. The controller owns this product policy (the ratified 5-minute
+ * duration); operationalEpisodeRead.service.ts continues to own lifecycle
+ * derivation (the inclusive now - resolvedAt <= windowMs boundary itself).
+ */
+export const OPERATIONAL_EPISODE_JUST_RESOLVED_WINDOW_MS = 5 * 60 * 1000;
+
 export interface OperationalEpisodeItem {
   episodeId: string;
   constraintId: string;
@@ -293,7 +301,7 @@ export interface OperationalEpisodeItem {
   constraintType: string;
   blockType: string;
   targetId: string | null;
-  lifecycle: 'attention' | 'verifying';
+  lifecycle: 'attention' | 'verifying' | 'just_resolved';
   occurredAt: string;
   treatment: WaitingV1Treatment;
   interventionId: string | null;
@@ -304,7 +312,14 @@ export const httpGetOperationalEpisodes = async (req: Request, res: Response) =>
     const shopId = req.user?.shopId;
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const episodes = await readCurrentOperationalEpisodesV1({ shopId });
+    const now = new Date();
+    const episodes = await readCurrentOperationalEpisodesV1({
+      shopId,
+      justResolved: {
+        now,
+        windowMs: OPERATIONAL_EPISODE_JUST_RESOLVED_WINDOW_MS,
+      },
+    });
 
     const items: OperationalEpisodeItem[] = episodes.map((episode) => ({
       episodeId: episode.episodeId,
