@@ -936,16 +936,35 @@ export function CanvasEditor({
     if (initialViewportAppliedRef.current) return;
     if (!hasUsableWarehouseBounds(warehouseRoot)) return;
 
-    let animationFrame: number;
+    let animationFrame: number | undefined;
+    let observer: ResizeObserver | undefined;
+
     const applyWhenMeasurable = () => {
-      if (fitCurrentWarehouse()) {
-        initialViewportAppliedRef.current = true;
-        return;
+      const fitted = fitCurrentWarehouse();
+      if (!fitted) {
+        animationFrame = window.requestAnimationFrame(applyWhenMeasurable);
       }
-      animationFrame = window.requestAnimationFrame(applyWhenMeasurable);
+      return fitted;
     };
+
     applyWhenMeasurable();
-    return () => window.cancelAnimationFrame(animationFrame);
+
+    if (typeof ResizeObserver !== 'undefined' && svgRef.current) {
+      observer = new ResizeObserver(() => {
+        if (fitCurrentWarehouse()) {
+          initialViewportAppliedRef.current = true;
+          observer?.disconnect();
+        }
+      });
+      observer.observe(svgRef.current);
+    }
+
+    return () => {
+      if (animationFrame !== undefined) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      observer?.disconnect();
+    };
   }, [fitCurrentWarehouse, warehouseRoot]);
 
   const toSvg = useCallback((metres: number) => metres * SCALE * zoom, [zoom]);

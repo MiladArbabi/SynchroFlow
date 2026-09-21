@@ -178,6 +178,76 @@ describe('CanvasEditor passive warehouse root', () => {
     await waitFor(() => expect(screen.getByText('150%')).toBeInTheDocument());
   });
 
+  it('re-fits the initial viewport when the drawable canvas grows after first measurement', async () => {
+    rectSpy.mockReturnValue(canvasRect(600, 500));
+
+    let notifyResize: (() => void) | undefined;
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+
+    const originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => callback([], this);
+      }
+
+      observe = observe;
+      unobserve = jest.fn();
+      disconnect = disconnect;
+    } as typeof ResizeObserver;
+
+    try {
+      render(<CanvasEditor zones={[warehouse, lane]} />);
+
+      await waitFor(() => {
+        expect(screen.queryByText('100%')).not.toBeInTheDocument();
+      });
+
+      rectSpy.mockReturnValue(canvasRect(1000, 500));
+
+      expect(observe).toHaveBeenCalled();
+      expect(notifyResize).toBeDefined();
+
+      notifyResize?.();
+
+      await waitFor(() => expect(screen.getByText('150%')).toBeInTheDocument());
+    } finally {
+      global.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it('stops observing after the initial resize fit has settled', async () => {
+    rectSpy.mockReturnValue(canvasRect(600, 500));
+
+    let notifyResize: (() => void) | undefined;
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+
+    const originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => callback([], this);
+      }
+
+      observe = observe;
+      unobserve = jest.fn();
+      disconnect = disconnect;
+    } as typeof ResizeObserver;
+
+    try {
+      render(<CanvasEditor zones={[warehouse, lane]} />);
+
+      rectSpy.mockReturnValue(canvasRect(1000, 500));
+      expect(notifyResize).toBeDefined();
+      notifyResize?.();
+
+      await waitFor(() => expect(screen.getByText('150%')).toBeInTheDocument());
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      global.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it('Reset recomputes fit from the current drawable viewport', async () => {
     render(<CanvasEditor zones={[warehouse, lane]} />);
     await waitFor(() => expect(screen.getByText('150%')).toBeInTheDocument());

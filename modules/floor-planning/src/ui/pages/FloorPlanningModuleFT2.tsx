@@ -25,7 +25,7 @@ import {
   MenuItem,
   Select,
 } from '@mui/material';
-import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
+import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { 
   WarehouseLocation, 
@@ -1066,13 +1066,6 @@ function FloorPlanningModuleFT2Inner({
     });
   }, [onBinSelect]);
   const [logOpen, setLogOpen]           = useState(false);
-  const [createOpen, setCreateOpen]     = useState(false);
-  const [createType, setCreateType]     = useState<WarehouseLocationType>('bin');
-  const [createCode, setCreateCode]     = useState('');
-  const [createParent, setCreateParent] = useState('');
-  const [createError, setCreateError]   = useState<string | null>(null);
-  const [creating, setCreating]         = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
 
   const binCount      = (gridLocations ?? []).filter((l) => l.type === 'bin').length;
   const setupCount    = zones.length;
@@ -1082,25 +1075,6 @@ function FloorPlanningModuleFT2Inner({
   // REV-HARD-01: to-do signal is inactive locations, not missing barcodes.
   const barcodesCount = zones.filter((z) => !z.active).length;
 
-    const handleCreate = async () => {
-    if (!createCode.trim()) { setCreateError('Location code is required'); return; }
-    setCreating(true);
-    setCreateError(null);
-    try {
-      await onCreateZone?.({
-        location_code: createCode.trim().toUpperCase(),
-        type: createType,
-        parent_location_code: createParent.trim() || undefined,
-      });
-      setCreateCode('');
-      setCreateParent('');
-      setCreateOpen(false);
-    } catch (err: any) {
-      setCreateError(err?.response?.data?.error ?? 'Failed to create zone');
-    } finally {
-      setCreating(false);
-    }
-  };
   
   return (
     <Box sx={{ p: '32px 40px', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'var(--bg)' }}>
@@ -1529,7 +1503,7 @@ function FloorPlanningModuleFT2Inner({
       {!isLoading && !isError && tab === 'setup' && (
         <>
           <Box sx={{ mb: 4 }}>
-            {/* Header + Canvas/List toggle + Add button */}
+            {/* Header + Canvas/List toggle */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <LayoutDashboard size={18} />
               <Typography variant="subtitle1" fontWeight={700}>Warehouse Zones</Typography>
@@ -1552,66 +1526,9 @@ function FloorPlanningModuleFT2Inner({
                     </Box>
                   ))}
                 </Box>
-                <Box
-                  onClick={() => { setCreateOpen(v => !v); setCreateError(null); }}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderRadius: 1.5, cursor: 'pointer', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 12, fontWeight: 600, '&:hover': { bgcolor: 'var(--accent)', color: '#fff' }, transition: 'all 0.15s' }}
-                >
-                  <Plus size={13} />
-                  Add zone
-                </Box>
               </Box>
             </Box>
 
-            {/* Inline create form */}
-            {createOpen && (
-              <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', mb: 1.5 }}>New Zone</Typography>
-                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                  <TextField
-                    label="Location code"
-                    size="small"
-                    value={createCode}
-                    onChange={e => setCreateCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. A-5"
-                    sx={{ width: 160 }}
-                    inputProps={{ style: { fontFamily: 'monospace' } }}
-                  />
-                  <FormControl size="small" sx={{ width: 130 }}>
-                    <InputLabel>Type</InputLabel>
-                    <Select value={createType} label="Type" onChange={e => setCreateType(e.target.value as WarehouseLocationType)}>
-                      <MenuItem value="bin">Bin</MenuItem>
-                      <MenuItem value="lane">Lane (Aisle)</MenuItem>
-                      <MenuItem value="shelf">Shelf</MenuItem>
-                      <MenuItem value="warehouse">Warehouse</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <TextField
-                    label="Parent (optional)"
-                    size="small"
-                    value={createParent}
-                    onChange={e => setCreateParent(e.target.value.toUpperCase())}
-                    placeholder="e.g. A"
-                    sx={{ width: 160 }}
-                    inputProps={{ style: { fontFamily: 'monospace' } }}
-                  />
-                  <Button
-                    variant="contained"
-                    size="small"
-                    disabled={createLoading}
-                    onClick={handleCreate}
-                    sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent-hover)' }, textTransform: 'none', fontWeight: 600, height: 40 }}
-                  >
-                    {createLoading ? 'Creating...' : 'Create'}
-                  </Button>
-                  <Button size="small" onClick={() => setCreateOpen(false)} sx={{ height: 40, textTransform: 'none', color: 'var(--ink-3)' }}>
-                    Cancel
-                  </Button>
-                </Box>
-                {createError && (
-                  <Typography sx={{ fontSize: 11, color: 'var(--error, #ef4444)', mt: 1 }}>{createError}</Typography>
-                )}
-              </Paper>
-            )}
 
             {canvasView ? (
               <CanvasEditor
