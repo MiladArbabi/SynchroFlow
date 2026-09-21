@@ -787,6 +787,30 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     return SUPPORTED_OPERATIONAL_EPISODE_LABELS[key] ?? null;
   }
 
+  /**
+   * D2C — THREE-STATE CONTRACT.
+   *   undefined -> legacy/non-participating consumer; behaves exactly like
+   *                `[]` below (no supported visuals, nothing suppressed).
+   *   null      -> canonical operational lifecycle UNRESOLVED. Fail closed
+   *                ONLY for the exact V1 legacy pairing (see
+   *                `isExactV1LegacyRow` below) — every other row (SLA-only,
+   *                other customer/inventory block types, non-V1 operational)
+   *                is untouched.
+   *   []/[...]  -> existing D2B reconciliation, unchanged.
+   */
+  const isOperationalLifecycleUnresolved = operationalEpisodeVisuals === null;
+
+  /**
+   * The EXACT legacy pairing D2C is allowed to fail-closed on while
+   * unresolved — never a broader customer/inventory suppression. Matches
+   * the same two pairings `SUPPORTED_OPERATIONAL_EPISODE_LABELS` recognises
+   * for a real visual, but read directly off the legacy row's own
+   * constraintType/blockType, since no visual exists yet to consult.
+   */
+  const isExactV1LegacyRow = (order: { constraintType: string | null; blockType?: string | null }): boolean =>
+    (order.constraintType === 'customer' && order.blockType === 'incomplete_address') ||
+    (order.constraintType === 'inventory' && order.blockType === 'oversell');
+
   const supportedVisualByOrderId = new Map<string, OrdersOperationalEpisodeVisualInput>();
   for (const visual of operationalEpisodeVisuals ?? []) {
     if (supportedOperationalEpisodeLabel(visual)) {
@@ -805,11 +829,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     verifyingOrderIds.has(orderId) || justResolvedOrderIds.has(orderId);
 
   // Rail-only reconciled groups — a verifying/just_resolved order is removed
-  // from "Needs a decision" here. `criticalGroups` itself is never mutated.
+  // from "Needs a decision" here, and (only while the canonical lifecycle is
+  // UNRESOLVED) the exact V1 legacy pairing is fail-closed too. `criticalGroups`
+  // itself is never mutated.
   const railCriticalGroups = criticalGroups
     .map(group => ({
       ...group,
-      orders: group.orders.filter(o => !isReconciledOutOfDecision(o.lasyncro_order_id)),
+      orders: group.orders.filter(o => {
+        if (isOperationalLifecycleUnresolved && isExactV1LegacyRow(o)) return false;
+        return !isReconciledOutOfDecision(o.lasyncro_order_id);
+      }),
     }))
     .filter(group => group.orders.length > 0)
     .map(group => ({
@@ -1059,6 +1088,19 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                     </Typography>
                   </Box>
                 )}
+              </Box>
+            )}
+
+            {/* D2C — UNRESOLVED PRESENTATION: canonical lifecycle is not yet
+                known. Compact neutral copy only — no CTA, no navigation, no
+                lifecycle glyph, no Verifying/Just-resolved section (those
+                stay empty on their own while unresolved). Unrelated rail
+                groups above are unaffected and may coexist with this. */}
+            {isOperationalLifecycleUnresolved && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', px: 1.75, py: 1.25 }}>
+                <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-4)' }}>
+                  Checking operational state
+                </Typography>
               </Box>
             )}
 

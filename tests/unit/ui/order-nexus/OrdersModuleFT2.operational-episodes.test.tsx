@@ -465,3 +465,175 @@ describe('D2B-RED Contract 6 — returned_undelivered ownership regression (item
     expect(glyphCount(container, '!')).toBe(0);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// D2C-RED — CANONICAL OPERATIONAL LIFECYCLE READINESS (component-level)
+// ═════════════════════════════════════════════════════════════════════════
+//
+// Ratified prop semantics:
+//   operationalEpisodeVisuals === undefined -> legacy/non-participating consumer, current behavior exactly
+//   operationalEpisodeVisuals === null      -> canonical lifecycle UNRESOLVED, fail closed for V1 families only
+//   operationalEpisodeVisuals === []        -> canonical query succeeded with no current episodes
+//   operationalEpisodeVisuals === [visuals] -> normal D2B reconciliation
+//
+// No production behavior has been implemented for the `null` case yet —
+// OrdersModuleFT2.tsx still treats `operationalEpisodeVisuals ?? []`
+// identically for `null` and `undefined` (no distinction), so Contracts 3/4
+// are expected to fail RED. Contracts 5/6/7 are regression guards for
+// behavior that must survive once the fix lands — see D2B-RED Contract 5/6
+// above for the `undefined`-path precedent these reuse.
+describe('D2C-RED Contract 3 — UNRESOLVED ADDRESS (item 3)', () => {
+  it('a customer/incomplete_address row is NOT rendered under Needs a decision while lifecycle is unresolved (null)', () => {
+    const props = baseProps({
+      mapContent: <div>map</div>,
+      constrainedOrders: [
+        {
+          order_id: 'order-unresolved-addr-1',
+          external_order_id: '3001',
+          constraint_type: 'customer',
+          block_type: 'incomplete_address',
+          revenue: 100,
+          age_since_creation_seconds: 0,
+          is_shipping_sla_breached: false,
+        },
+      ],
+      operationalEpisodeVisuals: null,
+    });
+
+    const { container } = renderModule(props);
+
+    expect(screen.queryByText(/Address issues/i)).not.toBeInTheDocument();
+    expect(glyphCount(container, '!')).toBe(0);
+    expect(screen.getByText(/Checking operational state/i)).toBeInTheDocument();
+    expect(screen.queryByText(/all orders on track/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('D2C-RED Contract 4 — UNRESOLVED OVERSELL (item 4)', () => {
+  it('an inventory/oversell row is NOT rendered under Needs a decision while lifecycle is unresolved (null)', () => {
+    const props = baseProps({
+      mapContent: <div>map</div>,
+      constrainedOrders: [
+        {
+          order_id: 'order-unresolved-inv-1',
+          external_order_id: '4001',
+          constraint_type: 'inventory',
+          block_type: 'oversell',
+          revenue: 100,
+          age_since_creation_seconds: 0,
+          is_shipping_sla_breached: false,
+        },
+      ],
+      operationalEpisodeVisuals: null,
+    });
+
+    const { container } = renderModule(props);
+
+    expect(screen.queryByText(/Out of stock/i)).not.toBeInTheDocument();
+    expect(glyphCount(container, '!')).toBe(0);
+    expect(screen.getByText(/Checking operational state/i)).toBeInTheDocument();
+    expect(screen.queryByText(/all orders on track/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('D2C-RED Contract 5 — UNRELATED LEGACY ROWS SURVIVE while unresolved (item 5)', () => {
+  it('an SLA-only row and a non-V1 operational constraint remain represented normally when operationalEpisodeVisuals=null', () => {
+    const props = baseProps({
+      mapContent: <div>map</div>,
+      operatorSummary: {
+        constraintCounts: { inventory: 0, customer: 0, operational: 1 },
+        topBlockingType: 'operational',
+        agingOrders: [
+          {
+            lasyncro_order_id: 'order-sla-only',
+            externalOrderId: '5101',
+            ageHours: 80,
+            isShippingSlaBreached: true,
+            constraintType: null,
+            blockType: null,
+            isPriorityFlagged: false,
+            inPickBatch: false,
+            pickBatchStatus: null,
+            revenue: 700,
+            timeToSlaBreachMinutes: null,
+          },
+        ],
+        imminentSlaBreachers: [],
+        queueCounts: { readyToShip: 0, awaitingInventory: 0, awaitingCustomer: 0, manualReview: 1 },
+      },
+      constrainedOrders: [
+        {
+          order_id: 'order-non-v1-op',
+          external_order_id: '5102',
+          constraint_type: 'operational',
+          block_type: 'manual_review_hold',
+          revenue: 400,
+          age_since_creation_seconds: 0,
+          is_shipping_sla_breached: false,
+        },
+      ],
+      operationalEpisodeVisuals: null,
+    });
+
+    renderModule(props);
+
+    expect(screen.getByText(/Shipping SLA breached/i)).toBeInTheDocument();
+    expect(screen.getByText(/Operational issues/i)).toBeInTheDocument();
+  });
+});
+
+describe('D2C-RED Contract 6 — UNDEFINED preserves compatibility (item 6)', () => {
+  it('an omitted operationalEpisodeVisuals prop keeps current legacy behavior exactly (no readiness gating)', () => {
+    const onOrderClick = jest.fn();
+    const props = baseProps({
+      mapContent: <div>map</div>,
+      onOrderClick,
+      constrainedOrders: [
+        {
+          order_id: 'order-undefined-prop',
+          external_order_id: '6001',
+          constraint_type: 'customer',
+          block_type: 'incomplete_address',
+          revenue: 100,
+          age_since_creation_seconds: 0,
+          is_shipping_sla_breached: false,
+        },
+      ],
+      // operationalEpisodeVisuals deliberately OMITTED (undefined).
+    });
+
+    const { container } = renderModule(props);
+
+    expect(screen.getByText(/Address issues/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Checking operational state/i)).not.toBeInTheDocument();
+    expect(glyphCount(container, '!')).toBe(0);
+
+    fireEvent.click(screen.getByText(/Address issues/i));
+    expect(onOrderClick).toHaveBeenCalledWith('order-undefined-prop');
+  });
+});
+
+describe('D2C-RED Contract 7 — NO-MAP COMPATIBILITY (item 7)', () => {
+  it('the no-mapContent triage-first layout does not adopt D2C readiness gating when operationalEpisodeVisuals=null', () => {
+    const props = baseProps({
+      constrainedOrders: [
+        {
+          order_id: 'order-nomap-null',
+          external_order_id: '7001',
+          constraint_type: 'customer',
+          block_type: 'incomplete_address',
+          revenue: 100,
+          age_since_creation_seconds: 0,
+          is_shipping_sla_breached: false,
+        },
+      ],
+      operationalEpisodeVisuals: null,
+      // mapContent deliberately omitted -> fallback triage-first grid.
+    });
+
+    renderModule(props);
+
+    expect(screen.getByRole('button', { name: /Address issues/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Checking operational state/i)).not.toBeInTheDocument();
+  });
+});
