@@ -648,9 +648,55 @@ function CreatePoDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
-      <DialogTitle>New Purchase Order</DialogTitle>
-      <DialogContent>
+    <EntityDetailModal
+      entityId={open ? 'new-purchase-order' : null}
+      onClose={handleClose}
+      title="New Purchase Order"
+      maxWidth="md"
+      footerActions={
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Button
+            variant="outlined"
+            onClick={handleClose}
+            disabled={submitting}
+            sx={{
+              color: 'var(--ink-3)',
+              borderColor: 'var(--rule)',
+              '&:hover': {
+                borderColor: 'var(--rule-2)',
+                bgcolor: 'var(--surface)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => void handleSubmit()}
+            disabled={submitting}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              '&:hover': {
+                bgcolor: 'var(--accent)',
+                opacity: 0.88,
+              },
+            }}
+          >
+            {submitting ? 'Creating…' : 'Create PO'}
+          </Button>
+        </Box>
+      }
+    >
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
 
           {error && <Alert severity="error">{error}</Alert>}
@@ -929,14 +975,7 @@ function CreatePoDialog({
             placeholder="Any notes about this PO..."
           />
         </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose} disabled={submitting}>Cancel</Button>
-        <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
-          {submitting ? 'Creating...' : 'Create PO'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    </EntityDetailModal>
   );
 }
 
@@ -1551,7 +1590,15 @@ function PoAccordion({
         )}
 
         {OPEN_STATUSES.includes(po.status) && (
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+              minHeight: 32,
+            }}
+          >
             {/* Draft: copy PO content, then manually confirm sent */}
             {po.status === 'draft' && (
               <>
@@ -1569,8 +1616,17 @@ function PoAccordion({
             )}
             {/* On the way → mark as arrived at dock */}
             {(po.status === 'ordered' || po.status === 'confirmed' || po.status === 'in_production') && (
-              <Button size="small" variant="outlined" color="success" disabled={updatingStatus}
-                onClick={() => void handleStatusUpdate('shipped')}>
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('shipped')}
+                sx={{
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                }}
+              >
                 Mark as arrived
               </Button>
             )}
@@ -1612,18 +1668,67 @@ function PoAccordion({
           </Typography>
         )}
 
-        <Dialog
-          open={assignReceiveOpen}
+        <EntityDetailModal
+          entityId={assignReceiveOpen ? po.id : null}
           onClose={handleCloseReceiveAssignment}
-          aria-labelledby="assign-receive-title"
-          maxWidth="xs"
-          fullWidth
-        >
-          <DialogTitle id="assign-receive-title">
-            {reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive'}
-          </DialogTitle>
+          title={
+            <Box
+              component="span"
+              role="heading"
+              aria-level={2}
+            >
+              {reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive'}
+            </Box>
+          }
+          maxWidth="md"
+          footerActions={
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: 1,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Button
+                variant="outlined"
+                onClick={handleCloseReceiveAssignment}
+                disabled={assigningReceive}
+                sx={{
+                  color: 'var(--ink-3)',
+                  borderColor: 'var(--rule)',
+                  '&:hover': {
+                    borderColor: 'var(--rule-2)',
+                    bgcolor: 'var(--surface)',
+                  },
+                }}
+              >
+                Cancel
+              </Button>
 
-          <DialogContent>
+              <Button
+                variant="contained"
+                disabled={
+                  selectedReceiveOperatorId == null || assigningReceive
+                }
+                onClick={() => void handleAssignReceive()}
+                sx={{
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': {
+                    bgcolor: 'var(--accent)',
+                    opacity: 0.88,
+                  },
+                }}
+              >
+                {assigningReceive
+                  ? (reassignReceiveMode ? 'Reassigning…' : 'Assigning…')
+                  : (reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive')}
+              </Button>
+            </Box>
+          }
+        >
             <Typography variant="body2" fontWeight={700}>
               {po.supplier_name}
             </Typography>
@@ -1761,28 +1866,7 @@ function PoAccordion({
                 {receiveDispatchError}
               </Alert>
             )}
-          </DialogContent>
-
-          <DialogActions>
-            <Button
-              onClick={handleCloseReceiveAssignment}
-              disabled={assigningReceive}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              disabled={
-                selectedReceiveOperatorId == null || assigningReceive
-              }
-              onClick={() => void handleAssignReceive()}
-            >
-              {assigningReceive
-                ? (reassignReceiveMode ? 'Reassigning…' : 'Assigning…')
-                : (reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive')}
-            </Button>
-          </DialogActions>
-        </Dialog>
+        </EntityDetailModal>
 
         {/* §Gap2: PO send preview modal — copy-only, no status transition inside */}
         {sendPreviewOpen && lineItems && (
