@@ -15,6 +15,7 @@ import {
   httpCreateZone,
   httpDeleteZone,
   httpUpdateZone,
+  httpUpdateZonePositions,
   httpPrintBarcode,
   httpBatchPrintBarcodes,
   httpPrintProductBarcode,
@@ -75,6 +76,15 @@ router.post(
   requireCapability('warehouse.floor_planning'),
   requireAction('floor-planning:write'),
   httpCreateZone
+);
+
+router.patch(
+  '/zones/positions',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.floor_planning'),
+  requireAction('floor-planning:write'),
+  httpUpdateZonePositions
 );
 
 router.patch(

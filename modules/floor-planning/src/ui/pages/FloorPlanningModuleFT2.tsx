@@ -135,6 +135,11 @@ export type FloorPlanningPageProps = {
     zone_type?: string | null;
     dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
   }) => Promise<void>;
+  onUpdateZonePositions?: (positions: Array<{
+    location_code: string;
+    position_x: number;
+    position_y: number;
+  }>) => Promise<void>;
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -982,6 +987,7 @@ function FloorPlanningModuleFT2Inner({
   onPrintBarcode,
   onToggleZoneActive,
   onUpdateZone,
+  onUpdateZonePositions,
   onUpdateProductBarcode,
   onPrintProductBarcode,
   onBatchPrintProductBarcodes,
@@ -1608,7 +1614,14 @@ function FloorPlanningModuleFT2Inner({
             )}
 
             {canvasView ? (
-              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} onCreateZone={onCreateZone} onPrintBarcode={onPrintBarcode} />
+              <CanvasEditor
+                zones={zones}
+                onUpdateZone={onUpdateZone}
+                onUpdateZonePositions={onUpdateZonePositions}
+                onDeleteZone={onDeleteZone}
+                onCreateZone={onCreateZone}
+                onPrintBarcode={onPrintBarcode}
+              />
             ) : zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />

@@ -82,6 +82,74 @@ export function useUpdateZone() {
   });
 }
 
+
+export interface UpdateZonePosition {
+  location_code: string;
+  position_x: number;
+  position_y: number;
+}
+
+export function useUpdateZonePositions() {
+  const qc = useQueryClient();
+  const { show } = useToast();
+  const queryKey = ['floor-planning', 'layout'];
+
+  return useMutation({
+    mutationFn: (positions: UpdateZonePosition[]) =>
+      axiosInstance
+        .patch('/api/v1/floor-planning/zones/positions', { positions })
+        .then(r => r.data),
+
+    // C2b — one optimistic cache transition for the complete group.
+    // Server persistence is transactional, so rollback is also whole-group.
+    onMutate: async (positions) => {
+      await qc.cancelQueries({ queryKey });
+
+      const previous =
+        qc.getQueryData<{ zones: Array<Record<string, unknown>> }>(queryKey);
+
+      if (previous) {
+        const byCode = new Map(
+          positions.map(position => [position.location_code, position]),
+        );
+
+        qc.setQueryData(queryKey, {
+          ...previous,
+          zones: previous.zones.map(zone => {
+            const code = String(zone.location_code ?? '');
+            const next = byCode.get(code);
+
+            return next
+              ? {
+                  ...zone,
+                  position_x: next.position_x,
+                  position_y: next.position_y,
+                }
+              : zone;
+          }),
+        });
+      }
+
+      return { previous };
+    },
+
+    onError: (_err, _positions, context) => {
+      if (context?.previous) {
+        qc.setQueryData(queryKey, context.previous);
+      }
+
+      show(
+        'Failed to move selected components — reverted to their previous positions.',
+        'error',
+      );
+    },
+
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}
+
 export function useDeleteZone() {
   const qc = useQueryClient();
   return useMutation({

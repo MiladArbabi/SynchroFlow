@@ -761,6 +761,175 @@ export async function httpCreateZone(req: Request, res: Response) {
   }
 }
 
+
+/**
+ * PATCH /api/v1/floor-planning/zones/positions
+ * -------------------------------------------------
+ * Atomically updates the canvas position of multiple tenant-owned locations.
+ *
+ * Body:
+ * {
+ *   positions: Array<{
+ *     location_code: string;
+ *     position_x: number;
+ *     position_y: number;
+ *   }>
+ * }
+ *
+ * Contract:
+ * - all requested locations must belong to the authenticated shop;
+ * - warehouse/root locations cannot be moved through this operation;
+ * - duplicate / malformed entries are rejected before mutation;
+ * - all updates commit together or roll back together.
+ */
+export async function httpUpdateZonePositions(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const positions = req.body?.positions;
+
+  if (!Array.isArray(positions) || positions.length === 0) {
+    return res.status(400).json({
+      error: 'positions must be a non-empty array',
+    });
+  }
+
+  const seen = new Set<string>();
+
+  for (const item of positions) {
+    if (!item || typeof item !== 'object') {
+      return res.status(400).json({ error: 'Invalid position entry' });
+    }
+
+    const locationCode = item.location_code;
+    const positionX = item.position_x;
+    const positionY = item.position_y;
+
+    if (
+      typeof locationCode !== 'string'
+      || locationCode.trim().length === 0
+      || typeof positionX !== 'number'
+      || !Number.isFinite(positionX)
+      || positionX < 0
+      || typeof positionY !== 'number'
+      || !Number.isFinite(positionY)
+      || positionY < 0
+    ) {
+      return res.status(400).json({ error: 'Invalid position entry' });
+    }
+
+    const normalizedCode = locationCode.trim();
+
+    if (seen.has(normalizedCode)) {
+      return res.status(400).json({
+        error: 'Duplicate location_code in positions',
+      });
+    }
+
+    seen.add(normalizedCode);
+  }
+
+  // Same spatial-write boundary as the single-zone Canvas update path.
+  // The route capability currently requires Growth+, so this is normally
+  // redundant, but preserves the field-level contract if entitlement policy
+  // changes independently later.
+  if (!meetsTier(req, 'growth')) {
+    return res.status(403).json({
+      error: 'TIER_INSUFFICIENT_FIELD',
+      required: 'growth',
+      current: req.user?.tier ?? 'starter',
+      fields: ['position_x', 'position_y'],
+    });
+  }
+
+  try {
+    const updatedCount = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const requestedCodes = positions.map(
+        (item: { location_code: string }) => item.location_code.trim(),
+      );
+
+      // Lock the complete requested set before mutation. Tenant scoping is
+      // explicit even with RLS so a foreign location is indistinguishable
+      // from a missing one.
+      const existing = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereIn('location_code', requestedCodes)
+        .select('location_code', 'type')
+        .forUpdate();
+
+      if (existing.length !== requestedCodes.length) {
+        const err = new Error('Zone not found');
+        (err as Error & { statusCode?: number }).statusCode = 404;
+        throw err;
+      }
+
+      if (existing.some((row: { type: string }) => row.type === 'warehouse')) {
+        const err = new Error('Warehouse root cannot be moved');
+        (err as Error & { statusCode?: number }).statusCode = 400;
+        throw err;
+      }
+
+      const now = new Date();
+
+      for (const item of positions as Array<{
+        location_code: string;
+        position_x: number;
+        position_y: number;
+      }>) {
+        const locationCode = item.location_code.trim();
+
+        const count = await trx('warehouse_locations')
+          .where({
+            shop_id: shopId,
+            location_code: locationCode,
+          })
+          .update({
+            position_x: item.position_x,
+            position_y: item.position_y,
+            updated_at: now,
+          });
+
+        if (count !== 1) {
+          const err = new Error('Zone not found');
+          (err as Error & { statusCode?: number }).statusCode = 404;
+          throw err;
+        }
+      }
+
+      return positions.length;
+    });
+
+    return res.json({
+      success: true,
+      updated: updatedCount,
+    });
+  } catch (err: unknown) {
+    const statusCode =
+      err instanceof Error
+        ? (err as Error & { statusCode?: number }).statusCode
+        : undefined;
+
+    if (statusCode === 404) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    if (statusCode === 400) {
+      return res.status(400).json({
+        error: err instanceof Error
+          ? err.message
+          : 'Invalid position update',
+      });
+    }
+
+    console.error('[floor-planning] httpUpdateZonePositions failed', err);
+    return res.status(500).json({
+      error: 'Failed to update zone positions',
+    });
+  }
+}
+
 /**
  * PATCH /api/v1/floor-planning/zones/:locationCode
  * -------------------------------------------------

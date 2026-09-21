@@ -15,8 +15,8 @@
  * Phase 3: same WarehouseLocation data feeds Three.js renderer unchanged.
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button } from '@mui/material';
-import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2 } from 'lucide-react';
+import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
 import { IsometricCanvas } from './IsometricCanvas.js';
@@ -143,6 +143,7 @@ interface DragState {
   startMouseY: number;
   startPosX: number;
   startPosY: number;
+  groupStartPositions?: Record<string, { x: number; y: number }>;
 }
 
 interface PanState {
@@ -150,6 +151,17 @@ interface PanState {
   startMouseY: number;
   startOffsetX: number;
   startOffsetY: number;
+}
+
+type CanvasMode = 'pointer' | 'marquee' | 'pan';
+
+interface MarqueeState {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  shiftKey: boolean;
+  baseSelection: Set<string>;
 }
 
 interface ResizeState {
@@ -173,6 +185,11 @@ interface CanvasEditorProps {
     zone_type?: string | null;
     dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
   }) => Promise<void>;
+  onUpdateZonePositions?: (positions: Array<{
+    location_code: string;
+    position_x: number;
+    position_y: number;
+  }>) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
   // FP-16 follow-up: mirrors the FloorPlanningModuleFT2 interface fix —
   // usePrintBarcode's mutationFn resolves the fetched label Blob
@@ -194,6 +211,15 @@ interface CanvasEditorProps {
   // the Map tab. This callback lets Canvas hand off to that existing view
   // instead of duplicating a stripped-down copy of it.
   onViewIn3D?: () => void;
+}
+
+function isSelectableZone(zone: WarehouseZone | undefined): zone is WarehouseZone {
+  return !!zone && zone.type !== 'warehouse';
+}
+
+function selectableCodes(codes: Iterable<string>, zones: readonly WarehouseZone[]): Set<string> {
+  const zoneByCode = new Map(zones.map((zone) => [zone.location_code, zone]));
+  return new Set([...codes].filter((code) => isSelectableZone(zoneByCode.get(code))));
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
 function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent }: {
@@ -433,6 +459,40 @@ function FloorSettingsPanel({ root, onClose, onUpdateZone }: {
   );
 }
 
+function BulkSelectionPanel({ zones, onClear }: { zones: WarehouseZone[]; onClear: () => void }) {
+  const summary = [...zones.reduce((counts, zone) => {
+    const role = zone.type === 'lane' || zone.type === 'shelf'
+      ? zone.type
+      : (zone.zone_type ?? zone.type);
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>())]
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  return (
+    <Box data-testid="bulk-selection-panel" sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ px: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box>
+          <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Selection</Typography>
+          <Typography sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{zones.length} selected</Typography>
+        </Box>
+        <IconButton size="small" title="Deselect all" onClick={onClear} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
+      </Box>
+      <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+        {summary.map(([role, count]) => (
+          <Box key={role} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography sx={{ fontSize: 10, textTransform: 'capitalize', color: 'var(--ink-3)' }}>{role}</Typography>
+            <Typography sx={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--ink-2)' }}>{count}</Typography>
+          </Box>
+        ))}
+        <Button size="small" variant="outlined" onClick={onClear} sx={{ mt: 0.75, textTransform: 'none', fontSize: 10 }}>
+          Deselect all
+        </Button>
+      </Box>
+    </Box>
+  );
+}
+
 // ── RackInspector ─────────────────────────────────────────────────────────────
 function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarcode, onCreateZone }: {
   zone: WarehouseZone;
@@ -518,7 +578,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
   }
 
   return (
-    <Box sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <Box sx={{ width: 240, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
@@ -528,12 +588,11 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             {zone.location_code}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <IconButton size="small" title="Duplicate zone" onClick={openDuplicate} sx={{ color: 'var(--ink-4)', '&:hover': { color: 'var(--accent)' } }}><Copy size={13} /></IconButton>
-          <IconButton size="small" title="Close inspector" onClick={onClose} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
-        </Box>
+        <IconButton size="small" title="Close inspector" onClick={onClose} sx={{ color: 'var(--ink-4)' }}>
+          <X size={13} />
+        </IconButton>
       </Box>
-      <Box data-testid="zone-inspector-content" sx={{ flex: 1, overflowY: 'auto', p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Box data-testid="zone-inspector-content" sx={{ p: 1.25, display: 'flex', flexDirection: 'column', gap: 0.9 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
             <Typography sx={{ mr: 0.25, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Role</Typography>
             <Chip label={roleLabel} size="small" sx={{ fontSize: 10, height: 20, bgcolor: zone.zone_type ? ZONE_COLORS[zone.zone_type] : 'transparent', color: zoneColor, border: `1px solid ${zoneColor}` }} />
@@ -551,7 +610,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               { label: 'Position Y', field: 'position_y' as const, value: editY, set: setEditY },
             ] },
           ]).map((row) => (
-            <Box key={row.testId} data-testid={row.testId} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, mb: 0.75 }}>
+            <Box key={row.testId} data-testid={row.testId} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1 }}>
               {row.fields.map(({ label, field, value, set }) => (
                 <TextField key={field} size="small" label={label} value={value} onChange={(e) => set(e.target.value)}
                   onBlur={() => void commitField(field, value)}
@@ -562,7 +621,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               ))}
             </Box>
           ))}
-          <Box data-testid="geometry-levels-row" sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
+          <Box data-testid="geometry-levels-row" sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
             <TextField size="small" type="number" label="Levels"
               key={`${zone.location_code}:${zone.rack_levels ?? 'none'}`}
               defaultValue={zone.rack_levels ?? ''}
@@ -634,21 +693,79 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             {zone.parent_location_code && <Typography sx={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--ink-3)' }}>Parent: {zone.parent_location_code}</Typography>}
           </Box>
         )}
-      </Box>
-      <Box sx={{ p: 1, borderTop: '1px solid var(--rule)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
-        {/* Print barcode — hidden for warehouse frame type which have no scannable barcode */}
-        {zone.type !== 'warehouse' && (
-          <Box onClick={() => onPrintBarcode?.(zone.location_code)}
-            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.7, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer', '&:hover': { opacity: 0.9 }, transition: 'opacity 0.15s' }}>
-            <Tag size={12} /> Print barcode
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, pt: 0.15 }}>
+          <Box
+            title="Duplicate zone"
+            role="button"
+            onClick={openDuplicate}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.5,
+              py: 0.65,
+              borderRadius: 1,
+              border: '1px solid var(--rule)',
+              fontSize: 10,
+              fontWeight: 500,
+              color: 'var(--ink-3)',
+              cursor: 'pointer',
+              '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+              transition: 'all 0.15s',
+            }}
+          >
+            <Copy size={11} /> Duplicate
           </Box>
-        )}
-        <Box onClick={handleDelete}
-          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.7, borderRadius: 1, border: '1px solid var(--rule)', fontSize: 10, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'rgba(239,68,68,0.6)', color: 'rgba(239,68,68,0.9)' }, transition: 'all 0.15s' }}>
-          <Trash2 size={11} /> Delete
+
+          {zone.type !== 'warehouse' && (
+            <Box
+              onClick={() => onPrintBarcode?.(zone.location_code)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.5,
+                py: 0.65,
+                borderRadius: 1,
+                bgcolor: 'var(--accent)',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.9 },
+                transition: 'opacity 0.15s',
+              }}
+            >
+              <Tag size={11} /> Print barcode
+            </Box>
+          )}
+
+          <Box
+            onClick={handleDelete}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.5,
+              py: 0.65,
+              borderRadius: 1,
+              border: '1px solid var(--rule)',
+              fontSize: 10,
+              fontWeight: 500,
+              color: 'var(--ink-3)',
+              cursor: 'pointer',
+              '&:hover': {
+                borderColor: 'rgba(239,68,68,0.6)',
+                color: 'rgba(239,68,68,0.9)',
+              },
+              transition: 'all 0.15s',
+            }}
+          >
+            <Trash2 size={11} /> Delete
+          </Box>
         </Box>
       </Box>
-
       {/* Duplicate — user sets a unique code before creation; location_code is immutable PK post-create */}
       <Dialog open={duplicateOpen} onClose={() => setDuplicateOpen(false)}>
         <DialogTitle sx={{ fontSize: 14 }}>Duplicate <strong>{zone.location_code}</strong></DialogTitle>
@@ -724,7 +841,8 @@ function Ruler({ length, horizontal, scale, offset: off, zoom }: {
 // ── CanvasEditor ──────────────────────────────────────────────────────────────
 export function CanvasEditor({ 
   zones, 
-  onUpdateZone, 
+  onUpdateZone,
+  onUpdateZonePositions,
   onDeleteZone, 
   onCreateZone,
   onPrintBarcode,
@@ -733,7 +851,9 @@ export function CanvasEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(1);
   const [offset, setOffset]     = useState({ x: 40, y: 40 });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [mode, setMode] = useState<CanvasMode>('pointer');
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [floorSettingsOpen, setFloorSettingsOpen] = useState(false);
   const [optimisticCreatedZones, setOptimisticCreatedZones] = useState<WarehouseZone[]>([]);
   const [flipped, setFlipped]   = useState(false); // angle preset: standard vs mirrored
@@ -742,13 +862,10 @@ export function CanvasEditor({
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  // FP-06: mode/marquee state removed — Canvas is pan-only now. Marquee
-  // selection only ever selected one zone regardless of drag area
-  // (dead scaffolding, never completed to true multi-select), and
-  // Select mode existed only to enable it.
   const dragRef   = useRef<DragState | null>(null);
   const panRef    = useRef<PanState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
+  const marqueeRef = useRef<MarqueeState | null>(null);
   const initialViewportAppliedRef = useRef(false);
   const savingRef = useRef<Set<string>>(new Set());
   // FP-11: alignment guide lines, shown while dragging a frame zone
@@ -775,22 +892,29 @@ export function CanvasEditor({
       (optimisticZone) => !zones.some((zone) => zone.location_code === optimisticZone.location_code),
     ));
   }, [zones]);
+  useEffect(() => {
+    setSelected((current) => {
+      const next = selectableCodes(current, zones);
+      return next.size === current.size && [...next].every((code) => current.has(code)) ? current : next;
+    });
+  }, [zones]);
   // Refs for latest values — avoids stale closure captures inside useEffect mousemove handler
   const positionedZonesRef = useRef(positionedZones);
   const localSizesRef      = useRef(localSizes);
   const localPositionsRef  = useRef(localPositions);
   const zoomRef             = useRef(zoom);
   const offsetRef          = useRef(offset);
+  const selectedRef        = useRef(selected);
   // Sync refs synchronously on every render — avoids stale closure in mousemove handler
   positionedZonesRef.current = positionedZones;
   localSizesRef.current      = localSizes;
   localPositionsRef.current  = localPositions;
   zoomRef.current            = zoom;
   offsetRef.current          = offset;
+  selectedRef.current        = selected;
   const unpositionedCount = zones.filter(z => z.position_x == null && !placedCoords[z.location_code]).length;
-  const selectedZone = selected
-    ? positionedZones.find(z => z.location_code === selected) ?? zones.find(z => z.location_code === selected)
-    : null;
+  const selectedZones = positionedZones.filter((zone) => selected.has(zone.location_code) && isSelectableZone(zone));
+  const selectedZone = selectedZones.length === 1 ? selectedZones[0] : null;
 
   const warehouseRoots = zones.filter((zone) => zone.type === 'warehouse');
   const warehouseRoot = warehouseRoots.length === 1 ? warehouseRoots[0] : null;
@@ -859,7 +983,7 @@ export function CanvasEditor({
     };
     setOptimisticCreatedZones((current) => [...current, createdZone]);
     setFloorSettingsOpen(false);
-    setSelected(locationCode);
+    setSelected(selectableCodes([locationCode], [...positionedZones, createdZone]));
   }
 
   /**
@@ -906,6 +1030,127 @@ export function CanvasEditor({
       if (!moved) break; // stable — no more overlaps
     }
     return { x: cx, y: cy };
+  }
+
+  /**
+   * C2a.2 — validate one common transform for a multi-selection.
+   *
+   * Selected components never collide with each other because their relative
+   * geometry is preserved. warehouse/lane/shelf retain the existing
+   * frame semantics and therefore do not participate in bin collision.
+   *
+   * Operational/bin-like selected zones are checked only against unselected
+   * operational/bin-like blockers.
+   */
+  function isGroupDeltaValid(
+    starts: Record<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ): boolean {
+    const selectedCodes = new Set(Object.keys(starts));
+    const TOL = 0.05;
+
+    for (const [code, start] of Object.entries(starts)) {
+      const zone = positionedZonesRef.current.find(
+        (candidate) => candidate.location_code === code,
+      );
+      if (!zone || !isSelectableZone(zone)) return false;
+
+      const candidateX = snapV(start.x + dx);
+      const candidateY = snapV(start.y + dy);
+
+      // Keep the complete group inside the same lower-bound contract used by
+      // existing single-zone dragging.
+      if (candidateX < 0 || candidateY < 0) return false;
+
+      // Frame-like zones move freely under the existing collision model.
+      if (zone.type === 'lane' || zone.type === 'shelf') continue;
+
+      const w =
+        localSizesRef.current[code]?.w
+        ?? parseFloat(String(zone.width ?? 1));
+      const h =
+        localSizesRef.current[code]?.h
+        ?? parseFloat(String(zone.depth ?? 0.8));
+
+      for (const blocker of positionedZonesRef.current) {
+        if (
+          selectedCodes.has(blocker.location_code)
+          || blocker.type === 'warehouse'
+          || blocker.type === 'lane'
+          || blocker.type === 'shelf'
+        ) {
+          continue;
+        }
+
+        const bx =
+          localPositionsRef.current[blocker.location_code]?.x
+          ?? parseFloat(String(blocker.position_x ?? 0));
+        const by =
+          localPositionsRef.current[blocker.location_code]?.y
+          ?? parseFloat(String(blocker.position_y ?? 0));
+        const bw =
+          localSizesRef.current[blocker.location_code]?.w
+          ?? parseFloat(String(blocker.width ?? 1));
+        const bh =
+          localSizesRef.current[blocker.location_code]?.h
+          ?? parseFloat(String(blocker.depth ?? 0.8));
+
+        const overlaps =
+          candidateX < bx + bw - TOL
+          && candidateX + w - TOL > bx
+          && candidateY < by + bh - TOL
+          && candidateY + h - TOL > by;
+
+        if (overlaps) return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Sweep from the group's start geometry toward the requested delta in
+   * grid-sized increments. Stop at the last valid transform so a fast pointer
+   * movement cannot tunnel the selection through an unselected blocker.
+   *
+   * One accepted dx/dy is returned for the whole group.
+   */
+  function clampGroupDelta(
+    starts: Record<string, { x: number; y: number }>,
+    requestedDx: number,
+    requestedDy: number,
+  ): { dx: number; dy: number } {
+    const startPositions = Object.values(starts);
+    if (startPositions.length === 0) return { dx: 0, dy: 0 };
+
+    const minStartX = Math.min(...startPositions.map((position) => position.x));
+    const minStartY = Math.min(...startPositions.map((position) => position.y));
+
+    const boundedDx = snapV(Math.max(-minStartX, requestedDx));
+    const boundedDy = snapV(Math.max(-minStartY, requestedDy));
+
+    const distance = Math.max(Math.abs(boundedDx), Math.abs(boundedDy));
+    if (distance === 0) return { dx: 0, dy: 0 };
+
+    const steps = Math.max(1, Math.ceil(distance / SNAP));
+    let acceptedDx = 0;
+    let acceptedDy = 0;
+
+    for (let step = 1; step <= steps; step++) {
+      const ratio = step / steps;
+      const candidateDx = snapV(boundedDx * ratio);
+      const candidateDy = snapV(boundedDy * ratio);
+
+      if (!isGroupDeltaValid(starts, candidateDx, candidateDy)) {
+        break;
+      }
+
+      acceptedDx = candidateDx;
+      acceptedDy = candidateDy;
+    }
+
+    return { dx: acceptedDx, dy: acceptedDy };
   }
 
   // FP-11: alignment snap for frame zones (warehouse/lane/shelf) only.
@@ -1097,30 +1342,86 @@ export function CanvasEditor({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
-    if (zone.type === 'warehouse') return;
-    // FP-06: mode branch removed — Select mode/marquee no longer exists,
-    // so zone mousedown always starts a drag (previously "pan mode" only
-    // behavior) and never lets the event bubble to canvas.
+    if (!isSelectableZone(zone) || mode === 'pan') return;
     e.stopPropagation();
+    if (mode === 'marquee') return;
     setFloorSettingsOpen(false);
-    setSelected(zone.location_code);
+    if (e.shiftKey) {
+      setSelected((current) => {
+        const next = selectableCodes(current, positionedZonesRef.current);
+        if (next.has(zone.location_code)) next.delete(zone.location_code);
+        else next.add(zone.location_code);
+        return next;
+      });
+      return;
+    }
+
+    const currentSelection = selectableCodes(
+      selectedRef.current,
+      positionedZonesRef.current,
+    );
+    const draggingExistingGroupMember =
+      currentSelection.size > 1 && currentSelection.has(zone.location_code);
+
+    if (!draggingExistingGroupMember) {
+      setSelected(selectableCodes([zone.location_code], positionedZonesRef.current));
+    }
+
+    const groupStartPositions = draggingExistingGroupMember
+      ? Object.fromEntries(
+          [...currentSelection].map((code) => {
+            const selectedZone = positionedZonesRef.current.find(
+              (candidate) => candidate.location_code === code,
+            );
+            const position = localPositionsRef.current[code];
+            return [
+              code,
+              {
+                x: position?.x
+                  ?? parseFloat(String(selectedZone?.position_x ?? placedCoords[code]?.x ?? 0)),
+                y: position?.y
+                  ?? parseFloat(String(selectedZone?.position_y ?? placedCoords[code]?.y ?? 0)),
+              },
+            ];
+          }),
+        )
+      : undefined;
+
     dragRef.current = {
       locationCode: zone.location_code,
-      startMouseX:  e.clientX,
-      startMouseY:  e.clientY,
-      startPosX:    localPositions[zone.location_code]?.x ?? parseFloat(String(zone.position_x ?? placedCoords[zone.location_code]?.x ?? 0)),
-      startPosY:    localPositions[zone.location_code]?.y ?? parseFloat(String(zone.position_y ?? placedCoords[zone.location_code]?.y ?? 0)),
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPosX:
+        localPositionsRef.current[zone.location_code]?.x
+        ?? parseFloat(String(zone.position_x ?? placedCoords[zone.location_code]?.x ?? 0)),
+      startPosY:
+        localPositionsRef.current[zone.location_code]?.y
+        ?? parseFloat(String(zone.position_y ?? placedCoords[zone.location_code]?.y ?? 0)),
+      groupStartPositions,
     };
   }
 
-  // FP-06: marquee selection removed — it only ever selected a single
-  // zone regardless of drag area (see prior mouseup comment: "Multi-select:
-  // for now select first hit — group select in future sprint"). Canvas
-  // is pan-only now; clicking a zone directly still selects it via
-  // onRackMouseDown, unaffected by this change.
   function onCanvasMouseDown(e: React.MouseEvent) {
     if (dragRef.current) return;
-    setSelected(null);
+    if (mode === 'pointer') {
+      setSelected(new Set());
+      return;
+    }
+    if (mode === 'marquee') {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const next: MarqueeState = {
+        startX: e.clientX - rect.left,
+        startY: e.clientY - rect.top,
+        currentX: e.clientX - rect.left,
+        currentY: e.clientY - rect.top,
+        shiftKey: e.shiftKey,
+        baseSelection: selectableCodes(selectedRef.current, positionedZonesRef.current),
+      };
+      marqueeRef.current = next;
+      setMarquee(next);
+      return;
+    }
     panRef.current = {
       startMouseX:  e.clientX,
       startMouseY:  e.clientY,
@@ -1186,6 +1487,31 @@ export function CanvasEditor({
         const d    = dragRef.current;
         const dxM  = (e.clientX - d.startMouseX) / (SCALE * zoom);
         const dyM  = (e.clientY - d.startMouseY) / (SCALE * zoom);
+
+        // C2a: multi-selection group transform preview.
+        // Every selected member receives exactly the same delta, preserving
+        // relative spacing. Persistence is intentionally deferred to C2b.
+        if (d.groupStartPositions && Object.keys(d.groupStartPositions).length > 1) {
+          const { dx: groupDx, dy: groupDy } = clampGroupDelta(
+            d.groupStartPositions,
+            dxM,
+            dyM,
+          );
+
+          setAlignGuides({ x: null, y: null });
+          setLocalPositions((current) => {
+            const next = { ...current };
+            for (const [code, start] of Object.entries(d.groupStartPositions!)) {
+              next[code] = {
+                x: snapV(start.x + groupDx),
+                y: snapV(start.y + groupDy),
+              };
+            }
+            return next;
+          });
+          return;
+        }
+
         const rawX = snapV(Math.max(0, d.startPosX + dxM));
         const rawY = snapV(Math.max(0, d.startPosY + dyM));
         const zone = positionedZonesRef.current.find(z => z.location_code === d.locationCode);
@@ -1212,7 +1538,18 @@ export function CanvasEditor({
         setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
         return;
       }
-      // FP-06: marquee-update branch removed along with marquee feature.
+      if (marqueeRef.current) {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const next = {
+          ...marqueeRef.current,
+          currentX: e.clientX - rect.left,
+          currentY: e.clientY - rect.top,
+        };
+        marqueeRef.current = next;
+        setMarquee(next);
+        return;
+      }
       // Pan — FP-05: clamped so the floor plan can't be dragged fully off-screen
       if (panRef.current) {
         const p = panRef.current;
@@ -1241,7 +1578,65 @@ export function CanvasEditor({
         return;
       }
       if (dragRef.current) {
-        const d     = dragRef.current;
+        const d = dragRef.current;
+
+        // C2b — persist the complete transform through one transactional
+        // backend operation. Never degrade to N independent zone PATCHes.
+        if (d.groupStartPositions && Object.keys(d.groupStartPositions).length > 1) {
+          const starts = d.groupStartPositions;
+
+          const positions = Object.entries(starts).map(([code, start]) => {
+            const local = localPositionsRef.current[code] ?? start;
+
+            return {
+              location_code: code,
+              position_x: local.x,
+              position_y: local.y,
+            };
+          });
+
+          // Clear the gesture before awaiting so a second mouse-up cannot
+          // submit the same transform while the network request is pending.
+          dragRef.current = null;
+          setAlignGuides({ x: null, y: null });
+
+          if (!onUpdateZonePositions) {
+            // The module may be embedded without a persistence callback.
+            // In that case preserve the previous safe C2a behavior.
+            setLocalPositions((current) => {
+              const next = { ...current };
+              for (const [code, start] of Object.entries(starts)) {
+                next[code] = { ...start };
+              }
+              return next;
+            });
+            return;
+          }
+
+          const codes = Object.keys(starts);
+          for (const code of codes) savingRef.current.add(code);
+
+          try {
+            await onUpdateZonePositions(positions);
+            setLastSaved(new Date());
+          } catch {
+            // HTTP/cache rollback happens in the page mutation; Canvas owns
+            // its own local drag geometry and must roll that back as well.
+            setLocalPositions((current) => {
+              const next = { ...current };
+              for (const [code, start] of Object.entries(starts)) {
+                next[code] = { ...start };
+              }
+              return next;
+            });
+          } finally {
+            for (const code of codes) savingRef.current.delete(code);
+          }
+
+          // Selection intentionally stays active after success or failure.
+          return;
+        }
+
         const local = localPositionsRef.current[d.locationCode];
         if (local && onUpdateZone && !savingRef.current.has(d.locationCode)) {
           // Final clamp before persist — guards against any residual overlap from rapid drag
@@ -1261,7 +1656,37 @@ export function CanvasEditor({
       // branch fired above — avoids a stale guide line lingering after
       // the drag stops.
       setAlignGuides({ x: null, y: null });
-      // FP-06: marquee-resolution block removed along with marquee feature.
+      if (marqueeRef.current) {
+        const selectionRect = marqueeRef.current;
+        const left = Math.min(selectionRect.startX, selectionRect.currentX);
+        const right = Math.max(selectionRect.startX, selectionRect.currentX);
+        const top = Math.min(selectionRect.startY, selectionRect.currentY);
+        const bottom = Math.max(selectionRect.startY, selectionRect.currentY);
+        const hits = positionedZonesRef.current.filter((zone) => {
+          if (!isSelectableZone(zone) || zone.position_x == null || zone.position_y == null) return false;
+          const localPosition = localPositionsRef.current[zone.location_code];
+          const localSize = localSizesRef.current[zone.location_code];
+          const zoneLeft = offsetRef.current.x + (localPosition?.x ?? Number(zone.position_x)) * SCALE * zoomRef.current;
+          const zoneTop = offsetRef.current.y + (localPosition?.y ?? Number(zone.position_y)) * SCALE * zoomRef.current;
+          const zoneRight = zoneLeft + (localSize?.w ?? Number(zone.width ?? 1)) * SCALE * zoomRef.current;
+          const zoneBottom = zoneTop + (localSize?.h ?? Number(zone.depth ?? 0.8)) * SCALE * zoomRef.current;
+          return left <= zoneRight && right >= zoneLeft && top <= zoneBottom && bottom >= zoneTop;
+        });
+        const next = selectionRect.shiftKey
+          ? selectableCodes(selectionRect.baseSelection, positionedZonesRef.current)
+          : new Set<string>();
+        for (const zone of hits) {
+          if (selectionRect.shiftKey && next.has(zone.location_code)) next.delete(zone.location_code);
+          else next.add(zone.location_code);
+        }
+        setSelected(selectableCodes(next, positionedZonesRef.current));
+        marqueeRef.current = null;
+        setMarquee(null);
+
+        // Marquee is a transient selection gesture. Once selection finishes,
+        // return to Pointer so the user can immediately drag the group.
+        setMode('pointer');
+      }
       panRef.current = null;
     }
     // Native wheel listener on SVG — { passive: false } required to call preventDefault()
@@ -1284,7 +1709,7 @@ export function CanvasEditor({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup',   onMouseUp);
       };
-  }, [zoom, localPositions, localSizes, onUpdateZone]);
+  }, [zoom, localPositions, localSizes, onUpdateZone, onUpdateZonePositions]);
 
   // onWheel is registered as a native listener in useEffect (passive: false required)
   const canvasW = toSvg(CANVAS_W);
@@ -1337,15 +1762,34 @@ export function CanvasEditor({
               View in 3D
             </Box>
           )}
-          {/* FP-06: Pan/Select mode toggle removed — Canvas is pan-only
-              now that marquee selection is gone. */}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={mode}
+              aria-label="Canvas interaction mode"
+              onChange={(_, nextMode: CanvasMode | null) => {
+                if (!nextMode) return;
+                dragRef.current = null;
+                panRef.current = null;
+                resizeRef.current = null;
+                marqueeRef.current = null;
+                setMarquee(null);
+                setAlignGuides({ x: null, y: null });
+                setMode(nextMode);
+              }}
+              sx={{ height: 24, mr: 0.5, '& .MuiToggleButton-root': { px: 0.75, py: 0, gap: 0.4, fontSize: 9, lineHeight: 1, textTransform: 'none' } }}
+            >
+              <ToggleButton value="pointer" aria-label="Pointer mode"><MousePointer2 size={11} />Pointer</ToggleButton>
+              <ToggleButton value="marquee" aria-label="Marquee mode"><BoxSelect size={11} />Marquee</ToggleButton>
+              <ToggleButton value="pan" aria-label="Pan mode"><Hand size={11} />Pan</ToggleButton>
+            </ToggleButtonGroup>
             <Button
               size="small"
               variant={floorSettingsOpen ? 'contained' : 'outlined'}
               startIcon={<Settings2 size={12} />}
               disabled={!warehouseRoot}
-              onClick={() => { setSelected(null); setFloorSettingsOpen(true); }}
+              onClick={() => { setSelected(new Set()); setFloorSettingsOpen(true); }}
               sx={{ height: 22, minWidth: 0, px: 1, fontSize: 9, textTransform: 'none', '& .MuiButton-startIcon': { mr: 0.5 } }}
             >
               Floor settings
@@ -1380,7 +1824,7 @@ export function CanvasEditor({
             <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               <svg ref={svgRef} width="100%" height="100%"
                 data-testid="floor-planning-canvas"
-                style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
+                style={{ cursor: mode === 'pan' ? 'grab' : mode === 'marquee' ? 'crosshair' : 'default', userSelect: 'none', display: 'block' }}
                 onMouseDown={onCanvasMouseDown}>
                 <g data-testid="floor-plan-viewport" transform={`translate(${offset.x},${offset.y})`}>
                   <defs>
@@ -1408,7 +1852,7 @@ export function CanvasEditor({
                       : (zone.zone_type ?? 'storage');
                     const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
                     const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-                    const isSelected = selected === zone.location_code;
+                    const isSelected = selected.has(zone.location_code);
                     const isDragging = dragRef.current?.locationCode === zone.location_code;
                     const isWarehouse = zone.type === 'warehouse';
                     const HANDLE = 6;
@@ -1419,7 +1863,7 @@ export function CanvasEditor({
                         data-zone-type={zone.type}
                         onMouseDown={isWarehouse ? undefined : (e) => onRackMouseDown(e, zone)}
                         opacity={isWarehouse ? 0.55 : undefined}
-                        style={{ cursor: isWarehouse ? 'default' : isDragging ? 'grabbing' : 'grab', pointerEvents: isWarehouse ? 'none' : undefined }}>
+                        style={{ cursor: isWarehouse ? 'default' : mode === 'pan' ? 'grab' : mode === 'marquee' ? 'default' : isDragging ? 'grabbing' : 'grab', pointerEvents: isWarehouse ? 'none' : undefined }}>
                         {isSelected && !isWarehouse && (
                           <rect x="-2" y="-2" width={pw + 4} height={ph + 4} rx="5"
                             fill="none" stroke="var(--accent)" strokeWidth="2" opacity="0.5" strokeDasharray="4 2" />
@@ -1467,7 +1911,7 @@ export function CanvasEditor({
                           </text>
                         )}
                         {/* Resize handles — selected zone only */}
-                        {isSelected && !isWarehouse && (<>
+                        {isSelected && selected.size === 1 && !isWarehouse && (<>
                           <rect x={pw - HANDLE / 2} y={ph / 2 - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ew-resize' }}
                             onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; }} />
@@ -1482,10 +1926,22 @@ export function CanvasEditor({
                     );
                   })}
                 </g>
-              {/* FP-11: alignment guide lines — rendered outside the transform
-                  group in screen coords (same reasoning FP-06's marquee rect
-                  used), so offset.x/y must be added manually since toSvg()
-                  only applies zoom, not pan translation. */}
+                {marquee && (
+                  <rect
+                    data-testid="selection-marquee"
+                    x={Math.min(marquee.startX, marquee.currentX)}
+                    y={Math.min(marquee.startY, marquee.currentY)}
+                    width={Math.abs(marquee.currentX - marquee.startX)}
+                    height={Math.abs(marquee.currentY - marquee.startY)}
+                    fill="var(--accent-ghost)"
+                    stroke="var(--accent)"
+                    strokeWidth="1.5"
+                    strokeDasharray="5 3"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
+              {/* FP-11: alignment guide lines render outside the transformed
+                  group, so offset must be added to their local coordinates. */}
                 {alignGuides.x !== null && (
                   <line
                     x1={alignGuides.x + offset.x} y1={0}
@@ -1524,12 +1980,12 @@ export function CanvasEditor({
           </Typography>
           {positionedZones.filter(z => z.type === 'lane' || z.type === 'warehouse').map((z, i, arr) => (
             <Box key={z.location_code} sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <Box onClick={z.type === 'warehouse' ? undefined : () => { setFloorSettingsOpen(false); setSelected(z.location_code); }}
+              <Box onClick={z.type === 'warehouse' ? undefined : () => { setFloorSettingsOpen(false); setSelected(selectableCodes([z.location_code], positionedZones)); }}
                 sx={{ px: 1, py: 0.25, borderRadius: 0.75, cursor: z.type === 'warehouse' ? 'default' : 'pointer', fontSize: 10, fontFamily: 'monospace',
                   opacity: z.type === 'warehouse' ? 0.55 : 1,
-                  fontWeight: selected === z.location_code ? 700 : 400,
-                  color: selected === z.location_code ? 'var(--accent)' : 'var(--ink-3)',
-                  bgcolor: selected === z.location_code ? 'var(--accent-ghost)' : 'transparent',
+                  fontWeight: selected.has(z.location_code) ? 700 : 400,
+                  color: selected.has(z.location_code) ? 'var(--accent)' : 'var(--ink-3)',
+                  bgcolor: selected.has(z.location_code) ? 'var(--accent-ghost)' : 'transparent',
                   '&:hover': { color: 'var(--accent)' } }}>
                 {z.location_code}
               </Box>
@@ -1542,8 +1998,10 @@ export function CanvasEditor({
       {/* RIGHT — inspector */}
       {floorSettingsOpen && warehouseRoot ? (
         <FloorSettingsPanel root={warehouseRoot} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
+      ) : selectedZones.length > 1 ? (
+        <BulkSelectionPanel zones={selectedZones} onClear={() => setSelected(new Set())} />
       ) : selectedZone ? (
-        <RackInspector zone={selectedZone} onClose={() => setSelected(null)}
+        <RackInspector zone={selectedZone} onClose={() => setSelected(new Set())}
           onUpdateZone={onUpdateZone}
           onDeleteZone={onDeleteZone}
           onPrintBarcode={onPrintBarcode}

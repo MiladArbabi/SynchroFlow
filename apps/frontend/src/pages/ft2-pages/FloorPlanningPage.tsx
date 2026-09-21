@@ -13,7 +13,8 @@ import { useBinStats } from '../floor-planning/useBinStats';
 import { 
   useCreateZone, 
   useDeleteZone, 
-  useUpdateZone, 
+  useUpdateZone,
+  useUpdateZonePositions,
   useUpdateProductBarcode, 
   usePrintBarcode,
   useBatchPrintBarcodes,
@@ -55,6 +56,7 @@ export default function FloorPlanningPage() {
   const createZone    = useCreateZone();
   const deleteZone    = useDeleteZone();
   const updateZone           = useUpdateZone();
+  const updateZonePositions  = useUpdateZonePositions();
   const updateProductBarcode = useUpdateProductBarcode();
   const batchPrintProductBarcodes = useBatchPrintProductBarcodes();
 
@@ -114,6 +116,7 @@ export default function FloorPlanningPage() {
         onDeleteZone={(code) => deleteZone.mutateAsync(code)}
         onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
         onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
+        onUpdateZonePositions={(positions) => updateZonePositions.mutateAsync(positions)}
         onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
         // SHOP-REVIEW-BARCODE-PRINT-05: PDF → optional QZ dispatch → discriminated
         // outcome. No window.open here; the Barcodes UI renders the result and
