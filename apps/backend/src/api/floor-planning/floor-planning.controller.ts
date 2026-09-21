@@ -897,7 +897,7 @@ export async function httpDuplicateZones(req: Request, res: Response) {
       }
 
       const sourceByCode = new Map(
-        sources.map((row: { location_code: string }) => [row.location_code, row]),
+        sources.map((row) => [row.location_code, row] as const),
       );
 
       const allCodes = await trx('warehouse_locations')
