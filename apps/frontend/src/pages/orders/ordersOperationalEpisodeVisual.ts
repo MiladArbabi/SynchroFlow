@@ -1,6 +1,11 @@
 // apps/frontend/src/pages/orders/ordersOperationalEpisodeVisual.ts
 //
 // SLICE D2A — Orders-owned pure VISUAL projection.
+// SLICE D3A — added the just_resolved -> healthy/'✓' mapping (see
+// resolveVisual() below). The production endpoint does not emit
+// just_resolved yet (see useOperationalEpisodes.ts's D3A note), so this
+// branch only activates once an internal caller opts into D0's
+// justResolved policy — D2A's attention/verifying behavior is unchanged.
 //
 // D1 (ordersOperationalEpisodeProjection.ts) already answers "what episodes
 // exist for this order, and which one dominates?" — canonical semantic
@@ -24,7 +29,7 @@ import type {
 } from '@lasyncro/shared/contracts/operational-episode';
 import type { OrdersOperationalEpisodeAggregate } from './ordersOperationalEpisodeProjection';
 
-export type OrdersOperationalGlyph = '!' | '◌';
+export type OrdersOperationalGlyph = '!' | '◌' | '✓';
 
 export interface OrdersOperationalVisual {
   readonly orderId: string;
@@ -38,24 +43,26 @@ export interface OrdersOperationalVisual {
 /**
  * LOCKED V1 MAPPING — canonical dominant.lifecycle -> Orders visual state.
  *
- *   attention  -> critical, '!'  — unresolved blocking problem needing action.
- *   verifying  -> active,   '◌'  — action already happened; canonical
- *                                  completion is pending and must remain
- *                                  visibly active but quieter than attention.
+ *   attention      -> critical, '!'  — unresolved blocking problem needing action.
+ *   verifying      -> active,   '◌'  — action already happened; canonical
+ *                                      completion is pending and must remain
+ *                                      visibly active but quieter than attention.
+ *   just_resolved  -> healthy,  '✓'  — canonical resolution truth (D3A:
+ *                                      order_constraints.resolved_at, via an
+ *                                      opt-in caller policy the production
+ *                                      endpoint does not yet supply).
  *
  * Deliberately NOT keyed on problem.domain, treatment, age, occurredAt,
  * money, or any frontend loading state — those never decide visual state
  * here. D1 already supplies severity='critical' for both V1 blocking
- * families; this module does not run a second severity algorithm.
+ * families; this module does not run a second severity algorithm. No
+ * spatial field or map attribution is read or produced here.
  *
- * just_resolved is a real member of the shared OperationalEpisodeLifecycle
- * union, but D0 does not expose it yet (V1 only returns 'attention' |
- * 'verifying'). The switch below is exhaustive over the FULL shared union
- * so a future D3 can add the just_resolved -> healthy/'✓' branch without
- * reshaping this function's signature — but it deliberately does not fake
- * that branch now. Any lifecycle this V1 read seam cannot yet produce
- * throws rather than silently falling back to a neutral state: an unknown
- * lifecycle must never read as a healthy/normal order.
+ * The switch is exhaustive over the FULL shared OperationalEpisodeLifecycle
+ * union. Any lifecycle value this function cannot recognize falls through
+ * the `default` branch and throws rather than silently reading as
+ * neutral/healthy — an unknown lifecycle must never look like a healthy
+ * order.
  */
 function resolveVisual(lifecycle: OperationalEpisodeLifecycle): {
   state: OperationalMapState;
@@ -67,9 +74,7 @@ function resolveVisual(lifecycle: OperationalEpisodeLifecycle): {
     case 'verifying':
       return { state: 'active', glyph: '◌' };
     case 'just_resolved':
-      throw new Error(
-        "[ORDERS_OPERATIONAL_VISUAL_UNSUPPORTED_LIFECYCLE] 'just_resolved' is not yet exposed by the D0 V1 episode read seam — this branch is reserved for D3, not silently mapped to a neutral state."
-      );
+      return { state: 'healthy', glyph: '✓' };
     default: {
       // Fail closed: an unrecognized lifecycle must never read as healthy/normal.
       const exhaustiveCheck: never = lifecycle;

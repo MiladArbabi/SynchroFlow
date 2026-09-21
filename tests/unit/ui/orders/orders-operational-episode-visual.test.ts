@@ -1,10 +1,13 @@
 // SLICE D2A — pure visual-projection contract: D1
 // OrdersOperationalEpisodeAggregate[] -> OrdersOperationalVisual[].
+// SLICE D3A — extends coverage to the just_resolved -> healthy/'✓' mapping.
 //
 // Fixtures are built via D1's own projectOrdersOperationalEpisodes()
 // (never hand-built shared OperationalEpisodeProjection objects), so these
-// tests prove the real D1 -> D2A composition, not an isolated D2A-only
-// shape.
+// tests prove the real D1 -> D2A/D3A composition, not an isolated D2A-only
+// shape. D1 forwards lifecycle verbatim with no restriction, so a
+// 'just_resolved' fixture item flows through it exactly like 'attention'/
+// 'verifying' already do.
 import { projectOrdersOperationalEpisodes } from '../../../../apps/frontend/src/pages/orders/ordersOperationalEpisodeProjection';
 import type { OperationalEpisodeItem } from '../../../../apps/frontend/src/pages/orders/useOperationalEpisodes';
 import { projectOrdersOperationalVisuals } from '../../../../apps/frontend/src/pages/orders/ordersOperationalEpisodeVisual';
@@ -196,5 +199,106 @@ describe('D2A-12 — no spatial/location data is manufactured', () => {
     for (const episode of visual.episodes) {
       expect(episode.spatialContext).toEqual([]);
     }
+  });
+});
+
+// ── D3A — just_resolved -> healthy + ✓ ──────────────────────────────────────
+
+describe('D3A-01 — just_resolved aggregate -> healthy + ✓', () => {
+  it('maps dominant.lifecycle=just_resolved to state=healthy, glyph=✓ (address family)', () => {
+    const aggregates = projectOrdersOperationalEpisodes([
+      addressItem({ lifecycle: 'just_resolved', occurredAt: '2026-09-21T09:00:00.000Z' }),
+    ]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+    expect(visual.state).toBe('healthy');
+    expect(visual.glyph).toBe('✓');
+  });
+
+  it('maps dominant.lifecycle=just_resolved to state=healthy, glyph=✓ (oversell family)', () => {
+    const aggregates = projectOrdersOperationalEpisodes([
+      oversellItem({ lifecycle: 'just_resolved', occurredAt: '2026-09-21T09:00:00.000Z' }),
+    ]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+    expect(visual.state).toBe('healthy');
+    expect(visual.glyph).toBe('✓');
+  });
+});
+
+describe('D3A-02 — exact dominant/actionTarget preserved for just_resolved', () => {
+  it('the visual dominant is the exact same D1 dominant object, actionTarget included, occurredAt preserved', () => {
+    const aggregates = projectOrdersOperationalEpisodes([
+      addressItem({ lifecycle: 'just_resolved', occurredAt: '2026-09-21T09:00:00.000Z' }),
+    ]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+
+    expect(visual.dominant).toBe(aggregates[0].dominant);
+    expect(visual.dominant.actionTarget).toEqual({
+      kind: 'entity',
+      entity: { kind: 'order', id: ORDER_1 },
+    });
+    expect(visual.dominant.occurredAt).toBe('2026-09-21T09:00:00.000Z');
+  });
+});
+
+describe('D3A-03 — no spatial data manufactured for just_resolved', () => {
+  it('carries no location-shaped fields and inherited episodes keep zero spatialContext', () => {
+    const aggregates = projectOrdersOperationalEpisodes([
+      addressItem({ lifecycle: 'just_resolved' }),
+      oversellItem({ lifecycle: 'just_resolved', targetId: VARIANT_B }),
+    ]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+
+    const visualKeys = Object.keys(visual);
+    for (const forbidden of [
+      'locationCode',
+      'location',
+      'bin',
+      'station',
+      'occupancy',
+      'coordinates',
+      'operationalStateByLocation',
+    ]) {
+      expect(visualKeys).not.toContain(forbidden);
+    }
+    for (const episode of visual.episodes) {
+      expect(episode.spatialContext).toEqual([]);
+    }
+  });
+});
+
+describe('D3A-04 — input not mutated for just_resolved', () => {
+  it('leaves a frozen D1 aggregate array/episodes untouched', () => {
+    const aggregates = projectOrdersOperationalEpisodes([
+      addressItem({ lifecycle: 'just_resolved' }),
+    ]);
+    const frozenAggregates = Object.freeze(
+      aggregates.map((a) =>
+        Object.freeze({
+          orderId: a.orderId,
+          episodes: Object.freeze(a.episodes.slice()),
+          dominant: a.dominant,
+        })
+      )
+    );
+
+    expect(() => projectOrdersOperationalVisuals(frozenAggregates)).not.toThrow();
+    expect(frozenAggregates[0].episodes).toHaveLength(1);
+    expect(frozenAggregates[0].dominant.lifecycle).toBe('just_resolved');
+  });
+});
+
+describe('D3A-05 — attention/verifying behavior unchanged after adding just_resolved support', () => {
+  it('attention still reads critical/!', () => {
+    const aggregates = projectOrdersOperationalEpisodes([addressItem({ lifecycle: 'attention' })]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+    expect(visual.state).toBe('critical');
+    expect(visual.glyph).toBe('!');
+  });
+
+  it('verifying still reads active/◌', () => {
+    const aggregates = projectOrdersOperationalEpisodes([oversellItem({ lifecycle: 'verifying' })]);
+    const [visual] = projectOrdersOperationalVisuals(aggregates);
+    expect(visual.state).toBe('active');
+    expect(visual.glyph).toBe('◌');
   });
 });

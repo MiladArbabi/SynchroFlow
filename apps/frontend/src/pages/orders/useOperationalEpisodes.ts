@@ -1,17 +1,26 @@
 // apps/frontend/src/pages/orders/useOperationalEpisodes.ts
 //
 // SLICE D1 — typed read hook for GET /api/v1/operations/episodes.
+// SLICE D3A — widened lifecycle union to match the backend contract.
 //
 // This hook performs NO lifecycle inference. lifecycle ('attention' |
-// 'verifying') is canonical backend truth — composed from order_constraints
-// and readCurrentWaitingV1Records() by
+// 'verifying' | 'just_resolved') is canonical backend truth — composed from
+// order_constraints and readCurrentWaitingV1Records() by
 // apps/backend/src/services/operations/operationalEpisodeRead.service.ts
-// (SLICE D0) — and is returned here exactly as the backend sent it.
+// (SLICE D0, widened in D3A) — and is returned here exactly as the backend
+// sent it.
+//
+// D3A NOTE: the production endpoint (operations.controller.ts) is
+// untouched in D3A and never supplies the backend's opt-in `justResolved`
+// policy, so GET /api/v1/operations/episodes still only ever returns
+// 'attention' | 'verifying' today. The union is widened here now so the
+// frontend contract does not need a second migration when D3B ratifies a
+// recovery window and the endpoint begins emitting 'just_resolved'.
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
-export type OperationalEpisodeLifecycleV1 = 'attention' | 'verifying';
+export type OperationalEpisodeLifecycleV1 = 'attention' | 'verifying' | 'just_resolved';
 
 export type OperationalEpisodeTreatmentV1 = 'address_correction' | 'inventory_reorder_intent';
 

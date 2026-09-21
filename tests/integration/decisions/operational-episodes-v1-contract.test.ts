@@ -1,4 +1,16 @@
 /**
+ * SLICE D3A EXTENSION — POLICY-CAPABLE JUST_RESOLVED DERIVATION.
+ *
+ * Adds coverage for readCurrentOperationalEpisodesV1()'s opt-in
+ * `justResolved: { now, windowMs }` policy (D3A). GET
+ * /api/v1/operations/episodes (operations.controller.ts) is UNTOUCHED in
+ * D3A and never supplies this policy — production HTTP behavior stays
+ * exactly the D0 attention/verifying-only contract proved by the D0-*
+ * suites below. The D3A-* suites further down call
+ * readCurrentOperationalEpisodesV1() directly (bypassing the HTTP layer
+ * entirely) since there is no ratified recovery-window policy for any
+ * endpoint to supply yet — that arrives in D3B.
+ *
  * SLICE D0 — CANONICAL OPERATIONAL EPISODE READ SEAM V1 CONTRACT.
  *
  * GET /api/v1/operations/episodes composes two existing canonical truths
@@ -51,6 +63,11 @@ import { projectOrderConstraints } from 'api-src/projections/orderConstraintProj
 import { revalidateOrdersForReceivedVariants } from 'api-src/services/wms/receiveJob.service';
 import { createUndeliveredReturnJob } from 'api-src/services/returns/returnJobs.service';
 import type { ConstraintEvaluationResult } from 'api-src/services/constraints/constraint.types';
+import {
+  readCurrentOperationalEpisodesV1,
+  type JustResolvedPolicy,
+  type OperationalEpisodeV1Record,
+} from 'api-src/services/operations/operationalEpisodeRead.service';
 import { withTenant, systemTransaction, setTenantContext } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { issueTestToken } from '../../unit/helpers/auth';
@@ -472,6 +489,30 @@ async function seedSupplier(shopId: number, name: string): Promise<number> {
 
 function episodeFor(body: { items?: any[] }, constraintId: string) {
   return (body.items ?? []).find((r: any) => r.constraintId === constraintId);
+}
+
+/** D3A — same lookup as episodeFor(), against the service's own Date-typed records (bypassing HTTP). */
+function episodeForRecord(records: OperationalEpisodeV1Record[], constraintId: string) {
+  return records.find((r) => r.constraintId === constraintId);
+}
+
+/**
+ * D3A — completes an order's shipping address by writing directly to the
+ * `orders` table (not order_constraints, so no projection-write-guard
+ * trigger applies) instead of through PATCH /shipping-address. Used only
+ * where a test needs the address genuinely complete WITHOUT the real route
+ * ever writing a decision_interventions row (D3A-14's "no intervention
+ * required" proof).
+ */
+async function completeOrderAddress(shopId: number, orderId: string) {
+  await withTenant(shopId, (trx) =>
+    trx('orders').where({ lasyncro_order_id: orderId }).update({
+      shipping_address1: '221B Baker Street',
+      shipping_city: 'London',
+      shipping_zip: 'NW1 6XE',
+      shipping_country_code: 'GB',
+    })
+  );
 }
 
 // ── D0-01 — address active, no intervention -> attention ───────────────────
@@ -903,4 +944,416 @@ describe('D0-14 — the endpoint returns no duplicate episode rows (item 14)', (
     const constraintIds = items.map((r: any) => r.constraintId);
     expect(new Set(constraintIds).size).toBe(constraintIds.length);
   }, 180_000);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// SLICE D3A — POLICY-CAPABLE JUST_RESOLVED DERIVATION
+// ═════════════════════════════════════════════════════════════════════════
+//
+// Every D3A-* test below calls readCurrentOperationalEpisodesV1() directly
+// (never through GET /api/v1/operations/episodes — operations.controller.ts
+// is untouched in D3A and supplies no policy). D3A-11/D3A-12 are the only
+// tests in this block using a direct order_constraints UPDATE, and only to
+// reproduce an incoherent state the real projection engine cannot itself
+// produce (mirroring D0-10's own established sentinel precedent) — every
+// other test resolves constraints through the real evaluator +
+// projectOrderConstraints path.
+
+// ── D3A-01/02 — no-policy behavior is byte-for-byte unchanged ──────────────
+
+describe('D3A-01 — existing attention behavior is unchanged when justResolved policy is absent (item 1)', () => {
+  it('an active customer constraint still reads attention via a direct no-policy service call', async () => {
+    const { shopId } = await provisionTenant('d3a-attention-nopolicy');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date());
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    const records = await readCurrentOperationalEpisodesV1({ shopId });
+    const record = episodeForRecord(records, constraint.constraint_id);
+    expect(record).toBeTruthy();
+    expect(record!.lifecycle).toBe('attention');
+    expect(record!.interventionId).toBeNull();
+  }, 180_000);
+});
+
+describe('D3A-02 — existing verifying behavior is unchanged when justResolved policy is absent (item 2)', () => {
+  it('an active oversell constraint with a pending intervention still reads verifying via a direct no-policy service call', async () => {
+    const { shopId, token } = await provisionTenant('d3a-verifying-nopolicy');
+    const catalogue = await seedCatalogue(shopId);
+    const supplierId = await seedSupplier(shopId, 'D3A Mills Ltd');
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date());
+    const constraint = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    const reorder = await postReorder(token, {
+      lasyncro_variant_id: catalogue.variantId,
+      supplier_id: supplierId,
+      qty_requested: 10,
+      source: 'alert',
+      originating_order_id: orderId,
+    });
+    expect(reorder.status).toBe(201);
+
+    const records = await readCurrentOperationalEpisodesV1({ shopId });
+    const record = episodeForRecord(records, constraint.constraint_id);
+    expect(record).toBeTruthy();
+    expect(record!.lifecycle).toBe('verifying');
+    expect(record!.interventionId).toBeTruthy();
+  }, 180_000);
+});
+
+// ── D3A-03 — resolved omitted without policy ────────────────────────────────
+
+describe('D3A-03 — a resolved constraint is omitted when justResolved policy is absent (item 3)', () => {
+  it('matches D0-08: no policy means resolved rows never appear', async () => {
+    const { shopId } = await provisionTenant('d3a-resolved-nopolicy');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date());
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    await materialiseCustomerConstraint(shopId, orderId, new Date(Date.now() + 1000));
+    const resolved = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    )!;
+    expect(resolved.is_active).toBe(false);
+
+    const records = await readCurrentOperationalEpisodesV1({ shopId });
+    expect(episodeForRecord(records, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-04/06/07 — address family just_resolved: lifecycle, occurredAt, episodeId
+
+describe('D3A-04 — a recently resolved address_correction episode reads just_resolved when policy is supplied (items 4, 6, 7)', () => {
+  it('lifecycle=just_resolved, occurredAt=canonical resolved_at, episodeId keyed to the ORIGINAL started_at, interventionId=null', async () => {
+    const { shopId } = await provisionTenant('d3a-address-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    const startedAt = new Date('2026-09-21T09:00:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, startedAt);
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    const resolvedAt = new Date('2026-09-21T09:05:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, resolvedAt);
+    const resolvedRow = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    )!;
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    const record = episodeForRecord(records, constraint.constraint_id);
+
+    expect(record).toBeTruthy();
+    expect(record!.lifecycle).toBe('just_resolved'); // item 4
+    expect(record!.interventionId).toBeNull();
+    // item 6 — occurredAt is the CANONICAL DB resolved_at, not the supplied anchor echoed back.
+    expect(record!.occurredAt.getTime()).toBe(
+      new Date(resolvedRow.resolved_at as unknown as string).getTime()
+    );
+    // item 7 — episodeId still keys off the constraint's ORIGINAL started_at.
+    expect(record!.episodeId).toBe(`${constraint.constraint_id}:${startedAt.toISOString()}`);
+    expect(record!.constraintStartedAt.getTime()).toBe(startedAt.getTime());
+  }, 180_000);
+});
+
+// ── D3A-05 — oversell family just_resolved ──────────────────────────────────
+
+describe('D3A-05 — a recently resolved inventory/oversell episode reads just_resolved when policy is supplied (item 5)', () => {
+  it('lifecycle=just_resolved, interventionId=null', async () => {
+    const { shopId } = await provisionTenant('d3a-inventory-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+    const startedAt = new Date('2026-09-21T09:00:00.000Z');
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, startedAt);
+    const constraint = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 10);
+    const resolvedAt = new Date('2026-09-21T09:05:00.000Z');
+    await materialiseInventoryConstraint(shopId, orderId, resolvedAt);
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    const record = episodeForRecord(records, constraint.constraint_id);
+
+    expect(record).toBeTruthy();
+    expect(record!.lifecycle).toBe('just_resolved');
+    expect(record!.interventionId).toBeNull();
+  }, 180_000);
+});
+
+// ── D3A-08 — resolution window boundary ─────────────────────────────────────
+
+describe('D3A-08 — resolution window is inclusive at the boundary and exclusive just outside it (item 8)', () => {
+  it('age === windowMs is included; age === windowMs + 1ms is omitted', async () => {
+    const { shopId } = await provisionTenant('d3a-window-boundary');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    const resolvedAt = new Date('2026-09-21T09:05:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, resolvedAt);
+
+    const windowMs = 5 * 60 * 1000;
+
+    const includedRecords = await readCurrentOperationalEpisodesV1({
+      shopId,
+      justResolved: { now: new Date(resolvedAt.getTime() + windowMs), windowMs },
+    });
+    expect(episodeForRecord(includedRecords, constraint.constraint_id)).toBeTruthy();
+
+    const omittedRecords = await readCurrentOperationalEpisodesV1({
+      shopId,
+      justResolved: { now: new Date(resolvedAt.getTime() + windowMs + 1), windowMs },
+    });
+    expect(episodeForRecord(omittedRecords, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-09 — future resolved_at ─────────────────────────────────────────────
+
+describe('D3A-09 — a future resolved_at (relative to policy.now) is omitted (item 9)', () => {
+  it('never emits just_resolved for a resolution that has not happened yet from policy.now\'s perspective', async () => {
+    const { shopId } = await provisionTenant('d3a-future-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    const futureResolvedAt = new Date('2026-09-21T10:00:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, futureResolvedAt);
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:30:00.000Z'), // before futureResolvedAt
+      windowMs: 24 * 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    expect(episodeForRecord(records, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-10 — inverted chronology ────────────────────────────────────────────
+
+describe('D3A-10 — resolved_at before started_at is an impossible chronology and is omitted (item 10)', () => {
+  it('fails closed rather than projecting an inverted-chronology just_resolved episode', async () => {
+    const { shopId } = await provisionTenant('d3a-inverted-chronology');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    const startedAt = new Date('2026-09-21T09:00:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, startedAt);
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await completeOrderAddress(shopId, orderId);
+    // Real projection engine, deliberately supplied an anchor EARLIER than
+    // the constraint's own started_at — an impossible chronology the real
+    // lifecycle cannot organically produce (resolution anchors always
+    // advance forward in the real flow), but one the read seam must still
+    // fail closed against.
+    const invertedResolvedAt = new Date('2026-09-21T08:00:00.000Z');
+    await materialiseCustomerConstraint(shopId, orderId, invertedResolvedAt);
+
+    const resolvedRow = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    )!;
+    expect(resolvedRow.is_active).toBe(false);
+    expect(new Date(resolvedRow.resolved_at as unknown as string).getTime()).toBeLessThan(
+      startedAt.getTime()
+    );
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 24 * 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    expect(episodeForRecord(records, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-11 — inactive, no resolved_at (sentinel) ────────────────────────────
+
+describe('D3A-11 — an inactive constraint with no resolved_at is omitted (item 11)', () => {
+  it('a malformed inactive-with-no-resolved_at row never emits just_resolved (sentinel: the real engine always stamps resolved_at on resolution)', async () => {
+    const { shopId } = await provisionTenant('d3a-inactive-no-resolved');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await withTenant(shopId, async (trx) => {
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await trx('order_constraints')
+        .where({ constraint_id: constraint.constraint_id })
+        .update({ is_active: false, resolved_at: null });
+    });
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 24 * 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    expect(episodeForRecord(records, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-12 — active + resolved_at incoherence (sentinel) ────────────────────
+
+describe('D3A-12 — an active constraint carrying resolved_at is canonically incoherent and is omitted (item 12)', () => {
+  it('is dropped entirely rather than projected as attention/verifying, via the same SET LOCAL sentinel precedent', async () => {
+    const { shopId } = await provisionTenant('d3a-active-incoherent');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 1, { completeAddress: false });
+    await materialiseCustomerConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    await withTenant(shopId, async (trx) => {
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await trx('order_constraints')
+        .where({ constraint_id: constraint.constraint_id })
+        .update({ resolved_at: new Date('2026-09-21T09:05:00.000Z') }); // is_active stays true
+    });
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 24 * 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    expect(episodeForRecord(records, constraint.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-13 — malformed inventory target, still omitted under the widened read
+
+describe('D3A-13 — a malformed inventory/oversell row with no target_id is still omitted under the widened justResolved read (item 13)', () => {
+  it('fails closed the same way it does with no policy (D0-10)', async () => {
+    const { shopId } = await provisionTenant('d3a-malformed-target-policy');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+
+    await materialiseMalformedInventoryConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const malformed = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.is_active && c.constraint_type === 'inventory' && c.target_id === null
+    );
+    expect(malformed).toBeTruthy();
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 24 * 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    expect(episodeForRecord(records, malformed!.constraint_id)).toBeUndefined();
+  }, 180_000);
+});
+
+// ── D3A-14 — no intervention required ───────────────────────────────────────
+
+describe('D3A-14 — no intervention is required for a canonical resolution to read just_resolved (item 14)', () => {
+  it('inventory resolves purely from stock arriving — no reorder request is ever created', async () => {
+    const { shopId } = await provisionTenant('d3a-no-intervention-needed');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+    const startedAt = new Date('2026-09-21T09:00:00.000Z');
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, startedAt);
+    const constraint = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    // No postReorder call anywhere in this test — resolution below is
+    // purely a canonical stock-availability fact.
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 10);
+    const resolvedAt = new Date('2026-09-21T09:05:00.000Z');
+    await materialiseInventoryConstraint(shopId, orderId, resolvedAt);
+
+    const interventions = await withTenant(shopId, (trx) =>
+      trx('decision_interventions').where({ shop_id: shopId, constraint_id: constraint.constraint_id })
+    );
+    expect(interventions).toHaveLength(0);
+
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:10:00.000Z'),
+      windowMs: 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+    const record = episodeForRecord(records, constraint.constraint_id);
+    expect(record).toBeTruthy();
+    expect(record!.lifecycle).toBe('just_resolved');
+    expect(record!.interventionId).toBeNull();
+  }, 180_000);
+});
+
+// ── D3A-15 — re-raise never emits a stale previous resolution ──────────────
+
+describe('D3A-15 — a re-raised CURRENT active episode never emits a stale previous resolution (item 15)', () => {
+  it('the fresh active episode reads attention, not just_resolved, despite a genuine earlier resolution on the same constraint_id', async () => {
+    const { shopId } = await provisionTenant('d3a-reraise-no-stale-resolution');
+    const catalogue = await seedCatalogue(shopId);
+    const { orderId } = await seedOrder(shopId, catalogue, 10);
+
+    // Episode A: active, then genuinely resolved.
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date('2026-09-21T09:00:00.000Z'));
+    const episodeA = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 10);
+    await materialiseInventoryConstraint(shopId, orderId, new Date('2026-09-21T09:05:00.000Z'));
+    const resolvedA = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === episodeA.constraint_id
+    )!;
+    expect(resolvedA.is_active).toBe(false);
+
+    // Episode B: SAME deterministic constraint_id, re-raised active again.
+    await setStock(shopId, catalogue.variantId, PICK_BIN, 0);
+    await materialiseInventoryConstraint(shopId, orderId, new Date('2026-09-21T09:10:00.000Z'));
+    const episodeB = await activeInventoryConstraint(shopId, orderId, catalogue.variantId);
+    expect(episodeB.constraint_id).toBe(episodeA.constraint_id);
+
+    // Window wide enough that episode A's resolution (09:05) would still be
+    // "recent" relative to 09:15 if it were wrongly considered current.
+    const policy: JustResolvedPolicy = {
+      now: new Date('2026-09-21T09:15:00.000Z'),
+      windowMs: 60 * 60 * 1000,
+    };
+    const records = await readCurrentOperationalEpisodesV1({ shopId, justResolved: policy });
+
+    const matches = records.filter((r) => r.constraintId === episodeB.constraint_id);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].lifecycle).toBe('attention');
+    expect(matches[0].episodeId).not.toContain('09:05:00.000Z');
+  }, 180_000);
+});
+
+// ── D3A policy validation — programmer-invalid policy fails explicitly ─────
+
+describe('D3A — an invalid justResolved policy fails explicitly rather than inventing semantics', () => {
+  it('rejects an unparseable now Date', async () => {
+    const { shopId } = await provisionTenant('d3a-invalid-policy-date');
+    await expect(
+      readCurrentOperationalEpisodesV1({
+        shopId,
+        justResolved: { now: new Date('not-a-real-date'), windowMs: 1000 },
+      })
+    ).rejects.toThrow(/OPERATIONAL_EPISODE_JUST_RESOLVED_POLICY_INVALID/);
+  }, 60_000);
+
+  it('rejects a non-positive windowMs', async () => {
+    const { shopId } = await provisionTenant('d3a-invalid-policy-window');
+    await expect(
+      readCurrentOperationalEpisodesV1({
+        shopId,
+        justResolved: { now: new Date(), windowMs: 0 },
+      })
+    ).rejects.toThrow(/OPERATIONAL_EPISODE_JUST_RESOLVED_POLICY_INVALID/);
+  }, 60_000);
 });
