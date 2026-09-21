@@ -154,7 +154,18 @@ beforeEach(() => {
   mockUseConstrainedOrders.mockReturnValue({ data: { data: [], pagination: { page: 1, limit: 50 } } });
 
   mockUseOperationalEpisodes.mockReset();
-  mockUseOperationalEpisodes.mockReturnValue({ data: operationalEpisodeItems() });
+  // D2C: OrdersFT2Page now reads `.isSuccess` before projecting — this
+  // default represents an ordinary RESOLVED query (the scenario every
+  // pre-D2C test here assumes), matching the real react-query v5 shape.
+  // The D2C-RED tests below override this per-case with their own explicit
+  // isPending/isSuccess/isError values.
+  mockUseOperationalEpisodes.mockReturnValue({
+    data: operationalEpisodeItems(),
+    isPending: false,
+    isSuccess: true,
+    isError: false,
+    status: 'success',
+  });
 
   jest.spyOn(operationalEpisodeProjectionModule, 'projectOrdersOperationalEpisodes');
   jest.spyOn(operationalEpisodeVisualModule, 'projectOrdersOperationalVisuals');
@@ -188,5 +199,54 @@ describe('OrdersFT2Page — D2B operational-episode shell wiring (item 7)', () =
     expect(mockOrdersModuleFT2).toHaveBeenCalled();
     const props = mockOrdersModuleFT2.mock.calls[0][0];
     expect(props.mapContent).toBeTruthy();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// D2C-RED — CANONICAL OPERATIONAL LIFECYCLE READINESS (shell-level contracts)
+// ═════════════════════════════════════════════════════════════════════════
+//
+// `operationalEpisodesQuery.data ?? []` collapses PENDING, ERROR, and
+// SUCCESSFUL-EMPTY into the identical [] projection, which lets a supported
+// V1 legacy constraint briefly reappear as actionable while canonical
+// lifecycle truth is still unresolved. These two contracts prove the shell
+// must distinguish "unresolved" (null) from "resolved, empty" ([]) using
+// the REAL react-query v5 status fields already present on
+// useOperationalEpisodes()'s UseQueryResult — `isPending` / `isSuccess` —
+// rather than inventing a new state. No production change has been made
+// yet; OrdersFT2Page still unconditionally does `data ?? []`, so both tests
+// below are expected to fail RED.
+describe('OrdersFT2Page — D2C canonical operational lifecycle readiness (items 1, 2)', () => {
+  it('item 1 — SHELL PENDING: isPending with data undefined must pass operationalEpisodeVisuals={null}, not []', () => {
+    mockUseOperationalEpisodes.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isSuccess: false,
+      isError: false,
+      status: 'pending',
+    });
+
+    renderWithProviders(<OrdersFT2Page />);
+
+    expect(mockOrdersModuleFT2).toHaveBeenCalled();
+    const props = mockOrdersModuleFT2.mock.calls[0][0];
+    expect(props.operationalEpisodeVisuals).toBeNull();
+  });
+
+  it('item 2 — SHELL SUCCESS EMPTY: isSuccess with data=[] must pass operationalEpisodeVisuals=[], distinguishable from unresolved', () => {
+    mockUseOperationalEpisodes.mockReturnValue({
+      data: [],
+      isPending: false,
+      isSuccess: true,
+      isError: false,
+      status: 'success',
+    });
+
+    renderWithProviders(<OrdersFT2Page />);
+
+    expect(mockOrdersModuleFT2).toHaveBeenCalled();
+    const props = mockOrdersModuleFT2.mock.calls[0][0];
+    expect(props.operationalEpisodeVisuals).not.toBeNull();
+    expect(props.operationalEpisodeVisuals).toEqual([]);
   });
 });

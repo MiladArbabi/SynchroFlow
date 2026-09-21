@@ -78,11 +78,19 @@ export default function OrdersFT2Page() {
   // just_resolved), presented as NON-SPATIAL context in OrdersModuleFT2's
   // Live Intelligence rail only. D1 projection -> D2A visual, no second
   // projection/adapter here.
+  //
+  // D2C — SHELL READINESS: `data ?? []` alone cannot distinguish "query
+  // hasn't resolved yet" from "resolved, no current episodes" — both would
+  // otherwise collapse to the same `[]`. Only project on isSuccess;
+  // pending/error stay `null` (canonical lifecycle UNRESOLVED) rather than
+  // silently reading as "confirmed clear". No new clock/readiness state is
+  // introduced — this reads react-query's own existing result shape.
   const operationalEpisodesQuery = useOperationalEpisodes();
-  const operationalEpisodeAggregates = projectOrdersOperationalEpisodes(
-    operationalEpisodesQuery.data ?? []
-  );
-  const operationalEpisodeVisuals = projectOrdersOperationalVisuals(operationalEpisodeAggregates);
+  const operationalEpisodeVisuals = operationalEpisodesQuery.isSuccess
+    ? projectOrdersOperationalVisuals(
+        projectOrdersOperationalEpisodes(operationalEpisodesQuery.data ?? [])
+      )
+    : null;
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
   const bulkSetPriority = useBulkSetPriority();
