@@ -318,6 +318,8 @@ export type WmsModuleFT2Props = {
     receive_job_id: string;
     status: string;
     assigned_operator_id: number | null;
+    /** GH-1143 — assignee identity for another-operator's management card. */
+    assigned_operator_name?: string | null;
     started_at?: string | null;
     closed_at?: string | null;
     supplier_name: string;
@@ -328,6 +330,20 @@ export type WmsModuleFT2Props = {
   }>;
   /** Persists Receive session identity in the URL for refresh recovery. */
   onReceiveSessionEnter?: (jobId: string) => void;
+  /**
+   * GH-1143 RECEIVE-REASSIGN-UI-01 — owner/admin advisory dispatch gate,
+   * same pattern as canAssignStow/canReassignCount. Backend re-validates
+   * pending/unstarted state on the assignment PATCH regardless of this
+   * prop's value.
+   */
+  canReassignReceive?: boolean;
+  onFetchReceiveAssignees?: () => Promise<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>;
+  onReassignReceiveJob?: (jobId: string, targetOperatorId: number) => Promise<void>;
   /** True when the count routes returned 403 — Core tier required. */
   recountLocked?: boolean;
   onRecountUpgrade?: () => void;
@@ -776,6 +792,138 @@ const StowTaskCard = memo(function StowTaskCard({
   );
 });
 
+export type WmsOpenReceiveJob = {
+  receive_job_id: string;
+  status: string;
+  assigned_operator_id: number | null;
+  assigned_operator_name?: string | null;
+  started_at?: string | null;
+  closed_at?: string | null;
+  supplier_name: string;
+  po_id: string;
+  po_number?: number | null;
+  total_units: number;
+  total_variants: number;
+};
+
+/**
+ * RECEIVE WORK CARD
+ * -----------------
+ * GH-1143 RECEIVE-REASSIGN-UI-01 — own assigned work keeps the existing
+ * Open/Resume execution CTA unchanged. A pending/unstarted job assigned to
+ * another operator (visible only when canReassignReceive, via the
+ * visibility projection in WmsModuleFT2Inner) gets no execution CTA at all
+ * — only a contextual ⋮ → Reassign… management affordance, mirroring
+ * STOW-LIFECYCLE-02's StowTaskCard menu.
+ */
+const ReceiveWorkCard = memo(function ReceiveWorkCard({
+  job,
+  isOwnJob,
+  onOpen,
+  onReassignRequest,
+}: {
+  job: WmsOpenReceiveJob;
+  isOwnJob: boolean;
+  onOpen: (jobId: string) => void;
+  onReassignRequest?: (job: WmsOpenReceiveJob) => void;
+}) {
+  const started = job.status === 'in_progress' || Boolean(job.started_at);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+
+  return (
+    <Box
+      data-testid={`receive-work-card-${job.receive_job_id}`}
+      sx={{
+        border: '1px solid var(--rule)',
+        borderRadius: '10px',
+        bgcolor: 'var(--surface)',
+        px: 2,
+        py: 1.5,
+        mb: 1,
+        '&:last-child': { mb: 0 },
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+        }}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+            {job.supplier_name}
+          </Typography>
+
+          <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)' }}>
+            {job.po_number == null ? 'PO reference unavailable' : `PO-${job.po_number}`}
+            {' · '}
+            {job.total_variants} {job.total_variants === 1 ? 'product' : 'products'}
+            {' · '}
+            {job.total_units} {job.total_units === 1 ? 'unit' : 'units'}
+          </Typography>
+
+          <Typography sx={{ mt: 0.75, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)' }}>
+            {isOwnJob
+              ? (started ? 'Assigned to you · In progress' : 'Assigned to you · Not started')
+              : `Assigned to ${job.assigned_operator_name ?? 'another operator'} · Not started`}
+          </Typography>
+
+          <Typography sx={{ mt: 0.25, fontSize: 11.5, color: 'var(--ink-4)' }}>
+            {isOwnJob
+              ? (started ? 'Continue receiving shipment' : 'Review shipment and claim Receive')
+              : 'Pending — manage assignment'}
+          </Typography>
+        </Box>
+
+        {isOwnJob ? (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => onOpen(job.receive_job_id)}
+            sx={{
+              flexShrink: 0,
+              borderColor: 'var(--rule)',
+              color: 'var(--accent)',
+              borderRadius: '6px',
+              fontWeight: 600,
+            }}
+          >
+            {started ? 'Resume receive' : 'Open receive'}
+          </Button>
+        ) : (
+          <>
+            <IconButton
+              size="small"
+              aria-label="Receive job options"
+              data-testid={`receive-job-menu-${job.receive_job_id}`}
+              onClick={(e) => setMenuAnchor(e.currentTarget)}
+              sx={{ flexShrink: 0 }}
+            >
+              <MoreVertical size={16} />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={() => setMenuAnchor(null)}
+            >
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onReassignRequest?.(job);
+                }}
+              >
+                Reassign…
+              </MenuItem>
+            </Menu>
+          </>
+        )}
+      </Box>
+    </Box>
+  );
+});
+
 export interface PackFreeScanLineItem {
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
@@ -1089,6 +1237,9 @@ function WmsModuleFT2Inner({
   openReceiveJobCount,
   openReceiveJobs,
   onReceiveSessionEnter,
+  canReassignReceive,
+  onFetchReceiveAssignees,
+  onReassignReceiveJob,
   recountLocked,
   recountTasks,
   onRecountUpgrade,
@@ -1252,6 +1403,73 @@ function WmsModuleFT2Inner({
       }
       // Advisory-only UI action (see J) — the card re-renders from the
       // refreshed list either way; no separate error surface needed here.
+    }
+  };
+
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — owner/admin reassignment of a
+  // pending/unstarted Receive job assigned to another operator. Mirrors the
+  // Stow/Recount reassign dialogs above; no "Pool"/unassign action exists
+  // for Receive (contract: no Receive Pool/unassigned semantics).
+  const [receiveReassignJob, setReceiveReassignJob] = useState<WmsOpenReceiveJob | null>(null);
+  const [receiveReassignTargets, setReceiveReassignTargets] = useState<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>([]);
+  const [receiveReassignLoading, setReceiveReassignLoading] = useState(false);
+  const [receiveReassignError, setReceiveReassignError] = useState<string | null>(null);
+  const [receiveReassignTargetId, setReceiveReassignTargetId] = useState<number | ''>('');
+  const [receiveReassignSubmitting, setReceiveReassignSubmitting] = useState(false);
+
+  const openReceiveReassignDialog = async (job: WmsOpenReceiveJob) => {
+    setReceiveReassignJob(job);
+    // Current assignee represented/preselected, when present.
+    setReceiveReassignTargetId(job.assigned_operator_id ?? '');
+    setReceiveReassignError(null);
+    setReceiveReassignLoading(true);
+    try {
+      const targets = (await onFetchReceiveAssignees?.()) ?? [];
+      setReceiveReassignTargets(targets);
+    } catch (error) {
+      setReceiveReassignError(
+        error instanceof Error ? error.message : 'Failed to load team operators.'
+      );
+    } finally {
+      setReceiveReassignLoading(false);
+    }
+  };
+
+  const closeReceiveReassignDialog = () => {
+    setReceiveReassignJob(null);
+    setReceiveReassignTargetId('');
+    setReceiveReassignError(null);
+  };
+
+  const submitReceiveReassign = async () => {
+    if (!receiveReassignJob || receiveReassignTargetId === '') return;
+    setReceiveReassignSubmitting(true);
+    setReceiveReassignError(null);
+    try {
+      await onReassignReceiveJob?.(receiveReassignJob.receive_job_id, receiveReassignTargetId);
+      onRefresh();
+      closeReceiveReassignDialog();
+    } catch (error: any) {
+      // A 409 means the job was claimed/started concurrently — no stale
+      // reassignment UI, refresh so the card reflects real current state.
+      const status = error?.response?.status;
+      if (status === 409) {
+        setReceiveReassignError(
+          'This Receive job has already started and can no longer be reassigned.'
+        );
+        onRefresh();
+      } else {
+        setReceiveReassignError(
+          error instanceof Error ? error.message : 'Reassignment failed. Try again.'
+        );
+      }
+    } finally {
+      setReceiveReassignSubmitting(false);
     }
   };
 
@@ -1441,12 +1659,29 @@ function WmsModuleFT2Inner({
   // Derive cards and tally from this exact same projection so the two cannot
   // drift. Owner/admin broader API visibility does not broaden floor work:
   // this surface still shows only work assigned to the authenticated operator.
-  const receiveWorkJobs = (openReceiveJobs ?? []).filter(
+  const ownReceiveWorkJobs = (openReceiveJobs ?? []).filter(
     (job) =>
       job.assigned_operator_id === currentUserId &&
       (job.status === 'pending' || job.status === 'in_progress') &&
       !job.closed_at
   );
+
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — owner/admin additionally sees PENDING/
+  // UNSTARTED work assigned to someone else, solely for reassignment
+  // management. Never in_progress/started, closed, or cancelled work — no
+  // takeover path (mirrors STOW-LIFECYCLE-02's canAssignStow visibility).
+  const otherPendingReceiveJobsForManagement = canReassignReceive
+    ? (openReceiveJobs ?? []).filter(
+        (job) =>
+          job.assigned_operator_id !== null &&
+          job.assigned_operator_id !== currentUserId &&
+          job.status === 'pending' &&
+          !job.started_at &&
+          !job.closed_at
+      )
+    : [];
+
+  const receiveWorkJobs = [...ownReceiveWorkJobs, ...otherPendingReceiveJobsForManagement];
 
   // STOW-LIFECYCLE-02 (Part E) — an operator sees only unassigned pending
   // work, work assigned to them, and work they themselves claimed.
@@ -2246,6 +2481,101 @@ function WmsModuleFT2Inner({
         </DialogActions>
       </Dialog>
 
+      {/* GH-1143 RECEIVE-REASSIGN-UI-01 — Reassign Receive. Owner/admin only
+          (advisory gate; the backend assignment PATCH re-validates
+          pending/unstarted state atomically). No "Pool"/unassign action —
+          Receive reassignment always targets a specific operator. */}
+      <Dialog
+        open={receiveReassignJob !== null}
+        onClose={receiveReassignSubmitting ? undefined : closeReceiveReassignDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Reassign Receive</DialogTitle>
+
+        <DialogContent>
+          {receiveReassignJob && (
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 1.5 }}>
+              {receiveReassignJob.supplier_name}
+            </Typography>
+          )}
+
+          {receiveReassignError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {receiveReassignError}
+            </Alert>
+          )}
+
+          <Box role="radiogroup" aria-label="Reassign Receive to" sx={{ display: 'grid', gap: 0.5 }}>
+            {receiveReassignLoading && (
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                Loading operators…
+              </Typography>
+            )}
+            {receiveReassignTargets.map((operator) => {
+              const name =
+                `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                `Operator ${operator.user_id}`;
+              const isSelected = receiveReassignTargetId === operator.user_id;
+
+              return (
+                <Box
+                  key={operator.user_id}
+                  role="radio"
+                  aria-checked={isSelected}
+                  tabIndex={0}
+                  onClick={() => setReceiveReassignTargetId(operator.user_id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setReceiveReassignTargetId(operator.user_id);
+                    }
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    px: 1,
+                    py: 0.75,
+                    border: '1px solid',
+                    borderColor: isSelected ? 'var(--accent)' : 'var(--rule)',
+                    borderRadius: 1,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Typography sx={{ fontSize: 13 }}>{name}</Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={closeReceiveReassignDialog}
+            disabled={receiveReassignSubmitting}
+            sx={{ color: 'var(--accent)' }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => void submitReceiveReassign()}
+            disabled={receiveReassignTargetId === '' || receiveReassignSubmitting}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            {receiveReassignSubmitting ? 'Reassigning…' : 'Reassign'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* LOADING */}
       {(isLoading || loadingSession) && (
         <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
@@ -2498,112 +2828,15 @@ function WmsModuleFT2Inner({
                     onDismiss={receiveAssignedWorkSpotlight.dismiss}
                   />
                 )}
-              {receiveWorkJobs.map((job) => {
-                const started =
-                  job.status === 'in_progress' ||
-                  Boolean(job.started_at);
-
-                return (
-                  <Box
-                    key={job.receive_job_id}
-                    data-testid={`receive-work-card-${job.receive_job_id}`}
-                    sx={{
-                      border: '1px solid var(--rule)',
-                      borderRadius: '10px',
-                      bgcolor: 'var(--surface)',
-                      px: 2,
-                      py: 1.5,
-                      mb: 1,
-                      '&:last-child': { mb: 0 },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                        gap: 2,
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography
-                          sx={{
-                            fontSize: 14,
-                            fontWeight: 600,
-                            color: 'var(--ink)',
-                          }}
-                        >
-                          {job.supplier_name}
-                        </Typography>
-
-                        <Typography
-                          sx={{
-                            mt: 0.25,
-                            fontSize: 12,
-                            color: 'var(--ink-3)',
-                          }}
-                        >
-                          {job.po_number == null ? 'PO reference unavailable' : `PO-${job.po_number}`}
-                          {' · '}
-                          {job.total_variants}{' '}
-                          {job.total_variants === 1
-                            ? 'product'
-                            : 'products'}
-                          {' · '}
-                          {job.total_units}{' '}
-                          {job.total_units === 1 ? 'unit' : 'units'}
-                        </Typography>
-
-                        <Typography
-                          sx={{
-                            mt: 0.75,
-                            fontSize: 11.5,
-                            fontWeight: 500,
-                            color: 'var(--ink-3)',
-                          }}
-                        >
-                          {started
-                            ? 'Assigned to you · In progress'
-                            : 'Assigned to you · Not started'}
-                        </Typography>
-
-                        <Typography
-                          sx={{
-                            mt: 0.25,
-                            fontSize: 11.5,
-                            color: 'var(--ink-4)',
-                          }}
-                        >
-                          {started
-                            ? 'Continue receiving shipment'
-                            : 'Review shipment and claim Receive'}
-                        </Typography>
-                      </Box>
-
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() =>
-                          void enterReceiveSession(
-                            job.receive_job_id
-                          )
-                        }
-                        sx={{
-                          flexShrink: 0,
-                          borderColor: 'var(--rule)',
-                          color: 'var(--accent)',
-                          borderRadius: '6px',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {started
-                          ? 'Resume receive'
-                          : 'Open receive'}
-                      </Button>
-                    </Box>
-                  </Box>
-                );
-              })}
+              {receiveWorkJobs.map((job) => (
+                <ReceiveWorkCard
+                  key={job.receive_job_id}
+                  job={job}
+                  isOwnJob={job.assigned_operator_id === currentUserId}
+                  onOpen={(jobId) => void enterReceiveSession(jobId)}
+                  onReassignRequest={(j) => void openReceiveReassignDialog(j)}
+                />
+              ))}
             </WorkQueueFamily>
 
       {/* STOW TASKS */}

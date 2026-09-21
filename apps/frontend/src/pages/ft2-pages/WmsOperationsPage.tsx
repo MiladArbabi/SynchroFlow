@@ -134,6 +134,9 @@ export default function WmsOperationsPage() {
   // STOW-LIFECYCLE-02: advisory UI gate only — backend
   // requireAction('wms:stow:assign') is the real authority (see J).
   const canAssignStow = userRole === 'owner' || userRole === 'admin';
+  // GH-1143 RECEIVE-REASSIGN-UI-01: advisory UI gate only, same pattern as
+  // canAssignStow — the backend assignment PATCH remains authoritative.
+  const canReassignReceive = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
     await axiosInstance.post(url, body);
@@ -529,6 +532,24 @@ export default function WmsOperationsPage() {
     });
   }, []);
 
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — canonical Receive assignee source,
+  // same endpoint SuppliersPortalPage already uses for the initial Assign
+  // Receive dialog (apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx).
+  const handleFetchReceiveAssignees = useCallback(async () => {
+    const { data } = await axiosInstance.get('/api/v1/operators/receive-assignees');
+    return data.operators ?? [];
+  }, []);
+
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — owner/admin reassignment of a
+  // pending/unstarted Receive job. Reuses the existing assignment PATCH;
+  // the backend re-validates pending/unstarted state atomically regardless
+  // of what this UI gate renders.
+  const handleReassignReceiveJob = useCallback(async (jobId: string, operatorId: number) => {
+    await axiosInstance.patch(`/api/v1/suppliers/receive-jobs/${jobId}/assignment`, {
+      assigned_operator_id: operatorId,
+    });
+  }, []);
+
   // ── COUNTING CALLBACKS ──────────────────────────────────
 
   const handleFetchCountingLines = useCallback(
@@ -741,6 +762,9 @@ export default function WmsOperationsPage() {
           { replace: true }
         )
       }
+      canReassignReceive={canReassignReceive}
+      onFetchReceiveAssignees={handleFetchReceiveAssignees}
+      onReassignReceiveJob={handleReassignReceiveJob}
       recountLocked={recountLocked}
       recountTasks={recountTasks}
       onRecountUpgrade={() => setRecountUpgradeOpen(true)}

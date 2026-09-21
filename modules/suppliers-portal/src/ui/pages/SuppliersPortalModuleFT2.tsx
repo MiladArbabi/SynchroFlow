@@ -378,6 +378,16 @@ export type SuppliersPortalPageProps = {
     poId: string,
     input: { assigned_operator_id: number }
   ) => Promise<{ receive_job_id: string }>;
+  /**
+   * GH-1143 RECEIVE-REASSIGN-UI-01 — reassigns an EXISTING pending/unstarted
+   * Receive job to a different operator. Distinct from onCreateReceiveJob:
+   * this is the explicit owner/admin management path and must never be
+   * confused with initial dispatch/creation.
+   */
+  onReassignReceiveJob?: (
+    jobId: string,
+    targetOperatorId: number
+  ) => Promise<void>;
   /** Candidates already filtered by the app wrapper for Receive assignment. */
   teamAssignableOperators?: ReceiveAssignableOperator[];
   /** Explicit authenticated identity. Never infer "Me" from array order. */
@@ -1216,6 +1226,7 @@ function PoAccordion({
   onFetchLineItems,
   onUpdatePoStatus,
   onCreateReceiveJob,
+  onReassignReceiveJob,
   teamAssignableOperators,
   currentUserId,
   autoOpenReceive = false,
@@ -1228,6 +1239,8 @@ function PoAccordion({
     poId: string,
     input: { assigned_operator_id: number }
   ) => Promise<{ receive_job_id: string }>;
+  /** GH-1143 RECEIVE-REASSIGN-UI-01 — reassigns an EXISTING pending/unstarted job. */
+  onReassignReceiveJob?: (jobId: string, targetOperatorId: number) => Promise<void>;
   teamAssignableOperators: ReceiveAssignableOperator[];
   currentUserId: number | null;
   autoOpenReceive?: boolean;
@@ -1252,6 +1265,10 @@ function PoAccordion({
     useState<string | null>(null);
   const [receiveAssignmentConfirmation, setReceiveAssignmentConfirmation] =
     useState<string | null>(null);
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — the same dialog serves two distinct
+  // states: initial assignment (create) vs reassignment of an existing
+  // pending/unstarted job. Never confused with each other (see J).
+  const [reassignReceiveMode, setReassignReceiveMode] = useState(false);
 
   // §Gap2: load line items if not yet fetched, then open preview modal
   const handleOpenSendPreview = async () => {
@@ -1276,11 +1293,24 @@ function PoAccordion({
    * an assignee first. Claim remains an explicit action on the Receive Brief.
    */
   const handleReceive = useCallback(() => {
+    setReassignReceiveMode(false);
     setSelectedReceiveOperatorId(null);
     setReceiveDispatchError(null);
     setReceiveAssignmentConfirmation(null);
     setAssignReceiveOpen(true);
   }, []);
+
+  /**
+   * GH-1143 RECEIVE-REASSIGN-UI-01 — explicit reassignment of an EXISTING
+   * pending/unstarted Receive job. Current assignee preselected/represented.
+   */
+  const handleReassignReceive = useCallback(() => {
+    setReassignReceiveMode(true);
+    setSelectedReceiveOperatorId(po.receive_assigned_operator_id ?? null);
+    setReceiveDispatchError(null);
+    setReceiveAssignmentConfirmation(null);
+    setAssignReceiveOpen(true);
+  }, [po.receive_assigned_operator_id]);
 
   const autoReceiveOpenedRef = useRef(false);
 
@@ -1302,6 +1332,7 @@ function PoAccordion({
     setAssignReceiveOpen(false);
     setSelectedReceiveOperatorId(null);
     setReceiveDispatchError(null);
+    setReassignReceiveMode(false);
   };
 
   const handleAssignReceive = async () => {
@@ -1311,6 +1342,21 @@ function PoAccordion({
     setReceiveDispatchError(null);
 
     try {
+      if (reassignReceiveMode) {
+        // GH-1143 — reassigns the EXISTING job. Never routes through
+        // onCreateReceiveJob's create/legacy-recovery path.
+        if (!po.receive_job_id) {
+          throw new Error('Receive job reference is missing.');
+        }
+
+        await onReassignReceiveJob?.(po.receive_job_id, selectedReceiveOperatorId);
+
+        setAssignReceiveOpen(false);
+        setSelectedReceiveOperatorId(null);
+        setReassignReceiveMode(false);
+        return;
+      }
+
       const { receive_job_id } = await onCreateReceiveJob(po.id, {
         assigned_operator_id: selectedReceiveOperatorId,
       });
@@ -1338,7 +1384,9 @@ function PoAccordion({
       setReceiveDispatchError(
         err instanceof Error
           ? err.message
-          : 'Failed to assign Receive work. Please try again.'
+          : reassignReceiveMode
+            ? 'Failed to reassign Receive work. Please try again.'
+            : 'Failed to assign Receive work. Please try again.'
       );
     } finally {
       setAssigningReceive(false);
@@ -1352,6 +1400,16 @@ function PoAccordion({
 
   const isReceiveEligible =
     po.status === 'shipped' || po.status === 'partially_received';
+
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — an existing PENDING/UNSTARTED Receive
+  // job already assigned to someone gets explicit "Reassign Receive"
+  // instead of the initial "Receive via WMS" → Assign flow. Once the job
+  // has started (or closed/cancelled), receive_status !== 'pending' and no
+  // Reassign affordance is offered — no takeover path (see J).
+  const canReassignExistingReceive =
+    po.receive_job_id != null &&
+    po.receive_status === 'pending' &&
+    po.receive_assigned_operator_id != null;
 
   const receiveAssignmentLabel = isReceiveEligible
     ? po.receive_job_id && po.receive_assigned_operator_id != null
@@ -1516,8 +1574,21 @@ function PoAccordion({
                 Mark as arrived
               </Button>
             )}
-            {/* Arrived → start receive session in WMS */}
-            {(po.status === 'shipped' || po.status === 'partially_received') && (
+            {/* Arrived, already assigned pending Receive → manage reassignment */}
+            {canReassignExistingReceive && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                startIcon={<CheckCircle size={14} />}
+                onClick={() => void handleReassignReceive()}
+                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+              >
+                Reassign Receive
+              </Button>
+            )}
+            {/* Arrived, no existing pending assignment → start receive session in WMS */}
+            {!canReassignExistingReceive && (po.status === 'shipped' || po.status === 'partially_received') && (
               <Button
                 size="small"
                 variant="contained"
@@ -1549,7 +1620,7 @@ function PoAccordion({
           fullWidth
         >
           <DialogTitle id="assign-receive-title">
-            Assign Receive
+            {reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive'}
           </DialogTitle>
 
           <DialogContent>
@@ -1706,7 +1777,9 @@ function PoAccordion({
               }
               onClick={() => void handleAssignReceive()}
             >
-              {assigningReceive ? 'Assigning…' : 'Assign Receive'}
+              {assigningReceive
+                ? (reassignReceiveMode ? 'Reassigning…' : 'Assigning…')
+                : (reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive')}
             </Button>
           </DialogActions>
         </Dialog>
@@ -1888,7 +1961,7 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
 function PurchasingPosView({
   data, isLoading, isError, onRefresh,
   onFetchLineItems, onUpdatePoStatus, onCreateSupplier, onCreatePo,
-  onCreateReceiveJob, onSearchVariants, autoOpenCreatePo = false,
+  onCreateReceiveJob, onReassignReceiveJob, onSearchVariants, autoOpenCreatePo = false,
   autoOpenReceivePoId, prefilledLineItem,
   teamAssignableOperators = [], currentUserId = null,
   spotlights,
@@ -1982,6 +2055,7 @@ function PurchasingPosView({
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
                   onCreateReceiveJob={onCreateReceiveJob}
+                  onReassignReceiveJob={onReassignReceiveJob}
                   teamAssignableOperators={teamAssignableOperators}
                   currentUserId={currentUserId}
                   autoOpenReceive={autoOpenReceivePoId === po.id}
@@ -2013,6 +2087,7 @@ function PurchasingPosView({
                   onFetchLineItems={onFetchLineItems}
                   onUpdatePoStatus={onUpdatePoStatus}
                   onCreateReceiveJob={onCreateReceiveJob}
+                  onReassignReceiveJob={onReassignReceiveJob}
                   teamAssignableOperators={teamAssignableOperators}
                   currentUserId={currentUserId}
                 />
