@@ -13,7 +13,9 @@ import {
   httpGetBinStats,
   httpGetVariantBins,
   httpCreateZone,
+  httpDuplicateZones,
   httpDeleteZone,
+  httpDeleteZones,
   httpUpdateZone,
   httpUpdateZonePositions,
   httpPrintBarcode,
@@ -76,6 +78,24 @@ router.post(
   requireCapability('warehouse.floor_planning'),
   requireAction('floor-planning:write'),
   httpCreateZone
+);
+
+router.post(
+  '/zones/duplicate',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.floor_planning'),
+  requireAction('floor-planning:write'),
+  httpDuplicateZones
+);
+
+router.delete(
+  '/zones',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.floor_planning'),
+  requireAction('floor-planning:write'),
+  httpDeleteZones
 );
 
 router.patch(

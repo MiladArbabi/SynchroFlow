@@ -762,6 +762,369 @@ export async function httpCreateZone(req: Request, res: Response) {
 }
 
 
+type BulkActionError = Error & { statusCode?: number };
+
+function bulkActionError(message: string, statusCode: number): BulkActionError {
+  const err = new Error(message) as BulkActionError;
+  err.statusCode = statusCode;
+  return err;
+}
+
+function componentCodePrefix(type: string, zoneType: string | null): string | null {
+  if (type === 'lane' && zoneType === 'pick') return 'AISLE';
+  if (type !== 'bin') return null;
+
+  switch (zoneType) {
+    case 'pick': return 'PICK';
+    case 'pack': return 'PACK';
+    case 'receive': return 'RECEIVE';
+    case 'ship': return 'SHIP';
+    case 'problem': return 'PROBLEM';
+    case 'returns': return 'RETURNS';
+    case 'quarantine': return 'QUARANTINE';
+    case 'kitting': return 'MATERIALS';
+    default: return null;
+  }
+}
+
+function nextLocationCode(prefix: string, usedCodes: Set<string>): string {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${escaped}-(\\d+)$`, 'i');
+  const usedSuffixes = new Set<number>();
+
+  for (const code of usedCodes) {
+    const match = pattern.exec(code);
+    if (!match) continue;
+
+    const suffix = Number(match[1]);
+    if (Number.isSafeInteger(suffix) && suffix > 0) {
+      usedSuffixes.add(suffix);
+    }
+  }
+
+  let suffix = 1;
+  while (usedSuffixes.has(suffix)) suffix += 1;
+
+  const code = `${prefix}-${String(suffix).padStart(2, '0')}`;
+  usedCodes.add(code);
+  return code;
+}
+
+/**
+ * POST /api/v1/floor-planning/zones/duplicate
+ *
+ * Atomically duplicates a selected set using one common spatial translation.
+ * Codes are derived from persisted semantic type/zone_type, never source code.
+ */
+export async function httpDuplicateZones(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const locationCodes = req.body?.location_codes;
+  const offset = req.body?.offset;
+
+  if (!Array.isArray(locationCodes) || locationCodes.length === 0) {
+    return res.status(400).json({ error: 'location_codes must be a non-empty array' });
+  }
+
+  const normalizedCodes: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of locationCodes) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return res.status(400).json({ error: 'Invalid location_code' });
+    }
+
+    const code = value.trim();
+    if (seen.has(code)) {
+      return res.status(400).json({ error: 'Duplicate location_code in request' });
+    }
+
+    seen.add(code);
+    normalizedCodes.push(code);
+  }
+
+  if (
+    !offset
+    || typeof offset !== 'object'
+    || typeof offset.x !== 'number'
+    || !Number.isFinite(offset.x)
+    || typeof offset.y !== 'number'
+    || !Number.isFinite(offset.y)
+  ) {
+    return res.status(400).json({ error: 'offset.x and offset.y must be finite numbers' });
+  }
+
+  if (!meetsTier(req, 'growth')) {
+    return res.status(403).json({
+      error: 'TIER_INSUFFICIENT_FIELD',
+      required: 'growth',
+      current: req.user?.tier ?? 'starter',
+      fields: ['position_x', 'position_y'],
+    });
+  }
+
+  try {
+    const created = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const sources = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereIn('location_code', normalizedCodes)
+        .select(
+          'location_code',
+          'warehouse_id',
+          'type',
+          'parent_location_code',
+          'active',
+          'position_x',
+          'position_y',
+          'width',
+          'depth',
+          'orientation',
+          'rack_levels',
+          'zone_type',
+          'dock_face',
+        )
+        .forUpdate();
+
+      if (sources.length !== normalizedCodes.length) {
+        throw bulkActionError('Zone not found', 404);
+      }
+
+      if (sources.some((row: { type: string }) => row.type === 'warehouse')) {
+        throw bulkActionError('Warehouse root cannot be duplicated', 400);
+      }
+
+      const sourceByCode = new Map(
+        sources.map((row: { location_code: string }) => [row.location_code, row]),
+      );
+
+      const allCodes = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .select('location_code');
+
+      const usedCodes = new Set<string>(
+        allCodes.map((row: { location_code: string }) => row.location_code),
+      );
+
+      const now = new Date();
+      const result: Array<{
+        source_location_code: string;
+        location_code: string;
+      }> = [];
+
+      for (const sourceCode of normalizedCodes) {
+        const source = sourceByCode.get(sourceCode);
+        if (!source) throw bulkActionError('Zone not found', 404);
+
+        const prefix = componentCodePrefix(source.type, source.zone_type);
+        if (!prefix) {
+          throw bulkActionError(
+            `Unsupported component role for duplication: ${source.location_code}`,
+            400,
+          );
+        }
+
+        const locationCode = nextLocationCode(prefix, usedCodes);
+
+        await trx('warehouse_locations').insert({
+          shop_id: shopId,
+          warehouse_id: source.warehouse_id,
+          location_code: locationCode,
+          type: source.type,
+          parent_location_code: source.parent_location_code,
+          barcode: null,
+          active: source.active,
+          position_x:
+            source.position_x == null
+              ? null
+              : Number(source.position_x) + offset.x,
+          position_y:
+            source.position_y == null
+              ? null
+              : Number(source.position_y) + offset.y,
+          width: source.width,
+          depth: source.depth,
+          orientation: source.orientation ?? 0,
+          rack_levels: source.rack_levels,
+          zone_type: source.zone_type,
+          dock_face: source.dock_face,
+          created_at: now,
+          updated_at: now,
+        });
+
+        result.push({
+          source_location_code: source.location_code,
+          location_code: locationCode,
+        });
+      }
+
+      return result;
+    });
+
+    return res.status(201).json({
+      success: true,
+      created,
+    });
+  } catch (err: unknown) {
+    const statusCode =
+      err instanceof Error
+        ? (err as BulkActionError).statusCode
+        : undefined;
+
+    if (statusCode) {
+      return res.status(statusCode).json({
+        error: err instanceof Error ? err.message : 'Bulk duplicate failed',
+      });
+    }
+
+    console.error('[floor-planning] httpDuplicateZones failed', err);
+    return res.status(500).json({ error: 'Failed to duplicate zones' });
+  }
+}
+
+/**
+ * DELETE /api/v1/floor-planning/zones
+ *
+ * Atomically deletes a selected set after validating the complete set.
+ */
+export async function httpDeleteZones(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const locationCodes = req.body?.location_codes;
+
+  if (!Array.isArray(locationCodes) || locationCodes.length === 0) {
+    return res.status(400).json({ error: 'location_codes must be a non-empty array' });
+  }
+
+  const normalizedCodes: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of locationCodes) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return res.status(400).json({ error: 'Invalid location_code' });
+    }
+
+    const code = value.trim();
+    if (seen.has(code)) {
+      return res.status(400).json({ error: 'Duplicate location_code in request' });
+    }
+
+    seen.add(code);
+    normalizedCodes.push(code);
+  }
+
+  try {
+    const deleted = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const locations = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereIn('location_code', normalizedCodes)
+        .select('location_code', 'type', 'parent_location_code')
+        .forUpdate();
+
+      if (locations.length !== normalizedCodes.length) {
+        throw bulkActionError('Zone not found', 404);
+      }
+
+      if (locations.some((row: { type: string }) => row.type === 'warehouse')) {
+        throw bulkActionError(
+          'Cannot delete the warehouse root. Manage warehouses in Settings › Warehouse.',
+          409,
+        );
+      }
+
+      const stocked = await trx('inventory_truth')
+        .where({ shop_id: shopId })
+        .whereIn('location_code', normalizedCodes)
+        .where('on_hand_quantity', '>', 0)
+        .first();
+
+      if (stocked) {
+        throw bulkActionError(
+          'Cannot delete a location with stock. Move or adjust inventory first.',
+          409,
+        );
+      }
+
+      const externalChildren = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereIn('parent_location_code', normalizedCodes)
+        .whereNotIn('location_code', normalizedCodes)
+        .first('location_code', 'parent_location_code');
+
+      if (externalChildren) {
+        throw bulkActionError(
+          'Cannot delete a location with dependent components outside this selection.',
+          409,
+        );
+      }
+
+      // Delete deepest selected descendants first so the existing
+      // parent_location_code ON DELETE RESTRICT contract remains intact.
+      const remaining = new Map(
+        locations.map((row: {
+          location_code: string;
+          parent_location_code: string | null;
+        }) => [row.location_code, row]),
+      );
+
+      let deletedCount = 0;
+
+      while (remaining.size > 0) {
+        const leaves = [...remaining.values()].filter(
+          (candidate) =>
+            ![...remaining.values()].some(
+              (other) => other.parent_location_code === candidate.location_code,
+            ),
+        );
+
+        if (leaves.length === 0) {
+          throw bulkActionError('Invalid location hierarchy', 409);
+        }
+
+        const leafCodes = leaves.map((row) => row.location_code);
+
+        const count = await trx('warehouse_locations')
+          .where({ shop_id: shopId })
+          .whereIn('location_code', leafCodes)
+          .delete();
+
+        if (count !== leafCodes.length) {
+          throw bulkActionError('Zone not found', 404);
+        }
+
+        deletedCount += count;
+        for (const code of leafCodes) remaining.delete(code);
+      }
+
+      return deletedCount;
+    });
+
+    return res.json({
+      success: true,
+      deleted,
+    });
+  } catch (err: unknown) {
+    const statusCode =
+      err instanceof Error
+        ? (err as BulkActionError).statusCode
+        : undefined;
+
+    if (statusCode) {
+      return res.status(statusCode).json({
+        error: err instanceof Error ? err.message : 'Bulk delete failed',
+      });
+    }
+
+    console.error('[floor-planning] httpDeleteZones failed', err);
+    return res.status(500).json({ error: 'Failed to delete zones' });
+  }
+}
+
 /**
  * PATCH /api/v1/floor-planning/zones/positions
  * -------------------------------------------------
@@ -782,6 +1145,7 @@ export async function httpCreateZone(req: Request, res: Response) {
  * - duplicate / malformed entries are rejected before mutation;
  * - all updates commit together or roll back together.
  */
+
 export async function httpUpdateZonePositions(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });

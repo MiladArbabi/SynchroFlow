@@ -640,4 +640,182 @@ describe('CanvasEditor marquee and multi-selection', () => {
     expect(selectedOutline(container, 'BIN-01')).not.toBeInTheDocument();
     expect(selectedOutline(container, 'LANE-01')).not.toBeInTheDocument();
   });
+
+  it('shows bulk actions below Deselect all in the approved order', () => {
+    const { container } = render(
+      <CanvasEditor
+        zones={[warehouse, first, second]}
+        onDuplicateZones={jest.fn()}
+        onDeleteZones={jest.fn()}
+      />
+    );
+
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="BIN-01"]') as SVGGElement,
+    );
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="LANE-01"]') as SVGGElement,
+      { shiftKey: true },
+    );
+
+    const panel = screen.getByTestId('bulk-selection-panel');
+    const content = panel.textContent ?? '';
+
+    expect(content.indexOf('Deselect all')).toBeLessThan(
+      content.indexOf('Duplicate selected'),
+    );
+    expect(content.indexOf('Duplicate selected')).toBeLessThan(
+      content.indexOf('Delete selected'),
+    );
+  });
+
+  it('confirms duplicate selection through one atomic bulk callback', async () => {
+    const onDuplicateZones = jest.fn().mockResolvedValue({
+      success: true,
+      created: [
+        {
+          source_location_code: 'BIN-01',
+          location_code: 'PICK-02',
+        },
+        {
+          source_location_code: 'LANE-01',
+          location_code: 'AISLE-01',
+        },
+      ],
+    });
+
+    const { container } = render(
+      <CanvasEditor
+        zones={[warehouse, first, second]}
+        onDuplicateZones={onDuplicateZones}
+      />
+    );
+
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="BIN-01"]') as SVGGElement,
+    );
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="LANE-01"]') as SVGGElement,
+      { shiftKey: true },
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Duplicate selected' }),
+    );
+
+    expect(
+      screen.getByText('Duplicate 2 components?'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Duplicate' }),
+    );
+
+    await waitFor(() => {
+      expect(onDuplicateZones).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = onDuplicateZones.mock.calls[0][0];
+
+    expect(payload.location_codes).toEqual([
+      'BIN-01',
+      'LANE-01',
+    ]);
+    expect(payload.offset).toEqual({
+      x: expect.any(Number),
+      y: expect.any(Number),
+    });
+  });
+
+  it('confirms delete selection through one atomic destructive callback', async () => {
+    const onDeleteZones = jest.fn().mockResolvedValue({
+      success: true,
+      deleted: 2,
+    });
+
+    const { container } = render(
+      <CanvasEditor
+        zones={[warehouse, first, second]}
+        onDeleteZones={onDeleteZones}
+      />
+    );
+
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="BIN-01"]') as SVGGElement,
+    );
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="LANE-01"]') as SVGGElement,
+      { shiftKey: true },
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete selected' }),
+    );
+
+    expect(
+      screen.getByText('Delete 2 components?'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete' }),
+    );
+
+    await waitFor(() => {
+      expect(onDeleteZones).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onDeleteZones).toHaveBeenCalledWith([
+      'BIN-01',
+      'LANE-01',
+    ]);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId('bulk-selection-panel'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('preserves the complete selection when an atomic bulk action fails', async () => {
+    const onDeleteZones = jest.fn().mockRejectedValue(
+      new Error('Location contains stock'),
+    );
+
+    const { container } = render(
+      <CanvasEditor
+        zones={[warehouse, first, second]}
+        onDeleteZones={onDeleteZones}
+      />
+    );
+
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="BIN-01"]') as SVGGElement,
+    );
+    fireEvent.mouseDown(
+      container.querySelector('[data-zone-code="LANE-01"]') as SVGGElement,
+      { shiftKey: true },
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete selected' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete' }),
+    );
+
+    await waitFor(() => {
+      expect(onDeleteZones).toHaveBeenCalledTimes(1);
+    });
+
+    expect(
+      screen.getByTestId('bulk-selection-panel'),
+    ).toHaveTextContent('2 selected');
+
+    expect(selectedOutline(container, 'BIN-01')).toBeInTheDocument();
+    expect(selectedOutline(container, 'LANE-01')).toBeInTheDocument();
+    expect(
+      screen.getByText('Delete 2 components?'),
+    ).toBeInTheDocument();
+  });
+
 });

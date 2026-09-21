@@ -150,6 +150,66 @@ export function useUpdateZonePositions() {
   });
 }
 
+
+export interface DuplicateZonesPayload {
+  location_codes: string[];
+  offset: {
+    x: number;
+    y: number;
+  };
+}
+
+export interface DuplicateZonesResult {
+  success: true;
+  created: Array<{
+    source_location_code: string;
+    location_code: string;
+  }>;
+}
+
+export function useDuplicateZones() {
+  const qc = useQueryClient();
+  const { show } = useToast();
+
+  return useMutation({
+    mutationFn: (payload: DuplicateZonesPayload) =>
+      axiosInstance
+        .post('/api/v1/floor-planning/zones/duplicate', payload)
+        .then(r => r.data as DuplicateZonesResult),
+
+    onError: () => {
+      show('Failed to duplicate selected components.', 'error');
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}
+
+export function useDeleteZones() {
+  const qc = useQueryClient();
+  const { show } = useToast();
+
+  return useMutation({
+    mutationFn: (locationCodes: string[]) =>
+      axiosInstance
+        .delete('/api/v1/floor-planning/zones', {
+          data: { location_codes: locationCodes },
+        })
+        .then(r => r.data as { success: true; deleted: number }),
+
+    onError: () => {
+      show(
+        'Failed to delete selected components. Check for stock or dependent components.',
+        'error',
+      );
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}
+
 export function useDeleteZone() {
   const qc = useQueryClient();
   return useMutation({

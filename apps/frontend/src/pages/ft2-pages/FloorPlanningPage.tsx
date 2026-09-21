@@ -12,7 +12,9 @@ import { useBinLog } from '../floor-planning/useBinLog';
 import { useBinStats } from '../floor-planning/useBinStats';
 import { 
   useCreateZone, 
-  useDeleteZone, 
+  useDeleteZone,
+  useDeleteZones,
+  useDuplicateZones,
   useUpdateZone,
   useUpdateZonePositions,
   useUpdateProductBarcode, 
@@ -55,6 +57,8 @@ export default function FloorPlanningPage() {
   const { data: binStatsData } = useBinStats(selectedBin);
   const createZone    = useCreateZone();
   const deleteZone    = useDeleteZone();
+  const deleteZones    = useDeleteZones();
+  const duplicateZones = useDuplicateZones();
   const updateZone           = useUpdateZone();
   const updateZonePositions  = useUpdateZonePositions();
   const updateProductBarcode = useUpdateProductBarcode();
@@ -114,6 +118,8 @@ export default function FloorPlanningPage() {
         variantFocusBins={variantFocusBins.length > 0 ? variantFocusBins : undefined}
         onCreateZone={(payload) => createZone.mutateAsync(payload)}
         onDeleteZone={(code) => deleteZone.mutateAsync(code)}
+        onDeleteZones={(codes) => deleteZones.mutateAsync(codes)}
+        onDuplicateZones={(payload) => duplicateZones.mutateAsync(payload)}
         onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
         onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
         onUpdateZonePositions={(positions) => updateZonePositions.mutateAsync(positions)}

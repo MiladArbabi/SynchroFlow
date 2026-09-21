@@ -194,6 +194,20 @@ interface CanvasEditorProps {
     position_y: number;
   }>) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
+  onDeleteZones?: (locationCodes: string[]) => Promise<{
+    success: true;
+    deleted: number;
+  }>;
+  onDuplicateZones?: (payload: {
+    location_codes: string[];
+    offset: { x: number; y: number };
+  }) => Promise<{
+    success: true;
+    created: Array<{
+      source_location_code: string;
+      location_code: string;
+    }>;
+  }>;
   // FP-16 follow-up: mirrors the FloorPlanningModuleFT2 interface fix —
   // usePrintBarcode's mutationFn resolves the fetched label Blob
   // (responseType: 'blob'), not void. Usage at line 472 is fire-and-forget
@@ -462,7 +476,19 @@ function FloorSettingsPanel({ root, onClose, onUpdateZone }: {
   );
 }
 
-function BulkSelectionPanel({ zones, onClear }: { zones: WarehouseZone[]; onClear: () => void }) {
+function BulkSelectionPanel({
+  zones,
+  onClear,
+  onDuplicate,
+  onDelete,
+  pending,
+}: {
+  zones: WarehouseZone[];
+  onClear: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  pending: boolean;
+}) {
   const summary = [...zones.reduce((counts, zone) => {
     const role = zone.type === 'lane' || zone.type === 'shelf'
       ? zone.type
@@ -488,8 +514,35 @@ function BulkSelectionPanel({ zones, onClear }: { zones: WarehouseZone[]; onClea
             <Typography sx={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--ink-2)' }}>{count}</Typography>
           </Box>
         ))}
-        <Button size="small" variant="outlined" onClick={onClear} sx={{ mt: 0.75, textTransform: 'none', fontSize: 10 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={onClear}
+          disabled={pending}
+          sx={{ mt: 0.75, textTransform: 'none', fontSize: 10 }}
+        >
           Deselect all
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<Copy size={12} />}
+          onClick={onDuplicate}
+          disabled={pending}
+          sx={{ textTransform: 'none', fontSize: 10 }}
+        >
+          Duplicate selected
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          startIcon={<Trash2 size={12} />}
+          onClick={onDelete}
+          disabled={pending}
+          sx={{ textTransform: 'none', fontSize: 10 }}
+        >
+          Delete selected
         </Button>
       </Box>
     </Box>
@@ -845,7 +898,9 @@ export function CanvasEditor({
   zones, 
   onUpdateZone,
   onUpdateZonePositions,
-  onDeleteZone, 
+  onDeleteZone,
+  onDeleteZones,
+  onDuplicateZones,
   onCreateZone,
   onPrintBarcode,
   onViewIn3D,
@@ -858,6 +913,9 @@ export function CanvasEditor({
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [floorSettingsOpen, setFloorSettingsOpen] = useState(false);
   const [optimisticCreatedZones, setOptimisticCreatedZones] = useState<WarehouseZone[]>([]);
+  const [bulkDuplicateOpen, setBulkDuplicateOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkActionPending, setBulkActionPending] = useState(false);
   const [flipped, setFlipped]   = useState(false); // angle preset: standard vs mirrored
   const [localPositions, setLocalPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [localSizes, setLocalSizes]         = useState<Record<string, { w: number; h: number }>>({});
@@ -1067,6 +1125,7 @@ export function CanvasEditor({
     starts: Record<string, { x: number; y: number }>,
     dx: number,
     dy: number,
+    ignoreSourceBlockers = true,
   ): boolean {
     const selectedCodes = new Set(Object.keys(starts));
     const TOL = 0.05;
@@ -1096,7 +1155,7 @@ export function CanvasEditor({
 
       for (const blocker of positionedZonesRef.current) {
         if (
-          selectedCodes.has(blocker.location_code)
+          (ignoreSourceBlockers && selectedCodes.has(blocker.location_code))
           || blocker.type === 'warehouse'
           || blocker.type === 'lane'
           || blocker.type === 'shelf'
@@ -1172,6 +1231,161 @@ export function CanvasEditor({
     }
 
     return { dx: acceptedDx, dy: acceptedDy };
+  }
+
+
+  function currentSelectionStarts(): Record<string, { x: number; y: number }> {
+    return Object.fromEntries(
+      selectedZones.map((zone) => [
+        zone.location_code,
+        {
+          x:
+            localPositionsRef.current[zone.location_code]?.x
+            ?? parseFloat(String(zone.position_x ?? 0)),
+          y:
+            localPositionsRef.current[zone.location_code]?.y
+            ?? parseFloat(String(zone.position_y ?? 0)),
+        },
+      ]),
+    );
+  }
+
+  /**
+   * Find one deterministic common translation for a duplicate group.
+   *
+   * Unlike group movement, the original selected components remain in place,
+   * so they participate in collision checks here.
+   */
+  function findDuplicateGroupDelta(
+    starts: Record<string, { x: number; y: number }>,
+  ): { dx: number; dy: number } | null {
+    if (Object.keys(starts).length === 0) return null;
+
+    // Prefer nearby placements in a predictable order.
+    // Search progressively farther from the source group while preserving
+    // one common transform for the complete selection.
+    for (let distance = 0.5; distance <= 10; distance += 0.5) {
+      const candidates = [
+        { dx: distance, dy: 0 },
+        { dx: 0, dy: distance },
+        { dx: distance, dy: distance },
+        { dx: -distance, dy: 0 },
+        { dx: 0, dy: -distance },
+        { dx: -distance, dy: distance },
+        { dx: distance, dy: -distance },
+        { dx: -distance, dy: -distance },
+      ];
+
+      for (const candidate of candidates) {
+        const dx = snapV(candidate.dx);
+        const dy = snapV(candidate.dy);
+
+        if (isGroupDeltaValid(starts, dx, dy, false)) {
+          return { dx, dy };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function openBulkDuplicate() {
+    if (!onDuplicateZones || selectedZones.length < 2 || bulkActionPending) return;
+    setBulkDuplicateOpen(true);
+  }
+
+  function openBulkDelete() {
+    if (!onDeleteZones || selectedZones.length < 2 || bulkActionPending) return;
+    setBulkDeleteOpen(true);
+  }
+
+  async function confirmBulkDuplicate() {
+    if (!onDuplicateZones || selectedZones.length < 2) return;
+
+    const sourceZones = [...selectedZones];
+    const starts = currentSelectionStarts();
+    const delta = findDuplicateGroupDelta(starts);
+
+    if (!delta) {
+      // No mutation has happened, so leave the selection untouched.
+      setBulkDuplicateOpen(false);
+      return;
+    }
+
+    setBulkActionPending(true);
+
+    try {
+      const result = await onDuplicateZones({
+        location_codes: sourceZones.map((zone) => zone.location_code),
+        offset: {
+          x: delta.dx,
+          y: delta.dy,
+        },
+      });
+
+      const createdBySource = new Map(
+        result.created.map((entry) => [
+          entry.source_location_code,
+          entry.location_code,
+        ]),
+      );
+
+      const duplicatedZones: WarehouseZone[] = sourceZones.flatMap((source) => {
+        const locationCode = createdBySource.get(source.location_code);
+        if (!locationCode) return [];
+
+        const sourcePosition = starts[source.location_code];
+        const sourceSize = localSizesRef.current[source.location_code];
+
+        return [{
+          ...source,
+          location_code: locationCode,
+          barcode: null,
+          children_count: 0,
+          position_x: snapV(sourcePosition.x + delta.dx),
+          position_y: snapV(sourcePosition.y + delta.dy),
+          width: sourceSize?.w ?? source.width,
+          depth: sourceSize?.h ?? source.depth,
+          last_printed_at: null,
+        }];
+      });
+
+      setOptimisticCreatedZones((current) => [
+        ...current,
+        ...duplicatedZones,
+      ]);
+
+      setFloorSettingsOpen(false);
+      setSelected(new Set(
+        duplicatedZones.map((zone) => zone.location_code),
+      ));
+
+      setBulkDuplicateOpen(false);
+    } catch {
+      // The mutation owner surfaces transport/server failure.
+      // Keep the original selection and confirmation context intact.
+    } finally {
+      setBulkActionPending(false);
+    }
+  }
+
+  async function confirmBulkDelete() {
+    if (!onDeleteZones || selectedZones.length < 2) return;
+
+    const codes = selectedZones.map((zone) => zone.location_code);
+
+    setBulkActionPending(true);
+
+    try {
+      await onDeleteZones(codes);
+      setSelected(new Set());
+      setBulkDeleteOpen(false);
+    } catch {
+      // Atomic server failure means nothing was deleted.
+      // Preserve selection so the merchant can resolve the blocker.
+    } finally {
+      setBulkActionPending(false);
+    }
   }
 
   // FP-11: alignment snap for frame zones (warehouse/lane/shelf) only.
@@ -2020,7 +2234,13 @@ export function CanvasEditor({
       {floorSettingsOpen && warehouseRoot ? (
         <FloorSettingsPanel root={warehouseRoot} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
       ) : selectedZones.length > 1 ? (
-        <BulkSelectionPanel zones={selectedZones} onClear={() => setSelected(new Set())} />
+        <BulkSelectionPanel
+          zones={selectedZones}
+          onClear={() => setSelected(new Set())}
+          onDuplicate={openBulkDuplicate}
+          onDelete={openBulkDelete}
+          pending={bulkActionPending}
+        />
       ) : selectedZone ? (
         <RackInspector zone={selectedZone} onClose={() => setSelected(new Set())}
           onUpdateZone={onUpdateZone}
@@ -2037,6 +2257,27 @@ export function CanvasEditor({
           </Typography>
         </Box>
       )}
+
+      <DecisionConfirmationModal
+        open={bulkDuplicateOpen}
+        onClose={() => setBulkDuplicateOpen(false)}
+        onConfirm={confirmBulkDuplicate}
+        title={`Duplicate ${selectedZones.length} components?`}
+        description={`${selectedZones.length} new components will be created. The originals will stay unchanged.`}
+        confirmLabel="Duplicate"
+        isPending={bulkActionPending}
+      />
+
+      <DecisionConfirmationModal
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={confirmBulkDelete}
+        title={`Delete ${selectedZones.length} components?`}
+        description="The selected components will be removed. Locations with stock or dependent components outside this selection cannot be deleted."
+        confirmLabel="Delete"
+        tone="destructive"
+        isPending={bulkActionPending}
+      />
     </Box>
   );
 }

@@ -99,6 +99,20 @@ export type FloorPlanningPageProps = {
   variantFocusBins?: string[];
   onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
+  onDeleteZones?: (locationCodes: string[]) => Promise<{
+    success: true;
+    deleted: number;
+  }>;
+  onDuplicateZones?: (payload: {
+    location_codes: string[];
+    offset: { x: number; y: number };
+  }) => Promise<{
+    success: true;
+    created: Array<{
+      source_location_code: string;
+      location_code: string;
+    }>;
+  }>;
   // FP-16 follow-up: FP-15 changed usePrintBarcode's mutationFn to resolve
   // the fetched label Blob (responseType: 'blob') instead of void — the
   // interface here was never updated to match, causing TS2322 in
@@ -984,6 +998,8 @@ function FloorPlanningModuleFT2Inner({
   variantFocusBins,
   onCreateZone,
   onDeleteZone,
+  onDeleteZones,
+  onDuplicateZones,
   onPrintBarcode,
   onToggleZoneActive,
   onUpdateZone,
@@ -1536,6 +1552,8 @@ function FloorPlanningModuleFT2Inner({
                 onUpdateZone={onUpdateZone}
                 onUpdateZonePositions={onUpdateZonePositions}
                 onDeleteZone={onDeleteZone}
+                onDeleteZones={onDeleteZones}
+                onDuplicateZones={onDuplicateZones}
                 onCreateZone={onCreateZone}
                 onPrintBarcode={onPrintBarcode}
               />
