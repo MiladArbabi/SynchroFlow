@@ -8,6 +8,7 @@ export * from './contracts/free-tier.js';
 export * from './contracts/returns-quality-contract.js';
 export * from './contracts/finances-intelligence.js';
 export * from './contracts/work-queue-statuses.js';
+export * from './contracts/operational-episode.js';
 
 // --- Runtime helpers ---
 export * from './modules/module-presence.js';
