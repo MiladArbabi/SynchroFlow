@@ -819,15 +819,22 @@ export type WmsOpenReceiveJob = {
 const ReceiveWorkCard = memo(function ReceiveWorkCard({
   job,
   isOwnJob,
+  canManageAssignment,
   onOpen,
   onReassignRequest,
 }: {
   job: WmsOpenReceiveJob;
   isOwnJob: boolean;
+  canManageAssignment: boolean;
   onOpen: (jobId: string) => void;
   onReassignRequest?: (job: WmsOpenReceiveJob) => void;
 }) {
   const started = job.status === 'in_progress' || Boolean(job.started_at);
+  const showAssignmentMenu =
+    canManageAssignment &&
+    job.status === 'pending' &&
+    !job.started_at &&
+    !job.closed_at;
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   return (
@@ -877,48 +884,59 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
           </Typography>
         </Box>
 
-        {isOwnJob ? (
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={() => onOpen(job.receive_job_id)}
-            sx={{
-              flexShrink: 0,
-              borderColor: 'var(--rule)',
-              color: 'var(--accent)',
-              borderRadius: '6px',
-              fontWeight: 600,
-            }}
-          >
-            {started ? 'Resume receive' : 'Open receive'}
-          </Button>
-        ) : (
-          <>
-            <IconButton
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            flexShrink: 0,
+          }}
+        >
+          {isOwnJob && (
+            <Button
+              variant="outlined"
               size="small"
-              aria-label="Receive job options"
-              data-testid={`receive-job-menu-${job.receive_job_id}`}
-              onClick={(e) => setMenuAnchor(e.currentTarget)}
-              sx={{ flexShrink: 0 }}
+              onClick={() => onOpen(job.receive_job_id)}
+              sx={{
+                flexShrink: 0,
+                borderColor: 'var(--rule)',
+                color: 'var(--accent)',
+                borderRadius: '6px',
+                fontWeight: 600,
+              }}
             >
-              <MoreVertical size={16} />
-            </IconButton>
-            <Menu
-              anchorEl={menuAnchor}
-              open={Boolean(menuAnchor)}
-              onClose={() => setMenuAnchor(null)}
-            >
-              <MenuItem
-                onClick={() => {
-                  setMenuAnchor(null);
-                  onReassignRequest?.(job);
-                }}
+              {started ? 'Resume receive' : 'Open receive'}
+            </Button>
+          )}
+
+          {showAssignmentMenu && (
+            <>
+              <IconButton
+                size="small"
+                aria-label="Receive job options"
+                data-testid={`receive-job-menu-${job.receive_job_id}`}
+                onClick={(e) => setMenuAnchor(e.currentTarget)}
+                sx={{ flexShrink: 0 }}
               >
-                Reassign…
-              </MenuItem>
-            </Menu>
-          </>
-        )}
+                <MoreVertical size={16} />
+              </IconButton>
+              <Menu
+                anchorEl={menuAnchor}
+                open={Boolean(menuAnchor)}
+                onClose={() => setMenuAnchor(null)}
+              >
+                <MenuItem
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onReassignRequest?.(job);
+                  }}
+                >
+                  Reassign…
+                </MenuItem>
+              </Menu>
+            </>
+          )}
+        </Box>
       </Box>
     </Box>
   );
@@ -2833,6 +2851,7 @@ function WmsModuleFT2Inner({
                   key={job.receive_job_id}
                   job={job}
                   isOwnJob={job.assigned_operator_id === currentUserId}
+                  canManageAssignment={Boolean(canReassignReceive)}
                   onOpen={(jobId) => void enterReceiveSession(jobId)}
                   onReassignRequest={(j) => void openReceiveReassignDialog(j)}
                 />

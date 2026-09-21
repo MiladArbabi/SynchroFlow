@@ -138,6 +138,40 @@ describe('GH-1143 (2) — card offers Reassign via contextual management', () =>
   });
 });
 
+describe('GH-1143 (2b) — owner/admin can reassign their own pending Receive', () => {
+  it('keeps Open receive and also exposes the contextual Reassign… management action', () => {
+    const props = baseProps();
+    props.canReassignReceive = true;
+    props.currentUserId = 3;
+    props.openReceiveJobs = [
+      pendingJobAssignedToOther({
+        receive_job_id: 'receive-self-pending',
+        assigned_operator_id: 3,
+        assigned_operator_name: 'Admin User',
+        supplier_name: 'Self Assigned Supply',
+      }),
+    ];
+
+    render(<WmsModuleFT2 {...props} />);
+
+    const card = screen.getByTestId('receive-work-card-receive-self-pending');
+
+    expect(
+      within(card).getByRole('button', { name: /open receive/i })
+    ).toBeInTheDocument();
+
+    const menuTrigger = within(card).getByRole('button', {
+      name: /receive.*options/i,
+    });
+
+    fireEvent.click(menuTrigger);
+
+    expect(
+      screen.getByRole('menuitem', { name: /reassign/i })
+    ).toBeInTheDocument();
+  });
+});
+
 describe('GH-1143 (3) — no execution CTA for another operator\'s pending Receive card', () => {
   it('withholds Open receive / Resume receive for a pending job assigned to someone else', () => {
     const props = baseProps();
