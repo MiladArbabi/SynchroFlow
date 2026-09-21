@@ -33,7 +33,9 @@ import {
   readCurrentHistoryV1Records,
   readCurrentWaitingV1Records,
   WAITING_V1_TREATMENTS,
+  type WaitingV1Treatment,
 } from '../../services/decision/interventionOutcome.service.js';
+import { readCurrentOperationalEpisodesV1 } from '../../services/operations/operationalEpisodeRead.service.js';
 
 export interface WaitingItem {
   interventionId: string;
@@ -265,5 +267,63 @@ export const httpGetHistory = async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[OPERATIONS_HISTORY_LIST_FAILED]', { error: message });
     return res.status(500).json({ error: `Failed to list history items: ${message}` });
+  }
+};
+
+// GET /api/v1/operations/episodes
+// -------------------------------
+// SLICE D0 — canonical shop-wide operational-episode V1 read.
+//
+// Composes order_constraints (active canonical problem truth) with
+// readCurrentWaitingV1Records() (canonical "merchant already acted;
+// verification pending" truth) via readCurrentOperationalEpisodesV1() —
+// see operationalEpisodeRead.service.ts for the full seam. This endpoint
+// performs NO additional filtering, deduplication, or lifecycle inference.
+//
+// V1 ONLY: customer/incomplete_address, inventory/oversell.
+//
+// Semantic truth only — no presentation copy, no severity colors, no
+// routes, no spatial inference. UI/map wiring is explicitly out of scope
+// for this slice.
+export interface OperationalEpisodeItem {
+  episodeId: string;
+  constraintId: string;
+  constraintStartedAt: string;
+  lasyncroOrderId: string;
+  constraintType: string;
+  blockType: string;
+  targetId: string | null;
+  lifecycle: 'attention' | 'verifying';
+  occurredAt: string;
+  treatment: WaitingV1Treatment;
+  interventionId: string | null;
+}
+
+export const httpGetOperationalEpisodes = async (req: Request, res: Response) => {
+  try {
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const episodes = await readCurrentOperationalEpisodesV1({ shopId });
+
+    const items: OperationalEpisodeItem[] = episodes.map((episode) => ({
+      episodeId: episode.episodeId,
+      constraintId: episode.constraintId,
+      constraintStartedAt: episode.constraintStartedAt.toISOString(),
+      lasyncroOrderId: episode.lasyncroOrderId,
+      constraintType: episode.constraintType,
+      blockType: episode.blockType,
+      targetId: episode.targetId,
+      lifecycle: episode.lifecycle,
+      occurredAt: episode.occurredAt.toISOString(),
+      treatment: episode.treatment,
+      interventionId: episode.interventionId,
+    }));
+
+    return res.status(200).json({ items });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[OPERATIONAL_EPISODES_LIST_FAILED]', { error: message });
+    return res.status(500).json({ error: `Failed to list operational episodes: ${message}` });
   }
 };

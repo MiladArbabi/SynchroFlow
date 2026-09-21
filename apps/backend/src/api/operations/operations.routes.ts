@@ -3,7 +3,7 @@
 // OPS-CONSOLE-WAITING-01 — canonical shop-wide WAITING route.
 
 import { Router } from 'express';
-import { httpGetHistory, httpGetWaiting } from './operations.controller.js';
+import { httpGetHistory, httpGetOperationalEpisodes, httpGetWaiting } from './operations.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
@@ -21,5 +21,12 @@ router.get('/waiting', authenticateToken, httpGetWaiting);
  * shape as the sibling WAITING route above.
  */
 router.get('/history', authenticateToken, httpGetHistory);
+
+/**
+ * GET /api/v1/operations/episodes
+ * SLICE D0 — canonical shop-wide operational-episode V1 route. Same auth
+ * shape as the sibling WAITING/HISTORY routes above.
+ */
+router.get('/episodes', authenticateToken, httpGetOperationalEpisodes);
 
 export default router;

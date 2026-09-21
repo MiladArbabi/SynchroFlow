@@ -49,8 +49,12 @@ export const WAITING_V1_TREATMENTS = ['address_correction', 'inventory_reorder_i
  * constraintType/blockType it was built to treat. Any other pairing
  * (including either V1 treatment against an operational constraint, or a
  * treatment crossed with the other's constraint type) fails closed — never
- * WAITING, and never excluded from NOW. Single source of truth, consumed
- * only by readCurrentWaitingV1Records() below — no caller may hand-roll a
+ * WAITING, and never excluded from NOW. Single source of truth: this table
+ * is never read directly by any consumer — it is reached only through the
+ * pure lookup getWaitingV1TreatmentForConstraint() below, which is in turn
+ * the ONLY thing readCurrentWaitingV1Records()/readCurrentHistoryV1Records()
+ * (via isWaitingV1EligiblePairing()) and D0's
+ * operationalEpisodeRead.service.ts consume. No caller may hand-roll a
  * second copy of this table.
  */
 const WAITING_V1_PAIRINGS: Record<
@@ -61,14 +65,35 @@ const WAITING_V1_PAIRINGS: Record<
   inventory_reorder_intent: { constraintType: 'inventory', blockType: 'oversell' },
 };
 
+export type WaitingV1Treatment = (typeof WAITING_V1_TREATMENTS)[number];
+
+/**
+ * D0 — the SAME single pairing authority WAITING_V1_PAIRINGS backs, exposed
+ * as a pure lookup: "which approved V1 treatment, if any, corresponds to
+ * this exact constraint_type/block_type?" Every caller that needs a
+ * constraint->treatment answer (WAITING eligibility below, and D0's
+ * operationalEpisodeRead.service.ts) MUST go through this function rather
+ * than hand-rolling a second copy of WAITING_V1_PAIRINGS.
+ */
+export function getWaitingV1TreatmentForConstraint(
+  constraintType: string | null,
+  blockType: string | null
+): WaitingV1Treatment | null {
+  for (const treatment of WAITING_V1_TREATMENTS) {
+    const pairing = WAITING_V1_PAIRINGS[treatment];
+    if (constraintType === pairing.constraintType && blockType === pairing.blockType) {
+      return treatment;
+    }
+  }
+  return null;
+}
+
 function isWaitingV1EligiblePairing(
   treatment: string,
   constraintType: string | null,
   blockType: string | null
 ): boolean {
-  const pairing = WAITING_V1_PAIRINGS[treatment as (typeof WAITING_V1_TREATMENTS)[number]];
-  if (!pairing) return false;
-  return constraintType === pairing.constraintType && blockType === pairing.blockType;
+  return getWaitingV1TreatmentForConstraint(constraintType, blockType) === treatment;
 }
 
 export interface InterventionOutcomeRecord {
