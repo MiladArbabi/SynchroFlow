@@ -394,6 +394,23 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     }
   }, []);
 
+  // GH-1143 RECEIVE-REASSIGN-UI-01 — explicit owner/admin reassignment of an
+  // existing pending/unstarted Receive job. Distinct from
+  // handleCreateReceiveJob's GH-1109 legacy-recovery branch above, which
+  // exists only to recover an unassigned/self-assigned pending job and
+  // deliberately throws rather than reassigning work already assigned to a
+  // different operator. Uses the same canonical assignment PATCH; the
+  // backend re-validates pending/unstarted state atomically.
+  const handleReassignReceiveJob = useCallback(async (
+    jobId: string,
+    operatorId: number
+  ): Promise<void> => {
+    await axiosInstance.patch(`/api/v1/suppliers/receive-jobs/${jobId}/assignment`, {
+      assigned_operator_id: operatorId,
+    });
+    refetch();
+  }, [refetch]);
+
   const sharedProps = {
     // P0-A3-5: `never_ordered` is Growth-only ADVANCED SOURCING intelligence and
     // is deliberately EMPTY on the shared Core props — SourcingRoute supplies
@@ -410,6 +427,7 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onDeleteSupplier: handleDeleteSupplier,
     onCreatePo: handleCreatePo,
     onCreateReceiveJob: handleCreateReceiveJob,
+    onReassignReceiveJob: handleReassignReceiveJob,
     currentUserId,
     teamAssignableOperators,
     onSearchVariants: handleSearchVariants,
