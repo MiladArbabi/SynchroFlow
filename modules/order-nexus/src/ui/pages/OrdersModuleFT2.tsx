@@ -147,10 +147,12 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   /**
    * Active constrained orders — the existing /api/v1/orders/constrained
-   * payload (useConstrainedOrders). Only returned_undelivered rows are
-   * consumed here: "Package returned" is order_constraints truth and must
-   * surface in Critical even when order_age_snapshot / SLA-breach state is
-   * absent. Minimal shape — extend only as this module requires.
+   * payload (useConstrainedOrders). DR-03B2 (#1114): returned_undelivered
+   * rows are explicitly EXCLUDED from admission (see
+   * isMerchantActionableConstraint) — that is Returns-owned post-shipment
+   * work now, not an Orders Overview decision; Returns is the sole
+   * merchant-facing owner. Minimal shape — extend only as this module
+   * requires.
    */
   constrainedOrders?: Array<{
     order_id: string;
@@ -499,8 +501,13 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         // become a decision. Every other inventory block is actionable.
         return blockType !== 'allocation_pending';
       case 'customer':
-      case 'operational':
         return true;
+      case 'operational':
+        // DR-03B2 (#1114): returned_undelivered is Returns-owned post-shipment
+        // recovery, never an Orders Overview decision — Returns is the sole
+        // merchant-facing owner (no "Package returned" tile here anymore,
+        // and not replaced by folding it into "Operational issues" either).
+        return blockType !== 'returned_undelivered';
       default:
         // An unrecognised constraint type is NOT assumed actionable. New
         // types opt in here deliberately rather than appearing by default.
@@ -555,18 +562,29 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const criticalOrdersById = new Map<string, (typeof breachedCriticalOrders)[number]>();
   for (const o of breachedCriticalOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
   for (const o of actionableConstrainedOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
-  const criticalOrders = [...criticalOrdersById.values()];
-
-  // Ids that belong to "Package returned" regardless of which merged row won —
-  // used to keep the SLA / operational groups from double-listing them.
-  const returnedPackageOrderIds = new Set<string>([
-    ...actionableConstrainedOrders
-      .filter(o => o.constraintType === 'operational' && o.blockType === 'returned_undelivered')
-      .map(o => o.lasyncro_order_id),
-    ...breachedCriticalOrders
+  // DR-03B2 (#1114): returned_undelivered is excluded at admission
+  // (isMerchantActionableConstraint) for actionableConstrainedOrders, but
+  // allAgingOrders is a SEPARATE population keyed only by SLA-breach/aging
+  // facts — an order can appear there with constraintType:null even though
+  // props.constrainedOrders independently marks it returned_undelivered
+  // (the two populations are not guaranteed to agree, and the merge above
+  // no longer lets the (now-excluded) actionable row overwrite the aging
+  // row's null constraint). So the exclusion must be keyed off the ORIGINAL
+  // constrainedOrders payload directly, not off whichever row happened to
+  // win the merge — otherwise such an order silently reappears under
+  // "Shipping SLA breached" instead of having no home at all. Returns is
+  // the sole merchant-facing owner of this decision, by order id, full stop.
+  const returnedUndeliveredOrderIds = new Set([
+    ...(props.constrainedOrders ?? [])
+      .filter(o => o.constraint_type === 'operational' && o.block_type === 'returned_undelivered')
+      .map(o => o.order_id),
+    ...allAgingOrders
       .filter(o => o.constraintType === 'operational' && o.blockType === 'returned_undelivered')
       .map(o => o.lasyncro_order_id),
   ]);
+  const criticalOrders = [...criticalOrdersById.values()].filter(
+    o => !returnedUndeliveredOrderIds.has(o.lasyncro_order_id)
+  );
 
   // UX-CRITICAL-GROUPS: the owner acts on issue classes, not a wall of
   // repeated order rows. Preserve every order underneath an expandable group.
@@ -582,30 +600,19 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       orders: criticalOrders.filter(o => o.constraintType === 'inventory'),
     },
     {
-    key: 'operational',
-    label: 'Operational issues',
-    orders: criticalOrders.filter(
-      o =>
-        o.constraintType !== null &&
-        o.constraintType !== 'customer' &&
-        o.constraintType !== 'inventory' &&
-        o.blockType !== 'returned_undelivered' &&
-        !returnedPackageOrderIds.has(o.lasyncro_order_id)
-    ),
-  },
-  {
-    key: 'returned_undelivered',
-    label: 'Package returned',
-    orders: criticalOrders.filter(
-      o => returnedPackageOrderIds.has(o.lasyncro_order_id)
-    ),
-  },
+      key: 'operational',
+      label: 'Operational issues',
+      orders: criticalOrders.filter(
+        o =>
+          o.constraintType !== null &&
+          o.constraintType !== 'customer' &&
+          o.constraintType !== 'inventory'
+      ),
+    },
     {
       key: 'sla',
       label: 'Shipping SLA breached',
-      orders: criticalOrders.filter(
-        o => o.constraintType === null && !returnedPackageOrderIds.has(o.lasyncro_order_id)
-      ),
+      orders: criticalOrders.filter(o => o.constraintType === null),
     },
   ]
     .filter(group => group.orders.length > 0)
@@ -669,7 +676,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     switch (type) {
       case 'inventory': return 'Out of stock';
       case 'customer':  return 'Address issue';
-      case 'operational': return blockType === 'returned_undelivered' ? 'Package returned' : 'Pick exception';
+      case 'operational':
+        // DR-03B2 (#1114): 'returned_undelivered' can no longer reach this
+        // function at all (excluded upstream at criticalOrders admission),
+        // but the label itself is fixed regardless — 'Pick exception' was
+        // stale/incorrect dead vocabulary (operationalConstraintEvaluator.ts
+        // is permanently inert; see RETURNS-BOUNDARY-01 in
+        // useConstrainedOrders.ts for the twin fix already made there).
+        // 'Operational hold' matches that module's neutral vocabulary.
+        void blockType;
+        return 'Operational hold';
       default: return isBreached ? 'SLA breach' : 'Aging';
     }
   };

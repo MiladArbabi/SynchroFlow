@@ -72,8 +72,25 @@ export function getBlockerReason(order: ConstrainedOrder): string {
     return 'Not enough stock to fulfill';
   }
   if (order.constraint_type === 'operational') {
+    // DR-03B2-CORRECTION §3: Order Flow must ignore the Returns condition
+    // for merchant-facing diagnosis ENTIRELY — not just avoid saying
+    // "Package returned"/"returned_undelivered", but never surface
+    // "Operational hold" for it either. When this row survives
+    // OrderFlowPage's returned_undelivered filter solely because another
+    // real blocker (other_blocker_types) is also active, show that genuine
+    // blocker's reason instead, following the same customer > inventory
+    // precedence the server already uses to elect the primary constraint.
+    // other_blocker_types carries only the constraint TYPE, not its exact
+    // block_type, so the reason here is the coarser per-type wording
+    // (matching CONSTRAINT_LABELS) — honest, not invented detail. A
+    // returned_undelivered-ONLY order never reaches this component at all
+    // (OrderFlowPage filters it out before render), so the fallback below
+    // is defensive, not the expected path.
     if (order.block_type === 'returned_undelivered') {
-      return 'Package returned';
+      const others = order.other_blocker_types ?? [];
+      if (others.includes('customer')) return 'Customer details need attention';
+      if (others.includes('inventory')) return 'Not enough stock to fulfill';
+      return 'Operational hold';
     }
     return 'Operational hold';
   }

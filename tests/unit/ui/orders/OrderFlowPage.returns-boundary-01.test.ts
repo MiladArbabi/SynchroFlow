@@ -14,6 +14,7 @@
 import * as ts from 'typescript';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { getBlockerReason, type ConstrainedOrder } from 'pages/orders/useConstrainedOrders';
 
 function extractBlockedOrdersFilterPredicate(): (order: {
   constraint_type: string;
@@ -129,5 +130,89 @@ describe('RETURNS-BOUNDARY-01 — Order Flow does not render returned_undelivere
       other_blocker_types: [],
     };
     expect(predicate(order)).toBe(true);
+  });
+});
+
+/**
+ * DR-03B2-CORRECTION §3: for the co-blocked survivor case above (a row that
+ * reaches the page because a REAL blocker also exists), the rendered reason
+ * text must ignore the Returns condition entirely — never "Package
+ * returned", never "returned_undelivered", and never "Operational hold"
+ * either (that language was still wrong: it's Returns' condition being
+ * mislabeled as a generic operational one). The genuine other blocker's
+ * reason must show instead, following the same customer > inventory
+ * precedence the server uses to elect the primary constraint.
+ */
+function baseOrder(overrides: Partial<ConstrainedOrder>): ConstrainedOrder {
+  return {
+    order_id: 'order-1',
+    external_order_id: '1001',
+    constraint_type: 'operational',
+    block_type: null,
+    other_blocker_types: [],
+    constrained_since: null,
+    revenue: null,
+    promised_ship_by: null,
+    recommended_action: null,
+    priority: null,
+    decision_id: null,
+    age_since_creation_seconds: null,
+    age_since_paid_seconds: null,
+    fulfillment_sla_hours: null,
+    is_shipping_sla_breached: null,
+    is_delivery_sla_breached: null,
+    gross_margin: null,
+    margin_pct: null,
+    ...overrides,
+  };
+}
+
+describe('DR-03B2-CORRECTION §3 — Order Flow co-blocker reason text ignores the Returns condition', () => {
+  it('case 1: returned-only never reaches getBlockerReason in practice, but even if it did, never renders Returns copy', () => {
+    const order = baseOrder({ constraint_type: 'operational', block_type: 'returned_undelivered', other_blocker_types: [] });
+    const reason = getBlockerReason(order);
+    expect(reason).not.toMatch(/package returned/i);
+    expect(reason).not.toMatch(/returned_undelivered/i);
+  });
+
+  it('case 2: returned + customer blocker → shows the customer reason, not Operational hold', () => {
+    const order = baseOrder({
+      constraint_type: 'operational',
+      block_type: 'returned_undelivered',
+      other_blocker_types: ['customer'],
+    });
+    expect(getBlockerReason(order)).toBe('Customer details need attention');
+  });
+
+  it('case 3: returned + inventory blocker → shows the inventory reason, not Operational hold', () => {
+    const order = baseOrder({
+      constraint_type: 'operational',
+      block_type: 'returned_undelivered',
+      other_blocker_types: ['inventory'],
+    });
+    expect(getBlockerReason(order)).toBe('Not enough stock to fulfill');
+  });
+
+  it('case 4: returned + customer + inventory → customer wins, matching the existing precedence hierarchy', () => {
+    const order = baseOrder({
+      constraint_type: 'operational',
+      block_type: 'returned_undelivered',
+      other_blocker_types: ['customer', 'inventory'],
+    });
+    expect(getBlockerReason(order)).toBe('Customer details need attention');
+  });
+
+  it('case 5: a hypothetical non-return operational blocker keeps existing "Operational hold" behavior', () => {
+    const order = baseOrder({ constraint_type: 'operational', block_type: 'manual_hold', other_blocker_types: [] });
+    expect(getBlockerReason(order)).toBe('Operational hold');
+  });
+
+  it('genuine customer/inventory reasons are unaffected', () => {
+    expect(getBlockerReason(baseOrder({ constraint_type: 'customer', block_type: 'incomplete_address' }))).toBe(
+      'Shipping address incomplete'
+    );
+    expect(getBlockerReason(baseOrder({ constraint_type: 'inventory', block_type: null }))).toBe(
+      'Not enough stock to fulfill'
+    );
   });
 });

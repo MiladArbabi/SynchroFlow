@@ -115,9 +115,11 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
    * constrainedOrders uses the snake_case order_constraints row shape, and
    * operatorSummary.agingOrders uses the aging population shape.
    *
-   * Five distinct issue classes are produced (Address issues, Out of stock,
-   * Operational issues, Package returned, Shipping SLA breached) plus an
-   * Aging group, so the 3-group preview limit is genuinely exercised.
+   * Four distinct issue classes are produced (Address issues, Out of stock,
+   * Operational issues, Shipping SLA breached) plus an Aging group, so the
+   * 3-group preview limit is genuinely exercised. o-4 (returned_undelivered)
+   * is included deliberately to prove it contributes to NO group at all
+   * (DR-03B2, #1114 — Returns is the sole owner of that decision now).
    */
   const constrainedOrders = [
     { order_id: 'o-1', external_order_id: '#1001', constraint_type: 'customer', block_type: 'address_invalid', revenue: 400, age_since_creation_seconds: 180000, is_shipping_sla_breached: false },

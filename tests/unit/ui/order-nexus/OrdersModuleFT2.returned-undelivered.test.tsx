@@ -1,3 +1,9 @@
+// DR-03B2 (#1114): the "Package returned" Critical Decisions tile was
+// removed entirely — returned_undelivered is Returns-owned post-shipment
+// recovery, never an Orders Overview decision, and is NOT folded into any
+// other tile ("Operational issues", "Shipping SLA breached") either. This
+// file previously asserted the tile's existence; it now asserts its
+// permanent absence under every admission path that used to produce it.
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -99,23 +105,19 @@ const renderModule = (props: Props) =>
     </MemoryRouter>
   );
 
-describe('OrdersModuleFT2 returned-undelivered semantics', () => {
-  it('renders returned-undelivered as Package returned, not Pick exception', () => {
+describe('OrdersModuleFT2 returned-undelivered semantics (DR-03B2, #1114)', () => {
+  it('never renders a "Package returned" tile, and does not fold the order into Operational issues either', () => {
     renderModule(makeProps());
 
-    fireEvent.click(screen.getByRole('button', { name: /Package returned/i }));
-
-    expect(screen.getAllByText(/Package returned/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pick exception/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Operational issues/i)).not.toBeInTheDocument();
+    // The aging-only returned_undelivered order must not surface under any
+    // other Critical Decisions tile either — it has no home here anymore.
+    expect(screen.queryByRole('button', { name: /Operational issues/i })).not.toBeInTheDocument();
   });
 
-  // RET-RETPKG — the "Package returned" Critical group is driven by active
-  // order_constraints truth (constraint_type='operational' /
-  // block_type='returned_undelivered'), delivered via the existing
-  // constrained-orders payload. It must NOT depend on the SLA/aging
-  // population (order_age_snapshot / isShippingSlaBreached).
-  it('A — surfaces a constrained-only returned package with no SLA-breach prerequisite', () => {
+  it('A — a constrained-only returned package (no SLA-breach prerequisite) never appears in Critical Decisions', () => {
     renderModule(
       makeProps({
         operatorSummary: {
@@ -139,11 +141,12 @@ describe('OrdersModuleFT2 returned-undelivered semantics', () => {
       } as Partial<Props>)
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Package returned/i }));
-    expect(screen.getByText('#900099')).toBeInTheDocument();
+    expect(screen.queryByText('#900099')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Operational issues/i })).not.toBeInTheDocument();
   });
 
-  it('B — an SLA-breached order that is also returned_undelivered appears once, only under Package returned', () => {
+  it('B — an SLA-breached order that is also returned_undelivered never appears in Critical Decisions (not Package returned, not Shipping SLA breached)', () => {
     renderModule(
       makeProps({
         operatorSummary: {
@@ -183,12 +186,11 @@ describe('OrdersModuleFT2 returned-undelivered semantics', () => {
 
     expect(screen.queryByRole('button', { name: /Shipping SLA breached/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Shipping SLA breached/i)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Package returned/i }));
-    expect(screen.getAllByText('#900099')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('#900099')).not.toBeInTheDocument();
   });
 
-  it('C — an ordinary SLA-breached order without returned_undelivered stays under Shipping SLA breached', () => {
+  it('C — an ordinary SLA-breached order without returned_undelivered stays under Shipping SLA breached, unaffected', () => {
     renderModule(
       makeProps({
         operatorSummary: {
