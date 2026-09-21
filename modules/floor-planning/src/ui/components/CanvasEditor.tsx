@@ -18,7 +18,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
-import { WarehouseLocationType } from '@lasyncro/shared/ui';
+import {
+  DecisionConfirmationModal,
+  WarehouseLocationType,
+} from '@lasyncro/shared/ui';
 import { IsometricCanvas } from './IsometricCanvas.js';
 import {
   FLOOR_PLANNING_COMPONENT_GROUPS,
@@ -791,16 +794,15 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
         </DialogActions>
       </Dialog>
 
-      {/* Delete confirmation — MUI Dialog replaces window.confirm() for design-system consistency */}
-      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
-        <DialogTitle sx={{ fontSize: 14 }}>
-          Delete <strong>{zone.location_code}</strong>? This cannot be undone.
-        </DialogTitle>
-        <DialogActions>
-          <Button size="small" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-          <Button size="small" color="error" variant="contained" onClick={confirmDelete}>Delete</Button>
-        </DialogActions>
-      </Dialog>
+      <DecisionConfirmationModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={confirmDelete}
+        title={<>Delete <strong>{zone.location_code}</strong>?</>}
+        description="This component will be removed. This action cannot be undone."
+        confirmLabel="Delete"
+        tone="destructive"
+      />
     </Box>
   );
 }

@@ -163,9 +163,39 @@ describe('CanvasEditor compact zone inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     fireEvent.click(screen.getByText('Delete'));
-    const dialog = screen.getByRole('dialog');
+
+    expect(onDeleteZone).not.toHaveBeenCalled();
+    let dialog = screen.getByRole('dialog');
+
+    expect(
+      within(dialog).getByText(
+        (_content, element) =>
+          element?.tagName === 'P'
+          && element.textContent === 'Delete ZONE-01?',
+      ),
+    ).toBeInTheDocument();
+
+    expect(
+      within(dialog).getByText(
+        'This component will be removed. This action cannot be undone.',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(onDeleteZone).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByText('Delete'));
+    dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(onDeleteZone).toHaveBeenCalledWith('ZONE-01'));
+
+    await waitFor(() =>
+      expect(onDeleteZone).toHaveBeenCalledTimes(1),
+    );
+    expect(onDeleteZone).toHaveBeenCalledWith('ZONE-01');
   });
 
   it('keeps dock controls conditional to receive and ship roles', () => {

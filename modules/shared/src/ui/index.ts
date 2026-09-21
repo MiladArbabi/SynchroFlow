@@ -8,6 +8,7 @@ export * from './WarehouseGrid/WarehouseGrid.types.js';
 export * from './IsometricCanvas.types.js';
 export * from './IsometricCanvas.js';
 export * from './EntityDetailModal.js';
+export * from './DecisionConfirmationModal.js';
 export * from './ReorderTransitionList.js';
 export * from './SpotlightCoachMark.js';
 export * from './PulseCard.js'
