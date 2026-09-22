@@ -87,10 +87,18 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * `unknown` prevents positive copy while those sources are loading or failed.
    */
   operationalWarningState: 'clear' | 'warning' | 'unknown';
+  /**
+   * UX-OWNERSHIP-01: Overview's remediation UI (per-signal CTAs, Business
+   * Pulse footer CTA) was retired — Ops Console is now the sole cross-domain
+   * ACTION owner. onNavigate may still be supplied for compatibility but is
+   * no longer invoked by Overview's signal/pulse presentation.
+   */
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
   isRefreshingBrief?: boolean;
   onResolveAll?: () => void;
+  /** UX-OWNERSHIP-01: the one Overview-level action affordance — opens Ops Console. */
+  onOpenOpsConsole?: () => void;
   /**
    * Rendered in the 75% map slot.
    * When absent the module falls back to the triage-first layout.
@@ -173,20 +181,7 @@ const MODULE_LABELS: Record<string, string> = {
   'returns':          'Returns',
 };
 
-const DEFAULT_ACTIONS: Record<string, string> = {
-  'order-nexus':      'Review queue',
-  'wms':              'Review floor',
-  'demand':           'Reorder',
-  'suppliers-portal': 'View supplier',
-  'returns':          'Review returns',
-  'finances':         'View finances',
-  'cashflow':         'View cashflow',
-};
-
 function moduleLabel(m: string): string { return MODULE_LABELS[m] ?? m; }
-function actionLabel(signal: Signal): string {
-  return signal.actionLabel ?? DEFAULT_ACTIONS[signal.module] ?? 'Review ›';
-}
 
 /* # ISS-056: local fmtCurrency removed. Used locale 'en' (no region), which
 # renders currency as a code prefix (e.g. "USD180") instead of a symbol
@@ -206,12 +201,10 @@ function timeOfDay(): string {
 function TriageRow({
   signal,
   isCritical,
-  onNavigate,
   currency,
 }: {
   signal: Signal;
   isCritical: boolean;
-  onNavigate?: (deepLink: string) => void;
   currency: string;
 }) {
   const sev = SEV[sevKey(signal.priority)];
@@ -221,7 +214,7 @@ function TriageRow({
 
   return (
     <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'var(--bg-2)' }, transition: 'background 0.1s' }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: onNavigate ? 'minmax(0,1fr) 90px 118px' : 'minmax(0,1fr) 90px', gap: 1.75, alignItems: 'center' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px', gap: 1.75, alignItems: 'center' }}>
 
         {/* LEFT: badge + content */}
         <Box sx={{ minWidth: 0 }}>
@@ -280,27 +273,6 @@ function TriageRow({
             </Typography>
           )}
         </Box>
-
-        {/* RIGHT: CTA */}
-        {onNavigate && (
-          <Box
-            component="button"
-            onClick={() => onNavigate(signal.deepLink)}
-            sx={{
-              fontSize: 12, fontWeight: 600,
-              px: '12px', py: '6px', borderRadius: '8px',
-              ...(isCritical
-                ? { bgcolor: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }
-                : { bgcolor: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)' }),
-              cursor: 'pointer',
-              '&:hover': { opacity: 0.88 },
-              transition: 'opacity 0.1s',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {actionLabel(signal)}
-          </Box>
-        )}
       </Box>
     </Box>
   );
@@ -367,7 +339,6 @@ function MergedPulseCard({
   watchSignals,
   pulse,
   currency,
-  onNavigate,
   generatedTime,
   trustWarning,
   onRefreshBrief,
@@ -378,7 +349,6 @@ function MergedPulseCard({
   watchSignals: Signal[];
   pulse: OverviewModuleFT2DataProps['pulse'];
   currency: string;
-  onNavigate?: (path: string) => void;
   generatedTime: string | null;
   trustWarning: boolean;
   onRefreshBrief?: () => void;
@@ -419,8 +389,7 @@ function MergedPulseCard({
             return (
               <Box
                 key={s.id}
-                onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
-                sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+                sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px' }}
               >
                 <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -450,8 +419,7 @@ function MergedPulseCard({
                   return (
                     <Box
                       key={s.id}
-                      onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
-                      sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+                      sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px' }}
                     >
                       <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
                       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -527,7 +495,6 @@ function MergedPulseCard({
             title="Business pulse"
             variant="embedded"
             rows={buildBusinessPulseRows(pulse, currency)}
-            footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
           />
         </Box>
       )}
@@ -542,10 +509,10 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     morningBrief,
     pulse,
     operationalWarningState,
-    onNavigate,
     onRefreshBrief,
     isRefreshingBrief = false,
     mapContent,
+    onOpenOpsConsole,
   } = props;
 
   const isLoading    = morningBrief === undefined;
@@ -632,6 +599,27 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             {' · '}
             {isLoading ? 'Syncing…' : 'Live'}
           </Typography>
+          {/* UX-OWNERSHIP-01: the single Overview-level action-owner
+              affordance. Lives at page/header level — not per-signal, not in
+              Business Pulse — so map and fallback layouts share exactly one. */}
+          {onOpenOpsConsole && (
+            <Box
+              component="button"
+              type="button"
+              onClick={onOpenOpsConsole}
+              sx={{
+                fontSize: 12, fontWeight: 600,
+                px: '14px', py: '7px', borderRadius: '8px',
+                bgcolor: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.88 },
+                transition: 'opacity 0.1s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Open Ops Console
+            </Box>
+          )}
         </Box>
 
         {isLoading ? (
@@ -688,7 +676,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
               watchSignals={watchSignals}
               pulse={pulse ?? null}
               currency={currency}
-              onNavigate={onNavigate}
               generatedTime={generatedTime}
               trustWarning={trustWarning}
               onRefreshBrief={onRefreshBrief ? handleRefreshBrief : undefined}
@@ -777,13 +764,13 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <>
                   <GroupBand sevK="critical" count={criticalSignals.length} />
                   {visibleCriticalSignals.map(s => (
-                    <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                    <TriageRow key={s.id} signal={s} isCritical currency={currency} />
                   ))}
                   {hiddenCriticalSignals.length > 0 && (
                     <>
                       <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
                         {hiddenCriticalSignals.map(s => (
-                          <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                          <TriageRow key={s.id} signal={s} isCritical currency={currency} />
                         ))}
                       </Collapse>
                       <Box
@@ -805,13 +792,13 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <>
                   <GroupBand sevK="watch" count={watchSignals.length} />
                   {visibleWatchSignals.map(s => (
-                    <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                    <TriageRow key={s.id} signal={s} isCritical={false} currency={currency} />
                   ))}
                   {hiddenWatchSignals.length > 0 && (
                     <>
                       <Collapse in={watchExpanded} timeout={180} unmountOnExit>
                         {hiddenWatchSignals.map(s => (
-                          <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                          <TriageRow key={s.id} signal={s} isCritical={false} currency={currency} />
                         ))}
                       </Collapse>
                       <Box
@@ -830,7 +817,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
               {/* EVERYTHING ELSE — on-track signals collapsed */}
               {onTrackSignals.length > 0 && (
-                <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
+                <EverythingElse signals={onTrackSignals} currency={currency} />
               )}
 
               {/* Morning Brief trust warning */}
@@ -858,7 +845,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <PulseCard
                   title="Business pulse"
                   rows={buildBusinessPulseRows(pulse, currency)}
-                  footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
                 />
               </Box>
             )}
@@ -886,11 +872,9 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
 function EverythingElse({
   signals,
-  onNavigate,
   currency,
 }: {
   signals: Signal[];
-  onNavigate?: (path: string) => void;
   currency: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -912,7 +896,7 @@ function EverythingElse({
         </Box>
       </Box>
       {open && signals.map(s => (
-        <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+        <TriageRow key={s.id} signal={s} isCritical={false} currency={currency} />
       ))}
     </>
   );

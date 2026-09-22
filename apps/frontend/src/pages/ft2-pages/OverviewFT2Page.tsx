@@ -12,6 +12,7 @@ import { IsometricCanvas } from '@lasyncro/shared/ui';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import useConfig from 'hooks/useConfig';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { ProfileCompletionBanner } from '../overview/ProfileCompletionBanner';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
@@ -52,6 +53,16 @@ export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
   const { user, isLoading: authLoading } = useAuth();
+
+  // UX-OWNERSHIP-01: Overview's single action-owner affordance opens Ops
+  // Console — an OPEN, not a blind TOGGLE. Clicking it while already open
+  // must not close it out from under whatever the operator is doing there.
+  const { state: configState, dispatch: configDispatch } = useConfig();
+  const openOpsConsole = () => {
+    if (!configState.isOpsConsoleOpen) {
+      configDispatch({ type: 'TOGGLE_OPS_CONSOLE' });
+    }
+  };
 
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
@@ -947,6 +958,7 @@ export default function OverviewPageFT2() {
           currency={displayCurrency}
           mapContent={mapContent}
           onNavigate={(deepLink) => navigate(deepLink)}
+          onOpenOpsConsole={openOpsConsole}
           onRefreshBrief={() => { void morningBrief.refreshMorningBrief(); }}
           isRefreshingBrief={morningBrief.isRefreshingBrief}
         />
