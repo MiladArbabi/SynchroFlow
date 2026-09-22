@@ -25,7 +25,8 @@ export type SnapshotMetrics = {
   aging72hPlus: number;
 
   ordersAtSlaRisk: number;
-  slaBreach24hRevenue: number;
+  /** Current revenue already past the merchant-configured Fulfillment SLA. */
+  slaBreachedRevenue: number;
 
   queueManualReview: number;
   queueAwaitingInventory: number;

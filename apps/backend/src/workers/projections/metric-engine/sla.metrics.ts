@@ -1,8 +1,5 @@
 import type { Knex } from 'knex';
-import {
-  approachingFulfillmentSlaLeadSeconds,
-  fulfillmentSlaSeconds,
-} from '@lasyncro/shared/contracts/fulfillment-sla';
+import { readCurrentFulfillmentSlaSummary } from '../../../services/orders/fulfillmentSla.service.js';
 
 /**
  * SLA & AGING METRICS
@@ -73,97 +70,28 @@ export async function computeSlaMetrics(
   const aging72hPlus = Number(buckets.aging_72h_plus ?? 0);
 
   /**
-   * APPROACHING FULFILLMENT SLA — SLA-SEM-01
-   * ------------------------------------------
-   * Canonical contract:
-   * - payment-age only
-   * - current/latest age snapshot only
-   * - unfulfilled only
-   * - already-breached orders excluded
-   * - warning window = min(4h, 25% of configured SLA)
+   * CURRENT FULFILLMENT SLA — SLA-CANONICAL-01D
+   * --------------------------------------------
+   * Current SLA is time-driven and must not depend on order_age_snapshot.
    *
-   * This is deliberately distinct from creation-age Watch/Aging.
+   * The canonical reader owns:
+   * - merchant-configured SLA duration
+   * - anchor precedence
+   * - NOW()-relative age
+   * - fulfilled/cancelled exclusion
+   * - inclusive breach boundary
+   * - approaching-window semantics
+   *
+   * Aging buckets above intentionally remain historical snapshot metrics;
+   * only current Fulfillment SLA truth is consolidated here.
    */
-  const slaSettingsRow = await trx('shop_operational_settings')
-    .where({ shop_id: Number(shopId) })
-    .select('fulfillment_sla_hours')
-    .first();
+  const currentSla = await readCurrentFulfillmentSlaSummary(
+    Number(shopId),
+    trx
+  );
 
-  const fulfillmentSlaHours =
-    Number(slaSettingsRow?.fulfillment_sla_hours ?? 24);
-  const slaSeconds = fulfillmentSlaSeconds(fulfillmentSlaHours);
-  const approachingLeadSeconds =
-    approachingFulfillmentSlaLeadSeconds(fulfillmentSlaHours);
-  const approachingFloorSeconds =
-    slaSeconds - approachingLeadSeconds;
-
-  const ordersAtSlaRiskRow = await trx
-    .with('latest_sla_snapshot', (qb) => {
-      qb.from('order_age_snapshot as oas')
-        .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .distinctOn('oas.lasyncro_order_id')
-        .select(
-          'oas.lasyncro_order_id',
-          'oas.age_since_paid_seconds',
-          'oas.is_shipping_sla_breached'
-        )
-        .orderBy('oas.lasyncro_order_id')
-        .orderBy('oas.aggregate_version', 'desc');
-    })
-    .from('latest_sla_snapshot as oas')
-    .leftJoin(
-      'order_fulfillment_status as ofs',
-      'ofs.lasyncro_order_id',
-      'oas.lasyncro_order_id'
-    )
-    .where((builder) => {
-      builder
-        .whereNull('ofs.status')
-        .orWhereNot('ofs.status', 'fulfilled');
-    })
-    .whereNotNull('oas.age_since_paid_seconds')
-    .andWhere('oas.is_shipping_sla_breached', false)
-    .andWhere(
-      'oas.age_since_paid_seconds',
-      '>=',
-      approachingFloorSeconds
-    )
-    .andWhere('oas.age_since_paid_seconds', '<', slaSeconds)
-    .countDistinct('oas.lasyncro_order_id as count')
-    .first();
-
-  type CountRow = { count: number | string | null };
-
-  const riskRow = ordersAtSlaRiskRow as CountRow | undefined;
-
-  if (!riskRow) {
-    throw new Error('[sla.metrics] Missing ordersAtSlaRiskRow — DB contract violation');
-  }
-
-  const ordersAtSlaRisk = Number(riskRow.count ?? 0);
-
-  const slaBreach24hRevenueRow = await trx('orders as o')
-    .where('o.shop_id', shopId)
-    .andWhere('o.payment_state', 'paid')
-    .whereNotExists(
-      trx('order_fulfillment_status as ofs')
-        .select(1)
-        .whereRaw('ofs.lasyncro_order_id = o.lasyncro_order_id')
-        .andWhere('ofs.status', 'fulfilled')
-    )
-    .sum('o.total_price as sum')
-    .first();
-
-  type SumRow = { sum: number | string | null };
-
-  const breachRow = slaBreach24hRevenueRow as SumRow | undefined;
-
-  if (!breachRow) {
-    throw new Error('[sla.metrics] Missing slaBreach24hRevenueRow — DB contract violation');
-  }
-
-  const slaBreach24hRevenue = Number(breachRow.sum ?? 0);
+  const ordersAtSlaRisk = currentSla.approachingCount;
+  const slaBreachedRevenue = currentSla.breachedRevenue;
 
   return {
     aging24h,
@@ -171,6 +99,6 @@ export async function computeSlaMetrics(
     aging72h,
     aging72hPlus,
     ordersAtSlaRisk,
-    slaBreach24hRevenue,
+    slaBreachedRevenue,
   };
 }
