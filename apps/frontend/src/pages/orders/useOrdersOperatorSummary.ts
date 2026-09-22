@@ -31,6 +31,16 @@ export interface OrdersOperatorSummary {
   topBlockingType?: string | null;
 
   /**
+   * Canonical uncapped live Fulfillment SLA aggregate.
+   */
+  fulfillmentSla?: {
+    fulfillmentSlaHours: number;
+    breachedCount: number;
+    breachedRevenue: number;
+    approachingCount: number;
+  };
+
+  /**
    * Unfulfilled orders in the broader Watch/Aging population — named and actionable.
    * externalOrderId allows direct lookup in the operator's store.
    */

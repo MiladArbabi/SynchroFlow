@@ -4,6 +4,10 @@ import {
   approachingFulfillmentSlaLeadSeconds,
   fulfillmentSlaSeconds,
 } from '@lasyncro/shared/contracts/fulfillment-sla';
+import {
+  readCurrentFulfillmentSlaSummary,
+  type CurrentFulfillmentSlaSummary,
+} from '../orders/fulfillmentSla.service.js';
 
 /**
  * OrdersOperatorFacts
@@ -33,6 +37,14 @@ import {
 
 export interface OrdersOperatorFacts {
   shopId: number;
+
+  /**
+   * Canonical live Fulfillment SLA aggregate.
+   *
+   * This is uncapped current truth and must not be inferred from agingOrders,
+   * which is an inspection list capped at 20 rows.
+   */
+  fulfillmentSla: CurrentFulfillmentSlaSummary;
 
   // ── Constraint breakdown (active constraints) ─────────────
   // Count of distinct orders blocked by each constraint type
@@ -104,13 +116,15 @@ export async function getOrdersOperatorFacts(
       db.raw('COUNT(DISTINCT oc.lasyncro_order_id) as count')
     );
 
-  // Add near the top of the exported function, before constraintRows is queried
-  // — shopId here is already typed `number`, no cast needed.
-  const slaSettings = await trx('shop_operational_settings')
-    .where({ shop_id: shopId })
-    .select('fulfillment_sla_hours')
-    .first();
-  const slaHours = slaSettings?.fulfillment_sla_hours ?? 24;
+  /**
+   * SLA-CANONICAL-01C
+   * -----------------
+   * Aggregate/current SLA truth comes from the shared live reader.
+   * Named Watch/approaching rows below remain bounded inspection lists.
+   */
+  const fulfillmentSla =
+    await readCurrentFulfillmentSlaSummary(shopId, trx);
+  const slaHours = fulfillmentSla.fulfillmentSlaHours;
 
   /**
    * UNIFIED THRESHOLD MODEL (2026-07-01)
@@ -366,6 +380,7 @@ export async function getOrdersOperatorFacts(
       shopId,
       constraintCounts,
       topBlockingType,
+      fulfillmentSla,
       agingOrders,
       imminentSlaBreachers,
       queueCounts,

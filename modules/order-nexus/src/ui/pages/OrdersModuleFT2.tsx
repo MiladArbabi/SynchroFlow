@@ -146,6 +146,12 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
     topBlockingType?: string | null;
+    fulfillmentSla?: {
+      fulfillmentSlaHours: number;
+      breachedCount: number;
+      breachedRevenue: number;
+      approachingCount: number;
+    };
     agingOrders?: Array<{
       lasyncro_order_id: string;
       externalOrderId: string | null;
@@ -664,7 +670,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
    * never propagated to the pulse. The card's own subtext already counted
    * against this figure, so the headline contradicted its own caption.
    */
-  const slaBreachedCount = allBreachedOrders.length;
+  // SLA-CANONICAL-01C: headline truth is the uncapped live aggregate.
+  // agingOrders remains a bounded inspection list and is only a compatibility
+  // fallback for older/partial operator-summary payloads.
+  const slaBreachedCount =
+    operatorSummary?.fulfillmentSla?.breachedCount ??
+    allBreachedOrders.length;
   // FIX (2026-07-01): the >= 24 check was dead weight — the backend already
   // pre-filters agingOrders to WATCH_FLOOR_SECONDS (now SLA-aware, was a flat
   // 48h) before this array ever reaches the frontend, so every order here
