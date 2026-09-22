@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 import { buildSlaBreachAlertCopy, buildBlockedRevenueAlertCopy } from './alerts.copy.js';
 import { syncStockProtectionAlertsForShop } from './stockProtectionAlertSynchronizer.js';
 import { readCurrentWaitingV1Records } from '../decision/interventionOutcome.service.js';
+import { readCurrentFulfillmentSlaSummary } from '../orders/fulfillmentSla.service.js';
 
 /**
  * ALERTS AGGREGATOR SERVICE (AL-01)
@@ -279,38 +280,17 @@ async function aggregateSlaAlerts(
   shopId: number
 ): Promise<AlertUpsert[]> {
   /**
-   * SHIPPING SLA BREACH COUNT (deterministic, version-safe)
-   * -------------------------------------------------------
-   * order_age_snapshot is versioned by aggregate_version — every rebuild/
-   * reconciliation appends a new row per order. Counting raw rows inflates
-   * the breach total (e.g. 18 orders × N versions = 59). We therefore:
-   *   1. Filter to the LATEST aggregate_version per order (correlated subquery,
-   *      matching OrdersOperatorFacts house pattern).
-   *   2. EXCLUDE fulfilled orders — a shipped order cannot breach a *shipping*
-   *      SLA, so fulfilled rows must never count even if the flag is stale.
-   *   3. COUNT DISTINCT orders (not rows) and sum revenue once per order.
+   * CURRENT FULFILLMENT SLA TRUTH
+   * -----------------------------
+   * SLA alert state is time-driven. Read canonical current truth from order
+   * timestamps + NOW() so idle orders cross the SLA boundary without waiting
+   * for an order_age_snapshot projection event.
+   *
+   * The alert key/source/lifecycle contract remains unchanged here; this slice
+   * replaces only the stale signal source.
    */
-  const row = await trx('order_age_snapshot as oas')
-    .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .where('oas.is_shipping_sla_breached', true)
-    .andWhere(function () {
-      // Unfulfilled only: status is null or anything other than 'fulfilled'
-      this.whereNull('ofs.status').orWhereNot('ofs.status', 'fulfilled');
-    })
-    // Latest snapshot version per order — avoids version multiplication
-    .andWhere(
-      'oas.aggregate_version',
-      db('order_age_snapshot as oas2')
-        .where('oas2.lasyncro_order_id', db.raw('oas.lasyncro_order_id'))
-        .max('oas2.aggregate_version')
-    )
-    .countDistinct('o.lasyncro_order_id as breach_count')
-    .sum('o.total_price as total_revenue')
-    .first();
-
-  const count = Number(row?.breach_count ?? 0);
+  const summary = await readCurrentFulfillmentSlaSummary(shopId, trx);
+  const count = summary.breachedCount;
 
   if (count === 0) {
     return [{
@@ -328,10 +308,7 @@ async function aggregateSlaAlerts(
     }];
   }
 
-  // Resolution hint (carried in the message): tells owner the job-to-be-done,
-  // not just the problem. "Fulfil these orders" is the one action that clears
-  // this alert. Title/message wording now owned by buildSlaBreachAlertCopy.
-  const breachedOrderValue = Number(row?.total_revenue ?? 0);
+  const breachedOrderValue = summary.breachedRevenue;
   const slaCopy = buildSlaBreachAlertCopy(count, breachedOrderValue);
 
   return [{
