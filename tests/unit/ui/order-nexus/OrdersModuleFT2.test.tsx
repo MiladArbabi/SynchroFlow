@@ -197,6 +197,24 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     expect(screen.queryByText('View order flow')).toBeNull();
   });
 
+  it('uses the uncapped live SLA aggregate for the Breached pulse count', () => {
+    renderWithMap({
+      operatorSummary: {
+        ...operatorSummary,
+        fulfillmentSla: {
+          fulfillmentSlaHours: 24,
+          breachedCount: 25,
+          breachedRevenue: 2500,
+          approachingCount: 0,
+        },
+      },
+    });
+
+    // Fixture agingOrders contains only one breached row. The pulse must show
+    // the live aggregate (25), proving it is no longer capped by inspection rows.
+    expect(screen.getByText('25')).toBeInTheDocument();
+  });
+
   it('shows group summaries only — never individual order rows', () => {
     renderWithMap();
 

@@ -219,4 +219,59 @@ describe('SLA-SEM-01 consumer wiring', () => {
       })
     );
   });
+
+  it('SLA-CANONICAL-01C exposes live uncapped SLA headline truth through operator summary', async () => {
+    const { shopId, userId } = await createShop();
+
+    /*
+     * 25 orders are live-breached by paid_at + NOW(), but every persisted
+     * age snapshot is intentionally stale and says only 1h paid / 2h created.
+     *
+     * This proves the headline cannot be derived from:
+     * - order_age_snapshot breach state
+     * - agingOrders
+     * - the agingOrders top-20 cap
+     */
+    for (let i = 0; i < 25; i += 1) {
+      await seedOrder({
+        shopId,
+        creationAgeHours: 26,
+        paidAgeHours: 25,
+        versions: [
+          {
+            aggregateVersion: 1,
+            creationAgeHours: 2,
+            paidAgeHours: 1,
+          },
+        ],
+      });
+    }
+
+    const facts = await getOrdersOperatorFacts(shopId);
+
+    expect(facts.agingOrders).toHaveLength(0);
+
+    expect(facts.fulfillmentSla).toEqual({
+      fulfillmentSlaHours: 24,
+      breachedCount: 25,
+      breachedRevenue: 2500,
+      approachingCount: 0,
+    });
+
+    const token = issueTestToken({ userId, shopId });
+
+    const res = await request(app)
+      .get('/api/v1/modules/order-nexus/operator-summary')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+
+    expect(res.body.fulfillmentSla).toEqual({
+      fulfillmentSlaHours: 24,
+      breachedCount: 25,
+      breachedRevenue: 2500,
+      approachingCount: 0,
+    });
+  });
+
 });

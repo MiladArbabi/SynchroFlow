@@ -35,6 +35,12 @@ export interface OrdersOperatorSummary {
   topBlockingType: string | null;
 
   /**
+   * Uncapped live Fulfillment SLA aggregate.
+   * Headline counts must use this, never agingOrders.length.
+   */
+  fulfillmentSla: OrdersOperatorFacts['fulfillmentSla'];
+
+  /**
    * Watch/Aging orders (named, actionable)
    * ----------------------------------------
    * Broader operational-attention population; not synonymous with approaching SLA.
@@ -91,6 +97,7 @@ export async function getOrdersOperatorSummary(
   return {
     constraintCounts: facts.constraintCounts,
     topBlockingType: facts.topBlockingType,
+    fulfillmentSla: facts.fulfillmentSla,
     agingOrders: facts.agingOrders,
     imminentSlaBreachers: facts.imminentSlaBreachers,
     queueCounts: facts.queueCounts,
