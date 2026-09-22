@@ -1,3 +1,5 @@
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { fulfillmentSlaSeconds, approachingFulfillmentSlaLeadSeconds, isApproachingFulfillmentSla } from '@lasyncro/shared/contracts/fulfillment-sla';
 
 // One anchor precedence for projection, read-time assessment and SQL ordering.
@@ -27,4 +29,81 @@ export function currentFulfillmentSlaSql(hours: number | null | undefined) {
   const state = `CASE WHEN ofs.status IS NULL OR ofs.status IN ('fulfilled', 'cancelled') THEN NULL WHEN ${age} >= ${seconds} THEN 'breached' WHEN ${age} >= ${floor} THEN 'approaching' ELSE 'normal' END`;
   const rank = `CASE (${state}) WHEN 'breached' THEN 2 WHEN 'approaching' THEN 1 ELSE 0 END`;
   return { age, state, rank, breached: `COALESCE((${state}) = 'breached', false)` };
+}
+
+export interface CurrentFulfillmentSlaSummary {
+  fulfillmentSlaHours: number;
+  breachedCount: number;
+  breachedRevenue: number;
+  approachingCount: number;
+}
+
+/**
+ * Canonical CURRENT Fulfillment SLA summary.
+ *
+ * Current truth is derived from order timestamps + NOW(), never from
+ * order_age_snapshot age/breach fields.
+ *
+ * Reuses an existing tenant-scoped transaction when supplied so callers such
+ * as the alerts aggregator do not open nested transactions.
+ */
+export async function readCurrentFulfillmentSlaSummary(
+  shopId: number,
+  trx?: Knex.Transaction
+): Promise<CurrentFulfillmentSlaSummary> {
+  const run = async (
+    t: Knex.Transaction
+  ): Promise<CurrentFulfillmentSlaSummary> => {
+    const settings = await t('shop_operational_settings')
+      .where({ shop_id: shopId })
+      .first('fulfillment_sla_hours');
+
+    const configuredHours = settings?.fulfillment_sla_hours;
+    const fulfillmentSlaHours =
+      fulfillmentSlaSeconds(configuredHours) / 3600;
+
+    const currentSla = currentFulfillmentSlaSql(configuredHours);
+
+    const row = await t('orders as o')
+      .leftJoin(
+        'order_fulfillment_status as ofs',
+        'ofs.lasyncro_order_id',
+        'o.lasyncro_order_id'
+      )
+      .where('o.shop_id', shopId)
+      .select(
+        t.raw(`
+          COUNT(*) FILTER (
+            WHERE ${currentSla.state} = 'breached'
+          ) AS breached_count
+        `),
+        t.raw(`
+          COALESCE(
+            SUM(
+              CASE
+                WHEN ${currentSla.state} = 'breached'
+                  THEN o.total_price
+                ELSE 0
+              END
+            ),
+            0
+          ) AS breached_revenue
+        `),
+        t.raw(`
+          COUNT(*) FILTER (
+            WHERE ${currentSla.state} = 'approaching'
+          ) AS approaching_count
+        `)
+      )
+      .first();
+
+    return {
+      fulfillmentSlaHours,
+      breachedCount: Number(row?.breached_count ?? 0),
+      breachedRevenue: Number(row?.breached_revenue ?? 0),
+      approachingCount: Number(row?.approaching_count ?? 0),
+    };
+  };
+
+  return trx ? run(trx) : withTenant(shopId, run);
 }
