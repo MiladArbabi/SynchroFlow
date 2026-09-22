@@ -58,7 +58,24 @@ async function seedAgeOrder(input: {
   } = input;
 
   const orderId = crypto.randomUUID();
-  const now = new Date('2026-09-01T12:00:00.000Z');
+  const now = new Date();
+
+  const currentVersion = versions[versions.length - 1];
+
+  if (!currentVersion) {
+    throw new Error('seedAgeOrder requires at least one age version');
+  }
+
+  const orderCreatedAt = new Date(
+    now.getTime() - currentVersion.creationAgeSeconds * 1000
+  );
+
+  const paidAt =
+    currentVersion.paidAgeSeconds == null
+      ? null
+      : new Date(
+          now.getTime() - currentVersion.paidAgeSeconds * 1000
+        );
 
   await withTenant(shopId, async (trx) => {
     await trx('orders').insert({
@@ -69,7 +86,8 @@ async function seedAgeOrder(input: {
       total_price: '100.00',
       subtotal_price: '100.00',
       total_tax: '0.00',
-      order_created_at: now,
+      order_created_at: orderCreatedAt,
+      paid_at: paidAt,
       order_updated_at: now,
       created_at: now,
       updated_at: now,
@@ -199,7 +217,7 @@ describe('SLA-SEM-01 canonical approaching Fulfillment SLA', () => {
     expect(result.ordersAtSlaRisk).toBe(0);
   });
 
-  it('SLA-APPROACH-06/07 counts only the latest snapshot once per order', async () => {
+  it('SLA-APPROACH-06/07 does not double-count one live order with multiple snapshots', async () => {
     const shopId = await createShop(24);
 
     await seedAgeOrder({

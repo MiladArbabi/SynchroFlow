@@ -187,7 +187,7 @@ export async function computeShopOperationalSnapshot(
       aging48h,
       aging72hPlus,
       ordersAtSlaRisk,
-      slaBreach24hRevenue,
+      slaBreachedRevenue,
     } = slaMetrics;
 
     const {
@@ -243,7 +243,7 @@ export async function computeShopOperationalSnapshot(
             aging48h,
             aging72hPlus,
             ordersAtSlaRisk,
-            slaBreach24hRevenue,
+            slaBreachedRevenue,
             queueManualReview,
             queueAwaitingInventory,
             queueAwaitingCustomer,

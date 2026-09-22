@@ -36,7 +36,7 @@ export function buildSnapshotPayload(
     aging48h,
     aging72hPlus,
     ordersAtSlaRisk,
-    slaBreach24hRevenue,
+    slaBreachedRevenue,
     queueManualReview,
     queueAwaitingInventory,
     queueAwaitingCustomer,
@@ -71,7 +71,10 @@ export function buildSnapshotPayload(
     at_risk_revenue: atRiskRevenue,
 
     total_at_risk_revenue: atRiskRevenue,
-    sla_breach_24h_revenue: slaBreach24hRevenue,
+    // Legacy persisted column name retained for schema/API compatibility.
+    // Its value is canonical current merchant-configured SLA breach revenue;
+    // it is NOT a fixed 24-hour metric.
+    sla_breach_24h_revenue: slaBreachedRevenue,
     top_blocking_type: topBlockingType,
 
     total_gmv: totalGMV,
