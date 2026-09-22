@@ -5,7 +5,7 @@
 // Fulfillment SLA
 
 import { useState, useEffect } from 'react';
-import { Box, TextField, Typography } from '@mui/material';
+import { Box, Button, TextField, Typography } from '@mui/material';
 import { Package, RotateCcw } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,7 +22,7 @@ function useShopSettings() {
   return useQuery<ShopSettings>({
     queryKey: ['shop-settings', 'operational'],
     queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/modules/cashflow/settings');
+      const { data } = await axiosInstance.get('/api/v1/settings/shop/fulfillment-sla');
       return data;
     },
   });
@@ -33,7 +33,7 @@ function usePatchShopSettings() {
   const { show } = useToast();
   return useMutation<void, Error, Partial<ShopSettings>>({
     mutationFn: async (body) => {
-      await axiosInstance.patch('/api/v1/modules/cashflow/settings', body);
+      await axiosInstance.patch('/api/v1/settings/shop/fulfillment-sla', body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shop-settings', 'operational'] });
@@ -68,16 +68,58 @@ function usePatchReturnsSettings() {
 }
 
 export default function ShopSettingsGeneralPage() {
-  const { data: settings } = useShopSettings();
+  const { data: settings, isLoading: loadingSla, isError: slaLoadError, isSuccess: slaLoaded } = useShopSettings();
   const { mutate: patch, isPending: saving } = usePatchShopSettings();
+  const { show } = useToast();
 
-  const [sla, setSla]     = useState('24');
-  const [dirty, setDirty] = useState(false);
+  const [sla, setSla]         = useState('24');
+  const [dirty, setDirty]     = useState(false);
+  const [slaError, setSlaError] = useState<string | null>(null);
+
+  // SLA-SETTINGS-SAVE-FEEDBACK-01 — minimal local success feedback for this
+  // one Save CTA only (not the shared SaveButton, so Returns Aging's Save is
+  // untouched). 'saved' shows "Saved ✓"; 'leaving' plays a short fade/scale
+  // out before the button unmounts (or reverts to plain "Save" if the field
+  // is dirty again by then).
+  const [slaSaveFeedback, setSlaSaveFeedback] = useState<'idle' | 'saved' | 'leaving'>('idle');
 
   useEffect(() => {
-    if (settings?.fulfillment_sla_hours != null) setSla(String(settings.fulfillment_sla_hours));
-    setDirty(false);
-  }, [settings?.fulfillment_sla_hours]);
+    if (slaLoadError) show('Failed to load fulfillment SLA. Please refresh and try again.', 'error');
+  }, [slaLoadError, show]);
+
+  useEffect(() => {
+    // Only seed from real data — never conflate "no data yet" (loading/error)
+    // with "the value happens to be 24" (the shared default).
+    if (slaLoaded && settings?.fulfillment_sla_hours != null) {
+      setSla(String(settings.fulfillment_sla_hours));
+      setDirty(false);
+    }
+  }, [slaLoaded, settings?.fulfillment_sla_hours]);
+
+  useEffect(() => {
+    if (slaSaveFeedback !== 'saved') return;
+    const t = setTimeout(() => setSlaSaveFeedback('leaving'), 600);
+    return () => clearTimeout(t);
+  }, [slaSaveFeedback]);
+
+  useEffect(() => {
+    if (slaSaveFeedback !== 'leaving') return;
+    const t = setTimeout(() => setSlaSaveFeedback('idle'), 150);
+    return () => clearTimeout(t);
+  }, [slaSaveFeedback]);
+
+  const handleSaveSla = () => {
+    const val = Number(sla);
+    if (!Number.isInteger(val) || val < 1 || val > 720) {
+      setSlaError('Hours to fulfill must be a whole number between 1 and 720.');
+      return;
+    }
+    setSlaError(null);
+    patch(
+      { fulfillment_sla_hours: val },
+      { onSuccess: () => setSlaSaveFeedback('saved') }
+    );
+  };
 
   const { data: returnsSettings } = useReturnsSettings();
   const { mutate: patchReturns, isPending: savingReturns } = usePatchReturnsSettings();
@@ -117,22 +159,61 @@ export default function ShopSettingsGeneralPage() {
       >
         <Box>
           <SectionLabel>Hours to fulfill</SectionLabel>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <TextField
-              type="number" size="small" value={sla}
-              onChange={(e) => { setSla(e.target.value); setDirty(true); }}
-              inputProps={{ min: 1, max: 720, style: { fontSize: 13 } }}
-              sx={{ width: 100 }}
-            />
-            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>hours</Typography>
-          </Box>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.5 }}>
-            Default: 24 hours. Max: 720 hours (30 days).
-          </Typography>
-          <SaveButton
-            dirty={dirty} saving={saving}
-            onSave={() => patch({ fulfillment_sla_hours: Number(sla) })}
-          />
+          {loadingSla ? (
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }} data-testid="sla-loading">
+              Loading…
+            </Typography>
+          ) : slaLoadError ? (
+            <Typography sx={{ fontSize: 12, color: 'error.main' }} data-testid="sla-load-error">
+              Failed to load fulfillment SLA. Please refresh and try again.
+            </Typography>
+          ) : (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <TextField
+                  type="number" size="small" value={sla}
+                  onChange={(e) => { setSla(e.target.value); setDirty(true); }}
+                  inputProps={{ min: 1, max: 720, style: { fontSize: 13 } }}
+                  sx={{ width: 100 }}
+                />
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>hours</Typography>
+              </Box>
+              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.5 }}>
+                Default: 24 hours. Max: 720 hours (30 days).
+              </Typography>
+              {slaError && (
+                <Typography sx={{ fontSize: 11, color: 'error.main', mt: 0.5 }}>
+                  {slaError}
+                </Typography>
+              )}
+              {(dirty || slaSaveFeedback !== 'idle') && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
+                  <Button
+                    size="small" variant="contained"
+                    onClick={handleSaveSla}
+                    disabled={saving || slaSaveFeedback !== 'idle'}
+                    data-testid="sla-save-button"
+                    sx={{
+                      bgcolor: slaSaveFeedback !== 'idle' ? 'success.main' : 'var(--accent)',
+                      '&:hover': {
+                        bgcolor: slaSaveFeedback !== 'idle' ? 'success.main' : 'var(--accent)',
+                        opacity: 0.88,
+                      },
+                      '&:active': {
+                        transform: slaSaveFeedback === 'idle' ? 'scale(0.97)' : undefined,
+                      },
+                      transition: 'transform 150ms ease, opacity 150ms ease, background-color 150ms ease',
+                      opacity: slaSaveFeedback === 'leaving' ? 0 : 1,
+                      transform: slaSaveFeedback === 'leaving' ? 'scale(0.95)' : 'scale(1)',
+                      fontSize: 12,
+                    }}
+                  >
+                    {slaSaveFeedback !== 'idle' ? 'Saved ✓' : saving ? 'Saving…' : 'Save'}
+                  </Button>
+                </Box>
+              )}
+            </>
+          )}
         </Box>
       </SettingsCard>
 

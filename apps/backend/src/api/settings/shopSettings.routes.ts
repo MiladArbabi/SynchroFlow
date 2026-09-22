@@ -7,6 +7,8 @@ import {
   httpPatchShopTimezone,
   httpGetWarehouseShopifyLocations,
   httpPatchWarehouseShopifyLocation,
+  httpGetFulfillmentSla,
+  httpPatchFulfillmentSla,
 } from './shopSettings.controller.js';
 
 const router = Router();
@@ -55,6 +57,31 @@ router.patch(
   authenticateToken,
   requireAction('wms:settings:write'),
   httpPatchWarehouseShopifyLocation
+);
+
+/**
+ * GET /api/v1/settings/shop/fulfillment-sla
+ * Fulfillment SLA is a general operational setting (not a Growth-tier
+ * intelligence feature) — deliberately tier-independent, same convention as
+ * /timezone above. See also the growth-gated duplicate at
+ * /api/v1/modules/cashflow/settings, which still separately owns this same
+ * column for the (currently hidden) Cash Flow UI.
+ */
+router.get(
+  '/fulfillment-sla',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpGetFulfillmentSla
+);
+
+/**
+ * PATCH /api/v1/settings/shop/fulfillment-sla
+ */
+router.patch(
+  '/fulfillment-sla',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpPatchFulfillmentSla
 );
 
 export default router;

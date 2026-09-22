@@ -87,6 +87,75 @@ export async function httpPatchShopTimezone(req: Request, res: Response) {
 }
 
 
+// -----------------------------------------------------------------------
+// FULFILLMENT SLA (tier-independent)
+// -----------------------------------------------------------------------
+// Fulfillment SLA is a general operational setting, not a Growth-tier
+// intelligence feature, so it must be reachable regardless of the shop's
+// commercial tier. It lives in shop_operational_settings alongside fields
+// still owned by the growth-gated /api/v1/modules/cashflow/settings
+// endpoint (daily_cpt_local, monthly_overhead_amount, starting_cash_balance,
+// starting_cash_balance_set_at). This controller only ever reads/writes
+// fulfillment_sla_hours — those other columns remain exclusively owned by
+// the cashflow settings controller and must never be touched here.
+
+export async function httpGetFulfillmentSla(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const row = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_operational_settings')
+        .where('shop_id', shopId)
+        .select('fulfillment_sla_hours')
+        .first();
+    });
+
+    return res.status(200).json({
+      fulfillment_sla_hours: row?.fulfillment_sla_hours ?? 24,
+    });
+  } catch (err) {
+    console.error('[shop-settings] httpGetFulfillmentSla failed', err);
+    return res.status(500).json({ error: 'Failed to fetch fulfillment SLA' });
+  }
+}
+
+export async function httpPatchFulfillmentSla(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { fulfillment_sla_hours } = req.body ?? {};
+
+  const val = Number(fulfillment_sla_hours);
+  if (
+    fulfillment_sla_hours === undefined ||
+    fulfillment_sla_hours === null ||
+    isNaN(val) ||
+    !Number.isInteger(val) ||
+    val < 1 ||
+    val > 720
+  ) {
+    return res.status(400).json({ error: 'fulfillment_sla_hours must be between 1 and 720' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx('shop_operational_settings')
+        .insert({ shop_id: shopId, fulfillment_sla_hours: val })
+        .onConflict('shop_id')
+        .merge({ fulfillment_sla_hours: val, updated_at: trx.fn.now() });
+    });
+
+    return res.status(200).json({ fulfillment_sla_hours: val });
+  } catch (err) {
+    console.error('[shop-settings] httpPatchFulfillmentSla failed', err);
+    return res.status(500).json({ error: 'Failed to update fulfillment SLA' });
+  }
+}
+
+
 const SHOPIFY_LOCATIONS_QUERY = `
   query ShopifyLocations {
     locations(first: 100) {
