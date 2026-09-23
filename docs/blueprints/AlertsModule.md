@@ -1,223 +1,302 @@
 # Alerts Module — Blueprint
 
-**Status:** ✅ Implemented · Sprint closed 2026-05-30 · ALR-02–12 shipped
-**Scope:** Web module surface + topnav bell dropdown. Notification bell ✅. Operator mobile = fast-follow.
-**Out of scope:** rules-engine backend, `shop_alert_rules`, evaluation hooks, escalation worker, external routing (separate Alerts/Backend sprint).
+**Status:** GH-1147 implemented architecture
+**Scope:** Merchant Alerts module, notification history, notification preferences, and delivery semantics.
 **Project root:** `/Users/miladarbabi/Codes/projects/SynchroFlow/`
 
 ---
 
-## 1. Strategic context
+## 1. Purpose
 
-Alerts is the one module that converts laSyncro from reactive to proactive — the direct
-answer to the firefighting culture (stockout learned from a customer complaint, margin
-problem learned from the quarterly report, SLA breach learned from a 1-star review).
+Alerts answers one job:
 
-ICP: 1–20 operators + owners/admins, own-warehouse fulfilment, $100K–$50M revenue,
-high SKU complexity. If Alerts works, the owner stops opening fifteen tabs every morning.
+> Tell me when something I care about happens.
 
-Every other module answers "what is true?" — Alerts answers "what is about to go wrong,
-who must act, and have they?"
+Alerts is not an operational task workspace. It does not own assignment,
+acknowledgement, resolution, operational snoozing, root-cause triage,
+prioritization, task queues, or workflow state. It records notification history
+and lets a merchant choose how notifications should be routed. When action is
+needed, Alerts deep-links to the canonical owning module.
 
----
+The canonical flow is:
 
-## 2. Locked decisions
-
-| # | Decision |
-|---|----------|
-| D1 | Default view = **consequence taxonomy**; severity is a toggle, not the primary grouping. ✅ |
-| D2 | Lifecycle verbs = **Acknowledge / Snooze / Resolve**. Operators acknowledge-only; owners/admins resolve. Auto-resolve when the signal clears is primary. Dismiss is retired. ✅ |
-| D3 | This sprint ships the **web module surface + bell dropdown**. Operator mobile follows. ✅ |
-| D4 | Severity = **commercial consequence**, not technical severity. critical = money leaving / customer breach imminent; warning = trending to breach; info = state transition. ✅ |
-| D5 | Severity is communicated by **rail + icon + label**, never colour alone (inclusive design; survives dark mode + colour-blindness). ✅ |
-| D6 | Counts live **inside the module** and on the bell (hover); the **sidenav stays a calm dot** (B-07). ✅ |
-
----
-
-## 3. Routes & IA
-
-Module mounted at `/alerts/*` (`LifecycleRouteHost.tsx` ~L221; import ~L39; vite alias
-`@lasyncro/alerts` ~L76). Sidenav entry in `modules/alerts/src/ui/ModuleEntry.tsx`
-(Bell icon, group `operations`).
-
-`ModuleTabBar` (same component as Products/Inventory):
-
-| Tab | Path | Purpose | Status |
-|-----|------|---------|--------|
-| Inbox | `/alerts` | Active + acknowledged alerts (live working surface) | ✅ |
-| Snoozed | `/alerts/snoozed` | Parked until timer expires | ✅ |
-| Resolved | `/alerts/resolved` | Auto/owner-resolved history (read-only) | ✅ |
-| Rules | `/alerts/rules` | Rule-builder shell (gated: growth tier) | ✅ |
-
----
-
-## 4. Backend endpoints
-
-**Implemented:**
-
-- `GET /api/v1/alerts?status=inbox|snoozed|resolved` — tab-aware ranked inbox.
-- `POST /api/v1/alerts/:id/acknowledge` → sets `acknowledged_at`, `acknowledged_by`. ✅
-- `POST /api/v1/alerts/:id/snooze` → body `{ until: ISO }` → sets `snoozed_until`. ✅
-- `POST /api/v1/alerts/:id/resolve` → owner/admin only; sets `resolved_at`. ✅
-- `POST /api/v1/alerts/:id/dismiss` → **410 Gone** — retired (KI-2 fix). ✅
-
-**Rules (existing, gated):**
-- `GET /api/v1/alerts/rules`
-- `POST /api/v1/alerts/rules`
-- `DELETE /api/v1/alerts/rules/:ruleId`
-
----
-
-## 5. Data contract
-
-```tsc
-`apps/frontend/src/pages/alerts/useAlerts.ts` — `Alert` type:
-id, alert_key, source, alert_type, severity, title, message, entity_id, entity_type,
-revenue_impact, is_active, dismissed_at, resolved_at, created_at, updated_at,
-category, audience, acknowledged_at, acknowledged_by, snoozed_until, escalated_at, rule_id
-```
-
-All new fields implemented and populated by all producers (aggregator, demand, wms).
-Frontend tolerates absence via optional types for forward-compat.
-
-**Hooks:**
-```
-useAlerts(filters)         GET /alerts — shared canonical cache entry per filter set
-useAlertCount()            subscribes to the shared inbox cache — feeds sidenav health dot
-useAcknowledgeAlert()      POST /:id/acknowledge  ✅
-useSnoozeAlert()           POST /:id/snooze        ✅
-useResolveAlert()          POST /:id/resolve        ✅
-useDismissAlert()          DEPRECATED — no-op stub, remove when call sites cleared
-```
-
-Live inbox data uses one shared canonical React Query cache entry — equivalent
-filter inputs (`useAlerts()` and `useAlerts({ status: 'inbox' })`) normalize to
-the same key. One persistent shell observer (`TopnavbarContent`) owns the
-30-second refresh cadence; every other consumer (`useAlertCount`, the sidenav
-badge, `AlertsPage`) subscribes to that shared data without an independent poll.
-Snoozed and resolved are historical and never poll.
-
----
-
-## 6. Consequence taxonomy & source mapping
-
-| Category | Fed by (`source` / signal) | audience | Status |
-|----------|----------------------------|----------|--------|
-| Revenue at risk | snapshot (revenue-at-risk), constraint (SLA breach, blocked fulfilment), order_age | all | ✅ |
-| Stock & reorder | demand (stockout, reorder), constraint (inventory block) | all | ✅ |
-| Money & margin | AL-06 missing COGS, low-margin, blended-margin drop vs shop baseline | owner | ✅ |
-| Supplier & inbound | supplier (PO overdue, on-time/fill/defect), defective receive batch | operator/owner | ✅ |
-| Warehouse floor | wms (pick/pack exception, stow pending, batch ready, operator idle) | operator | ✅ |
-| Data trust | sync stale, SKUs missing cost, identity-map gaps | owner | ✅ |
-
-Within a category: severity-ranked, then `revenue_impact`-ranked.
-
----
-
-## 7. Frontend component tree
-
-```
-AlertsPage (apps/frontend/src/pages/ft2-pages/AlertsPage.tsx)         ✅ rebuilt
-├─ PageHeader            DM Sans 22/500 "Alerts" + 13px/ink-3 signal line  ✅
-├─ ModuleTabBar          Inbox · Snoozed · Resolved · Rules               ✅
-├─ AlertsPulseStrip      Critical · $ at risk · Oldest unresolved · Ack/total ✅
-├─ AlertsFilterBar       category · severity · source chips + Clear        ✅
-├─ ViewToggle            Consequence ⇄ Severity (inbox only)              ✅
-├─ AlertCategoryGroup[]  collapsible; header = icon + label + count        ✅
-│   └─ AlertCard[]
-├─ AlertSeverityGroup[]  Critical → Warning → Info                        ✅
-│   └─ AlertCard[]
-├─ EmptyState            per-tab (inbox / snoozed / resolved)             ✅
-├─ AlertsSkeleton        3 progressive skeleton cards                     ✅
-└─ ErrorState            graceful, retry message                          ✅
-
-AlertCard
-├─ SeverityRail + SeverityIcon + SeverityLabel   (never colour-only) ✅
-├─ Title (ink-1, ≤500) · Message (ink-2)                             ✅
-├─ SourceBadge · RelativeAge · RevenueChip                           ✅
-├─ PrimaryCTA  "Go to {X} →"  (var(--accent); entity-aware deep link)✅
-├─ Actions: Acknowledge (ghost) · SnoozeMenu (1h/4h/tomorrow) · Resolve (owner only) ✅
-├─ AcknowledgedFooter (who + when)                                   ✅
-└─ readOnly mode — actions hidden on Resolved tab                    ✅
-
-TopnavbarContent (apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx)
-└─ Bell → AlertsDropdownSheet                                        ✅
-   ├─ Header: "Alerts" + active count
-   ├─ BellAlertRow × 6 (severity rail, title, revenue, Go to CTA, Ack)
-   └─ Footer: "See all alerts →" → /alerts
+```text
+SOURCE CONDITION
+→ ALERT ELIGIBILITY
+→ USER PREFERENCES
+→ NOTIFICATION EVENT
+→ CHANNEL ROUTING
+→ DELIVERY
+→ READ / CLICK HISTORY
 ```
 
 ---
 
-## 8. Known issues — resolved
+## 2. Routes and Surface
 
-| ID | Resolution |
-|----|------------|
-| KI-1 (ISSUE-007) | ✅ Fixed — `ALERT_TYPE_ROUTES` now uses underscore `alert_type` keys (matching all producers), not colon alert_key format. Entity-aware deep links for variant-scoped demand alerts. |
-| KI-2 | ✅ Fixed — dismiss retired (410 Gone); replaced by Acknowledge (operator) + auto-resolve (system) + Resolve (owner). Aggregator no longer fights dismiss. |
-| KI-3 | ✅ Fixed — `AlertsPage` fully rebuilt in FT2 (fontWeight ≤500, 0.5px borders, useAppTheme(), ModuleTabBar). |
+```text
+Alerts
+├── Recent
+└── Settings
+```
 
----
+| Route | Surface |
+|---|---|
+| `/alerts` | Recent notification history |
+| `/alerts/settings` | Alerts-module Settings |
+| `/settings/alerts` | The same Alerts settings implementation inside the Settings modal |
+| `/settings/notifications` | Legacy redirect to `/settings/alerts` |
+| `/settings/integrations` | Legacy redirect to `/settings/alerts` |
 
-## 9. Sprint register
+Profile menu:
 
-| ID | Description | Status |
-|----|-------------|--------|
-| ALR-01 | Blueprint | ✅ |
-| ALR-02 | FT2 conversion via `useAppTheme()` (note: `useModuleTheme` does not exist; `useAppTheme` is canonical) | ✅ |
-| ALR-03 | Page shell: title + signal line + ModuleTabBar | ✅ |
-| ALR-04 | AlertsPulseStrip (FT2 stat cards) | ✅ |
-| ALR-05 | Consequence grouping + severity toggle + category icons | ✅ |
-| ALR-06 | AlertCard FT2 redesign | ✅ |
-| ALR-07 | Acknowledge / Snooze / Resolve model + states | ✅ |
-| ALR-08 | Deep-link routing fix (KI-1) | ✅ |
-| ALR-09 | Filter bar | ✅ |
-| ALR-10 | Empty / skeleton / error states | ✅ |
-| ALR-11 | Rules tab UI shell (gated: growth tier via ModuleTabBar `feature` prop) | ✅ |
-| ALR-12 | Accessibility pass (rail+icon+label D5, ARIA label on bell, readOnly resolved tab) | ✅ |
-| ALR-13 | Bell dropdown sheet (top 6, Ack + deep-link per row, See all footer) | ✅ |
+- Alerts -> `/alerts`
 
-**Build order completed:** 02/03 → 04/05/06 → 07/08 → 09/10 → 11 → 12 → 13
+Ops Console:
 
----
+- Alert settings -> `/settings/alerts`
 
-## 10. Design system (FT2)
-
-Via `useAppTheme()` (canonical hook — `useModuleTheme` does not exist).
-
-- Surfaces: `--bg` (page) / `--surface` (cards).
-- Borders: `--rule`, 0.5px. fontWeight ≤ 500.
-- Accent: `--accent #FF6B2B`, `--accent-hover #FF8C5A`, `--accent-ghost rgba(255,107,43,0.12)`.
-- Ink: ink / ink-2 / ink-3 / ink-4.
-- Title: DM Sans 22/500. Signal line: 13px/ink-3.
-- Light + dark parity verified.
+Retired merchant Alerts UI: Inbox, Snoozed, Resolved, Rules, alert-rule
+management, acknowledgement, assignment, operational snooze, resolution, the
+commercial pulse strip, and alert-rule management are no longer part of the
+merchant Alerts module. `AlertRulesPanel` is retired. The backend alert-rule
+evaluation subsystem still exists where order projection depends on it.
 
 ---
 
-## 11. States & accessibility
+## 3. Recent
 
-- Empty: Inbox "All clear — your operations are running smoothly." Snoozed/Resolved each own copy. ✅
-- Loading: skeleton cards (3 progressive). ✅
-- Error: graceful message, no raw throw. ✅
-- A11y: non-colour severity (rail+icon+label), ARIA label on bell button, readOnly mode hides actions on resolved tab, keyboard nav via MUI components. ✅
-- Motion: Collapse on category/severity groups. Snooze menu via MUI Menu. ✅
+Recent is notification history. One logical notification remains one Recent item
+regardless of channel:
+
+- in-app
+- push
+- email
+
+Recent states are only:
+
+- Unread
+- Read
+- Clicked
+
+Recent does not own operational lifecycle state. Its CTA hands off to the
+canonical owning module.
+
+Current implemented notification conditions are exactly:
+
+| Condition | Area | Urgency | Critical in-app protection | Action |
+|---|---|---|---|---|
+| `orders_cannot_be_fulfilled` | fulfillment | critical | true | `/orders` |
+| `not_enough_stock_to_fulfill_orders` | inventory | important | false | `/orders/flow?constraint=inventory` |
+
+Do not document future notification conditions as implemented until they ship.
 
 ---
 
-## 12. Cross-sprint dependencies
+## 4. Settings and Defaults
 
-- ALR-07 backend columns (`acknowledged_at`, `acknowledged_by`, `snoozed_until`) — **shipped** in base migration 0079.
-- ALR-05 `category` field — **populated** by all producers (aggregator, demand, wms).
-- Operator audience filtering ✅ — `audience` column in schema, populated by all producers, enforced server-side in `httpGetAlerts` (operators see `warehouse_floor` + `all` only). Role model shipped via `requireAction` middleware.
-- Rules engine backend (`shop_alert_rules`, evaluation hooks) — separate sprint.
+Canonical notification preference defaults:
+
+| Preference | Default |
+|---|---|
+| Urgency | Important + critical |
+| In-app | Always on |
+| Push | ON preference |
+| Email | OFF |
+| Quiet hours enabled | false |
+| Quiet hours prepared window | 22:00-07:00 |
+| Quiet hours allow critical | true |
+| Daily summary | backend field exists with default `off`; no scheduler or UI control |
+
+Critical protection:
+
+- A critical protected condition remains in-app even if its condition `enabled`
+  preference is false.
+- External channels remain suppressible.
+- A non-critical condition may be disabled normally.
+
+External-channel hierarchy:
+
+```text
+effective channel =
+  global master ON
+  AND condition channel override !== false
+```
+
+A condition-level `true` never resurrects a globally disabled channel.
 
 ---
 
-## 13. Open questions
+## 5. Push Preference vs Registered Capability
 
-- Resolved-tab retention window (30/60/90 days) before archival.
-- Operator web access vs mobile-only — ✅ decided: operators have both web (WMS/Operations surface) and mobile access. Web is not locked to owner-only. Audience filtering enforced server-side.
-- Escalation worker (phase 2) — strongest anti-firefighting feature, deferred.
-- External routing (Slack / email digest / webhook) — phase 2.
-- FT2DateRangeBar on Resolved tab only — confirm in next audit.
-- Order-detail-modal alert reuse (2026-07-01, see `entity-detail-modal-playbook.md` §2.8) — `AlertCard`/`BellAlertRow` may become a shared reuse target for order-scoped alerts inside `EntityDetailModal`. Not yet decided which component, or whether a new shared variant is needed.
+Push preference and push capability are separate facts.
+
+Push preference answers:
+
+> Should LaSyncro send push where a registered destination exists?
+
+Registered capability answers:
+
+> Does this user currently have a registered push destination?
+
+`GET /api/v1/notifications/push-status` exposes non-secret counts only, for the
+current authenticated FT2 user and tenant. The response does not include endpoint,
+key, auth, or token values.
+
+The Settings UI can truthfully show:
+
+```text
+Push notifications [ON]
+No device registered
+Push won't be delivered until notifications are enabled on a device.
+```
+
+Registered means structurally present, not healthy, active, or guaranteed
+working. Provider validity is known only at send time.
+
+Push OFF suppresses delivery but does not delete subscriptions. Push ON does not
+request browser permission or create a subscription.
+
+Current registration paths:
+
+- Web Push through the existing WMS flow
+- Expo through the mobile application
+
+Device management and user-initiated "enable on this device" UX are follow-ups,
+not GH-1147.
+
+---
+
+## 6. Delivery Semantics
+
+External delivery is intentionally at-least-once.
+
+Crash window:
+
+```text
+provider may accept
+→ process may die before local sent state commits
+→ lease may expire
+→ delivery may be retried
+```
+
+Retries are bounded. `sent` means provider acceptance/local send state, not
+confirmed device delivery.
+
+Resend uses:
+
+```text
+Idempotency-Key: notification-delivery:<deliveryId>
+```
+
+Web Push and Expo do not guarantee exactly-once provider delivery. Do not claim
+exactly-once external delivery.
+
+Web Push payload identity uses the logical notification event:
+
+```text
+tag: lasyncro-notification:<notificationEventId>
+```
+
+Semantics:
+
+- same notification event retry -> same tag
+- different notification event -> different tag
+
+This prevents separate logical notifications from replacing one another in the
+OS tray while allowing duplicate delivery of the same logical event to replace
+itself. Expo collapse semantics remain a follow-up.
+
+---
+
+## 7. Time and Quiet Hours
+
+`shops.timezone` is the canonical time authority. Alerts quiet-hours evaluation
+consumes `shops.timezone` and is DST-safe.
+
+Alerts does not introduce a separate timezone. Localization remains the owner of
+shop timezone.
+
+---
+
+## 8. Audience
+
+The two current constraint-derived conditions originate from legacy alerts with
+`audience='all'`.
+
+Current semantics:
+
+- every active shop membership receives the notification occurrence
+- owner, admin, and operator memberships are included
+- revoked memberships are excluded
+
+This is intentional current behavior. Role-specific notification preferences do
+not exist.
+
+---
+
+## 9. Noise, Dedupe, and Reactivation
+
+Notification occurrence rules:
+
+- notify on activation
+- do not duplicate while the same alert remains active
+- clearing does not notify
+- inactive -> active reactivation creates a new occurrence
+- delivery is unique per notification event + channel
+- one Recent item remains one logical notification
+
+The source boundary is activation detection. Do not describe occurrence random
+UUIDs as the dedupe mechanism.
+
+---
+
+## 10. Deployment and Migration
+
+Migration `0187_create_notification_history_tables` must land before GH-1147
+runtime starts. The canonical GitHub/Fly deploy workflow runs privileged
+migrations before `flyctl deploy`; failed migration prevents runtime deployment.
+
+The API and notification worker run in the same process. Migration 0187 is
+additive.
+
+Operational caveat: manual `flyctl deploy` bypasses the workflow migration step
+and must not be used for this schema-changing release without running the
+privileged migration path first.
+
+---
+
+## 11. Transitional #1123 Boundary
+
+Legacy operational alerts still exist temporarily for Ops Console and shell
+attention.
+
+```text
+Topnavbar / Ops Console attention source:
+  legacy operational alert lifecycle
+
+/alerts Recent:
+  new notification_events history
+```
+
+These may disagree. That is accepted transitional debt owned by #1123.
+
+Do not imply that:
+
+- the Ops Console dot is Recent unread count
+- old operational alerts were deleted
+- GH-1147 migrated operational state into notification history
+
+GH-1147 removes operational ownership from the merchant Alerts surface.
+
+---
+
+## 12. Follow-ups
+
+Known follow-ups, not implemented by GH-1147:
+
+- #1123 legacy operational-alert migration
+- push device-management / user-initiated registration UX
+- notification-history retention / purge policy, likely 90-180 days
+- Expo duplicate-collapse improvements
+- broader legacy backend alert lifecycle cleanup

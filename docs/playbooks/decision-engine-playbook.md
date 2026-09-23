@@ -865,14 +865,14 @@ Its source boundaries are:
   lifecycle records;
 - `WAITING` remains absent until a shop-wide persisted
   intervention/verification read exists;
-- `/alerts` remains the advanced management surface for Inbox, Snoozed,
-  Resolved and Rules.
+- `/alerts` is notification history plus notification preferences. It is not a
+  decision-management or operational-action surface.
 
 The following distinctions are mandatory:
 
 ```text
 navigation != intervention
-alert acknowledgement != resolution
+notification read/click state != decision state or operational resolution
 alert closure != verified Decision Engine outcome
 action completion != canonical problem resolution
 ```

@@ -5,6 +5,7 @@ import { buildSlaBreachAlertCopy, buildBlockedRevenueAlertCopy } from './alerts.
 import { syncStockProtectionAlertsForShop } from './stockProtectionAlertSynchronizer.js';
 import { readCurrentWaitingV1Records } from '../decision/interventionOutcome.service.js';
 import { readCurrentFulfillmentSlaSummary } from '../orders/fulfillmentSla.service.js';
+import { createNotificationsForAlertActivation } from '../notifications/notificationSourceAdapter.js';
 
 /**
  * ALERTS AGGREGATOR SERVICE (AL-01)
@@ -64,6 +65,39 @@ type AlertUpsert = {
   category: AlertCategory;
   audience: AlertAudience;
 };
+
+function alertWrite(trx: Knex.Transaction, alert: AlertUpsert) {
+  return {
+    ...alert,
+    resolved_at: alert.is_active ? null : trx.fn.now(),
+    updated_at:  trx.fn.now(),
+  };
+}
+
+function alertRefresh(trx: Knex.Transaction, alert: AlertUpsert) {
+  return {
+    severity:       alert.severity,
+    title:          alert.title,
+    message:        alert.message,
+    is_active:      alert.is_active,
+    revenue_impact: alert.revenue_impact ?? null,
+    category:       alert.category,
+    audience:       alert.audience,
+    resolved_at:    alert.is_active ? null : trx.fn.now(),
+    /**
+     * DISMISS RESET ON REACTIVATION
+     * ------------------------------
+     * When a signal re-fires (is_active=true), clear dismissed_at so
+     * the operator sees it again. When signal clears (is_active=false),
+     * preserve dismissed_at for audit. Dismissing is always temporary —
+     * if the underlying problem persists, the alert returns.
+     */
+    dismissed_at: alert.is_active
+      ? null
+      : trx.raw('"alerts"."dismissed_at"'),
+    updated_at: trx.fn.now(),
+  };
+}
 
 /**
  * MISSING COGS ALERT (AL-06)
@@ -127,40 +161,44 @@ async function aggregateMissingCogsAlerts(
 
 async function upsertAlerts(
   trx: Knex.Transaction,
-  alerts: AlertUpsert[]
+  alerts: AlertUpsert[],
 ): Promise<void> {
   if (alerts.length === 0) return;
 
   for (const alert of alerts) {
-    await trx('alerts')
-      .insert({
-        ...alert,
-        resolved_at: alert.is_active ? null : trx.fn.now(),
-        updated_at:  trx.fn.now(),
-      })
+    if (!alert.is_active) {
+      await trx('alerts')
+        .insert(alertWrite(trx, alert))
+        .onConflict(['shop_id', 'alert_key'])
+        .merge(alertRefresh(trx, alert));
+      continue;
+    }
+
+    const [inserted] = await trx('alerts')
+      .insert(alertWrite(trx, alert))
       .onConflict(['shop_id', 'alert_key'])
-      .merge({
-        severity:       alert.severity,
-        title:          alert.title,
-        message:        alert.message,
-        is_active:      alert.is_active,
-        revenue_impact: alert.revenue_impact ?? null,
-        category:       alert.category,
-        audience:       alert.audience,
-        resolved_at:    alert.is_active ? null : trx.fn.now(),
-        /**
-         * DISMISS RESET ON REACTIVATION
-         * ------------------------------
-         * When a signal re-fires (is_active=true), clear dismissed_at so
-         * the operator sees it again. When signal clears (is_active=false),
-         * preserve dismissed_at for audit. Dismissing is always temporary —
-         * if the underlying problem persists, the alert returns.
-         */
-        dismissed_at: alert.is_active
-          ? null
-          : trx.raw('"alerts"."dismissed_at"'),
-        updated_at: trx.fn.now(),
-      });
+      .ignore()
+      .returning(['id']);
+
+    if (inserted) {
+      await createNotificationsForAlertActivation(trx, alert);
+      continue;
+    }
+
+    const existing = await trx('alerts')
+      .where({ shop_id: alert.shop_id, alert_key: alert.alert_key })
+      .forUpdate()
+      .first('is_active');
+
+    const activated = existing && existing.is_active !== true;
+
+    await trx('alerts')
+      .where({ shop_id: alert.shop_id, alert_key: alert.alert_key })
+      .update(alertRefresh(trx, alert));
+
+    if (activated) {
+      await createNotificationsForAlertActivation(trx, alert);
+    }
   }
 }
 
@@ -478,61 +516,69 @@ async function aggregateStockReorderAlerts(
  * Called after every snapshot recomputation.
  * Runs inside a transaction with app.current_tenant set.
  */
+export async function aggregateAlertsForShopInTransaction(
+  trx: Knex.Transaction,
+  shopId: number,
+): Promise<void> {
+  await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+  const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts] =
+    await Promise.all([
+      aggregateConstraintAlerts(trx, shopId),
+      aggregateSlaAlerts(trx, shopId),
+      aggregateRevenueAlerts(trx, shopId),
+      aggregateMissingCogsAlerts(trx, shopId),
+    ]);
+
+  const allAlerts = [
+    ...constraintAlerts,
+    ...slaAlerts,
+    ...revenueAlerts,
+    ...missingCogsAlerts,
+  ];
+
+  await upsertAlerts(trx, allAlerts);
+  await syncStockProtectionAlertsForShop(trx, shopId);
+
+  /**
+   * RECONCILE — DEACTIVATE ORPHANED ALERTS
+   * --------------------------------------
+   * upsertAlerts only writes the alerts that are produced THIS run. An
+   * alert whose underlying signal has cleared (e.g. operational
+   * constraints that no longer exist after a projection change) is never
+   * re-emitted, so without this step it would linger is_active=true
+   * forever. Here we deactivate any currently-active alert for this shop
+   * whose alert_key is NOT in the freshly-computed set. We preserve
+   * dismissed_at (audit) and stamp resolved_at, matching upsertAlerts.
+   *
+   * If allAlerts is empty, every active alert for the shop is cleared.
+   */
+  const activeKeys = allAlerts
+    .filter(a => a.is_active)
+    .map(a => a.alert_key);
+  const deactivateQuery = trx('alerts')
+    .where({ shop_id: shopId, is_active: true })
+    .whereIn('source', ['constraint', 'snapshot'])
+    .update({
+      is_active:   false,
+      resolved_at: trx.fn.now(),
+      updated_at:  trx.fn.now(),
+    });
+  if (activeKeys.length > 0) {
+    deactivateQuery.whereNotIn('alert_key', activeKeys);
+  }
+  const deactivatedCount = await deactivateQuery;
+
+  console.info('[ALERTS_AGGREGATED]', {
+    shopId,
+    total:        allAlerts.length,
+    active:       allAlerts.filter(a => a.is_active).length,
+    deactivated:  deactivatedCount,
+  });
+}
+
 export async function aggregateAlertsForShop(shopId: number): Promise<void> {
   await db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts] = await Promise.all([
-        aggregateConstraintAlerts(trx, shopId),
-        aggregateSlaAlerts(trx, shopId),
-        aggregateRevenueAlerts(trx, shopId),
-        aggregateMissingCogsAlerts(trx, shopId),
-      ]);
-
-      const allAlerts = [
-        ...constraintAlerts,
-        ...slaAlerts,
-        ...revenueAlerts,
-        ...missingCogsAlerts,
-      ];
-
-    await upsertAlerts(trx, allAlerts);
-    await syncStockProtectionAlertsForShop(trx, shopId);
-
-    /**
-     * RECONCILE — DEACTIVATE ORPHANED ALERTS
-     * --------------------------------------
-     * upsertAlerts only writes the alerts that are produced THIS run. An
-     * alert whose underlying signal has cleared (e.g. operational
-     * constraints that no longer exist after a projection change) is never
-     * re-emitted, so without this step it would linger is_active=true
-     * forever. Here we deactivate any currently-active alert for this shop
-     * whose alert_key is NOT in the freshly-computed set. We preserve
-     * dismissed_at (audit) and stamp resolved_at, matching upsertAlerts.
-     *
-     * If allAlerts is empty, every active alert for the shop is cleared.
-     */
-    const activeKeys = allAlerts
-      .filter(a => a.is_active)
-      .map(a => a.alert_key);
-    const deactivateQuery = trx('alerts')
-      .where({ shop_id: shopId, is_active: true })
-      .whereIn('source', ['constraint', 'snapshot'])
-      .update({
-        is_active:   false,
-        resolved_at: trx.fn.now(),
-        updated_at:  trx.fn.now(),
-      });
-    if (activeKeys.length > 0) {
-      deactivateQuery.whereNotIn('alert_key', activeKeys);
-    }
-    const deactivatedCount = await deactivateQuery;
-
-    console.info('[ALERTS_AGGREGATED]', {
-      shopId,
-      total:        allAlerts.length,
-      active:       allAlerts.filter(a => a.is_active).length,
-      deactivated:  deactivatedCount,
-    });
+    await aggregateAlertsForShopInTransaction(trx, shopId);
   });
 }

@@ -90,27 +90,6 @@ export function SettingsPageWrapper({ children }: { children: React.ReactNode })
   );
 }
 
-export function PlaceholderTab({ title, description }: { title: string; description: string }) {
-  return (
-    <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', p: 2.5 }}>
-      <Box sx={{ maxWidth: 640 }}>
-        <Box sx={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', py: 8, gap: 1,
-          border: '0.5px dashed var(--rule)', borderRadius: '8px',
-        }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
-            {title}
-          </Typography>
-          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-            {description}
-          </Typography>
-        </Box>
-      </Box>
-    </Box>
-  );
-}
-
 // Inline confirm — replaces window.confirm() across Settings pages.
 // Renders inline below the trigger, not a modal — matches the
 // Collapse-based confirm pattern used for bulk backfill (Outbound).

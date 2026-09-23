@@ -493,6 +493,53 @@ async function startWorkersInternal(): Promise<void> {
     );
   }
 
+  // GH-1147: durable notification delivery.
+  // Compose one real transport for this registered worker lifecycle.
+  // Construction performs no provider request; delivery remains claim-driven.
+  try {
+    const [notificationDelivery, notificationTransport] =
+      await Promise.all([
+        import('../workers/notification-delivery.worker.js'),
+        import(
+          '../services/notifications/notificationDeliveryTransport.service.js'
+        ),
+      ]);
+
+    if (stopRequested) return;
+
+    if (
+      typeof notificationDelivery.startNotificationDeliveryWorker
+        === 'function'
+      && typeof notificationTransport.createNotificationDeliveryTransport
+        === 'function'
+    ) {
+      const transport =
+        notificationTransport.createNotificationDeliveryTransport();
+
+      if (
+        typeof notificationDelivery.stopNotificationDeliveryWorker
+          === 'function'
+      ) {
+        workerStopFns.push(async () => {
+          await notificationDelivery.stopNotificationDeliveryWorker();
+        });
+      }
+
+      notificationDelivery.startNotificationDeliveryWorker(transport);
+
+      console.log(
+        '[bootstrap/workers] Notification delivery worker started'
+      );
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Notification delivery worker not available:',
+      err && (err as Error).message
+        ? (err as Error).message
+        : err
+    );
+  }
+
 // start exchange rate worker — fetches daily FX rates for display-only currency conversion
   try {
     const exchangeRate = await import('../workers/exchange-rate.worker.js');

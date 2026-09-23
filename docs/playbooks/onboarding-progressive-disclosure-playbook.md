@@ -43,9 +43,10 @@ The Ops Console replaces both legacy topnav surfaces:
 
 It does **not** replace their authoritative data sources.
 
-`/alerts` remains the advanced alert-management workspace for Inbox, Snoozed,
-Resolved and Rules. The console provides a subordinate `Manage alerts →` path
-to that workspace.
+`/alerts` is the merchant notification surface: Recent notification history plus
+notification preferences. It is not a task-management destination. The console
+provides a subordinate path to Alerts when the merchant needs notification
+history or alert settings.
 
 **Design rationale:** Setup work, operational alerts and future Decision Engine
 interventions are all forms of "what needs my attention next". Splitting them
@@ -133,20 +134,21 @@ new persistence mechanism is introduced.
 
 #### Operational truth
 
-`TopnavbarContent` remains the single shell-level owner of the canonical inbox
-poll:
+`TopnavbarContent` remains the single shell-level owner of the legacy
+operational alert inbox poll during the #1123 transition:
 
 ```text
 useAlerts({ status: 'inbox' }, { enabled: isFt2, poll: true })
 ```
 
-The inbox rows are passed into the Ops Console. The console must not create a
-second inbox polling owner.
+The legacy inbox rows are passed into the Ops Console. The console must not
+create a second legacy operational alert polling owner.
 
-Resolved alerts do **not** populate Ops Console `HISTORY`.
-`alerts.resolved_at` is an alert-lifecycle fact only and is not evidence of a
-verified operational outcome. Resolved-alert archive/history remains owned by
-the Alerts workspace.
+Legacy resolved alerts do **not** populate Ops Console `HISTORY`.
+`alerts.resolved_at` is a legacy operational alert-lifecycle fact only and is
+not evidence of a verified operational outcome. Merchant `/alerts` Recent is
+notification history from `notification_events`, not the legacy resolved-alert
+archive.
 
 Ops Console `HISTORY` is sourced only from canonically verified operational
 outcomes exposed by `GET /api/v1/operations/history`.
@@ -154,7 +156,7 @@ outcomes exposed by `GET /api/v1/operations/history`.
 Accordingly:
 
 - `HISTORY` rows use `verified` state and glyph `✓`;
-- alert acknowledgement/resolution does not create a HISTORY row;
+- legacy alert acknowledgement/resolution does not create a HISTORY row;
 - navigation does not equal intervention;
 - navigation does not manufacture WAITING or VERIFIED state.
 
@@ -198,8 +200,8 @@ V1 filtering is deliberately small:
 OPEN | HISTORY
 ```
 
-Advanced alert filtering, snoozing, acknowledgement, resolution and Rules stay
-on `/alerts`.
+Operational action handling stays with Ops Console and the owning modules.
+Alerts is limited to Recent notification history and notification preferences.
 
 #### Responsive contract
 
@@ -599,7 +601,7 @@ lasyncroOrderId: <exact canonical LaSyncro order id>
 the generic Address Issues or Inventory queue. WAITING keeps its existing
 workflow-resolution routes.
 
-Resolved alerts are explicitly excluded from Ops Console HISTORY. The retired
+Legacy resolved alerts are explicitly excluded from Ops Console HISTORY. The retired
 `buildAlertHistoryRows()` path has been removed.
 
 **Verification evidence:**

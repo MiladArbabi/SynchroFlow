@@ -891,13 +891,14 @@ describe('alert deep-link mapping', () => {
 // ─── /alerts PRESERVED + REACHABLE ───────────────────────────────────────────
 
 describe('advanced alert workspace', () => {
-  it('"Manage alerts" is the one subtle path to /alerts', () => {
+  it('"Alert settings" is the one subtle handoff to /settings/alerts (GH-1147)', () => {
     renderPanel();
 
     const link = screen.getByTestId('ops-manage-alerts');
-    expect(link).toHaveTextContent('Manage alerts');
+    expect(link).toHaveTextContent('Alert settings →');
+    expect(link).not.toHaveTextContent('Manage alerts');
     fireEvent.click(link);
-    expect(mockNavigate).toHaveBeenCalledWith('/alerts');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/alerts');
   });
 
   it('adds no acknowledge/snooze/resolve/rules management of its own', () => {
@@ -909,16 +910,10 @@ describe('advanced alert workspace', () => {
     expect(console_).toMatch(/OpsConsolePanel/);
   });
 
-  it('leaves the /alerts routes and their tab paths untouched', () => {
+  it('keeps the /alerts wildcard route mounted for the Alerts module', () => {
     const host = fs.readFileSync(
       path.join(REPO_ROOT, 'apps/frontend/src/lifecycle/LifecycleRouteHost.tsx'), 'utf8');
     expect(host).toMatch(/<Route path="\/alerts\/\*" element=\{<AlertsPage \/>\} \/>/);
-
-    const alertsPage = fs.readFileSync(
-      path.join(REPO_ROOT, 'apps/frontend/src/pages/ft2-pages/AlertsPage.tsx'), 'utf8');
-    for (const p of ['/alerts', '/alerts/snoozed', '/alerts/resolved', '/alerts/rules']) {
-      expect(alertsPage).toMatch(`path: '${p}'`);
-    }
   });
 });
 
@@ -1025,7 +1020,7 @@ describe('xs responsive layout', () => {
     expect(screen.getByTestId('ops-row-label-alert:a1').textContent).toBe(LONG);
   });
 
-  it('keeps header, tabs, close control, section counts and Manage alerts present', () => {
+  it('keeps header, tabs, close control, section counts and Alert settings present', () => {
     renderPanel({ alerts: [alert({ id: 'a1' })] });
 
     expect(screen.getByLabelText('Ops Console')).toBeInTheDocument();
@@ -1112,7 +1107,7 @@ describe('NOW is actionable-only', () => {
     expect(screen.queryByTestId('ops-row-alert:a2')).not.toBeInTheDocument();
 
     // No generic fallback CTA was synthesised on any ROW to keep the dead-end
-    // alert in the queue. (The rail's own "Manage alerts →" footer is a
+    // alert in the queue. (The rail's own "Alert settings →" footer is a
     // different thing and must still be there — asserted below.)
     const rowCtas = Array.from(document.querySelectorAll('[data-testid^="ops-row-action-wrap-"]'))
       .map(el => el.textContent ?? '');
@@ -1121,7 +1116,7 @@ describe('NOW is actionable-only', () => {
       expect(rowCtas.some(t => t.includes(generic))).toBe(false);
     }
 
-    // /alerts remains the place unmapped alerts are managed.
+    // The rail's Alert settings footer is still present.
     expect(screen.getByTestId('ops-manage-alerts')).toBeInTheDocument();
   });
 });

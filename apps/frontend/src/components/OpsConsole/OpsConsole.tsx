@@ -3,11 +3,12 @@
 // OPS-CONSOLE-01 — persistent right-side Ops Console (V1).
 //
 // The SINGLE top-nav attention surface. It replaces both the "Getting started"
-// activation-checklist popover and the alerts bell popover. The alerts
-// subsystem is untouched and still authoritative: /alerts remains the advanced
-// management workspace (inbox / snoozed / resolved / rules, acknowledge, snooze,
-// resolve, filter) and is reachable from the rail's "Manage alerts" footer. The
-// console presents alerts; it manages none of them.
+// activation-checklist popover and the alerts bell popover. The console
+// presents alerts; it manages none of them. GH-1147 retired the old /alerts
+// management workspace (inbox / snoozed / resolved / rules): /alerts is now the
+// notification module (Recent + Settings), and the rail's "Alert settings"
+// footer opens its preferences in the Settings modal, /settings/alerts, over
+// the merchant's current page.
 //
 // The trigger stays in the topnav; the surface is a right-side rail rather than
 // a modal:
@@ -954,14 +955,14 @@ export function OpsConsolePanel({
         )}
       </Box>
 
-      {/* FOOTER — the single, non-primary path to the advanced alert workspace.
-          /alerts stays the place to acknowledge, snooze, resolve, filter and
-          manage rules; the console deliberately carries none of those controls. */}
+      {/* FOOTER — the single, non-primary handoff to notification preferences
+          (/settings/alerts, GH-1147). It is not an operational workspace; the
+          console deliberately carries no alert-management controls. */}
       <Box
         component="button"
         type="button"
         data-testid="ops-manage-alerts"
-        onClick={() => nav('/alerts')}
+        onClick={() => nav('/settings/alerts')}
         sx={{
           flexShrink: 0, width: '100%', textAlign: 'left',
           boxSizing: 'border-box', maxWidth: '100%',
@@ -975,7 +976,7 @@ export function OpsConsolePanel({
           '&:hover': { color: pal.ink3, bgcolor: pal.rowHover },
         }}
       >
-        Manage alerts →
+        Alert settings →
       </Box>
 
       <EntityDetailModal

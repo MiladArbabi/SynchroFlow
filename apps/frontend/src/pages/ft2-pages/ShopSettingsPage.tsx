@@ -11,10 +11,15 @@
 //   /settings/warehouse    → Warehouse     (Floor Display; future: batch/auto-release WM-35)
 //   /settings/finance      → Finance       (Cash Flow Inputs)
 //   /settings/localization → Localization  (display currency preference — ISS-124, 2026-07-09)
-//   /settings/notifications→ Notifications (📋 placeholder — push prefs, alert routing)
-//   /settings/integrations → Integrations  (📋 placeholder — non-carrier third-party)
+//   /settings/alerts       → Alerts        (shared AlertsSettingsPanel — same UI as /alerts/settings, GH-1147)
+//   /settings/billing      → Billing
+//   /settings/reports      → Reports
+//
+// Retired (GH-1147) — legacy URLs canonicalize to Alerts, no placeholder content:
+//   /settings/notifications→ /settings/alerts
+//   /settings/integrations → /settings/alerts
 
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box } from '@mui/material';
 import ShopSettingsGeneralPage      from './ShopSettingsGeneralPage';
 import ShopSettingsCarriersPage     from './ShopSettingsCarriersPage';
@@ -22,8 +27,9 @@ import ShopSettingsWarehousePage    from './ShopSettingsWarehousePage';
 import ShopSettingsFinancePage      from './ShopSettingsFinancePage';
 import BillingSettings              from '../account-settings/BillingSettings';
 import ShopSettingsReportsPage      from './ShopSettingsReportsPage';
-import { PlaceholderTab }           from './ShopSettingsShared';
 import LocalizationSettings         from '../account-settings/LocalizationSettings';
+import AlertsSettingsPanel          from '../alerts/AlertsSettingsPanel';
+import { SettingsPageWrapper }      from './ShopSettingsShared';
 import { SettingsShellHeader } from './SettingsShellHeader';
 
 export default function ShopSettingsPage() {
@@ -37,18 +43,13 @@ export default function ShopSettingsPage() {
         <Route path="/warehouse"     element={<ShopSettingsWarehousePage />} />
         <Route path="/finance"       element={<ShopSettingsFinancePage />}   />
         <Route path="/localization"  element={<LocalizationSettings />} />
-        <Route path="/notifications" element={
-          <PlaceholderTab
-            title="Notifications"
-            description="Push notification preferences, alert thresholds, and email routing — coming soon."
-          />
+        <Route path="/alerts"        element={
+          <SettingsPageWrapper>
+            <AlertsSettingsPanel />
+          </SettingsPageWrapper>
         } />
-        <Route path="/integrations"  element={
-          <PlaceholderTab
-            title="Integrations"
-            description="Third-party connections (accounting, ERP, and more) — coming soon."
-          />
-        } />
+        <Route path="/notifications" element={<Navigate to="/settings/alerts" replace />} />
+        <Route path="/integrations"  element={<Navigate to="/settings/alerts" replace />} />
         {/* Billing — plan, usage meters, upgrade/downgrade (UX-02) */}
         <Route path="/billing" element={<BillingSettings />} />
         {/* Reports Hub — export templates + history (GH #1014 Sprint 2) */}

@@ -1,6 +1,15 @@
 // apps/backend/src/api/notifications/notifications.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { listNotificationConditions } from '../../services/notifications/notificationConditionRegistry.js';
+import {
+  listRecentNotifications,
+  markNotificationClicked,
+  markNotificationRead,
+  NotificationHistoryInputError,
+  parseNotificationId,
+  parseRecentLimit,
+} from './notificationHistory.service.js';
 
 /**
  * PUSH SUBSCRIPTION CONTROLLER (WM-22)
@@ -86,4 +95,115 @@ export async function unsubscribe(req: Request, res: Response) {
 
   console.info('[PUSH_UNSUBSCRIBE]', { userId, shopId });
   return res.status(204).send();
+}
+
+export async function getPushStatus(req: Request, res: Response) {
+  const userId = req.user?.userId;
+  const shopId = req.user?.shopId;
+  if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const [webCountRow, expoCountRow] = await Promise.all([
+    db('push_subscriptions')
+      .where({ shop_id: shopId, user_id: userId, device_type: 'web' })
+      .whereNotNull('endpoint')
+      .whereNotNull('p256dh')
+      .whereNotNull('auth')
+      .whereRaw("btrim(endpoint) <> ''")
+      .whereRaw("btrim(p256dh) <> ''")
+      .whereRaw("btrim(auth) <> ''")
+      .count<{ count: string }[]>({ count: '*' })
+      .first(),
+    db('push_subscriptions')
+      .where({ shop_id: shopId, user_id: userId, device_type: 'expo' })
+      .whereNotNull('expo_push_token')
+      .whereRaw("btrim(expo_push_token) <> ''")
+      .count<{ count: string }[]>({ count: '*' })
+      .first(),
+  ]);
+
+  const webCount = Number(webCountRow?.count ?? 0);
+  const expoCount = Number(expoCountRow?.count ?? 0);
+  const registeredDestinationCount = webCount + expoCount;
+
+  return res.json({
+    registered_destination_count: registeredDestinationCount,
+    has_registered_destination: registeredDestinationCount > 0,
+    web_count: webCount,
+    expo_count: expoCount,
+  });
+}
+
+export function getNotificationConditions(
+  _req: Request,
+  res: Response,
+) {
+  return res.json({
+    conditions: listNotificationConditions(),
+  });
+}
+
+export async function getRecentNotifications(req: Request, res: Response) {
+  const userId = req.user?.userId;
+  const shopId = req.user?.shopId;
+  if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const limit = parseRecentLimit(req.query.limit);
+    const result = await listRecentNotifications({ shopId, userId, limit });
+    return res.json(result);
+  } catch (err) {
+    if (err instanceof NotificationHistoryInputError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[NOTIFICATIONS] getRecentNotifications failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function markRecentNotificationRead(req: Request, res: Response) {
+  const userId = req.user?.userId;
+  const shopId = req.user?.shopId;
+  if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const notification = await markNotificationRead({
+      shopId,
+      userId,
+      notificationId: parseNotificationId(req.params.notificationId),
+    });
+
+    if (!notification) return res.status(404).json({ error: 'NOTIFICATION_NOT_FOUND' });
+
+    return res.json({ notification });
+  } catch (err) {
+    if (err instanceof NotificationHistoryInputError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[NOTIFICATIONS] markRecentNotificationRead failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function markRecentNotificationClicked(req: Request, res: Response) {
+  const userId = req.user?.userId;
+  const shopId = req.user?.shopId;
+  if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const notification = await markNotificationClicked({
+      shopId,
+      userId,
+      notificationId: parseNotificationId(req.params.notificationId),
+    });
+
+    if (!notification) return res.status(404).json({ error: 'NOTIFICATION_NOT_FOUND' });
+
+    return res.json({ notification });
+  } catch (err) {
+    if (err instanceof NotificationHistoryInputError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[NOTIFICATIONS] markRecentNotificationClicked failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 }

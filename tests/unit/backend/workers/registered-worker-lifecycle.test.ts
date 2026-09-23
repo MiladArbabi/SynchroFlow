@@ -12,6 +12,8 @@ const inactive = [
   'workers/shopifyBillingReconciliation.worker', 'workers/margin-snapshot-integrity.worker',
   'workers/carrier-stall-detection.worker', 'workers/carrier-tracking-reconciliation.worker',
   'workers/morning-brief.worker', 'workers/exchange-rate.worker',
+  'workers/notification-delivery.worker',
+  'services/notifications/notificationDeliveryTransport.service',
   'workers/reconciliation/reconciliation.consumer', 'execution/execution.registry',
   'execution/handlers/proceed_fulfillment.handler', 'execution/handlers/resolve_operational_block.handler',
   'execution/handlers/resolve_inventory_block.handler', 'execution/handlers/resolve_customer_block.handler',
@@ -96,6 +98,55 @@ describe('registered worker lifecycle', () => {
     expect(stopB).toHaveBeenCalledTimes(1);
     expect(stopProduct).toHaveBeenCalledTimes(1);
   });
+  it('composes notification delivery transport once and owns its awaited stop', async () => {
+    const transport = jest.fn();
+    const createTransport = jest.fn(() => transport);
+    const startNotification = jest.fn();
+    const stopNotification = jest.fn();
+
+    jest.doMock(
+      'api-src/workers/notification-delivery.worker',
+      () => ({
+        startNotificationDeliveryWorker: startNotification,
+        stopNotificationDeliveryWorker: stopNotification,
+      }),
+    );
+
+    jest.doMock(
+      'api-src/services/notifications/notificationDeliveryTransport.service',
+      () => ({
+        createNotificationDeliveryTransport: createTransport,
+      }),
+    );
+
+    const workers = await import('api-src/bootstrap/workers');
+
+    await workers.startWorkers();
+
+    expect(createTransport).toHaveBeenCalledTimes(1);
+    expect(startNotification).toHaveBeenCalledTimes(1);
+    expect(startNotification).toHaveBeenCalledWith(transport);
+
+    const gate = deferred();
+    stopNotification.mockReturnValue(gate.promise);
+
+    let settled = false;
+    const stopping = workers.stopWorkers().then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stopNotification).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    gate.resolve();
+    await stopping;
+
+    expect(settled).toBe(true);
+  });
+
   it('waits for an owned finite start and blocks later starts during shutdown', async () => {
     const gate = deferred();
     const entered = deferred();

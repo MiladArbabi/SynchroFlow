@@ -12,7 +12,7 @@ import {
   Grow,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Plug } from 'lucide-react';
+import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Bell } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { getCapabilityPresentation } from '../../commercial/capabilityPresentation';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
@@ -589,12 +589,12 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
                     <ListItemButton
                       role="menuitem"
-                      onClick={() => handleProfileNavigate('/settings/integrations')}
+                      onClick={() => handleProfileNavigate('/alerts')}
                       sx={profileMenuItemSx}
                     >
-                      <Plug size={18} strokeWidth={1.75} />
+                      <Bell size={18} strokeWidth={1.75} />
                       <Typography sx={{ fontSize: 14, color: 'inherit' }}>
-                        Integrations
+                        Alerts
                       </Typography>
                     </ListItemButton>
                   </Box>
