@@ -11,6 +11,11 @@
 import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
+import {
+  LEGACY_OPENING_BALANCE_V1,
+  resolveBootstrapModel,
+  UnresolvedBootstrapModelError,
+} from '../../../services/inventory/bootstrapModel.js';
 
 type ShopifyRefundPayload = {
   id: number | string;
@@ -163,6 +168,54 @@ export async function handleRefundCreated(
    */
   const refundLineItems = refundPayload.refund_line_items ?? [];
   const restockableTypes = new Set(['return', 'cancel', 'legacy_restock']);
+
+  /**
+   * PHYSICALITY GATE (GH-1145-A1)
+   * -----------------------------
+   * A Shopify refund webhook asserts an economic event; it is not proof
+   * that stock physically came back to the warehouse. For
+   * reconcile_opening_expectation_v2 tenants the webhook must therefore
+   * never mint trusted physical release capacity: the refund stays
+   * observable (domain_events above) but no refund_return credit is
+   * written. Physical return capacity comes from WMS return restock after
+   * physical execution (stow.service.ts).
+   *
+   * legacy_opening_balance_v1 keeps the RT-04 behaviour below unchanged
+   * until A2. A missing/invalid bootstrap_model fails closed: no credit.
+   */
+  const hasRestockCandidate = refundLineItems.some(
+    (lineItem) =>
+      restockableTypes.has(lineItem.restock_type ?? 'return') &&
+      Number(lineItem.quantity ?? 0) > 0 &&
+      !!lineItem.line_item?.variant_id
+  );
+
+  if (hasRestockCandidate) {
+    let physicalCreditAllowed = false;
+
+    try {
+      physicalCreditAllowed =
+        (await resolveBootstrapModel(trx, shopId)) === LEGACY_OPENING_BALANCE_V1;
+    } catch (err) {
+      if (!(err instanceof UnresolvedBootstrapModelError)) throw err;
+
+      console.error('[REFUND_RETURN_BOOTSTRAP_MODEL_UNRESOLVED]', {
+        shopId,
+        refundId,
+        error: err.message,
+      });
+    }
+
+    if (!physicalCreditAllowed) {
+      console.info('[REFUND_RETURN_PHYSICAL_CREDIT_WITHHELD]', {
+        shopId,
+        refundId,
+        platformOrderId,
+        reason: 'shopify_webhook_not_physical_evidence',
+      });
+      return;
+    }
+  }
 
   for (const lineItem of refundLineItems) {
     const restockType = lineItem.restock_type ?? 'return';

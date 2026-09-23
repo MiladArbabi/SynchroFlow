@@ -108,8 +108,9 @@ async function main(): Promise<void> {
     console.log('[REVIEWER_SEED] ✅ Growth entitlements seeded');
 
     // ── 5. WMS + OPERATIONAL SETTINGS ────────────────────────────────────────
+    // GH-1145-A1: the reviewer tenant is provisioned like a new install.
     await trx('shop_wms_settings')
-      .insert({ shop_id: shopId })
+      .insert({ shop_id: shopId, bootstrap_model: 'reconcile_opening_expectation_v2' })
       .onConflict('shop_id').ignore();
 
     await trx('shop_operational_settings')

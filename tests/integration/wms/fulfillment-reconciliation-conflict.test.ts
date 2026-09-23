@@ -157,7 +157,7 @@ async function createFixture(
      * model that install invariant explicitly.
      */
     await trx('shop_wms_settings')
-      .insert({ shop_id: shopId })
+      .insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' })
       .onConflict('shop_id')
       .ignore();
 

@@ -10,12 +10,17 @@
  * sprints and cost two Shopify review cycles.
  *
  *   syncShopifyProducts  -> products / variants / external_product_identity_map
- *   inventory_movements  -> opening_balance at WH-{shopId}-ROOT (verbatim from
- *                           seedShopifyOpeningBalances)
+ *   inventory_movements  -> explicit PHYSICAL fixture stock at WH-{shopId}-ROOT
+ *                           (manual_adjustment, platform 'wms')
  *   rebuild projection   -> inventory_truth
  *   syncShopifyOrders    -> domain_events -> projection worker builds the rest
  *
  * Usage: npx tsx apps/backend/src/scripts/seed_fresh_install.cli.ts <shopId>
+ *
+ * GH-1145-A1: the fixture stock is deliberately NOT a Shopify opening_balance.
+ * A new install is reconcile_opening_expectation_v2, where Shopify quantity is
+ * an expectation and never capacity; fixtures that need releasable stock must
+ * say so physically instead of masquerading as imported Shopify inventory.
  *
  * FRESH-INSTALL-04: this module is import-safe — no argv parsing, no
  * process.exit at module scope — so integration tests can call
@@ -163,14 +168,14 @@ export async function seedFreshInstall(shopId: number) {
         device_event_id: crypto.randomUUID(),
         shop_id: shopId,
         lasyncro_variant_id: variant.lasyncro_variant_id,
-        movement_type: 'opening_balance',
+        movement_type: 'manual_adjustment',
         quantity_delta: product.qty,
-        reference_type: 'opening_balance',
+        reference_type: 'fixture_physical_stock',
         reference_id: crypto.randomUUID(),
-        platform: 'shopify',
+        platform: 'wms',
         location_code: rootLocationCode,
         occurred_at: new Date(),
-        triggered_by: 'system',
+        triggered_by: 'fresh_install_seed',
       });
     }
 

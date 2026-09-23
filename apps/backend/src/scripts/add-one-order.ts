@@ -13,8 +13,9 @@
 //
 // WHY NOT re-run seed_fresh_install: it is idempotent on orders
 // (external_event_id dedup) but NOT on inventory — a second run writes another
-// set of opening_balance movements and inflates stock by 125, destroying the
-// only tenant whose ledger currently reconciles with truth.
+// set of physical fixture-stock movements (manual_adjustment, GH-1145-A1) and
+// inflates stock by 125, destroying the only tenant whose ledger currently
+// reconciles with truth.
 //
 // This script writes NO inventory movements. syncShopifyOrders emits domain
 // events only ("responsible ONLY for transforming Shopify orders → domain

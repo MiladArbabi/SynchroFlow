@@ -113,7 +113,7 @@ async function createFixture(): Promise<Fixture> {
       stripe_customer_id: null,
     });
 
-    await trx('shop_wms_settings').insert({ shop_id: shopId });
+    await trx('shop_wms_settings').insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' });
 
     await trx('user_lifecycle_snapshot').insert({
       shop_id: shopId,

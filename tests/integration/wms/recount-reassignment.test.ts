@@ -153,7 +153,7 @@ async function createFixture(): Promise<Fixture> {
       stripe_customer_id: null,
     });
 
-    await trx('shop_wms_settings').insert({ shop_id: shopId });
+    await trx('shop_wms_settings').insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' });
 
     // user_lifecycle_snapshot is SHOP-scoped (PK is shop_id alone) — one row
     // per shop, not per user (user_id is retained for audit reference only).

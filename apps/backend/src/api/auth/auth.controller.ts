@@ -101,8 +101,10 @@ export const registerUser = async (req: Request, res: Response) => {
     // install (integration.controller.ts:807) but never at registration, so
     // every organic signup hit "[PICK_BATCH_SERVICE] shop_wms_settings missing"
     // and failed its first batch release. Mirrors the install path exactly.
+    // GH-1145-A1: a genuinely new tenant — opening Shopify inventory is an
+    // expectation only (bootstrap_model has no default; migration 0193).
     await trx('shop_wms_settings')
-      .insert({ shop_id: shopId })
+      .insert({ shop_id: shopId, bootstrap_model: 'reconcile_opening_expectation_v2' })
       .onConflict('shop_id')
       .ignore();
 
