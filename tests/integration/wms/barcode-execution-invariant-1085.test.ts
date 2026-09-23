@@ -1,9 +1,16 @@
 /**
  * GH-1085 / BARCODE-LIFECYCLE-01 — Slice C.
  *
- * The final execution invariant, from Stow through Pick release:
- * inventory may not be mutated, and pickable work may not be created, unless
- * the stock involved can actually be scanned by a human on the floor.
+ * The execution invariant for Stow and Pick: inventory may not be moved by
+ * a Stow unless the operator scanned the exact physical unit, and Pick
+ * execution owns scan identity/recovery for the stock it picks.
+ *
+ * GH-1145 SUPERSEDES the original Release-time prerequisites of this suite.
+ * Release eligibility is canonical physical stock only: stock releases and
+ * reserves regardless of variant barcode, inventory_units rows,
+ * label_printed_at or barcode_print_jobs. C3/C4/C7 were converted from
+ * "release is refused" into "release succeeds" regressions; the Stow identity
+ * cases (C1/C2/C2b) are unchanged.
  *
  * TWO KINDS OF EVIDENCE, NEVER INTERCHANGEABLE
  *   exact-unit   LSU- — one physical unit, one sticker. The only thing that
@@ -12,14 +19,9 @@
  *                identity. Both identify a SKU, not a unit.
  *
  * Slice B established that a printed LSU- label (label_printed_at) is the
- * acknowledgement that a unit is physically identifiable. Slice C carries that
- * through to the two places stock actually moves: Stow confirm, and Pick
- * release/reservation.
- *
- * LOCATION-AWARE COVERAGE: readiness must cover the stock being allocated, at
- * the location it is allocated from. A label-ready unit sitting in another bin,
- * another tenant, another variant, or already shipped proves nothing about this
- * allocation.
+ * acknowledgement that a unit is physically identifiable. Slice C originally
+ * carried that through to Stow confirm and Pick release/reservation; after
+ * GH-1145 it remains a Stow and Pick-execution concern, not a Release gate.
  *
  * Real services and the real release route against the disposable
  * synchroflow_test_* database (`npm run test:integration`).
@@ -359,15 +361,41 @@ function releaseBatch(token: string, orderId: string) {
     .send({ priority_order_ids: [orderId], exclusive: true });
 }
 
-/** A release refused for scan-readiness must leave the ledger untouched. */
-function expectNoReservationSideEffects(
+/**
+ * GH-1145: a Release of canonical physical stock succeeds and reserves exactly
+ * the expected quantity at the expected bin — on_hand unchanged, reserved up,
+ * available down.
+ */
+async function expectReleasedAt(
+  shopId: number,
+  lasyncroVariantId: string,
+  release: request.Response,
   before: Awaited<ReturnType<typeof variantState>>,
-  after: Awaited<ReturnType<typeof variantState>>
+  locationCode: string,
+  quantity: number
 ) {
-  expect(after.truth).toEqual(before.truth);
-  expect(after.allocations).toEqual([]);
-  expect(after.movements.filter((m: any) => m.movement_type === 'reservation_hold')).toEqual([]);
-  expect(after.movements).toEqual(before.movements);
+  expect({ status: release.status, body: release.body })
+    .toMatchObject({ status: 201, body: { pick_batch_id: expect.any(String) } });
+
+  const after = await variantState(shopId, lasyncroVariantId);
+
+  expect(after.allocations).toEqual([
+    expect.objectContaining({
+      pick_batch_id: release.body.pick_batch_id,
+      location_code: locationCode,
+      quantity,
+    }),
+  ]);
+
+  expect(after.movements.filter((m: any) => m.movement_type === 'reservation_hold')).toEqual([
+    expect.objectContaining({ movement_type: 'reservation_hold', location_code: locationCode }),
+  ]);
+
+  const truthAfter = after.truth.find((t: any) => t.location_code === locationCode)!;
+  const truthBefore = before.truth.find((t: any) => t.location_code === locationCode)!;
+  expect(Number(truthAfter.on_hand_quantity)).toBe(Number(truthBefore.on_hand_quantity));
+  expect(Number(truthAfter.reserved_quantity)).toBe(Number(truthBefore.reserved_quantity) + quantity);
+  expect(Number(truthAfter.available_quantity)).toBe(Number(truthBefore.available_quantity) - quantity);
 }
 
 // ── C1 ─────────────────────────────────────────────────────────────────────
@@ -507,7 +535,7 @@ it('C2b — one LSU scan cannot bulk-stow additional inbound units', async () =>
 
 // ── C3 ─────────────────────────────────────────────────────────────────────
 
-it('C3 — release is blocked for pickable stock with no practical scan path', async () => {
+it('C3 — canonical physical stock with no external barcode and no LSU rows releases; identity/recovery belongs to Pick execution', async () => {
   const shop = await provisionFt2Shop(crypto.randomUUID());
   const variantId = await seedMappedVariant(shop.shopId, null);
   const binCode = await createPickBin(shop.shopId, shop.rootLocationCode);
@@ -515,9 +543,9 @@ it('C3 — release is blocked for pickable stock with no practical scan path', a
   await seedTruth(shop.shopId, variantId, binCode, 2);
   const orderId = await seedOrder(shop.shopId, variantId, 2);
 
-  // The variant carries an LSP- catalog identity from ingestion. That is
-  // product identity in a database, not a sticker on a box, and must not by
-  // itself make this stock releasable.
+  // Fixture identity: no external barcode, only the LSP- catalog identity
+  // from ingestion, and no LSU rows. GH-1145: none of that gates Release —
+  // scan identity/recovery is resolved at Pick execution.
   const variantRow = await withTenant(shop.shopId, (trx) =>
     trx('variants').where({ shop_id: shop.shopId, lasyncro_variant_id: variantId })
       .first('barcode', 'lasyncro_barcode'));
@@ -525,18 +553,16 @@ it('C3 — release is blocked for pickable stock with no practical scan path', a
   expect(variantRow!.lasyncro_barcode).toMatch(/^LSP-/);
 
   const before = await variantState(shop.shopId, variantId);
+  expect(before.units).toEqual([]);
 
   const release = await releaseBatch(shop.token, orderId);
 
-  expect(release.status).toBeGreaterThanOrEqual(400);
-  expect(release.status).toBeLessThan(500);
-
-  expectNoReservationSideEffects(before, await variantState(shop.shopId, variantId));
+  await expectReleasedAt(shop.shopId, variantId, release, before, binCode, 2);
 });
 
 // ── C4 ─────────────────────────────────────────────────────────────────────
 
-it('C4 — unprinted LSU rows alone do not make stock releasable', async () => {
+it('C4 — missing label_printed_at does not block Release', async () => {
   const shop = await provisionFt2Shop(crypto.randomUUID());
   const variantId = await seedMappedVariant(shop.shopId, null);
   const binCode = await createPickBin(shop.shopId, shop.rootLocationCode);
@@ -544,8 +570,8 @@ it('C4 — unprinted LSU rows alone do not make stock releasable', async () => {
   await seedTruth(shop.shopId, variantId, binCode, 2);
   const jobLineId = await seedReceiveJobLine(shop.shopId, variantId);
 
-  // Enough units, in the right bin, but no label has ever been acknowledged —
-  // a database row is not a sticker.
+  // Enough units, in the right bin, but no label has ever been acknowledged.
+  // GH-1145: label acknowledgement is not a Release prerequisite.
   await seedStowedUnits(shop.shopId, {
     lasyncroVariantId: variantId, receiveJobLineId: jobLineId, count: 2,
     locationCode: binCode, labelPrinted: false,
@@ -558,10 +584,7 @@ it('C4 — unprinted LSU rows alone do not make stock releasable', async () => {
 
   const release = await releaseBatch(shop.token, orderId);
 
-  expect(release.status).toBeGreaterThanOrEqual(400);
-  expect(release.status).toBeLessThan(500);
-
-  expectNoReservationSideEffects(before, await variantState(shop.shopId, variantId));
+  await expectReleasedAt(shop.shopId, variantId, release, before, binCode, 2);
 });
 
 // ── C5 ─────────────────────────────────────────────────────────────────────
@@ -637,7 +660,7 @@ it('C6 — stock with a real external barcode releases without any LSU relabelli
 
 // ── C7 ─────────────────────────────────────────────────────────────────────
 
-it('C7 — a legacy barcode_print_jobs row is not an escape hatch for release readiness', async () => {
+it('C7 — barcode_print_jobs is irrelevant to Release eligibility; canonical physical stock releases independently of it', async () => {
   const shop = await provisionFt2Shop(crypto.randomUUID());
   const variantId = await seedMappedVariant(shop.shopId, null);
   const binCode = await createPickBin(shop.shopId, shop.rootLocationCode);
@@ -648,7 +671,8 @@ it('C7 — a legacy barcode_print_jobs row is not an escape hatch for release re
    * The artefact closeReceiveJob still writes today: one row per VARIANT,
    * barcode_value = SKU or a slice of the variant UUID. It is not per-unit, it
    * is not acknowledged by anyone, and for a barcode-less variant its value is
-   * invented from a UUID. It must never satisfy the execution invariant.
+   * invented from a UUID. GH-1145: it is irrelevant to Release — the stock
+   * releases on canonical physical quantity alone, with or without it.
    */
   await withTenant(shop.shopId, (trx) =>
     trx('barcode_print_jobs').insert({
@@ -665,8 +689,5 @@ it('C7 — a legacy barcode_print_jobs row is not an escape hatch for release re
 
   const release = await releaseBatch(shop.token, orderId);
 
-  expect(release.status).toBeGreaterThanOrEqual(400);
-  expect(release.status).toBeLessThan(500);
-
-  expectNoReservationSideEffects(before, await variantState(shop.shopId, variantId));
+  await expectReleasedAt(shop.shopId, variantId, release, before, binCode, 2);
 });

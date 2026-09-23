@@ -1,25 +1,24 @@
 // tests/integration/inventory/eligibility-reservation-parity-1145d.test.ts
 //
-// GH-1145-D CHARACTERIZATION
-// --------------------------
-// This is intentionally CURRENT DEFECTIVE BEHAVIOUR, pinned so it cannot
-// change silently. It was A1-06 in opening-balance-physical-capacity-1145a
-// and was relocated here because it belongs to GH-1145-D, not GH-1145-A1.
+// GH-1145-D1 REGRESSION CONTRACT
+// ------------------------------
+// Originally A1-06 in opening-balance-physical-capacity-1145a, relocated here
+// as a GH-1145-D characterization of the eligibility/reservation disagreement.
+// GH-1145-D1 converts it into the desired parity regression:
 //
-// For the same physical stock state — genuine physical ROOT stock, a variant
-// with no external barcode, zero inventory_units, zero label_printed_at
-// evidence — the two release gates disagree today:
-//
-//   - evaluateInventoryConstraint (order eligibility) reads only
-//     inventory_truth and says the order is NOT inventory-blocked;
-//   - assertPickAllocationsScanReady (called by reserveBatchInventory before
-//     any reservation_hold is written) requires a variant barcode OR enough
-//     label-printed inventory_units, and throws PickExecutionReadinessError
-//     with code PICK_SCAN_READINESS_REQUIRED.
-//
-// When GH-1145-D removes label/print readiness from Release, this test MUST
-// be rewritten into the desired parity regression:
 //   eligibility permits -> reservation also permits.
+//
+// For genuine physical ROOT stock of a variant with no external barcode, zero
+// inventory_units and zero label_printed_at evidence:
+//
+//   - evaluateInventoryConstraint (order eligibility) says the order is NOT
+//     inventory-blocked;
+//   - the real reserveBatchInventory must reserve the same stock: canonical
+//     physical stock may Release/reserve regardless of barcode,
+//     inventory_units, label_printed_at or barcode_print_jobs state.
+//
+// Scan identity/recovery belongs to Pick execution; Pick execution
+// safeguards are not weakened by this contract.
 //
 // Fixture helpers are a minimal local copy of the 1145-A suite's helpers:
 // test files cannot import each other without also registering their tests.
@@ -37,11 +36,7 @@ import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.ser
 
 import { evaluateInventoryConstraint } from 'api-src/services/constraints/evaluators/inventoryConstraintEvaluator';
 import { rebuildInventoryProjectionForVariants } from 'api-src/services/inventory/rebuildInventoryProjection';
-import {
-  assertPickAllocationsScanReady,
-  PickExecutionReadinessError,
-  PICK_SCAN_READINESS_REQUIRED,
-} from 'api-src/services/wms/pickExecutionReadiness.service';
+import { reserveBatchInventory } from 'api-src/services/wms/batchReservation.service';
 
 jest.setTimeout(120000);
 
@@ -134,8 +129,9 @@ async function createDemandOrder(
   productId: string,
   variantId: string,
   quantity: number
-): Promise<string> {
+): Promise<{ orderId: string; lineItemId: string }> {
   const orderId = crypto.randomUUID();
+  const lineItemId = crypto.randomUUID();
   const now = new Date();
 
   await withTenant(shopId, async (trx) => {
@@ -167,13 +163,58 @@ async function createDemandOrder(
       line_total: (10 * quantity).toFixed(2),
       estimated_unit_cost: '5.00',
     });
+
+    await trx('order_line_items').insert({
+      lasyncro_line_item_id: lineItemId,
+      lasyncro_order_id: orderId,
+      lasyncro_product_id: productId,
+      lasyncro_variant_id: variantId,
+      title: 'GH-1145-D fixture line',
+      quantity,
+      unit_price: '10.00',
+      line_total: (10 * quantity).toFixed(2),
+      created_at: now,
+      updated_at: now,
+    });
   });
 
-  return orderId;
+  return { orderId, lineItemId };
 }
 
-describe('GH-1145-D — eligibility vs reservation-readiness (CHARACTERIZATION)', () => {
-  it('CURRENT DEFECT: eligibility permits barcode-less, unit-less physical ROOT stock while reservation-readiness throws PICK_SCAN_READINESS_REQUIRED', async () => {
+/** Minimal pick_batches row — same shape as opening-balance-physical-capacity-1145a. */
+async function createPickBatch(shopId: number): Promise<string> {
+  const pickBatchId = crypto.randomUUID();
+  await withTenant(shopId, (trx) =>
+    trx('pick_batches').insert({
+      pick_batch_id: pickBatchId,
+      shop_id: shopId,
+      status: 'pending',
+      released_at: new Date(),
+      release_trigger: 'manual',
+      max_line_items: 10,
+      total_line_items: 1,
+      total_units: 1,
+    })
+  );
+  return pickBatchId;
+}
+
+async function readRootTruth(shopId: number, variantId: string, rootCode: string) {
+  const row = await withTenant(shopId, (trx) =>
+    trx('inventory_truth')
+      .where({ shop_id: shopId, lasyncro_variant_id: variantId, location_code: rootCode })
+      .first('on_hand_quantity', 'reserved_quantity', 'available_quantity')
+  );
+  expect(row).toBeDefined();
+  return {
+    onHand: Number(row.on_hand_quantity),
+    reserved: Number(row.reserved_quantity),
+    available: Number(row.available_quantity),
+  };
+}
+
+describe('GH-1145-D1 — eligibility / reservation parity', () => {
+  it('barcode-less, unit-less, unlabelled physical ROOT stock that eligibility permits is also reserved by reserveBatchInventory', async () => {
     const shopId = await createShop();
     const { productId, variantId, rootCode } = await seedBarcodelessVariantAtRoot(shopId);
 
@@ -184,19 +225,21 @@ describe('GH-1145-D — eligibility vs reservation-readiness (CHARACTERIZATION)'
 
     // Fixture preconditions: no external barcode, zero inventory_units,
     // therefore zero label_printed_at evidence.
-    const identity = await withTenant(shopId, async (trx) => ({
-      variant: await trx('variants')
-        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
-        .first('barcode'),
-      units: await trx('inventory_units')
-        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
-        .count<{ count: string }[]>('* as count'),
-    }));
+    const readIdentity = () =>
+      withTenant(shopId, async (trx) => ({
+        variant: await trx('variants')
+          .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+          .first('barcode'),
+        units: await trx('inventory_units')
+          .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+          .count<{ count: string }[]>('* as count'),
+      }));
+    const identity = await readIdentity();
     expect(identity.variant?.barcode ?? null).toBeNull();
     expect(Number(identity.units[0].count)).toBe(0);
 
     // 1. Eligibility: NOT inventory-blocked.
-    const orderId = await createDemandOrder(shopId, productId, variantId, 5);
+    const { orderId, lineItemId } = await createDemandOrder(shopId, productId, variantId, 5);
     const results = await withTenant(shopId, (trx) =>
       evaluateInventoryConstraint(trx, orderId, shopId)
     );
@@ -205,25 +248,72 @@ describe('GH-1145-D — eligibility vs reservation-readiness (CHARACTERIZATION)'
     const eligibilityBlocked = !!row?.isActive;
     expect(eligibilityBlocked).toBe(false);
 
-    // 2. Reservation-readiness: throws PICK_SCAN_READINESS_REQUIRED for the
-    //    same variant, same location, same quantity.
-    let caught: unknown = null;
-    await withTenant(shopId, async (trx) => {
-      try {
-        await assertPickAllocationsScanReady(trx, shopId, [
-          { lasyncroVariantId: variantId, locationCode: rootCode, quantity: 5 },
-        ]);
-      } catch (err) {
-        caught = err;
-      }
-    });
+    // 2. Reservation: the real reserveBatchInventory permits the same stock.
+    const truthBefore = await readRootTruth(shopId, variantId, rootCode);
+    const pickBatchId = await createPickBatch(shopId);
 
-    expect(caught).toBeInstanceOf(PickExecutionReadinessError);
-    expect((caught as PickExecutionReadinessError).code).toBe(
-      PICK_SCAN_READINESS_REQUIRED
+    const allocations = await withTenant(shopId, (trx) =>
+      reserveBatchInventory(trx, {
+        shopId,
+        pickBatchId,
+        releasedBy: null,
+        lineItems: [
+          {
+            lasyncro_variant_id: variantId,
+            quantity: 5,
+            lasyncro_order_id: orderId,
+            lasyncro_line_item_id: lineItemId,
+          },
+        ],
+      })
     );
-    expect((caught as PickExecutionReadinessError).code).toBe(
-      'PICK_SCAN_READINESS_REQUIRED'
+
+    // 3. Allocation is exactly ROOT qty 5.
+    expect(allocations).toEqual([
+      { lasyncroVariantId: variantId, locationCode: rootCode, quantity: 5 },
+    ]);
+
+    // 4. One reservation_hold for this batch/variant/location.
+    const holds = await withTenant(shopId, (trx) =>
+      trx('inventory_movements')
+        .where({
+          shop_id: shopId,
+          movement_type: 'reservation_hold',
+          reference_type: 'pick_batch',
+          reference_id: pickBatchId,
+          lasyncro_variant_id: variantId,
+          location_code: rootCode,
+        })
+        .select('quantity_delta')
     );
+    expect(holds).toHaveLength(1);
+    expect(Number(holds[0].quantity_delta)).toBe(5);
+
+    // 5. One ownership row for the order line.
+    const ownership = await withTenant(shopId, (trx) =>
+      trx('pick_reservation_allocations')
+        .where({
+          shop_id: shopId,
+          pick_batch_id: pickBatchId,
+          lasyncro_order_id: orderId,
+          lasyncro_line_item_id: lineItemId,
+        })
+        .select('lasyncro_variant_id', 'location_code', 'quantity')
+    );
+    expect(ownership).toHaveLength(1);
+    expect(ownership[0].lasyncro_variant_id).toBe(variantId);
+    expect(ownership[0].location_code).toBe(rootCode);
+    expect(Number(ownership[0].quantity)).toBe(5);
+
+    // 6-8. on_hand unchanged, reserved +5, available -5.
+    const truthAfter = await readRootTruth(shopId, variantId, rootCode);
+    expect(truthAfter.onHand).toBe(truthBefore.onHand);
+    expect(truthAfter.reserved).toBe(truthBefore.reserved + 5);
+    expect(truthAfter.available).toBe(truthBefore.available - 5);
+
+    // 9. The fixture still proves what it claims: no barcode, zero units.
+    const identityAfter = await readIdentity();
+    expect(identityAfter.variant?.barcode ?? null).toBeNull();
+    expect(Number(identityAfter.units[0].count)).toBe(0);
   });
 });
