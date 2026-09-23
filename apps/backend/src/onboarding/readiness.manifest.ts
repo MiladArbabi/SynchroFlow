@@ -80,6 +80,17 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
           { signal: 'wms.carrierConfigured', expectedValue: true }
         ],
         action: { type: 'navigate', target: '/settings/carriers' }
+      },
+      {
+        id: 'reconcile-inventory',
+        label: 'Reconcile inventory',
+        required: false,
+        completionRules: [
+          {
+            signal: 'wms.openingInventoryReconciled',
+            expectedValue: true
+          }
+        ]
       }
     ]
   },

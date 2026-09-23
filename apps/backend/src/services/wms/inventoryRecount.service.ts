@@ -3,6 +3,7 @@ import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { isActionAllowed } from '../permissions/permissionCache.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
+import { issueReconciledUnits } from './inventoryUnit.service.js';
 
 /**
  * INVENTORY RECOUNT SERVICE (INV-PHYSICAL-COUNT-13 / INV-RECON-WRITER-14)
@@ -374,6 +375,1182 @@ export async function createRecountTask(
     shopId, label, scope, lineCount: lines.length, assignedTo: params.assignedTo ?? null,
   });
   return { recount_task_id: task.recount_task_id, label, line_count: lines.length };
+}
+
+
+export type OpeningInventoryProgressState =
+  | 'not_started'
+  | 'in_progress'
+  | 'needs_review'
+  | 'complete';
+
+export interface OpeningInventoryBinProgress {
+  recount_task_id: string;
+  location_code: string;
+  status: string;
+  progress_state: OpeningInventoryProgressState;
+  claimed_by: number | null;
+}
+
+export interface OpeningInventoryProgress {
+  warehouse_id: string;
+  total_bins: number;
+  complete_bins: number;
+  in_progress_bins: number;
+  needs_review_bins: number;
+  not_started_bins: number;
+  remaining_bins: number;
+  progress_pct: number;
+  all_bins_settled: boolean;
+  bins: OpeningInventoryBinProgress[];
+}
+
+function openingInventoryProgressState(
+  status: string
+): OpeningInventoryProgressState {
+  if (status === 'committed') return 'complete';
+
+  if (status === 'manual_review' || status === 'cancelled') {
+    return 'needs_review';
+  }
+
+  if (status === 'claimed' || status === 'counting') {
+    return 'in_progress';
+  }
+
+  return 'not_started';
+}
+
+export async function getOpeningInventoryProgress(
+  trx: Knex.Transaction,
+  shopId: number,
+  warehouseId: string
+): Promise<OpeningInventoryProgress> {
+  const rows = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      purpose: 'opening_inventory',
+    })
+    .select(
+      'recount_task_id',
+      'scope_location_code',
+      'status',
+      'claimed_by'
+    )
+    .orderBy('scope_location_code', 'asc');
+
+  const bins: OpeningInventoryBinProgress[] = rows.map((row: any) => ({
+    recount_task_id: String(row.recount_task_id),
+    location_code: String(row.scope_location_code),
+    status: String(row.status),
+    progress_state: openingInventoryProgressState(String(row.status)),
+    claimed_by:
+      row.claimed_by === null || row.claimed_by === undefined
+        ? null
+        : Number(row.claimed_by),
+  }));
+
+  const completeBins = bins.filter(
+    (bin) => bin.progress_state === 'complete'
+  ).length;
+
+  const inProgressBins = bins.filter(
+    (bin) => bin.progress_state === 'in_progress'
+  ).length;
+
+  const needsReviewBins = bins.filter(
+    (bin) => bin.progress_state === 'needs_review'
+  ).length;
+
+  const notStartedBins = bins.filter(
+    (bin) => bin.progress_state === 'not_started'
+  ).length;
+
+  const totalBins = bins.length;
+
+  return {
+    warehouse_id: warehouseId,
+    total_bins: totalBins,
+    complete_bins: completeBins,
+    in_progress_bins: inProgressBins,
+    needs_review_bins: needsReviewBins,
+    not_started_bins: notStartedBins,
+    remaining_bins: totalBins - completeBins,
+    progress_pct:
+      totalBins === 0
+        ? 0
+        : Math.floor((completeBins * 100) / totalBins),
+    all_bins_settled: totalBins > 0 && completeBins === totalBins,
+    bins,
+  };
+}
+
+
+export type ShopOpeningInventoryState =
+  | 'not_required'
+  | 'not_started'
+  | 'counting'
+  | 'needs_bin_review'
+  | 'ready_for_cutover'
+  | 'review_required';
+
+export interface ShopOpeningInventoryDifference {
+  lasyncro_variant_id: string;
+  expected_quantity: number;
+  observed_quantity: number;
+  delta: number;
+}
+
+export interface ShopOpeningInventoryBinProgress {
+  recount_task_id: string;
+  warehouse_id: string;
+  location_code: string;
+  status: string;
+  progress_state: OpeningInventoryProgressState;
+  claimed_by: number | null;
+}
+
+export interface ShopOpeningInventoryProgress {
+  bootstrap_model:
+    | 'legacy_opening_balance_v1'
+    | 'reconcile_opening_expectation_v2';
+  reconciliation_required: boolean;
+  started_at: Date | null;
+  state: ShopOpeningInventoryState;
+  total_bins: number;
+  complete_bins: number;
+  in_progress_bins: number;
+  needs_review_bins: number;
+  not_started_bins: number;
+  remaining_bins: number;
+  progress_pct: number;
+  all_bins_settled: boolean;
+  difference_count: number;
+  differences: ShopOpeningInventoryDifference[];
+  bins: ShopOpeningInventoryBinProgress[];
+}
+
+/**
+ * Shop-wide opening reconciliation authority.
+ *
+ * Important distinction:
+ *
+ *   all_bins_settled
+ *     = every frozen physical observation task is committed
+ *
+ *   ready_for_cutover
+ *     = every task is committed AND immutable Shopify expectation matches the
+ *       immutable opening physical observation
+ *
+ * A mismatch never mutates physical truth here.
+ */
+export async function getShopOpeningInventoryProgress(
+  dbOrTrx: Knex | Knex.Transaction,
+  shopId: number
+): Promise<ShopOpeningInventoryProgress> {
+  const settings = await dbOrTrx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .select(
+      'bootstrap_model',
+      'opening_inventory_reconciliation_started_at'
+    )
+    .first();
+
+  if (!settings) {
+    throw new Error(
+      `[OPENING_RECOUNT_SHOP_PROGRESS] shop_wms_settings missing for shop ${shopId}`
+    );
+  }
+
+  const bootstrapModel = String(settings.bootstrap_model);
+
+  if (
+    bootstrapModel !== 'legacy_opening_balance_v1' &&
+    bootstrapModel !== 'reconcile_opening_expectation_v2'
+  ) {
+    throw new Error(
+      `[OPENING_RECOUNT_SHOP_PROGRESS] Unsupported bootstrap_model: ${JSON.stringify(
+        settings.bootstrap_model
+      )}`
+    );
+  }
+
+  if (bootstrapModel === 'legacy_opening_balance_v1') {
+    return {
+      bootstrap_model: 'legacy_opening_balance_v1',
+      reconciliation_required: false,
+      started_at: null,
+      state: 'not_required',
+      total_bins: 0,
+      complete_bins: 0,
+      in_progress_bins: 0,
+      needs_review_bins: 0,
+      not_started_bins: 0,
+      remaining_bins: 0,
+      progress_pct: 100,
+      all_bins_settled: true,
+      difference_count: 0,
+      differences: [],
+      bins: [],
+    };
+  }
+
+  const rows = await dbOrTrx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      purpose: 'opening_inventory',
+    })
+    .select(
+      'recount_task_id',
+      'warehouse_id',
+      'scope_location_code',
+      'status',
+      'claimed_by'
+    )
+    .orderBy([
+      { column: 'warehouse_id', order: 'asc' },
+      { column: 'scope_location_code', order: 'asc' },
+    ]);
+
+  const bins: ShopOpeningInventoryBinProgress[] = rows.map(
+    (row: any) => ({
+      recount_task_id: String(row.recount_task_id),
+      warehouse_id: String(row.warehouse_id),
+      location_code: String(row.scope_location_code),
+      status: String(row.status),
+      progress_state: openingInventoryProgressState(
+        String(row.status)
+      ),
+      claimed_by:
+        row.claimed_by === null ||
+        row.claimed_by === undefined
+          ? null
+          : Number(row.claimed_by),
+    })
+  );
+
+  const totalBins = bins.length;
+
+  const completeBins = bins.filter(
+    (bin) => bin.progress_state === 'complete'
+  ).length;
+
+  const inProgressBins = bins.filter(
+    (bin) => bin.progress_state === 'in_progress'
+  ).length;
+
+  const needsReviewBins = bins.filter(
+    (bin) => bin.progress_state === 'needs_review'
+  ).length;
+
+  const notStartedBins = bins.filter(
+    (bin) => bin.progress_state === 'not_started'
+  ).length;
+
+  const allBinsSettled =
+    totalBins > 0 && completeBins === totalBins;
+
+  let differences: ShopOpeningInventoryDifference[] = [];
+
+  if (allBinsSettled) {
+    const expectationRows = await dbOrTrx(
+      'shopify_opening_inventory_expectations'
+    )
+      .where({ shop_id: shopId })
+      .select(
+        'lasyncro_variant_id',
+        'expected_quantity'
+      );
+
+    const observedRows = await dbOrTrx(
+      'inventory_movements'
+    )
+      .where({
+        shop_id: shopId,
+        movement_type: 'opening_inventory_reconcile',
+      })
+      .groupBy('lasyncro_variant_id')
+      .select('lasyncro_variant_id')
+      .sum<{ lasyncro_variant_id: string; observed_quantity: string }[]>(
+        'quantity_delta as observed_quantity'
+      );
+
+    const expectedByVariant = new Map<string, number>(
+      expectationRows.map((row: any) => [
+        String(row.lasyncro_variant_id),
+        Number(row.expected_quantity),
+      ])
+    );
+
+    const observedByVariant = new Map<string, number>(
+      observedRows.map((row: any) => [
+        String(row.lasyncro_variant_id),
+        Number(row.observed_quantity ?? 0),
+      ])
+    );
+
+    const variantIds = Array.from(
+      new Set([
+        ...expectedByVariant.keys(),
+        ...observedByVariant.keys(),
+      ])
+    ).sort();
+
+    differences = variantIds
+      .map((lasyncroVariantId) => {
+        const expected =
+          expectedByVariant.get(lasyncroVariantId) ?? 0;
+
+        const observed =
+          observedByVariant.get(lasyncroVariantId) ?? 0;
+
+        return {
+          lasyncro_variant_id: lasyncroVariantId,
+          expected_quantity: expected,
+          observed_quantity: observed,
+          delta: observed - expected,
+        };
+      })
+      .filter((row) => row.delta !== 0);
+  }
+
+  let state: ShopOpeningInventoryState;
+
+  if (totalBins === 0) {
+    state = 'not_started';
+  } else if (needsReviewBins > 0) {
+    state = 'needs_bin_review';
+  } else if (!allBinsSettled) {
+    state = 'counting';
+  } else if (differences.length > 0) {
+    state = 'review_required';
+  } else {
+    state = 'ready_for_cutover';
+  }
+
+  return {
+    bootstrap_model: 'reconcile_opening_expectation_v2',
+    reconciliation_required: true,
+    started_at:
+      settings.opening_inventory_reconciliation_started_at ??
+      null,
+    state,
+    total_bins: totalBins,
+    complete_bins: completeBins,
+    in_progress_bins: inProgressBins,
+    needs_review_bins: needsReviewBins,
+    not_started_bins: notStartedBins,
+    remaining_bins: totalBins - completeBins,
+    progress_pct:
+      totalBins === 0
+        ? 0
+        : Math.floor((completeBins * 100) / totalBins),
+    all_bins_settled: allBinsSettled,
+    difference_count: differences.length,
+    differences,
+    bins,
+  };
+}
+
+/**
+ * Freeze the initial physical reconciliation cohort across every active
+ * warehouse in the shop.
+ *
+ * The first successful call snapshots all ACTIVE BIN locations. Later
+ * warehouses/bins never change this initial denominator.
+ */
+export async function startShopOpeningInventoryReconciliation(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    createdBy: number;
+    assignedTo?: number | null;
+  }
+): Promise<ShopOpeningInventoryProgress> {
+  const { shopId, createdBy } = params;
+
+  const settings = await trx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .select(
+      'bootstrap_model',
+      'opening_inventory_reconciliation_started_at'
+    )
+    .forUpdate()
+    .first();
+
+  if (!settings) {
+    throw new Error(
+      `[OPENING_RECOUNT_SHOP_START] shop_wms_settings missing for shop ${shopId}`
+    );
+  }
+
+  if (
+    settings.bootstrap_model !==
+    'reconcile_opening_expectation_v2'
+  ) {
+    throw new Error(
+      `[OPENING_RECOUNT_SHOP_START] bootstrap_model must be reconcile_opening_expectation_v2, got ${JSON.stringify(
+        settings.bootstrap_model
+      )}`
+    );
+  }
+
+  const existingTask = await trx(
+    'inventory_recount_tasks'
+  )
+    .where({
+      shop_id: shopId,
+      purpose: 'opening_inventory',
+    })
+    .first('recount_task_id');
+
+  if (existingTask) {
+    if (
+      !settings.opening_inventory_reconciliation_started_at
+    ) {
+      throw new Error(
+        '[OPENING_RECOUNT_SHOP_START] Existing opening tasks have no shop-wide snapshot anchor'
+      );
+    }
+
+    return getShopOpeningInventoryProgress(trx, shopId);
+  }
+
+  if (
+    settings.opening_inventory_reconciliation_started_at
+  ) {
+    throw new Error(
+      '[OPENING_RECOUNT_SHOP_START] Snapshot anchor exists but opening tasks are missing'
+    );
+  }
+
+  const bins = await trx(
+    'warehouse_locations as wl'
+  )
+    .join('warehouses as w', function () {
+      this.on(
+        'w.warehouse_id',
+        '=',
+        'wl.warehouse_id'
+      ).andOn(
+        'w.shop_id',
+        '=',
+        'wl.shop_id'
+      );
+    })
+    .where({
+      'wl.shop_id': shopId,
+      'wl.type': 'bin',
+      'wl.active': true,
+      'w.active': true,
+    })
+    .select(
+      'wl.warehouse_id',
+      'wl.location_code'
+    )
+    .orderBy([
+      { column: 'wl.warehouse_id', order: 'asc' },
+      { column: 'wl.location_code', order: 'asc' },
+    ]);
+
+  if (bins.length === 0) {
+    throw new Error(
+      '[OPENING_RECOUNT_SHOP_START] Initial inventory reconciliation requires at least one active bin'
+    );
+  }
+
+  const startedAt = new Date();
+
+  for (const bin of bins) {
+    const warehouseId = String(bin.warehouse_id);
+    const locationCode = String(bin.location_code);
+    const label = await nextRecountLabel(trx, shopId);
+
+    await trx('inventory_recount_tasks').insert({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      label,
+      scope: 'location',
+      purpose: 'opening_inventory',
+      scope_location_code: locationCode,
+      status: 'dispatched',
+      blind: true,
+      assigned_to: params.assignedTo ?? null,
+      created_by: createdBy,
+      notes:
+        `Initial inventory reconciliation: ${locationCode}`,
+    });
+  }
+
+  await trx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .update({
+      opening_inventory_reconciliation_started_at:
+        startedAt,
+      updated_at: trx.fn.now(),
+    });
+
+  console.info('[OPENING_RECOUNT_SHOP_STARTED]', {
+    shopId,
+    binCount: bins.length,
+    createdBy,
+  });
+
+  return getShopOpeningInventoryProgress(trx, shopId);
+}
+
+export async function startOpeningInventoryReconciliation(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    warehouseId?: string;
+    createdBy: number;
+    assignedTo?: number | null;
+  }
+): Promise<OpeningInventoryProgress> {
+  const { shopId, createdBy } = params;
+
+  const settings = await trx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .select(
+      'bootstrap_model',
+      'opening_inventory_reconciliation_started_at'
+    )
+    .forUpdate()
+    .first();
+
+  if (!settings) {
+    throw new Error(
+      `[OPENING_RECOUNT_START] shop_wms_settings missing for shop ${shopId}`
+    );
+  }
+
+  if (settings.bootstrap_model !== 'reconcile_opening_expectation_v2') {
+    throw new Error(
+      `[OPENING_RECOUNT_START] bootstrap_model must be reconcile_opening_expectation_v2, got ${JSON.stringify(
+        settings.bootstrap_model
+      )}`
+    );
+  }
+
+  const warehouseId =
+    params.warehouseId ?? (await resolveDefaultWarehouseId(trx, shopId));
+
+  const warehouse = await trx('warehouses')
+    .where({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      active: true,
+    })
+    .select('warehouse_id')
+    .first();
+
+  if (!warehouse) {
+    throw new Error(
+      `[OPENING_RECOUNT_START] Warehouse not found or inactive: ${warehouseId}`
+    );
+  }
+
+  const existingTask = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      purpose: 'opening_inventory',
+    })
+    .first('recount_task_id');
+
+  if (existingTask) {
+    return getOpeningInventoryProgress(trx, shopId, warehouseId);
+  }
+
+  /**
+   * Once the shop-wide initial cohort is frozen, this legacy
+   * warehouse-level entry point may read an existing warehouse task set
+   * but must never add a newly-created warehouse/bin to that cohort.
+   */
+  if (
+    settings.opening_inventory_reconciliation_started_at
+  ) {
+    throw new Error(
+      '[OPENING_RECOUNT_START] Shop-wide opening reconciliation cohort already frozen'
+    );
+  }
+
+  const bins = await trx('warehouse_locations')
+    .where({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      type: 'bin',
+      active: true,
+    })
+    .select('location_code')
+    .orderBy('location_code', 'asc');
+
+  if (bins.length === 0) {
+    throw new Error(
+      '[OPENING_RECOUNT_START] Initial inventory reconciliation requires at least one active bin'
+    );
+  }
+
+  for (const bin of bins) {
+    const locationCode = String(bin.location_code);
+    const label = await nextRecountLabel(trx, shopId);
+
+    await trx('inventory_recount_tasks').insert({
+      shop_id: shopId,
+      warehouse_id: warehouseId,
+      label,
+      scope: 'location',
+      purpose: 'opening_inventory',
+      scope_location_code: locationCode,
+      status: 'dispatched',
+      blind: true,
+      assigned_to: params.assignedTo ?? null,
+      created_by: createdBy,
+      notes: `Initial inventory reconciliation: ${locationCode}`,
+    });
+  }
+
+  console.info('[OPENING_RECOUNT_STARTED]', {
+    shopId,
+    warehouseId,
+    binCount: bins.length,
+    createdBy,
+  });
+
+  return getOpeningInventoryProgress(trx, shopId, warehouseId);
+}
+
+export async function addOpeningInventoryRecountLine(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    recountTaskId: string;
+    lasyncroVariantId: string;
+    addedBy: number;
+  }
+): Promise<{
+  recount_line_id: string;
+  lasyncro_variant_id: string;
+  location_code: string;
+  expected_quantity: number;
+}> {
+  const {
+    shopId,
+    recountTaskId,
+    lasyncroVariantId,
+    addedBy,
+  } = params;
+
+  const task = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select(
+      'purpose',
+      'status',
+      'claimed_by',
+      'scope_location_code'
+    )
+    .forUpdate()
+    .first();
+
+  if (!task) {
+    throw new Error(
+      `[OPENING_RECOUNT_LINE] Task not found: ${recountTaskId}`
+    );
+  }
+
+  if (task.purpose !== 'opening_inventory') {
+    throw new Error(
+      '[OPENING_RECOUNT_LINE] Task is not an opening_inventory task'
+    );
+  }
+
+  if (!['claimed', 'counting'].includes(task.status)) {
+    throw new Error(
+      `[OPENING_RECOUNT_LINE] Task not countable in status: ${task.status}`
+    );
+  }
+
+  if (task.claimed_by !== addedBy) {
+    throw new Error(
+      '[OPENING_RECOUNT_LINE] Task owned by a different operator'
+    );
+  }
+
+  const locationCode = String(task.scope_location_code ?? '').trim();
+
+  if (!locationCode) {
+    throw new Error(
+      '[OPENING_RECOUNT_LINE] Opening inventory task has no physical location anchor'
+    );
+  }
+
+  const variant = await trx('variants')
+    .where({
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+    })
+    .select('lasyncro_variant_id')
+    .first();
+
+  if (!variant) {
+    throw new Error(
+      `[OPENING_RECOUNT_LINE] Variant not found: ${lasyncroVariantId}`
+    );
+  }
+
+  const existing = await trx('inventory_recount_lines')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+    })
+    .whereNull('recount_of_line_id')
+    .select(
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'expected_quantity'
+    )
+    .first();
+
+  if (existing) {
+    return {
+      recount_line_id: String(existing.recount_line_id),
+      lasyncro_variant_id: String(existing.lasyncro_variant_id),
+      location_code: String(existing.location_code),
+      expected_quantity: Number(existing.expected_quantity),
+    };
+  }
+
+  const [created] = await trx('inventory_recount_lines')
+    .insert({
+      recount_task_id: recountTaskId,
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+      expected_quantity: 0,
+    })
+    .returning([
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'expected_quantity',
+    ]);
+
+  console.info('[OPENING_RECOUNT_LINE_ADDED]', {
+    shopId,
+    recountTaskId,
+    recountLineId: created.recount_line_id,
+    lasyncroVariantId,
+    locationCode,
+    addedBy,
+  });
+
+  return {
+    recount_line_id: String(created.recount_line_id),
+    lasyncro_variant_id: String(created.lasyncro_variant_id),
+    location_code: String(created.location_code),
+    expected_quantity: Number(created.expected_quantity),
+  };
+}
+
+
+export interface CompleteOpeningInventoryBinResult {
+  status: 'committed' | 'manual_review';
+  movements: number;
+  units: number;
+  unresolved: number;
+  skipped: number;
+  contested: number;
+  findings: number;
+  preexisting_canonical_signals: number;
+}
+
+/**
+ * Canonical settlement boundary for one initial-inventory bin.
+ *
+ * The operator's count remains immutable observation evidence. A clean bin
+ * establishes BOTH sides of physical truth atomically:
+ *
+ *   inventory_movements -> economic/location quantity
+ *   inventory_units     -> exact LSU identities
+ *
+ * Shopify opening expectation is deliberately absent from this function.
+ * Warehouse-wide expectation comparison happens only after the initial bin
+ * snapshot has been fully worked.
+ */
+export async function completeOpeningInventoryBin(
+  trx: Knex.Transaction,
+  shopId: number,
+  recountTaskId: string,
+  userId: number
+): Promise<CompleteOpeningInventoryBinResult> {
+  const task = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select(
+      'purpose',
+      'status',
+      'claimed_by',
+      'scope_location_code'
+    )
+    .forUpdate()
+    .first();
+
+  if (!task) {
+    throw new Error(
+      `[OPENING_RECOUNT_COMPLETE] Task not found: ${recountTaskId}`
+    );
+  }
+
+  if (task.purpose !== 'opening_inventory') {
+    throw new Error(
+      '[OPENING_RECOUNT_COMPLETE] Task is not an opening_inventory task'
+    );
+  }
+
+  if (task.claimed_by !== userId) {
+    throw new Error(
+      '[OPENING_RECOUNT_COMPLETE] Task owned by a different operator'
+    );
+  }
+
+  const allLines = await trx('inventory_recount_lines')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select(
+      'recount_line_id',
+      'recount_of_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'counted_quantity',
+      'skip_reason',
+      'window_delta'
+    );
+
+  const allLineIds = allLines.map((line: any) =>
+    String(line.recount_line_id)
+  );
+
+  if (task.status === 'committed') {
+    let movements = 0;
+    let units = 0;
+
+    if (allLineIds.length > 0) {
+      const movementCount = await trx('inventory_movements')
+        .where({
+          shop_id: shopId,
+          movement_type: 'opening_inventory_reconcile',
+          reference_type: 'recount_line',
+        })
+        .whereIn('reference_id', allLineIds)
+        .count<{ count: string }>('* as count')
+        .first();
+
+      const unitCount = await trx('inventory_units')
+        .where({ shop_id: shopId })
+        .whereIn('recount_line_id', allLineIds)
+        .count<{ count: string }>('* as count')
+        .first();
+
+      movements = Number(movementCount?.count ?? 0);
+      units = Number(unitCount?.count ?? 0);
+    }
+
+    return {
+      status: 'committed',
+      movements,
+      units,
+      unresolved: 0,
+      skipped: 0,
+      contested: 0,
+      findings: 0,
+      preexisting_canonical_signals: 0,
+    };
+  }
+
+  if (!['claimed', 'counting'].includes(task.status)) {
+    throw new Error(
+      `[OPENING_RECOUNT_COMPLETE] Task not completable in status: ${task.status}`
+    );
+  }
+
+  const locationCode = String(task.scope_location_code ?? '').trim();
+
+  if (!locationCode) {
+    throw new Error(
+      '[OPENING_RECOUNT_COMPLETE] Opening inventory task has no physical location anchor'
+    );
+  }
+
+  const supersededIds = new Set(
+    allLines
+      .filter((line: any) => line.recount_of_line_id !== null)
+      .map((line: any) => String(line.recount_of_line_id))
+  );
+
+  const activeLines = allLines.filter(
+    (line: any) => !supersededIds.has(String(line.recount_line_id))
+  );
+
+  for (const line of activeLines) {
+    if (String(line.location_code) !== locationCode) {
+      throw new Error(
+        `[OPENING_RECOUNT_COMPLETE] Recount line ${line.recount_line_id} is anchored to ${line.location_code}, not task bin ${locationCode}`
+      );
+    }
+  }
+
+  const unresolved = activeLines.filter(
+    (line: any) =>
+      line.counted_quantity === null &&
+      line.skip_reason === null
+  ).length;
+
+  if (unresolved > 0) {
+    throw new Error(
+      `[OPENING_RECOUNT_COMPLETE] ${unresolved} line(s) not yet resolved`
+    );
+  }
+
+  const skipped = activeLines.filter(
+    (line: any) => line.skip_reason !== null
+  ).length;
+
+  const contested = activeLines.filter(
+    (line: any) =>
+      line.window_delta !== null &&
+      Number(line.window_delta) !== 0
+  ).length;
+
+  const findingCount = await trx('inventory_recount_findings')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .count<{ count: string }>('* as count')
+    .first();
+
+  const findings = Number(findingCount?.count ?? 0);
+
+  const activeVariantIds = [
+    ...new Set(
+      activeLines.map((line: any) =>
+        String(line.lasyncro_variant_id)
+      )
+    ),
+  ];
+
+  let preexistingCanonicalSignals = 0;
+
+  if (activeVariantIds.length > 0) {
+    const existingTruth = await trx('inventory_truth')
+      .where({
+        shop_id: shopId,
+        location_code: locationCode,
+      })
+      .whereIn('lasyncro_variant_id', activeVariantIds)
+      .whereNot('on_hand_quantity', 0)
+      .select('lasyncro_variant_id');
+
+    const existingUnitCount = await trx('inventory_units')
+      .where({
+        shop_id: shopId,
+        current_location_code: locationCode,
+      })
+      .whereIn('lasyncro_variant_id', activeVariantIds)
+      .count<{ count: string }>('* as count')
+      .first();
+
+    preexistingCanonicalSignals =
+      existingTruth.length +
+      Number(existingUnitCount?.count ?? 0);
+  }
+
+  if (
+    skipped > 0 ||
+    contested > 0 ||
+    findings > 0 ||
+    preexistingCanonicalSignals > 0
+  ) {
+    await trx('inventory_recount_tasks')
+      .where({
+        shop_id: shopId,
+        recount_task_id: recountTaskId,
+      })
+      .update({
+        status: 'manual_review',
+        counted_at: trx.fn.now(),
+        committed_at: null,
+        updated_at: trx.fn.now(),
+      });
+
+    console.info('[OPENING_RECOUNT_REVIEW_REQUIRED]', {
+      shopId,
+      recountTaskId,
+      locationCode,
+      skipped,
+      contested,
+      findings,
+      preexistingCanonicalSignals,
+    });
+
+    return {
+      status: 'manual_review',
+      movements: 0,
+      units: 0,
+      unresolved: 0,
+      skipped,
+      contested,
+      findings,
+      preexisting_canonical_signals: preexistingCanonicalSignals,
+    };
+  }
+
+  const settledAt = new Date();
+  const affectedVariantIds = new Set<string>();
+
+  let movements = 0;
+  let units = 0;
+
+  for (const line of activeLines) {
+    const quantity = Number(line.counted_quantity ?? 0);
+
+    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+      throw new Error(
+        `[OPENING_RECOUNT_COMPLETE] Invalid counted quantity on line ${line.recount_line_id}: ${line.counted_quantity}`
+      );
+    }
+
+    if (quantity === 0) {
+      continue;
+    }
+
+    const recountLineId = String(line.recount_line_id);
+    const lasyncroVariantId = String(line.lasyncro_variant_id);
+
+    const movementId = uuidv5(
+      `${recountLineId}:opening_inventory_reconcile`,
+      RECOUNT_NAMESPACE
+    );
+
+    const deviceEventId = uuidv5(
+      `${recountLineId}:device:opening_inventory_reconcile`,
+      RECOUNT_NAMESPACE
+    );
+
+    await trx('inventory_movements')
+      .insert({
+        lasyncro_inventory_movement_id: movementId,
+        device_event_id: deviceEventId,
+        shop_id: shopId,
+        lasyncro_variant_id: lasyncroVariantId,
+        movement_type: 'opening_inventory_reconcile',
+        quantity_delta: quantity,
+        reference_type: 'recount_line',
+        reference_id: recountLineId,
+        location_code: locationCode,
+        platform: 'wms',
+        occurred_at: settledAt,
+        operator_id: userId,
+        triggered_by: 'inventory_recount',
+      })
+      .onConflict(['device_event_id'])
+      .ignore();
+
+    await trx('inventory_recount_lines')
+      .where({
+        shop_id: shopId,
+        recount_line_id: recountLineId,
+      })
+      .update({
+        inventory_movement_id: movementId,
+        updated_at: trx.fn.now(),
+      });
+
+    const issued = await issueReconciledUnits(trx, {
+      shopId,
+      recountLineId,
+      lasyncroVariantId,
+      quantity,
+      currentLocationCode: locationCode,
+      canonicalizedAt: settledAt,
+    });
+
+    affectedVariantIds.add(lasyncroVariantId);
+    movements += 1;
+    units += issued.length;
+  }
+
+  if (affectedVariantIds.size > 0) {
+    const { rebuildInventoryProjectionForVariants } = await import(
+      '../inventory/rebuildInventoryProjection.js'
+    );
+
+    await rebuildInventoryProjectionForVariants(
+      shopId,
+      [...affectedVariantIds],
+      trx,
+      settledAt
+    );
+  }
+
+  await enqueueShopSnapshotJob(trx, shopId);
+
+  await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .update({
+      status: 'committed',
+      counted_at: settledAt,
+      committed_at: settledAt,
+      updated_at: settledAt,
+    });
+
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: userId,
+    actionType: 'recount_commit',
+    entityType: 'recount_task',
+    entityId: recountTaskId,
+    metadata: {
+      purpose: 'opening_inventory',
+      locationCode,
+      movements,
+      units,
+    },
+  });
+
+  console.info('[OPENING_RECOUNT_BIN_COMMITTED]', {
+    shopId,
+    recountTaskId,
+    locationCode,
+    movements,
+    units,
+  });
+
+  return {
+    status: 'committed',
+    movements,
+    units,
+    unresolved: 0,
+    skipped: 0,
+    contested: 0,
+    findings: 0,
+    preexisting_canonical_signals: 0,
+  };
 }
 
 /**

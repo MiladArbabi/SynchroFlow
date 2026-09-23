@@ -75,6 +75,7 @@ const PHYSICAL_ON_HAND_CASE_SQL = `
       'refund_return',
       'manual_adjustment',
       'opening_balance',
+      'opening_inventory_reconcile',
       'location_transfer',
       'pick_removal',
       'fulfillment_removal',

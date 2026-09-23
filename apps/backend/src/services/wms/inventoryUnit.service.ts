@@ -28,11 +28,33 @@ export interface BatchConfirmInput {
   createdBy: number;
 }
 
+export interface ReconcileUnitIssuanceInput {
+  shopId: number;
+  recountLineId: string;
+  lasyncroVariantId: string;
+  quantity: number;
+  currentLocationCode: string;
+  canonicalizedAt: Date;
+  ean?: string | null;
+  upc?: string | null;
+  shopifyBarcode?: string | null;
+}
+
 export interface InventoryUnitRow {
   id: string;
   lasyncro_unit_id: string;
   receive_sequence: number;
 }
+
+type RecountIssuedUnitRow = InventoryUnitRow & {
+  receive_job_line_id: string | null;
+  recount_line_id: string | null;
+  lasyncro_variant_id: string;
+  source: string;
+  status: string;
+  current_location_code: string | null;
+  received_at: Date | string;
+};
 
 export interface CoverageResult {
   labelled_units: number;
@@ -113,6 +135,209 @@ export async function batchConfirmUnits(
   });
 
   return created;
+}
+
+function assertRecountIssuance(
+  input: ReconcileUnitIssuanceInput,
+  rows: RecountIssuedUnitRow[]
+): InventoryUnitRow[] {
+  if (rows.length !== input.quantity) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECOUNT_ISSUANCE_MISMATCH] Expected ${input.quantity} units for recount line ${input.recountLineId}, found ${rows.length}`
+    );
+  }
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const sequence = i + 1;
+    const expectedLsu = generateLsuId(
+      input.shopId,
+      input.recountLineId,
+      sequence
+    );
+
+    if (
+      row.receive_job_line_id !== null ||
+      row.recount_line_id !== input.recountLineId ||
+      row.lasyncro_variant_id !== input.lasyncroVariantId ||
+      row.receive_sequence !== sequence ||
+      row.lasyncro_unit_id !== expectedLsu ||
+      row.source !== 'opening_inventory_reconcile' ||
+      row.status !== 'stowed' ||
+      row.current_location_code !== input.currentLocationCode
+    ) {
+      throw new Error(
+        `[INVENTORY_UNIT_RECOUNT_ISSUANCE_INVARIANT] Canonical LSU lineage mismatch for recount line ${input.recountLineId}`
+      );
+    }
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    lasyncro_unit_id: row.lasyncro_unit_id,
+    receive_sequence: row.receive_sequence,
+  }));
+}
+
+/**
+ * Creates canonical LSUs for a successfully settled opening-inventory recount.
+ *
+ * Reconcile stock enters directly at the physically observed bin as stowed;
+ * it never masquerades as Receive/ROOT inventory.
+ *
+ * Retrying the same settled recount line returns the same canonical units.
+ * A changed quantity/location/variant for an already-issued line fails closed
+ * rather than extending or rewriting physical truth.
+ */
+export async function issueReconciledUnits(
+  trx: Knex.Transaction,
+  input: ReconcileUnitIssuanceInput
+): Promise<InventoryUnitRow[]> {
+  const locationCode = input.currentLocationCode.trim();
+
+  if (!locationCode) {
+    throw new Error(
+      '[INVENTORY_UNIT_RECOUNT_LOCATION_REQUIRED] Reconcile LSU issuance requires an exact physical location'
+    );
+  }
+
+  const normalizedInput = {
+    ...input,
+    currentLocationCode: locationCode,
+  };
+
+  const recountLine = await trx('inventory_recount_lines')
+    .where({
+      shop_id: normalizedInput.shopId,
+      recount_line_id: normalizedInput.recountLineId,
+    })
+    .select(
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code'
+    )
+    .forUpdate()
+    .first();
+
+  if (!recountLine) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECOUNT_LINE_NOT_FOUND] Recount line ${normalizedInput.recountLineId} was not found for shop ${normalizedInput.shopId}`
+    );
+  }
+
+  if (
+    String(recountLine.lasyncro_variant_id) !==
+    normalizedInput.lasyncroVariantId
+  ) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECOUNT_VARIANT_MISMATCH] Recount line ${normalizedInput.recountLineId} belongs to variant ${recountLine.lasyncro_variant_id}, not ${normalizedInput.lasyncroVariantId}`
+    );
+  }
+
+  if (String(recountLine.location_code) !== locationCode) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECOUNT_LOCATION_MISMATCH] Recount line ${normalizedInput.recountLineId} belongs to location ${recountLine.location_code}, not ${locationCode}`
+    );
+  }
+
+  const readExisting = () =>
+    trx('inventory_units')
+      .where({
+        shop_id: normalizedInput.shopId,
+        recount_line_id: normalizedInput.recountLineId,
+      })
+      .orderBy('receive_sequence', 'asc')
+      .select(
+        'id',
+        'lasyncro_unit_id',
+        'receive_sequence',
+        'receive_job_line_id',
+        'recount_line_id',
+        'lasyncro_variant_id',
+        'source',
+        'status',
+        'current_location_code',
+        'received_at'
+      ) as Promise<RecountIssuedUnitRow[]>;
+
+  const existing = await readExisting();
+
+  if (existing.length > 0) {
+    return assertRecountIssuance(
+      normalizedInput,
+      existing
+    );
+  }
+
+  const rows = Array.from(
+    { length: normalizedInput.quantity },
+    (_, i) => {
+      const sequence = i + 1;
+
+      return {
+        lasyncro_unit_id: generateLsuId(
+          normalizedInput.shopId,
+          normalizedInput.recountLineId,
+          sequence
+        ),
+        shop_id: normalizedInput.shopId,
+        lasyncro_variant_id:
+          normalizedInput.lasyncroVariantId,
+        receive_job_line_id: null,
+        recount_line_id:
+          normalizedInput.recountLineId,
+        receive_sequence: sequence,
+        ean: normalizedInput.ean ?? null,
+        upc: normalizedInput.upc ?? null,
+        shopify_barcode:
+          normalizedInput.shopifyBarcode ?? null,
+        source:
+          'opening_inventory_reconcile',
+        status: 'stowed',
+        current_location_code:
+          locationCode,
+        reprint_count: 0,
+        received_at:
+          normalizedInput.canonicalizedAt,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+    }
+  );
+
+  await trx('inventory_units')
+    .insert(rows)
+    .onConflict([
+      'shop_id',
+      'recount_line_id',
+      'receive_sequence',
+    ])
+    .ignore();
+
+  const persisted =
+    await readExisting();
+
+  const units =
+    assertRecountIssuance(
+      normalizedInput,
+      persisted
+    );
+
+  console.info(
+    '[INVENTORY_UNIT] reconcile_issue',
+    {
+      shopId:
+        normalizedInput.shopId,
+      recountLineId:
+        normalizedInput.recountLineId,
+      quantity:
+        normalizedInput.quantity,
+      units:
+        units.length,
+    }
+  );
+
+  return units;
 }
 
 /**

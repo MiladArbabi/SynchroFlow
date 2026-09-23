@@ -12,6 +12,7 @@ import {
 import { financesOnboardingSignalProvider } from './providers/finances.provider.js';
 
 import { UserStateService } from '../services/user-state.service.js';
+import { getShopOpeningInventoryProgress } from '../services/wms/inventoryRecount.service.js';
 import { deriveKnownCount } from './utils/deriveKnownCount.js';
 import { devReadinessOverrideProvider } from './providers/dev-readiness.provider.js';
 
@@ -240,11 +241,71 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
       .first();
     const carrierConfigured = !!carrierRow;
 
+    const openingSettings = await db('shop_wms_settings')
+      .where({ shop_id: shopId })
+      .select('bootstrap_model')
+      .first();
+
+    let openingInventoryReconciliationRequired = true;
+    let openingInventoryProgressPct = 0;
+    let openingInventoryNeedsReview = false;
+    let openingInventoryReconciled = false;
+
+    if (
+      openingSettings?.bootstrap_model ===
+      'legacy_opening_balance_v1'
+    ) {
+      openingInventoryReconciliationRequired = false;
+      openingInventoryProgressPct = 100;
+      openingInventoryNeedsReview = false;
+      openingInventoryReconciled = true;
+    } else if (
+      openingSettings?.bootstrap_model ===
+      'reconcile_opening_expectation_v2'
+    ) {
+      const openingProgress =
+        await getShopOpeningInventoryProgress(
+          db as any,
+          shopId
+        );
+
+      openingInventoryReconciliationRequired =
+        openingProgress.reconciliation_required;
+      openingInventoryProgressPct =
+        openingProgress.progress_pct;
+      openingInventoryNeedsReview =
+        openingProgress.state === 'needs_bin_review' ||
+        openingProgress.state === 'review_required';
+
+      /**
+       * 4b-2a deliberately stops before merchant acceptance / Shopify
+       * cutover. A v2 tenant cannot be called reconciled merely because every
+       * bin was counted or the imported expectation happened to match.
+       */
+      openingInventoryReconciled = false;
+    }
+
     return [
       { name: 'wms.enabled', value: zonesConfigured },
       { name: 'wms.zonesConfigured', value: zonesConfigured },
       { name: 'wms.barcodesPrinted', value: barcodesPrinted },
-      { name: 'wms.carrierConfigured', value: carrierConfigured }
+      { name: 'wms.carrierConfigured', value: carrierConfigured },
+      {
+        name: 'wms.openingInventoryReconciliationRequired',
+        value: openingInventoryReconciliationRequired
+      },
+      {
+        name: 'wms.openingInventoryProgressPct',
+        value: openingInventoryProgressPct
+      },
+      {
+        name: 'wms.openingInventoryNeedsReview',
+        value: openingInventoryNeedsReview
+      },
+      {
+        name: 'wms.openingInventoryReconciled',
+        value: openingInventoryReconciled
+      }
     ];
   }
 };
