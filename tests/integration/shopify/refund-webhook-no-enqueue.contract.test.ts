@@ -45,6 +45,12 @@ async function createFixtureShop(unique: string): Promise<{ shopId: number; shop
     }),
   );
 
+  // GH-1145-A1: bootstrap_model is required (migration 0193). This contract
+  // covers the current legacy refund_return behaviour.
+  await withTenant(shopId, (trx) =>
+    trx('shop_wms_settings').insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' }),
+  );
+
   return { shopId, shopDomain };
 }
 

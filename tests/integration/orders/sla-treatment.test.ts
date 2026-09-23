@@ -169,7 +169,7 @@ it('SLA-TREAT-01 uses batch membership and authenticated picker ownership', asyn
   const orderId = await seedOrder({ shopId, creationAgeHours: 22, paidAgeHours: 21 });
   const batchId = crypto.randomUUID();
   await withTenant(shopId, async trx => {
-    await trx('shop_wms_settings').insert({ shop_id: shopId, idle_alert_threshold_minutes: 15 }).onConflict('shop_id').merge({ idle_alert_threshold_minutes: 15 });
+    await trx('shop_wms_settings').insert({ shop_id: shopId, idle_alert_threshold_minutes: 15, bootstrap_model: 'legacy_opening_balance_v1' }).onConflict('shop_id').merge({ idle_alert_threshold_minutes: 15 });
     await trx('pick_batches').insert({ shop_id: shopId, pick_batch_id: batchId, status: 'picking', released_at: new Date(), pick_last_activity_at: new Date(Date.now()-16*60000), picked_by: userId, release_trigger: 'manual', max_line_items: 10, total_line_items: 1, total_units: 1 });
     await trx('pick_batch_orders').insert({ shop_id: shopId, pick_batch_id: batchId, lasyncro_order_id: orderId });
   });

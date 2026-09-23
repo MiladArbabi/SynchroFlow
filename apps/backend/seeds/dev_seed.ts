@@ -164,8 +164,11 @@ export async function seed(knex: Knex): Promise<void> {
 
     // Seed WMS settings — SET LOCAL required: shop_wms_settings has RLS enabled
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
+    // GH-1145-A1: the dev tenant keeps existing-tenant semantics. Its
+    // opening stock is a physical re-baseline booked at the bins below,
+    // not a Shopify import.
     await trx('shop_wms_settings')
-      .insert({ shop_id: shop.id })
+      .insert({ shop_id: shop.id, bootstrap_model: 'legacy_opening_balance_v1' })
       .onConflict('shop_id')
       .ignore();
     await trx('shop_operational_settings')
@@ -761,7 +764,12 @@ export async function seed(knex: Knex): Promise<void> {
 
     // WMS settings — upsert here since full_data runs with correct SET LOCAL context
     await trx('shop_wms_settings')
-      .insert({ shop_id: shop.id, problem_bin_location: 'PROBLEM' })
+      .insert({
+        shop_id: shop.id,
+        problem_bin_location: 'PROBLEM',
+        // NOT NULL, no default (0193). merge() below never touches it.
+        bootstrap_model: 'legacy_opening_balance_v1',
+      })
       .onConflict('shop_id')
       .merge(['problem_bin_location']);
     console.log('[DEV_SEED] ✅ WMS settings seeded');

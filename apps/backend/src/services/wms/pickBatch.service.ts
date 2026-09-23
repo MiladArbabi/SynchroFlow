@@ -6,7 +6,10 @@ import { v5 as uuidv5 } from 'uuid';
 import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 import { fireBatchReleasedAlert } from './wmsAlerts.service.js';
 import { reserveBatchInventory } from './batchReservation.service.js';
-import { pickableLocationCondition } from '../inventory/pickableLocation.js';
+import {
+  readReleaseCapacity,
+  sumReleaseCapacityByVariant,
+} from '../inventory/releaseCapacity.service.js';
 import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
 import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
 import { generateWmsBarcode } from './wmsOrderBarcode.service.js';
@@ -452,8 +455,8 @@ let allLineItems = await trx('order_line_items')
    * has a real state to act on instead of an order that silently fails
    * to release on every attempt.
    *
-   * Uses pickableLocationCondition — the same stateless predicate
-   * reserveBatchInventory uses, so the two cannot disagree.
+   * Uses readReleaseCapacity — the same capacity source
+   * reserveBatchInventory locks, so the two cannot disagree.
    *
    * RACE: a concurrent release could consume stock between this check and
    * the reservation below. reserveBatchInventory still takes FOR UPDATE
@@ -475,28 +478,15 @@ let allLineItems = await trx('order_line_items')
     ...new Set(allLineItems.map((li) => li.lasyncro_variant_id)),
   ];
 
-  const availabilityRows = variantIds.length
-    ? await trx('inventory_truth as it')
-        .join('warehouse_locations as wl', function () {
-          this.on('wl.location_code', '=', 'it.location_code')
-            .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
-            .andOnVal('wl.active', true)
-            .andOn(pickableLocationCondition(trx));
-        })
-        .where('it.shop_id', shopId)
-        .whereIn('it.lasyncro_variant_id', variantIds)
-        .groupBy('it.lasyncro_variant_id')
-        .select(
-          'it.lasyncro_variant_id',
-          trx.raw('SUM(it.available_quantity)::integer as available_quantity')
-        )
-    : [];
-
-  const availableByVariant = new Map<string, number>(
-    availabilityRows.map((r: { lasyncro_variant_id: string; available_quantity: number }) => [
-      r.lasyncro_variant_id,
-      Number(r.available_quantity),
-    ])
+  // GH-1145-A1: same capacity source as the evaluator and the reservation
+  // lock — no second definition. Non-locking here; reserveBatchInventory
+  // re-reads the same rows FOR UPDATE.
+  const availableByVariant = sumReleaseCapacityByVariant(
+    await readReleaseCapacity(trx, {
+      shopId,
+      variantIds,
+      lock: 'none',
+    })
   );
 
   /**

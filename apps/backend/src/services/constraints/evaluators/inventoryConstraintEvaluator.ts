@@ -1,8 +1,9 @@
 import { Knex } from 'knex';
 import { ConstraintEvaluationResult } from '../constraint.types.js';
 import {
-  pickableLocationCondition,
-} from '../../inventory/pickableLocation.js';
+  readReleaseCapacity,
+  sumReleaseCapacityByVariant,
+} from '../../inventory/releaseCapacity.service.js';
 
 export async function evaluateInventoryConstraint(
   trx: Knex.Transaction,
@@ -11,40 +12,25 @@ export async function evaluateInventoryConstraint(
 ): Promise<ConstraintEvaluationResult[]> {
 
   /**
-   * SOURCE OF TRUTH: inventory_truth
-   * --------------------------------
-   * Constraint must be derived from actual stock state,
-   * NOT from previously projected constraints.
-   */
-  /*
-   * INVENTORY CONSTRAINT — BIN + ROOT AWARE (SHOP-REV-02, Aug 2026)
-   * --------------------------------------------------------------
-   * History: originally hardcoded to WH-1-ROOT, which falsely blocked
-   * variants stocked in bins (A-1, B-2). The May 2026 fix counted ONLY
-   * bins — which inverted the bug: it falsely blocked variants whose
-   * stock sits at the warehouse root. Neither version counted both.
+   * SOURCE OF TRUTH: release capacity (GH-1145-A1)
+   * ----------------------------------------------
+   * Constraint must be derived from actual stock state, NOT from previously
+   * projected constraints — and from the SAME quantity definition the
+   * release precheck and the reservation lock use: readReleaseCapacity
+   * (inventory_truth.available_quantity at canonical pickable locations).
    *
-   * Root stock is real and sellable. seedShopifyOpeningBalances and
-   * receiveJob both land stock at WH-{shopId}-ROOT as "available
-   * (unlocated)"; nothing moves it to a bin until the merchant builds a
-   * floor plan and stows. On a freshly installed tenant that is 100% of
-   * inventory — so bin-only counting made every order oversell-blocked
-   * and the order pool unreachable. Shopify review ref 102766.
-   *
-   * FRESH-STOW-CLIFF-01: counts active pick bins AND warehouse root,
-   * unconditionally — root holds real unstowed stock. See
-   * pickableLocation.ts for why the bin-existence conditional was removed.
-   * Lanes stay excluded: zone_type='pick' but type='lane', frame
-   * geometry that never holds stock.
-   *
-   * MUST stay in sync with batchReservation.service.ts's pickable-location
-   * filter. That decides what is reservable; this decides what is
-   * eligible. If they diverge, orders either block with stock on hand or
-   * reach release and throw.
+   * History (SHOP-REV-02 / FRESH-STOW-CLIFF-01): bins-only and root-only
+   * counting each falsely blocked real stock. Pickable = active pick bins
+   * AND warehouse root, unconditionally; lanes stay excluded. That
+   * predicate now lives in one place behind readReleaseCapacity, so
+   * eligibility and reservability cannot diverge (INV-BLOCK-19).
    *
    * shop_id scoping via RLS — SET LOCAL must be called by caller.
    */
-  const demandByVariant = trx('order_revenue_units')
+  const demandRows: Array<{
+    lasyncro_variant_id: string;
+    remaining_quantity: number | string;
+  }> = await trx('order_revenue_units')
     .where('lasyncro_order_id', orderId)
     .select(
       'lasyncro_variant_id',
@@ -52,45 +38,23 @@ export async function evaluateInventoryConstraint(
         'SUM(quantity - fulfilled_quantity) as remaining_quantity'
       )
     )
-    .groupBy('lasyncro_variant_id')
-    .as('demand');
+    .groupBy('lasyncro_variant_id');
 
-  const rows = await trx
-    .from(demandByVariant)
-    .leftJoin('inventory_truth as it', function () {
-      this.on(
-        'demand.lasyncro_variant_id',
-        '=',
-        'it.lasyncro_variant_id'
-      ).andOn('it.shop_id', '=', trx.raw('?', [shopId]));
+  const capacityByVariant = sumReleaseCapacityByVariant(
+    await readReleaseCapacity(trx, {
+      shopId,
+      variantIds: demandRows
+        .map((row) => row.lasyncro_variant_id)
+        .filter((variantId): variantId is string => !!variantId),
+      lock: 'none',
     })
-    .leftJoin('warehouse_locations as wl', function () {
-      this.on('wl.location_code', '=', 'it.location_code')
-        .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
-        .andOnVal('wl.active', true)
-        .andOn(pickableLocationCondition(trx));
-    })
-    .select(
-      'demand.lasyncro_variant_id',
-      'demand.remaining_quantity',
-      /**
-       * Sum availability across matched pickable locations only. The
-       * leftJoin already applies the canonical predicate, so a non-null
-       * wl row IS a pickable row — filtering on the predicate again
-       * would be a second definition free to drift (INV-BLOCK-19).
-       * Demand is already one row per variant, so joining
-       * location-level inventory cannot multiply required quantity.
-       */
-      trx.raw(
-        'COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.location_code IS NOT NULL), 0) as available_quantity'
-      )
-    )
-    .groupBy(
-      'demand.lasyncro_variant_id',
-      'demand.remaining_quantity'
-    );
+  );
 
-    /* isOversell derived per-variant below — no aggregate needed */
+  const rows = demandRows.map((row) => ({
+    lasyncro_variant_id: row.lasyncro_variant_id,
+    remaining_quantity: row.remaining_quantity,
+    available_quantity: capacityByVariant.get(row.lasyncro_variant_id) ?? 0,
+  }));
 
   /**
    * VARIANT-SCOPED CONSTRAINT EMISSION

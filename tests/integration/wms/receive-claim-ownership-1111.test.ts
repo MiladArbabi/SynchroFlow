@@ -147,6 +147,7 @@ async function createFixture(): Promise<Fixture> {
 
     await trx('shop_wms_settings').insert({
       shop_id: shopId,
+      bootstrap_model: 'legacy_opening_balance_v1',
     });
 
     await trx('user_lifecycle_snapshot').insert({

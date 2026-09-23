@@ -947,7 +947,11 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
       await withTenant(existing.shop_id, (trx) =>
         trx('shop_wms_settings')
-          .insert({ shop_id: existing.shop_id })
+          // GH-1145-A1: reinstall of an EXISTING shop. onConflict().ignore()
+          // never overwrites its bootstrap_model; this value only lands if the
+          // row was never provisioned, and an existing shop is classified
+          // like every other pre-migration tenant.
+          .insert({ shop_id: existing.shop_id, bootstrap_model: 'legacy_opening_balance_v1' })
           .onConflict('shop_id')
           .ignore()
       );
@@ -1002,8 +1006,10 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         // every shop hit "No WMS settings found" on first batch release.
         // All columns except shop_id have NOT NULL defaults (confirmed via
         // information_schema), so this minimal insert is safe.
+        // GH-1145-A1: bootstrap_model has no default (migration 0193) — a
+        // genuinely new install is reconcile_opening_expectation_v2.
         await trx('shop_wms_settings')
-          .insert({ shop_id: shopId })
+          .insert({ shop_id: shopId, bootstrap_model: 'reconcile_opening_expectation_v2' })
           .onConflict('shop_id')
           .ignore();
 

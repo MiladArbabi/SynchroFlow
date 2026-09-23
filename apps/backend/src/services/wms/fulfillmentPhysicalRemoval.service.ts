@@ -1,6 +1,7 @@
 import type { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import { v5 as uuidv5 } from 'uuid';
+import { resolveShopifyOpeningBaselineAt } from '../inventory/resolveShopifyOpeningBaseline.js';
 
 const FULFILLMENT_REMOVAL_NAMESPACE =
   'da62cc94-65a7-4afb-a819-e79ce724d86e';
@@ -108,8 +109,9 @@ export async function applyFulfillmentPhysicalRemoval(
     /**
      * SHOPIFY → LASYNCRO PHYSICAL AUTHORITY CUTOVER
      * ---------------------------------------------
-     * Initial Shopify sync establishes the variant's physical baseline through
-     * its Shopify opening_balance. Fulfillments whose event-time predates that
+     * Initial Shopify sync establishes the variant's opening baseline — the
+     * Shopify opening_balance (legacy) or the opening expectation's
+     * observed_at (v2), see resolveShopifyOpeningBaseline. Fulfillments whose event-time predates that
      * baseline are historical Shopify truth already reflected in the baseline.
      *
      * Replaying their physical debit would double-apply history.
@@ -117,21 +119,11 @@ export async function applyFulfillmentPhysicalRemoval(
      * We still reconstruct the warehouse/order state as shipped, but we do not
      * infer a LaSyncro bin/location or write fulfillment_removal.
      */
-    const shopifyBaselineRow =
-      await trx('inventory_movements')
-        .where({
-          shop_id: shopId,
-          lasyncro_variant_id: lasyncroVariantId,
-          movement_type: 'opening_balance',
-          platform: 'shopify',
-        })
-        .min('occurred_at as occurred_at')
-        .first();
-
-    const shopifyBaselineAt =
-      shopifyBaselineRow?.occurred_at
-        ? new Date(shopifyBaselineRow.occurred_at)
-        : null;
+    const shopifyBaselineAt = await resolveShopifyOpeningBaselineAt(
+      trx,
+      shopId,
+      lasyncroVariantId
+    );
 
     if (
       shopifyBaselineAt &&

@@ -1,9 +1,24 @@
 import crypto from 'crypto';
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
-import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant, systemTransaction, setTenantContext } from '@lasyncro/backend-core/db.js';
+import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 
 const app = createApp();
+
+function buildInstallRequest(shopDomain: string) {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const params = { shop: shopDomain, timestamp };
+  const message = Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${params[key as keyof typeof params]}`)
+    .join('&');
+  const hmac = crypto
+    .createHmac('sha256', process.env.SHOPIFY_API_SECRET!) // test-only secret set in beforeAll
+    .update(message)
+    .digest('hex');
+  return { ...params, hmac };
+}
 
 describe('Shopify install flow', () => {
   const shopDomain = `fresh-install-test-${Date.now()}.myshopify.com`;
@@ -59,6 +74,9 @@ describe('Shopify install flow', () => {
       trx('shop_wms_settings').where({ shop_id: shopId }).first()
     );
     expect(wmsSettings).toBeDefined();
+    // S1-04 (SLICE 1) — a genuinely new shop provisioned by the Shopify
+    // install path is explicitly classified reconcile_opening_expectation_v2.
+    expect(wmsSettings?.bootstrap_model).toBe('reconcile_opening_expectation_v2');
 
     const subscription = await withTenant(shopId, (trx) =>
       trx('shop_subscriptions').where({ shop_id: shopId }).first()
@@ -79,5 +97,74 @@ describe('Shopify install flow', () => {
     );
     expect(location).toBeDefined();
     expect(location?.type).toBe('warehouse');
+  });
+
+  // S1-05 (SLICE 1) — reinstall/retry against an EXISTING shop must never
+  // change its existing bootstrap_model. Fixture reproduces the reinstall
+  // lookup's real prerequisite (a row in shopify_app_installations keyed by
+  // shop_domain — see resolve_shopify_reinstall_shop, migration 0137) so the
+  // real handleShopifyInstall "existing" branch (integration.controller.ts)
+  // is exercised over HTTP, not bypassed.
+  it('reinstall against an existing shop leaves its bootstrap_model unchanged', async () => {
+    const reinstallDomain = `reinstall-test-${Date.now()}.myshopify.com`;
+
+    const shopId = await systemTransaction(async (trx) => {
+      const id = await createTenantShop(trx, `reinstall-fixture-${reinstallDomain}`);
+      await setTenantContext(trx, id);
+      return id;
+    });
+
+    await withTenant(shopId, (trx) =>
+      trx('shop_wms_settings')
+        .insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' })
+        .onConflict('shop_id')
+        .ignore()
+    );
+
+    await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations').insert({
+        shop_id: shopId,
+        shop_domain: reinstallDomain,
+        access_token: 'test-reinstall-token',
+        scopes: 'read_products',
+      })
+    );
+
+    // The reinstall branch (integration.controller.ts) requires an existing
+    // owner membership ("No owner found for reinstall" -> 500 otherwise).
+    // shop_memberships.user_id is NOT NULL, so seed a real fixture user.
+    const [fixtureUser] = await withTenant(shopId, (trx) =>
+      trx('users')
+        .insert({
+          shop_id: shopId,
+          email: `reinstall-fixture+${reinstallDomain}@lasyncro.internal`,
+          password_hash: 'test-fixture-hash',
+          first_name: 'Reinstall',
+          last_name: 'Fixture',
+        })
+        .returning('id')
+    );
+    const fixtureUserId = Number((fixtureUser as any).id ?? fixtureUser);
+
+    await withTenant(shopId, (trx) =>
+      trx('shop_memberships').insert({ shop_id: shopId, user_id: fixtureUserId, role: 'owner' })
+    );
+
+    const before = await withTenant(shopId, (trx) =>
+      trx('shop_wms_settings').where({ shop_id: shopId }).first('bootstrap_model')
+    );
+    expect(before?.bootstrap_model).toBe('legacy_opening_balance_v1');
+
+    const res = await request(app)
+      .get('/api/v1/integrations/shopify/install')
+      .query(buildInstallRequest(reinstallDomain))
+      .redirects(0);
+
+    expect(res.status).toBe(302);
+
+    const after = await withTenant(shopId, (trx) =>
+      trx('shop_wms_settings').where({ shop_id: shopId }).first('bootstrap_model')
+    );
+    expect(after?.bootstrap_model).toBe('legacy_opening_balance_v1');
   });
 });

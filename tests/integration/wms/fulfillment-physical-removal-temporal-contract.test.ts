@@ -40,7 +40,13 @@ type Fixture = {
   lineId: string;
 };
 
-async function createFixture(label: string): Promise<Fixture> {
+async function createFixture(
+  label: string,
+  bootstrapModel:
+    | 'legacy_opening_balance_v1'
+    | 'reconcile_opening_expectation_v2'
+    | null = 'legacy_opening_balance_v1'
+): Promise<Fixture> {
   const unique = crypto.randomBytes(6).toString('hex');
 
   const shopId = await systemTransaction(async (trx) => {
@@ -52,6 +58,23 @@ async function createFixture(label: string): Promise<Fixture> {
     await setTenantContext(trx, id);
     return id;
   });
+
+  // createTenantShop only inserts into public.shops — no shop_wms_settings
+  // row exists for this shop yet (ISSUE-12, confirmed via migration 0193's
+  // own comments, and via the identical fixture pattern in
+  // tests/integration/inventory/shopify-opening-expectations-v2.test.ts).
+  // Provision it explicitly with the requested classification so the
+  // resolver cutover in fulfillmentPhysicalRemoval.service.ts has a
+  // bootstrap_model to read. `bootstrapModel === null` deliberately leaves
+  // shop_wms_settings unprovisioned (S3-06: missing-classification fixture).
+  if (bootstrapModel !== null) {
+    await withTenant(shopId, (trx) =>
+      trx('shop_wms_settings')
+        .insert({ shop_id: shopId, bootstrap_model: bootstrapModel })
+        .onConflict('shop_id')
+        .ignore()
+    );
+  }
 
   const orderId = crypto.randomUUID();
   const productId = crypto.randomUUID();
@@ -139,6 +162,51 @@ async function insertMovement(
       occurred_at: new Date(input.occurredAt),
     })
   );
+}
+
+async function insertExpectation(
+  shopId: number,
+  variantId: string,
+  observedAt: string
+): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    trx('shopify_opening_inventory_expectations').insert({
+      shop_id: shopId,
+      lasyncro_variant_id: variantId,
+      external_variant_id: `gid://shopify/ProductVariant/${variantId.slice(0, 8)}`,
+      reported_quantity: 1,
+      expected_quantity: 1,
+      observed_at: new Date(observedAt),
+    })
+  );
+}
+
+async function seedSiblingVariant(
+  shopId: number,
+  label: string
+): Promise<string> {
+  const productId = crypto.randomUUID();
+  const variantId = crypto.randomUUID();
+
+  await withTenant(shopId, async (trx) => {
+    await trx('products').insert({
+      lasyncro_product_id: productId,
+      shop_id: shopId,
+      title: `Temporal ${label} sibling product`,
+    });
+
+    await trx('variants').insert({
+      lasyncro_variant_id: variantId,
+      lasyncro_product_id: productId,
+      shop_id: shopId,
+      sku: `TEMP-SIB-${variantId.slice(0, 8)}`,
+      title: `Temporal ${label} sibling variant`,
+      status: 'active',
+      unit_cost: '1.00',
+    });
+  });
+
+  return variantId;
 }
 
 async function fulfillmentRemovals(fixture: Fixture) {
@@ -309,6 +377,187 @@ describe('FULFILLMENT-PHYSICAL-TIME-01', () => {
       );
 
       expect(await fulfillmentRemovals(fixture)).toHaveLength(0);
+    }
+  );
+
+  it(
+    'S3-03: v2 shop — does not infer physical removal for a fulfillment before the expectation-row baseline, with zero opening_balance rows involved',
+    async () => {
+      const fixture = await createFixture(
+        's3-03-v2-pre-baseline',
+        'reconcile_opening_expectation_v2'
+      );
+
+      // v2 never writes opening_balance — the baseline is this expectation row.
+      await insertExpectation(
+        fixture.shopId,
+        fixture.variantId,
+        '2026-09-16T00:00:00.000Z'
+      );
+
+      const fulfilledAt = new Date('2026-08-04T18:06:13.000Z');
+
+      await expect(
+        withTenant(fixture.shopId, (trx) =>
+          applyFulfillmentPhysicalRemoval(
+            trx,
+            fixture.shopId,
+            fixture.orderId,
+            fulfilledAt
+          )
+        )
+      ).resolves.toBeUndefined();
+
+      expect(await fulfillmentRemovals(fixture)).toHaveLength(0);
+
+      expect(await warehouseLineStatus(fixture)).toMatchObject({
+        status: 'shipped',
+      });
+
+      const openingBalanceMovements = await withTenant(
+        fixture.shopId,
+        (trx) =>
+          trx('inventory_movements').where({
+            shop_id: fixture.shopId,
+            lasyncro_variant_id: fixture.variantId,
+            movement_type: 'opening_balance',
+          })
+      );
+      expect(openingBalanceMovements).toHaveLength(0);
+    }
+  );
+
+  it(
+    'S3-04: v2 shop — resolves normal physical-removal path for a fulfillment after the expectation-row baseline',
+    async () => {
+      const fixture = await createFixture(
+        's3-04-v2-post-baseline',
+        'reconcile_opening_expectation_v2'
+      );
+
+      await insertExpectation(
+        fixture.shopId,
+        fixture.variantId,
+        '2026-09-01T00:00:00.000Z'
+      );
+
+      // Physical stock arriving after the baseline — v2 never writes
+      // opening_balance, so physical truth is established by ordinary
+      // WMS movements, not by the expectation row.
+      await insertMovement(fixture, {
+        movementType: 'manual_adjustment',
+        quantity: 2,
+        locationCode: `WH-${fixture.shopId}-ROOT`,
+        occurredAt: '2026-09-01T06:00:00.000Z',
+      });
+
+      const fulfilledAt = new Date('2026-09-02T00:00:00.000Z');
+
+      await expect(
+        withTenant(fixture.shopId, (trx) =>
+          applyFulfillmentPhysicalRemoval(
+            trx,
+            fixture.shopId,
+            fixture.orderId,
+            fulfilledAt
+          )
+        )
+      ).resolves.toBeUndefined();
+
+      const rows = await fulfillmentRemovals(fixture);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        location_code: `WH-${fixture.shopId}-ROOT`,
+        quantity_delta: -1,
+      });
+
+      expect(await warehouseLineStatus(fixture)).toMatchObject({
+        status: 'shipped',
+      });
+    }
+  );
+
+  it(
+    'S3-05: v2 shop — a variant with no expectation row is not classified as pre-baseline merely because a sibling variant in the same shop has one',
+    async () => {
+      const fixture = await createFixture(
+        's3-05-v2-per-variant-scope',
+        'reconcile_opening_expectation_v2'
+      );
+
+      const siblingVariantId = await seedSiblingVariant(
+        fixture.shopId,
+        's3-05'
+      );
+
+      // Sibling variant HAS an expectation row — the fixture's own line-item
+      // variant does not.
+      await insertExpectation(
+        fixture.shopId,
+        siblingVariantId,
+        '2026-09-16T00:00:00.000Z'
+      );
+
+      // Physical stock for the fixture's own (unbaselined) variant, so the
+      // normal removal path can actually execute rather than throwing
+      // LOCATION_NOT_FOUND — proving this ran the removal path, not the
+      // pre-baseline skip.
+      await insertMovement(fixture, {
+        movementType: 'manual_adjustment',
+        quantity: 2,
+        locationCode: `WH-${fixture.shopId}-ROOT`,
+        occurredAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      // Deliberately BEFORE the sibling's expectation observed_at, to prove
+      // the sibling's baseline is never consulted for this variant.
+      const fulfilledAt = new Date('2026-08-04T18:06:13.000Z');
+
+      await expect(
+        withTenant(fixture.shopId, (trx) =>
+          applyFulfillmentPhysicalRemoval(
+            trx,
+            fixture.shopId,
+            fixture.orderId,
+            fulfilledAt
+          )
+        )
+      ).resolves.toBeUndefined();
+
+      const rows = await fulfillmentRemovals(fixture);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        location_code: `WH-${fixture.shopId}-ROOT`,
+        quantity_delta: -1,
+      });
+
+      expect(await warehouseLineStatus(fixture)).toMatchObject({
+        status: 'shipped',
+      });
+    }
+  );
+
+  it(
+    'S3-06: throws an explicit invariant error when bootstrap_model is missing, and performs zero physical inventory mutation',
+    async () => {
+      const fixture = await createFixture('s3-06-invalid-bootstrap', null);
+
+      await expect(
+        withTenant(fixture.shopId, (trx) =>
+          applyFulfillmentPhysicalRemoval(
+            trx,
+            fixture.shopId,
+            fixture.orderId,
+            new Date('2026-09-02T00:00:00.000Z')
+          )
+        )
+      ).rejects.toThrow(/Unresolved bootstrap_model/);
+
+      expect(await fulfillmentRemovals(fixture)).toHaveLength(0);
+
+      expect(await warehouseLineStatus(fixture)).toBeUndefined();
     }
   );
 });

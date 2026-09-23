@@ -1,8 +1,9 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import {
-  pickableLocationCondition,
-} from '../inventory/pickableLocation.js';
+  readReleaseCapacity,
+  sumReleaseCapacityByVariant,
+} from '../inventory/releaseCapacity.service.js';
 import { assertPickAllocationsScanReady } from './pickExecutionReadiness.service.js';
 
 const RESERVATION_NAMESPACE =
@@ -355,57 +356,38 @@ export async function reserveBatchInventory(
   const variantIds = [...requiredByVariant.keys()];
 
   /**
-   * FRESH-STOW-CLIFF-01: pickable = active pick bin OR warehouse root,
-   * unconditionally. Shares one stateless helper with
-   * inventoryConstraintEvaluator — that one decides which orders are
-   * eligible, this one decides which are reservable.
-   * A bin-only filter here threw on every tenant whose stock had not
-   * been stowed, which is every tenant at install (Shopify ref 102766).
+   * GH-1145-A1: capacity comes from readReleaseCapacity — the single
+   * quantity definition shared with inventoryConstraintEvaluator (what is
+   * eligible) and the pickBatch release precheck. Pickable = active pick bin
+   * OR warehouse root, unconditionally (FRESH-STOW-CLIFF-01); location_rank
+   * drives bins-first allocation, root is the fallback.
    *
-   * location_rank drives bins-first allocation in
-   * allocateRequiredQuantities; root is the fallback, not the default.
-   *
-   * FOR UPDATE serializes competing releases against the same
-   * inventory_truth rows inside the caller's transaction.
+   * lock: 'for_update' locks exactly the inventory_truth rows whose quantity
+   * is allocated and decremented below, serializing competing releases
+   * inside the caller's transaction.
    */
-  const inventoryRows: PickableInventoryRow[] =
-    await trx('inventory_truth as it')
-      .join('warehouse_locations as wl', function () {
-        this.on('wl.location_code', '=', 'it.location_code')
-            .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
-            .andOnVal('wl.active', true)
-            .andOn(pickableLocationCondition(trx));
-      })
-      .where('it.shop_id', shopId)
-      .whereIn('it.lasyncro_variant_id', variantIds)
-      .where('it.available_quantity', '>', 0)
-      .select(
-        'it.lasyncro_variant_id',
-        'it.location_code',
-        'it.available_quantity',
-        trx.raw(`CASE wl.type WHEN 'bin' THEN 0 ELSE 1 END as location_rank`)
-      )
-      .orderBy('it.lasyncro_variant_id', 'asc')
-      .orderBy('location_rank', 'asc')
-      .orderBy('it.location_code', 'asc')
-      .forUpdate();
+  const capacityRows = await readReleaseCapacity(trx, {
+    shopId,
+    variantIds,
+    lock: 'for_update',
+  });
+
+  const inventoryRows: PickableInventoryRow[] = capacityRows.map((row) => ({
+    lasyncro_variant_id: row.lasyncroVariantId,
+    location_code: row.locationCode,
+    available_quantity: row.availableQuantity,
+    location_rank: row.locationRank,
+  }));
 
   /**
    * SHOP-REVIEW-RELEASE-SYSTEM-08 (R14) — authoritative post-lock re-check.
-   * `inventoryRows` is now the FOR UPDATE-locked truth. If it can no longer
+   * The capacity rows are now FOR UPDATE-locked truth. If they can no longer
    * cover demand, a competing release committed between pickBatch.service.ts's
    * non-locking pre-check and this lock. That is a concurrency conflict, not a
    * pre-existing shortfall (R9), so surface it typed: the whole release rolls
    * back and the caller gets a controlled 409 instead of a generic 500.
    */
-  const lockedAvailableByVariant = new Map<string, number>();
-  for (const row of inventoryRows) {
-    lockedAvailableByVariant.set(
-      row.lasyncro_variant_id,
-      (lockedAvailableByVariant.get(row.lasyncro_variant_id) ?? 0) +
-        Number(row.available_quantity)
-    );
-  }
+  const lockedAvailableByVariant = sumReleaseCapacityByVariant(capacityRows);
   for (const [variantId, requiredQuantity] of requiredByVariant) {
     const availableQuantity = lockedAvailableByVariant.get(variantId) ?? 0;
     if (availableQuantity < requiredQuantity) {
