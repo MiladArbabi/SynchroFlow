@@ -84,11 +84,16 @@ export function createProcessShutdown(
           options.processName
         );
       } catch (error) {
-        failed = true;
+        // Promise.allSettled() itself cannot reject. Reaching this catch means
+        // either startDrain() threw synchronously or the shared shutdown
+        // deadline expired. In either case we must not tear down shared
+        // infrastructure underneath potentially active work.
         console.error(
           `[${options.processName}] shutdown drain failed`,
           error
         );
+        terminate(1);
+        return;
       }
 
       for (const result of drainResults) {
@@ -104,6 +109,16 @@ export function createProcessShutdown(
       // Infrastructure remains available until registered work has drained.
       // Cleanup still shares the original process-level deadline.
       for (const step of options.cleanup) {
+        // Never start another teardown step after the shared process deadline.
+        if (Date.now() >= deadlineAt) {
+          console.error(
+            `[${options.processName}] shutdown cleanup failed: ${step.name}`,
+            deadlineError(options.processName)
+          );
+          terminate(1);
+          return;
+        }
+
         const requested = Promise.resolve().then(step.run);
 
         try {
@@ -118,6 +133,13 @@ export function createProcessShutdown(
             `[${options.processName}] shutdown cleanup failed: ${step.name}`,
             error
           );
+
+          // A timeout is terminal. Do not start later cleanup steps after the
+          // original process-level deadline has expired.
+          if (Date.now() >= deadlineAt) {
+            terminate(1);
+            return;
+          }
         }
       }
 

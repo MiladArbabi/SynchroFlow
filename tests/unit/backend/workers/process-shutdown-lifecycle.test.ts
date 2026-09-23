@@ -139,6 +139,7 @@ describe.each(['server', 'worker-entry'])('%s production shutdown signals', (ent
     stop.mockRejectedValue(new Error('worker stop failed'));
     signal('SIGINT');
     await jest.advanceTimersByTimeAsync(0);
+    expect(cleanup).toHaveBeenCalled();
     expect(exit).toHaveBeenCalledWith(1);
   });
   it('a hung stop terminates at the single 10-second deadline', async () => {
@@ -149,6 +150,7 @@ describe.each(['server', 'worker-entry'])('%s production shutdown signals', (ent
     expect(exit).not.toHaveBeenCalled();
     await jest.advanceTimersByTimeAsync(1);
     expect(exit).toHaveBeenCalledWith(1);
+    expect(cleanup).not.toHaveBeenCalled();
   });
   if (entry === 'server') {
     it('starts HTTP close and worker stop concurrently, before cleanup', async () => {
@@ -183,6 +185,7 @@ describe.each(['server', 'worker-entry'])('%s production shutdown signals', (ent
       signal('SIGTERM');
       await jest.advanceTimersByTimeAsync(10_000);
       expect(exit).toHaveBeenCalledWith(1);
+      expect(cleanup).toHaveBeenCalledTimes(1);
     });
   }
 });
