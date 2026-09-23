@@ -6,6 +6,10 @@
 
 let started = false;
 let workerStopFns: Array<() => Promise<void> | void> = [];
+let workerStartPromise: Promise<void> | null = null;
+let workerStopPromise: Promise<void> | null = null;
+let workerStartInFlight = false;
+let stopRequested = false;
 
 /**
  * startWorkers
@@ -18,19 +22,20 @@ let workerStopFns: Array<() => Promise<void> | void> = [];
 // synchronous throws from starts that are not async.
 function superviseWorker(name: string, start: () => unknown): void {
   void Promise.resolve()
-    .then(start)
+    .then(() => {
+      if (stopRequested) return;
+      return start();
+    })
     .catch((err) => {
       console.error(`[WORKER_FAULT] ${name}`, err);
     });
 }
 
-export async function startWorkers(): Promise<void> {
-  if (started) return;
-  started = true;
-
+async function startWorkersInternal(): Promise<void> {
   // start api worker
   try {
     const w = await import('../worker.js');
+    if (stopRequested) return;
     if (typeof w.startWorker === 'function') {
       superviseWorker('api-domain-events', () => w.startWorker());
       if ((w as any).stopWorker && typeof (w as any).stopWorker === 'function') {
@@ -45,6 +50,7 @@ export async function startWorkers(): Promise<void> {
   // start sync worker
   try {
     const s = await import('../sync.worker.js');
+    if (stopRequested) return;
     if (typeof s.startSyncWorker === 'function') {
       superviseWorker('sync', () => s.startSyncWorker());
       if ((s as any).stopSyncWorker && typeof (s as any).stopSyncWorker === 'function') {
@@ -59,11 +65,13 @@ export async function startWorkers(): Promise<void> {
   // start Product ingestion worker (FT0)
   try {
     const product = await import('../workers/product-ingestion.worker.js');
+    if (stopRequested) return;
     if (typeof product.startProductIngestionWorker === 'function') {
-      await Promise.resolve(product.startProductIngestionWorker());
       if (typeof product.stopProductIngestionWorker === 'function') {
         workerStopFns.push(async () => await product.stopProductIngestionWorker());
       }
+      await Promise.resolve(product.startProductIngestionWorker());
+      if (stopRequested) return;
       console.log('[bootstrap/workers] Product ingestion worker started');
 
       /**
@@ -93,6 +101,7 @@ export async function startWorkers(): Promise<void> {
          *
          * This is permanently disabled.
          */
+        if (stopRequested) return;
         if (typeof reconciliation.startReconciliationConsumer === 'function') {
           console.warn('[RECONCILIATION_CONSUMER_DISABLED]');
           // DO NOT START
@@ -188,6 +197,7 @@ export async function startWorkers(): Promise<void> {
           const execution = await import('../workers/execution.worker.js');
           const dispatcher = await import('../workers/execution.dispatcher.worker.js');
 
+          if (stopRequested) return;
           if (typeof execution.startExecutionWorker === 'function') {
             superviseWorker('execution', () => execution.startExecutionWorker());
 
@@ -201,6 +211,7 @@ export async function startWorkers(): Promise<void> {
            *
            * Must start AFTER execution worker is ready.
            */
+          if (stopRequested) return;
           if (typeof dispatcher.startExecutionDispatcher === 'function') {
             // WORKER-CRASH-01: this start was the one worker missed by
             // RUNTIME-BOOT-03. Unsupervised, its rejection was unowned and
@@ -221,6 +232,7 @@ export async function startWorkers(): Promise<void> {
            */
           const commandsConsumer = await import('../workers/commands.consumer.js');
 
+          if (stopRequested) return;
           if (typeof commandsConsumer.startCommandsConsumer === 'function') {
             commandsConsumer.startCommandsConsumer();
             console.log('[bootstrap/workers] Commands consumer started');
@@ -253,6 +265,7 @@ export async function startWorkers(): Promise<void> {
   // start WMS batch auto-release worker
   try {
     const wmsAutoRelease = await import('../workers/wms.batch.auto-release.worker.js');
+    if (stopRequested) return;
     if (typeof wmsAutoRelease.startWmsBatchAutoReleaseWorker === 'function') {
       // Fire-and-forget — polling loop runs indefinitely, must not block bootstrap
       superviseWorker('wms-batch-auto-release', () => wmsAutoRelease.startWmsBatchAutoReleaseWorker());
@@ -274,6 +287,7 @@ export async function startWorkers(): Promise<void> {
   // Without this: orders_operational_control_snapshot stays empty → Orders/Overview show zeros.
   try {
     const snapshotDispatcher = await import('../workers/projections/shopSnapshotJob.dispatcher.js');
+    if (stopRequested) return;
     if (typeof snapshotDispatcher.startShopSnapshotJobDispatcher === 'function') {
       await Promise.resolve(snapshotDispatcher.startShopSnapshotJobDispatcher()).then(() => {
         console.log('[bootstrap/workers] Shop snapshot dispatcher started');
@@ -294,6 +308,7 @@ export async function startWorkers(): Promise<void> {
   // start Stock Protection reconciliation worker
   try {
     const stockProtectionReconciliation = await import('../workers/stockProtectionReconciliation.worker.js');
+    if (stopRequested) return;
     if (typeof stockProtectionReconciliation.startStockProtectionReconciliationWorker === 'function') {
       superviseWorker(
         'stock-protection-reconciliation',
@@ -314,6 +329,7 @@ export async function startWorkers(): Promise<void> {
   // start WMS idle alert worker
   try {
     const wmsIdleAlert = await import('../workers/wms.idle.alert.worker.js');
+    if (stopRequested) return;
     if (typeof wmsIdleAlert.startWmsIdleAlertWorker === 'function') {
       superviseWorker('wms-idle-alert', () => wmsIdleAlert.startWmsIdleAlertWorker());
       if (typeof wmsIdleAlert.stopWmsIdleAlertWorker === 'function') {
@@ -332,6 +348,7 @@ export async function startWorkers(): Promise<void> {
   // unless explicitly enabled and independently verifies seed ownership.
   try {
     const reviewerActivity = await import('../workers/reviewer-activity-refresh.worker.js');
+    if (stopRequested) return;
     if (typeof reviewerActivity.startReviewerActivityRefreshWorker === 'function') {
       superviseWorker('reviewer-activity-refresh', () => reviewerActivity.startReviewerActivityRefreshWorker());
       if (typeof reviewerActivity.stopReviewerActivityRefreshWorker === 'function') {
@@ -349,6 +366,7 @@ export async function startWorkers(): Promise<void> {
   // start trial expiry worker (MON-07)
   try {
     const trialExpiry = await import('../workers/trial-expiry.worker.js');
+    if (stopRequested) return;
     if (typeof trialExpiry.startTrialExpiryWorker === 'function') {
       superviseWorker('trial-expiry', () => trialExpiry.startTrialExpiryWorker());
       if (typeof trialExpiry.stopTrialExpiryWorker === 'function') {
@@ -366,6 +384,7 @@ export async function startWorkers(): Promise<void> {
   // start Shopify uninstall grace-period worker (SHB-08)
   try {
     const shopifyGrace = await import('../workers/shopifyUninstallGrace.worker.js');
+    if (stopRequested) return;
     if (typeof shopifyGrace.startShopifyUninstallGraceWorker === 'function') {
       superviseWorker('shopify-uninstall-grace', () => shopifyGrace.startShopifyUninstallGraceWorker());
       if (typeof shopifyGrace.stopShopifyUninstallGraceWorker === 'function') {
@@ -383,6 +402,7 @@ export async function startWorkers(): Promise<void> {
   // missed app_subscriptions/update webhook deliveries
   try {
     const shopifyBillingReconciliation = await import('../workers/shopifyBillingReconciliation.worker.js');
+    if (stopRequested) return;
     if (typeof shopifyBillingReconciliation.startShopifyBillingReconciliationWorker === 'function') {
       superviseWorker('shopify-billing-reconciliation', () => shopifyBillingReconciliation.startShopifyBillingReconciliationWorker());
       if (typeof shopifyBillingReconciliation.stopShopifyBillingReconciliationWorker === 'function') {
@@ -399,6 +419,7 @@ export async function startWorkers(): Promise<void> {
   // start margin snapshot integrity worker (FIN-02 hardening — read-only drift detector)
   try {
     const marginIntegrity = await import('../workers/margin-snapshot-integrity.worker.js');
+    if (stopRequested) return;
     if (typeof marginIntegrity.startMarginSnapshotIntegrityWorker === 'function') {
       superviseWorker('margin-snapshot-integrity', () => marginIntegrity.startMarginSnapshotIntegrityWorker());
       if (typeof marginIntegrity.stopMarginSnapshotIntegrityWorker === 'function') {
@@ -416,6 +437,7 @@ export async function startWorkers(): Promise<void> {
   // start carrier stall detection worker (WM-40 hardening)
   try {
     const carrierStall = await import('../workers/carrier-stall-detection.worker.js');
+    if (stopRequested) return;
     if (typeof carrierStall.startCarrierStallDetectionWorker === 'function') {
       superviseWorker('carrier-stall-detection', () => carrierStall.startCarrierStallDetectionWorker());
       if (typeof carrierStall.stopCarrierStallDetectionWorker === 'function') {
@@ -435,6 +457,7 @@ export async function startWorkers(): Promise<void> {
   // webhooks remain primary, this repairs truth when one was missed)
   try {
     const carrierTrackingReconciliation = await import('../workers/carrier-tracking-reconciliation.worker.js');
+    if (stopRequested) return;
     if (typeof carrierTrackingReconciliation.startCarrierTrackingReconciliationWorker === 'function') {
       superviseWorker(
         'carrier-tracking-reconciliation',
@@ -455,6 +478,7 @@ export async function startWorkers(): Promise<void> {
   // start morning brief worker (OVR-02)
   try {
     const morningBrief = await import('../workers/morning-brief.worker.js');
+    if (stopRequested) return;
     if (typeof morningBrief.startMorningBriefWorker === 'function') {
       superviseWorker('morning-brief', () => morningBrief.startMorningBriefWorker());
       if (typeof morningBrief.stopMorningBriefWorker === 'function') {
@@ -472,6 +496,7 @@ export async function startWorkers(): Promise<void> {
 // start exchange rate worker — fetches daily FX rates for display-only currency conversion
   try {
     const exchangeRate = await import('../workers/exchange-rate.worker.js');
+    if (stopRequested) return;
     if (typeof exchangeRate.startExchangeRateWorker === 'function') {
       await exchangeRate.startExchangeRateWorker();
       if (typeof exchangeRate.stopExchangeRateWorker === 'function') {
@@ -488,12 +513,82 @@ export async function startWorkers(): Promise<void> {
 }
 
 
-export async function stopWorkers(): Promise<void> {
-  // run stop functions in sequence, ignore individual errors
-  for (const fn of workerStopFns) {
-    try { await fn(); } catch (e) { /* ignore per-worker errors */ }
+export function startWorkers(): Promise<void> {
+  if (started) {
+    return workerStartPromise ?? Promise.resolve();
   }
-  workerStopFns = [];
-  started = false;
-  console.log('[bootstrap/workers] Workers stopped');
-};
+
+  started = true;
+  stopRequested = false;
+  workerStartInFlight = true;
+
+  workerStartPromise = startWorkersInternal().finally(() => {
+    workerStartInFlight = false;
+  });
+
+  return workerStartPromise;
+}
+
+export function stopWorkers(): Promise<void> {
+  if (workerStopPromise) {
+    return workerStopPromise;
+  }
+
+  if (!started && !workerStartPromise && workerStopFns.length === 0) {
+    return Promise.resolve();
+  }
+
+  stopRequested = true;
+  const activeStart = workerStartInFlight
+    ? workerStartPromise
+    : null;
+
+  const operation = (async (): Promise<void> => {
+    const failures: unknown[] = [];
+
+    // A finite start already in progress remains lifecycle-owned.
+    // stopRequested prevents that start from launching later workers.
+    if (activeStart) {
+      const [startResult] = await Promise.allSettled([activeStart]);
+      if (startResult.status === 'rejected') {
+        failures.push(startResult.reason);
+      }
+    }
+
+    // Snapshot only after startup has reached a quiescent point so stop hooks
+    // registered by an in-flight start are included.
+    const stopFns = workerStopFns;
+    workerStopFns = [];
+
+    // Invoke every stop before awaiting any individual completion.
+    const stopResults = await Promise.allSettled(
+      stopFns.map((fn) => Promise.resolve().then(fn))
+    );
+
+    for (const result of stopResults) {
+      if (result.status === 'rejected') {
+        failures.push(result.reason);
+      }
+    }
+
+    if (failures.length > 0) {
+      const firstFailure = failures[0];
+      throw firstFailure instanceof Error
+        ? firstFailure
+        : new Error(String(firstFailure));
+    }
+
+    console.log('[bootstrap/workers] Workers stopped');
+  })();
+
+  workerStopPromise = operation.finally(() => {
+    workerStopPromise = null;
+    workerStartPromise = null;
+    workerStartInFlight = false;
+    workerStopFns = [];
+    stopRequested = false;
+    started = false;
+  });
+
+  return workerStopPromise;
+}

@@ -10,12 +10,29 @@ process.env.WORKER_RUNTIME = 'true';
 import './bootstrap/tsconfig-paths-register.js';
 import './api/shopify/shopify.webhook.js';
 
-import { initQueue } from './queue.js';
-import { startWorkers } from './bootstrap/workers.js';
+import { initQueue, closeQueue } from './queue.js';
+import { startWorkers, stopWorkers } from './bootstrap/workers.js';
+import { createProcessShutdown } from './bootstrap/processShutdown.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
 import { startProjectionHealthWorker } from './workers/projection.health.worker.js';
 import { assertRuntimeDatabaseIdentity } from '@lasyncro/backend-core/db.js';
+
+const shutdown = createProcessShutdown({
+  processName: 'worker-entry',
+  startDrain: () => [
+    stopWorkers(),
+  ],
+  cleanup: [
+    {
+      name: 'queue',
+      run: () => closeQueue(),
+    },
+  ],
+});
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 async function start() {
   // WORKER-CRASH-01: server.ts:47 contains unowned rejections for the HTTP

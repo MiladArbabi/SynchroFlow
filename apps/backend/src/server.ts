@@ -4,7 +4,8 @@ dotenv.config();
 import { createApp } from './bootstrap/express.js';
 import { initQueue, closeQueue } from './bootstrap/queue.js';
 import { declareTopology } from './queue.topology.js';
-import { startWorkers } from './bootstrap/workers.js';
+import { startWorkers, stopWorkers } from './bootstrap/workers.js';
+import { createProcessShutdown } from './bootstrap/processShutdown.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { runSchemaGuard } from './utils/schemaGuard.js';
@@ -58,25 +59,49 @@ async function start() {
   });
 }
 
-async function shutdown(sig?: string) {
-  console.log('[server] shutdown triggered', sig || '');
-  try { await flushAnalytics(); } catch (e) { /* non-fatal — flush remaining PostHog events */ }
-  try { await closeRedisClient(); } catch (e) { /* ignore */ }
-  try { await closeQueue(); } catch (e) { /* ignore */ }
-
-  if (server) {
-    try {
-      server.close(() => {
-        console.log('[server] HTTP server closed');
-        process.exit(0);
-      });
-    } catch (_) {
-      process.exit(0);
-    }
-  } else {
-    process.exit(0);
+function closeHttpServer(): Promise<void> {
+  if (!server) {
+    return Promise.resolve();
   }
+
+  return new Promise<void>((resolve, reject) => {
+    try {
+      server?.close((error?: Error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        console.log('[server] HTTP server closed');
+        resolve();
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
+
+const shutdown = createProcessShutdown({
+  processName: 'server',
+  startDrain: () => [
+    closeHttpServer(),
+    stopWorkers(),
+  ],
+  cleanup: [
+    {
+      name: 'analytics',
+      run: () => flushAnalytics(),
+    },
+    {
+      name: 'queue',
+      run: () => closeQueue(),
+    },
+    {
+      name: 'redis',
+      run: () => closeRedisClient(),
+    },
+  ],
+});
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
