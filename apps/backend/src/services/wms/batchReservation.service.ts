@@ -4,7 +4,6 @@ import {
   readReleaseCapacity,
   sumReleaseCapacityByVariant,
 } from '../inventory/releaseCapacity.service.js';
-import { assertPickAllocationsScanReady } from './pickExecutionReadiness.service.js';
 
 const RESERVATION_NAMESPACE =
   'c2d3e4f5-a6b7-8901-bcde-f12345678901';
@@ -404,11 +403,12 @@ export async function reserveBatchInventory(
     inventoryRows
   );
 
-  await assertPickAllocationsScanReady(
-    trx,
-    shopId,
-    allocations
-  );
+  /**
+   * GH-1145-D1: canonical physical capacity + location (readReleaseCapacity
+   * above) owns Release eligibility. Barcode / LSU / label readiness is an
+   * execution-time Pick concern; Release must not inspect unit-identity or
+   * label-print execution state here.
+   */
 
   const ownershipAllocations =
     buildReservationOwnershipAllocations(lineItems, allocations);
