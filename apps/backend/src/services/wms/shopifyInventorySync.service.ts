@@ -4,16 +4,19 @@
 // -------------------------------------
 // Called after stow confirmation to push accepted quantity delta to Shopify.
 //
-// Uses inventoryAdjustQuantities mutation (API 2024-01+):
+// Uses inventoryAdjustQuantities:
 //   - Delta-based: adds quantity, never sets absolute — safe under concurrent operations
-//   - Requires write_inventory scope (added to REQUIRED_SCOPES)
+//   - Shopify-native idempotency protects retries from applying the same delta twice
+//   - changeFromQuantity: null deliberately opts out of compare-and-swap because
+//     Shopify availability may legitimately change concurrently through orders
+//   - Requires write_inventory scope
 //   - Requires external_inventory_item_id from external_product_identity_map
 //   - Requires external_location_id from the owning warehouses row
 //
 // Failure contract:
 //   - Throws on missing identity, missing installation, or Shopify userErrors
 //   - Caller logs and continues — Shopify sync failure MUST NOT block stow confirmation
-//   - Retry is safe: delta idempotency handled at caller (quantity only sent once per stow task)
+//   - Caller supplies one deterministic idempotency key per committed Stow placement
 //
 // Called by: httpConfirmStow in wms.controller.ts
 
@@ -22,8 +25,12 @@ import { decrypt } from '../../security/encryption.service.js';
 import { createShopifyGraphQLClient } from './../shopify/shopifyClient.service.js';
 
 const INVENTORY_ADJUST_MUTATION = `
-  mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!) {
-    inventoryAdjustQuantities(input: $input) {
+  mutation inventoryAdjustQuantities(
+    $input: InventoryAdjustQuantitiesInput!
+    $idempotencyKey: String!
+  ) {
+    inventoryAdjustQuantities(input: $input)
+      @idempotent(key: $idempotencyKey) {
       inventoryAdjustmentGroup {
         id
         reason
@@ -48,11 +55,21 @@ export async function syncStowedQuantityToShopify(
     lasyncroVariantId: string;
     locationCode: string;
     quantityDelta: number; // positive — units stowed
+    idempotencyKey: string;
   }
 ): Promise<void> {
-  const { shopId, lasyncroVariantId, locationCode, quantityDelta } = params;
+  const {
+    shopId,
+    lasyncroVariantId,
+    locationCode,
+    quantityDelta,
+    idempotencyKey,
+  } = params;
 
   if (quantityDelta <= 0) return;
+  if (!idempotencyKey.trim()) {
+    throw new Error('[SHOPIFY_INV_SYNC] idempotencyKey is required');
+  }
 
   // 1. Resolve Shopify inventory_item_id for this variant
   const identity = await trx('external_product_identity_map')
@@ -116,6 +133,7 @@ export async function syncStowedQuantityToShopify(
   // 4. Push delta to Shopify — delta-based, safe under concurrent ops
   const response: any = await client.request(INVENTORY_ADJUST_MUTATION, {
     variables: {
+      idempotencyKey,
       input: {
         reason: 'received',
         name: 'available',
@@ -124,6 +142,7 @@ export async function syncStowedQuantityToShopify(
             inventoryItemId: `gid://shopify/InventoryItem/${identity.external_inventory_item_id}`,
             locationId: `gid://shopify/Location/${location.external_location_id}`,
             delta: quantityDelta,
+            changeFromQuantity: null,
           },
         ],
       },

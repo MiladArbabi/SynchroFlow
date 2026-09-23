@@ -2916,6 +2916,9 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
       .first();
 
     if (stowedTask?.lasyncro_variant_id && confirmResult.locationCode) {
+      const stowShopifyIdempotencyKey =
+        `lasyncro:stow:${shopId}:${taskId}:${confirmResult.quantityPlaced}`;
+
       syncStowedQuantityToShopify(db as any, {
         shopId,
         lasyncroVariantId: stowedTask.lasyncro_variant_id,
@@ -2925,6 +2928,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         // by this transaction. Using the task total here would double-count a task
         // that is stowed incrementally or split across multiple bins.
         quantityDelta: confirmResult.placedNow,
+        idempotencyKey: stowShopifyIdempotencyKey,
       }).catch((err: Error) => {
         // Non-fatal — internal inventory_truth is source of truth.
         // Shopify sync failure is recoverable via manual reconciliation.
