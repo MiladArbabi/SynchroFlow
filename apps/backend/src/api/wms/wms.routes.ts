@@ -110,6 +110,10 @@ import {
   httpListRecountFindings,
   httpPreviewSuggestedBins,
 } from './inventoryRecount.controller.js';
+import {
+  httpGetOpeningInventoryProgress,
+  httpApproveOpeningInventoryCutover,
+} from './openingInventoryCutover.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -920,6 +924,28 @@ router.post(
   requireCapability('inventory.core'),
   requireAction('wms:recount:commit'),
   httpCommitRecountTask
+);
+
+// 4b-2b GRILL-03: opening inventory cutover joins the recount family.
+// Read uses recount read RBAC; approval uses recount commit RBAC. The
+// service additionally re-checks active owner/admin membership, readiness
+// and physical-truth acceptance.
+router.get(
+  '/opening-inventory/progress',
+  authenticateToken,
+  requireFt2,
+  requireCapability('inventory.core'),
+  requireAction('wms:recount:read'),
+  httpGetOpeningInventoryProgress
+);
+
+router.post(
+  '/opening-inventory/cutover',
+  authenticateToken,
+  requireFt2,
+  requireCapability('inventory.core'),
+  requireAction('wms:recount:commit'),
+  httpApproveOpeningInventoryCutover
 );
 
 router.get(

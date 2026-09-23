@@ -949,3 +949,299 @@ POST /api/v1/wms/orders/:orderId/generate-label
 - Carrier configured: label PDF opens in new tab automatically at pack time
 - No carrier configured: Shopify packing slip opens (pre-WM-38 behaviour preserved)
 - Operator is never blocked — fallback always exists
+
+---
+
+## 17. Opening Inventory Reconciliation & Shopify Cutover — 4b-2 (September 23, 2026)
+
+Opening inventory is a one-time transition from Shopify's existing stock
+expectation into LaSyncro's canonical physical inventory truth.
+
+The workflow is:
+
+```text
+Shopify opening expectation
+→ physical warehouse count
+→ bin review / reconciliation
+→ canonical LaSyncro physical truth
+→ merchant final review
+→ Shopify delta correction
+→ opening cutover complete
+```
+
+### Authority contract
+
+Shopify opening quantity is an **expectation only**. It must never directly
+create or overwrite LaSyncro physical inventory.
+
+Physical truth is established only by the opening recount workflow:
+
+```text
+NOT STARTED
+→ COUNTING
+→ NEEDS BIN REVIEW
+→ PHYSICAL COUNT COMPLETE
+→ FINAL REVIEW
+→ SHOPIFY CUTOVER
+→ COMPLETE
+```
+
+The implementation may expose operational states such as
+`not_started`, `counting`, `needs_bin_review`, `review_required`,
+`ready_for_cutover`, and `complete`, but the authority rule does not change:
+
+- counting records evidence;
+- counting alone does not mutate stock;
+- settled opening recounts create canonical
+  `opening_inventory_reconcile` inventory movements;
+- those movements establish LaSyncro physical truth;
+- Shopify never becomes the authority for the reconciled physical count.
+
+### Shopify correction is delta-based — never absolute
+
+The frozen opening discrepancy is:
+
+```text
+opening physical quantity - opening Shopify expectation
+```
+
+That frozen **delta** is what LaSyncro applies to Shopify.
+
+Example:
+
+```text
+Shopify opening expectation = 100
+physical opening count      = 93
+frozen correction delta     = -7
+```
+
+If Shopify changes to 95 before cutover executes, LaSyncro applies `-7`,
+producing 88.
+
+LaSyncro must **not** absolute-set Shopify back to 93.
+
+This is required because Shopify may continue receiving legitimate external
+changes between opening snapshot and final merchant approval.
+
+### Exact-match cutover
+
+When every opening variant already matches:
+
+```text
+opening physical == opening Shopify expectation
+```
+
+the cutover completes with:
+
+- zero Shopify correction variants;
+- zero Shopify execution batches;
+- no Shopify inventory mutation;
+- no Shopify installation/location/item-identity dependency for the no-op;
+- `opening_inventory_shopify_synced_at` written only after completion.
+
+### Merchant approval
+
+Only an active owner/admin may approve opening cutover.
+
+For `ready_for_cutover` with no discrepancy:
+
+- no physical-truth acceptance is required;
+- owner/admin may complete the zero-difference cutover directly.
+
+For `review_required`:
+
+- the merchant must explicitly accept:
+  **“LaSyncro physical count is truth”**;
+- the approval authorizes Shopify correction only;
+- approval never mutates LaSyncro physical inventory.
+
+Persisted acceptance may be reused when retrying the same durable cutover.
+The frontend must never synthesize consent.
+
+### Multi-location rule
+
+Opening Shopify expectation is currently aggregate rather than location-scoped.
+
+For a non-zero correction:
+
+- there must be exactly one active warehouse;
+- that active warehouse must have a canonical Shopify location mapping in
+  `warehouses.external_location_id`;
+- any active unmapped warehouse fails closed;
+- multiple active mapped warehouses fail closed.
+
+LaSyncro must never invent how an aggregate discrepancy should be distributed
+across several Shopify locations.
+
+A zero-difference cutover needs no Shopify location distribution because no
+external write occurs.
+
+### Durable cutover and retry contract
+
+Opening cutover uses:
+
+- one durable `opening_inventory_cutovers` aggregate per shop;
+- zero or more durable `opening_inventory_cutover_batches`;
+- maximum 250 Shopify quantity changes per batch.
+
+Each batch freezes:
+
+- exact Shopify mutation input;
+- audit snapshot;
+- deterministic idempotency key.
+
+Idempotency key:
+
+```text
+lasyncro:opening-cutover:<cutover_id>:<batch_sequence>
+```
+
+Every retry reads the already-persisted Shopify input and key. It must never
+rebuild the economic operation from current inventory state.
+
+A succeeded batch is monotonic and is never replayed.
+
+A stale failure from a concurrent executor must not regress a batch that has
+already succeeded or regress its parent cutover.
+
+A process crash with a batch left `in_flight` is recoverable: the same
+persisted economic operation is reclaimed and retried.
+
+### Persisted `executing` is resumable
+
+`executing` does not mean a merchant is permanently blocked.
+
+The UI distinguishes:
+
+- local HTTP request currently running → disabled `Syncing…` state;
+- persisted backend `executing` with no local request → owner/admin may
+  **Resume Shopify sync**.
+
+Resume calls the same cutover endpoint and continues the same durable cutover.
+It does not create a second economic operation.
+
+### Shopify mutation contract
+
+Opening corrections use additive Shopify inventory adjustment semantics:
+
+```text
+reason: correction
+name: available
+delta: frozen opening discrepancy
+changeFromQuantity: null
+```
+
+The implementation never sends LaSyncro's current physical/available quantity
+as an absolute Shopify target.
+
+The Shopify call runs outside the internal database transaction.
+
+A cutover becomes complete only when all required persisted batches have
+succeeded.
+
+### Public error contract
+
+Raw provider/runtime diagnostics may remain persisted internally in
+`last_error`, but merchant-facing APIs must never expose arbitrary raw provider
+text.
+
+The public read model exposes only:
+
+```text
+error_code
+error_message
+```
+
+Known cutover failures use stable `OPENING_CUTOVER_*` classifications.
+Unknown/unprefixed runtime failures are returned as a generic
+`OPENING_CUTOVER_INTERNAL` message.
+
+### HTTP boundary
+
+Merchant operability lives in the WMS reconciliation surface.
+
+```text
+GET  /api/v1/wms/opening-inventory/progress
+POST /api/v1/wms/opening-inventory/cutover
+```
+
+GET authorization:
+
+```text
+authenticateToken
+→ requireFt2
+→ requireCapability('inventory.core')
+→ requireAction('wms:recount:read')
+```
+
+POST authorization:
+
+```text
+authenticateToken
+→ requireFt2
+→ requireCapability('inventory.core')
+→ requireAction('wms:recount:commit')
+```
+
+The POST body contains only:
+
+```json
+{
+  "accept_physical_truth": true
+}
+```
+
+when mismatch acceptance is required.
+
+Shop/user identity always comes from authenticated `req.user`.
+Client-supplied shop, user, role, delta, location, variant or Shopify payload
+data is never authoritative.
+
+### Frontend ownership boundary
+
+`WmsOperationsPage` owns:
+
+- HTTP requests;
+- authenticated user/role context;
+- refreshing opening progress after count/cutover actions.
+
+`WmsModuleFT2` and `OpeningInventoryCutoverCard` remain presentational and
+receive state/callbacks via props.
+
+No HTTP hooks or `axiosInstance` calls belong inside `modules/wms` UI
+components.
+
+### Completion marker
+
+`shop_wms_settings.opening_inventory_shopify_synced_at` is the durable
+onboarding completion marker.
+
+It remains `NULL` while cutover is incomplete or failed.
+
+It is written only when the cutover is durably complete.
+
+### Regression contract
+
+The 4b-2 certification covers:
+
+- opening recount bootstrap and frozen-bin progress;
+- canonical recount-origin inventory units and provenance;
+- projection / historical-repair / fulfillment physical semantics;
+- cutover persistence and RLS;
+- owner/admin authorization and explicit mismatch acceptance;
+- frozen positive/negative economic deltas;
+- Shopify location and external identity preflight;
+- 250-change batching;
+- deterministic persisted idempotency;
+- stale `in_flight` recovery;
+- concurrent success/failure monotonicity;
+- resumable persisted `executing`;
+- public error sanitization;
+- exact-zero no-Shopify completion;
+- real Express + JWT + FT2 + commercial entitlement + RBAC + PostgreSQL
+  GET → POST → GET route proof.
+
+The central invariant is:
+
+> LaSyncro owns physical truth. Shopify receives the frozen opening correction
+> delta needed to reconcile its independently evolving state to that truth.
