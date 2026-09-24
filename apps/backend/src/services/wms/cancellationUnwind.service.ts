@@ -49,28 +49,112 @@ import { randomUUID } from 'crypto';
 
 const RETAIN_STATUSES = ['picking', 'picked', 'packing', 'packed'];
 
+/**
+ * GH-1145 R0-1 LOCK ORDER — shared with batchCancellation.service.ts:
+ *   orders → pick_batches → pick_batch_orders → order_line_item_warehouse_status
+ *   → pick_reservation_allocations → inventory_truth (variant, location order)
+ *
+ * Every allocation this service releases is read FOR UPDATE while the owning
+ * batch is locked, so a concurrent batch cancellation either commits first
+ * (the allocation is gone before it is read) or waits until this unwind
+ * commits (and then sees only what is still owned). Shopify fulfillment takes
+ * the same line warehouse-status lock before touching allocations.
+ */
+type LockedBatchScope = {
+  memberBatchId: string | null;
+};
+
+async function lockBatchScope(
+  trx: Knex.Transaction,
+  shopId: number,
+  lasyncroOrderId: string
+): Promise<LockedBatchScope> {
+  // Release takes this same anchor before creating membership or allocations.
+  await trx('orders')
+    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+    .forUpdate()
+    .first('lasyncro_order_id');
+
+  const observedMembership = await trx('pick_batch_orders')
+    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+    .first('pick_batch_id');
+  const observedAllocationBatches = await trx('pick_reservation_allocations')
+    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+    .distinct('pick_batch_id');
+  const batchIds = [
+    ...new Set<string>([
+      ...(observedMembership ? [String(observedMembership.pick_batch_id)] : []),
+      ...observedAllocationBatches.map((row: { pick_batch_id: string }) =>
+        String(row.pick_batch_id)
+      ),
+    ]),
+  ].sort();
+
+  for (const batchId of batchIds) {
+    await trx('pick_batches')
+      .where({ shop_id: shopId, pick_batch_id: batchId })
+      .forUpdate()
+      .first('pick_batch_id');
+  }
+
+  // Re-read membership while both lifecycle anchors are held.
+  const membership = await trx('pick_batch_orders')
+    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+    .forUpdate()
+    .first('pick_batch_id');
+  return { memberBatchId: membership ? String(membership.pick_batch_id) : null };
+}
+
 export async function unwindCancelledOrder(
   trx: Knex.Transaction,
   shopId: number,
   lasyncroOrderId: string
 ): Promise<void> {
-  const lines = await trx('order_line_items as oli')
-    .leftJoin('order_line_item_warehouse_status as ws', function () {
-      this.on('ws.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
-        .andOn(trx.raw('ws.shop_id = ?', [shopId]));
-    })
-    .where('oli.lasyncro_order_id', lasyncroOrderId)
+  // 1-2. Order anchor, batch lock(s), then current membership.
+  const scope = await lockBatchScope(trx, shopId, lasyncroOrderId);
+
+  await trx('order_warehouse_status')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .forUpdate()
+    .first('lasyncro_order_id');
+
+  const orderLines = await trx('order_line_items')
+    .where('lasyncro_order_id', lasyncroOrderId)
+    .orderBy('lasyncro_line_item_id', 'asc')
     .select(
-      'oli.lasyncro_line_item_id',
-      'oli.lasyncro_variant_id',
-      'ws.status as warehouse_status'
+      'lasyncro_line_item_id',
+      'lasyncro_variant_id'
     );
 
-  if (lines.length === 0) {
-    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
+  if (orderLines.length === 0) {
+    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId, scope.memberBatchId);
     console.info('[CANCEL_UNWIND_NO_LINES]', { shopId, lasyncroOrderId });
     return;
   }
+
+  // 3. Line warehouse-status locks, before allocations / inventory truth.
+  const lockedLineStates = await trx('order_line_item_warehouse_status')
+    .where({ shop_id: shopId })
+    .whereIn(
+      'lasyncro_line_item_id',
+      orderLines.map((line: any) => line.lasyncro_line_item_id)
+    )
+    .orderBy('lasyncro_line_item_id', 'asc')
+    .select('lasyncro_line_item_id', 'status')
+    .forUpdate();
+
+  const statusByLine = new Map<string, string>(
+    lockedLineStates.map((row: { lasyncro_line_item_id: string; status: string }) => [
+      String(row.lasyncro_line_item_id),
+      String(row.status),
+    ])
+  );
+
+  const lines = orderLines.map((line: any) => ({
+    lasyncro_line_item_id: String(line.lasyncro_line_item_id),
+    lasyncro_variant_id: line.lasyncro_variant_id,
+    warehouse_status: statusByLine.get(String(line.lasyncro_line_item_id)) ?? null,
+  }));
 
   /**
    * REPLAY GUARD. Cancellation webhooks retry, and orders/cancelled is
@@ -78,17 +162,130 @@ export async function unwindCancelledOrder(
    * service itself writes, so it needs no extra column or lookup table.
    */
   const alreadyUnwound = lines.every(
-    (l: any) => l.warehouse_status === 'cancelled'
+    (l) => l.warehouse_status === 'cancelled'
   );
 
   if (alreadyUnwound) {
-    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
+    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId, scope.memberBatchId);
     console.info('[CANCEL_UNWIND_ALREADY_APPLIED]', { shopId, lasyncroOrderId });
     return;
   }
 
+  const unwindLineIds = lines
+    .filter((line) => line.warehouse_status !== 'shipped')
+    .map((line) => line.lasyncro_line_item_id);
+
+  // 4. Current ownership, locked; scanned state derived from the locked rows.
+  const lockedAllocations = unwindLineIds.length === 0
+    ? []
+    : await trx('pick_reservation_allocations')
+      .where({ shop_id: shopId })
+      .whereIn('lasyncro_line_item_id', unwindLineIds)
+      .orderBy('allocation_id', 'asc')
+      .select(
+        'allocation_id',
+        'pick_batch_id',
+        'lasyncro_line_item_id',
+        'lasyncro_variant_id',
+        'location_code',
+        'quantity'
+      )
+      .forUpdate();
+
+  const scannedRows = unwindLineIds.length === 0
+    ? []
+    : await trx('pick_scan_log')
+      .where({
+        shop_id: shopId,
+        status: 'confirmed',
+      })
+      .whereIn('lasyncro_line_item_id', unwindLineIds)
+      .whereNotNull('reservation_allocation_id')
+      .pluck('reservation_allocation_id');
+
+  const scanned = new Set<string>(
+    scannedRows.map((id: unknown) => String(id))
+  );
+
+  // 5. Release still-owned unscanned allocations, variant + location order.
+  const releasable = lockedAllocations
+    .filter((a: any) => !scanned.has(String(a.allocation_id)))
+    .sort((a: any, b: any) => {
+      const left = `${a.lasyncro_variant_id}\u0000${a.location_code}\u0000${a.allocation_id}`;
+      const right = `${b.lasyncro_variant_id}\u0000${b.location_code}\u0000${b.allocation_id}`;
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
+
+  for (const allocation of releasable) {
+    const releasedAt = new Date();
+
+    const insertedRelease = await trx('inventory_movements')
+      .insert({
+        lasyncro_inventory_movement_id: randomUUID(),
+        lasyncro_variant_id: allocation.lasyncro_variant_id,
+        shop_id: shopId,
+        movement_type: 'reservation_release',
+        quantity_delta: -Number(allocation.quantity),
+        location_code: allocation.location_code,
+        reference_type: 'pick_reservation_allocation',
+        reference_id: allocation.allocation_id,
+        platform: 'wms',
+        occurred_at: releasedAt,
+        operator_id: null,
+        triggered_by: 'order_cancelled',
+      })
+      .onConflict([
+        'shop_id',
+        'reference_type',
+        'reference_id',
+        'lasyncro_variant_id',
+        'location_code',
+        'movement_type',
+      ])
+      .ignore()
+      .returning('lasyncro_inventory_movement_id');
+
+    if (insertedRelease.length === 1) {
+      const releasedQuantity = Number(allocation.quantity);
+
+      const updatedTruthRows = await trx('inventory_truth')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: allocation.lasyncro_variant_id,
+          location_code: allocation.location_code,
+        })
+        .where('reserved_quantity', '>=', releasedQuantity)
+        .update({
+          reserved_quantity: trx.raw(
+            'reserved_quantity - ?',
+            [releasedQuantity]
+          ),
+          available_quantity: trx.raw(
+            'available_quantity + ?',
+            [releasedQuantity]
+          ),
+          last_evaluated_at: releasedAt,
+          updated_at: releasedAt,
+        });
+
+      if (updatedTruthRows !== 1) {
+        throw new Error(
+          `[CANCEL_UNWIND] INVENTORY_TRUTH_RESERVATION_RELEASE_FAILED allocation=${allocation.allocation_id}`
+        );
+      }
+    }
+
+    await trx('pick_reservation_allocations')
+      .where({
+        shop_id: shopId,
+        allocation_id: allocation.allocation_id,
+      })
+      .delete();
+  }
+
+  // 6. Per-line retention / Problem Center / status, on already-locked rows.
   for (const line of lines) {
-    const status = line.warehouse_status as string | null;
+    const status = line.warehouse_status;
 
     if (status === 'shipped') {
       console.warn('[CANCEL_UNWIND_SHIPPED_SKIPPED]', {
@@ -99,112 +296,26 @@ export async function unwindCancelledOrder(
       continue;
     }
 
-    const allocations = await trx('pick_reservation_allocations')
-      .where({
-        shop_id: shopId,
-        lasyncro_line_item_id: line.lasyncro_line_item_id,
-      })
-      .select(
-        'allocation_id',
-        'lasyncro_variant_id',
-        'location_code',
-        'quantity'
-      );
+    const allocations = lockedAllocations.filter(
+      (a: any) => String(a.lasyncro_line_item_id) === line.lasyncro_line_item_id
+    );
 
     if (allocations.length === 0) {
       await markLineCancelled(trx, shopId, line.lasyncro_line_item_id);
       continue;
     }
 
-    const scannedRows = await trx('pick_scan_log')
-      .where({
-        shop_id: shopId,
-        lasyncro_line_item_id: line.lasyncro_line_item_id,
-        status: 'confirmed',
-      })
-      .whereNotNull('reservation_allocation_id')
-      .pluck('reservation_allocation_id');
-
-    const scanned = new Set<string>(scannedRows);
-
-    const releasable = allocations.filter(
-      (a: any) => !scanned.has(a.allocation_id)
+    const released = allocations.filter(
+      (a: any) => !scanned.has(String(a.allocation_id))
     );
 
-    for (const allocation of releasable) {
-      const releasedAt = new Date();
-
-      const insertedRelease = await trx('inventory_movements')
-        .insert({
-          lasyncro_inventory_movement_id: randomUUID(),
-          lasyncro_variant_id: allocation.lasyncro_variant_id,
-          shop_id: shopId,
-          movement_type: 'reservation_release',
-          quantity_delta: -Number(allocation.quantity),
-          location_code: allocation.location_code,
-          reference_type: 'pick_reservation_allocation',
-          reference_id: allocation.allocation_id,
-          platform: 'wms',
-          occurred_at: releasedAt,
-          operator_id: null,
-          triggered_by: 'order_cancelled',
-        })
-        .onConflict([
-          'shop_id',
-          'reference_type',
-          'reference_id',
-          'lasyncro_variant_id',
-          'location_code',
-          'movement_type',
-        ])
-        .ignore()
-        .returning('lasyncro_inventory_movement_id');
-
-      if (insertedRelease.length === 1) {
-        const releasedQuantity = Number(allocation.quantity);
-
-        const updatedTruthRows = await trx('inventory_truth')
-          .where({
-            shop_id: shopId,
-            lasyncro_variant_id: allocation.lasyncro_variant_id,
-            location_code: allocation.location_code,
-          })
-          .where('reserved_quantity', '>=', releasedQuantity)
-          .update({
-            reserved_quantity: trx.raw(
-              'reserved_quantity - ?',
-              [releasedQuantity]
-            ),
-            available_quantity: trx.raw(
-              'available_quantity + ?',
-              [releasedQuantity]
-            ),
-            last_evaluated_at: releasedAt,
-            updated_at: releasedAt,
-          });
-
-        if (updatedTruthRows !== 1) {
-          throw new Error(
-            `[CANCEL_UNWIND] INVENTORY_TRUTH_RESERVATION_RELEASE_FAILED allocation=${allocation.allocation_id}`
-          );
-        }
-      }
-
-      await trx('pick_reservation_allocations')
-        .where({
-          shop_id: shopId,
-          allocation_id: allocation.allocation_id,
-        })
-        .delete();
-    }
-
-    if (releasable.length > 0) {
+    if (released.length > 0) {
       console.info('[CANCEL_UNWIND_ALLOCATIONS_RELEASED]', {
         shopId,
         lasyncroOrderId,
         lasyncroLineItemId: line.lasyncro_line_item_id,
-        released: releasable.length,
-        releasedQuantity: releasable.reduce(
+        released: released.length,
+        releasedQuantity: released.reduce(
           (sum: number, allocation: any) =>
             sum + Number(allocation.quantity),
           0
@@ -213,7 +324,7 @@ export async function unwindCancelledOrder(
     }
 
     const retainedQty = allocations
-      .filter((a: any) => scanned.has(a.allocation_id))
+      .filter((a: any) => scanned.has(String(a.allocation_id)))
       .reduce((sum: number, a: any) => sum + Number(a.quantity), 0);
 
     if (retainedQty > 0 && (status === null || RETAIN_STATUSES.includes(status))) {
@@ -228,23 +339,19 @@ export async function unwindCancelledOrder(
     await markLineCancelled(trx, shopId, line.lasyncro_line_item_id);
   }
 
-  await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
+  await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId, scope.memberBatchId);
 }
 
+/**
+ * Caller holds the batch row and membership row locks (lockBatchScope), so
+ * no lock is taken here in an order that could invert the shared lock order.
+ */
 async function detachCancelledOrderFromBatch(
   trx: Knex.Transaction,
   shopId: number,
-  lasyncroOrderId: string
+  lasyncroOrderId: string,
+  memberBatchId: string | null
 ): Promise<void> {
-  const membership = await trx('pick_batch_orders')
-    .where({
-      shop_id: shopId,
-      lasyncro_order_id: lasyncroOrderId,
-    })
-    .select('pick_batch_id')
-    .forUpdate()
-    .first();
-
   const now = new Date();
 
   await trx('order_warehouse_status')
@@ -256,31 +363,29 @@ async function detachCancelledOrderFromBatch(
       updated_at: now,
     });
 
-  if (!membership) {
+  if (!memberBatchId) {
     return;
   }
 
   const batch = await trx('pick_batches')
     .where({
       shop_id: shopId,
-      pick_batch_id: membership.pick_batch_id,
+      pick_batch_id: memberBatchId,
     })
-    .select('status')
-    .forUpdate()
-    .first();
+    .first('status');
 
   await trx('pick_batch_orders')
     .where({
       shop_id: shopId,
       lasyncro_order_id: lasyncroOrderId,
-      pick_batch_id: membership.pick_batch_id,
+      pick_batch_id: memberBatchId,
     })
     .delete();
 
   const remainingOrders = await trx('pick_batch_orders')
     .where({
       shop_id: shopId,
-      pick_batch_id: membership.pick_batch_id,
+      pick_batch_id: memberBatchId,
     })
     .count<{ count: string }>('* as count')
     .first();
@@ -289,7 +394,7 @@ async function detachCancelledOrderFromBatch(
     await trx('pick_batches')
       .where({
         shop_id: shopId,
-        pick_batch_id: membership.pick_batch_id,
+        pick_batch_id: memberBatchId,
       })
       .update({
         status: 'cancelled',
@@ -300,7 +405,7 @@ async function detachCancelledOrderFromBatch(
   console.info('[CANCEL_UNWIND_BATCH_DETACHED]', {
     shopId,
     lasyncroOrderId,
-    pickBatchId: membership.pick_batch_id,
+    pickBatchId: memberBatchId,
     remainingOrders: Number(remainingOrders?.count ?? 0),
   });
 }

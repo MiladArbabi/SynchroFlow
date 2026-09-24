@@ -73,10 +73,23 @@ export async function confirmPickScan(
     lasyncroUnitId,
   } = input;
 
-  // 1. Validate batch status and ownership
+  // Lifecycle anchors precede membership, warehouse, allocation and truth locks.
+  const discoveredLine = await trx('order_line_items')
+    .where({ lasyncro_line_item_id: lasyncroLineItemId })
+    .first('lasyncro_order_id');
+  const order = discoveredLine && await trx('orders')
+    .where({ shop_id: shopId, lasyncro_order_id: discoveredLine.lasyncro_order_id })
+    .forUpdate()
+    .first('lasyncro_order_id');
+  if (!order) {
+    throw new Error(`[PICK_SCAN] Line item not found in batch: ${lasyncroLineItemId}`);
+  }
+
+  // 1. Validate batch status and ownership under the batch lock.
   const batch = await trx('pick_batches')
     .where({ pick_batch_id: pickBatchId, shop_id: shopId })
     .select('status', 'picked_by')
+    .forUpdate()
     .first();
 
   if (!batch) {
@@ -100,6 +113,8 @@ export async function confirmPickScan(
     )
     .where({
       'oli.lasyncro_line_item_id': lasyncroLineItemId,
+      'oli.lasyncro_order_id': order.lasyncro_order_id,
+      'pbo.shop_id': shopId,
       'pbo.pick_batch_id': pickBatchId,
     })
     .select(
