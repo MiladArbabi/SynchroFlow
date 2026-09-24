@@ -15,7 +15,10 @@ import {
 } from '../../services/wms/pickBatch.service.js';
 import { InventoryChangedDuringReleaseError } from '../../services/wms/batchReservation.service.js';
 import { PickExecutionReadinessError } from '../../services/wms/pickExecutionReadiness.service.js';
-import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.service.js';
+import {
+  BatchReservationOwnershipError,
+  cancelUnclaimedBatch,
+} from '../../services/wms/batchCancellation.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
 import { computeCoverage, markLabelsPrinted } from '../../services/wms/inventoryUnit.service.js';
@@ -616,6 +619,23 @@ export const httpCancelBatch = async (req: Request, res: Response) => {
     if (message.startsWith('BATCH_NOT_CANCELLABLE:')) {
       return res.status(409).json({
         error: `Batch is not cancellable: ${message.split(':')[1]}`,
+      });
+    }
+
+    if (error instanceof BatchReservationOwnershipError) {
+      console.warn('[WMS_BATCH_CANCEL_OWNERSHIP_CONFLICT]', {
+        shopId,
+        userId,
+        batchId,
+        code: error.code,
+        details: error.details,
+      });
+
+      return res.status(409).json({
+        error:
+          'This batch’s reserved stock no longer matches its orders, so it was not cancelled. Nothing was changed.',
+        code: 'BATCH_RESERVATION_OWNERSHIP_CONFLICT',
+        reason: error.code,
       });
     }
 
@@ -3086,10 +3106,20 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       // short_pick writes real inventory_movements in this transaction.
       await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
-      // Validate batch exists and is active
+      const discoveredLine = await trx('order_line_items')
+        .where({ lasyncro_line_item_id })
+        .first('lasyncro_order_id');
+      const order = discoveredLine && await trx('orders')
+        .where({ shop_id: shopId, lasyncro_order_id: discoveredLine.lasyncro_order_id })
+        .forUpdate()
+        .first('lasyncro_order_id');
+      if (!order) throw new Error('RESERVATION_ALLOCATION_MISMATCH');
+
+      // Validate batch under the lifecycle anchors, before allocation/truth.
       const batch = await trx('pick_batches')
         .where({ pick_batch_id: batchId, shop_id: shopId })
         .select('status')
+        .forUpdate()
         .first();
 
       if (!batch) throw new Error('BATCH_NOT_FOUND');
@@ -3098,6 +3128,18 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       if (!ACTIVE_STATUSES.includes(batch.status)) {
         throw new Error(`BATCH_NOT_ACTIVE:${batch.status}`);
       }
+
+      const memberLine = await trx('order_line_items as oli')
+        .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'oli.lasyncro_order_id')
+        .where({
+          'oli.lasyncro_line_item_id': lasyncro_line_item_id,
+          'oli.lasyncro_order_id': order.lasyncro_order_id,
+          'pbo.shop_id': shopId, 'pbo.pick_batch_id': batchId,
+        }).first('oli.lasyncro_line_item_id');
+      if (!memberLine) throw new Error('RESERVATION_ALLOCATION_MISMATCH');
+      await trx('order_line_item_warehouse_status')
+        .where({ shop_id: shopId, lasyncro_line_item_id })
+        .forUpdate().first('status');
 
       /**
        * GH-1049 — allocation identity + cross-outcome serialization.

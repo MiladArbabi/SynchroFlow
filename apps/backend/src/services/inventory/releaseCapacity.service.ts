@@ -68,19 +68,32 @@ export async function readReleaseCapacity(
       'it.available_quantity',
       trx.raw(`CASE wl.type WHEN 'bin' THEN 0 ELSE 1 END as location_rank`)
     )
-    // Deterministic order: stable lock acquisition across concurrent
-    // releases, and bins before ROOT for allocation.
+    // Read preference is bins before ROOT; lock order is independent below.
     .orderBy('it.lasyncro_variant_id', 'asc')
     .orderBy('location_rank', 'asc')
     .orderBy('it.location_code', 'asc');
 
   /**
    * FOR UPDATE locks the inventory_truth rows whose quantity is returned —
-   * exactly the rows the reservation then decrements — plus their joined
-   * location rows, identical to the lock reservation has always taken.
+   * exactly the rows the reservation then decrements. Location metadata is
+   * not reservation ownership and must not add a shared lock across variants.
    */
   const rows =
-    lock === 'for_update' ? await query.forUpdate() : await query;
+    lock === 'for_update'
+      ? await query.clearOrder()
+        .orderBy('it.lasyncro_variant_id', 'asc')
+        .orderBy('it.location_code', 'asc')
+        .forUpdate('it')
+      : await query;
+
+  // Preserve allocation preference after locking truth in lifecycle key order.
+  if (lock === 'for_update') {
+    rows.sort((a, b) =>
+      String(a.lasyncro_variant_id).localeCompare(String(b.lasyncro_variant_id)) ||
+      Number(a.location_rank) - Number(b.location_rank) ||
+      String(a.location_code).localeCompare(String(b.location_code))
+    );
+  }
 
   return rows.map(
     (row: {

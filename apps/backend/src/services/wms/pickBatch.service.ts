@@ -207,7 +207,7 @@ export async function releaseBatch(
   //    the join would multiply eligible rows and corrupt the greedy fill below.
   const slaSettings = await trx('shop_operational_settings').where({ shop_id: shopId }).first('fulfillment_sla_hours');
   const currentSla = currentFulfillmentSlaSql(slaSettings?.fulfillment_sla_hours);
-  const eligibleOrders = await trx
+  const eligibleOrdersQuery = trx
     .with('latest_age_snapshot', (qb) => {
       qb.from('order_age_snapshot as oas')
         .distinctOn('oas.lasyncro_order_id')
@@ -240,6 +240,7 @@ export async function releaseBatch(
     .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
     .select('o.lasyncro_order_id', 'ofs.is_priority_flagged', trx.raw(`${currentSla.breached} as is_shipping_sla_breached`), trx.raw(`${currentSla.state} as sla_state`))
     .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC`);
+  const eligibleOrders = await eligibleOrdersQuery.clone();
     
 
   // 3. Build ordered candidate list:
@@ -388,6 +389,25 @@ export async function releaseBatch(
     console.info('[PICK_BATCH_SERVICE] No orders fit within ceiling', { shopId, maxLineItems });
     return null;
   }
+
+  // Anchor selected orders, then re-run the unchanged eligibility rules.
+  selectedOrderIds = [...new Set(selectedOrderIds)];
+  await trx('orders')
+    .where({ shop_id: shopId })
+    .whereIn('lasyncro_order_id', selectedOrderIds)
+    .orderBy('lasyncro_order_id', 'asc')
+    .forUpdate()
+    .select('lasyncro_order_id');
+  const currentEligible = await eligibleOrdersQuery.clone()
+    .whereIn('o.lasyncro_order_id', selectedOrderIds);
+  const currentEligibleIds = new Set(currentEligible.map(row => row.lasyncro_order_id));
+  selectedOrderIds = selectedOrderIds.filter(id => currentEligibleIds.has(id));
+  if (selectedOrderIds.length === 0) return null;
+  const selectedLines = await trx('order_line_items')
+    .whereIn('lasyncro_order_id', selectedOrderIds)
+    .select('quantity');
+  runningLineItems = selectedLines.length;
+  runningUnits = selectedLines.reduce((sum, line) => sum + Number(line.quantity), 0);
 
   // 4. Create pick batch
   const pickBatchId = randomUUID();

@@ -64,6 +64,11 @@ export async function handleOrdersCancelled({
     return;
   }
 
+  await trx('orders')
+    .where({ shop_id: domainEvent.shop_id, lasyncro_order_id: lasyncroOrderId })
+    .forUpdate()
+    .first('lasyncro_order_id');
+
   await orderFulfillmentIngestionService.ingestStatus(
     {
       lasyncroOrderId,
