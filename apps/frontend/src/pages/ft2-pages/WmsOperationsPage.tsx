@@ -22,6 +22,7 @@ import type {
   CountingSkipReason,
   CountingFinding,
   CountingFindingType,
+  OpeningInventoryCutoverView,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
@@ -137,6 +138,9 @@ export default function WmsOperationsPage() {
   // GH-1143 RECEIVE-REASSIGN-UI-01: advisory UI gate only, same pattern as
   // canAssignStow — the backend assignment PATCH remains authoritative.
   const canReassignReceive = userRole === 'owner' || userRole === 'admin';
+  // 4b-2b GRILL-04: advisory UI gate only — requireAction('wms:recount:commit')
+  // plus the cutover service's owner/admin membership check are the authority.
+  const canApproveOpeningInventoryCutover = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
     await axiosInstance.post(url, body);
@@ -198,6 +202,59 @@ export default function WmsOperationsPage() {
 
   // Register Web Push subscription on first WMS load (WM-22)
   useWebPush({ httpPost });
+
+  // 4b-2b GRILL-04 — opening inventory cutover. The backend owns readiness,
+  // acceptance, economics and idempotency; the page only reads the canonical
+  // view and posts the merchant's explicit physical-truth acceptance.
+  const [openingInventory, setOpeningInventory] =
+    useState<OpeningInventoryCutoverView | null>(null);
+  const [openingCutoverSubmitting, setOpeningCutoverSubmitting] = useState(false);
+  const [openingCutoverError, setOpeningCutoverError] = useState<string | null>(null);
+
+  const fetchOpeningInventory = useCallback(async () => {
+    try {
+      const { data } = await axiosInstance.get<OpeningInventoryCutoverView>(
+        '/api/v1/wms/opening-inventory/progress'
+      );
+      setOpeningInventory(data);
+    } catch {
+      // Keep the last known view; the card is informational until a read succeeds.
+      console.error('[WmsOperationsPage] Failed to load opening inventory progress');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (recountLocked) return;
+    void fetchOpeningInventory();
+  }, [recountLocked, fetchOpeningInventory]);
+
+  const handleApproveOpeningInventoryCutover = useCallback(async (acceptPhysicalTruth: boolean) => {
+    setOpeningCutoverSubmitting(true);
+    setOpeningCutoverError(null);
+    try {
+      await axiosInstance.post('/api/v1/wms/opening-inventory/cutover', {
+        accept_physical_truth: acceptPhysicalTruth,
+      });
+      refetch();
+    } catch (err) {
+      const message = (err as { response?: { data?: { error?: unknown } } })
+        ?.response?.data?.error;
+      setOpeningCutoverError(
+        typeof message === 'string' && message
+          ? message
+          : 'Opening inventory sync failed. Try again.'
+      );
+    } finally {
+      setOpeningCutoverSubmitting(false);
+      // Refresh after every attempt so a persisted failed/complete state shows.
+      await fetchOpeningInventory();
+    }
+  }, [refetch, fetchOpeningInventory]);
+
+  const handleCountFinished = useCallback((label: string) => {
+    setFinishedCountLabel(label);
+    void fetchOpeningInventory();
+  }, [fetchOpeningInventory]);
 
   // ── PICK CALLBACKS ──────────────────────────────────────
   const handleClaimBatch = useCallback(async (batchId: string) => {
@@ -779,7 +836,7 @@ export default function WmsOperationsPage() {
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}
       onCloseCountingTask={handleCloseCountingTask}
-      onCountFinished={setFinishedCountLabel}
+      onCountFinished={handleCountFinished}
       currentUserId={currentUserId}
       canReassignCount={canReassignRecount}
       pendingCountTaskId={searchParams.get('countTaskId')}
@@ -874,6 +931,11 @@ export default function WmsOperationsPage() {
       onAddReturnLine={handleAddReturnLine}
       onProcessReturnLine={handleProcessReturnLine}
       onCompleteReturnJob={handleCompleteReturnJob}
+      openingInventory={openingInventory}
+      canApproveOpeningInventoryCutover={canApproveOpeningInventoryCutover}
+      openingInventoryCutoverSubmitting={openingCutoverSubmitting}
+      openingInventoryCutoverError={openingCutoverError}
+      onApproveOpeningInventoryCutover={handleApproveOpeningInventoryCutover}
     />
    <UpgradePrompt
       requiredTier="core"

@@ -23,5 +23,13 @@ export type { UseOfflineScanQueueResult, ScanQueueEntry } from './hooks/useOffli
 export { WmsConnectionBadge } from './components/WmsConnectionBadge.js';
 export { WorkTally, isAllClear } from './components/WorkTally.js';
 export type { WorkTallyCounts, WorkTallyProps } from './components/WorkTally.js';
+export { OpeningInventoryCutoverCard } from './components/OpeningInventoryCutoverCard.js';
+export type {
+  OpeningInventoryCutoverView,
+  OpeningInventoryCutoverCardProps,
+  OpeningInventoryProgress,
+  OpeningInventoryReconciliationState,
+  OpeningInventoryCutoverStatus,
+} from './components/OpeningInventoryCutoverCard.js';
 export { useWebPush } from './hooks/useWebPush.js';
 export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props } from './pages/WmsModuleFT2.js';

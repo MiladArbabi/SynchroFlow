@@ -60,6 +60,10 @@ export type {
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
 import { WorkTally, isAllClear, type WorkTallyCounts } from '../components/WorkTally.js';
+import {
+  OpeningInventoryCutoverCard,
+  type OpeningInventoryCutoverView,
+} from '../components/OpeningInventoryCutoverCard.js';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -430,6 +434,18 @@ export type WmsModuleFT2Props = {
    * Rendered inline above the Receiving cards, never as a modal.
    */
   receiveAssignedWorkSpotlight?: { isDismissed: boolean; dismiss: () => void };
+
+  /**
+   * 4b-2b GRILL-04: canonical opening inventory view from
+   * GET /api/v1/wms/opening-inventory/progress. HTTP stays in
+   * WmsOperationsPage; this module only renders it.
+   */
+  openingInventory?: OpeningInventoryCutoverView | null;
+  /** Advisory owner/admin gate — the backend cutover service is the authority. */
+  canApproveOpeningInventoryCutover?: boolean;
+  openingInventoryCutoverSubmitting?: boolean;
+  openingInventoryCutoverError?: string | null;
+  onApproveOpeningInventoryCutover?: (acceptPhysicalTruth: boolean) => Promise<void>;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -1278,6 +1294,11 @@ function WmsModuleFT2Inner({
   onCountSessionEnter,
   onSetupBinsClick,
   receiveAssignedWorkSpotlight,
+  openingInventory,
+  canApproveOpeningInventoryCutover,
+  openingInventoryCutoverSubmitting,
+  openingInventoryCutoverError,
+  onApproveOpeningInventoryCutover,
 }: WmsModuleFT2Props) {
   const [countDialogOpen, setCountDialogOpen] = useState(false);
   const [countDialogLoading, setCountDialogLoading] = useState(false);
@@ -2111,6 +2132,16 @@ function WmsModuleFT2Inner({
 
       {/* WORK TALLY — everything waiting on the floor, above the fold */}
       <WorkTally counts={workCounts} countingLocked={recountLocked} />
+
+      {onApproveOpeningInventoryCutover && (
+        <OpeningInventoryCutoverCard
+          view={openingInventory ?? null}
+          canApprove={Boolean(canApproveOpeningInventoryCutover)}
+          submitting={Boolean(openingInventoryCutoverSubmitting)}
+          error={openingInventoryCutoverError ?? null}
+          onApprove={onApproveOpeningInventoryCutover}
+        />
+      )}
 
       <Dialog
         open={countDialogOpen}

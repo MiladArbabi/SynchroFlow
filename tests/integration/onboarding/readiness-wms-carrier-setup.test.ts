@@ -33,6 +33,7 @@ import db, { withTenant, setTenantContext, systemTransaction, runWithTenantConte
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { encrypt } from 'api-src/security/encryption.service';
 import { wmsOnboardingSignalProvider } from 'api-src/onboarding/readiness.providers';
+import { startShopOpeningInventoryReconciliation } from 'api-src/services/wms/inventoryRecount.service';
 
 async function createShop(prefix: string): Promise<number> {
   const unique = crypto.randomBytes(6).toString('hex');
@@ -159,5 +160,135 @@ describe('WMS onboarding readiness — wms.carrierConfigured', () => {
       name: 'wms.carrierConfigured',
       value: true,
     });
+  });
+});
+
+describe('WMS onboarding readiness — opening inventory reconciliation', () => {
+  it('reports opening-inventory readiness signals for a v2 shop', async () => {
+    const shopId = await createShop(
+      'opening-inventory-readiness-v2'
+    );
+
+    await withTenant(shopId, async (trx) => {
+      const settings = await trx('shop_wms_settings')
+        .where({ shop_id: shopId })
+        .first('shop_id');
+
+      if (!settings) {
+        await trx('shop_wms_settings').insert({
+          shop_id: shopId,
+          bootstrap_model:
+            'reconcile_opening_expectation_v2',
+        });
+      }
+    });
+
+    const signals = await runWithTenantContext(
+      shopId,
+      () =>
+        wmsOnboardingSignalProvider.getSignals({
+          shopId,
+        })
+    );
+
+    const byName = new Map(
+      signals.map((signal) => [
+        signal.name,
+        signal.value,
+      ])
+    );
+
+    expect(
+      byName.get(
+        'wms.openingInventoryReconciliationRequired'
+      )
+    ).toBe(true);
+
+    expect(
+      byName.get('wms.openingInventoryProgressPct')
+    ).toBe(0);
+
+    expect(
+      byName.get('wms.openingInventoryNeedsReview')
+    ).toBe(false);
+
+    expect(
+      byName.get('wms.openingInventoryReconciled')
+    ).toBe(false);
+  });
+});
+
+describe('WMS onboarding readiness — legacy opening inventory isolation', () => {
+  it('reports legacy opening-balance tenants as reconciliation-not-required and refuses the v2 starter', async () => {
+    const shopId = await createShop(
+      'opening-inventory-readiness-legacy'
+    );
+
+    await withTenant(shopId, async (trx) => {
+      const settings = await trx('shop_wms_settings')
+        .where({ shop_id: shopId })
+        .first('bootstrap_model');
+
+      if (!settings) {
+        await trx('shop_wms_settings').insert({
+          shop_id: shopId,
+          bootstrap_model:
+            'legacy_opening_balance_v1',
+        });
+      } else {
+        expect(settings.bootstrap_model).toBe(
+          'legacy_opening_balance_v1'
+        );
+      }
+    });
+
+    const signals = await runWithTenantContext(
+      shopId,
+      () =>
+        wmsOnboardingSignalProvider.getSignals({
+          shopId,
+        })
+    );
+
+    const byName = new Map(
+      signals.map((signal) => [
+        signal.name,
+        signal.value,
+      ])
+    );
+
+    expect(
+      byName.get(
+        'wms.openingInventoryReconciliationRequired'
+      )
+    ).toBe(false);
+
+    expect(
+      byName.get('wms.openingInventoryProgressPct')
+    ).toBe(100);
+
+    expect(
+      byName.get('wms.openingInventoryNeedsReview')
+    ).toBe(false);
+
+    expect(
+      byName.get('wms.openingInventoryReconciled')
+    ).toBe(true);
+
+    await expect(
+      withTenant(
+        shopId,
+        (trx) =>
+          startShopOpeningInventoryReconciliation(
+            trx,
+            {
+              shopId,
+              createdBy: 999999,
+            }
+          )
+      )
+    ).rejects.toThrow(
+      /bootstrap_model must be reconcile_opening_expectation_v2/
+    );
   });
 });

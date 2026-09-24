@@ -92,6 +92,7 @@ function historicalPhysicalOnHandDelta(
     'refund_return',
     'manual_adjustment',
     'opening_balance',
+    'opening_inventory_reconcile',
     'pick_removal',
     'fulfillment_removal',
     'damage',

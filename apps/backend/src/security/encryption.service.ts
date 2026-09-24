@@ -92,6 +92,7 @@ const ALLOWED_CONTEXTS = [
   'settings.shopifyLocationMapping',
 
   'wms.stow.inventorySync',
+  'wms.openingInventoryCutover',
   'shopify.dev',
   'shopify.billing',
   'shopify-token-backfill',
