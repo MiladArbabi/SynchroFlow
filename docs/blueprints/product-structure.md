@@ -74,7 +74,21 @@ Signal {
 | **Bell popover** | recent signals, compact | Global header |
 | **Signal history** | lifecycle=resolved | Data Trust |
 
-**Deleted:** Alerts as a hidden nav module (`/alerts` Inbox/Snoozed/Resolved/Rules). Rules → Settings › Notifications. Snoozed/Resolved → filters on the spine views.
+**GH-1147 correction:** Alerts is no longer modeled as a hidden operational
+queue, and it is not dissolved into the Signal spine. Alerts is a notification
+surface:
+
+```text
+Alerts
+├── Recent
+└── Settings
+```
+
+Recent is notification history (`Unread`, `Read`, `Clicked`) and Settings owns
+notification preferences. Ops Console and the owning modules remain the
+operational action surfaces. During the #1123 transition, Topnavbar/Ops Console
+attention still comes from the legacy operational alert lifecycle while
+`/alerts` Recent comes from `notification_events`; these may disagree.
 
 **Counts:** header badge = open signals, scope=owner. "N decisions pending" on Today = the same number. They can never disagree because they query the same table.
 
@@ -115,7 +129,7 @@ $    Finances       /finances          · Margin | Cash Flow
 | Move | Kills findings |
 |---|---|
 | Overview → **Today** (the daily ritual: queue + pulse + Export Brief) | #53–55 |
-| Alerts module dissolved into spine; Rules → Settings | #54, 63–65 |
+| Alerts corrected to notification surface: Recent + Settings; operational action stays in Ops Console / owning modules | #54, 63–65 |
 | Problem Center: Returns → **Warehouse** | #16, 17 |
 | Data Quality + Readiness + "Data trust" → one **Data Trust** module (promoted to nav) | #36, 62 |
 | Supplier scorecard unified (on-time + fill + return-rate + suspect batch on ONE card); "Suppliers portal" → **Suppliers** | #37, 38 |
@@ -316,10 +330,12 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 **P0 — trust-critical**
 
 1. ~~Signal spine: one table, one lifecycle... Delete `/alerts` module.~~
-   **CORRECTED 2026-07-08 (see §10.4):** `alerts` IS the signal spine —
-   shipped, working (ALR-01–13, closed sprint 2026-05-30). Do NOT delete.
-   Remaining gap: `acknowledge` verb vs this doc's originally-proposed
-   `assign` — reconcile terminology, not architecture. Also open:
+   **UPDATED GH-1147:** merchant `/alerts` is retained as a notification
+   surface, not as the operational signal spine. Legacy operational alerts
+   still feed Topnavbar/Ops Console attention during the #1123 transition, but
+   `/alerts` Recent reads `notification_events`. Do NOT delete the merchant
+   Alerts route; do not treat notification read/click state as operational
+   lifecycle. Also open:
    `problem_center_tasks` → `alerts` link is convention-coupled on
    `entity_id`, not FK-enforced (§10.4) — hardening candidate.
    **✅ HARDENED (2026-07-08):** the `entity_id` coupling risk flagged above
@@ -461,16 +477,21 @@ confirmed deprecated in favor of analytics/PostHog (per
 routed module today. `fulfillment`'s relationship to Orders/Warehouse is
 undetermined — needs scoping before §4 can be called complete.
 
-### 10.4 The signal spine — already closer to §3 than assumed
+### 10.4 Signal and notification boundary
 
-§3 proposes a single `Signal` object. Live architecture already has this,
-under the name `alerts` (migration `0079_create_alerts_table.ts`,
-`AlertsModule.md`, sprint ALR-01–13, **shipped and closed 2026-05-30**):
-consequence taxonomy (§3's `category`), commercial-consequence severity
-(§3's `severity`), audience scoping (§3's `scope`), and a lifecycle
-already at acknowledge/snooze/resolve — one verb short of §3's proposed
-assign/snooze/resolve (`acknowledge` vs `assign`, open gap, not yet
-reconciled).
+§3 proposes a single operational `Signal` object. GH-1147 separates the
+merchant Alerts surface from that operational lifecycle:
+
+- Topnavbar/Ops Console attention still reads the legacy operational alert
+  lifecycle during the #1123 transition.
+- `/alerts` Recent reads notification history from `notification_events`.
+- Alerts Settings owns notification preferences.
+- Notification `Unread` / `Read` / `Clicked` state is not assignment,
+  operational snooze, resolution, or Decision Engine outcome state.
+
+The legacy `alerts` table and backend alert-rule evaluation still exist where
+order projection and Ops Console attention depend on them. The merchant Alerts
+module no longer owns Inbox/Snoozed/Resolved/Rules surfaces.
 
 **Confirmed NOT duplicate systems** (§3 implies these should collapse
 into one spine — audit found they are legitimately different altitudes,

@@ -5,6 +5,11 @@ import { authEmailExists } from '@lasyncro/backend-core/services/pre-tenant.serv
 import bcrypt from 'bcrypt';
 import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
 import { resolveSeatCapacity, type SeatCapacity } from '../../services/billing/seat-capacity.service.js';
+import {
+  mergeNotificationPreferences,
+  normalizeNotificationPreferences,
+  NotificationPreferencesValidationError,
+} from '../../services/notifications/notificationPreferences.js';
 
 /**
  * MEMBERS CONTROLLER
@@ -334,7 +339,11 @@ export const getMyPreferences = async (req: Request, res: Response) => {
 
     if (!membership) return res.status(404).json({ error: 'Membership not found' });
 
-    return res.json({ preferences: membership.notification_preferences ?? {} });
+    return res.json({
+      preferences: normalizeNotificationPreferences(
+        membership.notification_preferences,
+      ),
+    });
   } catch (err) {
     console.error('[MEMBERS] getMyPreferences failed:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -455,13 +464,6 @@ export const updateMyPreferences = async (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const shopId = req.user!.shopId!;
 
-  const { push_enabled, alert_tone, alert_types } = req.body;
-
-  const VALID_TONES = ['urgent', 'standard', 'silent'];
-  if (alert_tone !== undefined && !VALID_TONES.includes(alert_tone)) {
-    return res.status(400).json({ error: `alert_tone must be one of: ${VALID_TONES.join(', ')}` });
-  }
-
   try {
     // Fetch existing prefs and merge — partial updates supported
     const membership = await withTenant(shopId, (trx) =>
@@ -473,13 +475,10 @@ export const updateMyPreferences = async (req: Request, res: Response) => {
 
     if (!membership) return res.status(404).json({ error: 'Membership not found' });
 
-    const existing = membership.notification_preferences ?? {};
-    const updated = {
-      ...existing,
-      ...(push_enabled !== undefined && { push_enabled: Boolean(push_enabled) }),
-      ...(alert_tone !== undefined && { alert_tone }),
-      ...(alert_types !== undefined && { alert_types: { ...existing.alert_types, ...alert_types } }),
-    };
+    const updated = mergeNotificationPreferences(
+      membership.notification_preferences,
+      req.body,
+    );
 
     await withTenant(shopId, (trx) =>
       trx('shop_memberships')
@@ -491,6 +490,9 @@ export const updateMyPreferences = async (req: Request, res: Response) => {
     console.info('[MEMBERS] Preferences updated', { userId, shopId });
     return res.json({ success: true, preferences: updated });
   } catch (err) {
+    if (err instanceof NotificationPreferencesValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
     console.error('[MEMBERS] updateMyPreferences failed:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }

@@ -4131,7 +4131,7 @@ Tier order is unchanged: `starter < core < growth < scale`.
 
 **GROWTH adds**
 - Demand Forecasting · Warehouse Analytics · Floor Planning
-- Returns supplier analysis · Alert Rules · advanced/custom export columns
+- Returns supplier analysis · Operational notifications and notification preferences · advanced/custom export columns
 - **Advanced Sourcing**
 - **5** included non-owner seats; purchased extra seats are **additive**
 - **2500** fulfilled orders included; **configurable overage**

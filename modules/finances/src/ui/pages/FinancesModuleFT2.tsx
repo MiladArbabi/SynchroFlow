@@ -322,7 +322,7 @@ function ProfitTrustPanel({
           sub={hasCarrierData ? 'Carrier shipping costs tracked' : 'No carrier labels — flying blind on shipping'}
           value={hasCarrierData && trueMarginPct != null ? `${trueMarginPct}%` : '0%'}
           cta={!hasCarrierData
-            ? { label: 'Configure →', onClick: () => window.location.assign('/settings/integrations') }
+            ? { label: 'Configure →', onClick: () => window.location.assign('/settings/carriers') }
             : undefined}
         />
       </Box>
