@@ -3,8 +3,37 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** September 5, 2026 — `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2 commercial-access convergence (§3, §3.1, §6), deployed.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · P0-A3-2 commercial convergence ✅ **CLOSED / VERIFIED / DEPLOYED** 2026-09-05 at `8e72888136011fc0298499b32664257f2bdf064e` · v3 parked.
+> **Last updated:** September 25, 2026 — OV-V1 Operations Pulse composition production certification.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ · OV-136 ✅ · OV-145 ✅ · OV-152 ✅ · P0-A3-2 commercial convergence ✅ · OV-V1-2B ✅ · OV-V1-2B.1 ✅ **PRODUCTION CERTIFIED** 2026-09-25 at `93c452b8a5628ce79dc5ff25b9de3eca2032c894` · next Live Map evolution remains a separate slice.
+---
+
+### OV-V1-2B / OV-V1-2B.1 — Operations Pulse composition closeout
+
+**Production certified:** 2026-09-25 at
+`93c452b8a5628ce79dc5ff25b9de3eca2032c894`.
+
+The Overview composition contract is now:
+
+- Live Map remains the dominant operational surface at approximately the intended
+  75/25 map-to-pulse hierarchy.
+- Operations Pulse is content-height and top-aligned; it must not stretch to the
+  Live Map row height.
+- Operations ends naturally after **Inbound**; no artificial empty lower area is
+  reserved beneath the final operational row.
+- Orders, Fulfillment, Inventory, and Inbound remain intact.
+- The Live Map itself is unchanged by the composition correction.
+- The composition remains stable when the additional trial banner is present.
+- No horizontal overflow, clipping, or spacing regression was accepted during
+  production certification.
+
+This closes the Overview composition slice. Further station semantics,
+operational coloring, and other Live Map evolution are deliberately deferred to
+their own future slice; they must not reopen OV-V1-2B / OV-V1-2B.1.
+
+**Verification boundary:** behavioural and visual/UX acceptance both passed in
+production. This closeout records the verified deployed result; it does not
+introduce a new runtime contract.
+
 ---
 
 ## 1. Why this exists — the product thesis
