@@ -1,19 +1,14 @@
 // tests/unit/ui/overview/OverviewModuleFT2.action-ownership.test.tsx
 //
-// UX-OWNERSHIP-01 — RED CONTRACT.
+// UX-OWNERSHIP-01 — status-only ownership contract.
 //
 // Ratified UX ownership: Ops Console is the cross-domain ACTION owner.
 // Overview becomes STATUS / situational awareness only.
 //   - triage signals (fallback triage layout AND the map-layout merged rail)
 //     must render as information, not per-signal remediation CTAs;
 //   - Business Pulse is a METRIC card, never a remediation CTA;
-//   - the module owns exactly one navigation/action affordance:
-//     "Open Ops Console", once onOpenOpsConsole is supplied.
-//
-// These contracts are RED against the current production component, which
-// still renders a per-signal CTA (TriageRow), a clickable merged-rail
-// decision row, and a Business Pulse "View order flow" footer CTA — and does
-// not yet accept/expose onOpenOpsConsole at all.
+//   - Overview renders no "Open Ops Console" controls; global top-nav
+//     Ops Console is the sole entry point.
 //
 // Imports the module directly from source (as OverviewModuleFT2.test.tsx
 // already does) rather than through the @lasyncro/overview package alias, to
@@ -182,47 +177,33 @@ describe('UX-OWNERSHIP-01 (3): Business Pulse is metric-only', () => {
   });
 });
 
-// ─── 4 — EXACTLY ONE OPS CONSOLE CTA ─────────────────────────────────────────
+// ─── 4 — NO OVERVIEW OPS CONSOLE CTA ────────────────────────────────────────
 
-describe('UX-OWNERSHIP-01 (4): exactly one "Open Ops Console" action owner affordance', () => {
-  it('fallback layout renders exactly one Open Ops Console control that invokes the callback once', () => {
-    const onOpenOpsConsole = jest.fn();
-    render(
-      <OverviewModuleFT2 {...baseProps()} onOpenOpsConsole={onOpenOpsConsole} />
-    );
+describe('UX-OWNERSHIP-01 (4): Overview owns no Ops Console entry point', () => {
+  it('fallback layout renders zero Open Ops Console controls', () => {
+    render(<OverviewModuleFT2 {...baseProps()} />);
 
-    const ctas = screen.queryAllByText('Open Ops Console');
-    expect(ctas).toHaveLength(1);
-
-    fireEvent.click(ctas[0]);
-    expect(onOpenOpsConsole).toHaveBeenCalledTimes(1);
+    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
   });
 
-  it('map layout renders exactly one Open Ops Console control, not duplicated between decision list and Business Pulse', () => {
-    const onOpenOpsConsole = jest.fn();
+  it('map layout renders zero Open Ops Console controls', () => {
     render(
       <OverviewModuleFT2
         {...baseProps()}
-        onOpenOpsConsole={onOpenOpsConsole}
         mapContent={<div data-testid="map-slot" />}
       />
     );
 
-    const ctas = screen.queryAllByText('Open Ops Console');
-    expect(ctas).toHaveLength(1);
-
-    fireEvent.click(ctas[0]);
-    expect(onOpenOpsConsole).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('map-slot')).toBeInTheDocument();
+    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
   });
 
-  it('does not render one Open Ops Console CTA per signal', () => {
-    const onOpenOpsConsole = jest.fn();
-    render(
-      <OverviewModuleFT2 {...baseProps()} onOpenOpsConsole={onOpenOpsConsole} />
-    );
+  it('multiple signals cannot create any Ops Console CTA', () => {
+    render(<OverviewModuleFT2 {...baseProps()} />);
 
-    // Two signals are rendered above; the CTA count must stay at one, not two.
-    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(1);
+    expect(screen.getByText('2 orders with address issues')).toBeInTheDocument();
+    expect(screen.getByText('3 SKUs below reorder point')).toBeInTheDocument();
+    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
   });
 });
 

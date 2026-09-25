@@ -88,17 +88,15 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    */
   operationalWarningState: 'clear' | 'warning' | 'unknown';
   /**
-   * UX-OWNERSHIP-01: Overview's remediation UI (per-signal CTAs, Business
-   * Pulse footer CTA) was retired — Ops Console is now the sole cross-domain
-   * ACTION owner. onNavigate may still be supplied for compatibility but is
+   * UX-OWNERSHIP-01: Overview is status-only. Global Ops Console is the
+   * external action owner, with the top nav as its sole entry point.
+   * onNavigate may still be supplied for compatibility but is
    * no longer invoked by Overview's signal/pulse presentation.
    */
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
   isRefreshingBrief?: boolean;
   onResolveAll?: () => void;
-  /** UX-OWNERSHIP-01: the one Overview-level action affordance — opens Ops Console. */
-  onOpenOpsConsole?: () => void;
   /**
    * Rendered in the 75% map slot.
    * When absent the module falls back to the triage-first layout.
@@ -512,7 +510,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     onRefreshBrief,
     isRefreshingBrief = false,
     mapContent,
-    onOpenOpsConsole,
   } = props;
 
   const isLoading    = morningBrief === undefined;
@@ -599,27 +596,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             {' · '}
             {isLoading ? 'Syncing…' : 'Live'}
           </Typography>
-          {/* UX-OWNERSHIP-01: the single Overview-level action-owner
-              affordance. Lives at page/header level — not per-signal, not in
-              Business Pulse — so map and fallback layouts share exactly one. */}
-          {onOpenOpsConsole && (
-            <Box
-              component="button"
-              type="button"
-              onClick={onOpenOpsConsole}
-              sx={{
-                fontSize: 12, fontWeight: 600,
-                px: '14px', py: '7px', borderRadius: '8px',
-                bgcolor: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
-                cursor: 'pointer',
-                '&:hover': { opacity: 0.88 },
-                transition: 'opacity 0.1s',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Open Ops Console
-            </Box>
-          )}
         </Box>
 
         {isLoading ? (
