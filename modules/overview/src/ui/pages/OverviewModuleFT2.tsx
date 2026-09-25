@@ -1,8 +1,14 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
 //
-// OVERVIEW — "A: Triage-first" layout from the LaSyncro design file.
+// OVERVIEW
 //
-// LAYOUT:
+// OV-V1 LAYOUT (operationsPulse present — the production page):
+//   HEADER (date · greeting)
+//   ────────────────────────────────────────────────────────────
+//   BODY  [  Live map / mapContent (~75%)  |  OPERATIONS PULSE (~25%)  ]
+//   (no mapContent → Operations Pulse is the primary body surface)
+//
+// LEGACY COMPATIBILITY LAYOUT (operationsPulse absent) — "A: Triage-first":
 //   HEADER (greeting · date · summary · page actions)
 //   ────────────────────────────────────────────────────────────
 //   BODY  [  Needs a decision (flex-1)  |  TODAY'S FLOW (280px)  ]
@@ -11,7 +17,7 @@
 //        CSS vars for adaptive colors; direct hex only for severity tokens.
 //        Severity palette: #E5484D critical · #D9A23B watch · #4CAF7A on-track.
 
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrencyCompact, ModuleErrorBoundary, PulseCard, PulseCardRowData, PulseTone } from '@lasyncro/shared/ui';
@@ -907,12 +913,169 @@ function EverythingElse({
   );
 }
 
+// ─── OV-V1: OPERATIONS PULSE COMPOSITION ──────────────────────
+//
+// The production Overview (operationsPulse present):
+//   compact orientation header · map slot · Operations Pulse.
+// Whole-operation situational awareness only. Reads ONLY operationsPulse —
+// never Morning Brief (no signals, greeting, summary, freshness or refresh),
+// never Business Pulse. Informational only: no buttons, links or navigation
+// until canonical destinations are ratified (OV-V1-4/5).
+
+function pluralize(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
+
+function PulseRow({ text, tone = 'default' }: { text: string; tone?: 'default' | 'muted' | 'clear' }) {
+  return (
+    <Typography
+      sx={{
+        fontSize: 12.5,
+        lineHeight: 1.45,
+        fontWeight: tone === 'default' ? 500 : 400,
+        color: tone === 'clear' ? '#4CAF7A' : tone === 'muted' ? 'var(--ink-3)' : 'var(--ink)',
+      }}
+    >
+      {text}
+    </Typography>
+  );
+}
+
+function PulseGroup({ label, rows }: { label: string; rows: ReactNode[] }) {
+  return (
+    <Box
+      role="group"
+      aria-label={label}
+      sx={{ display: 'flex', flexDirection: 'column', gap: '2px', py: '10px', borderTop: '0.5px solid var(--rule)', '&:first-of-type': { borderTop: 'none', pt: 0 } }}
+    >
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>
+        {label}
+      </Typography>
+      {/* Whitespace between rows keeps each fact textually separate for
+          assistive tech; the flex column ignores it visually. */}
+      {rows.map((row, i) => <Fragment key={i}>{i > 0 ? ' ' : null}{row}</Fragment>)}
+    </Box>
+  );
+}
+
+function OperationsPulse({ pulse, currency }: { pulse: OverviewOperationsPulse; currency: string }) {
+  const money = (v: number) => formatCurrencyCompact(v, currency);
+  const { orders, fulfillment, inventory, inbound } = pulse;
+
+  const orderRows: ReactNode[] = [<PulseRow key="ready" text={`${orders.readyCount} ready`} />];
+  if (orders.blockedCount > 0) {
+    orderRows.push(<PulseRow key="blocked" text={`${orders.blockedCount} blocked · ${money(orders.blockedRevenue)}`} />);
+  }
+  if (orders.pastSlaCount > 0) {
+    orderRows.push(<PulseRow key="sla" text={`${orders.pastSlaCount} past SLA · ${money(orders.pastSlaRevenue)}`} />);
+  }
+
+  const fulfillmentRows: ReactNode[] = [
+    <PulseRow
+      key="active"
+      text={`${fulfillment.activeBatchCount} active ${pluralize(fulfillment.activeBatchCount, 'batch', 'batches')}`}
+    />,
+  ];
+  if (fulfillment.activeBatchCount > 0) {
+    fulfillmentRows.push(
+      <PulseRow key="stages" tone="muted" text={`${fulfillment.pickingBatchCount} picking · ${fulfillment.packingBatchCount} packing`} />
+    );
+  }
+
+  const inventoryRows: ReactNode[] = inventory.awaitingInventoryCount > 0
+    ? [<PulseRow key="waiting" text={`${inventory.awaitingInventoryCount} awaiting inventory · ${money(inventory.awaitingInventoryRevenue)}`} />]
+    : [<PulseRow key="clear" tone="clear" text="Clear" />];
+
+  const inboundRows: ReactNode[] = [];
+  if (inbound.receiveAtDockUnits > 0) inboundRows.push(<PulseRow key="dock" text={`${inbound.receiveAtDockUnits} at dock`} />);
+  if (inbound.awaitingStowUnits > 0) inboundRows.push(<PulseRow key="stow" text={`${inbound.awaitingStowUnits} awaiting stow`} />);
+  if (inboundRows.length === 0) inboundRows.push(<PulseRow key="clear" tone="clear" text="Clear" />);
+
+  return (
+    <Box
+      component="section"
+      role="region"
+      aria-label="Operations pulse"
+      sx={{
+        minWidth: 0,
+        boxSizing: 'border-box',
+        bgcolor: 'var(--surface)',
+        border: '0.5px solid var(--rule)',
+        borderRadius: '14px',
+        px: '18px',
+        py: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}>
+        Operations
+      </Typography>
+      <PulseGroup label="Orders" rows={orderRows} />
+      <PulseGroup label="Fulfillment" rows={fulfillmentRows} />
+      <PulseGroup label="Inventory" rows={inventoryRows} />
+      <PulseGroup label="Inbound" rows={inboundRows} />
+    </Box>
+  );
+}
+
+function OverviewModuleV1({
+  operationsPulse,
+  mapContent,
+  userName,
+  currency = 'USD',
+}: OverviewModuleFT2Props & { operationsPulse: OverviewOperationsPulse }) {
+  const greetingText = userName ? `Good ${timeOfDay()}, ${userName}.` : `Good ${timeOfDay()}.`;
+
+  return (
+    <Box sx={{ p: { xs: 2, md: '28px 32px' }, display: 'flex', flexDirection: 'column', gap: '20px', bgcolor: 'var(--bg)', minHeight: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+      {/* ── COMPACT ORIENTATION HEADER — Live status belongs to the topnav ── */}
+      <Box>
+        <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: '#1D9E75', textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 2 }}>
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </Typography>
+        <Typography sx={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
+          {greetingText}
+        </Typography>
+      </Box>
+
+      {/* ── BODY — map ~75% + Operations Pulse ~25%; single column below lg ── */}
+      {mapContent ? (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 3fr) minmax(260px, 1fr)' },
+            gap: 2.25,
+            alignItems: 'stretch',
+            minWidth: 0,
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>{mapContent}</Box>
+          <OperationsPulse pulse={operationsPulse} currency={currency} />
+        </Box>
+      ) : (
+        <Box sx={{ minWidth: 0, maxWidth: 560 }}>
+          <OperationsPulse pulse={operationsPulse} currency={currency} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────
 
 export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
+  const { operationsPulse } = props;
   return (
     <ModuleErrorBoundary moduleName="overview">
-      <OverviewModuleFT2Inner {...props} />
+      {operationsPulse ? (
+        <OverviewModuleV1 {...props} operationsPulse={operationsPulse} />
+      ) : (
+        // LEGACY COMPATIBILITY PATH — only for callers that have not yet
+        // supplied the structured OV-V1 `operationsPulse` prop. The production
+        // Overview page always supplies it, so it never reaches this renderer.
+        <OverviewModuleFT2Inner {...props} />
+      )}
     </ModuleErrorBoundary>
   );
 }
