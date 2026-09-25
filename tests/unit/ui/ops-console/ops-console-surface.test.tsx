@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitForElementToBeRemoved } from '@testing-library/react';
 import { createTheme } from '@mui/material/styles';
 
 import type { Alert } from 'pages/alerts/useAlerts';
@@ -227,7 +227,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof OpsConsolePanel>
 // ─── 1 + 10 — TRIGGER AND CLOSE ──────────────────────────────────────────────
 
 describe('topnav trigger', () => {
-  it('opens the Ops Console and closes it again without navigating', () => {
+  it('opens the Ops Console and closes it again without navigating', async () => {
     render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
 
     expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
@@ -236,9 +236,49 @@ describe('topnav trigger', () => {
     expect(screen.getByTestId('ops-console')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
-    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    // GH-1158: the rail reverses out before it unmounts, then is gone.
+    await waitForElementToBeRemoved(() => screen.queryByTestId('ops-console'));
     // Opening or closing the rail must never move the merchant's route.
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('toggles open and closed from the trigger itself, without navigating', async () => {
+    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    const trigger = screen.getByRole('button', { name: /Ops Console/ });
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('complementary', { name: 'Ops Console' })).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await waitForElementToBeRemoved(() => screen.queryByTestId('ops-console'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('stays mounted only through the exit animation: hidden and inert while closing, then unmounted', async () => {
+    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    fireEvent.click(screen.getByRole('button', { name: /Ops Console/ }));
+
+    const panel = screen.getByTestId('ops-console');
+    expect(panel).not.toHaveAttribute('aria-hidden');
+    expect(panel).not.toHaveAttribute('inert');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
+
+    // Exit in progress: still in the DOM for the reverse slide, but no longer
+    // exposed to assistive tech or reachable by keyboard/pointer.
+    expect(screen.getByTestId('ops-console')).toBe(panel);
+    expect(panel).toHaveAttribute('aria-hidden', 'true');
+    expect(panel).toHaveAttribute('inert');
+    expect(screen.queryByRole('complementary', { name: 'Ops Console' })).not.toBeInTheDocument();
+
+    await waitForElementToBeRemoved(panel);
+  });
+
+  it('mounts nothing while closed, as before', () => {
+    renderPanel({ open: false });
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
   });
 
   it('is not a modal: the console renders no MUI Modal/backdrop over the app', () => {
@@ -759,6 +799,19 @@ describe('top-nav trigger — attention dot, not a second counter', () => {
 
     render(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
     expect(document.querySelector('.MuiBadge-badge')).toHaveClass('MuiBadge-invisible');
+  });
+
+  it('hides the dot while open but keeps the authoritative count in the accessible name', () => {
+    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    const trigger = screen.getByRole('button', { name: 'Ops Console — 2 open' });
+    const dot = () => screen.getByTestId('ops-console-trigger-badge').querySelector('.MuiBadge-badge');
+    expect(dot()).not.toHaveClass('MuiBadge-invisible');
+
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAccessibleName('Ops Console — 2 open');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(dot()).toHaveClass('MuiBadge-invisible');
   });
 
   it('keeps the count out of the visible trigger while the rail owns the numbers', () => {

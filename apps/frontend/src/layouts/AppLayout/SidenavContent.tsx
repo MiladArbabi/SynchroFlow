@@ -26,6 +26,7 @@ import { useTheme, alpha } from '@mui/material/styles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { axiosInstance } from '../../api/axiosConfig';
+import { ThemeToggle } from '../../components/ThemeToggle';
 
 type SidenavState = 'EXPANDED' | 'COMPACT';
 
@@ -397,65 +398,82 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         {groups.map(g => renderGroup(g))}
       </SimpleBar>
 
-      {/* PROFILE TRIGGER — bottom of sidenav */}
+      {/* FOOTER — theme control directly above the profile trigger (GH-1158) */}
       {isFt2Ready && (
         <Box
-          role="button"
-          tabIndex={0}
-          aria-haspopup="menu"
-          aria-expanded={profileOpen}
-          aria-controls={profileOpen ? 'profile-menu' : undefined}
-          onClick={(event) => toggleProfileMenu(event.currentTarget)}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            toggleProfileMenu(event.currentTarget);
-          }}
+          data-testid="sidenav-footer"
           sx={{
-            px: isExpanded ? 1.5 : 0,
-            py: 1,
-            mx: isExpanded ? 0 : 0.5,
-            mb: 0.5,
             borderTop: '1px solid var(--rule)',
+            pt: 0.75,
+            px: isExpanded ? 1 : 0.5,
             display: 'flex',
-            alignItems: 'center',
-            gap: 1.25,
-            cursor: 'pointer',
-            borderRadius: isExpanded ? 0 : '8px',
-            justifyContent: isCompact ? 'center' : 'flex-start',
-            outline: 'none',
-            '&:hover': { bgcolor: 'var(--bg-2)' },
-            '&:focus-visible': {
-              boxShadow: 'inset 0 0 0 2px var(--accent)',
-            },
-            transition: 'background 0.15s',
+            flexDirection: 'column',
+            alignItems: isCompact ? 'center' : 'stretch',
+            gap: 0.5,
             flexShrink: 0,
           }}
         >
-          {/* AVATAR */}
-          <Box sx={{
-            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-            bgcolor: alpha(theme.palette.primary.main, 0.15),
-            border: `1.5px solid ${profileOpen ? theme.palette.primary.main : 'var(--rule)'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'border-color 0.15s',
-          }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 700, color: theme.palette.primary.main, lineHeight: 1 }}>
-              {initial}
-            </Typography>
-          </Box>
+          <ThemeToggle variant={isExpanded ? 'row' : 'icon'} />
 
-          {/* NAME — expanded only */}
-          {isExpanded && (
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {displayName}
-              </Typography>
-              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user?.email}
+          {/* PROFILE TRIGGER — bottom of sidenav */}
+          <Box
+            role="button"
+            tabIndex={0}
+            aria-haspopup="menu"
+            aria-expanded={profileOpen}
+            aria-controls={profileOpen ? 'profile-menu' : undefined}
+            onClick={(event) => toggleProfileMenu(event.currentTarget)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              toggleProfileMenu(event.currentTarget);
+            }}
+            sx={{
+              px: isExpanded ? 1.5 : 0,
+              py: 1,
+              mx: isExpanded ? -1 : 0,
+              mb: 0.5,
+              alignSelf: 'stretch',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.25,
+              cursor: 'pointer',
+              borderRadius: isExpanded ? 0 : '8px',
+              justifyContent: isCompact ? 'center' : 'flex-start',
+              outline: 'none',
+              '&:hover': { bgcolor: 'var(--bg-2)' },
+              '&:focus-visible': {
+                boxShadow: 'inset 0 0 0 2px var(--accent)',
+              },
+              transition: 'background 0.15s',
+              flexShrink: 0,
+            }}
+          >
+            {/* AVATAR */}
+            <Box sx={{
+              width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+              bgcolor: alpha(theme.palette.primary.main, 0.15),
+              border: `1.5px solid ${profileOpen ? theme.palette.primary.main : 'var(--rule)'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'border-color 0.15s',
+            }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: theme.palette.primary.main, lineHeight: 1 }}>
+                {initial}
               </Typography>
             </Box>
-          )}
+
+            {/* NAME — expanded only */}
+            {isExpanded && (
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {displayName}
+                </Typography>
+                <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user?.email}
+                </Typography>
+              </Box>
+            )}
+          </Box>
         </Box>
       )}
 

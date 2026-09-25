@@ -38,10 +38,10 @@
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Typography, IconButton, Tooltip, Badge } from '@mui/material';
+import { type CSSProperties, type ReactNode, forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { Box, Typography, IconButton, Tooltip, Badge, Slide, useMediaQuery } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { Terminal, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
 
@@ -58,6 +58,8 @@ import { VariantDetailModalHost } from '../../pages/ft2-pages/VariantDetailModal
 import { usePickBatches } from '../../pages/wms/usePickBatches';
 import { useBulkSetPriority } from '../../pages/wms/useOrderPool';
 import { useGlobalSearch, type GlobalSearchResult } from './useGlobalSearch';
+import { OpsConsoleGlyph } from './OpsConsoleGlyph';
+import { REDUCED_MOTION_QUERY, SHELL_MOTION } from '../ThemeToggle/shellMotion';
 import {
   OPS_STATUS_GLYPH,
   buildHistoryRows,
@@ -623,14 +625,41 @@ export interface OpsConsoleProps {
   historyItems?: HistoryItem[];
 }
 
-export function OpsConsolePanel({
+/**
+ * GH-1158 — presentation lifecycle only. The rail slides in from the right and
+ * reverses out on the shell motion curve; it stays mounted through the exit
+ * transition and unmounts once it completes (mountOnEnter/unmountOnExit), so a
+ * closed console still mounts nothing and runs none of its queries. Reduced
+ * motion collapses the transition to zero. Geometry, content, search and
+ * navigation contracts all live unchanged in OpsConsolePanelSurface.
+ */
+export function OpsConsolePanel(props: OpsConsoleProps) {
+  const reduceMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+
+  return (
+    <Slide
+      in={props.open}
+      direction="left"
+      appear
+      mountOnEnter
+      unmountOnExit
+      timeout={reduceMotion ? 0 : SHELL_MOTION.durationMs}
+      easing={SHELL_MOTION.easing}
+    >
+      <OpsConsolePanelSurface {...props} />
+    </Slide>
+  );
+}
+
+const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { style?: CSSProperties }>(function OpsConsolePanelSurface({
   alerts,
   deepLink = alertDeepLink,
   open,
   onClose,
   waitingItems,
   historyItems,
-}: OpsConsoleProps) {
+  style,
+}, ref) {
   const pal = useAppTheme();
   const nav = useNavigate();
   const [tab, setTab] = useState<'OPEN' | 'HISTORY'>('OPEN');
@@ -735,14 +764,22 @@ export function OpsConsolePanel({
 
   const goto = (route: string) => { nav(route); };
 
-  if (!open) return null;
+  // While the exit transition plays the rail is visual only: hidden from
+  // assistive tech, out of the tab order, and click-through.
+  const exiting = !open;
 
   return (
     <Box
+      ref={ref}
+      style={style}
       role="complementary"
       aria-label="Ops Console"
+      aria-hidden={exiting || undefined}
+      inert={exiting}
       data-testid="ops-console"
+      data-state={exiting ? 'closing' : 'open'}
       sx={{
+        pointerEvents: exiting ? 'none' : undefined,
         position: 'fixed', top: 56, right: 0, bottom: 0, zIndex: 1150,
         // xs: pinned to BOTH edges and sized against the viewport, so no strip
         // of the application can remain beside it. sm+ keeps the approved
@@ -1028,7 +1065,7 @@ export function OpsConsolePanel({
       />
     </Box>
   );
-}
+});
 
 // ─── TOPNAV TRIGGER ───────────────────────────────────────────────────────────
 
@@ -1057,15 +1094,31 @@ export function OpsConsoleButton({
       <Tooltip title={open ? '' : 'Ops Console'}>
         <IconButton
           size="small"
+          disableRipple
           onClick={() => setOpen((v) => !v)}
           aria-label={`Ops Console — ${badge} open`}
           aria-expanded={open}
-          sx={{ color: hasAttention ? 'var(--accent)' : 'text.secondary' }}
+          data-state={open ? 'open' : 'closed'}
+          sx={{
+            borderRadius: '8px',
+            color: open || hasAttention ? 'var(--accent)' : 'text.secondary',
+            // GH-1158 — open state takes the accent wash; keyboard focus draws
+            // the accent ring, pointer focus leaves nothing behind.
+            bgcolor: open ? pal.accentGhost : 'transparent',
+            boxShadow: open ? `inset 0 0 0 1px ${pal.accentBorder}` : 'none',
+            outline: 'none',
+            transition: 'background-color 150ms ease, box-shadow 150ms ease, color 150ms ease',
+            '&:hover': {
+              bgcolor: open ? pal.accentGhost : pal.bg2,
+              color: 'var(--accent-hover)',
+            },
+            '&.Mui-focusVisible': { boxShadow: `0 0 0 2px ${pal.accent}` },
+          }}
         >
           <Badge
             data-testid="ops-console-trigger-badge"
             variant="dot"
-            invisible={!hasAttention}
+            invisible={!hasAttention || open}
             sx={{
               '& .MuiBadge-badge': {
                 minWidth: 6, height: 6, borderRadius: '50%',
@@ -1073,7 +1126,7 @@ export function OpsConsoleButton({
               },
             }}
           >
-            <Terminal size={18} strokeWidth={hasAttention ? 2.5 : 1.75} />
+            <OpsConsoleGlyph open={open} />
           </Badge>
         </IconButton>
       </Tooltip>

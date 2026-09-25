@@ -4,11 +4,10 @@ import React, { useState } from "react";
 import { useLocation, Link as RouterLink, useNavigate } from "react-router-dom";
 import { getBreadcrumbLabel } from "runtime/registerNav";
 import {
-  Box, IconButton, Typography, Breadcrumbs as MuiBreadcrumbs,
+  Box, Typography, Breadcrumbs as MuiBreadcrumbs,
   Link, Tooltip, Popover,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
-import IconComponent from "../../components/Icon";
 import { TrialCountdownChip } from 'components/TrialCountdownChip';
 import { Home } from 'lucide-react';
 import { OpsConsoleButton } from '../../components/OpsConsole';
@@ -31,7 +30,9 @@ interface TopnavbarContentProps {
 const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) => {
   const location  = useLocation();
   const navigate = useNavigate();
-  const { mode, setMode } = useColorScheme();
+  // Read-only here: the logo follows the scheme. The theme control itself
+  // lives in the sidenav footer (GH-1158).
+  const { mode } = useColorScheme();
   const { user } = useAuth();
   const { phase } = useShopLifecycle();
   const isFt2     = phase === 'FT2_READY';
@@ -253,26 +254,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
                 </Popover>
               </>
             )}
-
-            <Tooltip title="Light mode">
-              <IconButton
-                size="small"
-                onClick={() => setMode("light")}
-                sx={{ color: mode === "light" ? "primary.main" : "text.secondary" }}
-              >
-                <IconComponent name="Sun" size="medium" />
-              </IconButton>
-            </Tooltip>
-
-            <Tooltip title="Dark mode">
-              <IconButton
-                size="small"
-                onClick={() => setMode("dark")}
-                sx={{ color: mode === "dark" ? "primary.main" : "text.secondary" }}
-              >
-                <IconComponent name="Moon" size="medium" />
-              </IconButton>
-            </Tooltip>
           </>
         )}
 
