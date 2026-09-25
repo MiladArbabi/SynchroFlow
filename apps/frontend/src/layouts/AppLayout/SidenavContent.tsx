@@ -10,6 +10,7 @@ import {
   Typography,
   Tooltip,
   Grow,
+  ButtonBase,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Bell } from 'lucide-react';
@@ -119,6 +120,13 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const handleProfileNavigate = (path: string) => {
     setProfileAnchorEl(null);
     navigate(path, { state: { backgroundLocation: location } });
+  };
+
+  // OV-V1-1A: Settings is permanent shell navigation in the footer, not an
+  // account-menu item. Same modal-route semantics the menu item used.
+  const isSettingsActive = pathname === '/settings' || pathname.startsWith('/settings/');
+  const handleSettingsNavigate = () => {
+    navigate('/settings', { state: { backgroundLocation: location } });
   };
 
   const handleGetHelp = () => {
@@ -415,6 +423,60 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         >
           <ThemeToggle variant={isExpanded ? 'row' : 'icon'} />
 
+          {/* SETTINGS — permanent shell navigation (OV-V1-1A). Geometry mirrors
+              the ThemeToggle row/icon variants directly above it. */}
+          {isCompact ? (
+            <Tooltip title="Settings" placement="right" arrow describeChild>
+              <ButtonBase
+                aria-label="Settings"
+                aria-current={isSettingsActive ? 'page' : undefined}
+                disableRipple
+                onClick={handleSettingsNavigate}
+                sx={{
+                  width: 36, height: 36, borderRadius: '8px', flexShrink: 0,
+                  color: isSettingsActive ? 'var(--accent)' : 'var(--ink-3)',
+                  bgcolor: isSettingsActive ? 'var(--accent-ghost)' : 'transparent',
+                  outline: 'none',
+                  transition: 'background 150ms ease, color 150ms ease',
+                  '&:hover': {
+                    bgcolor: isSettingsActive ? 'var(--accent-ghost)' : 'var(--bg-2)',
+                    color: isSettingsActive ? 'var(--accent)' : 'var(--ink)',
+                  },
+                  '&.Mui-focusVisible': { boxShadow: 'inset 0 0 0 2px var(--accent)' },
+                }}
+              >
+                <Settings size={20} strokeWidth={isSettingsActive ? 2.5 : 1.75} />
+              </ButtonBase>
+            </Tooltip>
+          ) : (
+            <ButtonBase
+              aria-current={isSettingsActive ? 'page' : undefined}
+              disableRipple
+              onClick={handleSettingsNavigate}
+              sx={{
+                width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+                gap: 1.25,
+                pl: 1.5, pr: 1.25, py: 0.75,
+                borderRadius: '8px',
+                color: isSettingsActive ? 'var(--accent)' : 'var(--ink-3)',
+                bgcolor: isSettingsActive ? 'var(--accent-ghost)' : 'transparent',
+                outline: 'none',
+                transition: 'background 150ms ease, color 150ms ease',
+                '&:hover': {
+                  bgcolor: isSettingsActive ? 'var(--accent-ghost)' : 'var(--bg-2)',
+                  color: isSettingsActive ? 'var(--accent)' : 'var(--ink)',
+                },
+                '&.Mui-focusVisible': { boxShadow: 'inset 0 0 0 2px var(--accent)' },
+              }}
+            >
+              <Settings size={18} strokeWidth={isSettingsActive ? 2.5 : 1.75} />
+              <span style={{ fontSize: 13, lineHeight: 1.4, color: 'inherit', fontWeight: isSettingsActive ? 600 : 400 }}>
+                Settings
+              </span>
+            </ButtonBase>
+          )}
+
           {/* PROFILE TRIGGER — bottom of sidenav */}
           <Box
             role="button"
@@ -568,17 +630,6 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                   </Box>
 
                   <Box sx={{ py: 0.5 }}>
-                    <ListItemButton
-                      role="menuitem"
-                      onClick={() => handleProfileNavigate('/settings')}
-                      sx={profileMenuItemSx}
-                    >
-                      <Settings size={18} strokeWidth={1.75} />
-                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
-                        Settings
-                      </Typography>
-                    </ListItemButton>
-
                     <ListItemButton
                       role="menuitem"
                       onClick={handleGetHelp}
