@@ -51,7 +51,13 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
     requiredSignals: [
       'wms.zonesConfigured',
       'wms.barcodesPrinted',
-      'wms.carrierConfigured'
+      'wms.carrierConfigured',
+      // GH-1156: exposed so reconcile-inventory's completion rule can
+      // evaluate, and so the SETUP assembler knows whether opening inventory
+      // applies at all. Exposure only: the task stays required: false and
+      // FT1 gating is unchanged.
+      'wms.openingInventoryReconciliationRequired',
+      'wms.openingInventoryReconciled'
     ],
     tasks: [
       {

@@ -243,7 +243,7 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
 
     const openingSettings = await db('shop_wms_settings')
       .where({ shop_id: shopId })
-      .select('bootstrap_model')
+      .select('bootstrap_model', 'opening_inventory_shopify_synced_at')
       .first();
 
     let openingInventoryReconciliationRequired = true;
@@ -278,11 +278,13 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
         openingProgress.state === 'review_required';
 
       /**
-       * 4b-2a deliberately stops before merchant acceptance / Shopify
-       * cutover. A v2 tenant cannot be called reconciled merely because every
-       * bin was counted or the imported expectation happened to match.
+       * GH-1156: a v2 tenant is reconciled only once the opening cutover has
+       * persisted its Shopify-sync completion marker. Counting every bin,
+       * ready_for_cutover, or any merchant click is never reconciliation.
        */
-      openingInventoryReconciled = false;
+      openingInventoryReconciled = Boolean(
+        openingSettings.opening_inventory_shopify_synced_at
+      );
     }
 
     return [

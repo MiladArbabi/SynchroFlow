@@ -1,14 +1,31 @@
 // apps/frontend/src/hooks/useActivationChecklist.ts
 //
 // T5 — onboarding activation checklist hook.
-// Assembles 5 checklist items from two endpoints:
-//   1. GET /api/v1/onboarding/readiness  — items 1–4
+// Assembles 6 checklist items from three endpoints:
+//   1. GET /api/v1/onboarding/readiness  — items 1–4, and item 6's
+//      applicability (wms.openingInventoryReconciliationRequired) and
+//      completion (wms/reconcile-inventory is the ONLY source of item 6's ✓)
 //   2. GET /api/v1/user-state/activation-events — item 5
+//   3. GET /api/v1/wms/opening-inventory/progress — item 6's presentation only,
+//      read only while item 6 is required and incomplete (GH-1156: readiness
+//      cannot distinguish not-started / counting / review / cutover; the
+//      progress view never establishes completion)
 //
 // See docs/playbooks/onboarding-progressive-disclosure-playbook.md §2 Layer 1.
 
+import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from '../api/axiosConfig';
+import { AuthContext } from '../contexts/AuthContext';
+
+/**
+ * GH-1156 — an item's explicit primary action, when the generic "Open"
+ * navigation to `actionRoute` is not the right affordance. `command` names a
+ * console-owned command; no callback is ever stored on an item.
+ */
+export type ChecklistItemAction =
+  | { kind: 'navigate'; label: string; route: string }
+  | { kind: 'command'; label: string; command: 'opening_inventory_start' };
 
 export interface ChecklistItem {
   key: string;
@@ -16,12 +33,25 @@ export interface ChecklistItem {
   complete: boolean;
   /** Tier 2 ghost pill CTA route — undefined when item has no navigation */
   actionRoute?: string;
+  /** GH-1156 — explicit action; takes precedence over actionRoute. */
+  action?: ChecklistItemAction;
+  /** GH-1156 — canonical lifecycle context (e.g. "Review required"). */
+  subtitle?: string;
+  /** GH-1156 — short canonical progress qualifier (e.g. "6 / 17 bins"). */
+  meta?: string;
+  /**
+   * GH-1156 — canonical non-default lifecycle status for an incomplete item:
+   * attention (review required), waiting (cutover executing), failed.
+   */
+  lifecycle?: 'attention' | 'waiting' | 'failed';
 }
 
 interface ReadinessResponse {
   modules: Array<{
     moduleId: string;
     tasks: Array<{ id: string; complete: boolean }>;
+    /** Signals exposed by the module manifest's requiredSignals. */
+    signals?: Array<{ name: string; value: unknown }>;
   }>;
 }
 
@@ -29,11 +59,135 @@ interface ActivationEventsResponse {
   wave_released: boolean;
 }
 
+/**
+ * Subset of the GET /api/v1/wms/opening-inventory/progress wire shape
+ * (OpeningInventoryCutoverView) that the SETUP row reads.
+ */
+export interface OpeningInventoryProgressView {
+  progress: {
+    state:
+      | 'not_required'
+      | 'not_started'
+      | 'counting'
+      | 'needs_bin_review'
+      | 'ready_for_cutover'
+      | 'review_required';
+    total_bins: number;
+    complete_bins: number;
+  };
+  cutover: { status: 'prepared' | 'executing' | 'failed' | 'complete' } | null;
+  shopify_synced_at: string | null;
+}
+
+export const OPENING_INVENTORY_SETUP_KEY = 'opening-inventory';
+const OPENING_INVENTORY_LABEL = 'Establish opening inventory';
+const WAREHOUSE_ROUTE = '/wms';
+
 function findTask(modules: ReadinessResponse['modules'], moduleId: string, taskId: string): boolean {
   return modules
     .find(m => m.moduleId === moduleId)
     ?.tasks.find(t => t.id === taskId)
     ?.complete ?? false;
+}
+
+/**
+ * GH-1156 — canonical wms.openingInventoryReconciliationRequired.
+ * Returns null when the signal is missing or not a boolean (unknown).
+ */
+function openingReconciliationRequired(modules: ReadinessResponse['modules']): boolean | null {
+  const value = modules
+    .find(m => m.moduleId === 'wms')
+    ?.signals?.find(s => s.name === 'wms.openingInventoryReconciliationRequired')
+    ?.value;
+  return typeof value === 'boolean' ? value : null;
+}
+
+function isProgressView(value: unknown): value is OpeningInventoryProgressView {
+  const state = (value as OpeningInventoryProgressView | null | undefined)?.progress?.state;
+  return typeof state === 'string';
+}
+
+/**
+ * GH-1156 — pure lifecycle mapping for the "Establish opening inventory" row.
+ *
+ * Completion is readiness-owned: only the backend wms/reconcile-inventory task
+ * (canonical wms.openingInventoryReconciled — the persisted Shopify-sync
+ * marker for v2) can make the row verified. The progress view supplies
+ * presentation states only. A click is never an input. Returns null when
+ * opening inventory is not required, so no setup work is added for that
+ * tenant.
+ *
+ * `canStart` is an advisory UI gate only (owner/admin, mirroring the default
+ * wms:recount:create grant); requireAction('wms:recount:create') on the start
+ * endpoint remains the authority.
+ */
+export function buildOpeningInventoryItem(
+  readinessComplete: boolean,
+  view: OpeningInventoryProgressView | null,
+  canStart: boolean,
+): ChecklistItem | null {
+  const base = { key: OPENING_INVENTORY_SETUP_KEY, label: OPENING_INVENTORY_LABEL };
+
+  if (view?.progress.state === 'not_required') return null;
+
+  if (readinessComplete) return { ...base, complete: true };
+
+  // Progress unknown (loading, unavailable or not permitted): not verified,
+  // and no action is offered without a canonical state to act on.
+  if (!view) return { ...base, complete: false };
+
+  const { progress, cutover } = view;
+  const bins = progress.total_bins > 0
+    ? `${progress.complete_bins} / ${progress.total_bins} bins`
+    : undefined;
+  const openWarehouse = (label: string): ChecklistItemAction =>
+    ({ kind: 'navigate', label, route: WAREHOUSE_ROUTE });
+
+  if (cutover?.status === 'failed') {
+    return {
+      ...base, complete: false, lifecycle: 'failed',
+      subtitle: 'Shopify update failed',
+      action: openWarehouse('Retry'),
+    };
+  }
+  if (cutover?.status === 'executing') {
+    return {
+      ...base, complete: false, lifecycle: 'waiting',
+      subtitle: 'Updating Shopify',
+      action: openWarehouse('View'),
+    };
+  }
+
+  switch (progress.state) {
+    case 'not_started':
+      return canStart
+        ? {
+            ...base, complete: false,
+            action: { kind: 'command', label: 'Start opening count', command: 'opening_inventory_start' },
+          }
+        : { ...base, complete: false, subtitle: 'Owner or admin must start' };
+    case 'counting':
+      return {
+        ...base, complete: false, meta: bins,
+        subtitle: 'Warehouse Operations · Inventory checks',
+        action: openWarehouse('Continue'),
+      };
+    case 'needs_bin_review':
+    case 'review_required':
+      return {
+        ...base, complete: false, lifecycle: 'attention', meta: bins,
+        subtitle: 'Review required',
+        action: openWarehouse('Review'),
+      };
+    case 'ready_for_cutover':
+      return {
+        ...base, complete: false, meta: bins,
+        subtitle: 'Count complete · ready to update Shopify',
+        action: openWarehouse('Review'),
+      };
+    default:
+      return { ...base, complete: false };
+  }
 }
 
 export function useActivationChecklist() {
@@ -50,6 +204,39 @@ export function useActivationChecklist() {
   });
 
   const modules = readiness.data?.modules ?? [];
+  const openingReadinessComplete = findTask(modules, 'wms', 'reconcile-inventory');
+  // null while readiness is loading or when the signal is missing/unknown.
+  const reconciliationRequired = readiness.isSuccess
+    ? openingReconciliationRequired(modules)
+    : null;
+
+  // Advisory role gate for the Start command. Read without throwing so the
+  // hook stays usable outside an AuthProvider; no role → no Start (fail
+  // closed). The backend requireAction remains the authority.
+  const role = (useContext(AuthContext)?.user as { role?: string } | null | undefined)?.role;
+  const canStartOpeningInventory = role === 'owner' || role === 'admin';
+
+  // Presentation only — never completion. Read only when readiness says
+  // opening inventory applies and is not yet reconciled. A failure here is NOT
+  // a SETUP failure: an incomplete row simply offers no action.
+  const openingProgress = useQuery<OpeningInventoryProgressView>({
+    queryKey: ['wms', 'opening-inventory', 'progress'],
+    queryFn: async () => (await axiosInstance.get('/api/v1/wms/opening-inventory/progress')).data,
+    enabled: reconciliationRequired === true && !openingReadinessComplete,
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  // No row at all unless readiness canonically says opening inventory is
+  // required: loading, not required (legacy) and unknown all build nothing,
+  // so a legacy tenant never sees a row appear and then disappear.
+  const openingItem = reconciliationRequired === true
+    ? buildOpeningInventoryItem(
+        openingReadinessComplete,
+        isProgressView(openingProgress.data) ? openingProgress.data : null,
+        canStartOpeningInventory,
+      )
+    : null;
 
   const items: ChecklistItem[] = [
     {
@@ -82,10 +269,17 @@ export function useActivationChecklist() {
       complete:     events.data?.wave_released ?? false,
       actionRoute:  '/orders/flow',
     },
+    ...(openingItem ? [openingItem] : []),
   ];
 
   const completedCount = items.filter(i => i.complete).length;
   const allComplete    = completedCount === items.length;
+
+  // GH-1156 — after an Opening Inventory command the canonical sources are
+  // re-read; the row's next state comes only from what they return.
+  const refreshOpeningInventory = async () => {
+    await Promise.all([readiness.refetch(), openingProgress.refetch()]);
+  };
 
   return {
     items,
@@ -96,5 +290,6 @@ export function useActivationChecklist() {
     // failed-fetch state instead of an empty SETUP section that would read as
     // "nothing left to do". Completion logic above is untouched.
     isError: readiness.isError || events.isError,
+    refreshOpeningInventory,
   };
 }

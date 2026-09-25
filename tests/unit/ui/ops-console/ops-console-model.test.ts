@@ -527,6 +527,81 @@ describe('SETUP rows', () => {
   });
 });
 
+// ─── SETUP — GH-1156 OPENING INVENTORY COMMAND ACTION ────────────────────────
+
+describe('SETUP rows — Opening Inventory command action (GH-1156)', () => {
+  const START: ChecklistItem = {
+    key: 'opening-inventory',
+    label: 'Establish opening inventory',
+    complete: false,
+    action: { kind: 'command', label: 'Start opening count', command: 'opening_inventory_start' },
+  };
+
+  it('maps a command item to a data-only command action — no callback, no route', () => {
+    const [row] = buildSetupRows([START]);
+    expect(row).toMatchObject({
+      id: 'setup:opening-inventory',
+      section: 'SETUP',
+      status: 'actionable',
+      label: 'Establish opening inventory',
+    });
+    expect(row.action).toEqual({
+      kind: 'command', label: 'Start opening count', command: 'opening_inventory_start',
+    });
+    expect(Object.values(row.action!).some((v) => typeof v === 'function')).toBe(false);
+    expect(row.action).not.toHaveProperty('route');
+  });
+
+  it('carries canonical progress and lifecycle into the row without inventing completion', () => {
+    const [counting, review, failed] = buildSetupRows([
+      { ...START, meta: '6 / 17 bins', subtitle: 'Warehouse Operations · Inventory checks',
+        action: { kind: 'navigate', label: 'Continue', route: '/wms' } },
+      { ...START, lifecycle: 'attention', subtitle: 'Review required',
+        action: { kind: 'navigate', label: 'Review', route: '/wms' } },
+      { ...START, lifecycle: 'failed', action: { kind: 'navigate', label: 'Retry', route: '/wms' } },
+    ]);
+
+    expect(counting).toMatchObject({ status: 'actionable', meta: '6 / 17 bins' });
+    expect(counting.action).toEqual({ kind: 'navigate', label: 'Continue', route: '/wms' });
+    expect(review).toMatchObject({ status: 'attention', tone: 'warning', subtitle: 'Review required' });
+    expect(failed.status).toBe('failed');
+    for (const row of [counting, review, failed]) expect(row.status).not.toBe('verified');
+  });
+
+  it('a complete item is verified with no action, whatever action it carried', () => {
+    const [row] = buildSetupRows([{ ...START, complete: true, meta: '17 / 17 bins' }]);
+    expect(row.status).toBe('verified');
+    expect(row.action).toBeUndefined();
+    expect(row.meta).toBeUndefined();
+  });
+
+  it('leaves generic navigation SETUP rows unchanged', () => {
+    const [row] = buildSetupRows([
+      { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning' },
+    ]);
+    expect(row).toEqual({
+      id: 'setup:map-zones',
+      section: 'SETUP',
+      status: 'actionable',
+      label: 'Map your warehouse zones',
+      action: { kind: 'navigate', label: 'Open', route: '/floor-planning' },
+    });
+  });
+
+  it('keeps the model pure: no transport, React or command execution in opsConsoleModel', () => {
+    const source = require('fs').readFileSync(
+      require('path').join(
+        __dirname,
+        '../../../../apps/frontend/src/components/OpsConsole/opsConsoleModel.ts'
+      ),
+      'utf8'
+    );
+    expect(source).not.toMatch(/from 'react'/);
+    expect(source).not.toMatch(/axios/);
+    expect(source).not.toMatch(/opening-inventory\/start/);
+  });
+});
+
 // ─── BADGE — OPEN ATTENTION ONLY ─────────────────────────────────────────────
 
 describe('openAttentionCount', () => {

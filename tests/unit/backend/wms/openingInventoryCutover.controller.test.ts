@@ -38,6 +38,16 @@ jest.mock('api-src/services/wms/openingInventoryCutover.service', () => {
   };
 });
 
+// GH-1156: the canonical shop-wide start is mocked at its module boundary;
+// its cohort/anchor/replay semantics are integration-tested in
+// tests/integration/inventory/opening-recount-bootstrap-progress.test.ts.
+jest.mock('api-src/services/wms/inventoryRecount.service', () => ({
+  ...jest.requireActual('api-src/services/wms/inventoryRecount.service'),
+  startShopOpeningInventoryReconciliation: jest.fn(),
+}));
+
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { startShopOpeningInventoryReconciliation } from 'api-src/services/wms/inventoryRecount.service';
 import {
   approveAndRunOpeningInventoryCutover,
   classifyOpeningInventoryCutoverError,
@@ -46,10 +56,14 @@ import {
 import {
   httpApproveOpeningInventoryCutover,
   httpGetOpeningInventoryProgress,
+  httpStartOpeningInventoryReconciliation,
 } from 'api-src/api/wms/openingInventoryCutover.controller';
 
 const approveMock = approveAndRunOpeningInventoryCutover as jest.Mock;
 const viewMock = getOpeningInventoryCutoverView as jest.Mock;
+const startMock = startShopOpeningInventoryReconciliation as jest.Mock;
+const withTenantMock = withTenant as jest.Mock;
+const FAKE_TRX = { __trx: 'tenant-trx' };
 
 const AUTH_USER = { shopId: 41, userId: 7 };
 
@@ -62,6 +76,7 @@ function buildApp(user: Record<string, unknown> | null = AUTH_USER) {
   });
   app.get('/opening-inventory/progress', httpGetOpeningInventoryProgress);
   app.post('/opening-inventory/cutover', httpApproveOpeningInventoryCutover);
+  app.post('/opening-inventory/start', httpStartOpeningInventoryReconciliation);
   return app;
 }
 
@@ -82,6 +97,7 @@ const SNAPSHOT = {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  withTenantMock.mockImplementation((_shopId: number, fn: (trx: unknown) => unknown) => fn(FAKE_TRX));
 });
 
 afterEach(() => {
@@ -344,5 +360,93 @@ describe('GRILL-03H/03I — shared public error classifier (POST + GET read mode
 
     expect(res.body.code).toBe('OPENING_CUTOVER_SHOPIFY');
     expect(JSON.stringify(res.body)).not.toContain('secret-provider-detail');
+  });
+});
+
+describe('GH-1156 — opening count start bridge', () => {
+  const STARTED_PROGRESS = {
+    bootstrap_model: 'reconcile_opening_expectation_v2',
+    reconciliation_required: true,
+    started_at: '2026-09-24T09:00:00.000Z',
+    state: 'counting',
+    total_bins: 3,
+    not_started_bins: 3,
+  };
+
+  it('invokes the canonical shop-wide start inside withTenant with req.user identity only, ignoring forged body scope', async () => {
+    startMock.mockResolvedValue(STARTED_PROGRESS);
+
+    const res = await request(buildApp())
+      .post('/opening-inventory/start')
+      .send({
+        shopId: 999,
+        shop_id: 999,
+        userId: 555,
+        createdBy: 555,
+        warehouse_id: 'wh-forged',
+        warehouseId: 'wh-forged',
+        location_codes: ['A-01'],
+        bins: ['A-01'],
+        cohort: [{ location_code: 'A-01' }],
+        assigned_to: 555,
+        quantities: { v1: 10 },
+        delta: 100,
+      })
+      .expect(200);
+
+    expect(withTenantMock).toHaveBeenCalledTimes(1);
+    expect(withTenantMock.mock.calls[0][0]).toBe(41);
+    expect(startMock).toHaveBeenCalledTimes(1);
+    expect(startMock).toHaveBeenCalledWith(FAKE_TRX, { shopId: 41, createdBy: 7 });
+    expect(res.body).toEqual(STARTED_PROGRESS);
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it.each([[null], [{ shopId: 41 }], [{ userId: 7 }]])(
+    'without complete req.user identity (%j) => 401 and no start',
+    async (user) => {
+      const res = await request(buildApp(user as Record<string, unknown> | null))
+        .post('/opening-inventory/start')
+        .send({});
+
+      expect(res.status).toBe(401);
+      expect(withTenantMock).not.toHaveBeenCalled();
+      expect(startMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['[OPENING_RECOUNT_SHOP_START] Initial inventory reconciliation requires at least one active bin'],
+    ['[OPENING_RECOUNT_SHOP_START] bootstrap_model must be reconcile_opening_expectation_v2, got "legacy_opening_balance_v1"'],
+    ['[OPENING_RECOUNT_SHOP_START] Snapshot anchor exists but opening tasks are missing'],
+  ])('service rejection %s => 409 stable code, raw service text never exposed', async (message) => {
+    startMock.mockRejectedValue(new Error(message));
+
+    const res = await request(buildApp())
+      .post('/opening-inventory/start')
+      .send({})
+      .expect(409);
+
+    expect(res.body.code).toBe('OPENING_START_REJECTED');
+    expect(typeof res.body.error).toBe('string');
+    expect(res.body.error.length).toBeGreaterThan(0);
+    expect(JSON.stringify(res.body)).not.toContain('[OPENING_RECOUNT_SHOP_START]');
+    expect(JSON.stringify(res.body)).not.toContain(message.replace('[OPENING_RECOUNT_SHOP_START] ', ''));
+  });
+
+  it.each([
+    ['connect ECONNREFUSED secret-host:5432'],
+    ['wrapped: [OPENING_RECOUNT_SHOP_START] mid-message prefix'],
+  ])('unclassified failure %s => 500 stable code, raw text never exposed', async (message) => {
+    startMock.mockRejectedValue(new Error(message));
+
+    const res = await request(buildApp())
+      .post('/opening-inventory/start')
+      .send({})
+      .expect(500);
+
+    expect(res.body.code).toBe('OPENING_START_INTERNAL');
+    expect(JSON.stringify(res.body)).not.toContain('secret-host');
+    expect(JSON.stringify(res.body)).not.toContain('mid-message');
   });
 });

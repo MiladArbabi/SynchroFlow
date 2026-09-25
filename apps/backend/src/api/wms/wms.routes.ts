@@ -113,6 +113,7 @@ import {
 import {
   httpGetOpeningInventoryProgress,
   httpApproveOpeningInventoryCutover,
+  httpStartOpeningInventoryReconciliation,
 } from './openingInventoryCutover.controller.js';
 
 /**
@@ -937,6 +938,17 @@ router.get(
   requireCapability('inventory.core'),
   requireAction('wms:recount:read'),
   httpGetOpeningInventoryProgress
+);
+
+// GH-1156: merchant start of the shop-wide opening count. Uses recount
+// create RBAC; the canonical start service owns the cohort and replay.
+router.post(
+  '/opening-inventory/start',
+  authenticateToken,
+  requireFt2,
+  requireCapability('inventory.core'),
+  requireAction('wms:recount:create'),
+  httpStartOpeningInventoryReconciliation
 );
 
 router.post(

@@ -5,9 +5,10 @@
 // bounded-chunk convention as commercial-inventory-products-access
 // .contract.test.ts). No DB, no server.
 //
-// Contract: both routes sit in the canonical recount family —
+// Contract: all routes sit in the canonical recount family —
 //   authenticateToken → requireFt2 → requireCapability('inventory.core')
-//   → requireAction('wms:recount:read' | 'wms:recount:commit') → handler
+//   → requireAction('wms:recount:read' | 'wms:recount:commit'
+//                   | 'wms:recount:create' (GH-1156 start)) → handler
 // in exactly that order, with no extra gate and no raw tier gate.
 
 import fs from 'fs';
@@ -43,6 +44,8 @@ function middlewareChain(chunk: string, pathLiteral: string): string[] {
 const CASES: Array<[string, string, string, string]> = [
   ['get', '/opening-inventory/progress', 'wms:recount:read', 'httpGetOpeningInventoryProgress'],
   ['post', '/opening-inventory/cutover', 'wms:recount:commit', 'httpApproveOpeningInventoryCutover'],
+  // GH-1156: merchant start bridge to the canonical shop-wide opening start.
+  ['post', '/opening-inventory/start', 'wms:recount:create', 'httpStartOpeningInventoryReconciliation'],
 ];
 
 describe('GRILL-03G — opening inventory cutover routes', () => {
@@ -73,6 +76,9 @@ describe('GRILL-03G — opening inventory cutover routes', () => {
     expect(
       /import\s*\{[^}]*httpGetOpeningInventoryProgress[^}]*httpApproveOpeningInventoryCutover[^}]*\}\s*from\s*'\.\/openingInventoryCutover\.controller\.js'/.test(src)
       || /import\s*\{[^}]*httpApproveOpeningInventoryCutover[^}]*httpGetOpeningInventoryProgress[^}]*\}\s*from\s*'\.\/openingInventoryCutover\.controller\.js'/.test(src)
+    ).toBe(true);
+    expect(
+      /import\s*\{[^}]*\bhttpStartOpeningInventoryReconciliation\b[^}]*\}\s*from\s*'\.\/openingInventoryCutover\.controller\.js'/.test(src)
     ).toBe(true);
   });
 });

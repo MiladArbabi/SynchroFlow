@@ -25,6 +25,8 @@
 //             local lifecycle inference. Empty feed renders no section.
 //   SETUP   — existing useActivationChecklist assembler, unchanged. Secondary:
 //             collapsed until asked for, and always rendered below NOW.
+//             GH-1156: its Opening Inventory row may carry a `command` action,
+//             which this surface alone executes (runCommand below).
 //   HISTORY — its own tab, never in OPEN. OPS-CONSOLE-HISTORY-01: canonical
 //             shop-wide HISTORY V1 feed (GET /api/v1/operations/history, see
 //             useHistory.ts), mapped verbatim by buildHistoryRows — no local
@@ -38,7 +40,7 @@
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
 
-import { type CSSProperties, type ReactNode, forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type ReactNode, forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, IconButton, Tooltip, Badge, Slide, useMediaQuery } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
@@ -68,11 +70,32 @@ import {
   buildWaitingRows,
   NOW_VISIBLE_LIMIT,
   openAttentionCount,
+  type OpsCommand,
   type OpsRow,
 } from './opsConsoleModel';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const OPS_SEARCH_HINT = 'FIND ORDER, SKU, BARCODE OR BATCH';
+
+/**
+ * GH-1156 — stable merchant copy for a failed opening-count start. The
+ * backend's own public message is used only when it carries the start
+ * endpoint's stable OPENING_START_* code; anything else (network, RBAC,
+ * entitlement) falls back to this sentence.
+ */
+export const OPENING_START_FALLBACK_ERROR = 'The opening count could not be started. Try again.';
+
+function openingStartErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { code?: unknown; error?: unknown } } })
+    ?.response?.data;
+  if (
+    typeof data?.code === 'string' && data.code.startsWith('OPENING_START_')
+    && typeof data.error === 'string' && data.error
+  ) {
+    return data.error;
+  }
+  return OPENING_START_FALLBACK_ERROR;
+}
 
 /**
  * RESPONSIVE LAYOUT CONTRACT
@@ -129,6 +152,9 @@ function OpsConsoleRow({
   row,
   onNavigate,
   onOrderEntity,
+  onCommand,
+  pendingCommand = null,
+  commandError = null,
 }: {
   row: OpsRow;
   onNavigate: (route: string) => void;
@@ -138,6 +164,12 @@ function OpsConsoleRow({
    * 'navigate'`, so most call sites never need it.
    */
   onOrderEntity?: (lasyncroOrderId: string) => void;
+  /** GH-1156 — invoked for a `kind: 'command'` action. Never navigates. */
+  onCommand?: (command: OpsCommand) => void;
+  /** GH-1156 — the command currently in flight, if any. */
+  pendingCommand?: OpsCommand | null;
+  /** GH-1156 — last failure of this row's command, if any. */
+  commandError?: string | null;
 }) {
   const pal = useAppTheme();
 
@@ -147,6 +179,9 @@ function OpsConsoleRow({
   const quiet = faded || row.status === 'closed';
   // Cardize actionable work only. HISTORY never gets elevation.
   const isCard = row.section !== 'HISTORY' && Boolean(row.action);
+  const command = row.action?.kind === 'command' ? row.action.command : null;
+  const commandPending = command !== null && pendingCommand === command;
+  const rowCommandError = command !== null ? commandError : null;
 
   const glyphColor =
     row.status === 'attention'
@@ -266,6 +301,16 @@ function OpsConsoleRow({
             {row.subtitle}
           </Box>
         )}
+        {rowCommandError && (
+          <Box
+            component="span"
+            role="alert"
+            data-testid={`ops-row-error-${row.id}`}
+            sx={{ display: 'block', fontSize: 10, color: 'var(--critical-ink)', fontWeight: 400 }}
+          >
+            {rowCommandError}
+          </Box>
+        )}
       </Typography>
 
       {/* COL 3 — meta. Always present so the grid columns never shift. */}
@@ -289,13 +334,19 @@ function OpsConsoleRow({
           <Box
             component="button"
             type="button"
+            disabled={commandPending}
+            aria-busy={commandPending || undefined}
             onClick={() => {
               // HISTORY-ORDER-ENTITY-01: branch on the action's own kind —
               // navigate is the existing V1 route CTA (NOW/WAITING/SETUP/
               // issue 1114), order_entity opens the canonical Order Entity Modal.
+              // GH-1156: command runs in place and never navigates.
               const action = row.action!;
               if (action.kind === 'order_entity') {
                 onOrderEntity?.(action.lasyncroOrderId);
+              } else if (action.kind === 'command') {
+                if (commandPending) return;
+                onCommand?.(action.command);
               } else {
                 onNavigate(action.route);
               }
@@ -310,9 +361,12 @@ function OpsConsoleRow({
               border: '0.5px solid var(--accent-border)', borderRadius: '4px',
               cursor: 'pointer',
               '&:hover': { bgcolor: 'var(--accent-ghost)' },
+              '&:disabled': { cursor: 'default', opacity: 0.62, bgcolor: 'transparent' },
             }}
           >
-            {row.action.label} →
+            {row.action.kind === 'command'
+              ? (commandPending ? 'Starting…' : row.action.label)
+              : `${row.action.label} →`}
           </Box>
         </Box>
       )}
@@ -676,7 +730,9 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>();
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
 
-  const { items, isLoading: setupLoading, isError: setupError } = useActivationChecklist();
+  const {
+    items, isLoading: setupLoading, isError: setupError, refreshOpeningInventory,
+  } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
   const pickBatchesQuery = usePickBatches({ enabled: open });
@@ -763,6 +819,33 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   const allSetupComplete = setupRows.length > 0 && openSetupRows.length === 0;
 
   const goto = (route: string) => { nav(route); };
+
+  // GH-1156 — console-owned command execution. The ref blocks a duplicate
+  // POST before React re-renders the disabled CTA; completion is never
+  // inferred here — the row's next state comes only from the canonical
+  // readiness/progress re-read after a successful start.
+  const [pendingCommand, setPendingCommand] = useState<OpsCommand | null>(null);
+  const [commandErrors, setCommandErrors] = useState<Partial<Record<OpsCommand, string>>>({});
+  const commandInFlight = useRef(false);
+  const runCommand = useCallback(async (command: OpsCommand) => {
+    if (command !== 'opening_inventory_start') return;
+    if (commandInFlight.current) return;
+    commandInFlight.current = true;
+    setPendingCommand(command);
+    setCommandErrors((prev) => ({ ...prev, [command]: undefined }));
+    try {
+      // No body: the canonical start service owns shop, cohort and replay.
+      await axiosInstance.post('/api/v1/wms/opening-inventory/start');
+      await refreshOpeningInventory?.();
+    } catch (error) {
+      setCommandErrors((prev) => ({ ...prev, [command]: openingStartErrorMessage(error) }));
+    } finally {
+      commandInFlight.current = false;
+      setPendingCommand(null);
+    }
+  }, [refreshOpeningInventory]);
+  const commandErrorFor = (row: OpsRow) =>
+    row.action?.kind === 'command' ? commandErrors[row.action.command] ?? null : null;
 
   // While the exit transition plays the rail is visual only: hidden from
   // assistive tech, out of the tab order, and click-through.
@@ -951,7 +1034,14 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                     {setupExpanded && (
                       <>
                         {openSetupRows.map((row) => (
-                          <OpsConsoleRow key={row.id} row={row} onNavigate={goto} />
+                          <OpsConsoleRow
+                            key={row.id}
+                            row={row}
+                            onNavigate={goto}
+                            onCommand={(command) => { void runCommand(command); }}
+                            pendingCommand={pendingCommand}
+                            commandError={commandErrorFor(row)}
+                          />
                         ))}
                         {doneSetupRows.length > 0 && (
                           <>

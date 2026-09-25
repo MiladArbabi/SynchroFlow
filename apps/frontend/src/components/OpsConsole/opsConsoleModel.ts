@@ -60,7 +60,16 @@ export type OpsSectionKey = 'NOW' | 'WAITING' | 'SETUP' | 'HISTORY';
  */
 export type OpsRowAction =
   | { kind: 'navigate'; label: string; route: string }
-  | { kind: 'order_entity'; label: string; lasyncroOrderId: string };
+  | { kind: 'order_entity'; label: string; lasyncroOrderId: string }
+  | { kind: 'command'; label: string; command: OpsCommand };
+
+/**
+ * GH-1156 — console-owned commands. A row names its command; the console
+ * surface alone owns execution (transport, in-flight guard, refresh), so no
+ * callback is ever stored on a row. SETUP's Opening Inventory start is the
+ * only command.
+ */
+export type OpsCommand = 'opening_inventory_start';
 
 export interface OpsRow {
   id: string;
@@ -84,6 +93,9 @@ export interface OpsRow {
    *                     Entity Modal for `lasyncroOrderId` inside the
    *                     console, never a page navigation. HISTORY is the
    *                     only current producer.
+   *   command       <- GH-1156: runs a console-owned OpsCommand in place,
+   *                     never a navigation. SETUP Opening Inventory is the
+   *                     only producer.
    */
   action?: OpsRowAction;
   /** Severity tone, so 'attention' can pick --critical-ink vs --warning-ink. */
@@ -281,23 +293,35 @@ export function buildWaitingRows(items: WaitingItem[]): OpsRow[] {
 
 /**
  * SETUP reuses the existing onboarding assembler unchanged, so completion stays
- * owned by /api/v1/onboarding/readiness and /api/v1/user-state/activation-events.
+ * owned by /api/v1/onboarding/readiness and /api/v1/user-state/activation-events
+ * (and, for Opening Inventory, the canonical opening progress view).
  * `complete` is the only input to 'verified'.
+ *
+ * GH-1156 — an item's explicit `action` (navigate or command) replaces the
+ * generic "Open" CTA, and its canonical `lifecycle` (attention / waiting /
+ * failed) replaces 'actionable'. Items without them map exactly as before.
  */
 export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
-  return items.map((item) => ({
-    id: `setup:${item.key}`,
-    section: 'SETUP' as const,
-    status: item.complete
-      ? ('verified' as const)
-      : item.actionRoute
-        ? ('actionable' as const)
-        : ('available' as const),
-    label: item.label,
-    action: !item.complete && item.actionRoute
-      ? { kind: 'navigate', label: 'Open', route: item.actionRoute }
-      : undefined,
-  }));
+  return items.map((item) => {
+    const action: OpsRowAction | undefined = item.complete
+      ? undefined
+      : item.action
+        ?? (item.actionRoute ? { kind: 'navigate', label: 'Open', route: item.actionRoute } : undefined);
+    const status: OpsRowStatus = item.complete
+      ? 'verified'
+      : item.lifecycle
+        ?? (action ? 'actionable' : 'available');
+    return {
+      id: `setup:${item.key}`,
+      section: 'SETUP' as const,
+      status,
+      label: item.label,
+      ...(!item.complete && item.subtitle ? { subtitle: item.subtitle } : {}),
+      ...(!item.complete && item.meta ? { meta: item.meta } : {}),
+      ...(item.lifecycle === 'attention' && !item.complete ? { tone: 'warning' as const } : {}),
+      action,
+    };
+  });
 }
 
 // ─── HISTORY V1 — BACKEND-CLASSIFIED VERIFIED-RESOLVED EPISODES ─────────────

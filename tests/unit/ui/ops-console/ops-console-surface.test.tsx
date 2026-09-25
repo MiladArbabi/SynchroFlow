@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { render, screen, within, fireEvent, waitForElementToBeRemoved } from '@testing-library/react';
+import { act, render, screen, within, fireEvent, waitFor, waitForElementToBeRemoved } from '@testing-library/react';
 import { createTheme } from '@mui/material/styles';
 
 import type { Alert } from 'pages/alerts/useAlerts';
@@ -108,6 +108,7 @@ jest.mock('hooks/useAppTheme', () => ({
 }));
 
 import { OpsConsoleButton, OpsConsolePanel } from 'components/OpsConsole';
+import { axiosInstance } from 'api/axiosConfig';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 
@@ -1618,5 +1619,244 @@ describe('theming', () => {
     expect(source).toMatch(/pal\.rule/);
     expect(source).toMatch(/var\(--critical-ink\)/);
     expect(source).toMatch(/var\(--confirm-ink\)/);
+  });
+});
+
+// ─── GH-1156 — SETUP OPENING INVENTORY COMMAND ───────────────────────────────
+
+describe('SETUP Opening Inventory command (GH-1156)', () => {
+  const START_URL = '/api/v1/wms/opening-inventory/start';
+  // The canonical lifecycle mapping, not a hand-written row: the surface is
+  // exercised with exactly what the hook derives from canonical progress.
+  const { buildOpeningInventoryItem } = jest.requireActual('hooks/useActivationChecklist');
+  const view = (state: string, over: Record<string, unknown> = {}) => ({
+    progress: { state, total_bins: 17, complete_bins: 6 },
+    cutover: null,
+    shopify_synced_at: null,
+    ...over,
+  });
+
+  let refresh: jest.Mock;
+  let postSpy: jest.SpyInstance;
+
+  // canStart mirrors the hook's advisory owner/admin gate.
+  function withOpeningItem(progressView: unknown, canStart = true) {
+    mockUseActivationChecklist.mockReturnValue({
+      items: [...SETUP_ITEMS, buildOpeningInventoryItem(false, progressView, canStart)],
+      completedCount: 1, allComplete: false, isLoading: false, isError: false,
+      refreshOpeningInventory: refresh,
+    });
+  }
+
+  const openingRow = () => screen.getByTestId('ops-row-setup:opening-inventory');
+  const startButton = () => within(openingRow()).getByRole('button');
+  const postCount = () => postSpy.mock.calls.filter(([url]) => url === START_URL).length;
+
+  beforeEach(() => {
+    refresh = jest.fn().mockResolvedValue(undefined);
+    postSpy = jest.spyOn(axiosInstance, 'post');
+  });
+
+  afterEach(() => {
+    postSpy.mockRestore();
+  });
+
+  it('not_started: renders a direct Start opening count command that POSTs once with no body and never navigates', async () => {
+    postSpy.mockResolvedValue({ data: {} });
+    withOpeningItem(view('not_started', { progress: { state: 'not_started', total_bins: 0, complete_bins: 0 } }));
+    renderPanel();
+    expandSetup();
+
+    expect(openingRow()).toHaveTextContent('Establish opening inventory');
+    expect(openingRow()).not.toHaveTextContent(/reconcile/i);
+    expect(startButton()).toHaveTextContent(/^Start opening count$/);
+
+    fireEvent.click(startButton());
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0]).toEqual([START_URL]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('rapid duplicate invocation issues exactly one POST; the action is disabled and reads Starting… while in flight', async () => {
+    let resolvePost: (value: unknown) => void = () => undefined;
+    postSpy.mockImplementation(() => new Promise((resolve) => { resolvePost = resolve; }));
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+
+    const button = startButton();
+    act(() => {
+      button.click();
+      button.click();
+    });
+    fireEvent.click(button);
+
+    expect(postCount()).toBe(1);
+    expect(startButton()).toBeDisabled();
+    expect(startButton()).toHaveTextContent('Starting…');
+
+    await act(async () => {
+      resolvePost({ data: {} });
+    });
+
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    expect(postCount()).toBe(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('success refreshes canonical progress/readiness, and the re-read counting state cannot start again', async () => {
+    postSpy.mockResolvedValue({ data: {} });
+    withOpeningItem(view('not_started'));
+    const { rerender } = renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+
+    // The canonical re-read now reports counting.
+    withOpeningItem(view('counting'));
+    rerender(<OpsConsolePanel alerts={[alert()]} deepLink={deepLink} open onClose={jest.fn()} />);
+
+    expect(within(openingRow()).queryByRole('button', { name: /start opening count/i })).toBeNull();
+    expect(screen.getByTestId('ops-row-meta-setup:opening-inventory')).toHaveTextContent('6 / 17 bins');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('counting: shows canonical progress and continues to Warehouse Operations, with no start command', () => {
+    withOpeningItem(view('counting'));
+    renderPanel();
+    expandSetup();
+
+    expect(screen.getByTestId('ops-row-meta-setup:opening-inventory')).toHaveTextContent('6 / 17 bins');
+    expect(openingRow()).toHaveTextContent('Warehouse Operations · Inventory checks');
+    expect(within(openingRow()).queryByRole('button', { name: /start/i })).toBeNull();
+
+    fireEvent.click(within(openingRow()).getByRole('button', { name: /Continue/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['needs_bin_review', 'review_required'])(
+    '%s: indicates review required and routes to the Warehouse opening inventory review surface',
+    (state) => {
+      withOpeningItem(view(state, { progress: { state, total_bins: 17, complete_bins: 17 } }));
+      renderPanel();
+      expandSetup();
+
+      expect(openingRow()).toHaveAttribute('data-status', 'attention');
+      expect(openingRow()).toHaveTextContent('Review required');
+
+      fireEvent.click(within(openingRow()).getByRole('button', { name: /Review/ }));
+      expect(mockNavigate).toHaveBeenCalledWith('/wms');
+      expect(postSpy).not.toHaveBeenCalled();
+    }
+  );
+
+  it('operator + not_started: the row is shown but no Start command can be issued', () => {
+    withOpeningItem(view('not_started'), false);
+    renderPanel();
+    expandSetup();
+
+    expect(openingRow()).toHaveTextContent('Establish opening inventory');
+    expect(openingRow()).toHaveTextContent('Owner or admin must start');
+    expect(openingRow()).toHaveAttribute('data-status', 'available');
+    expect(within(openingRow()).queryByRole('button')).toBeNull();
+    expect(postSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('operator + counting: Continue is still offered and navigates to /wms', () => {
+    withOpeningItem(view('counting'), false);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(within(openingRow()).getByRole('button', { name: /Continue/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['executing', 'waiting', /View/],
+    ['failed', 'failed', /Retry/],
+  ])('cutover %s: %s status, routed to the existing Warehouse cutover surface — the console never runs cutover', (status, rowStatus, cta) => {
+    withOpeningItem(view('ready_for_cutover', { cutover: { status } }));
+    renderPanel();
+    expandSetup();
+
+    expect(openingRow()).toHaveAttribute('data-status', rowStatus);
+    fireEvent.click(within(openingRow()).getByRole('button', { name: cta }));
+    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('failure exposes stable merchant copy and stays retryable', async () => {
+    const rejected = 'The opening count could not be started. Check that your warehouse has active bins, then try again.';
+    postSpy
+      .mockRejectedValueOnce({ response: { status: 409, data: { code: 'OPENING_START_REJECTED', error: rejected } } })
+      .mockRejectedValueOnce({ response: { status: 403, data: { error: 'Forbidden: raw permission text' } } })
+      .mockResolvedValueOnce({ data: {} });
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+    expect(await screen.findByRole('alert')).toHaveTextContent(rejected);
+    expect(startButton()).toBeEnabled();
+    expect(startButton()).toHaveTextContent('Start opening count');
+    expect(refresh).not.toHaveBeenCalled();
+
+    // A non-start-endpoint error never leaks its raw text.
+    fireEvent.click(startButton());
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('The opening count could not be started. Try again.')
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/Forbidden/);
+
+    fireEvent.click(startButton());
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(postCount()).toBe(3);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('leaves generic setup/navigation rows unchanged alongside the command row', () => {
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+
+    const row = screen.getByTestId('ops-row-setup:map-zones');
+    expect(row).toHaveAttribute('data-status', 'actionable');
+    const open = within(row).getByRole('button');
+    expect(open).toHaveTextContent('Open →');
+    fireEvent.click(open);
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('only the Opening Inventory command POSTs to the start endpoint', () => {
+    const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
+    expect(source.match(/opening-inventory\/start/g)).toHaveLength(1);
+    expect(source).toMatch(/if \(command !== 'opening_inventory_start'\) return;/);
+  });
+
+  it('preserves the GH-1158 open/close lifecycle with the command row present', async () => {
+    withOpeningItem(view('not_started'));
+    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    const trigger = screen.getByRole('button', { name: /Ops Console/ });
+
+    fireEvent.click(trigger);
+    const panel = screen.getByTestId('ops-console');
+    expect(panel).not.toHaveAttribute('inert');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
+    expect(panel).toHaveAttribute('aria-hidden', 'true');
+    expect(panel).toHaveAttribute('inert');
+    await waitForElementToBeRemoved(panel);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(postSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
