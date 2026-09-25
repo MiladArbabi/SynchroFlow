@@ -1006,6 +1006,8 @@ function OperationsPulse({ pulse, currency }: { pulse: OverviewOperationsPulse; 
         py: '14px',
         display: 'flex',
         flexDirection: 'column',
+        // Content-height and top-aligned: never stretch to the map row height.
+        alignSelf: 'start',
       }}
     >
       <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}>
