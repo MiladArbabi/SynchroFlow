@@ -81,6 +81,29 @@ export interface OverviewModuleFT2DataProps {
   } | null;
 }
 
+export interface OverviewOperationsPulse {
+  orders: {
+    readyCount: number;
+    blockedCount: number;
+    blockedRevenue: number;
+    pastSlaCount: number;
+    pastSlaRevenue: number;
+  };
+  fulfillment: {
+    activeBatchCount: number;
+    pickingBatchCount: number;
+    packingBatchCount: number;
+  };
+  inventory: {
+    awaitingInventoryCount: number;
+    awaitingInventoryRevenue: number;
+  };
+  inbound: {
+    receiveAtDockUnits: number;
+    awaitingStowUnits: number;
+  };
+}
+
 export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   /**
    * Consolidated state for operational warnings rendered outside Morning Brief.
@@ -103,6 +126,12 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * Tier gate and zone guard are resolved by the page layer — module is layout-only.
    */
   mapContent?: ReactNode;
+  /**
+   * OV-V1: structured Operations Pulse values, composed by the page from
+   * canonical sources. Optional while existing consumers migrate; not yet
+   * rendered (visual composition lands in a later slice).
+   */
+  operationsPulse?: OverviewOperationsPulse;
 };
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;

@@ -870,6 +870,36 @@ export default function OverviewPageFT2() {
   if (overviewModules.isError) return null;
 
   const overviewProps = mapOverviewFt2Props(overviewModules.data, trust.data ?? null);
+
+  // OV-V1: Operations Pulse composition — canonical structured sources only.
+  // Commercial values come from Overview's own pulse read model (latest
+  // operational snapshot + current Fulfillment SLA); live floor values reuse
+  // the totals already derived above. Never Morning Brief copy, never
+  // eligible_order_count / order-pool blocked_count / active_batch_count /
+  // stowPressure.pending_count. Null → 0 at this UI boundary only.
+  const structuredPulse = overviewModules.data?.pulse;
+  const operationsPulse = {
+    orders: {
+      readyCount: orderPool.data?.summary?.ready_for_release_count ?? 0,
+      blockedCount: structuredPulse?.blockedOrderCount ?? 0,
+      blockedRevenue: structuredPulse?.blockedRevenue ?? 0,
+      pastSlaCount: structuredPulse?.pastSlaCount ?? 0,
+      pastSlaRevenue: structuredPulse?.pastSlaRevenue ?? 0,
+    },
+    fulfillment: {
+      activeBatchCount: activeBatches.length,
+      pickingBatchCount: pickingBatches.length,
+      packingBatchCount: packingBatches.length,
+    },
+    inventory: {
+      awaitingInventoryCount: structuredPulse?.inventoryWaitingCount ?? 0,
+      awaitingInventoryRevenue: structuredPulse?.inventoryBlockedRevenue ?? 0,
+    },
+    inbound: {
+      receiveAtDockUnits: receiveAtDockTotal,
+      awaitingStowUnits: stowPendingTotal,
+    },
+  };
   const morningBriefData =
     morningBrief.data === undefined &&
     (morningBrief.isPending || morningBrief.isError)
@@ -946,6 +976,7 @@ export default function OverviewPageFT2() {
           morningBrief={isOwnerOrAdmin ? morningBriefData : undefined}
           currency={displayCurrency}
           mapContent={mapContent}
+          operationsPulse={operationsPulse}
           onNavigate={(deepLink) => navigate(deepLink)}
           onRefreshBrief={() => { void morningBrief.refreshMorningBrief(); }}
           isRefreshingBrief={morningBrief.isRefreshingBrief}
