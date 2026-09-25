@@ -37,6 +37,12 @@ export type OverviewModulesFt2Snapshot = {
     atRiskRevenue?: number | null;
     blockedRevenue?: number | null;
     topBlockingType?: string | null;
+    // OV-V1 structured Operations Pulse truth (backend OverviewPulse).
+    blockedOrderCount?: number | null;
+    inventoryWaitingCount?: number | null;
+    inventoryBlockedRevenue?: number | null;
+    pastSlaCount?: number | null;
+    pastSlaRevenue?: number | null;
   } | null;
 };
 

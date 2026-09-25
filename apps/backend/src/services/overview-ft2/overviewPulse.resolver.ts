@@ -7,14 +7,17 @@
 // work-in-progress queues; Pulse reports business OUTCOMES (money realized,
 // at-risk, stuck).
 //
-// Sources (both per-shop, tenant-scoped):
+// Sources (all per-shop, tenant-scoped, read in ONE transaction):
 //   - revenue_projection_daily          → today's gross revenue + yesterday delta
-//   - orders_operational_control_snapshot → at-risk / blocked revenue
+//   - orders_operational_control_snapshot → at-risk / blocked revenue, plus the
+//     OV-V1 structured blocked / inventory-waiting counts (latest row only)
+//   - readCurrentFulfillmentSlaSummary   → OV-V1 current past-SLA count/value
 //
 // No customers/analytics dependency (customers module deprecated).
 // Caller MUST set app.current_tenant before invoking.
 
 import db from '@lasyncro/backend-core/db.js';
+import { readCurrentFulfillmentSlaSummary } from '../orders/fulfillmentSla.service.js';
 
 export interface OverviewPulse {
   /**
@@ -38,6 +41,21 @@ export interface OverviewPulse {
   blockedRevenue: number | null;
   /** Dominant block domain: inventory | customer | operational | none. */
   topBlockingType: string | null;
+
+  // ── OV-V1 structured Operations Pulse truth ──────────────────────────────
+  /** Latest snapshot constrained_orders (0 when no snapshot). */
+  blockedOrderCount: number;
+  /**
+   * Latest snapshot queue_awaiting_inventory (0 when no snapshot). Never
+   * constrained_orders and never a sum with it.
+   */
+  inventoryWaitingCount: number;
+  /** Latest snapshot revenue_blocked_inventory (null when no snapshot). */
+  inventoryBlockedRevenue: number | null;
+  /** CURRENT breached order count — readCurrentFulfillmentSlaSummary. */
+  pastSlaCount: number;
+  /** CURRENT breached order value — readCurrentFulfillmentSlaSummary. */
+  pastSlaRevenue: number;
 }
 
 type RevenueDateWindow = {
@@ -122,14 +140,21 @@ export async function getOverviewPulse(shopId: number, now: Date = new Date()): 
   const revenueDeltaVsYesterday = revenueToday - revenueYesterday;
 
    // --- Operational revenue control: latest snapshot_date row ---
+   // One read; every snapshot-derived field below comes from this same row.
    const opctl = await trx('orders_operational_control_snapshot')
       .where({ shop_id: shopId })
       .orderBy('snapshot_date', 'desc')
       .first(
         'at_risk_revenue',
         'blocked_revenue',
-        'top_blocking_type'
+        'top_blocking_type',
+        'constrained_orders',
+        'queue_awaiting_inventory',
+        'revenue_blocked_inventory'
       );
+
+  // --- Current Fulfillment SLA: canonical live truth, same transaction ---
+  const sla = await readCurrentFulfillmentSlaSummary(shopId, trx);
 
   return {
     revenueToday,
@@ -139,6 +164,12 @@ export async function getOverviewPulse(shopId: number, now: Date = new Date()): 
     blockedRevenue:
       opctl?.blocked_revenue != null ? Number(opctl.blocked_revenue) : null,
     topBlockingType: opctl?.top_blocking_type ?? null,
+    blockedOrderCount: Number(opctl?.constrained_orders ?? 0),
+    inventoryWaitingCount: Number(opctl?.queue_awaiting_inventory ?? 0),
+    inventoryBlockedRevenue:
+      opctl?.revenue_blocked_inventory != null ? Number(opctl.revenue_blocked_inventory) : null,
+    pastSlaCount: sla.breachedCount,
+    pastSlaRevenue: sla.breachedRevenue,
     };
   });
 }
