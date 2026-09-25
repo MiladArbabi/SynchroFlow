@@ -1,75 +1,89 @@
 // tests/unit/ui/overview/OverviewModuleFT2.freshness-scope.test.ts
 //
-// OV-DATA-02B — RED-first Morning Brief freshness-scope contract.
+// OV-DATA-02B → OV-V1-0 — Morning Brief freshness scope (behavioural).
 //
-// Overview is intentionally composed from independently evaluated data sources.
-// morningBrief.generatedAt therefore belongs only to the Morning Brief /
-// Needs a Decision surface and must not visually imply Business Pulse freshness.
+// Overview is composed from independently evaluated sources.
+// morningBrief.generatedAt describes ONLY the Morning Brief. It must never
+// masquerade as freshness of the Operations Pulse, whose values come from
+// live/structured sources with their own cadence.
 //
-// Full OverviewModuleFT2 rendering still carries unrelated shared-ui Jest
-// import-resolution debt, so this uses the established static architecture seam.
+// OV-V1-0 supersession: the former contract source-scanned the retired
+// MergedPulseCard / Needs-a-Decision / Business Pulse structure. Those
+// surfaces no longer exist in v1, so the invariant is now proven by
+// rendering, scoped to the Operations pulse region:
+//   - no "Brief updated" freshness line inside the region;
+//   - no "Refresh morning brief" control inside the region;
+//   - the brief's generatedAt time is not shown inside the region.
+//
+// RED today: the module renders no Operations pulse region.
+//
+// Kept as .ts (its established path) — elements are built with
+// React.createElement instead of JSX.
 
-import fs from 'fs';
-import path from 'path';
+import React from 'react';
+import { render, screen, within } from '@testing-library/react';
+import OverviewModuleFT2, {
+  type OverviewModuleFT2Props,
+} from '../../../../modules/overview/src/ui/pages/OverviewModuleFT2';
 
-const sourcePath = path.join(
-  process.cwd(),
-  'modules/overview/src/ui/pages/OverviewModuleFT2.tsx'
-);
+const GENERATED_AT = '2026-09-10T07:43:00.000Z';
 
-function overviewSource(): string {
-  return fs.readFileSync(sourcePath, 'utf8');
+// Same structured shape as OverviewModuleFT2.ov-v1-operations-pulse.test.tsx.
+const OPERATIONS_PULSE = {
+  orders: { readyCount: 8, blockedCount: 9, blockedRevenue: 1250, pastSlaCount: 27, pastSlaRevenue: 5400 },
+  fulfillment: { activeBatchCount: 3, pickingBatchCount: 2, packingBatchCount: 1 },
+  inventory: { awaitingInventoryCount: 2, awaitingInventoryRevenue: 600 },
+  inbound: { receiveAtDockUnits: 5, awaitingStowUnits: 12 },
+};
+
+function props(): OverviewModuleFT2Props {
+  return {
+    trust: null,
+    context: { ordersObserved: 10, productsObserved: 5, customersObserved: 3 },
+    snapshot: { orders: null, products: null, customers: null },
+    alignment: null,
+    operationalWarningState: 'clear',
+    currency: 'USD',
+    pulse: null,
+    morningBrief: {
+      signals: [],
+      hasUrgentIssues: false,
+      generatedAt: GENERATED_AT,
+      trustWarning: false,
+      greeting: null,
+      summaryLine: null,
+    },
+    onRefreshBrief: jest.fn(),
+    // Not yet on the prop type — passed loosely so RED is behavioural.
+    ...({ operationsPulse: OPERATIONS_PULSE } as unknown as Partial<OverviewModuleFT2Props>),
+  };
 }
 
-function mergedPulseCardSource(): string {
-  const source = overviewSource();
-  const start = source.indexOf('function MergedPulseCard');
-  const end = source.indexOf('// ─── MAIN COMPONENT', start);
+const LAYOUTS = [
+  ['map layout', true],
+  ['fallback layout (no mapContent)', false],
+] as const;
 
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
-
-  return source.slice(start, end);
-}
-
-function triageDecisionCardSource(): string {
-  const source = overviewSource();
-  const start = source.indexOf('{/* LEFT: Needs a decision */}');
-  const end = source.indexOf('{pulse && (', start);
-
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
-
-  return source.slice(start, end);
-}
-
-describe('OverviewModuleFT2 freshness scope — OV-DATA-02B', () => {
-  it('OV-FRESH-01/02/03 scopes map-layout brief freshness and refresh controls before Business Pulse', () => {
-    const merged = mergedPulseCardSource();
-    const pulseStart = merged.indexOf('{/* ── BUSINESS PULSE');
-
-    expect(pulseStart).toBeGreaterThanOrEqual(0);
-
-    const morningBriefScope = merged.slice(0, pulseStart);
-    const businessPulseAndAfter = merged.slice(pulseStart);
-
-    // The Morning Brief section owns its own freshness and refresh affordance.
-    expect(morningBriefScope).toContain('generatedTime');
-    expect(morningBriefScope).toContain('Brief updated');
-    expect(morningBriefScope).toContain('aria-label="Refresh morning brief"');
-
-    // Business Pulse must not visually inherit Morning Brief freshness.
-    expect(businessPulseAndAfter).not.toContain('generatedTime');
-    expect(businessPulseAndAfter).not.toContain(
-      'aria-label="Refresh morning brief"'
+describe('OV-V1-0: Morning Brief freshness does not masquerade as Operations Pulse freshness', () => {
+  it.each(LAYOUTS)('%s: Operations pulse carries no brief freshness line, refresh control or brief timestamp', (_label, map) => {
+    render(
+      React.createElement(OverviewModuleFT2, {
+        ...props(),
+        mapContent: map ? React.createElement('div', { 'data-testid': 'map-slot' }) : undefined,
+      })
     );
-  });
 
-  it('OV-FRESH-04 keeps triage freshness inside Needs a Decision and labels it as brief freshness', () => {
-    const decisionCard = triageDecisionCardSource();
+    const pulse = screen.getByRole('region', { name: /operations pulse/i });
 
-    expect(decisionCard).toContain('generatedTime');
-    expect(decisionCard).toContain('Brief updated');
-    expect(decisionCard).toContain('aria-label="Refresh morning brief"');
+    expect(within(pulse).queryByText(/Brief updated/i)).not.toBeInTheDocument();
+    expect(within(pulse).queryByText(/Updating brief/i)).not.toBeInTheDocument();
+    expect(
+      within(pulse).queryByRole('button', { name: /Refresh morning brief/i })
+    ).not.toBeInTheDocument();
+
+    // The brief's generatedAt, formatted the way the module formats it today,
+    // must not appear as a Pulse timestamp.
+    const briefTime = new Date(GENERATED_AT).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    expect(pulse.textContent ?? '').not.toContain(briefTime);
   });
 });

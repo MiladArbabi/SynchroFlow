@@ -1,3 +1,13 @@
+// Overview Live Intelligence teaser parity.
+//
+// Retained invariant: the shared synthetic LiveMapTeaser (the real component
+// used for gated tenants) still renders in Overview's map slot.
+//
+// OV-V1-0: the retired-surface absence checks formerly here ("Needs a
+// decision", Business pulse, "Revenue today", "Ranked by commercial
+// consequence") are owned canonically, in both layouts, by
+// OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A), and were removed
+// here as duplicates.
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import OverviewModuleFT2, { type OverviewModuleFT2Props } from '../../../../modules/overview/src/ui/pages/OverviewModuleFT2';
@@ -21,22 +31,9 @@ const props: OverviewModuleFT2Props = {
 };
 
 describe('Overview Live Intelligence teaser parity', () => {
-  it('keeps real decisions and Business pulse beside the shared synthetic map teaser', () => {
+  it('renders the shared synthetic map teaser in the map slot', () => {
     render(<OverviewModuleFT2 {...props} mapContent={<LiveMapTeaser title="Overview live map" description="Preview" requiredTier="growth" onUpgrade={() => {}} />} />);
 
     expect(screen.getByText('Overview live map')).toBeInTheDocument();
-    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
-    expect(screen.getByText('10 orders blocked')).toBeInTheDocument();
-    expect(screen.getByText('Business pulse')).toBeInTheDocument();
-    expect(screen.getByText('Revenue today')).toBeInTheDocument();
-    expect(screen.queryByText('Ranked by commercial consequence')).toBeNull();
-  });
-
-  it('preserves triage-first compatibility when mapContent is absent', () => {
-    render(<OverviewModuleFT2 {...props} />);
-
-    expect(screen.getByText('Ranked by commercial consequence')).toBeInTheDocument();
-    expect(screen.getByText('10 orders blocked')).toBeInTheDocument();
-    expect(screen.getByText('Business pulse')).toBeInTheDocument();
   });
 });
