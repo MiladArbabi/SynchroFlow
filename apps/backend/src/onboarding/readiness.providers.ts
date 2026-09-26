@@ -206,10 +206,37 @@ export const returnNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'wms',
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    const zonesRow = await db('warehouse_locations')
+    const locationRow = await db('warehouse_locations')
       .where({ shop_id: shopId })
       .count<{ count: string }>('location_code as count')
       .first();
+    const enabled = Number(locationRow?.count ?? 0) > 0;
+
+    // GH-1160 first-entry mapping policy:
+    // root provisioning alone is not a merchant-authored warehouse map.
+    // The active default warehouse must contain at least one active bin.
+    // That bin is also eligible for the opening-inventory cohort.
+    const defaultWarehouse = await db('warehouses')
+      .where({
+        shop_id: shopId,
+        is_default: true,
+        active: true,
+      })
+      .select('warehouse_id')
+      .first();
+
+    const zonesRow = defaultWarehouse
+      ? await db('warehouse_locations')
+          .where({
+            shop_id: shopId,
+            warehouse_id: defaultWarehouse.warehouse_id,
+            type: 'bin',
+            active: true,
+          })
+          .count<{ count: string }>('location_code as count')
+          .first()
+      : null;
+
     const zonesConfigured = Number(zonesRow?.count ?? 0) > 0;
 
     const printedRow = await db('warehouse_locations')
@@ -288,7 +315,7 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
     }
 
     return [
-      { name: 'wms.enabled', value: zonesConfigured },
+      { name: 'wms.enabled', value: enabled },
       { name: 'wms.zonesConfigured', value: zonesConfigured },
       { name: 'wms.barcodesPrinted', value: barcodesPrinted },
       { name: 'wms.carrierConfigured', value: carrierConfigured },
