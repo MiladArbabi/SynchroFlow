@@ -131,10 +131,6 @@ jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
   useMorningBriefSnapshot: (...args: unknown[]) => mockUseMorningBriefSnapshot(...args),
 }));
 
-jest.mock('pages/overview/ProfileCompletionBanner', () => ({
-  ProfileCompletionBanner: () => null,
-}));
-
 // hasPlacedFloor === true (positioned zone) in every scenario below, so the
 // map-slot branch under test is purely the canonical-decision gate, never the
 // "no floor configured" empty state.

@@ -1,6 +1,11 @@
 // tests/unit/ui/overview/OverviewModuleFT2.ov-v1-operations-pulse.test.tsx
 //
-// OV-V1-0 — RED CONTRACT: Overview v1 ownership + Operations Pulse (module).
+// OV-V1-0 — Overview v1 ownership + Operations Pulse (module).
+//
+// OVERVIEW-SCREEN-OPT-01 (Slice A): the V1 composition is the single
+// canonical renderer and operationsPulse is a required prop. There is no
+// fallback triage / Business Pulse renderer; with no mapContent the module
+// renders the pulse-only state.
 //
 // Overview is whole-operation situational awareness.
 //
@@ -29,9 +34,6 @@
 // What is protected: ownership, domain semantics, structured truth,
 // accessibility of the region/groups/controls. What is deliberately NOT
 // protected: exact copy, CSS, layout, DOM nesting beyond region → group.
-//
-// RED today: the module has no operationsPulse prop and no Operations pulse
-// region.
 
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
@@ -90,7 +92,8 @@ function pulseFixture(overrides: Partial<OperationsPulseV1> = {}): OperationsPul
 }
 
 // Hostile Morning Brief: titles/messages carry numbers that contradict the
-// structured truth. Five signals also provoke the legacy "+2 more" expander.
+// structured truth. Five signals would have exceeded the retired decision
+// rail's three-row preview ("+2 more").
 const HOSTILE_SIGNALS = [
   {
     id: 'sla',
@@ -164,13 +167,8 @@ function baseProps(): OverviewModuleFT2Props {
       greeting: null,
       summaryLine: null,
     },
+    operationsPulse: pulseFixture(),
   };
-}
-
-// The prop does not exist on the current type; pass it loosely so the RED
-// state is a behavioural failure, not a compile-time one.
-function withPulse(pulse: OperationsPulseV1) {
-  return { operationsPulse: pulse } as unknown as Partial<OverviewModuleFT2Props>;
 }
 
 function renderOverview(opts: {
@@ -182,7 +180,7 @@ function renderOverview(opts: {
   render(
     <OverviewModuleFT2
       {...baseProps()}
-      {...withPulse(pulse)}
+      operationsPulse={pulse}
       onNavigate={onNavigate}
       mapContent={map ? <div data-testid="map-slot" /> : undefined}
     />
@@ -212,7 +210,7 @@ const usd = (v: number) => formatCurrencyCompact(v, 'USD');
 
 const LAYOUTS = [
   ['map layout', true],
-  ['fallback layout (no mapContent)', false],
+  ['pulse-only state (no mapContent)', false],
 ] as const;
 
 // ─── A — OVERVIEW OWNERSHIP ─────────────────────────────────────────────────
@@ -256,6 +254,20 @@ describe('OV-V1-0 (A): Overview ownership — situational awareness only', () =>
     expect(domainGroup(INBOUND)).toBeInTheDocument();
     expect(within(operationsPulse()).queryByRole('group', { name: /returns/i })).not.toBeInTheDocument();
     expect(within(operationsPulse()).queryByText(/returns?/i)).not.toBeInTheDocument();
+  });
+});
+
+// ─── REQUIRED PROP ──────────────────────────────────────────────────────────
+//
+// Compile-time contract: babel-jest strips types, so this is proven by
+// TypeScript (an unused @ts-expect-error is itself a type error).
+
+describe('OVERVIEW-SCREEN-OPT-01: operationsPulse is required', () => {
+  it('OverviewModuleFT2Props without operationsPulse is a type error', () => {
+    const { operationsPulse: _omitted, ...withoutPulse } = baseProps();
+    // @ts-expect-error — operationsPulse is a required prop.
+    const invalid: OverviewModuleFT2Props = withoutPulse;
+    expect(invalid).not.toHaveProperty('operationsPulse');
   });
 });
 

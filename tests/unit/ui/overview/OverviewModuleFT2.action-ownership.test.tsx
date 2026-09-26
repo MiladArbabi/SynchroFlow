@@ -3,12 +3,16 @@
 // UX-OWNERSHIP-01 — status-only ownership contract.
 //
 // Ratified UX ownership: Ops Console is the cross-domain ACTION owner.
-// Overview becomes STATUS / situational awareness only.
-//   - triage signals (fallback triage layout AND the map-layout merged rail)
-//     must render as information, not per-signal remediation CTAs;
-//   - Business Pulse is a METRIC card, never a remediation CTA;
+// Overview is STATUS / situational awareness only.
+//   - Morning Brief signals supplied to the module never surface as
+//     per-signal remediation CTAs or remediation navigation;
 //   - Overview renders no "Open Ops Console" controls; global top-nav
 //     Ops Console is the sole entry point.
+//
+// OVERVIEW-SCREEN-OPT-01 (Slice A): the retired fallback-triage and
+// Business Pulse renderers are gone; retired-surface absence is owned by
+// OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A). Both remaining
+// states — map layout and pulse-only (no mapContent) — are covered here.
 //
 // Imports the module directly from source (as OverviewModuleFT2.test.tsx
 // already does) rather than through the @lasyncro/overview package alias, to
@@ -20,10 +24,13 @@ import OverviewModuleFT2, {
   type OverviewModuleFT2Props,
 } from '../../../../modules/overview/src/ui/pages/OverviewModuleFT2';
 
-const ADDRESS_DEEP_LINK = '/overview?resolution=address';
-const REORDER_DEEP_LINK = '/demand?filter=critical';
+const FORBIDDEN_ROUTES = [
+  '/overview?resolution=address',
+  '/orders/flow?urgency=sla_breach',
+  '/demand?filter=critical',
+];
 
-function baseProps(overrides: Partial<OverviewModuleFT2Props> = {}): OverviewModuleFT2Props {
+function baseProps(): OverviewModuleFT2Props {
   return {
     trust: null,
     context: { ordersObserved: 10, productsObserved: 5, customersObserved: 3 },
@@ -45,11 +52,22 @@ function baseProps(overrides: Partial<OverviewModuleFT2Props> = {}): OverviewMod
           title: '2 orders with address issues',
           detail: 'Address problems are blocking fulfillment.',
           module: 'overview',
-          deepLink: ADDRESS_DEEP_LINK,
+          deepLink: FORBIDDEN_ROUTES[0],
           revenueImpact: 900,
           alertType: 'customer',
           ageLabel: '14d oldest',
           actionLabel: 'Fix addresses',
+        },
+        {
+          id: 'sla',
+          priority: 1,
+          title: 'SLA breaches',
+          detail: 'Orders are past SLA.',
+          module: 'order-nexus',
+          deepLink: FORBIDDEN_ROUTES[1],
+          revenueImpact: 200,
+          alertType: 'sla_breach',
+          actionLabel: 'Fulfil orders',
         },
         {
           id: 'reorder',
@@ -57,7 +75,7 @@ function baseProps(overrides: Partial<OverviewModuleFT2Props> = {}): OverviewMod
           title: '3 SKUs below reorder point',
           detail: 'Demand is outpacing stock.',
           module: 'demand',
-          deepLink: REORDER_DEEP_LINK,
+          deepLink: FORBIDDEN_ROUTES[2],
           revenueImpact: 300,
           alertType: 'revenue_at_risk',
           ageLabel: '6 orders',
@@ -70,214 +88,59 @@ function baseProps(overrides: Partial<OverviewModuleFT2Props> = {}): OverviewMod
       greeting: null,
       summaryLine: null,
     },
-    ...overrides,
+    operationsPulse: {
+      orders: { readyCount: 8, blockedCount: 9, blockedRevenue: 1250, pastSlaCount: 27, pastSlaRevenue: 5400 },
+      fulfillment: { activeBatchCount: 3, pickingBatchCount: 2, packingBatchCount: 1 },
+      inventory: { awaitingInventoryCount: 2, awaitingInventoryRevenue: 600 },
+      inbound: { receiveAtDockUnits: 5, awaitingStowUnits: 12 },
+    },
   };
 }
 
-// ─── 1 — TRIAGE SIGNALS ARE INFORMATIONAL ───────────────────────────────────
+const LAYOUTS = [
+  ['map layout', true],
+  ['pulse-only state (no mapContent)', false],
+] as const;
 
-describe('UX-OWNERSHIP-01 (1): triage signals are informational, not actionable', () => {
-  it('fallback triage layout still shows title/detail/severity/revenue/age but no per-signal CTA or navigation', () => {
-    const onNavigate = jest.fn();
-    render(<OverviewModuleFT2 {...baseProps()} onNavigate={onNavigate} />);
+function renderOverview(map: boolean, onNavigate = jest.fn()) {
+  render(
+    <OverviewModuleFT2
+      {...baseProps()}
+      onNavigate={onNavigate}
+      mapContent={map ? <div data-testid="map-slot" /> : undefined}
+    />
+  );
+  return { onNavigate };
+}
 
-    // Informational content still renders.
-    expect(screen.getByText('2 orders with address issues')).toBeInTheDocument();
-    expect(screen.getByText(/Address problems are blocking fulfillment\./)).toBeInTheDocument();
-    expect(screen.getByText('3 SKUs below reorder point')).toBeInTheDocument();
-    expect(screen.getByText('14d oldest')).toBeInTheDocument();
-    expect(screen.getByText('6 orders')).toBeInTheDocument();
-    expect(screen.getByText('Critical')).toBeInTheDocument();
-    expect(screen.getByText('Watch')).toBeInTheDocument();
+// ─── 1 — SIGNALS OWN NO REMEDIATION ─────────────────────────────────────────
 
-    // Remediation CTAs must not render as controls.
+describe('UX-OWNERSHIP-01 (1): Morning Brief signals never become remediation CTAs or navigation', () => {
+  it.each(LAYOUTS)('%s: renders no per-signal CTA and no control reaches a remediation route', (_label, map) => {
+    const { onNavigate } = renderOverview(map);
+
     expect(screen.queryByRole('button', { name: 'Fix addresses' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fulfil orders' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reorder now' })).not.toBeInTheDocument();
 
-    expect(onNavigate).not.toHaveBeenCalledWith(ADDRESS_DEEP_LINK);
-    expect(onNavigate).not.toHaveBeenCalledWith(REORDER_DEEP_LINK);
-  });
-
-  it('map-layout merged rail still shows the same signal information without invoking navigation on read/click', () => {
-    const onNavigate = jest.fn();
-    render(
-      <OverviewModuleFT2
-        {...baseProps()}
-        onNavigate={onNavigate}
-        mapContent={<div data-testid="map-slot" />}
-      />
-    );
-
-    expect(screen.getByTestId('map-slot')).toBeInTheDocument();
-    expect(screen.getByText('2 orders with address issues')).toBeInTheDocument();
-    expect(screen.getByText('3 SKUs below reorder point')).toBeInTheDocument();
-
-    expect(screen.queryByRole('button', { name: 'Fix addresses' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reorder now' })).not.toBeInTheDocument();
-
-    // Reading/clicking the decision row must not fire remediation navigation.
-    fireEvent.click(screen.getByText('2 orders with address issues'));
-    fireEvent.click(screen.getByText('3 SKUs below reorder point'));
-
-    expect(onNavigate).not.toHaveBeenCalledWith(ADDRESS_DEEP_LINK);
-    expect(onNavigate).not.toHaveBeenCalledWith(REORDER_DEEP_LINK);
-  });
-});
-
-// ─── 2 — FALLBACK TRIAGE IS ALSO NON-ACTIONABLE ─────────────────────────────
-
-describe('UX-OWNERSHIP-01 (2): fallback triage (no mapContent) is non-actionable', () => {
-  it('renders signal information but no per-signal CTA and fires no signal.deepLink navigation', () => {
-    const onNavigate = jest.fn();
-    render(<OverviewModuleFT2 {...baseProps()} onNavigate={onNavigate} />);
-
-    // Signal information may still render for now (copy normalization is UX-COPY-01).
-    expect(screen.getByText('2 orders with address issues')).toBeInTheDocument();
-    expect(screen.getByText('3 SKUs below reorder point')).toBeInTheDocument();
-
-    expect(screen.queryByRole('button', { name: 'Fix addresses' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reorder now' })).not.toBeInTheDocument();
-
-    expect(onNavigate).not.toHaveBeenCalledWith(ADDRESS_DEEP_LINK);
-    expect(onNavigate).not.toHaveBeenCalledWith(REORDER_DEEP_LINK);
-  });
-});
-
-// ─── 3 — BUSINESS PULSE HAS NO CTA ───────────────────────────────────────────
-
-describe('UX-OWNERSHIP-01 (3): Business Pulse is metric-only', () => {
-  it('fallback Business Pulse renders metrics but no "View order flow" footer CTA', () => {
-    const onNavigate = jest.fn();
-    render(<OverviewModuleFT2 {...baseProps()} onNavigate={onNavigate} />);
-
-    expect(screen.getByText('Business pulse')).toBeInTheDocument();
-    expect(screen.getByText('Revenue today')).toBeInTheDocument();
-
-    expect(screen.queryByText(/View order flow/)).not.toBeInTheDocument();
-
-    const footerCta = screen.queryByRole('button', { name: /View order flow/ });
-    expect(footerCta).not.toBeInTheDocument();
-    if (footerCta) fireEvent.click(footerCta);
-    expect(onNavigate).not.toHaveBeenCalledWith('/orders/flow');
-  });
-
-  it('map-layout merged pulse card renders metrics but no "View order flow" footer CTA', () => {
-    const onNavigate = jest.fn();
-    render(
-      <OverviewModuleFT2
-        {...baseProps()}
-        onNavigate={onNavigate}
-        mapContent={<div data-testid="map-slot" />}
-      />
-    );
-
-    expect(screen.getByText('Business pulse')).toBeInTheDocument();
-    expect(screen.queryByText(/View order flow/)).not.toBeInTheDocument();
-    expect(onNavigate).not.toHaveBeenCalledWith('/orders/flow');
-  });
-});
-
-// ─── 4 — NO OVERVIEW OPS CONSOLE CTA ────────────────────────────────────────
-
-describe('UX-OWNERSHIP-01 (4): Overview owns no Ops Console entry point', () => {
-  it('fallback layout renders zero Open Ops Console controls', () => {
-    render(<OverviewModuleFT2 {...baseProps()} />);
-
-    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
-  });
-
-  it('map layout renders zero Open Ops Console controls', () => {
-    render(
-      <OverviewModuleFT2
-        {...baseProps()}
-        mapContent={<div data-testid="map-slot" />}
-      />
-    );
-
-    expect(screen.getByTestId('map-slot')).toBeInTheDocument();
-    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
-  });
-
-  it('multiple signals cannot create any Ops Console CTA', () => {
-    render(<OverviewModuleFT2 {...baseProps()} />);
-
-    expect(screen.getByText('2 orders with address issues')).toBeInTheDocument();
-    expect(screen.getByText('3 SKUs below reorder point')).toBeInTheDocument();
-    expect(screen.queryAllByText('Open Ops Console')).toHaveLength(0);
-  });
-});
-
-// ─── 7 — SIGNAL UI NO LONGER OWNS REMEDIATION ROUTES ────────────────────────
-
-describe('UX-OWNERSHIP-01 (7): Overview module no longer invokes remediation routes through signal UI', () => {
-  const FORBIDDEN_ROUTES = [
-    '/overview?resolution=address',
-    '/orders/flow?urgency=sla_breach',
-    '/demand?filter=critical',
-  ];
-
-  it('clicking the actual Fix addresses remediation control must not call onNavigate with its deep link', () => {
-    // UX-OWNERSHIP-01 fix: the original version of this test clicked the
-    // signal TITLE text, which never owned navigation (only the CTA button
-    // did) — that made the test vacuously pass without ever exercising the
-    // real remediation control. This corrects it to click the actual button.
-    const onNavigate = jest.fn();
-    const signals = [
-      {
-        id: 'address',
-        priority: 1 as const,
-        title: 'Address issues',
-        detail: 'Detail',
-        module: 'overview',
-        deepLink: '/overview?resolution=address',
-        revenueImpact: 100,
-        actionLabel: 'Fix addresses',
-      },
-      {
-        id: 'sla',
-        priority: 1 as const,
-        title: 'SLA breaches',
-        detail: 'Detail',
-        module: 'order-nexus',
-        deepLink: '/orders/flow?urgency=sla_breach',
-        revenueImpact: 200,
-        actionLabel: 'Fulfil orders',
-      },
-      {
-        id: 'demand',
-        priority: 2 as const,
-        title: 'Reorder needed',
-        detail: 'Detail',
-        module: 'demand',
-        deepLink: '/demand?filter=critical',
-        revenueImpact: 300,
-        actionLabel: 'Reorder now',
-      },
-    ];
-
-    render(
-      <OverviewModuleFT2
-        {...baseProps({
-          morningBrief: {
-            signals,
-            hasUrgentIssues: true,
-            generatedAt: '2026-09-10T00:00:00.000Z',
-            trustWarning: false,
-            greeting: null,
-            summaryLine: null,
-          },
-        })}
-        onNavigate={onNavigate}
-      />
-    );
-
-    // GREEN: the remediation control itself no longer renders — Overview owns
-    // no per-signal CTA at all, so there is nothing to click that could still
-    // reach a forbidden route.
-    expect(screen.queryByRole('button', { name: 'Fix addresses' })).not.toBeInTheDocument();
+    for (const control of [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')]) {
+      fireEvent.click(control);
+    }
 
     for (const route of FORBIDDEN_ROUTES) {
       expect(onNavigate).not.toHaveBeenCalledWith(route);
     }
+  });
+});
+
+// ─── 2 — NO OVERVIEW OPS CONSOLE CTA ────────────────────────────────────────
+
+describe('UX-OWNERSHIP-01 (2): Overview owns no Ops Console entry point', () => {
+  it.each(LAYOUTS)('%s: renders zero Open Ops Console controls', (_label, map) => {
+    renderOverview(map);
+
+    if (map) expect(screen.getByTestId('map-slot')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /operations pulse/i })).toBeInTheDocument();
+    expect(screen.queryAllByText(/Open Ops Console/i)).toHaveLength(0);
   });
 });

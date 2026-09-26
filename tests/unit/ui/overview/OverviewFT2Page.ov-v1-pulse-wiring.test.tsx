@@ -1,6 +1,6 @@
 // tests/unit/ui/overview/OverviewFT2Page.ov-v1-pulse-wiring.test.tsx
 //
-// OV-V1-0 — RED CONTRACT (page wiring): Operations Pulse canonical sources.
+// OV-V1-0 — page wiring: Operations Pulse canonical sources.
 //
 // OverviewFT2Page must hand OverviewModuleFT2 a structured `operationsPulse`
 // prop (shape defined in OverviewModuleFT2.ov-v1-operations-pulse.test.tsx)
@@ -36,10 +36,13 @@
 // Fixtures are hostile: every non-canonical neighbour field carries a
 // different, recognisable number.
 //
-// RED today: the page passes no operationsPulse prop.
+// OVERVIEW-SCREEN-OPT-01 (Slice A): also asserts the Profile Completion
+// banner is no longer part of the Overview production composition.
 //
 // Mock harness copied from OverviewFT2Page.ops-console-wiring.test.tsx.
 
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { render } from '@testing-library/react';
 
@@ -115,10 +118,6 @@ jest.mock('pages/trust/useTrustFt2Snapshot', () => ({
 
 jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
   useMorningBriefSnapshot: (...args: unknown[]) => mockUseMorningBriefSnapshot(...args),
-}));
-
-jest.mock('pages/overview/ProfileCompletionBanner', () => ({
-  ProfileCompletionBanner: () => null,
 }));
 
 jest.mock('pages/floor-planning/useFloorPlanning', () => ({
@@ -391,5 +390,17 @@ describe('OV-V1-0 (F) page: Inbound ← receiveAtDock units + stowPressure.by_lo
     const { inbound } = lastModuleProps().operationsPulse;
     expect(inbound.receiveAtDockUnits).toBe(0);
     expect(inbound.awaitingStowUnits).toBe(0);
+  });
+});
+
+// ─── PRODUCTION COMPOSITION ─────────────────────────────────────────────────
+
+describe('OVERVIEW-SCREEN-OPT-01: Profile Completion banner is retired from Overview', () => {
+  it('OverviewFT2Page does not compose ProfileCompletionBanner and the component no longer exists', () => {
+    const root = process.cwd();
+    const page = fs.readFileSync(path.join(root, 'apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx'), 'utf8');
+
+    expect(page).not.toMatch(/ProfileCompletionBanner/);
+    expect(fs.existsSync(path.join(root, 'apps/frontend/src/pages/overview/ProfileCompletionBanner.tsx'))).toBe(false);
   });
 });

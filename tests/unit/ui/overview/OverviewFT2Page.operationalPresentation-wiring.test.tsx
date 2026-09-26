@@ -109,10 +109,6 @@ jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
   useMorningBriefSnapshot: (...args: unknown[]) => mockUseMorningBriefSnapshot(...args),
 }));
 
-jest.mock('pages/overview/ProfileCompletionBanner', () => ({
-  ProfileCompletionBanner: () => null,
-}));
-
 // One physical bin (open problem -> critical, badge "1 issue") and the
 // default synthetic stations, so both presentation records are observable.
 jest.mock('pages/floor-planning/useFloorPlanning', () => ({

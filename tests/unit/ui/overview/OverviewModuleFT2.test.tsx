@@ -5,9 +5,9 @@
 //
 // OV-V1-0: the retired-surface absence checks formerly here ("Needs a
 // decision", Business pulse, "Revenue today", "Ranked by commercial
-// consequence") are owned canonically, in both layouts, by
-// OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A), and were removed
-// here as duplicates.
+// consequence") are owned canonically, in both the map and pulse-only
+// states, by OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A), and
+// were removed here as duplicates.
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import OverviewModuleFT2, { type OverviewModuleFT2Props } from '../../../../modules/overview/src/ui/pages/OverviewModuleFT2';
@@ -27,6 +27,12 @@ const props: OverviewModuleFT2Props = {
     trustWarning: false,
     greeting: null,
     summaryLine: null,
+  },
+  operationsPulse: {
+    orders: { readyCount: 8, blockedCount: 9, blockedRevenue: 1250, pastSlaCount: 27, pastSlaRevenue: 5400 },
+    fulfillment: { activeBatchCount: 3, pickingBatchCount: 2, packingBatchCount: 1 },
+    inventory: { awaitingInventoryCount: 2, awaitingInventoryRevenue: 600 },
+    inbound: { receiveAtDockUnits: 5, awaitingStowUnits: 12 },
   },
 };
 

@@ -15,8 +15,6 @@
 //   - no "Refresh morning brief" control inside the region;
 //   - the brief's generatedAt time is not shown inside the region.
 //
-// RED today: the module renders no Operations pulse region.
-//
 // Kept as .ts (its established path) — elements are built with
 // React.createElement instead of JSX.
 
@@ -54,14 +52,13 @@ function props(): OverviewModuleFT2Props {
       summaryLine: null,
     },
     onRefreshBrief: jest.fn(),
-    // Not yet on the prop type — passed loosely so RED is behavioural.
-    ...({ operationsPulse: OPERATIONS_PULSE } as unknown as Partial<OverviewModuleFT2Props>),
+    operationsPulse: OPERATIONS_PULSE,
   };
 }
 
 const LAYOUTS = [
   ['map layout', true],
-  ['fallback layout (no mapContent)', false],
+  ['pulse-only state (no mapContent)', false],
 ] as const;
 
 describe('OV-V1-0: Morning Brief freshness does not masquerade as Operations Pulse freshness', () => {

@@ -140,10 +140,6 @@ jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
   useMorningBriefSnapshot: (...args: unknown[]) => mockUseMorningBriefSnapshot(...args),
 }));
 
-jest.mock('pages/overview/ProfileCompletionBanner', () => ({
-  ProfileCompletionBanner: () => null,
-}));
-
 jest.mock('pages/floor-planning/useFloorPlanning', () => ({
   useFloorPlanning: () => ({
     data: {

@@ -108,10 +108,6 @@ jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
   useMorningBriefSnapshot: (...args: unknown[]) => mockUseMorningBriefSnapshot(...args),
 }));
 
-jest.mock('pages/overview/ProfileCompletionBanner', () => ({
-  ProfileCompletionBanner: () => null,
-}));
-
 // One physical bin (open problem -> critical) and the default synthetic
 // stations, so both operationalStateByLocation and operationalStateByStation
 // are non-empty and observable.
