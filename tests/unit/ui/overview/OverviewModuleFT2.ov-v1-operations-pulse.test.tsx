@@ -175,14 +175,16 @@ function renderOverview(opts: {
   pulse?: OperationsPulseV1;
   map?: boolean;
   onNavigate?: jest.Mock;
+  suppress?: boolean;
 } = {}) {
-  const { pulse = pulseFixture(), map = true, onNavigate = jest.fn() } = opts;
+  const { pulse = pulseFixture(), map = true, onNavigate = jest.fn(), suppress } = opts;
   render(
     <OverviewModuleFT2
       {...baseProps()}
       operationsPulse={pulse}
       onNavigate={onNavigate}
       mapContent={map ? <div data-testid="map-slot" /> : undefined}
+      {...(suppress === undefined ? {} : { suppressOperationsPulse: suppress })}
     />
   );
   return { onNavigate };
@@ -254,6 +256,35 @@ describe('OV-V1-0 (A): Overview ownership — situational awareness only', () =>
     expect(domainGroup(INBOUND)).toBeInTheDocument();
     expect(within(operationsPulse()).queryByRole('group', { name: /returns/i })).not.toBeInTheDocument();
     expect(within(operationsPulse()).queryByText(/returns?/i)).not.toBeInTheDocument();
+  });
+});
+
+// ─── OPS CONSOLE WITHDRAWAL ─────────────────────────────────────────────────
+//
+// OVERVIEW-SCREEN-OPT-01 (Slice B): while the Ops Console is open the page
+// passes suppressOperationsPulse; Operations Pulse withdraws completely and
+// the map (when supplied) stays as spatial context.
+
+describe('OVERVIEW-SCREEN-OPT-01: suppressOperationsPulse withdraws Operations Pulse', () => {
+  it.each(LAYOUTS)('%s: suppress false keeps Operations Pulse with its four domains', (_label, map) => {
+    renderOverview({ map, suppress: false });
+
+    if (map) expect(screen.getByTestId('map-slot')).toBeInTheDocument();
+    expect(domainGroup(ORDERS)).toBeInTheDocument();
+    expect(domainGroup(FULFILLMENT)).toBeInTheDocument();
+    expect(domainGroup(INVENTORY)).toBeInTheDocument();
+    expect(domainGroup(INBOUND)).toBeInTheDocument();
+    expect(within(operationsPulse()).queryByRole('group', { name: /returns/i })).not.toBeInTheDocument();
+  });
+
+  it.each(LAYOUTS)('%s: suppress true renders no Operations Pulse at all', (_label, map) => {
+    renderOverview({ map, suppress: true });
+
+    if (map) expect(screen.getByTestId('map-slot')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /operations pulse/i })).not.toBeInTheDocument();
+    for (const name of [ORDERS, FULFILLMENT, INVENTORY, INBOUND]) {
+      expect(screen.queryByRole('group', { name })).not.toBeInTheDocument();
+    }
   });
 });
 

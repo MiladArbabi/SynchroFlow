@@ -12,6 +12,7 @@ import { IsometricCanvas } from '@lasyncro/shared/ui';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import useConfig from 'hooks/useConfig';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
@@ -51,6 +52,9 @@ export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
   const { user, isLoading: authLoading } = useAuth();
+  // OVERVIEW-SCREEN-OPT-01 — Operations Pulse withdraws while the topnav Ops
+  // Console is open. Read-only: the topnav trigger remains the sole owner.
+  const { state: { isOpsConsoleOpen } } = useConfig();
 
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
@@ -974,6 +978,7 @@ export default function OverviewPageFT2() {
           currency={displayCurrency}
           mapContent={mapContent}
           operationsPulse={operationsPulse}
+          suppressOperationsPulse={isOpsConsoleOpen}
           onNavigate={(deepLink) => navigate(deepLink)}
           onRefreshBrief={() => { void morningBrief.refreshMorningBrief(); }}
           isRefreshingBrief={morningBrief.isRefreshingBrief}

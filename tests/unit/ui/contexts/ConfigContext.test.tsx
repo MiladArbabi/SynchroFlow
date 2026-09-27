@@ -17,6 +17,8 @@ const TestConsumer = () => {
     <div>
       <div data-testid="console-open">{String(state.isOpsConsoleOpen)}</div>
       <button onClick={toggleConsole}>Toggle Console</button>
+      <button onClick={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: true })}>Set Console Open</button>
+      <button onClick={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: false })}>Set Console Closed</button>
     </div>
   );
 };
@@ -50,5 +52,24 @@ describe('ConfigContext', () => {
       screen.getByText('Toggle Console').click();
     });
     expect(screen.getByTestId('console-open')).toHaveTextContent('false');
+  });
+
+  // OVERVIEW-SCREEN-OPT-01 — deterministic set, idempotent in both directions.
+  it('should set isOpsConsoleOpen deterministically via the SET_OPS_CONSOLE action', () => {
+    renderWithProvider(<TestConsumer />);
+    const value = () => screen.getByTestId('console-open');
+    const click = (label: string) => act(() => { screen.getByText(label).click(); });
+
+    click('Set Console Closed');
+    expect(value()).toHaveTextContent('false');
+
+    click('Set Console Open');
+    expect(value()).toHaveTextContent('true');
+
+    click('Set Console Open');
+    expect(value()).toHaveTextContent('true');
+
+    click('Set Console Closed');
+    expect(value()).toHaveTextContent('false');
   });
 });

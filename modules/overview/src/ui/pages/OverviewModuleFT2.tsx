@@ -130,6 +130,12 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * canonical sources.
    */
   operationsPulse: OverviewOperationsPulse;
+  /**
+   * OVERVIEW-SCREEN-OPT-01: when true, Operations Pulse is not rendered at all
+   * (the Ops Console is open and owns attention). The map grid keeps its
+   * two-column track list; the empty second column is deliberate.
+   */
+  suppressOperationsPulse?: boolean;
 };
 
 // ─── HELPERS ──────────────────────────────────────────────────
@@ -252,6 +258,7 @@ function OverviewModuleV1({
   mapContent,
   userName,
   currency = 'USD',
+  suppressOperationsPulse = false,
 }: OverviewModuleFT2Props) {
   const greetingText = userName ? `Good ${timeOfDay()}, ${userName}.` : `Good ${timeOfDay()}.`;
 
@@ -279,11 +286,11 @@ function OverviewModuleV1({
           }}
         >
           <Box sx={{ minWidth: 0 }}>{mapContent}</Box>
-          <OperationsPulse pulse={operationsPulse} currency={currency} />
+          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} />}
         </Box>
       ) : (
         <Box sx={{ minWidth: 0, maxWidth: 560 }}>
-          <OperationsPulse pulse={operationsPulse} currency={currency} />
+          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} />}
         </Box>
       )}
     </Box>

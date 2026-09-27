@@ -109,6 +109,8 @@ jest.mock('hooks/useAppTheme', () => ({
 
 import { OpsConsoleButton, OpsConsolePanel } from 'components/OpsConsole';
 import { axiosInstance } from 'api/axiosConfig';
+import { ConfigProvider } from 'contexts/ConfigContext';
+import useConfig from 'hooks/useConfig';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 
@@ -213,6 +215,13 @@ function expandSetup() {
   fireEvent.click(screen.getByTestId('ops-setup-toggle'));
 }
 
+// OVERVIEW-SCREEN-OPT-01 — the trigger's open/closed state is shared
+// ConfigContext state, so it renders under the real ConfigProvider (the app
+// mounts it at the root).
+function renderButton(ui: React.ReactElement) {
+  return render(<ConfigProvider>{ui}</ConfigProvider>);
+}
+
 function renderPanel(props: Partial<React.ComponentProps<typeof OpsConsolePanel>> = {}) {
   return render(
     <OpsConsolePanel
@@ -229,7 +238,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof OpsConsolePanel>
 
 describe('topnav trigger', () => {
   it('opens the Ops Console and closes it again without navigating', async () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
 
     expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
 
@@ -244,7 +253,7 @@ describe('topnav trigger', () => {
   });
 
   it('toggles open and closed from the trigger itself, without navigating', async () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     const trigger = screen.getByRole('button', { name: /Ops Console/ });
 
     fireEvent.click(trigger);
@@ -258,7 +267,7 @@ describe('topnav trigger', () => {
   });
 
   it('stays mounted only through the exit animation: hidden and inert while closing, then unmounted', async () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     fireEvent.click(screen.getByRole('button', { name: /Ops Console/ }));
 
     const panel = screen.getByTestId('ops-console');
@@ -277,13 +286,55 @@ describe('topnav trigger', () => {
     await waitForElementToBeRemoved(panel);
   });
 
+  it('reflects the visible console state in shared ConfigContext state (OVERVIEW-SCREEN-OPT-01)', async () => {
+    function SharedState() {
+      const { state } = useConfig();
+      return <output data-testid="shared-console-open">{String(state.isOpsConsoleOpen)}</output>;
+    }
+    renderButton(
+      <>
+        <OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />
+        <SharedState />
+      </>,
+    );
+    const trigger = screen.getByRole('button', { name: /Ops Console/ });
+    const shared = screen.getByTestId('shared-console-open');
+
+    expect(shared).toHaveTextContent('false');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(trigger);
+    expect(shared).toHaveTextContent('true');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
+    expect(shared).toHaveTextContent('false');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await waitForElementToBeRemoved(() => screen.queryByTestId('ops-console'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('owns no private open state: the trigger reads and writes shared ConfigContext state (OVERVIEW-SCREEN-OPT-01)', () => {
+    const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
+    const start = source.indexOf('export function OpsConsoleButton(');
+    expect(start).toBeGreaterThan(-1);
+    // OpsConsoleButton is the file's final declaration, so its block runs to EOF.
+    const button = source.slice(start);
+
+    expect(button).not.toMatch(/\[\s*open\s*,\s*setOpen\s*\]\s*=\s*useState/);
+    expect(button).not.toMatch(/\bsetOpen\b/);
+    expect(button).toMatch(/useConfig\(\)/);
+    expect(button).toMatch(/type:\s*'SET_OPS_CONSOLE'/);
+  });
+
   it('mounts nothing while closed, as before', () => {
     renderPanel({ open: false });
     expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
   });
 
   it('is not a modal: the console renders no MUI Modal/backdrop over the app', () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     fireEvent.click(screen.getByRole('button', { name: /Ops Console/ }));
 
     expect(document.querySelector('.MuiModal-root')).toBeNull();
@@ -364,7 +415,7 @@ describe('SETUP rows', () => {
 
 describe('open badge', () => {
   it('counts open NOW + SETUP only, excluding completed setup and resolved outcomes', () => {
-    render(
+    renderButton(
       <OpsConsoleButton
         alerts={[alert({ id: 'a1' }), alert({ id: 'a2', title: 'Second' })]}
         deepLink={deepLink}
@@ -376,7 +427,7 @@ describe('open badge', () => {
   });
 
   it('does not grow when navigation occurs', () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     fireEvent.click(screen.getByRole('button', { name: /Ops Console/ }));
     expandSetup();
 
@@ -421,7 +472,7 @@ describe('open badge', () => {
       isLoading: false, isError: false,
     });
 
-    render(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
 
     expect(screen.getByRole('button', { name: 'Ops Console — 0 open' })).toBeInTheDocument();
     expect(document.querySelector('.MuiBadge-badge')).toHaveClass('MuiBadge-invisible');
@@ -613,7 +664,7 @@ describe('setup completion and dismissal', () => {
       completedCount: 2, allComplete: true, isLoading: false, isError: false,
     });
 
-    render(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
 
     // The trigger survives completion — it must never vanish the way the old
     // checklist popover did.
@@ -780,7 +831,7 @@ describe('OPEN | HISTORY tab focus', () => {
 
 describe('top-nav trigger — attention dot, not a second counter', () => {
   it('renders a dot badge with no number while attention is open', () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
 
     const dot = document.querySelector('.MuiBadge-badge');
     expect(dot).not.toBeNull();
@@ -798,12 +849,12 @@ describe('top-nav trigger — attention dot, not a second counter', () => {
       completedCount: 2, allComplete: true, isLoading: false, isError: false,
     });
 
-    render(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
     expect(document.querySelector('.MuiBadge-badge')).toHaveClass('MuiBadge-invisible');
   });
 
   it('hides the dot while open but keeps the authoritative count in the accessible name', () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     const trigger = screen.getByRole('button', { name: 'Ops Console — 2 open' });
     const dot = () => screen.getByTestId('ops-console-trigger-badge').querySelector('.MuiBadge-badge');
     expect(dot()).not.toHaveClass('MuiBadge-invisible');
@@ -816,7 +867,7 @@ describe('top-nav trigger — attention dot, not a second counter', () => {
   });
 
   it('keeps the count out of the visible trigger while the rail owns the numbers', () => {
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     const trigger = screen.getByRole('button', { name: /Ops Console/ });
 
     // Non-numeric trigger; the count survives only in the accessible name.
@@ -1843,7 +1894,7 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
 
   it('preserves the GH-1158 open/close lifecycle with the command row present', async () => {
     withOpeningItem(view('not_started'));
-    render(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
     const trigger = screen.getByRole('button', { name: /Ops Console/ });
 
     fireEvent.click(trigger);

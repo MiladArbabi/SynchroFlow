@@ -15,6 +15,7 @@ type ActionType =
   | { type: 'SET_THEME_DIRECTION'; payload: ConfigProps['themeDirection'] }
   | { type: 'SET_CONTAINER'; payload: ConfigProps['container'] }
   | { type: 'TOGGLE_OPS_CONSOLE' }
+  | { type: 'SET_OPS_CONSOLE'; payload: boolean }
 
 // Define context state
 export type ConfigContextState = {
@@ -51,6 +52,8 @@ const configReducer = (state: ConfigProps, action: ActionType): ConfigProps => {
      return { ...state, customizationDrawerOpen: action.payload };
     case 'TOGGLE_OPS_CONSOLE':
       return { ...state, isOpsConsoleOpen: !state.isOpsConsoleOpen };
+    case 'SET_OPS_CONSOLE':
+      return { ...state, isOpsConsoleOpen: action.payload };
     default:
       return state;
   }

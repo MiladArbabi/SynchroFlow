@@ -49,6 +49,7 @@ import { EntityDetailModal } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import useConfig from '../../hooks/useConfig';
 import { useActivationChecklist } from '../../hooks/useActivationChecklist';
 import { type Alert } from '../../pages/alerts/useAlerts';
 import { alertDeepLink } from '../../pages/alerts/alertDeepLink';
@@ -1164,7 +1165,10 @@ export function OpsConsoleButton({
   deepLink = alertDeepLink,
 }: Pick<OpsConsoleProps, 'alerts' | 'deepLink'>) {
   const pal = useAppTheme();
-  const [open, setOpen] = useState(false);
+  // OVERVIEW-SCREEN-OPT-01 — open/closed is shared ConfigContext state so the
+  // Overview page can withdraw Operations Pulse while the console is open.
+  const { state, dispatch } = useConfig();
+  const open = state.isOpsConsoleOpen;
   const { items } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
@@ -1185,7 +1189,7 @@ export function OpsConsoleButton({
         <IconButton
           size="small"
           disableRipple
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: !open })}
           aria-label={`Ops Console — ${badge} open`}
           aria-expanded={open}
           data-state={open ? 'open' : 'closed'}
@@ -1225,7 +1229,7 @@ export function OpsConsoleButton({
         alerts={alerts}
         deepLink={deepLink}
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: false })}
       />
     </>
   );
