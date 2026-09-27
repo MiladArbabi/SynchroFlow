@@ -60,6 +60,7 @@ jest.mock('pages/operations/useWaiting', () => ({
 // exercised that state). Mocked at the same seam
 // ops-console-global-search.test.tsx already uses, so the HISTORY-CTA test
 // below can assert "no navigation" without crashing on missing context.
+// GH-1165 — the first-contact Spotlight renders the REAL shared coach mark.
 jest.mock('@lasyncro/shared/ui', () => ({
   EntityDetailModal: ({ entityId, title, children }: any) =>
     entityId ? (
@@ -67,6 +68,7 @@ jest.mock('@lasyncro/shared/ui', () => ({
         {children}
       </section>
     ) : null,
+  SpotlightCoachMark: jest.requireActual('../../../../modules/shared/src/ui/SpotlightCoachMark').SpotlightCoachMark,
 }));
 
 jest.mock('pages/orders/OrderDetailModalBody', () => ({
@@ -1965,13 +1967,13 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
 
   // ── Composition ──
 
-  it('fresh (#1160) first-entry: intro, SETUP expanded first, exactly map + count, then NOW', () => {
+  it('fresh (#1160) first-entry: SETUP expanded first, exactly map + count, then NOW — no inline intro copy', () => {
     firstEntryChecklist(false);
     const { container } = renderPanel({ alerts: [alert({ id: 'a1' })] });
 
-    const intro = screen.getByTestId('ops-first-entry-intro');
-    expect(intro).toHaveTextContent('Start here');
-    expect(intro).toHaveTextContent('See what needs your attention and what to do next.');
+    // The explanatory intro is the one-time Spotlight now, never rail content.
+    expect(screen.queryByText('Start here')).not.toBeInTheDocument();
+    expect(screen.queryByText(/See what needs your attention/)).not.toBeInTheDocument();
 
     const toggle = screen.getByTestId('ops-first-entry-setup-toggle');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -2036,7 +2038,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     });
     renderPanel({ alerts: [alert({ id: 'a1' })] });
 
-    expect(screen.queryByTestId('ops-first-entry-intro')).not.toBeInTheDocument();
+    expect(screen.queryByText('Start here')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ops-first-entry-setup-toggle')).not.toBeInTheDocument();
     const setup = screen.getByTestId('ops-setup-toggle');
     expect(setup).toHaveAttribute('aria-expanded', 'false');
@@ -2189,6 +2191,253 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     } finally {
       platform.mockRestore();
     }
+  });
+
+  // ── First-contact Spotlight ──
+
+  // sm+ presentation (beside the rail) and xs presentation (inside the rail)
+  // of the ONE Spotlight. jsdom evaluates no media queries, so both mount
+  // while active; the breakpoint split is asserted as a source contract below.
+  const spotlight = () => screen.queryByTestId('ops-first-contact-spotlight');
+  const inlineSpotlight = () => screen.queryByTestId('ops-first-contact-spotlight-inline');
+  const anySpotlight = () => document.querySelector('[data-testid^="ops-first-contact-spotlight"]');
+  const dimmer = () => screen.queryByTestId('ops-first-contact-dimmer');
+  const {
+    OPS_FIRST_CONTACT_SPOTLIGHT, OPS_SPOTLIGHT_DESKTOP_DISPLAY, OPS_SPOTLIGHT_MOBILE_DISPLAY,
+  } = jest.requireActual('components/OpsConsole/OpsConsole');
+
+  it('desktop automatic first entry: Spotlight beside SETUP over a dimmed canvas; the dimmer never dismisses; search stays passive', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    expect(anySpotlight()).toBeNull();
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    const rail = screen.getByTestId('ops-console');
+    const coach = spotlight()!;
+    expect(coach).toHaveTextContent('Start here');
+    expect(coach).toHaveTextContent(
+      'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.');
+    expect(OPS_FIRST_CONTACT_SPOTLIGHT.title).toBe('Start here');
+    expect(dimmer()).toBeInTheDocument();
+    // Outside the rail: SETUP stays inline in the rail, never inside the coach.
+    expect(rail.contains(coach)).toBe(false);
+    expect(rail.contains(dimmer())).toBe(false);
+    expect(within(rail).getByTestId('ops-first-entry-setup-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(within(rail).getByTestId('ops-row-setup:first-entry-map')).toBeInTheDocument();
+    // Not a modal: no MUI Modal/Backdrop, no focus capture.
+    expect(document.querySelector('.MuiModal-root, .MuiBackdrop-root, [aria-modal="true"]')).toBeNull();
+    expect(document.activeElement).not.toBe(searchInput());
+    expect(coach.contains(document.activeElement)).toBe(false);
+
+    // The dimmer is a visual layer only: clicking it dismisses nothing.
+    fireEvent.click(dimmer()!);
+    expect(spotlight()).toBeInTheDocument();
+    expect(dimmer()).toBeInTheDocument();
+    expect(introPosts()).toBe(1);
+
+    fireEvent.click(within(coach).getByRole('button', { name: 'Got it' }));
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('ops-first-entry-setup-toggle')).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('xs first auto-open: the same coach renders inside the rail above SETUP, with map/count usable; dismissal removes the coach only', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    const rail = screen.getByTestId('ops-console');
+    const inline = inlineSpotlight()!;
+    expect(inline).toHaveTextContent('Start here');
+    expect(inline).toHaveTextContent(
+      'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.');
+    // Inside the rail's first-entry area, immediately above SETUP, never over its rows.
+    const setupBlock = within(rail).getByTestId('ops-first-entry-setup');
+    expect(setupBlock.contains(inline)).toBe(true);
+    const toggle = within(rail).getByTestId('ops-first-entry-setup-toggle');
+    expect(inline.nextElementSibling).toBe(toggle);
+    for (const id of ['ops-row-setup:first-entry-map', 'ops-row-setup:first-entry-count']) {
+      const row = within(rail).getByTestId(id);
+      expect(inline.contains(row)).toBe(false);
+    }
+    fireEvent.click(within(within(rail).getByTestId('ops-row-setup:first-entry-map'))
+      .getByRole('button', { name: /Map warehouse/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+
+    fireEvent.click(within(inline).getByRole('button', { name: 'Dismiss' }));
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(rail).getByTestId('ops-row-setup:first-entry-count')).toBeInTheDocument();
+    expect(postSpy.mock.calls.filter(([url]) => url !== INTRO_URL)).toHaveLength(0);
+
+    // Later reopen: no Spotlight in either presentation.
+    fireEvent.click(trigger());
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    fireEvent.click(trigger());
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(anySpotlight()).toBeNull();
+    expect(introPosts()).toBe(1);
+  });
+
+  it('coach body wraps in both presentations: explicit wrapping, never an inherited top-nav nowrap', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    for (const coach of [spotlight()!, inlineSpotlight()!]) {
+      const body = within(coach).getByText(OPS_FIRST_CONTACT_SPOTLIGHT.body);
+      expect(body).toHaveStyle({ whiteSpace: 'normal', wordBreak: 'normal', maxWidth: '100%' });
+      expect(getComputedStyle(body).getPropertyValue('overflow-wrap')).toBe('break-word');
+    }
+    const coachSource = codeOnly(fs.readFileSync(
+      path.join(REPO_ROOT, 'modules/shared/src/ui/SpotlightCoachMark.tsx'), 'utf8'));
+    expect(coachSource).not.toMatch(/nowrap/);
+  });
+
+  it('breakpoint contract: desktop coach + dimmer are sm+ only, the inline coach is xs only, and the dimmer has no dismissal handler', () => {
+    expect(OPS_SPOTLIGHT_DESKTOP_DISPLAY).toEqual({ xs: 'none', sm: 'block' });
+    expect(OPS_SPOTLIGHT_MOBILE_DISPLAY).toEqual({ xs: 'block', sm: 'none' });
+
+    const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
+    const block = (testId: string) => {
+      const at = source.indexOf(`data-testid="${testId}"`);
+      expect(at).toBeGreaterThan(-1);
+      // The whole opening tag: from its `<Box` to the end of its sx.
+      return source.slice(source.lastIndexOf('<Box', at), source.indexOf('>', source.indexOf('}}', at)));
+    };
+    const dimmerBlock = block('ops-first-contact-dimmer');
+    expect(dimmerBlock).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
+    expect(dimmerBlock).not.toMatch(/onClick|onMouseDown|onPointerDown/);
+    expect(block('ops-first-contact-spotlight')).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
+    expect(block('ops-first-contact-spotlight-inline')).toMatch(/display: OPS_SPOTLIGHT_MOBILE_DISPLAY/);
+  });
+
+  it('dismissal ("Got it" / close) removes coach + dimmer only; Ops stays open with SETUP expanded and nothing completed', () => {
+    for (const control of ['Got it', 'Dismiss']) {
+      jest.useFakeTimers();
+      firstEntryChecklist(false);
+      flagsRead({});
+      const view = renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+      advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+      // Real, keyboard-reachable buttons.
+      fireEvent.click(within(spotlight()!).getByRole('button', { name: control }));
+
+      expect(anySpotlight()).toBeNull();
+      expect(dimmer()).toBeNull();
+      expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByTestId('ops-first-entry-setup-toggle')).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByTestId('ops-row-setup:first-entry-map')).not.toHaveAttribute('data-status', 'verified');
+      expect(postSpy.mock.calls.filter(([url]) => url !== INTRO_URL)).toHaveLength(0);
+      view.unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('reload with the intro-seen flag: no auto-open and no Spotlight, even on a manual open', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({ [OPS_CONSOLE_INTRO_SEEN_KEY]: true });
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger());
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(screen.queryByText('Start here')).not.toBeInTheDocument();
+    expect(introPosts()).toBe(0);
+  });
+
+  it('manual first click before the timer: Spotlight once, search passive, delayed auto-open suppressed; later opens are plain', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+
+    fireEvent.click(trigger());
+    expect(screen.getAllByTestId('ops-first-contact-spotlight')).toHaveLength(1);
+    expect(dimmer()).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(searchInput());
+
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByTestId('ops-first-contact-spotlight')).toHaveLength(1);
+    expect(introPosts()).toBe(1);
+
+    // Closing without dismissing never carries the Spotlight into a later open.
+    fireEvent.click(trigger());
+    expect(anySpotlight()).toBeNull();
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    fireEvent.click(trigger());
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(introPosts()).toBe(1);
+  });
+
+  it('Ctrl+K first contact: search intent wins — search focused, no Spotlight or dimmer, now or after the timer', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true })); });
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(document.activeElement).toBe(searchInput());
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(introPosts()).toBe(1);
+
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+  });
+
+  it('Ctrl+K while the Spotlight is showing withdraws it in favour of search', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(spotlight()).toBeInTheDocument();
+
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true })); });
+    expect(document.activeElement).toBe(searchInput());
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+  });
+
+  it('mature Ops: opens carry no onboarding copy, Spotlight or dimmer', () => {
+    jest.useFakeTimers();
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    fireEvent.click(trigger());
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(anySpotlight()).toBeNull();
+    expect(dimmer()).toBeNull();
+    expect(screen.queryByText('Start here')).not.toBeInTheDocument();
+    expect(introPosts()).toBe(0);
+  });
+
+  it('adds no second persistence mechanism for the Spotlight', () => {
+    const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
+    expect(source).not.toMatch(/useSpotlight|spotlight:|localStorage|sessionStorage/);
+    // The only durable once-only write remains the existing intro-seen claim.
+    expect(source.match(/axiosInstance\.post\(/g)).toHaveLength(2);
+    expect(source).toMatch(/axiosInstance\.post\(OPS_CONSOLE_INTRO_SEEN_URL\)/);
   });
 
   // ── Persistence and ownership boundaries ──
