@@ -8,6 +8,9 @@ import { OnboardingReadinessSnapshot } from '@lasyncro/shared';
 import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
 import { logConflictIgnored, logConflictResolved } from '../conflict-resolution/conflict.logger.js';
 
+/** GH-1165 — dedicated user_states key for the first-entry Ops Console intro. */
+export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
+
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
 export type OrdersPerMonthSegment =
@@ -495,7 +498,8 @@ export class UserStateService {
   }
 
   // T6 — returns all onboarding-related user_states flags in one query.
-  // Covers checklist:completed + all spotlight:dismissed:* keys.
+  // Covers checklist:completed + all spotlight:dismissed:* keys, and (GH-1165)
+  // the ops-console:intro-seen key.
   // ONB-ORD2: user_states has FORCED RLS. Without app.current_tenant the policy's
   // USING clause filters every row out — the read returns {} silently while the
   // rows exist, so dismissed spotlights re-appear on reload. Reads need the same
@@ -506,12 +510,28 @@ export class UserStateService {
       return trx('user_states')
         .where({ user_id: userId })
         .where(function () {
-          this.where('key', 'like', 'checklist:%').orWhere('key', 'like', 'spotlight:%');
+          this.where('key', 'like', 'checklist:%')
+            .orWhere('key', 'like', 'spotlight:%')
+            .orWhere('key', OPS_CONSOLE_INTRO_SEEN_KEY);
         })
         .select('key', 'value');
     })) as { key: string; value: string }[];
 
     return Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value === '1']));
+  }
+
+  // GH-1165 — record that the once-only first-entry Ops Console auto-open has
+  // run for this user. Its own key: never checklist:completed, never a
+  // spotlight, and never a setup completion input. Same forced-RLS tenant
+  // context as the other user_states writes above.
+  static async markOpsConsoleIntroSeen(userId: number, shopId: number): Promise<void> {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(shopId)}'`);
+      await trx('user_states')
+        .insert({ user_id: userId, key: OPS_CONSOLE_INTRO_SEEN_KEY, value: '1', updated_at: trx.fn.now() })
+        .onConflict(['user_id', 'key'])
+        .merge({ value: '1', updated_at: trx.fn.now() });
+    });
   }
 
   // T6 — permanently dismiss the activation checklist for this user.

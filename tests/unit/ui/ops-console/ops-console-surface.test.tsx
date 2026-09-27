@@ -88,11 +88,14 @@ jest.mock('pages/wms/usePickBatches', () => ({
   }),
 }));
 
+// GH-1165 — the intro-seen write updates the shared onboarding-flags cache.
+const mockSetQueryData = jest.fn();
+
 jest.mock('@tanstack/react-query', () => ({
   // Only the onboarding-flags dismissal read goes through useQuery here.
   useQuery: () => ({ data: {} }),
   useMutation: () => ({ mutateAsync: jest.fn() }),
-  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+  useQueryClient: () => ({ invalidateQueries: jest.fn(), setQueryData: mockSetQueryData }),
 }));
 
 jest.mock('hooks/useAppTheme', () => ({
@@ -1909,5 +1912,298 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(postSpy).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+// ─── GH-1165 — FIRST-ENTRY OPS CONSOLE ONBOARDING ────────────────────────────
+
+describe('first-entry Ops Console onboarding (GH-1165)', () => {
+  const START_URL = '/api/v1/wms/opening-inventory/start';
+  const INTRO_URL = '/api/v1/user-state/ops-console/intro-seen';
+  const { buildFirstEntrySetupItems, buildOpeningInventoryItem } = jest.requireActual('hooks/useActivationChecklist');
+  const { OPS_CONSOLE_AUTO_OPEN_DELAY_MS, OPS_CONSOLE_INTRO_SEEN_KEY } = jest.requireActual('components/OpsConsole/OpsConsole');
+  const view = (state: string) => ({
+    progress: { state, total_bins: 0, complete_bins: 0 },
+    cutover: null,
+    shopify_synced_at: null,
+  });
+
+  let postSpy: jest.SpyInstance;
+  const rq = jest.requireMock('@tanstack/react-query') as { useQuery: () => unknown };
+  const originalUseQuery = rq.useQuery;
+
+  /** First-entry hook output built by the real canonical projection. */
+  function firstEntryChecklist(zonesConfigured: boolean, state = 'not_started', canStart = true) {
+    mockUseActivationChecklist.mockReturnValue({
+      items: [...SETUP_ITEMS, buildOpeningInventoryItem(false, view(state), canStart)],
+      completedCount: 1, allComplete: false, isLoading: false, isError: false,
+      refreshOpeningInventory: jest.fn().mockResolvedValue(undefined),
+      firstEntry: true,
+      firstEntryItems: buildFirstEntrySetupItems(zonesConfigured, false, view(state), canStart),
+    });
+  }
+
+  /** The onboarding-flags read as a loaded (or loading) server response. */
+  function flagsRead(data: Record<string, boolean> | undefined, isSuccess = true) {
+    rq.useQuery = () => ({ data, isSuccess });
+  }
+
+  const trigger = () => screen.getByRole('button', { name: /^Ops Console — / });
+  const searchInput = () => screen.getByLabelText('Search orders, products, SKUs, barcodes, or batches');
+  const introPosts = () => postSpy.mock.calls.filter(([url]) => url === INTRO_URL).length;
+  const advance = (ms: number) => act(() => { jest.advanceTimersByTime(ms); });
+
+  beforeEach(() => {
+    postSpy = jest.spyOn(axiosInstance, 'post').mockResolvedValue({ data: {} });
+  });
+
+  afterEach(() => {
+    rq.useQuery = originalUseQuery;
+    postSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  // ── Composition ──
+
+  it('fresh (#1160) first-entry: intro, SETUP expanded first, exactly map + count, then NOW', () => {
+    firstEntryChecklist(false);
+    const { container } = renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    const intro = screen.getByTestId('ops-first-entry-intro');
+    expect(intro).toHaveTextContent('Start here');
+    expect(intro).toHaveTextContent('See what needs your attention and what to do next.');
+
+    const toggle = screen.getByTestId('ops-first-entry-setup-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveTextContent('SETUP · 2 remaining');
+
+    const setupRows = [...container.querySelectorAll('[data-section="SETUP"]')].map((el) => el.getAttribute('data-testid'));
+    expect(setupRows).toEqual(['ops-row-setup:first-entry-map', 'ops-row-setup:first-entry-count']);
+    // The mature six-item SETUP is not rendered alongside it.
+    expect(screen.queryByTestId('ops-setup-toggle')).not.toBeInTheDocument();
+
+    // Setup-first: onboarding precedes NOW.
+    const nowRow = screen.getByTestId('ops-row-alert:a1');
+    expect(screen.getByTestId('ops-row-setup:first-entry-count').compareDocumentPosition(nowRow)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Search stays visible but passive.
+    expect(searchInput()).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(searchInput());
+  });
+
+  it('zonesConfigured=false: Count opening stock is locked — no command, no POST reachable', () => {
+    firstEntryChecklist(false);
+    renderPanel({ alerts: [] });
+
+    const map = screen.getByTestId('ops-row-setup:first-entry-map');
+    fireEvent.click(within(map).getByRole('button', { name: /Map warehouse/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+
+    const count = screen.getByTestId('ops-row-setup:first-entry-count');
+    expect(count).toHaveTextContent('Count opening stock');
+    expect(count).toHaveTextContent('Map your warehouse first so LaSyncro knows which locations must be counted.');
+    expect(count).toHaveAttribute('data-status', 'available');
+    expect(within(count).queryByRole('button')).toBeNull();
+    expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(0);
+  });
+
+  it('zonesConfigured=true + not_started + owner: map stays visible as verified; Start opening count POSTs', async () => {
+    firstEntryChecklist(true);
+    renderPanel({ alerts: [] });
+
+    expect(screen.getByTestId('ops-row-setup:first-entry-map')).toHaveAttribute('data-status', 'verified');
+    expect(screen.getByTestId('ops-first-entry-setup-toggle')).toHaveTextContent('SETUP · 1 remaining');
+
+    const count = screen.getByTestId('ops-row-setup:first-entry-count');
+    fireEvent.click(within(count).getByRole('button', { name: 'Start opening count' }));
+    await waitFor(() => expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(1));
+  });
+
+  it('zonesConfigured=true + not_started + operator: no Start command', () => {
+    firstEntryChecklist(true, 'not_started', false);
+    renderPanel({ alerts: [] });
+
+    const count = screen.getByTestId('ops-row-setup:first-entry-count');
+    expect(count).toHaveTextContent('Owner or admin must start');
+    expect(within(count).queryByRole('button')).toBeNull();
+  });
+
+  it('after canonical reconciliation: mature NOW-first / six-item composition resumes', () => {
+    mockUseActivationChecklist.mockReturnValue({
+      items: SETUP_ITEMS, completedCount: 1, allComplete: false,
+      isLoading: false, isError: false, firstEntry: false, firstEntryItems: [],
+    });
+    renderPanel({ alerts: [alert({ id: 'a1' })] });
+
+    expect(screen.queryByTestId('ops-first-entry-intro')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-first-entry-setup-toggle')).not.toBeInTheDocument();
+    const setup = screen.getByTestId('ops-setup-toggle');
+    expect(setup).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('ops-row-alert:a1').compareDocumentPosition(setup)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // ── Once-only auto-open ──
+
+  it('pulses, then auto-opens once after the delay without focusing search, and persists intro-seen', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+
+    expect(OPS_CONSOLE_AUTO_OPEN_DELAY_MS).toBeGreaterThanOrEqual(500);
+    expect(OPS_CONSOLE_AUTO_OPEN_DELAY_MS).toBeLessThanOrEqual(800);
+    expect(trigger()).toHaveAttribute('data-pulse', 'true');
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS - 1);
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    advance(1);
+
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(searchInput());
+    expect(introPosts()).toBe(1);
+    expect(postSpy.mock.calls.find(([url]) => url === INTRO_URL)).toEqual([INTRO_URL]);
+    // Never a setup completion write.
+    expect(postSpy.mock.calls.filter(([url]) => url !== INTRO_URL)).toHaveLength(0);
+
+    // The merchant can close it immediately; it does not come back.
+    fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    expect(introPosts()).toBe(1);
+  });
+
+  it('writes the persisted flag into the shared onboarding-flags cache on success', async () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(mockSetQueryData).toHaveBeenCalledWith(['user-state', 'onboarding-flags'], expect.any(Function));
+    const update = mockSetQueryData.mock.calls[0][1] as (old?: Record<string, boolean>) => Record<string, boolean>;
+    expect(update({ 'checklist:completed': false })).toEqual({
+      'checklist:completed': false, [OPS_CONSOLE_INTRO_SEEN_KEY]: true,
+    });
+  });
+
+  it('persisted intro-seen flag prevents any automatic reopen on remount/reload', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({ [OPS_CONSOLE_INTRO_SEEN_KEY]: true });
+
+    const first = renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    first.unmount();
+
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    expect(trigger()).not.toHaveAttribute('data-pulse');
+    expect(introPosts()).toBe(0);
+  });
+
+  it.each([
+    ['flags still loading', () => { firstEntryChecklist(false); flagsRead(undefined, false); }],
+    ['flags read failed/missing', () => { firstEntryChecklist(false); rq.useQuery = () => ({ data: undefined }); }],
+    ['not first-entry', () => { flagsRead({}); }],
+  ])('fails closed when %s: no pulse, no auto-open, no write', (_label, arrange) => {
+    jest.useFakeTimers();
+    arrange();
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    expect(screen.queryByTestId('ops-console')).not.toBeInTheDocument();
+    expect(trigger()).not.toHaveAttribute('data-pulse');
+    expect(introPosts()).toBe(0);
+  });
+
+  it('a manual open during the pending intro consumes it: no later auto-reopen', () => {
+    jest.useFakeTimers();
+    firstEntryChecklist(false);
+    flagsRead({});
+    renderButton(<OpsConsoleButton alerts={[]} deepLink={deepLink} />);
+
+    fireEvent.click(trigger());
+    fireEvent.click(trigger());
+    advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false');
+    expect(introPosts()).toBe(1);
+  });
+
+  // ── Search intent ──
+
+  it('manual trigger opens attention mode and never autofocuses search', () => {
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    fireEvent.click(trigger());
+
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(searchInput());
+  });
+
+  it('Ctrl+K (non-macOS) while closed opens the console with search focused and suppresses the browser default', () => {
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+
+    const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true });
+    act(() => { window.dispatchEvent(event); });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(document.activeElement).toBe(searchInput());
+  });
+
+  it('Ctrl+K while already open focuses search; a later manual reopen does not', async () => {
+    renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+    fireEvent.click(trigger());
+    expect(document.activeElement).not.toBe(searchInput());
+
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true })); });
+    expect(document.activeElement).toBe(searchInput());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Ops Console' }));
+    await waitForElementToBeRemoved(() => screen.queryByTestId('ops-console'));
+    fireEvent.click(trigger());
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(searchInput());
+  });
+
+  it('Cmd+K on macOS opens into search; Ctrl+K on macOS is left alone', () => {
+    const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      renderButton(<OpsConsoleButton alerts={[alert()]} deepLink={deepLink} />);
+
+      const ctrl = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });
+      act(() => { window.dispatchEvent(ctrl); });
+      expect(ctrl.defaultPrevented).toBe(false);
+      expect(trigger()).toHaveAttribute('aria-expanded', 'false');
+
+      const cmd = new KeyboardEvent('keydown', { key: 'k', metaKey: true, cancelable: true });
+      act(() => { window.dispatchEvent(cmd); });
+      expect(cmd.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(searchInput());
+    } finally {
+      platform.mockRestore();
+    }
+  });
+
+  // ── Persistence and ownership boundaries ──
+
+  it('uses no browser storage for intro, setup or search state', () => {
+    for (const file of [OPS_CONSOLE_SRC, CHECKLIST_HOOK_SRC]) {
+      expect(codeOnly(fs.readFileSync(file, 'utf8'))).not.toMatch(/localStorage|sessionStorage/);
+    }
+  });
+
+  it('keeps shortcut and auto-open ownership inside the console, not the topnav', () => {
+    const topnav = codeOnly(fs.readFileSync(TOPNAV_SRC, 'utf8'));
+    expect(topnav).not.toMatch(/keydown|metaKey|ctrlKey|intro-seen/);
+    const overview = codeOnly(fs.readFileSync(
+      path.join(REPO_ROOT, 'modules/overview/src/ui/pages/OverviewModuleFT2.tsx'), 'utf8'));
+    expect(overview).not.toMatch(/OpsConsole|intro-seen/);
   });
 });
