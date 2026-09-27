@@ -11,6 +11,9 @@
 //      cannot distinguish not-started / counting / review / cutover; the
 //      progress view never establishes completion)
 //
+// GH-1165: alongside the six items it exposes `firstEntry` and the dedicated
+// two-step first-entry projection (`firstEntryItems`) over the same sources.
+//
 // See docs/playbooks/onboarding-progressive-disclosure-playbook.md §2 Layer 1.
 
 import { useContext } from 'react';
@@ -190,6 +193,57 @@ export function buildOpeningInventoryItem(
   }
 }
 
+// ─── GH-1165 — FIRST-ENTRY SETUP PROJECTION ──────────────────────────────────
+
+export const FIRST_ENTRY_MAP_KEY = 'first-entry-map';
+export const FIRST_ENTRY_COUNT_KEY = 'first-entry-count';
+export const FIRST_ENTRY_COUNT_LOCKED_SUBTITLE =
+  'Map your warehouse first so LaSyncro knows which locations must be counted.';
+
+/**
+ * GH-1165 — the dedicated two-step first-entry setup: map, then count. A
+ * projection over the same canonical sources as the six-item checklist, which
+ * stays unchanged beside it.
+ *
+ * Map completion is wms/map-zones (wms.zonesConfigured). Count completion is
+ * wms/reconcile-inventory only. Until zones are configured the count row is
+ * locked: no command, no navigation, so no start POST is reachable from it.
+ * Once zones exist it reuses the GH-1156 lifecycle mapping verbatim.
+ */
+export function buildFirstEntrySetupItems(
+  zonesConfigured: boolean,
+  openingReadinessComplete: boolean,
+  view: OpeningInventoryProgressView | null,
+  canStart: boolean,
+): ChecklistItem[] {
+  const map: ChecklistItem = {
+    key: FIRST_ENTRY_MAP_KEY,
+    label: 'Map your warehouse',
+    complete: zonesConfigured,
+    subtitle: 'Define where stock lives and work happens.',
+    action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning' },
+  };
+
+  const countBase = { key: FIRST_ENTRY_COUNT_KEY, label: 'Count opening stock' };
+  let count: ChecklistItem;
+  if (openingReadinessComplete) {
+    count = { ...countBase, complete: true };
+  } else if (!zonesConfigured) {
+    count = { ...countBase, complete: false, subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE };
+  } else {
+    const lifecycle = buildOpeningInventoryItem(false, view, canStart);
+    count = lifecycle ? { ...lifecycle, ...countBase } : { ...countBase, complete: false };
+  }
+
+  return [map, count];
+}
+
+/** Canonical completion of one readiness task; null when it is absent (unknown). */
+function taskComplete(modules: ReadinessResponse['modules'], moduleId: string, taskId: string): boolean | null {
+  const task = modules.find(m => m.moduleId === moduleId)?.tasks.find(t => t.id === taskId);
+  return typeof task?.complete === 'boolean' ? task.complete : null;
+}
+
 export function useActivationChecklist() {
   const readiness = useQuery<ReadinessResponse>({
     queryKey: ['onboarding', 'readiness'],
@@ -275,6 +329,22 @@ export function useActivationChecklist() {
   const completedCount = items.filter(i => i.complete).length;
   const allComplete    = completedCount === items.length;
 
+  // GH-1165 — first-entry mode: opening reconciliation is canonically required
+  // and the readiness reconcile task canonically reports incomplete. Loading,
+  // a missing signal or a missing task all read as NOT first-entry (fail
+  // closed). Completion is never inferred locally, so the mode persists
+  // through map → count → review/cutover until readiness says reconciled.
+  const reconcileTask = readiness.isSuccess ? taskComplete(modules, 'wms', 'reconcile-inventory') : null;
+  const firstEntry = reconciliationRequired === true && reconcileTask === false;
+  const firstEntryItems: ChecklistItem[] = firstEntry
+    ? buildFirstEntrySetupItems(
+        findTask(modules, 'wms', 'map-zones'),
+        false,
+        isProgressView(openingProgress.data) ? openingProgress.data : null,
+        canStartOpeningInventory,
+      )
+    : [];
+
   // GH-1156 — after an Opening Inventory command the canonical sources are
   // re-read; the row's next state comes only from what they return.
   const refreshOpeningInventory = async () => {
@@ -291,5 +361,7 @@ export function useActivationChecklist() {
     // "nothing left to do". Completion logic above is untouched.
     isError: readiness.isError || events.isError,
     refreshOpeningInventory,
+    firstEntry,
+    firstEntryItems,
   };
 }

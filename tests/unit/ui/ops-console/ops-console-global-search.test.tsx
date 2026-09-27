@@ -144,13 +144,14 @@ function alert(over: Partial<Alert> = {}): Alert {
   };
 }
 
-function renderPanel() {
+function renderPanel(searchFocusRequest?: number) {
   return render(
     <OpsConsolePanel
       alerts={[alert()]}
       deepLink={() => ({ route: '/problem-center', label: 'Problem Center' })}
       open
       onClose={mockOnClose}
+      searchFocusRequest={searchFocusRequest}
     />,
   );
 }
@@ -354,5 +355,57 @@ describe('Ops Console global search', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'HISTORY' }));
     expect(within(screen.getByTestId('ops-console-body')).getByText('HISTORY')).toBeInTheDocument();
     expect(screen.getByText('Resolved episode')).toBeInTheDocument();
+  });
+});
+
+// ─── GH-1165 — SEARCH INTENT ─────────────────────────────────────────────────
+
+describe('Ops Console global search intent (GH-1165)', () => {
+  const searchInput = () => screen.getByLabelText('Search orders, products, SKUs, barcodes, or batches');
+
+  it('Escape with a query clears query/results and stays in search; empty focused Escape leaves search', () => {
+    renderPanel();
+    const input = searchInput();
+    act(() => { input.focus(); });
+    fireEvent.change(input, { target: { value: '10' } });
+    expect(screen.getAllByRole('option')).toHaveLength(6);
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input).toHaveValue('');
+    expect(screen.queryByRole('listbox', { name: 'Search results' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(input);
+
+    // Neither Escape navigates, closes the console or manufactures anything.
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('never focuses search without an explicit search request', () => {
+    renderPanel(0);
+    expect(document.activeElement).not.toBe(searchInput());
+  });
+
+  it('focuses search for each explicit request, including while already open', () => {
+    const { rerender } = renderPanel(1);
+    const input = searchInput();
+    expect(document.activeElement).toBe(input);
+
+    act(() => { input.blur(); });
+    expect(document.activeElement).not.toBe(input);
+
+    rerender(
+      <OpsConsolePanel
+        alerts={[alert()]}
+        deepLink={() => ({ route: '/problem-center', label: 'Problem Center' })}
+        open
+        onClose={mockOnClose}
+        searchFocusRequest={2}
+      />,
+    );
+    expect(document.activeElement).toBe(input);
   });
 });

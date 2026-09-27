@@ -16,7 +16,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { axiosInstance } from 'api/axiosConfig';
 import { AuthContext } from 'contexts/AuthContext';
-import { useActivationChecklist, type ChecklistItem } from 'hooks/useActivationChecklist';
+import {
+  useActivationChecklist,
+  FIRST_ENTRY_COUNT_LOCKED_SUBTITLE,
+  type ChecklistItem,
+} from 'hooks/useActivationChecklist';
 
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: { get: jest.fn() },
@@ -65,12 +69,15 @@ function mockReadiness(opts: {
   progressError?: boolean;
   /** Readiness never resolves (stays loading). */
   readinessPending?: boolean;
+  /** GH-1165 — wms.zonesConfigured and its map-zones task; default false. */
+  zonesConfigured?: boolean;
 } = {}) {
   const required = opts.reconciliationRequired ?? true;
+  const zones = opts.zonesConfigured ?? false;
   const wmsSignals = required === 'missing'
-    ? [{ name: 'wms.zonesConfigured', value: false }]
+    ? [{ name: 'wms.zonesConfigured', value: zones }]
     : [
-        { name: 'wms.zonesConfigured', value: false },
+        { name: 'wms.zonesConfigured', value: zones },
         { name: 'wms.openingInventoryReconciliationRequired', value: required },
         { name: 'wms.openingInventoryReconciled', value: opts.reconcileComplete ?? false },
       ];
@@ -96,7 +103,7 @@ function mockReadiness(opts: {
             {
               moduleId: 'wms',
               tasks: [
-                { id: 'map-zones', complete: false },
+                { id: 'map-zones', complete: zones },
                 { id: 'print-barcodes', complete: false },
                 { id: 'connect-carrier', complete: false },
                 { id: 'reconcile-inventory', complete: opts.reconcileComplete ?? false },
@@ -357,5 +364,126 @@ describe('useActivationChecklist — Opening Inventory canonical lifecycle (GH-1
     expect(item?.complete).toBe(false);
     expect(item?.action).toBeUndefined();
     expect(result.current.isError).toBe(false);
+  });
+});
+
+// ─── GH-1165 — FIRST-ENTRY MODE AND SETUP PROJECTION ─────────────────────────
+
+describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const countItem = (items: ChecklistItem[]) => items.find((i) => i.key === 'first-entry-count');
+  const mapItem = (items: ChecklistItem[]) => items.find((i) => i.key === 'first-entry-map');
+
+  /** Resolves once the hook reports first-entry mode with the progress read applied. */
+  async function renderFirstEntry(role?: string) {
+    const result = await renderWithProgressApplied(role);
+    await waitFor(() => expect(result.current.firstEntry).toBe(true));
+    return result;
+  }
+
+  it('#1160 fresh state (required, unreconciled, unmapped) => first-entry mode with exactly map + count', async () => {
+    mockReadiness({ progress: progressView({ state: 'not_started' }) });
+    const result = await renderFirstEntry('owner');
+
+    expect(result.current.firstEntryItems.map((i) => i.key)).toEqual(['first-entry-map', 'first-entry-count']);
+
+    expect(mapItem(result.current.firstEntryItems)).toEqual({
+      key: 'first-entry-map',
+      label: 'Map your warehouse',
+      complete: false,
+      subtitle: 'Define where stock lives and work happens.',
+      action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning' },
+    });
+
+    // zonesConfigured=false: locked — no command and no navigation, even for an owner.
+    const count = countItem(result.current.firstEntryItems);
+    expect(count).toEqual({
+      key: 'first-entry-count',
+      label: 'Count opening stock',
+      complete: false,
+      subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE,
+    });
+    expect(FIRST_ENTRY_COUNT_LOCKED_SUBTITLE)
+      .toBe('Map your warehouse first so LaSyncro knows which locations must be counted.');
+  });
+
+  it('keeps the mature six-item checklist unchanged beside the first-entry projection', async () => {
+    mockReadiness({ progress: progressView({ state: 'not_started' }) });
+    const result = await renderFirstEntry('owner');
+
+    expect(result.current.items.map((i) => i.key)).toEqual([
+      'fix-costs', 'map-zones', 'print-barcodes', 'connect-carrier', 'wave-released', 'opening-inventory',
+    ]);
+    // GH-1156 six-item behaviour is not gated by zones.
+    expect(openingItem(result.current.items)?.action).toEqual({
+      kind: 'command', label: 'Start opening count', command: 'opening_inventory_start',
+    });
+  });
+
+  it.each(['owner', 'admin'])('zonesConfigured + not_started + %s => map verified, Start opening count', async (role) => {
+    mockReadiness({ zonesConfigured: true, progress: progressView({ state: 'not_started' }) });
+    const result = await renderFirstEntry(role);
+
+    expect(mapItem(result.current.firstEntryItems)?.complete).toBe(true);
+    const count = countItem(result.current.firstEntryItems);
+    expect(count?.label).toBe('Count opening stock');
+    expect(count?.complete).toBe(false);
+    expect(count?.action).toEqual({
+      kind: 'command', label: 'Start opening count', command: 'opening_inventory_start',
+    });
+  });
+
+  it('zonesConfigured + not_started + operator => no Start command', async () => {
+    mockReadiness({ zonesConfigured: true, progress: progressView({ state: 'not_started' }) });
+    const result = await renderFirstEntry('operator');
+
+    const count = countItem(result.current.firstEntryItems);
+    expect(count?.action).toBeUndefined();
+    expect(count?.subtitle).toBe('Owner or admin must start');
+  });
+
+  it.each([
+    ['counting', progressView({ state: 'counting', total_bins: 17, complete_bins: 6 }), undefined, 'Continue'],
+    ['review_required', progressView({ state: 'review_required', total_bins: 17, complete_bins: 17 }), 'attention', 'Review'],
+    ['ready_for_cutover', progressView({ state: 'ready_for_cutover', total_bins: 3, complete_bins: 3 }), undefined, 'Review'],
+    ['cutover executing', progressView({ state: 'ready_for_cutover', cutover: { status: 'executing' } }), 'waiting', 'View'],
+    ['cutover failed', progressView({ state: 'review_required', cutover: { status: 'failed' } }), 'failed', 'Retry'],
+  ])('%s: first-entry mode persists and the count row reuses the GH-1156 lifecycle', async (_label, progress, lifecycle, cta) => {
+    mockReadiness({ zonesConfigured: true, progress });
+    const result = await renderFirstEntry();
+
+    const count = countItem(result.current.firstEntryItems);
+    expect(count?.complete).toBe(false);
+    expect(count?.lifecycle).toBe(lifecycle);
+    expect(count?.action).toEqual({ kind: 'navigate', label: cta, route: '/wms' });
+  });
+
+  it('canonical reconciliation complete => first-entry mode ends, no projection', async () => {
+    mockReadiness({ zonesConfigured: true, reconcileComplete: true });
+    const result = await renderChecklist();
+
+    expect(result.current.firstEntry).toBe(false);
+    expect(result.current.firstEntryItems).toEqual([]);
+    expect(result.current.items).toHaveLength(6);
+  });
+
+  it('fails closed: loading, missing signal and legacy required=false are not first-entry', async () => {
+    mockReadiness({ readinessPending: true });
+    const loading = renderHook(() => useActivationChecklist(), { wrapper: makeWrapper() });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(loading.result.current.firstEntry).toBe(false);
+    expect(loading.result.current.firstEntryItems).toEqual([]);
+    loading.unmount();
+
+    mockReadiness({ reconciliationRequired: 'missing' });
+    const missing = await renderChecklist();
+    expect(missing.current.firstEntry).toBe(false);
+
+    mockReadiness({ reconciliationRequired: false, reconcileComplete: true });
+    const legacy = await renderChecklist();
+    expect(legacy.current.firstEntry).toBe(false);
   });
 });

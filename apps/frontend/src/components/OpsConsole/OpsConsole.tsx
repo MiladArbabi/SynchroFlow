@@ -27,6 +27,10 @@
 //             collapsed until asked for, and always rendered below NOW.
 //             GH-1156: its Opening Inventory row may carry a `command` action,
 //             which this surface alone executes (runCommand below).
+//             GH-1165: in first-entry mode (useActivationChecklist.firstEntry)
+//             the dedicated map → count projection replaces it, expanded and
+//             above NOW; the trigger auto-opens once (persisted server-side)
+//             and Cmd/Ctrl+K opens straight into Global Search.
 //   HISTORY — its own tab, never in OPEN. OPS-CONSOLE-HISTORY-01: canonical
 //             shop-wide HISTORY V1 feed (GET /api/v1/operations/history, see
 //             useHistory.ts), mapped verbatim by buildHistoryRows — no local
@@ -42,7 +46,7 @@
 
 import { type CSSProperties, type ReactNode, forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, IconButton, Tooltip, Badge, Slide, useMediaQuery } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
@@ -77,6 +81,26 @@ import {
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const OPS_SEARCH_HINT = 'FIND ORDER, SKU, BARCODE OR BATCH';
+
+const ONBOARDING_FLAGS_QUERY_KEY = ['user-state', 'onboarding-flags'] as const;
+
+/**
+ * GH-1165 — dedicated server-side flag (user_states, via onboarding-flags) that
+ * records the once-only first-entry auto-open. Deliberately not
+ * checklist:completed or a spotlight key, and never a setup completion input.
+ */
+export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
+const OPS_CONSOLE_INTRO_SEEN_URL = '/api/v1/user-state/ops-console/intro-seen';
+/** Delay between the trigger pulse and the once-only first-entry auto-open. */
+export const OPS_CONSOLE_AUTO_OPEN_DELAY_MS = 650;
+
+/** Cmd on macOS, Ctrl elsewhere — the Global Search shortcut modifier. */
+function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
+    .userAgentData?.platform ?? navigator.platform ?? '';
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
 
 /**
  * GH-1156 — stable merchant copy for a failed opening-count start. The
@@ -122,7 +146,7 @@ export const OPS_ROW_SUBJECT_CLAMP = { xs: 'unset', sm: 2 } as const;
 
 function useChecklistDismissed() {
   return useQuery<Record<string, boolean>>({
-    queryKey: ['user-state', 'onboarding-flags'],
+    queryKey: ONBOARDING_FLAGS_QUERY_KEY,
     queryFn: async () => (await axiosInstance.get('/api/v1/user-state/onboarding-flags')).data,
     staleTime: 60_000,
   });
@@ -464,6 +488,7 @@ function OpsGlobalSearch({
   activeIndex,
   onActiveIndexChange,
   onActivate,
+  inputRef,
 }: {
   open: boolean;
   query: string;
@@ -471,6 +496,7 @@ function OpsGlobalSearch({
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   onActivate: (result: GlobalSearchResult) => void;
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const pal = useAppTheme();
   const search = useGlobalSearch(query, open);
@@ -486,8 +512,14 @@ function OpsGlobalSearch({
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      onQueryChange('');
-      onActiveIndexChange(-1);
+      // GH-1165 — a query/results Escape clears and stays in search; an empty
+      // focused Escape leaves search. Neither navigates nor closes the rail.
+      if (query.length > 0) {
+        onQueryChange('');
+        onActiveIndexChange(-1);
+      } else {
+        event.currentTarget.blur();
+      }
       return;
     }
 
@@ -570,6 +602,7 @@ function OpsGlobalSearch({
           )}
           <Box
             component="input"
+            ref={inputRef}
             value={query}
             onChange={(event) => onQueryChange(event.currentTarget.value)}
             onFocus={() => setSearchFocused(true)}
@@ -678,6 +711,11 @@ export interface OpsConsoleProps {
    * only, mirroring `waitingItems`.
    */
   historyItems?: HistoryItem[];
+  /**
+   * GH-1165 — explicit Global Search intent (Cmd/Ctrl+K). Each increment above
+   * zero focuses the search input; zero (manual open, auto-open) never does.
+   */
+  searchFocusRequest?: number;
 }
 
 /**
@@ -713,6 +751,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   onClose,
   waitingItems,
   historyItems,
+  searchFocusRequest = 0,
   style,
 }, ref) {
   const pal = useAppTheme();
@@ -722,6 +761,13 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   // Presentational only — no persistence, no new authority.
   const [nowExpanded, setNowExpanded] = useState(false);
   const [setupExpanded, setSetupExpanded] = useState(false);
+  // GH-1165 — first-entry SETUP is expanded by default.
+  const [firstEntrySetupExpanded, setFirstEntrySetupExpanded] = useState(true);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (searchFocusRequest > 0) searchInputRef.current?.focus({ preventScroll: true });
+  }, [searchFocusRequest]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -733,6 +779,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
 
   const {
     items, isLoading: setupLoading, isError: setupError, refreshOpeningInventory,
+    firstEntry = false, firstEntryItems,
   } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
@@ -808,6 +855,11 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   const resolvedWaitingItems = waitingItems ?? waitingQuery.data?.items ?? [];
   const waitingRows = useMemo(() => buildWaitingRows(resolvedWaitingItems), [resolvedWaitingItems]);
   const setupRows = useMemo(() => (setupDismissed ? [] : buildSetupRows(items)), [items, setupDismissed]);
+  const firstEntryRows = useMemo(
+    () => (firstEntry ? buildSetupRows(firstEntryItems ?? []) : []),
+    [firstEntry, firstEntryItems],
+  );
+  const firstEntryRemaining = firstEntryRows.filter((r) => r.status !== 'verified').length;
   const historyRows = useMemo(() => buildHistoryRows(resolvedHistoryItems), [resolvedHistoryItems]);
 
   // The cap is a rendering decision. The COUNT is always the full actionable
@@ -944,6 +996,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         activeIndex={activeSearchIndex}
         onActiveIndexChange={setActiveSearchIndex}
         onActivate={activateSearchResult}
+        inputRef={searchInputRef}
       />
 
       {/* BODY */}
@@ -952,6 +1005,44 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
       <Box data-testid="ops-console-body" sx={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
         {tab === 'OPEN' ? (
           <>
+            {/* GH-1165 — FIRST-ENTRY: while opening reconciliation is
+                canonically required and incomplete, the dedicated two-step
+                setup (map → count) comes first and expanded. Once readiness
+                reports reconciled this block is gone and the mature NOW-first
+                composition below is unchanged. */}
+            {firstEntry && (
+              <>
+                <Box
+                  data-testid="ops-first-entry-intro"
+                  sx={{ px: 1.5, py: 1, borderBottom: `0.5px solid ${pal.rule}` }}
+                >
+                  <Typography sx={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 600, color: pal.ink }}>
+                    Start here
+                  </Typography>
+                  <Typography sx={{ fontFamily: MONO, fontSize: 10.5, color: pal.ink3, mt: 0.25 }}>
+                    See what needs your attention and what to do next.
+                  </Typography>
+                </Box>
+                <DisclosureLine
+                  testId="ops-first-entry-setup-toggle"
+                  expanded={firstEntrySetupExpanded}
+                  onToggle={() => setFirstEntrySetupExpanded((v) => !v)}
+                >
+                  SETUP · {firstEntryRemaining} remaining
+                </DisclosureLine>
+                {firstEntrySetupExpanded && firstEntryRows.map((row) => (
+                  <OpsConsoleRow
+                    key={row.id}
+                    row={row}
+                    onNavigate={goto}
+                    onCommand={(command) => { void runCommand(command); }}
+                    pendingCommand={pendingCommand}
+                    commandError={commandErrorFor(row)}
+                  />
+                ))}
+              </>
+            )}
+
             {/* NOW — actionable operational work, backend rank preserved. The
                 count is the full actionable total, not the rendered slice. */}
             <SectionHeader label="NOW" count={nowRows.length} />
@@ -987,8 +1078,10 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
             )}
 
             {/* SETUP — always below NOW, and secondary: collapsed until asked
-                for, so unfinished onboarding never competes with live work. */}
-            {!setupDismissed && (
+                for, so unfinished onboarding never competes with live work.
+                GH-1165: replaced by the first-entry block above while
+                first-entry mode holds. */}
+            {!firstEntry && !setupDismissed && (
               <>
                 {setupError ? (
                   <>
@@ -1169,17 +1262,99 @@ export function OpsConsoleButton({
   // Overview page can withdraw Operations Pulse while the console is open.
   const { state, dispatch } = useConfig();
   const open = state.isOpsConsoleOpen;
-  const { items } = useActivationChecklist();
-  const { data: flags } = useChecklistDismissed();
+
+  // GH-1165 — first-entry onboarding uses the shared Ops open-state authority;
+  // query/cache state remains local to the onboarding behavior.
+  const queryClient = useQueryClient();
+  const { items, firstEntry = false, firstEntryItems } = useActivationChecklist();
+  const { data: flags, isSuccess: flagsLoaded } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
+
+  // GH-1165 — Global Search intent. Zero means "open without focusing search"
+  // (manual click, auto-open); Cmd/Ctrl+K increments it.
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  const [pulse, setPulse] = useState(false);
+
+  // GH-1165 — once-only first-entry auto-open. Eligible only on positive
+  // evidence: canonical first-entry mode AND a loaded flag read that lacks the
+  // intro-seen key. Loading, failed or missing state never opens (fail
+  // closed). The ref makes the claim once per mount; the persisted flag makes
+  // it once per user across remounts and reloads.
+  const introSeen = flags?.[OPS_CONSOLE_INTRO_SEEN_KEY] === true;
+  const autoOpenEligible = firstEntry === true && flagsLoaded === true && !introSeen;
+  const introClaimed = useRef(false);
+  // Held in a ref so claimIntro stays stable and never reschedules the timer.
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
+  const claimIntro = useCallback(() => {
+    if (introClaimed.current) return;
+    introClaimed.current = true;
+    // Records only that the intro ran; it never touches setup completion.
+    axiosInstance.post(OPS_CONSOLE_INTRO_SEEN_URL)
+      .then(() => {
+        queryClientRef.current.setQueryData<Record<string, boolean>>(
+          ONBOARDING_FLAGS_QUERY_KEY,
+          (old) => ({ ...(old ?? {}), [OPS_CONSOLE_INTRO_SEEN_KEY]: true }),
+        );
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!autoOpenEligible || introClaimed.current) return undefined;
+    setPulse(true);
+    // The claim happens when the timer fires, not when it is scheduled, so a
+    // cancelled schedule (unmount, StrictMode re-run) never burns the intro.
+    const timer = setTimeout(() => {
+      if (introClaimed.current) return;
+      claimIntro();
+      setSearchFocusRequest(0);
+      dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
+    }, OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [autoOpenEligible, claimIntro, dispatch]);
+
+  // Opening the console by any explicit means while the intro is pending
+  // consumes it, so it can never pop open again behind the merchant.
+  const autoOpenEligibleRef = useRef(autoOpenEligible);
+  autoOpenEligibleRef.current = autoOpenEligible;
+
+  const toggleFromTrigger = () => {
+    if (autoOpenEligibleRef.current) claimIntro();
+    setSearchFocusRequest(0);
+    dispatch({ type: 'SET_OPS_CONSOLE', payload: !open });
+  };
+
+  // GH-1165 — Cmd+K (macOS) / Ctrl+K (elsewhere): open if closed, then focus
+  // Global Search. The browser's own binding is suppressed.
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'k' || event.altKey || event.shiftKey) return;
+      const modifier = mac
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      if (!modifier) return;
+      event.preventDefault();
+      if (autoOpenEligibleRef.current) claimIntro();
+      dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
+      setSearchFocusRequest((n) => n + 1);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [claimIntro, dispatch]);
   // Open attention is still computed from exactly one authority (isOpenRow over
   // NOW + SETUP), but the trigger no longer PRINTS it: the alerts bell already
   // shows a number for largely the same inbox, and two adjacent counters read as
   // two different truths. The trigger shows presence; the rail's section headers
   // remain the visible, authoritative counts.
+  // GH-1165: in first-entry mode SETUP is the first-entry projection the rail
+  // actually presents.
   const badge = openAttentionCount([
     ...buildNowRows(alerts, deepLink),
-    ...(setupDismissed ? [] : buildSetupRows(items)),
+    ...(firstEntry
+      ? buildSetupRows(firstEntryItems ?? [])
+      : setupDismissed ? [] : buildSetupRows(items)),
   ]);
   const hasAttention = badge > 0;
 
@@ -1189,10 +1364,12 @@ export function OpsConsoleButton({
         <IconButton
           size="small"
           disableRipple
-          onClick={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: !open })}
+          onClick={toggleFromTrigger}
           aria-label={`Ops Console — ${badge} open`}
           aria-expanded={open}
           data-state={open ? 'open' : 'closed'}
+          data-pulse={pulse ? 'true' : undefined}
+          onAnimationEnd={() => setPulse(false)}
           sx={{
             borderRadius: '8px',
             color: open || hasAttention ? 'var(--accent)' : 'text.secondary',
@@ -1207,6 +1384,19 @@ export function OpsConsoleButton({
               color: 'var(--accent-hover)',
             },
             '&.Mui-focusVisible': { boxShadow: `0 0 0 2px ${pal.accent}` },
+            // GH-1165 — single first-entry pulse ahead of the auto-open, on
+            // the shell's one motion language (GH-1158).
+            '&[data-pulse="true"]': {
+              animationName: 'opsTriggerPulse',
+              animationDuration: `${SHELL_MOTION.durationMs}ms`,
+              animationTimingFunction: SHELL_MOTION.easing,
+              animationIterationCount: 1,
+              '@keyframes opsTriggerPulse': {
+                '0%': { boxShadow: `0 0 0 0 ${pal.accentBorder}` },
+                '100%': { boxShadow: '0 0 0 8px transparent' },
+              },
+              '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+            },
           }}
         >
           <Badge
@@ -1229,7 +1419,11 @@ export function OpsConsoleButton({
         alerts={alerts}
         deepLink={deepLink}
         open={open}
-        onClose={() => dispatch({ type: 'SET_OPS_CONSOLE', payload: false })}
+        onClose={() => {
+          setSearchFocusRequest(0);
+          dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
+        }}
+        searchFocusRequest={searchFocusRequest}
       />
     </>
   );

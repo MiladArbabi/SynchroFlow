@@ -241,3 +241,18 @@ export const dismissChecklist = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to dismiss checklist' });
   }
 };
+
+// GH-1165 — once-only first-entry Ops Console auto-open: records that it ran.
+export const markOpsConsoleIntroSeen = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    // shopId required for RLS tenant context on the write.
+    const shopId = (req as any).user?.shopId;
+    if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+    await UserStateService.markOpsConsoleIntroSeen(userId, shopId);
+    return res.status(200).json({ seen: true });
+  } catch (error) {
+    console.error('[OPS_CONSOLE_INTRO_SEEN_FAILED]', error);
+    return res.status(500).json({ error: 'Failed to record Ops Console intro' });
+  }
+};
