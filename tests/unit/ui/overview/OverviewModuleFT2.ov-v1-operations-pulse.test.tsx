@@ -31,8 +31,11 @@
 // from Morning Brief / alert title or message copy — hostile Morning Brief
 // fixtures below carry contradictory numbers to prove that.
 //
+// OVERVIEW-SCREEN-OPT-01 (Slice C): with onNavigate supplied, each whole
+// domain group is one contextual navigation button with an exact route.
+//
 // What is protected: ownership, domain semantics, structured truth,
-// accessibility of the region/groups/controls. What is deliberately NOT
+// accessibility of the region/groups/controls, contextual routes. What is deliberately NOT
 // protected: exact copy, CSS, layout, DOM nesting beyond region → group.
 
 import React from 'react';
@@ -175,14 +178,15 @@ function renderOverview(opts: {
   pulse?: OperationsPulseV1;
   map?: boolean;
   onNavigate?: jest.Mock;
+  omitNavigate?: boolean;
   suppress?: boolean;
 } = {}) {
-  const { pulse = pulseFixture(), map = true, onNavigate = jest.fn(), suppress } = opts;
+  const { pulse = pulseFixture(), map = true, onNavigate = jest.fn(), omitNavigate = false, suppress } = opts;
   render(
     <OverviewModuleFT2
       {...baseProps()}
       operationsPulse={pulse}
-      onNavigate={onNavigate}
+      {...(omitNavigate ? {} : { onNavigate })}
       mapContent={map ? <div data-testid="map-slot" /> : undefined}
       {...(suppress === undefined ? {} : { suppressOperationsPulse: suppress })}
     />
@@ -417,6 +421,46 @@ describe('OV-V1-0 (F): Inbound uses structured receive-at-dock and awaiting-stow
   });
 });
 
+// ─── CONTEXTUAL NAVIGATION ──────────────────────────────────────────────────
+//
+// OVERVIEW-SCREEN-OPT-01 (Slice C): Operations Pulse is contextual navigation,
+// not remediation. Interaction granularity is the whole domain group.
+
+const CONTEXT_CONTROLS = [
+  ['Open Orders operational context', '/orders/flow'],
+  ['Open Fulfillment operational context', '/wms'],
+  ['Open Inventory operational context', '/orders/flow?constraint=inventory'],
+  ['Open Inbound operational context', '/wms'],
+] as const;
+
+describe('OVERVIEW-SCREEN-OPT-01: Operations Pulse domain groups navigate to their operational context', () => {
+  it.each(LAYOUTS)('%s: exactly four contextual buttons, each invoking its exact route', (_label, map) => {
+    const { onNavigate } = renderOverview({ map });
+    const pulse = operationsPulse();
+
+    const buttons = within(pulse).getAllByRole('button');
+    expect(buttons).toHaveLength(4);
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(CONTEXT_CONTROLS.map(([name]) => name));
+
+    for (const [name, route] of CONTEXT_CONTROLS) {
+      onNavigate.mockClear();
+      fireEvent.click(within(pulse).getByRole('button', { name }));
+      expect(onNavigate).toHaveBeenCalledTimes(1);
+      expect(onNavigate).toHaveBeenCalledWith(route);
+    }
+  });
+
+  it.each(LAYOUTS)('%s: without onNavigate the pulse renders no buttons', (_label, map) => {
+    renderOverview({ map, omitNavigate: true });
+
+    expect(within(operationsPulse()).queryAllByRole('button')).toHaveLength(0);
+    expect(domainGroup(ORDERS)).toBeInTheDocument();
+    expect(domainGroup(FULFILLMENT)).toBeInTheDocument();
+    expect(domainGroup(INVENTORY)).toBeInTheDocument();
+    expect(domainGroup(INBOUND)).toBeInTheDocument();
+  });
+});
+
 // ─── H — NO LOOSE ENDS (bounded) ────────────────────────────────────────────
 //
 // Informational, non-interactive rows are allowed; nothing here requires a
@@ -425,10 +469,8 @@ describe('OV-V1-0 (F): Inbound uses structured receive-at-dock and awaiting-stow
 // must be specific — a non-empty href, or an onNavigate target — and never a
 // generic self-route to "/" or "/overview".
 //
-// Deliberately NOT protected here (deferred to OV-V1-5, which owns the
-// signal interaction API): exact final routes, dead-control detection for
-// buttons whose action is not observable through onNavigate. Ops Console
-// behaviour is not asserted here at all (GH-1153 owns it).
+// Exact contextual routes are protected by the contextual-navigation block
+// above. Ops Console behaviour is not asserted here at all (GH-1153 owns it).
 
 // Bare "/" or "/overview" only. A specific Overview intent such as
 // "/overview?resolution=address" is not a generic self-route.

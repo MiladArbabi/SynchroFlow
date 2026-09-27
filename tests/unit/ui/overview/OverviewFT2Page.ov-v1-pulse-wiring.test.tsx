@@ -393,6 +393,24 @@ describe('OV-V1-0 (F) page: Inbound ← receiveAtDock units + stowPressure.by_lo
   });
 });
 
+// ─── NAVIGATION ADAPTER ─────────────────────────────────────────────────────
+//
+// OVERVIEW-SCREEN-OPT-01 (Slice C): the page's onNavigate is a pure adapter.
+// Route ownership belongs to the module (OverviewModuleFT2.ov-v1-operations-pulse).
+
+describe('OVERVIEW-SCREEN-OPT-01 page: onNavigate forwards its input unchanged to navigate', () => {
+  it('passes the module-supplied deep link to navigate verbatim', () => {
+    renderPage();
+
+    const { onNavigate } = lastModuleProps();
+    expect(typeof onNavigate).toBe('function');
+
+    onNavigate('/any/context?probe=1');
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/any/context?probe=1');
+  });
+});
+
 // ─── PRODUCTION COMPOSITION ─────────────────────────────────────────────────
 
 describe('OVERVIEW-SCREEN-OPT-01: Profile Completion banner is retired from Overview', () => {

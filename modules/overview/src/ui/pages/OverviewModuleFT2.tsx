@@ -112,8 +112,9 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   /**
    * UX-OWNERSHIP-01: Overview is status-only. Global Ops Console is the
    * external action owner, with the top nav as its sole entry point.
-   * onNavigate may still be supplied for compatibility but is
-   * no longer invoked by Overview's signal/pulse presentation.
+   * OVERVIEW-SCREEN-OPT-01: onNavigate is invoked only by Operations Pulse
+   * domain groups, as contextual navigation (never remediation). When absent,
+   * the pulse renders non-interactively.
    */
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
@@ -152,7 +153,18 @@ function timeOfDay(): string {
 // Compact orientation header · map slot · Operations Pulse.
 // Whole-operation situational awareness only. Reads ONLY operationsPulse —
 // never Morning Brief (no signals, greeting, summary, freshness or refresh),
-// never Business Pulse. Informational only: no buttons, links or navigation.
+// never Business Pulse. When onNavigate is supplied, each whole domain group is
+// one contextual navigation button (PULSE_CONTEXT_ROUTES) — never remediation,
+// never per-metric actions. Without onNavigate the pulse is non-interactive.
+
+const PULSE_CONTEXT_ROUTES = {
+  Orders: '/orders/flow',
+  Fulfillment: '/wms',
+  Inventory: '/orders/flow?constraint=inventory',
+  Inbound: '/wms',
+} as const;
+
+type PulseDomain = keyof typeof PULSE_CONTEXT_ROUTES;
 
 function pluralize(count: number, singular: string, plural: string): string {
   return count === 1 ? singular : plural;
@@ -161,7 +173,9 @@ function pluralize(count: number, singular: string, plural: string): string {
 function PulseRow({ text, tone = 'default' }: { text: string; tone?: 'default' | 'muted' | 'clear' }) {
   return (
     <Typography
+      component="span"
       sx={{
+        display: 'block',
         fontSize: 12.5,
         lineHeight: 1.45,
         fontWeight: tone === 'default' ? 500 : 400,
@@ -173,24 +187,80 @@ function PulseRow({ text, tone = 'default' }: { text: string; tone?: 'default' |
   );
 }
 
-function PulseGroup({ label, rows }: { label: string; rows: ReactNode[] }) {
+function PulseGroup({
+  label,
+  rows,
+  onNavigate,
+}: {
+  label: PulseDomain;
+  rows: ReactNode[];
+  onNavigate?: (deepLink: string) => void;
+}) {
+  const contents = (
+    <>
+      <Typography component="span" sx={{ display: 'block', fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>
+        {label}
+      </Typography>
+      {/* Whitespace between rows keeps each fact textually separate for
+          assistive tech; the flex column ignores it visually. */}
+      {rows.map((row, i) => <Fragment key={i}>{i > 0 ? ' ' : null}{row}</Fragment>)}
+    </>
+  );
+
   return (
     <Box
       role="group"
       aria-label={label}
       sx={{ display: 'flex', flexDirection: 'column', gap: '2px', py: '10px', borderTop: '0.5px solid var(--rule)', '&:first-of-type': { borderTop: 'none', pt: 0 } }}
     >
-      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>
-        {label}
-      </Typography>
-      {/* Whitespace between rows keeps each fact textually separate for
-          assistive tech; the flex column ignores it visually. */}
-      {rows.map((row, i) => <Fragment key={i}>{i > 0 ? ' ' : null}{row}</Fragment>)}
+      {onNavigate ? (
+        <Box
+          component="button"
+          type="button"
+          aria-label={`Open ${label} operational context`}
+          onClick={() => onNavigate(PULSE_CONTEXT_ROUTES[label])}
+          sx={{
+            // Native button reset — the group keeps its existing presentation.
+            appearance: 'none',
+            font: 'inherit',
+            color: 'inherit',
+            textAlign: 'left',
+            bgcolor: 'transparent',
+            border: 'none',
+            m: 0,
+            // Horizontal inset offset by negative margin so the hover surface
+            // does not shift content or change the group's dimensions.
+            px: '8px',
+            mx: '-8px',
+            py: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'background-color 0.12s',
+            '&:hover': { bgcolor: 'var(--bg-3)' },
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+          }}
+        >
+          {contents}
+        </Box>
+      ) : (
+        contents
+      )}
     </Box>
   );
 }
 
-function OperationsPulse({ pulse, currency }: { pulse: OverviewOperationsPulse; currency: string }) {
+function OperationsPulse({
+  pulse,
+  currency,
+  onNavigate,
+}: {
+  pulse: OverviewOperationsPulse;
+  currency: string;
+  onNavigate?: (deepLink: string) => void;
+}) {
   const money = (v: number) => formatCurrencyCompact(v, currency);
   const { orders, fulfillment, inventory, inbound } = pulse;
 
@@ -245,10 +315,10 @@ function OperationsPulse({ pulse, currency }: { pulse: OverviewOperationsPulse; 
       <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}>
         Operations
       </Typography>
-      <PulseGroup label="Orders" rows={orderRows} />
-      <PulseGroup label="Fulfillment" rows={fulfillmentRows} />
-      <PulseGroup label="Inventory" rows={inventoryRows} />
-      <PulseGroup label="Inbound" rows={inboundRows} />
+      <PulseGroup label="Orders" rows={orderRows} onNavigate={onNavigate} />
+      <PulseGroup label="Fulfillment" rows={fulfillmentRows} onNavigate={onNavigate} />
+      <PulseGroup label="Inventory" rows={inventoryRows} onNavigate={onNavigate} />
+      <PulseGroup label="Inbound" rows={inboundRows} onNavigate={onNavigate} />
     </Box>
   );
 }
@@ -259,6 +329,7 @@ function OverviewModuleV1({
   userName,
   currency = 'USD',
   suppressOperationsPulse = false,
+  onNavigate,
 }: OverviewModuleFT2Props) {
   const greetingText = userName ? `Good ${timeOfDay()}, ${userName}.` : `Good ${timeOfDay()}.`;
 
@@ -286,11 +357,11 @@ function OverviewModuleV1({
           }}
         >
           <Box sx={{ minWidth: 0 }}>{mapContent}</Box>
-          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} />}
+          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} onNavigate={onNavigate} />}
         </Box>
       ) : (
         <Box sx={{ minWidth: 0, maxWidth: 560 }}>
-          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} />}
+          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} onNavigate={onNavigate} />}
         </Box>
       )}
     </Box>

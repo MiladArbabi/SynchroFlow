@@ -9,6 +9,10 @@
 //   - Overview renders no "Open Ops Console" controls; global top-nav
 //     Ops Console is the sole entry point.
 //
+// OVERVIEW-SCREEN-OPT-01 (Slice C): Operations Pulse domain groups are
+// approved contextual navigation controls. Their four routes are allowed;
+// remediation routes remain forbidden.
+//
 // OVERVIEW-SCREEN-OPT-01 (Slice A): the retired fallback-triage and
 // Business Pulse renderers are gone; retired-surface absence is owned by
 // OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A). Both remaining
@@ -29,6 +33,8 @@ const FORBIDDEN_ROUTES = [
   '/orders/flow?urgency=sla_breach',
   '/demand?filter=critical',
 ];
+
+const APPROVED_CONTEXT_ROUTES = ['/orders/flow', '/wms', '/orders/flow?constraint=inventory'];
 
 function baseProps(): OverviewModuleFT2Props {
   return {
@@ -123,12 +129,19 @@ describe('UX-OWNERSHIP-01 (1): Morning Brief signals never become remediation CT
     expect(screen.queryByRole('button', { name: 'Fulfil orders' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reorder now' })).not.toBeInTheDocument();
 
-    for (const control of [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')]) {
+    const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')];
+    // The approved contextual controls are present, so the click sweep is not vacuous.
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
       fireEvent.click(control);
     }
 
+    expect(onNavigate).toHaveBeenCalled();
     for (const route of FORBIDDEN_ROUTES) {
       expect(onNavigate).not.toHaveBeenCalledWith(route);
+    }
+    for (const [destination] of onNavigate.mock.calls) {
+      expect(APPROVED_CONTEXT_ROUTES).toContain(destination);
     }
   });
 });
@@ -142,5 +155,7 @@ describe('UX-OWNERSHIP-01 (2): Overview owns no Ops Console entry point', () => 
     if (map) expect(screen.getByTestId('map-slot')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /operations pulse/i })).toBeInTheDocument();
     expect(screen.queryAllByText(/Open Ops Console/i)).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { name: /ops console/i })).toHaveLength(0);
+    expect(screen.queryAllByRole('link', { name: /ops console/i })).toHaveLength(0);
   });
 });
