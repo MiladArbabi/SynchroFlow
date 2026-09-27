@@ -30,7 +30,10 @@
 //             GH-1165: in first-entry mode (useActivationChecklist.firstEntry)
 //             the dedicated map → count projection replaces it, expanded and
 //             above NOW; the trigger auto-opens once (persisted server-side)
-//             and Cmd/Ctrl+K opens straight into Global Search.
+//             and Cmd/Ctrl+K opens straight into Global Search. That first
+//             attention contact shows a one-time Spotlight: beside the rail
+//             over a dimmed canvas at sm+ (OpsFirstContactSpotlight), inside
+//             the full-width rail above SETUP at xs.
 //   HISTORY — its own tab, never in OPEN. OPS-CONSOLE-HISTORY-01: canonical
 //             shop-wide HISTORY V1 feed (GET /api/v1/operations/history, see
 //             useHistory.ts), mapped verbatim by buildHistoryRows — no local
@@ -44,12 +47,12 @@
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
 
-import { type CSSProperties, type ReactNode, forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, type Ref, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, IconButton, Tooltip, Badge, Slide, useMediaQuery } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { EntityDetailModal } from '@lasyncro/shared/ui';
+import { EntityDetailModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
 import { useAppTheme } from '../../hooks/useAppTheme';
@@ -93,6 +96,18 @@ export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
 const OPS_CONSOLE_INTRO_SEEN_URL = '/api/v1/user-state/ops-console/intro-seen';
 /** Delay between the trigger pulse and the once-only first-entry auto-open. */
 export const OPS_CONSOLE_AUTO_OPEN_DELAY_MS = 650;
+/** GH-1165 — approved first-contact Spotlight copy. */
+export const OPS_FIRST_CONTACT_SPOTLIGHT = {
+  title: 'Start here',
+  body: 'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.',
+} as const;
+/**
+ * GH-1165 — the two presentations of the ONE first-contact Spotlight. sm+:
+ * beside the rail over a dimmed canvas. xs: the rail is 100vw, so the same
+ * coach renders transiently inside it, above SETUP, with no dimmer.
+ */
+export const OPS_SPOTLIGHT_DESKTOP_DISPLAY = { xs: 'none', sm: 'block' } as const;
+export const OPS_SPOTLIGHT_MOBILE_DISPLAY = { xs: 'block', sm: 'none' } as const;
 
 /** Cmd on macOS, Ctrl elsewhere — the Global Search shortcut modifier. */
 function isMacPlatform(): boolean {
@@ -716,6 +731,17 @@ export interface OpsConsoleProps {
    * zero focuses the search input; zero (manual open, auto-open) never does.
    */
   searchFocusRequest?: number;
+  /**
+   * GH-1165 — receives the first-entry SETUP block, the element the
+   * first-contact Spotlight points at. Presentation only.
+   */
+  firstEntrySetupRef?: Ref<HTMLDivElement>;
+  /**
+   * GH-1165 — the trigger's one-time Spotlight is active. The rail renders
+   * only its xs presentation; the sm+ one lives beside the rail.
+   */
+  firstContactSpotlight?: boolean;
+  onDismissFirstContactSpotlight?: () => void;
 }
 
 /**
@@ -752,6 +778,9 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   waitingItems,
   historyItems,
   searchFocusRequest = 0,
+  firstEntrySetupRef,
+  firstContactSpotlight = false,
+  onDismissFirstContactSpotlight,
   style,
 }, ref) {
   const pal = useAppTheme();
@@ -1011,18 +1040,24 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                 reports reconciled this block is gone and the mature NOW-first
                 composition below is unchanged. */}
             {firstEntry && (
-              <>
-                <Box
-                  data-testid="ops-first-entry-intro"
-                  sx={{ px: 1.5, py: 1, borderBottom: `0.5px solid ${pal.rule}` }}
-                >
-                  <Typography sx={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 600, color: pal.ink }}>
-                    Start here
-                  </Typography>
-                  <Typography sx={{ fontFamily: MONO, fontSize: 10.5, color: pal.ink3, mt: 0.25 }}>
-                    See what needs your attention and what to do next.
-                  </Typography>
-                </Box>
+              <Box ref={firstEntrySetupRef} data-testid="ops-first-entry-setup">
+                {/* xs only: transient first-contact coach, above SETUP. */}
+                {firstContactSpotlight && onDismissFirstContactSpotlight && (
+                  <Box
+                    role="region"
+                    aria-label="Ops Console introduction"
+                    data-testid="ops-first-contact-spotlight-inline"
+                    sx={{ display: OPS_SPOTLIGHT_MOBILE_DISPLAY, px: 1.5, pt: 1 }}
+                  >
+                    <SpotlightCoachMark
+                      title={OPS_FIRST_CONTACT_SPOTLIGHT.title}
+                      body={OPS_FIRST_CONTACT_SPOTLIGHT.body}
+                      isDismissed={false}
+                      onDismiss={onDismissFirstContactSpotlight}
+                      direction="down"
+                    />
+                  </Box>
+                )}
                 <DisclosureLine
                   testId="ops-first-entry-setup-toggle"
                   expanded={firstEntrySetupExpanded}
@@ -1040,7 +1075,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                     commandError={commandErrorFor(row)}
                   />
                 ))}
-              </>
+              </Box>
             )}
 
             {/* NOW — actionable operational work, backend rank preserved. The
@@ -1251,6 +1286,89 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   );
 });
 
+// ─── FIRST-CONTACT SPOTLIGHT ─────────────────────────────────────────────────
+
+/** Fallback / floor for the Spotlight's vertical anchor (below the topnav). */
+const SPOTLIGHT_FALLBACK_Y = 180;
+const SPOTLIGHT_MIN_Y = 140;
+
+/**
+ * GH-1165 — one-time first-contact coaching moment. Sits immediately left of
+ * the rail, pointing at the first-entry SETUP block without covering it, over
+ * a dimmed application canvas. The rail itself stays above the dimmer and
+ * fully interactive; nothing here traps or moves focus. Owns no persistence:
+ * whether it may show at all is decided by the trigger from the existing
+ * ops-console:intro-seen claim. sm+ only — at xs the rail is full-width and
+ * the rail renders the same coach inline instead.
+ */
+function OpsFirstContactSpotlight({
+  anchor,
+  onDismiss,
+}: {
+  anchor: HTMLElement | null;
+  onDismiss: () => void;
+}) {
+  const [anchorY, setAnchorY] = useState(SPOTLIGHT_FALLBACK_Y);
+
+  useLayoutEffect(() => {
+    if (!anchor) return undefined;
+    const measure = () => {
+      const rect = anchor.getBoundingClientRect();
+      const y = rect.height > 0 ? rect.top + rect.height / 2 : SPOTLIGHT_FALLBACK_Y;
+      setAnchorY(Math.max(y, SPOTLIGHT_MIN_Y));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(anchor);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+      observer?.disconnect();
+    };
+  }, [anchor]);
+
+  return (
+    <>
+      {/* Canvas dimmer: below the rail (1150), never a MUI Modal/Backdrop.
+          Visual only — it absorbs canvas clicks but never dismisses; only
+          the coach's own X / Got it do. */}
+      <Box
+        aria-hidden
+        data-testid="ops-first-contact-dimmer"
+        sx={{
+          display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
+          position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 1149,
+          bgcolor: 'common.black', opacity: 0.35,
+        }}
+      />
+      <Box
+        role="region"
+        aria-label="Ops Console introduction"
+        data-testid="ops-first-contact-spotlight"
+        sx={{
+          display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
+          position: 'fixed', zIndex: 1151,
+          top: anchorY,
+          right: `calc(${OPS_CONSOLE_WIDTH.sm}px + 14px)`,
+          width: 272,
+          transform: 'translateY(-50%)',
+        }}
+      >
+        <SpotlightCoachMark
+          title={OPS_FIRST_CONTACT_SPOTLIGHT.title}
+          body={OPS_FIRST_CONTACT_SPOTLIGHT.body}
+          isDismissed={false}
+          onDismiss={onDismiss}
+          direction="right"
+          floating
+        />
+      </Box>
+    </>
+  );
+}
+
 // ─── TOPNAV TRIGGER ───────────────────────────────────────────────────────────
 
 export function OpsConsoleButton({
@@ -1274,6 +1392,11 @@ export function OpsConsoleButton({
   // (manual click, auto-open); Cmd/Ctrl+K increments it.
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const [pulse, setPulse] = useState(false);
+  // GH-1165 — first-contact Spotlight. In-memory only: it is raised solely by
+  // the same attention contact that claims ops-console:intro-seen, so the
+  // durable once-only contract stays that flag; any close clears it.
+  const [spotlightActive, setSpotlightActive] = useState(false);
+  const [setupAnchor, setSetupAnchor] = useState<HTMLDivElement | null>(null);
 
   // GH-1165 — once-only first-entry auto-open. Eligible only on positive
   // evidence: canonical first-entry mode AND a loaded flag read that lacks the
@@ -1309,6 +1432,7 @@ export function OpsConsoleButton({
       if (introClaimed.current) return;
       claimIntro();
       setSearchFocusRequest(0);
+      setSpotlightActive(true);
       dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
     }, OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
     return () => clearTimeout(timer);
@@ -1320,10 +1444,19 @@ export function OpsConsoleButton({
   autoOpenEligibleRef.current = autoOpenEligible;
 
   const toggleFromTrigger = () => {
+    // A manual open before the timer is the same first attention contact.
+    const firstContact = autoOpenEligibleRef.current && !introClaimed.current;
     if (autoOpenEligibleRef.current) claimIntro();
     setSearchFocusRequest(0);
+    setSpotlightActive(firstContact && !open);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: !open });
   };
+
+  // Closed by any path (including other ConfigContext writers): the Spotlight
+  // never survives into a later open.
+  useEffect(() => {
+    if (!open) setSpotlightActive(false);
+  }, [open]);
 
   // GH-1165 — Cmd+K (macOS) / Ctrl+K (elsewhere): open if closed, then focus
   // Global Search. The browser's own binding is suppressed.
@@ -1337,6 +1470,8 @@ export function OpsConsoleButton({
       if (!modifier) return;
       event.preventDefault();
       if (autoOpenEligibleRef.current) claimIntro();
+      // Search intent wins: no coaching layer in front of Global Search.
+      setSpotlightActive(false);
       dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
       setSearchFocusRequest((n) => n + 1);
     };
@@ -1357,6 +1492,7 @@ export function OpsConsoleButton({
       : setupDismissed ? [] : buildSetupRows(items)),
   ]);
   const hasAttention = badge > 0;
+  const showSpotlight = spotlightActive && open && firstEntry;
 
   return (
     <>
@@ -1415,15 +1551,25 @@ export function OpsConsoleButton({
         </IconButton>
       </Tooltip>
 
+      {/* Before the rail in DOM order so Tab reaches "Got it" right after
+          the trigger. */}
+      {showSpotlight && (
+        <OpsFirstContactSpotlight anchor={setupAnchor} onDismiss={() => setSpotlightActive(false)} />
+      )}
+
       <OpsConsolePanel
         alerts={alerts}
         deepLink={deepLink}
         open={open}
         onClose={() => {
           setSearchFocusRequest(0);
+          setSpotlightActive(false);
           dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
         }}
         searchFocusRequest={searchFocusRequest}
+        firstEntrySetupRef={setSetupAnchor}
+        firstContactSpotlight={showSpotlight}
+        onDismissFirstContactSpotlight={() => setSpotlightActive(false)}
       />
     </>
   );
