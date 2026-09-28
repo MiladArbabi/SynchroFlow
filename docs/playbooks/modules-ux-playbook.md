@@ -2,7 +2,7 @@
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces. Auth pages (`apps/frontend/src/pages/authentication/*`) are a **brand surface**, governed by `docs/blueprints/auth_blueprint.md` — the font ban and layout rules below do not apply there.
 > **Last updated:** 2026-09-28
-> **2026-09-28 — Orders Overview (ORD-UX-02) locally certified** as the second consumer of the operational-context shell grammar. See §1 (Operational Screen Ecosystem Pattern) and the ORD-UX-02 entry.
+> **2026-09-28 — Orders Overview (ORD-UX-02) production certified** (Fly v746) as the second consumer of the operational-context shell grammar. See §1 (Operational Screen Ecosystem Pattern) and the ORD-UX-02 entry.
 > **2026-09-14 — WMS operator-session UX contract ratified using Receive as the reference implementation.** See §22 for focus-shell, Work Note, scanner-focus, reconciliation, typography, completion-evidence, and handoff rules that future Receive / Stow / Pick session work must preserve.
 > **2026-07-22 — Inventory Intelligence adopted the shared `PulseCard`.** See §18, PULSE-02A, for the verified metric mapping and layout rules.
 > **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sends operators to the wrong workflow (reorder vs. check receiving).
@@ -172,8 +172,8 @@ same role. Keep the visual/semantic role, expressed through canonical tokens.
   reads no Ops Console, config or domain state;
 - below `lg`, the primary workspace precedes the domain rail.
 
-Certified consumers: Overview (reference) and Orders Overview (locally
-certified 2026-09-28). Orders uses the same shell and rail-replacement grammar;
+Certified consumers: Overview (reference) and Orders Overview (production
+certified, Fly v746). Orders uses the same shell and rail-replacement grammar;
 its Order health rail content and semantics remain Orders-owned and are not a
 global module rule.
 
@@ -1036,12 +1036,22 @@ The canonical Orders Overview landing pattern is Live Intelligence:
 
 All essential Orders landing content fits visibly in the first viewport. Residual ~64px vertical overflow at the tested desktop viewport is intentionally **DEFERRED** as non-blocking polish. The scroll-free requirement is **not fully closed/clean**; residual scroll is not resolved.
 
-**2026-09-27 — ORD-UX-02 — Orders Overview normalization — LOCAL CERTIFIED (2026-09-28)**
+**2026-09-27 — ORD-UX-02 — Orders Overview normalization — PROD CERTIFIED**
 
-Status: **Implemented and locally certified 2026-09-28** (1440 × 720 and
-1024 × 820, light/dark, Ops Console rail replacement, primary-workspace
-stability, document/horizontal overflow ≤ 1, silent-bin non-interactivity,
-projection-health recovery). Production certification pending.
+Status: **PROD CERTIFIED.** Local certification PASS (2026-09-28); production
+certification PASS — Fly release v746, deployed main SHA
+`1f4cf55a4420af42b1eb08d6bd1f4b1370d2c739`.
+
+Certified at 1440 × 720 and 1024 × 820: light/dark, Ops Console closed/open
+(rail replacement), primary-workspace geometric stability, document/horizontal
+overflow ≤ 1, projection-health banner absent, silent-bin hover/select
+(production PASS).
+
+Active-location hover/select: **AUTOMATED PASS / PRODUCTION BROWSER NOT
+OBSERVED / NON-BLOCKING.** No truthfully located active picker existed during
+certification and none was manufactured; the positive browser path (hover →
+dimming + transient plate; click → selected outline + pinned plate +
+"Open order flow →"; close → neutral) remains to be observed naturally.
 
 This supersedes `ORD-UX-01` as the current Orders Overview UX contract.
 `ORD-UX-01` above is historical: it records the pre-normalization composition,

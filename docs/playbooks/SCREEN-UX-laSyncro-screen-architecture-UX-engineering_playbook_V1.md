@@ -623,7 +623,7 @@ Recommended summary metrics:
 Then the registry:
 Screen	Route	Archetype	Spatial	Pulse	Ops Console	Scroll	Status
 Overview  /overview  Awareness  PRIMARY  Cross-domain  Global  PASS at 1440×720 + 1024×820  PROD CERTIFIED / reference
-Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
+Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	PROD CERTIFIED
 Order Flow	/orders/flow	Execution/context	ON-DEMAND	No?	Global	Candidate	Needs audit
 Inventory Intelligence	/inventory	Context	CONTEXTUAL	Audit	Global	Audit	Needs audit
 WMS	/wms	Execution	Conditional	likely no	Global	Audit	Needs audit
@@ -1001,19 +1001,29 @@ NO generic warehouse map
 NO duplicate Overview workspace
 NO duplicate Order Flow workspace
 
-CERTIFICATION (local, 2026-09-28)
-1440 × 720 desktop: PASS
-1024 × 820 below-lg: PASS
+CERTIFICATION
+Local certification (2026-09-28): PASS
+Production certification: PASS
+Production release: Fly v746
+Deployed main SHA: 1f4cf55a4420af42b1eb08d6bd1f4b1370d2c739
+
+Certified at 1440 × 720 (desktop) and 1024 × 820 (below-lg):
 Light / dark: PASS
-Ops Console rail replacement: PASS
+Ops Console closed / open (rail replacement): PASS
 Primary workspace geometric stability: PASS
-Document / horizontal overflow ≤ 1: PASS at both viewports
-Silent-bin non-interactivity: PASS
-Projection-health ("Data is not updating") recovery: PASS
-Production: PENDING
+Document / horizontal overflow ≤ 1: PASS
+Projection-health banner ("Data is not updating") absent: PASS
+Silent-bin hover/select (Orders-silent bins stay plain geometry): PRODUCTION PASS
+
+Active-location hover/select: AUTOMATED PASS / PRODUCTION BROWSER NOT OBSERVED / NON-BLOCKING
+No truthfully located active picker existed during certification, and none was
+manufactured. Once one naturally exists, the expected browser path is:
+hover → shared map dimming/focus → transient Orders contextual plate;
+click → persistent selected outline → pinned contextual plate → "Open order flow →";
+close → selection clears → map returns to neutral state.
 
 STATUS
-LOCAL CERTIFIED
+PROD CERTIFIED
 
 WORKSHOP
 Phase 3 approved 2026-09-27.
