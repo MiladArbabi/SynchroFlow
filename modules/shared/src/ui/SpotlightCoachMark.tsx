@@ -34,6 +34,12 @@ interface SpotlightCoachMarkProps {
    * canvas): opaque surface under the accent tint, no trailing margin.
    */
   floating?: boolean;
+  /**
+   * Optional primary action rendered in place of "Got it". Both must be set;
+   * the X control stays dismiss-only.
+   */
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 // Controls are real buttons (keyboard reachable); these reset UA button chrome
@@ -61,8 +67,11 @@ export function SpotlightCoachMark({
   totalSteps,
   direction,
   floating = false,
+  actionLabel,
+  onAction,
 }: SpotlightCoachMarkProps) {
   if (isDismissed) return null;
+  const hasAction = actionLabel != null && onAction != null;
 
   return (
     <Box
@@ -125,11 +134,11 @@ export function SpotlightCoachMark({
         {body}
       </Typography>
 
-      {/* Got it — Tier 2 ghost pill per modules-ux-playbook §2 */}
+      {/* Got it (or the optional action) — Tier 2 ghost pill per modules-ux-playbook §2 */}
       <Box
         component="button"
         type="button"
-        onClick={onDismiss}
+        onClick={hasAction ? onAction : onDismiss}
         sx={{
           ...BUTTON_RESET_SX,
           display: 'inline-flex', alignItems: 'center',
@@ -142,7 +151,7 @@ export function SpotlightCoachMark({
           '&:hover': { bgcolor: 'var(--accent-ghost)' },
         }}
       >
-        Got it
+        {hasAction ? actionLabel : 'Got it'}
       </Box>
     </Box>
   );

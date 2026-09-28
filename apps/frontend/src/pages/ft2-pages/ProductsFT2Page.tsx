@@ -37,6 +37,7 @@ import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { hasOperationalFloor } from '../floor-planning/operationalFloor';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 
 const __DEV__ = import.meta.env.DEV;
@@ -83,9 +84,8 @@ function InventoryIntelligenceView({
   // exists only when a zone carries geometry. Every shop is bootstrapped with a
   // WH-{shopId}-ROOT row whose position_x/position_y are null, so a row count
   // would report a floor that IsometricCanvas would then paint empty.
-  const hasPlacedFloor = zones.some(
-    (z: WarehouseZone) => z.position_x != null && z.position_y != null
-  );
+  // GH-1176: a positioned warehouse root alone is still not a floor.
+  const hasPlacedFloor = hasOperationalFloor(zones);
 
   const occupancyQuery = useWarehouseGridOccupancy(hasMapAccess && hasPlacedFloor);
 

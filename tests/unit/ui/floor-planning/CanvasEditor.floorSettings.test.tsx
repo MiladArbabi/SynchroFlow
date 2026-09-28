@@ -104,6 +104,70 @@ describe('CanvasEditor floor settings', () => {
   });
 });
 
+describe('GH1176 — floor settings resize containment', () => {
+  let rectSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    rectSpy = jest.spyOn(SVGSVGElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 1000,
+      height: 500,
+      top: 0,
+      right: 1000,
+      bottom: 500,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+  });
+
+  afterEach(() => rectSpy.mockRestore());
+
+  it('GH1176: rejects a width that would exclude an existing positioned child, with validation feedback', async () => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    // Child spans x 8..10 inside the 12m root; a 6m width would exclude it.
+    const child = zone({ location_code: 'EDGE-BIN', position_x: 8, position_y: 2, width: 2, depth: 1, orientation: 0 });
+    render(<CanvasEditor zones={[warehouse, child]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+
+    const width = screen.getByLabelText('Floor width');
+    fireEvent.change(width, { target: { value: '6' } });
+    fireEvent.blur(width);
+
+    await waitFor(() => expect(width).toHaveAttribute('aria-invalid', 'true'));
+    expect(width).toHaveAccessibleDescription();
+    expect(onUpdateZone).not.toHaveBeenCalled();
+  });
+
+  // GH1176 audit: a null persisted size still renders a visible Canvas
+  // footprint (1m wide, 0.8m deep), so containment must use that footprint.
+  it.each([
+    {
+      axis: 'width' as const,
+      label: 'Floor width',
+      child: { position_x: 9.5, position_y: 2, width: null, depth: 1 },
+    },
+    {
+      axis: 'depth' as const,
+      label: 'Floor depth',
+      child: { position_x: 2, position_y: 9.5, width: 1, depth: null },
+    },
+  ])('GH1176: rejects a $axis shrink that would clip a positioned child with a null $axis', async ({ label, child }) => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    const nullSized = zone({ location_code: 'NULL-SIZE-BIN', orientation: 0, ...child });
+    render(<CanvasEditor zones={[warehouse, nullSized]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+
+    // 10m keeps the persisted origin (9.5) inside but clips the visible footprint.
+    const input = screen.getByLabelText(label);
+    fireEvent.change(input, { target: { value: '10' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'));
+    expect(onUpdateZone).not.toHaveBeenCalled();
+  });
+});
+
 describe('CanvasEditor compact zone inspector', () => {
   let rectSpy: jest.SpyInstance;
 

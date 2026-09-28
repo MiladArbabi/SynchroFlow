@@ -15,10 +15,11 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 import useConfig from 'hooks/useConfig';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { hasOperationalFloor } from '../floor-planning/operationalFloor';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
-import type { SyntheticStation, LiveBinActivity, WarehouseZone, LocationPulse } from '@lasyncro/shared/ui';
+import type { SyntheticStation, LiveBinActivity, LocationPulse } from '@lasyncro/shared/ui';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
 import { AddressResolutionSessionModal } from '../orders/AddressResolutionSessionModal';
 import {
@@ -162,9 +163,8 @@ export default function OverviewPageFT2() {
   // never-configured tenant while IsometricCanvas filtered that row out of
   // positionedZones and painted an empty SVG. Mirrors IsometricCanvas.tsx:508
   // exactly so the gate and the canvas can never disagree about "has a floor".
-  const hasPlacedFloor = zones.some(
-    (z: WarehouseZone) => z.position_x != null && z.position_y != null
-  );
+  // GH-1176: a positioned warehouse root alone is still not a floor.
+  const hasPlacedFloor = hasOperationalFloor(zones);
   const occupancyQuery = useWarehouseGridOccupancy(hasMapAccess && hasPlacedFloor);
   const idleAlerts = useIdleAlerts(hasMapAccess && hasPlacedFloor);
   // useOrderPool (GET /api/v1/wms/order-pool, 30s poll) feeds the inbound apron:

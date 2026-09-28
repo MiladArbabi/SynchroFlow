@@ -194,7 +194,8 @@ describe('useActivationChecklist — SETUP contract', () => {
     );
 
     expect(routeByKey['fix-costs']).toBe('/inventory/catalog');
-    expect(routeByKey['map-zones']).toBe('/floor-planning');
+    // GH1176: supersedes the bare /floor-planning route.
+    expect(routeByKey['map-zones']).toBe('/floor-planning?tab=setup&view=canvas');
     expect(routeByKey['print-barcodes']).toBe('/floor-planning?tab=barcodes');
     expect(routeByKey['connect-carrier']).toBe('/settings/carriers');
     expect(routeByKey['wave-released']).toBe('/orders/flow');
@@ -384,19 +385,11 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     return result;
   }
 
-  it('#1160 fresh state (required, unreconciled, unmapped) => first-entry mode with exactly map + count', async () => {
+  it('#1160 / GH1176 fresh state (required, unreconciled, unmapped) => first-entry mode with exactly map + count; map deep-links to Setup > Canvas', async () => {
     mockReadiness({ progress: progressView({ state: 'not_started' }) });
     const result = await renderFirstEntry('owner');
 
     expect(result.current.firstEntryItems.map((i) => i.key)).toEqual(['first-entry-map', 'first-entry-count']);
-
-    expect(mapItem(result.current.firstEntryItems)).toEqual({
-      key: 'first-entry-map',
-      label: 'Map your warehouse',
-      complete: false,
-      subtitle: 'Define where stock lives and work happens.',
-      action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning' },
-    });
 
     // zonesConfigured=false: locked — no command and no navigation, even for an owner.
     const count = countItem(result.current.firstEntryItems);
@@ -408,6 +401,15 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     });
     expect(FIRST_ENTRY_COUNT_LOCKED_SUBTITLE)
       .toBe('Map your warehouse first so LaSyncro knows which locations must be counted.');
+
+    // GH1176: serialized onboarding navigation into Floor Planning Setup > Canvas.
+    expect(mapItem(result.current.firstEntryItems)).toEqual({
+      key: 'first-entry-map',
+      label: 'Map your warehouse',
+      complete: false,
+      subtitle: 'Define where stock lives and work happens.',
+      action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning?tab=setup&view=canvas' },
+    });
   });
 
   it('keeps the mature six-item checklist unchanged beside the first-entry projection', async () => {

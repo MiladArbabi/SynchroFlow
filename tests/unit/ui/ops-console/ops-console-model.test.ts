@@ -507,7 +507,7 @@ describe('WAITING rows — V1 backend-classified contract (supersedes the prior 
 describe('SETUP rows', () => {
   const items: ChecklistItem[] = [
     { key: 'connect-store', label: 'Connect your store', complete: true },
-    { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning' },
+    { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning?tab=setup&view=canvas' },
     { key: 'complete-sync', label: 'Complete your first sync', complete: false },
   ];
 
@@ -522,7 +522,7 @@ describe('SETUP rows', () => {
 
   it('preserves the existing route on incomplete rows and offers no action once complete', () => {
     const rows = buildSetupRows(items);
-    expect(rows[1].action).toEqual({ kind: 'navigate', label: 'Open', route: '/floor-planning' });
+    expect(rows[1].action).toEqual({ kind: 'navigate', label: 'Open', route: '/floor-planning?tab=setup&view=canvas' });
     expect(rows[0].action).toBeUndefined();
   });
 });
@@ -577,14 +577,14 @@ describe('SETUP rows — Opening Inventory command action (GH-1156)', () => {
 
   it('leaves generic navigation SETUP rows unchanged', () => {
     const [row] = buildSetupRows([
-      { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning' },
+      { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning?tab=setup&view=canvas' },
     ]);
     expect(row).toEqual({
       id: 'setup:map-zones',
       section: 'SETUP',
       status: 'actionable',
       label: 'Map your warehouse zones',
-      action: { kind: 'navigate', label: 'Open', route: '/floor-planning' },
+      action: { kind: 'navigate', label: 'Open', route: '/floor-planning?tab=setup&view=canvas' },
     });
   });
 

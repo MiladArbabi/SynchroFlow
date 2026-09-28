@@ -354,6 +354,37 @@ describe('OVLM-B — canonical overview.live_map ALLOW wins over a restrictive l
 });
 
 // ===========================================================================
+// GH1176 — a positioned warehouse root alone is not an operational floor
+// ===========================================================================
+describe('GH1176 — warehouse root at (0,0) with no positioned operational location', () => {
+  it('GH1176: keeps the teaching state and does not enable floor-dependent polling', () => {
+    mockTier = 'growth';
+    mockDecide = () => ALLOW;
+    mockUseFloorPlanning.mockReturnValue({
+      // Root boundary persisted at the origin; no non-root location is placed.
+      data: {
+        zones: [
+          { location_code: 'WH-1-ROOT', type: 'warehouse', active: true, position_x: 0, position_y: 0, width: 20, depth: 15 },
+          { location_code: 'A-1', type: 'bin', active: true, position_x: null, position_y: null, zone_type: 'pick' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mockFloorPlanningRefetch,
+    });
+    render(<OverviewPageFT2 />);
+
+    expect(screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')).toBeNull();
+    expect(screen.getByText('Build your floor.')).toBeInTheDocument();
+    expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
+    // Occupancy, idle alerts and problem locations all require a usable floor.
+    expect(mockUseOccupancy).toHaveBeenLastCalledWith(false);
+    expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(false);
+    expect(mockUseProblemCenter).toHaveBeenLastCalledWith(false);
+  });
+});
+
+// ===========================================================================
 // OVLM-C — denial metadata: teaser must consume AccessDecision.requiredTier,
 // never a hardcoded Growth assumption
 // ===========================================================================

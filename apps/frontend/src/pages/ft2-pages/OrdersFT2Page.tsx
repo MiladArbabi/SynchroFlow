@@ -55,6 +55,7 @@ import type { WarehouseZone, LiveBinActivity, LocationPulse } from '@lasyncro/sh
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { hasOperationalFloor } from '../floor-planning/operationalFloor';
 import { useOrdersLiveActivity } from '../wms/useWmsLiveActivity';
 
 const __DEV__ = import.meta.env.DEV;
@@ -118,9 +119,8 @@ export default function OrdersFT2Page() {
 
   // Same positioned-zone semantics as Overview and Inventory: rows exist on
   // every tenant (the bootstrapped WH-{shopId}-ROOT row), a floor does not.
-  const hasPlacedFloor = floorZones.some(
-    (z: WarehouseZone) => z.position_x != null && z.position_y != null
-  );
+  // GH-1176: a positioned warehouse root alone is still not a floor.
+  const hasPlacedFloor = hasOperationalFloor(floorZones);
 
   // Live operator activity is only drawable on a placed floor, so acquisition
   // follows both the decision and the floor.

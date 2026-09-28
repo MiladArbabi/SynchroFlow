@@ -14,15 +14,22 @@
  *
  * Phase 3: same WarehouseLocation data feeds Three.js renderer unchanged.
  */
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import {
   DecisionConfirmationModal,
+  SpotlightCoachMark,
   WarehouseLocationType,
 } from '@lasyncro/shared/ui';
 import { IsometricCanvas } from './IsometricCanvas.js';
+import {
+  componentFootprintEdge,
+  componentsExcludedByResize,
+  projectWarehouseRoot,
+  warehouseRootOrigin,
+} from './warehouseBoundary.js';
 import {
   FLOOR_PLANNING_COMPONENT_GROUPS,
   FLOOR_PLANNING_COMPONENTS,
@@ -82,9 +89,11 @@ export function fitWarehouseToViewport(
 
   const usableWidth = viewportWidth * (1 - VIEWPORT_PADDING_RATIO_PER_SIDE * 2);
   const usableHeight = viewportHeight * (1 - VIEWPORT_PADDING_RATIO_PER_SIDE * 2);
+  // GH-1176: auto-fit shows the COMPLETE boundary, so it is not floored at
+  // the manual MIN_ZOOM — a large warehouse would otherwise start clipped.
   const zoom = Math.min(
     MAX_ZOOM,
-    Math.max(MIN_ZOOM, Math.min(usableWidth / (width * SCALE), usableHeight / (depth * SCALE))),
+    Math.min(usableWidth / (width * SCALE), usableHeight / (depth * SCALE)),
   );
 
   return {
@@ -248,7 +257,7 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
 }) {
   // Layout health — real checks computed from live zone state (WMS-FP-06).
   const healthIssues: string[] = [];
-  const unpositioned = zones.filter((z) => z.position_x == null).length;
+  const unpositioned = zones.filter((z) => z.type !== 'warehouse' && z.position_x == null).length;
   if (unpositioned > 0) healthIssues.push(`${unpositioned} zone${unpositioned !== 1 ? 's' : ''} not placed on the floor`);
   const detachedBins = zones.filter((z) => z.type === 'bin' && z.zone_type !== 'quarantine' && z.parent_location_code == null).length;
   if (detachedBins > 0) healthIssues.push(`${detachedBins} bin${detachedBins !== 1 ? 's' : ''} with no parent aisle`);
@@ -414,25 +423,50 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
 }
 
 // ── FloorSettingsPanel ────────────────────────────────────────────────────────
-function FloorSettingsPanel({ root, onClose, onUpdateZone }: {
+const FLOOR_DIMENSION_ERROR_ID = 'floor-settings-dimension-error';
+
+function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
   root: WarehouseZone;
+  /** Positioned floor components the boundary must keep containing (GH-1176). */
+  components: readonly WarehouseZone[];
   onClose: () => void;
   onUpdateZone?: CanvasEditorProps['onUpdateZone'];
 }) {
   const [saving, setSaving] = useState(false);
   const [width, setWidth] = useState(String(root.width ?? ''));
   const [depth, setDepth] = useState(String(root.depth ?? ''));
+  const [dimensionError, setDimensionError] = useState<{ field: 'width' | 'depth'; message: string } | null>(null);
 
   useEffect(() => {
     setWidth(String(root.width ?? ''));
     setDepth(String(root.depth ?? ''));
+    setDimensionError(null);
   }, [root.location_code, root.width, root.depth]);
 
   async function commitDimension(field: 'width' | 'depth', raw: string) {
     const value = parseFloat(raw);
     if (isNaN(value) || !onUpdateZone) return;
+    const next = snapV(value);
+
+    // GH-1176: a boundary never shrinks around mapped components, and they are
+    // never moved to make room. The entered value stays visible, marked invalid.
+    const excluded = componentsExcludedByResize(root, { [field]: next }, components);
+    if (excluded.length > 0) {
+      const origin = warehouseRootOrigin(root)[field === 'width' ? 'x' : 'y'];
+      const required = Math.max(...excluded.map((zone) => componentFootprintEdge(zone, field))) - origin;
+      const subject = excluded.length === 1
+        ? excluded[0].location_code
+        : `${excluded.length} mapped components`;
+      setDimensionError({
+        field,
+        message: `${subject} would fall outside the warehouse. Minimum ${field}: ${Number(required.toFixed(2))} m.`,
+      });
+      return;
+    }
+
+    setDimensionError(null);
     setSaving(true);
-    try { await onUpdateZone(root.location_code, { [field]: snapV(value) }); }
+    try { await onUpdateZone(root.location_code, { [field]: next }); }
     finally { setSaving(false); }
   }
 
@@ -463,14 +497,27 @@ function FloorSettingsPanel({ root, onClose, onUpdateZone }: {
               label={dimension.label}
               value={dimension.value}
               disabled={saving}
-              onChange={(event) => dimension.set(event.target.value)}
+              error={dimensionError?.field === dimension.field}
+              onChange={(event) => {
+                dimension.set(event.target.value);
+                if (dimensionError?.field === dimension.field) setDimensionError(null);
+              }}
               onBlur={() => void commitDimension(dimension.field, dimension.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void commitDimension(dimension.field, dimension.value); }}
-              inputProps={{ 'aria-label': `Floor ${dimension.label.toLowerCase()}`, style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' } }}
+              inputProps={{
+                'aria-label': `Floor ${dimension.label.toLowerCase()}`,
+                'aria-describedby': dimensionError?.field === dimension.field ? FLOOR_DIMENSION_ERROR_ID : undefined,
+                style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' },
+              }}
               InputProps={{ endAdornment: <Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography> }}
             />
           ))}
         </Box>
+        {dimensionError && (
+          <Typography id={FLOOR_DIMENSION_ERROR_ID} role="alert" sx={{ fontSize: 10, lineHeight: 1.4, color: 'rgba(239,68,68,0.9)' }}>
+            {dimensionError.message}
+          </Typography>
+        )}
       </Box>
     </Box>
   );
@@ -862,13 +909,14 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
 
 // ── Metre ruler ───────────────────────────────────────────────────────────────
 function Ruler({ length, horizontal, scale, offset: off, zoom }: {
+  /** Physical extent in metres from the floor origin (0). */
   length: number; horizontal: boolean; scale: number; offset: number; zoom: number;
 }) {
   const step   = zoom < 0.6 ? 2 : 1;
   const ticks  = Math.ceil(length / step) + 1;
   const tickPx = step * scale * zoom;
   return (
-    <svg width={horizontal ? '100%' : RULER_SIZE} height={horizontal ? RULER_SIZE : '100%'} style={{ display: 'block', flexShrink: 0 }}>
+    <svg data-testid={horizontal ? 'floor-ruler-x' : 'floor-ruler-y'} width={horizontal ? '100%' : RULER_SIZE} height={horizontal ? RULER_SIZE : '100%'} style={{ display: 'block', flexShrink: 0 }}>
       <rect width="100%" height="100%" fill="var(--bg-2)" />
       {Array.from({ length: ticks }, (_, i) => {
         const pos = off + i * tickPx;
@@ -936,8 +984,11 @@ export function CanvasEditor({
   // x/y are in SVG canvas coordinates (post-toSvg), null when no snap active.
   const [alignGuides, setAlignGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   // Merge prop-positioned zones with optimistically placed zones
+  // GH-1176: a fresh root (null x/y, valid size) renders as the boundary at the
+  // implicit origin. Render projection only — nothing here is persisted, and
+  // the root stays non-selectable/non-draggable via isSelectableZone.
   const positionedZones = [
-    ...zones.filter(z => z.position_x != null && z.position_y != null),
+    ...zones.map(projectWarehouseRoot).filter(z => z.position_x != null && z.position_y != null),
     ...zones.filter(z => z.position_x == null && placedCoords[z.location_code] != null).map(z => ({
       ...z,
       position_x: placedCoords[z.location_code].x,
@@ -972,17 +1023,50 @@ export function CanvasEditor({
   zoomRef.current            = zoom;
   offsetRef.current          = offset;
   selectedRef.current        = selected;
-  const unpositionedCount = zones.filter(z => z.position_x == null && !placedCoords[z.location_code]).length;
+  const unpositionedCount = zones.filter(z => z.type !== 'warehouse' && z.position_x == null && !placedCoords[z.location_code]).length;
   const selectedZones = positionedZones.filter((zone) => selected.has(zone.location_code) && isSelectableZone(zone));
   const selectedZone = selectedZones.length === 1 ? selectedZones[0] : null;
 
   const warehouseRoots = zones.filter((zone) => zone.type === 'warehouse');
   const warehouseRoot = warehouseRoots.length === 1 ? warehouseRoots[0] : null;
+  const viewportRoot = useMemo(
+    () => (warehouseRoot ? projectWarehouseRoot(warehouseRoot) : null),
+    [warehouseRoot],
+  );
+  // GH-1176: once a usable warehouse root exists, its projected bounds ARE the
+  // floor (pan limits, rulers, grid, area). CANVAS_W x CANVAS_H is only the
+  // fallback when there is no usable boundary. Rulers and grid measure from the
+  // world origin, so their extent is the root's far edge.
+  const floorBounds = useMemo(() => (hasUsableWarehouseBounds(viewportRoot)
+    ? {
+        x: Number(viewportRoot.position_x),
+        y: Number(viewportRoot.position_y),
+        width: Number(viewportRoot.width),
+        depth: Number(viewportRoot.depth),
+      }
+    : { x: 0, y: 0, width: CANVAS_W, depth: CANVAS_H }), [viewportRoot]);
+  const floorBoundsRef = useRef(floorBounds);
+  floorBoundsRef.current = floorBounds;
+  const floorExtentW = floorBounds.x + floorBounds.width;
+  const floorExtentH = floorBounds.y + floorBounds.depth;
+  const floorArea = Number((floorBounds.width * floorBounds.depth).toFixed(2));
+
+  // GH-1176: boundary guidance while the root has no usable Width/Depth yet —
+  // a boundary concern only, independent of operational-floor readiness.
+  // Anchored to Floor settings; opening the panel (either way) fulfils it.
+  // Per-instance only — a refresh before bounds are set may show it again.
+  const [boundaryGuidanceDismissed, setBoundaryGuidanceDismissed] = useState(false);
+  const showBoundaryGuidance = warehouseRoot != null && !hasUsableWarehouseBounds(viewportRoot);
+  const openFloorSettings = () => {
+    setSelected(new Set());
+    setFloorSettingsOpen(true);
+    setBoundaryGuidanceDismissed(true);
+  };
 
   const fitCurrentWarehouse = useCallback(() => {
     const rect = svgRef.current?.getBoundingClientRect();
     const viewport = fitWarehouseToViewport(
-      warehouseRoot,
+      viewportRoot,
       rect?.width ?? 0,
       rect?.height ?? 0,
     );
@@ -990,11 +1074,11 @@ export function CanvasEditor({
     setZoom(viewport.zoom);
     setOffset(viewport.offset);
     return true;
-  }, [warehouseRoot]);
+  }, [viewportRoot]);
 
   useEffect(() => {
     if (initialViewportAppliedRef.current) return;
-    if (!hasUsableWarehouseBounds(warehouseRoot)) return;
+    if (!hasUsableWarehouseBounds(viewportRoot)) return;
 
     let animationFrame: number | undefined;
     let observer: ResizeObserver | undefined;
@@ -1672,11 +1756,16 @@ export function CanvasEditor({
   function clampOffset(x: number, y: number, currentZoom: number) {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return { x, y };
-    const cw = CANVAS_W * SCALE * currentZoom;
-    const ch = CANVAS_H * SCALE * currentZoom;
+    // GH-1176: bounds follow the real floor (root origin + size), read through a
+    // ref so native listeners never clamp against stale geometry.
+    const floor = floorBoundsRef.current;
+    const left   = floor.x * SCALE * currentZoom;
+    const top    = floor.y * SCALE * currentZoom;
+    const right  = (floor.x + floor.width) * SCALE * currentZoom;
+    const bottom = (floor.y + floor.depth) * SCALE * currentZoom;
     return {
-      x: Math.min(rect.width - PAN_MARGIN, Math.max(PAN_MARGIN - cw, x)),
-      y: Math.min(rect.height - PAN_MARGIN, Math.max(PAN_MARGIN - ch, y)),
+      x: Math.min(rect.width - PAN_MARGIN - left, Math.max(PAN_MARGIN - right, x)),
+      y: Math.min(rect.height - PAN_MARGIN - top, Math.max(PAN_MARGIN - bottom, y)),
     };
   }
 
@@ -1947,8 +2036,8 @@ export function CanvasEditor({
   }, [zoom, localPositions, localSizes, onUpdateZone, onUpdateZonePositions]);
 
   // onWheel is registered as a native listener in useEffect (passive: false required)
-  const canvasW = toSvg(CANVAS_W);
-  const canvasH = toSvg(CANVAS_H);
+  const canvasW = toSvg(floorExtentW);
+  const canvasH = toSvg(floorExtentH);
 
   return (
     <Box sx={{ display: 'flex', width: '100%', height: 560, border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden', bgcolor: 'var(--bg)' }}>
@@ -1957,7 +2046,7 @@ export function CanvasEditor({
       <ComponentPalette
         zones={zones}
         codeSourceZones={[...zones, ...optimisticCreatedZones]}
-        unpositionedZones={zones.filter(z => z.position_x == null)}
+        unpositionedZones={zones.filter(z => z.type !== 'warehouse' && z.position_x == null)}
         onPlace={(zone) => {
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
           const centreY = snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)));
@@ -1973,7 +2062,7 @@ export function CanvasEditor({
         {/* Toolbar */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0 }}>
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-            Floor 1 · {CANVAS_W * CANVAS_H}m² · Top-down
+            Floor 1 · {floorArea}m² · Top-down
           </Typography>
           <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>·</Typography>
           {lastSaved && (
@@ -2019,18 +2108,34 @@ export function CanvasEditor({
               <ToggleButton value="marquee" aria-label="Marquee mode"><BoxSelect size={11} />Marquee</ToggleButton>
               <ToggleButton value="pan" aria-label="Pan mode"><Hand size={11} />Pan</ToggleButton>
             </ToggleButtonGroup>
-            <Button
-              size="small"
-              variant={floorSettingsOpen ? 'contained' : 'outlined'}
-              startIcon={<Settings2 size={12} />}
-              disabled={!warehouseRoot}
-              onClick={() => { setSelected(new Set()); setFloorSettingsOpen(true); }}
-              sx={{ height: 22, minWidth: 0, px: 1, fontSize: 9, textTransform: 'none', '& .MuiButton-startIcon': { mr: 0.5 } }}
-            >
-              Floor settings
-            </Button>
+            <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+              <Button
+                size="small"
+                variant={floorSettingsOpen ? 'contained' : 'outlined'}
+                startIcon={<Settings2 size={12} />}
+                disabled={!warehouseRoot}
+                onClick={openFloorSettings}
+                sx={{ height: 22, minWidth: 0, px: 1, fontSize: 9, textTransform: 'none', '& .MuiButton-startIcon': { mr: 0.5 } }}
+              >
+                Floor settings
+              </Button>
+              {showBoundaryGuidance && (
+                <Box data-testid="floor-boundary-guidance" sx={{ position: 'absolute', top: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)', width: 320, zIndex: 10 }}>
+                  <SpotlightCoachMark
+                    title="Set your warehouse boundary"
+                    body="Click Floor settings above, then enter your warehouse Width and Depth. We’ll use this boundary to place aisles, receiving, packing, shipping and storage areas."
+                    isDismissed={boundaryGuidanceDismissed}
+                    onDismiss={() => setBoundaryGuidanceDismissed(true)}
+                    actionLabel="Open Floor settings"
+                    onAction={openFloorSettings}
+                    direction="up"
+                    floating
+                  />
+                </Box>
+              )}
+            </Box>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
-              <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta)))}
+              <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, z), z + delta)))}
                 sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
                 {label}
               </Box>
@@ -2049,12 +2154,12 @@ export function CanvasEditor({
           <Box sx={{ display: 'flex', flexShrink: 0 }}>
             <Box sx={{ width: RULER_SIZE, height: RULER_SIZE, bgcolor: 'var(--bg-2)', borderRight: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)', flexShrink: 0 }} />
             <Box sx={{ flex: 1, overflow: 'hidden' }}>
-              <Ruler length={CANVAS_W} horizontal={true} scale={SCALE} offset={offset.x} zoom={zoom} />
+              <Ruler length={floorExtentW} horizontal={true} scale={SCALE} offset={offset.x} zoom={zoom} />
             </Box>
           </Box>
           <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             <Box sx={{ width: RULER_SIZE, flexShrink: 0, overflow: 'hidden' }}>
-              <Ruler length={CANVAS_H} horizontal={false} scale={SCALE} offset={offset.y} zoom={zoom} />
+              <Ruler length={floorExtentH} horizontal={false} scale={SCALE} offset={offset.y} zoom={zoom} />
             </Box>
             <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               <svg ref={svgRef} width="100%" height="100%"
@@ -2232,7 +2337,7 @@ export function CanvasEditor({
 
       {/* RIGHT — inspector */}
       {floorSettingsOpen && warehouseRoot ? (
-        <FloorSettingsPanel root={warehouseRoot} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
+        <FloorSettingsPanel root={warehouseRoot} components={positionedZones} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
       ) : selectedZones.length > 1 ? (
         <BulkSelectionPanel
           zones={selectedZones}

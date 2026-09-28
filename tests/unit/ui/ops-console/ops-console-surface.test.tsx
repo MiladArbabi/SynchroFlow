@@ -165,7 +165,7 @@ const deepLink = () => ({ route: '/problem-center', label: 'Problem Center' });
 
 const SETUP_ITEMS = [
   { key: 'connect-store', label: 'Connect your store', complete: true },
-  { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning' },
+  { key: 'map-zones', label: 'Map your warehouse zones', complete: false, actionRoute: '/floor-planning?tab=setup&view=canvas' },
 ];
 
 /**
@@ -388,7 +388,7 @@ describe('SETUP rows', () => {
     expect(row).toHaveAttribute('data-status', 'actionable');
 
     fireEvent.click(within(row).getByRole('button', { name: /Open/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
 
     // Same authoritative input → same status. No local completion state exists.
     expect(screen.getByTestId('ops-row-setup:map-zones'))
@@ -1370,7 +1370,7 @@ describe('SETUP is secondary and collapsed', () => {
 
     const row = screen.getByTestId('ops-row-setup:map-zones');
     fireEvent.click(within(row).getByRole('button', { name: /Open/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
   });
 
   it('never renders completed setup as individual rows competing with open work', () => {
@@ -1887,7 +1887,7 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     const open = within(row).getByRole('button');
     expect(open).toHaveTextContent('Open →');
     fireEvent.click(open);
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
     expect(postSpy).not.toHaveBeenCalled();
   });
 
@@ -2000,7 +2000,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
 
     const map = screen.getByTestId('ops-row-setup:first-entry-map');
     fireEvent.click(within(map).getByRole('button', { name: /Map warehouse/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
 
     const count = screen.getByTestId('ops-row-setup:first-entry-count');
     expect(count).toHaveTextContent('Count opening stock');
@@ -2267,7 +2267,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     }
     fireEvent.click(within(within(rail).getByTestId('ops-row-setup:first-entry-map'))
       .getByRole('button', { name: /Map warehouse/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning');
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
 
     fireEvent.click(within(inline).getByRole('button', { name: 'Dismiss' }));
     expect(anySpotlight()).toBeNull();

@@ -1294,6 +1294,66 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
   }
 }
 
+type BoundaryRow = {
+  location_code: string;
+  position_x: unknown;
+  position_y: unknown;
+  width: unknown;
+  depth: unknown;
+};
+
+const BOUNDARY_EDGE_EPSILON = 1e-6;
+
+/**
+ * GH-1176: Canvas renders a positioned component with a null width/depth at
+ * 1m x 0.8m (CanvasEditor DEFAULT_COMPONENT_FOOTPRINT). Containment uses the
+ * same footprint so an accepted resize can never clip a visible component.
+ * Evaluation only — never persisted onto the component.
+ */
+const NULL_SIZE_COMPONENT_FOOTPRINT = { width: 1, depth: 0.8 } as const;
+
+function finiteOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * GH-1176 — positioned non-root components a resized warehouse root would
+ * newly exclude: inside the current boundary on that axis, outside the next.
+ * Growing a dimension can never be rejected. The origin is the persisted root
+ * x/y, or the implicit (0,0) of a fresh root. Child edges: right = x + width,
+ * bottom = y + depth, with a null size taken as NULL_SIZE_COMPONENT_FOOTPRINT.
+ */
+function componentsExcludedByRootResize(
+  root: BoundaryRow,
+  next: { width?: unknown; depth?: unknown },
+  children: BoundaryRow[],
+): string[] {
+  const originX = finiteOrNull(root.position_x) ?? 0;
+  const originY = finiteOrNull(root.position_y) ?? 0;
+  const axes = [
+    { next: finiteOrNull(next.width), current: finiteOrNull(root.width), start: originX, pos: 'position_x' as const, size: 'width' as const },
+    { next: finiteOrNull(next.depth), current: finiteOrNull(root.depth), start: originY, pos: 'position_y' as const, size: 'depth' as const },
+  ].filter((axis) => axis.next !== null);
+
+  return children
+    .filter((child) => axes.some((axis) => {
+      const edge = Number(child[axis.pos])
+        + (finiteOrNull(child[axis.size]) ?? NULL_SIZE_COMPONENT_FOOTPRINT[axis.size]);
+      const outsideNext = edge > axis.start + (axis.next as number) + BOUNDARY_EDGE_EPSILON;
+      const insideCurrent = axis.current === null || edge <= axis.start + axis.current + BOUNDARY_EDGE_EPSILON;
+      return outsideNext && insideCurrent;
+    }))
+    .map((child) => child.location_code);
+}
+
+class WarehouseBoundaryError extends Error {
+  constructor(readonly locationCodes: string[]) {
+    super('WAREHOUSE_BOUNDARY_EXCLUDES_COMPONENTS');
+  }
+}
+
 /**
  * PATCH /api/v1/floor-planning/zones/:locationCode
  * -------------------------------------------------
@@ -1339,10 +1399,27 @@ export async function httpUpdateZone(req: Request, res: Response) {
 
     const current = await trx('warehouse_locations')
       .where({ shop_id: shopId, location_code: locationCode })
-      .select('zone_type')
+      .select('location_code', 'zone_type', 'type', 'warehouse_id', 'position_x', 'position_y', 'width', 'depth')
+      .forUpdate()
       .first();
 
     if (!current) throw new Error('Zone not found');
+
+    // GH-1176: the warehouse root is the floor boundary. Resizing it must not
+    // exclude any positioned component; components are never moved to fit.
+    if (current.type === 'warehouse' && (width !== undefined || depth !== undefined)) {
+      const childQuery = trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereNot('type', 'warehouse')
+        .whereNotNull('position_x')
+        .whereNotNull('position_y');
+      if (current.warehouse_id) childQuery.where('warehouse_id', current.warehouse_id);
+      const children: BoundaryRow[] = await childQuery
+        .select('location_code', 'position_x', 'position_y', 'width', 'depth');
+
+      const excluded = componentsExcludedByRootResize(current, { width, depth }, children);
+      if (excluded.length > 0) throw new WarehouseBoundaryError(excluded);
+    }
 
     const nextZoneType =
       zone_type !== undefined ? zone_type : current.zone_type;
@@ -1387,6 +1464,13 @@ export async function httpUpdateZone(req: Request, res: Response) {
     if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
     if (err.message === 'dock_face requires zone_type ship or receive') {
       return res.status(400).json({ error: err.message });
+    }
+    if (err instanceof WarehouseBoundaryError) {
+      return res.status(422).json({
+        error: err.message,
+        message: 'Existing mapped components would fall outside the warehouse boundary.',
+        location_codes: err.locationCodes,
+      });
     }
     if (err.code === '23505') return res.status(409).json({ error: 'Barcode already assigned to another location' });
     console.error('[floor-planning] httpUpdateZone failed', err);

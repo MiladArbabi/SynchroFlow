@@ -37,8 +37,9 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('@lasyncro/order-nexus', () => ({
+  __esModule: true,
   OrdersModuleFT2: (props: Record<string, unknown>) => mockOrdersModuleFT2(props),
-}), { virtual: true });
+}));
 
 jest.mock('@lasyncro/shared/ui', () => ({
   IsometricCanvas: () => <div data-testid="live-map" />,
@@ -59,6 +60,13 @@ jest.mock('contexts/EntitlementsContext', () => ({
     locale: 'en-US',
     tier: mockTier,
     hasResolved: true,
+  }),
+}));
+
+jest.mock('hooks/useConfig', () => ({
+  __esModule: true,
+  default: () => ({
+    state: { isOpsConsoleOpen: false },
   }),
 }));
 
@@ -114,6 +122,10 @@ jest.mock('pages/orders/useConstrainedOrders', () => ({
   useConstrainedOrders: () => ({ data: { data: [] } }),
 }));
 
+jest.mock('pages/orders/useOperationalEpisodes', () => ({
+  useOperationalEpisodes: () => ({ data: [], isSuccess: true }),
+}));
+
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
 
 const ALLOW = { allowed: true, reason: 'ALLOWED' as const };
@@ -121,7 +133,7 @@ const DENY_TIER_TOO_LOW = (requiredTier: string) => ({
   allowed: false, reason: 'TIER_TOO_LOW' as const, requiredTier,
 });
 
-/** hasPlacedFloor === true — a zone carrying real geometry. */
+/** Operational floor === true — a positioned non-warehouse location. */
 const PLACED_FLOOR = {
   data: {
     zones: [
@@ -246,11 +258,41 @@ describe('ORDLM-C — allowed with no positioned floor shows setup, never the ol
     expect(
       screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')
     ).toBeNull();
-    // Never the teaser either — this tenant is entitled, just unconfigured.
-    expect(screen.queryByText('Orders live map')).toBeNull();
-
+    // This is the entitled no-floor teaching state, not a rendered live canvas.
+    // Current Orders UX intentionally keeps the "Orders live map" eyebrow here.
     // Geometry is acquired (that is how we know there is no floor); activity
     // for an undrawable floor is not.
+    expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
+    expect(mockUseOrdersLiveActivity).toHaveBeenLastCalledWith(false);
+  });
+});
+
+// ===========================================================================
+// GH1176 — a positioned warehouse root alone is not an operational floor
+// ===========================================================================
+describe('GH1176 — warehouse root at (0,0) with no positioned operational location', () => {
+  it('GH1176: stays in the no-floor setup state and does not poll Orders live activity', () => {
+    mockTier = 'growth';
+    mockDecide = () => ALLOW;
+    mockUseFloorPlanning.mockReturnValue({
+      data: {
+        zones: [
+          { location_code: 'WH-1-ROOT', type: 'warehouse', active: true, position_x: 0, position_y: 0, width: 20, depth: 15 },
+          { location_code: 'A-1', type: 'bin', active: true, position_x: null, position_y: null, zone_type: 'pick' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: jest.fn(),
+    });
+
+    render(<OrdersFT2Page />);
+
+    expect(screen.getByText('Map your warehouse floor first')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')
+    ).toBeNull();
+
     expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
     expect(mockUseOrdersLiveActivity).toHaveBeenLastCalledWith(false);
   });
@@ -263,22 +305,26 @@ describe('ORDLM-C — allowed with no positioned floor shows setup, never the ol
 it('keeps the certified Overview minimum height for the real-map and no-floor slots', () => {
   mockTier = 'growth';
   mockDecide = () => ALLOW;
+
   const { rerender } = render(<OrdersFT2Page />);
 
   const realMapSlot = mockOrdersModuleFT2.mock.calls[
     mockOrdersModuleFT2.mock.calls.length - 1
   ][0].mapContent as React.ReactElement<{ sx: { minHeight: unknown } }>;
+
   expect(realMapSlot.props.sx.minHeight).toBe(520);
 
   mockUseFloorPlanning.mockReturnValue({
     ...PLACED_FLOOR,
     data: { zones: [] },
   });
+
   rerender(<OrdersFT2Page />);
 
   const noFloorSlot = mockOrdersModuleFT2.mock.calls[
     mockOrdersModuleFT2.mock.calls.length - 1
   ][0].mapContent as React.ReactElement<{ sx: { minHeight: unknown } }>;
+
   expect(noFloorSlot.props.sx.minHeight).toBe(420);
 });
 

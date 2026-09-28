@@ -195,6 +195,13 @@ export function buildOpeningInventoryItem(
 
 // ─── GH-1165 — FIRST-ENTRY SETUP PROJECTION ──────────────────────────────────
 
+/**
+ * GH-1176 — the one frontend route for every "map your warehouse" entry point
+ * (the six-item map-zones row and the first-entry map step). Mirrors the
+ * map-zones action in the backend readiness manifest.
+ */
+export const MAP_WAREHOUSE_ROUTE = '/floor-planning?tab=setup&view=canvas';
+
 export const FIRST_ENTRY_MAP_KEY = 'first-entry-map';
 export const FIRST_ENTRY_COUNT_KEY = 'first-entry-count';
 export const FIRST_ENTRY_COUNT_LOCKED_SUBTITLE =
@@ -221,7 +228,7 @@ export function buildFirstEntrySetupItems(
     label: 'Map your warehouse',
     complete: zonesConfigured,
     subtitle: 'Define where stock lives and work happens.',
-    action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning' },
+    action: { kind: 'navigate', label: 'Map warehouse', route: MAP_WAREHOUSE_ROUTE },
   };
 
   const countBase = { key: FIRST_ENTRY_COUNT_KEY, label: 'Count opening stock' };
@@ -303,7 +310,7 @@ export function useActivationChecklist() {
       key:          'map-zones',
       label:        'Map your warehouse zones',
       complete:     findTask(modules, 'wms', 'map-zones'),
-      actionRoute:  '/floor-planning',
+      actionRoute:  MAP_WAREHOUSE_ROUTE,
     },
     {
       key:          'print-barcodes',

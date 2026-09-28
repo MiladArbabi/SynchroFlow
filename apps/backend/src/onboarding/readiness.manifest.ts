@@ -67,7 +67,9 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
         completionRules: [
           { signal: 'wms.zonesConfigured', expectedValue: true }
         ],
-        action: { type: 'navigate', target: '/floor-planning' }
+        // GH-1176: serialized straight into Setup > Canvas, where the
+        // warehouse boundary is established first.
+        action: { type: 'navigate', target: '/floor-planning?tab=setup&view=canvas' }
       },
       {
         id: 'print-barcodes',

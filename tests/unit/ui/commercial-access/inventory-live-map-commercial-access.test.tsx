@@ -273,6 +273,36 @@ describe('INVLM-B — canonical inventory.live_map ALLOW wins over a restrictive
 });
 
 // ===========================================================================
+// GH1176 — a positioned warehouse root alone is not an operational floor
+// ===========================================================================
+describe('GH1176 — warehouse root at (0,0) with no positioned operational location', () => {
+  it('GH1176: stays in the no-floor setup state and does not acquire occupancy', () => {
+    mockTier = 'growth';
+    mockDecide = () => ALLOW;
+    mockUseFloorPlanning.mockReturnValue({
+      // Root boundary persisted at the origin; no non-root location is placed.
+      data: {
+        zones: [
+          { location_code: 'WH-1-ROOT', type: 'warehouse', active: true, position_x: 0, position_y: 0, width: 20, depth: 15 },
+          { location_code: 'A-1', type: 'bin', active: true, position_x: null, position_y: null, zone_type: 'pick' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: jest.fn(),
+    });
+    render(<ProductsFT2Page />);
+
+    expect(screen.getByText('Map your warehouse floor first')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')
+    ).toBeNull();
+    expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
+    expect(mockUseWarehouseGridOccupancy).toHaveBeenLastCalledWith(false);
+  });
+});
+
+// ===========================================================================
 // INVLM-C — denial metadata comes from the AccessDecision, never hardcoded
 // ===========================================================================
 describe('INVLM-C — teaser required-tier text derives from AccessDecision', () => {
