@@ -123,8 +123,8 @@ export default function WmsOperationsPage() {
   const { user } = useAuth();
   const userRole =
     (user as { role?: string } | null)?.role ?? 'operator';
-  const currentUserId =
-    user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
+  // #1164: AuthContext canonicalizes user.id to the access token's user_id.
+  const currentUserId = user?.id ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
   // GH-1109 residual: teaches an assigned operator that assignment reserves
   // Receive work but does not start it — claim/start is a distinct step.
@@ -731,6 +731,26 @@ export default function WmsOperationsPage() {
     );
   }, []);
 
+  // #1164: opening inventory discovery — the server anchors the line to the
+  // task's frozen bin, so no location is sent.
+  const handleCreateOpeningLine = useCallback(async (
+    taskId: string,
+    params: { lasyncro_variant_id: string }
+  ): Promise<Pick<CountingLine, 'recount_line_id' | 'lasyncro_variant_id' | 'location_code'>> => {
+    const { data } = await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/opening-lines`,
+      { lasyncro_variant_id: params.lasyncro_variant_id }
+    );
+    return data.line;
+  }, []);
+
+  // #1164: opening inventory bin settlement (physical-truth boundary).
+  const handleCompleteOpening = useCallback(async (taskId: string) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/opening-complete`
+    );
+  }, []);
+
   // STOW-SPLIT-01 — stow no longer reports quantity shortfalls from a separate
   // confirmation screen. Unit-placement failures remain scanner failures and
   // do not create an exception through the retired bulk-stow callback.
@@ -836,6 +856,8 @@ export default function WmsOperationsPage() {
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}
       onCloseCountingTask={handleCloseCountingTask}
+      onCreateOpeningLine={handleCreateOpeningLine}
+      onCompleteOpening={handleCompleteOpening}
       onCountFinished={handleCountFinished}
       currentUserId={currentUserId}
       canReassignCount={canReassignRecount}

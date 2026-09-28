@@ -76,6 +76,13 @@ export type CountingTask = {
   claim_generation: string | null;
   line_count: number;
   counted_count: number;
+  /**
+   * #1164: 'opening_inventory' tasks are one frozen bin each
+   * (scope_location_code) and may start with zero lines. Optional for rows
+   * that predate the column; absent means ordinary line-driven recount.
+   */
+  purpose?: 'cycle_count' | 'opening_inventory' | null;
+  scope_location_code?: string | null;
 };
 
 export type CountingFindingType =
@@ -111,6 +118,12 @@ export type CountingLine = {
   sku: string | null;
   image_url: string | null;
 };
+
+/** #1164: the canonical line the server anchored to the opening task's bin. */
+export type CountingOpeningLine = Pick<
+  CountingLine,
+  'recount_line_id' | 'lasyncro_variant_id' | 'location_code'
+>;
 
 export type CountingSessionPageProps = {
   task: CountingTask;
@@ -150,6 +163,13 @@ export type CountingSessionPageProps = {
     }
   ) => Promise<void>;
   onCloseTask: (taskId: string) => Promise<void>;
+  /** #1164: opening_inventory discovery; the server owns location and expected quantity. */
+  onCreateOpeningLine: (
+    taskId: string,
+    params: { lasyncro_variant_id: string }
+  ) => Promise<CountingOpeningLine>;
+  /** #1164: opening_inventory bin settlement; replaces onCloseTask for that purpose. */
+  onCompleteOpening: (taskId: string) => Promise<void>;
 };
 
 type Phase = 'location' | 'bin';
@@ -300,6 +320,39 @@ function removeLineFromTally(
   return next;
 }
 
+/**
+ * #1164: add a server-returned opening line to the session exactly once.
+ * The server reuses the same line for a repeated task+variant discovery, so
+ * identity is the recount_line_id.
+ */
+function mergeOpeningLine(
+  currentLines: CountingLine[],
+  created: CountingOpeningLine
+): CountingLine[] {
+  if (currentLines.some((line) => line.recount_line_id === created.recount_line_id)) {
+    return currentLines;
+  }
+
+  return [
+    ...currentLines,
+    {
+      recount_line_id: created.recount_line_id,
+      lasyncro_variant_id: created.lasyncro_variant_id,
+      location_code: created.location_code,
+      counted_quantity: null,
+      count_method: null,
+      scan_count: null,
+      counted_at: null,
+      skip_reason: null,
+      skipped_at: null,
+      product_title: null,
+      variant_title: null,
+      sku: null,
+      image_url: null,
+    },
+  ];
+}
+
 // RECOUNT-CLAIM-ABANDONED-131: stable copy for a stale session — the old
 // claimant's tab is still open after an owner/admin reassigned this task.
 // Deliberately does not say "discarded" or "committed": the local tally is
@@ -336,6 +389,8 @@ export default function CountingSessionPage({
   onRecordCount,
   onSkipLine,
   onCloseTask,
+  onCreateOpeningLine,
+  onCompleteOpening,
 }: CountingSessionPageProps) {
   const theme = useTheme();
   const locationInputRef = useRef<HTMLInputElement>(null);
@@ -381,9 +436,21 @@ export default function CountingSessionPage({
   // Lines arrive already sorted into walk order (RECOUNT-WALKORDER-27), so
   // grouping preserves first-appearance order rather than re-sorting: any
   // re-sort here would silently discard the lane ordering the backend built.
+  // #1164: an opening_inventory task's bin is its frozen scope location,
+  // not something discovered from its (possibly empty) line set.
+  const isOpening = task.purpose === 'opening_inventory';
+  const openingBinCode = isOpening
+    ? task.scope_location_code?.trim() || null
+    : null;
+
   const bins = useMemo<CountingBin[]>(() => {
     const order: string[] = [];
     const grouped = new Map<string, CountingLine[]>();
+
+    if (openingBinCode) {
+      grouped.set(openingBinCode, []);
+      order.push(openingBinCode);
+    }
 
     for (const line of lines) {
       const existing = grouped.get(line.location_code);
@@ -400,7 +467,7 @@ export default function CountingSessionPage({
       location_code: code,
       lines: grouped.get(code) ?? [],
     }));
-  }, [lines]);
+  }, [lines, openingBinCode]);
 
   const unresolvedLines = useMemo(
     () => lines.filter((line) => !isResolved(line)),
@@ -414,13 +481,18 @@ export default function CountingSessionPage({
     ? activeBin.lines.filter(isResolved).length
     : 0;
 
-  const activeBinComplete = Boolean(
+  const activeBinLinesResolved = Boolean(
     activeBin && activeBinResolved === activeBin.lines.length
   );
 
-  const binsComplete = bins.filter((bin) =>
-    bin.lines.every(isResolved)
-  ).length;
+  // #1164: an opening bin is finished only by explicit completion — zero
+  // resolved of zero discovered lines is not a completed bin, and scanning
+  // stays open for further discovery.
+  const activeBinComplete = isOpening ? false : activeBinLinesResolved;
+
+  const binsComplete = isOpening
+    ? 0
+    : bins.filter((bin) => bin.lines.every(isResolved)).length;
 
   const activeBinNumber = activeBin
     ? bins.findIndex((bin) => bin.location_code === activeBin.location_code) + 1
@@ -492,6 +564,7 @@ export default function CountingSessionPage({
         if (task.status === 'claimed' || task.status === 'counting') {
           const nextUnresolvedLine = loaded.find((line) => !isResolved(line));
           const nextActiveBinCode =
+            openingBinCode ??
             nextUnresolvedLine?.location_code ??
             loaded[loaded.length - 1]?.location_code ??
             null;
@@ -504,7 +577,13 @@ export default function CountingSessionPage({
           }
 
           setActiveBinCode(nextActiveBinCode);
-          setPhase(!nextUnresolvedLine || locationStillVerified ? 'bin' : 'location');
+          // #1164: an opening bin always needs its location verified — having
+          // no unresolved lines does not mean the bin was physically visited.
+          setPhase(
+            (!openingBinCode && !nextUnresolvedLine) || locationStillVerified
+              ? 'bin'
+              : 'location'
+          );
         }
       } catch (loadError) {
         setError(
@@ -517,7 +596,7 @@ export default function CountingSessionPage({
         setLoading(false);
       }
     })();
-  }, [task.recount_task_id, onFetchLines, onFetchFindings, tallyStorageKey, verifiedLocationKey]);
+  }, [task.recount_task_id, onFetchLines, onFetchFindings, tallyStorageKey, verifiedLocationKey, openingBinCode]);
 
   useEffect(() => {
     if (phase === 'location') {
@@ -541,7 +620,10 @@ export default function CountingSessionPage({
 
       const next = firstOpenBin();
       const nextActiveBinCode =
-        next?.location_code ?? bins[bins.length - 1]?.location_code ?? null;
+        openingBinCode ??
+        next?.location_code ??
+        bins[bins.length - 1]?.location_code ??
+        null;
       const savedVerifiedLocation = sessionStorage.getItem(verifiedLocationKey);
       const locationStillVerified =
         nextActiveBinCode !== null && savedVerifiedLocation === nextActiveBinCode;
@@ -551,7 +633,9 @@ export default function CountingSessionPage({
       }
 
       setActiveBinCode(nextActiveBinCode);
-      setPhase(!next || locationStillVerified ? 'bin' : 'location');
+      setPhase(
+        (!openingBinCode && !next) || locationStillVerified ? 'bin' : 'location'
+      );
     } catch (startError) {
       setError(
         errorMessage(
@@ -612,6 +696,31 @@ export default function CountingSessionPage({
       const match = activeBin.lines.find(
         (line) => line.lasyncro_variant_id === resolved.lasyncro_variant_id
       );
+
+      if (!match && isOpening) {
+        // #1164: opening inventory has no expectation to be "unexpected"
+        // against — a known variant found in the bin becomes a count line.
+        // The server anchors it to the task bin; the scan counts one unit.
+        const created = await onCreateOpeningLine(task.recount_task_id, {
+          lasyncro_variant_id: resolved.lasyncro_variant_id,
+        });
+
+        let refreshed: CountingLine[] | null = null;
+        try {
+          refreshed = await onFetchLines(task.recount_task_id);
+        } catch {
+          // The line exists server-side; keep counting from local state.
+        }
+
+        setLines((previous) => mergeOpeningLine(refreshed ?? previous, created));
+        updateScanTally((previous) => ({
+          ...previous,
+          [created.recount_line_id]: (previous[created.recount_line_id] ?? 0) + 1,
+        }));
+        setScanInput('');
+        setTimeout(() => scanInputRef.current?.focus(), 50);
+        return;
+      }
 
       if (!match) {
         // A resolved barcode physically observed in this bin is evidence,
@@ -854,6 +963,29 @@ export default function CountingSessionPage({
     } catch (closeError) {
       setError(
         errorMessage(closeError, 'Count could not be finished. Try again.')
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // #1164: explicit operator completion of a verified opening bin — the
+  // physical-truth boundary. Never routed through the generic close.
+  const handleCompleteOpening = async () => {
+    if (!activeBin || unresolvedLines.length > 0 || submitting) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await onCompleteOpening(task.recount_task_id);
+      sessionStorage.removeItem(tallyStorageKey);
+      sessionStorage.removeItem(verifiedLocationKey);
+      setScanTally({});
+      onComplete(task.label);
+    } catch (completeError) {
+      setError(
+        errorMessage(completeError, 'This bin could not be completed. Try again.')
       );
     } finally {
       setSubmitting(false);
@@ -1104,7 +1236,11 @@ export default function CountingSessionPage({
                 Bin {activeBinNumber} of {bins.length}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {activeBinResolved} of {activeBin.lines.length} items
+                {/* #1164: an opening bin starts with nothing discovered, not
+                    with zero expected items. */}
+                {isOpening && activeBin.lines.length === 0
+                  ? 'No items discovered yet'
+                  : `${activeBinResolved} of ${activeBin.lines.length} items`}
               </Typography>
             </Box>
             <LinearProgress
@@ -1338,7 +1474,27 @@ export default function CountingSessionPage({
                 {activeBin.lines.map(renderRow)}
               </Box>
 
-              {activeBinComplete ? (
+              {isOpening ? (
+                activeBinLinesResolved ? (
+                  <Button
+                    variant="contained"
+                    onClick={() => void handleCompleteOpening()}
+                    disabled={submitting}
+                    sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
+                  >
+                    {activeBin.lines.length === 0 ? 'Confirm bin is empty' : 'Complete bin'}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="contained"
+                    onClick={() => void handleFinishBin()}
+                    disabled={submitting}
+                    sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
+                  >
+                    Done With This Bin
+                  </Button>
+                )
+              ) : activeBinComplete ? (
                 firstOpenBin() ? (
                   <Button
                     variant="contained"

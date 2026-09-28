@@ -38,6 +38,7 @@ import CountingSessionPage, {
   type CountingTask,
   type CountingFinding,
   type CountingFindingType,
+  type CountingSessionPageProps,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
 import { IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark, WarehouseGrid } from '@lasyncro/shared/ui';
@@ -406,6 +407,10 @@ export type WmsModuleFT2Props = {
     }
   ) => Promise<void>;
   onCloseCountingTask: (taskId: string) => Promise<void>;
+  /** #1164: opening_inventory discovery — server anchors the line to the task bin. */
+  onCreateOpeningLine: CountingSessionPageProps['onCreateOpeningLine'];
+  /** #1164: opening_inventory bin settlement — never the generic close. */
+  onCompleteOpening: CountingSessionPageProps['onCompleteOpening'];
 
   /** Authenticated user ID used to enforce recount claimant ownership in UI. */
   currentUserId?: number | null;
@@ -1288,6 +1293,8 @@ function WmsModuleFT2Inner({
   onRecordCountingLine,
   onSkipCountingLine,
   onCloseCountingTask,
+  onCreateOpeningLine,
+  onCompleteOpening,
   currentUserId,
   canReassignCount,
   pendingCountTaskId,
@@ -2027,6 +2034,8 @@ function WmsModuleFT2Inner({
         onRecordCount={onRecordCountingLine}
         onSkipLine={onSkipCountingLine}
         onCloseTask={onCloseCountingTask}
+        onCreateOpeningLine={onCreateOpeningLine}
+        onCompleteOpening={onCompleteOpening}
       />
     );
   }
