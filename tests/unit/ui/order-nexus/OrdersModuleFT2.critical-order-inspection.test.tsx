@@ -21,6 +21,9 @@ jest.mock('@lasyncro/shared/ui', () => {
           : null
       ),
     ReorderTransitionList: ({ children }: any) => React.createElement(React.Fragment, {}, children),
+    // Composition-only double: primary always, rail unless suppressed.
+    OperationalContextShell: ({ primary, rail, suppressRail }: any) =>
+      React.createElement(React.Fragment, {}, primary, suppressRail ? null : rail),
   };
 });
 
@@ -133,62 +136,94 @@ function renderOrders(props = makeProps()) {
   );
 }
 
-function expandCriticalGroup(name: RegExp) {
-  fireEvent.click(screen.getByRole('button', { name }));
+// SCREEN-ARCH: the triage-era expandable groups, per-order "View order #…
+// details" affordances, Watch "View →" and inline Prioritize are retired.
+// Orders still owns individual-order inspection: a single-order Order health
+// row IS the inspection affordance (onOrderClick). A multi-order group is
+// contextual state only. Prioritization belongs to Order Flow.
+
+/** Reveal every Order health group through the local "See N more" control. */
+function revealAllGroups() {
+  const more = screen.queryByText(/^See \d+ more$/);
+  if (more) fireEvent.click(more);
 }
 
-describe('OrdersModuleFT2 critical-order inspection — ORD-UX-DETAIL-01 RED', () => {
+describe('OrdersModuleFT2 critical-order inspection — ORD-UX-DETAIL-01', () => {
   it.each([
-    ['Address issues', /Address issues/i, criticalOrders.customer],
-    ['Out of stock', /Out of stock/i, criticalOrders.inventory],
-    ['Operational issues', /Operational issues/i, criticalOrders.operational],
-    ['SLA breached', /Shipping SLA breached/i, criticalOrders.sla],
+    ['Address issues', '1 Address issues', criticalOrders.customer],
+    ['Out of stock', '1 Out of stock', criticalOrders.inventory],
+    ['Operational issues', '1 Operational issues', criticalOrders.operational],
+    ['SLA breached', '1 Shipping SLA breached', criticalOrders.sla],
   ])(
-    'ORD-DETAIL-01/03 exposes a separate inspect affordance for %s orders',
-    (_label, groupName, order) => {
+    'ORD-DETAIL-01/03 a single-order %s row opens that order through onOrderClick',
+    (_label, rowText, order) => {
       const onOrderClick = jest.fn();
       renderOrders(makeProps({ onOrderClick }));
-      expandCriticalGroup(groupName);
+      revealAllGroups();
 
-      const inspect = screen.getByRole('button', {
-        name: `View order #${order.externalOrderId} details`,
-      });
+      const row = screen.getByText(rowText).closest('button');
+      expect(row).not.toBeNull();
 
-      fireEvent.click(inspect);
+      fireEvent.click(row!);
       expect(onOrderClick).toHaveBeenCalledTimes(1);
       expect(onOrderClick).toHaveBeenCalledWith(order.lasyncro_order_id);
     }
   );
 
+  it('ORD-DETAIL-02 a multi-order group is contextual state, not a one-order inspection action', () => {
+    const onOrderClick = jest.fn();
+    const secondCustomer = makeOrder('order-customer-2', '1006', 'customer');
+    renderOrders(
+      makeProps({
+        onOrderClick,
+        operatorSummary: {
+          ...makeProps().operatorSummary,
+          agingOrders: [criticalOrders.customer, secondCustomer],
+        },
+      })
+    );
+
+    const row = screen.getByText('2 Address issues');
+    expect(row.closest('button')).toBeNull();
+
+    fireEvent.click(row);
+    expect(onOrderClick).not.toHaveBeenCalled();
+  });
+
   it('ORD-DETAIL-04 removes misleading constrained-row action CTAs', () => {
     renderOrders();
+    revealAllGroups();
 
-    expandCriticalGroup(/Address issues/i);
-    expandCriticalGroup(/Out of stock/i);
-    expandCriticalGroup(/Operational issues/i);
+    expect(screen.getByText('1 Address issues')).toBeInTheDocument();
+    expect(screen.getByText('1 Out of stock')).toBeInTheDocument();
+    expect(screen.getByText('1 Operational issues')).toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: 'Fix address →' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Resolve stock →' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Resolve issue →' })).toBeNull();
+    expect(screen.queryByText(/Prioritize/i)).toBeNull();
   });
 
-  it('ORD-DETAIL-04/05 keeps SLA prioritization independent from inspection', async () => {
+  it('ORD-DETAIL-04/05 keeps inspection independent from Order Flow prioritization', () => {
     const onOrderClick = jest.fn();
     const onPriorityFlag = jest.fn().mockResolvedValue(undefined);
     renderOrders(makeProps({ onOrderClick, onPriorityFlag }));
-    expandCriticalGroup(/Shipping SLA breached/i);
+    revealAllGroups();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prioritize →' }));
+    expect(screen.queryByText(/Prioritize/i)).toBeNull();
 
-    expect(onOrderClick).not.toHaveBeenCalled();
-    expect(onPriorityFlag).toHaveBeenCalledWith([criticalOrders.sla.lasyncro_order_id], true);
+    fireEvent.click(screen.getByText('1 Shipping SLA breached'));
+
+    expect(onOrderClick).toHaveBeenCalledWith(criticalOrders.sla.lasyncro_order_id);
+    expect(onPriorityFlag).not.toHaveBeenCalled();
   });
 
-  it('ORD-DETAIL-07 preserves the existing Watch inspection path', () => {
+  it('ORD-DETAIL-07 preserves inspection of an aging (former Watch) order', () => {
     const onOrderClick = jest.fn();
     renderOrders(makeProps({ onOrderClick }));
+    revealAllGroups();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View →' }));
+    fireEvent.click(screen.getByText(/^1 Aging/));
 
     expect(onOrderClick).toHaveBeenCalledTimes(1);
     expect(onOrderClick).toHaveBeenCalledWith(watchOrder.lasyncro_order_id);

@@ -2,21 +2,17 @@
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 
-describe('OrdersModuleFT2 (triage-first fallback)', () => {
+describe('OrdersModuleFT2 (no map surface supplied)', () => {
   // The module uses useNavigate(), so every render needs router context.
   //
-  // These cases previously asserted a long-removed component generation: a bare
-  // observability dump with a `orders-ft2-root` testid and "Period" /
-  // "Orders observed" / "Total revenue" rows, under an "observability only"
-  // doctrine that also forbade CTAs and action language. None of that survives
-  // in the current triage-first module — `orders-ft2-root` does not exist in
-  // the source at all, and the surface is deliberately full of CTAs now.
-  //
-  // What is still worth protecting is kept: a deterministic render with full
-  // props, null-safety, the fallback structure, and a live callback.
+  // SCREEN-ARCH: an absent mapContent no longer resurrects the old
+  // triage-first dashboard. Every input keeps the same Orders screen identity:
+  // primary workspace + Order health rail. What is still worth protecting from
+  // the earlier suite is kept: a deterministic render with full props,
+  // null-safety, and a live Export callback.
 
   const fullProps = {
     context: {
@@ -33,7 +29,7 @@ describe('OrdersModuleFT2 (triage-first fallback)', () => {
     dataCoverage: { completenessPct: 82 },
   } as unknown as React.ComponentProps<typeof OrdersModuleFT2>;
 
-  const renderFallback = (
+  const renderWithoutMap = (
     props: Partial<React.ComponentProps<typeof OrdersModuleFT2>> = {},
   ) =>
     render(
@@ -43,10 +39,10 @@ describe('OrdersModuleFT2 (triage-first fallback)', () => {
     );
 
   it('renders deterministically with full observability props', () => {
-    renderFallback();
+    renderWithoutMap();
 
     expect(screen.getByText('Orders')).toBeInTheDocument();
-    expect(screen.getByText("Today's pulse")).toBeInTheDocument();
+    expect(screen.getByText('Order health')).toBeInTheDocument();
   });
 
   it('renders safely when nullable blocks are null', () => {
@@ -70,24 +66,14 @@ describe('OrdersModuleFT2 (triage-first fallback)', () => {
     expect(container.textContent).toContain('—');
   });
 
-  it('renders the triage-first fallback when no map surface is supplied', () => {
-    renderFallback();
+  it('keeps the Orders screen identity instead of the old triage-first dashboard', () => {
+    renderWithoutMap();
 
-    // mapContent is optional: without it the module stays on the triage layout.
-    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
-    expect(screen.getByText('Ranked by commercial consequence')).toBeInTheDocument();
-  });
-
-  it('structural contract: header, decision card and pulse all render together', () => {
-    // Replaces the old whole-tree snapshot. That snapshot froze a component
-    // generation that no longer exists, so it protected nothing about today's
-    // module; these are the same structural landmarks expressed semantically,
-    // and they survive incidental markup changes.
-    renderFallback();
-
-    expect(screen.getByText('Orders')).toBeInTheDocument();
-    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
-    expect(screen.getByText("Today's pulse")).toBeInTheDocument();
+    expect(screen.getByText('Order health')).toBeInTheDocument();
+    expect(screen.queryByText("Today's pulse")).toBeNull();
+    expect(screen.queryByText('Needs a decision')).toBeNull();
+    expect(screen.queryByText('Ranked by commercial consequence')).toBeNull();
+    expect(screen.queryByText(/Prioritize/i)).toBeNull();
   });
 
   it('exposes the Export affordance and fires its callback', () => {
@@ -95,7 +81,7 @@ describe('OrdersModuleFT2 (triage-first fallback)', () => {
     // deliberately actionable now, so the durable contract is that its action
     // is wired, not that it is absent.
     const onExport = jest.fn();
-    renderFallback({ onExport });
+    renderWithoutMap({ onExport });
 
     fireEvent.click(screen.getByText(/Export/));
     expect(onExport).toHaveBeenCalledTimes(1);
@@ -103,11 +89,13 @@ describe('OrdersModuleFT2 (triage-first fallback)', () => {
 });
 
 // ===========================================================================
-// ORD-UX-01 — Live Intelligence map layout
+// ORD-UX-01 / SCREEN-ARCH — Live Intelligence map layout
 // ===========================================================================
-// The module never decides map eligibility; it only leases the left slot.
-// With mapContent supplied it must render the map + compact 280px decision
-// rail, and must NOT render the triage detail body.
+// The module never decides map eligibility; it only leases the primary slot
+// (real map, LiveMapTeaser, or no-floor teaching state all arrive the same
+// way as mapContent). The secondary rail is Order health — state and
+// orientation, not a decision inbox — and the triage detail body and any
+// landing-surface priority mutation stay absent (Order Flow owns release).
 
 describe('OrdersModuleFT2 — live intelligence map layout', () => {
   /**
@@ -181,12 +169,13 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     );
   }
 
-  it('renders the supplied map, decision rail and four pulse metrics without redundant pulse content', () => {
+  it('renders the supplied map workspace beside the Order health rail with the four Orders metrics', () => {
     renderWithMap();
 
     expect(screen.getByTestId('orders-map-surface')).toBeInTheDocument();
-    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
-    expect(screen.getByText("Today's pulse")).toBeInTheDocument();
+    expect(screen.getByText('Order health')).toBeInTheDocument();
+    expect(screen.queryByText("Today's pulse")).toBeNull();
+    expect(screen.queryByText('Needs a decision')).toBeNull();
     expect(screen.getByText('Breached')).toBeInTheDocument();
     expect(screen.getByText('Blocked')).toBeInTheDocument();
     expect(screen.getByText('Picking')).toBeInTheDocument();
@@ -194,7 +183,23 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     expect(screen.queryByText(/^\d+ breached$/)).toBeNull();
     expect(screen.queryByText(/still need priority|Critical queue is under control/)).toBeNull();
     expect(screen.queryByText(/fulfilled to date|collected to date/)).toBeNull();
-    expect(screen.queryByText('View order flow')).toBeNull();
+  });
+
+  it('offers View order flow as contextual navigation to Order Flow', () => {
+    render(
+      <MemoryRouter initialEntries={['/orders']}>
+        <Routes>
+          <Route
+            path="/orders"
+            element={<OrdersModuleFT2 {...baseProps} mapContent={<div data-testid="orders-map-surface" />} />}
+          />
+          <Route path="/orders/flow" element={<div data-testid="order-flow-route" />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByText('View order flow'));
+    expect(screen.getByTestId('order-flow-route')).toBeInTheDocument();
   });
 
   it('uses the uncapped live SLA aggregate for the Breached pulse count', () => {
@@ -230,11 +235,14 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     expect(screen.getByText(/See \d+ more/)).toBeInTheDocument();
   });
 
-  it('does not render the triage detail body or its inline bulk-priority UI', () => {
-    renderWithMap();
+  it('does not render the triage detail body or any landing-surface priority mutation', () => {
+    // onPriorityFlag is supplied so absence is not merely a missing callback.
+    const onPriorityFlag = jest.fn().mockResolvedValue(undefined);
+    renderWithMap({ onPriorityFlag });
 
     expect(screen.queryByText('Ranked by commercial consequence')).toBeNull();
-    expect(screen.queryByText(/Prioritize all/)).toBeNull();
+    expect(screen.queryByText(/Prioritize/i)).toBeNull();
+    expect(onPriorityFlag).not.toHaveBeenCalled();
   });
 
   it('keeps the modal callback compatible — a single-order group opens that order', () => {
@@ -246,7 +254,28 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     expect(onOrderClick).toHaveBeenCalledWith('o-1');
   });
 
-  it('falls back to the triage layout when no map surface is supplied', () => {
+  it('suppressOrderHealth withdraws the Order health rail but leaves the primary map workspace in place', () => {
+    const { rerender } = renderWithMap();
+    const mapNode = screen.getByTestId('orders-map-surface');
+    expect(screen.getByText('Order health')).toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <OrdersModuleFT2
+          {...baseProps}
+          mapContent={<div data-testid="orders-map-surface" />}
+          suppressOrderHealth
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByText('Order health')).toBeNull();
+    expect(screen.queryByText('Breached')).toBeNull();
+    expect(screen.queryByText(/Address issues/)).toBeNull();
+    expect(screen.getByTestId('orders-map-surface')).toBe(mapNode);
+  });
+
+  it('keeps the same Orders screen identity when no map surface is supplied', () => {
     render(
       <MemoryRouter>
         <OrdersModuleFT2 {...baseProps} />
@@ -254,7 +283,9 @@ describe('OrdersModuleFT2 — live intelligence map layout', () => {
     );
 
     expect(screen.queryByTestId('orders-map-surface')).toBeNull();
-    expect(screen.getByText('Ranked by commercial consequence')).toBeInTheDocument();
-    expect(screen.getByText("Today's pulse")).toBeInTheDocument();
+    expect(screen.getByText('Order health')).toBeInTheDocument();
+    expect(screen.queryByText('Needs a decision')).toBeNull();
+    expect(screen.queryByText('Ranked by commercial consequence')).toBeNull();
+    expect(screen.queryByText("Today's pulse")).toBeNull();
   });
 });

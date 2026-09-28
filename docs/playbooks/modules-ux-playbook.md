@@ -1,7 +1,8 @@
 # LaSyncro — Modules UX Playbook
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces. Auth pages (`apps/frontend/src/pages/authentication/*`) are a **brand surface**, governed by `docs/blueprints/auth_blueprint.md` — the font ban and layout rules below do not apply there.
-> **Last updated:** 2026-09-14
+> **Last updated:** 2026-09-28
+> **2026-09-28 — Orders Overview (ORD-UX-02) locally certified** as the second consumer of the operational-context shell grammar. See §1 (Operational Screen Ecosystem Pattern) and the ORD-UX-02 entry.
 > **2026-09-14 — WMS operator-session UX contract ratified using Receive as the reference implementation.** See §22 for focus-shell, Work Note, scanner-focus, reconciliation, typography, completion-evidence, and handoff rules that future Receive / Stow / Pick session work must preserve.
 > **2026-07-22 — Inventory Intelligence adopted the shared `PulseCard`.** See §18, PULSE-02A, for the verified metric mapping and layout rules.
 > **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sends operators to the wrong workflow (reorder vs. check receiving).
@@ -12,53 +13,249 @@
 
 ## 1. Design System Foundations
 
+### Canonical Visual System Reference — Overview
+
+Overview is the production-certified reference implementation for the shared
+FT2 visual language across LaSyncro operational screens.
+
+This means new and transformed screens should inherit the established system for:
+
+- Plus Jakarta Sans typography and hierarchy;
+- canonical color tokens rather than local hardcoded colors;
+- page, surface and card treatments;
+- borders and radius;
+- spacing rhythm and alignment;
+- CTA hierarchy and interaction styling;
+- live severity/status treatment;
+- hover, selected, disabled and confirmed states;
+- responsive component behavior;
+- light/dark parity.
+
+Prefer shared components and existing canonical implementations over local
+approximations.
+
+Overview is a **visual-system reference, not a layout template to copy blindly**.
+It is not copied across unrelated archetypes: a domain screen must still follow
+its own screen-architecture contract for purpose, ownership, information
+hierarchy, spatial mode and viewport composition. When another screen solves the
+same UX problem and its approved architecture calls for the same operational
+composition, Overview's certified composition and interaction grammar is the
+reference (see Operational Screen Ecosystem Pattern — Overview → Orders).
+
+Specialized reference implementations may still govern workflow-specific
+behavior — for example Receive for operator-session behavior — but they inherit
+this shared visual language unless this playbook explicitly documents an
+exception.
+
+When a screen introduces a genuinely reusable visual pattern or an intentional
+exception, update this playbook rather than allowing the screen to become a
+parallel local design system.
+
+
+### Operational Screen Ecosystem Pattern — Overview → Orders
+
+Overview is the production-certified interaction and visual reference when
+another operational screen has the same UX problem.
+
+Reuse includes, where applicable:
+
+- the primary-workspace + canonical-right-rail composition;
+- stable primary-workspace geometry while Ops Console opens;
+- domain Pulse withdrawal while Ops Console occupies the attention rail;
+- surface, border, radius and spacing treatment;
+- warehouse/context badge placement;
+- spatial workspace footer grammar;
+- hover, selected and inspection interaction treatment;
+- teaching/setup, teaser, loading and error states inside the same workspace;
+- shared CTA and severity semantics.
+
+The canonical rail rule is:
+
+OPS CONSOLE CLOSED
+→ primary workspace remains visible
+→ domain Pulse/state rail occupies the secondary rail
+
+OPS CONSOLE OPEN
+→ primary workspace remains stable
+→ domain Pulse/state rail withdraws completely
+→ Ops Console owns the attention rail
+
+The domain Pulse is orientation/state, never a duplicate global attention queue.
+
+For Orders:
+
+- the rail becomes Order Health rather than `Needs a decision`;
+- legitimate order state remains Breached / Blocked / Picking / Fulfillable
+  plus useful lifecycle/aging context;
+- Ops Console owns actionable cross-workflow attention;
+- Order Flow owns release planning and fulfilment execution;
+- Orders spatial content remains an Orders-specific projection of canonical
+  warehouse geometry.
+
+Overview is still not copied blindly. Domain truth, spatial overlays, labels,
+inspection facts, contextual navigation and workflow ownership remain local to
+the owning domain.
+
+Reusable implementation direction, proven incrementally through Orders:
+
+- `OperationalContextShell` — primary workspace + canonical secondary rail;
+- app-level Ops Console replacement wiring feeding that shell;
+- `DomainPulseRail` semantics layered over the existing shared `PulseCard`;
+- `SpatialWorkspaceFrame` for common spatial surface furniture;
+- shared spatial inspection treatment when Overview + Orders demonstrate parity;
+- existing shared `IsometricCanvas` remains the spatial engine;
+- domain-specific spatial projection/adapters remain domain-owned.
+
+Do not pre-build all abstractions before they are required by the Orders slice.
+Extract only where real Overview + Orders duplication proves a stable contract.
+
+#### Overview parity rule
+
+When an operational screen solves the same UX problem as Overview, it mirrors
+Overview's proven composition and interaction grammar as closely as domain
+ownership allows. This includes geometry, spacing, surface treatment,
+typography hierarchy, CTA hierarchy, hover/focus behavior, selection/pinned
+behavior, transitions, state animation, responsive choreography,
+loading/setup states and Ops Console rail replacement.
+
+Domain differentiation comes from data, labels, projections, contextual facts
+and workflow ownership — not gratuitously different layout or interaction
+mechanics.
+
+#### Reuse-first rule
+
+Prefer the same existing component when it already owns the desired behavior —
+especially `LiveMapTeaser` and `IsometricCanvas` — rather than visually
+reproducing it locally.
+
+#### Motion parity
+
+Do not invent motion for Orders. Reuse Overview's motion only for the
+corresponding state:
+
+| State | Overview motion |
+|---|---|
+| Pulse/group row hover | `background-color` transition `0.12s` |
+| Ops Console / domain rail replacement | immediate — no fade, slide or width animation |
+| Spatial loading shimmer (where an equivalent loading state exists) | `1.6s ease-in-out` |
+| Setup/teaching accent indicator (where an equivalent state exists) | `2.4s ease-in-out` |
+| Warning footer indicator (where an equivalent warning state exists) | `2s ease-in-out` |
+
+Static/healthy state does not pulse merely for visual activity — Overview's
+footer indicator animates only while its warning state is present.
+
+#### Operational border hierarchy
+
+- Operational workspace, card and separator hairlines may use
+  `0.5px solid var(--rule)` when matching the certified Overview composition.
+- Interactive controls and inspection boundaries use the existing appropriate
+  `1px` rule.
+- Keyboard focus remains the stronger `2px solid var(--accent)` outline.
+- Do not arbitrarily mix border weights.
+
+#### Token rule
+
+Do not copy raw hardcoded hex values from legacy/reference source into new
+reusable Orders code when an established semantic CSS variable represents the
+same role. Keep the visual/semantic role, expressed through canonical tokens.
+
+#### Responsive operational shell
+
+`OperationalContextShell` (shared UI) mirrors Overview's certified body grid:
+
+- below `lg`: one-column composition;
+- `lg`+: `gridTemplateColumns: 'minmax(0, 3fr) minmax(260px, 1fr)'`, `gap: 2.25`;
+- when Ops Console is open, the desktop secondary track remains reserved while
+  the domain rail content withdraws — the primary workspace does not reflow;
+- below `lg`, a suppressed rail does not create an empty stacked row or gap;
+- the shell is composition only: the caller passes `suppressRail`; the shell
+  reads no Ops Console, config or domain state;
+- below `lg`, the primary workspace precedes the domain rail.
+
+Certified consumers: Overview (reference) and Orders Overview (locally
+certified 2026-09-28). Orders uses the same shell and rail-replacement grammar;
+its Order health rail content and semantics remain Orders-owned and are not a
+global module rule.
+
+#### Spatial inspection eligibility (configurable)
+
+Warehouse geometry is not automatically a domain inspection target. A domain
+screen may pass `IsometricCanvas` an optional `inspectableLocationCodes` set so
+that only locations with truthful domain facts enter hover focus, selection and
+pinned inspection; other geometry still renders for orientation without
+implying interaction. This is configurable, not globally mandatory — callers
+that pass no set keep the historic inspect-all behaviour. Orders passes the set
+of locations that have an Orders LocationPulse.
+
+#### Physical-location truth (shared data-truth principle)
+
+Workflow activity is not a known physical location. Operators are placed on a
+spatial surface only from actual location evidence — never inferred from the
+first or nearest zone, the workflow phase, parent/child geometry or a
+convenient renderer target. Unknown location stays unknown; workflow and batch
+counts remain valid without placement. Current data-contract reality: pack
+scans carry no location, so live spatial projections do not currently place
+packers.
+
+Ownership boundaries above are unchanged: Ops Console owns global attention,
+Order Flow owns release planning and execution, and Orders owns order-domain
+state and inspection.
+
+
 ### FT2 Triage + Pulse Layout
 
-Canonical triage + pulse layout:
+Canonical operational-screen layout — primary workspace + secondary Pulse/state
+rail — matching Overview's certified body grid (implemented by the shared
+`OperationalContextShell`):
 
 ```tsx
 <Box
   sx={{
-    display: 'flex',
-    flexDirection: { xs: 'column', lg: 'row' },
-    flexWrap: { xs: 'nowrap', lg: 'wrap' },
+    display: 'grid',
+    gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 3fr) minmax(260px, 1fr)' },
     gap: 2.25,
     alignItems: 'stretch',
+    minWidth: 0,
   }}
 >
-```
-
-Primary content:
-
-```tsx
-<Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0 }}>
-```
-
-Pulse rail:
-
-```tsx
-<Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
-  <PulseCard title="..." rows={rows} />
+  <Box sx={{ minWidth: 0 }}>{primary}</Box>
+  <Box sx={{ minWidth: 0 }}>
+    <PulseCard title="..." rows={rows} />
+  </Box>
 </Box>
 ```
 
 #### Rules
 
-Use breakpoint-driven flex layout, not a fixed two-column grid.
-Primary content owns the remaining desktop width.
-The pulse rail is 300px at desktop width and fills the row when stacked below `lg`.
-Use `alignItems: 'stretch'` so stacked children fill the available width.
-`PulseCard` owns its card shell; callers own only responsive sizing.
-Overview is the reference implementation for this layout.
+- Below `lg`: one column (`minmax(0, 1fr)`); primary and rail stack full-width.
+- `lg`+: `minmax(0, 3fr) minmax(260px, 1fr)` with `gap: 2.25`.
+- The primary track uses `minWidth: 0` so wide content cannot force overflow.
+- When the rail is withdrawn (e.g. Ops Console open), the desktop secondary
+  track stays reserved and only the rail content withdraws — the primary
+  workspace does not reflow.
+- Below `lg`, a suppressed rail creates no empty stacked row or extra gap.
+- Use `alignItems: 'stretch'` so stacked children fill the available width.
+- `PulseCard` owns its card shell; callers own only responsive sizing.
+- Overview is the reference implementation for this layout.
 
-### FT2 Page Scroll Rule
-Main module pages should prefer page-level vertical scroll over nested card/list scroll.
-Rules:
+Some existing FT2 screens still use an earlier flex composition with a fixed
+300px Pulse rail. Do not use it as the model for new or normalized operational
+screens.
 
-- Do not give primary lists their own `overflowY: 'auto'` unless explicitly required.
-- Avoid parent `height: '100%'` + `overflow: 'hidden'` clamps when the list should extend the page.
-- Drawer, modal, and side-panel bodies may keep internal scroll.
-- Table/list cards may keep `overflow: 'hidden'` for rounded corners, but the row container should not own vertical scroll.
+### FT2 Page / Workspace Scroll Rule
+
+The current Screen Architecture Playbook is authoritative for viewport ownership.
+
+For screens with a certified operational workspace:
+
+- accidental document-level vertical scrolling is not allowed at certified viewports;
+- target `document.documentElement.scrollHeight - window.innerHeight <= 1`;
+- use intentional workspace-owned scrolling when content must exceed the available workspace;
+- preserve the primary task or primary spatial/context surface instead of allowing the document itself to drift;
+- drawers, modals and side panels may own their own internal scroll;
+- simple list/detail screens may use normal page flow when their approved screen contract does not require a bounded operational workspace.
+
+Do not introduce nested scrolling merely to force content into a viewport. Scroll ownership must follow the approved screen architecture.
 
 **Board Layout Exception (2026-08-14, OF-12 / OF-UX-01):** Multi-column operational boards (for example Order Flow's Blocked / Order Pool / Fulfillment lanes) must remain bounded to the available viewport height. The shared board container owns the remaining page height with `flex: 1`, `minHeight: 0`, and overflow containment; each lane may then own independent `overflowY: 'auto'` scrolling. The tallest lane must never increase whole-page height or scroll the other lanes out of view. This exception applies only to genuine multi-column board pages, not single-list module pages, which remain governed by the base FT2 Page Scroll Rule above.
 
@@ -839,6 +1036,70 @@ The canonical Orders Overview landing pattern is Live Intelligence:
 
 All essential Orders landing content fits visibly in the first viewport. Residual ~64px vertical overflow at the tested desktop viewport is intentionally **DEFERRED** as non-blocking polish. The scroll-free requirement is **not fully closed/clean**; residual scroll is not resolved.
 
+**2026-09-27 — ORD-UX-02 — Orders Overview normalization — LOCAL CERTIFIED (2026-09-28)**
+
+Status: **Implemented and locally certified 2026-09-28** (1440 × 720 and
+1024 × 820, light/dark, Ops Console rail replacement, primary-workspace
+stability, document/horizontal overflow ≤ 1, silent-bin non-interactivity,
+projection-health recovery). Production certification pending.
+
+This supersedes `ORD-UX-01` as the current Orders Overview UX contract.
+`ORD-UX-01` above is historical: it records the pre-normalization composition,
+including its triage-first no-map fallback, which is now retired.
+
+The contract keeps Orders as an **Operational Context** screen:
+
+- primary question:
+  **What is happening to my orders, why, and where is fulfilment pressure?**
+- shared styling follows the canonical Overview/shared visual system;
+- Orders reuses Overview's proven operational-screen composition and interaction grammar where the same UX problem exists, while keeping Orders-specific domain truth and spatial semantics;
+- the actionable `Needs a decision` landing rail is retired as a local
+  attention inbox;
+- legitimate underlying order state, constraint severity, age and commercial
+  consequence remain available as Orders-domain context;
+- `Today's pulse` is replaced by truthful compact **Order health** state;
+- Order health may summarize Breached, Blocked, Picking, Fulfillable and useful
+  aging/risk state;
+- cumulative fulfilled/revenue-to-date metrics must not be presented as
+  "today";
+- the Orders warehouse projection remains **CONTEXTUAL**, answering where
+  order-related fulfilment pressure is physically concentrated;
+- the map uses canonical warehouse geometry and a real Orders projection, not
+  an independent or generic Overview map;
+- individual order and constraint inspection remains in Orders as secondary /
+  on-demand detail;
+- priority mutations, including bulk prioritization, belong to Order Flow;
+- `View order flow` remains valid contextual navigation;
+- Export remains available but is a secondary utility rather than a headline
+  action;
+- the triage-first no-map layout is retired — one composition renders for every
+  input.
+
+Certified responsive behaviour (shared `OperationalContextShell`):
+
+- `1440 × 720`: `[Orders spatial workspace][Order health]`; with Ops Console
+  open, `[Orders spatial workspace][Ops Console]` — Order health withdraws and
+  the primary workspace does not shift, resize or animate;
+- `1024 × 820`: single column — spatial workspace first, Order health below;
+  with Ops Console open, Order health is suppressed with no empty row or gap;
+- no accidental document-level overflow at either certified viewport;
+- intentional workspace-owned scrolling is allowed where required.
+
+Spatial truth on Orders: inspection is limited to locations with a truthful
+Orders LocationPulse (Orders-silent bins stay plain geometry), and operators
+appear only where physical-location evidence exists — packers are not
+currently placed (see §1, Physical-location truth).
+
+Global ownership remains:
+
+- Ops Console → cross-workflow/global attention;
+- Orders Overview → order-domain truth and inspection;
+- Order Flow → release planning and fulfilment execution.
+
+Do not reintroduce the historical `ORD-UX-01` layout. Changes must follow
+ORD-UX-02 and the current Screen Architecture Playbook.
+
+
 **2026-09-10 — OV-UX-02 — Overview Live Intelligence teaser parity**
 
 Starter/Core Overview now uses the canonical Live Intelligence layout:
@@ -980,6 +1241,17 @@ comes from cross-axis alignment. `alignItems: 'start'` lets children shrink
 to intrinsic content width, leaving dead space beside them when stacked;
 `'stretch'` fills the row. Found missing in Orders, Outbound, and Sourcing
 (all set `'start'`); Overview's TRIAGE layout was correct from the start.
+
+> **Supersession note (2026-09-28)** — applies to the two 2026-07-22 geometry
+> entries above (Pulse card wrap-fill; Triage+pulse outer container). They
+> record the historical layout contract at that time. For new or normalized
+> operational-context screens they are superseded by the 2026-09-28 certified
+> operational-screen composition: `xs: minmax(0, 1fr)`,
+> `lg`+: `minmax(0, 3fr) minmax(260px, 1fr)`, `gap: 2.25` (see §1, FT2
+> Triage + Pulse Layout). Existing screens with explicit screen-specific
+> contracts are not implicitly migrated by this note. For matching
+> operational-screen UX problems, Overview's current certified implementation —
+> not its historical Triage/BusinessPulse generation — is the reference.
 
 ## 19. Historical committed-`dist` drift — BUILD-DIST-STALE-101, 2026-08-23
 

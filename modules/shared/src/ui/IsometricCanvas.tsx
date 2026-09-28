@@ -667,6 +667,14 @@ export interface IsometricCanvasProps {
   pinnedAction?: { label: string; onClick: () => void } | null;
   /** Called when the pinned pulse close control clears selection. */
   onPinnedClose?: () => void;
+  /**
+   * Optional physical-location inspection eligibility. Absent: every physical
+   * location may enter hover focus and selection (historic behaviour).
+   * Present: only listed location_codes may; other geometry still renders
+   * normally but is not an inspection target. Synthetic stations and
+   * onZoneClick are unaffected.
+   */
+  inspectableLocationCodes?: ReadonlySet<string>;
   filteredCodes?: Set<string>;
   highlightZoneTypes?: Set<string>;
   /**
@@ -848,6 +856,7 @@ export function IsometricCanvas({
     selectedStationId,
     pinnedAction,
     onPinnedClose,
+    inspectableLocationCodes,
     filteredCodes, 
     highlightZoneTypes,
     enableHoverFocus = false,
@@ -913,7 +922,14 @@ export function IsometricCanvas({
   zoomRef.current   = zoom;
   offsetRef.current = offset;
   sizeRef.current   = size;
-  const activeSelectedLocation = selectedLocationCode !== undefined ? selectedLocationCode : selected;
+  const isInspectableLocation = (code: string): boolean =>
+    inspectableLocationCodes == null || inspectableLocationCodes.has(code);
+  const requestedSelectedLocation = selectedLocationCode !== undefined ? selectedLocationCode : selected;
+  // An ineligible location never becomes the active inspection selection.
+  const activeSelectedLocation =
+    requestedSelectedLocation != null && isInspectableLocation(requestedSelectedLocation)
+      ? requestedSelectedLocation
+      : null;
   const activeSelectedStation = selectedStationId !== undefined ? selectedStationId : selectedStation;
 
    // Apply zone filter rail selection; if no filter provided, show all positioned zones.
@@ -991,6 +1007,7 @@ export function IsometricCanvas({
   const activeHoveredCode =
     enableHoverFocus &&
     hovered != null &&
+    isInspectableLocation(hovered) &&
     positionedZones.some(
       z => z.type === 'bin' && z.location_code === hovered
     )
@@ -1248,6 +1265,7 @@ export function IsometricCanvas({
 
   function handleSelect(code: string, anchor?: { x: number; y: number; leftX: number }) {
     onZoneClick?.(code);
+    if (!isInspectableLocation(code)) return;
     const next = activeSelectedLocation === code ? null : code;
     setSelected(next);
     setSelectedStation(null);
@@ -1536,7 +1554,7 @@ export function IsometricCanvas({
               <g
                 key={zone.location_code}
                 onMouseEnter={
-                  enableHoverFocus && !isFrame
+                  enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code)
                     ? () => {
                         setHovered(zone.location_code);
                         const a = project(wx + ww, wy, wh, zoom, flipped);
@@ -1546,7 +1564,7 @@ export function IsometricCanvas({
                     : undefined
                 }
                 onMouseLeave={
-                  enableHoverFocus && !isFrame
+                  enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code)
                     ? () =>
                         {
                           setHovered(current =>

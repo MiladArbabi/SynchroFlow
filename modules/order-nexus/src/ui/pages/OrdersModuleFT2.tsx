@@ -1,16 +1,15 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 //
-// ORDERS MODULE — FT2 OPERATOR SURFACE — TRIAGE-FIRST
+// ORDERS MODULE — FT2 OPERATOR SURFACE — OPERATIONAL CONTEXT
 // ─────────────────────────────────────────────────────────────
 // Layout:
-//   1. Header          — title + signal line + resolve CTA
-//   2. Needs a decision — triage card: Critical band → Watch band → footer
-//   3. Today's flow    — pulse counts + stage bar
+//   1. Header        — title + signal line + export
+//   2. Body          — shared OperationalContextShell:
+//                      primary Orders workspace | Order health rail
 //
 // RULES:
 // - No hardcoded hex. CSS variables or design-system tokens only.
-//   Exception: severity band colors (#E5484D critical, #D9A23B watch, #4CAF7A ok) — domain tokens.
-//   Exception: STAGE_COLORS — pipeline stage domain tokens, tracked in B-08.
+//   Exception: header live-dot color (#4CAF7A) — pre-existing domain token.
 // - No inline style={}. MUI sx prop only.
 // - No cross-module imports.
 // - No fetching. All data via props.
@@ -18,11 +17,10 @@
 
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Box, Collapse, Typography } from '@mui/material';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { Box, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
-import { formatCurrencyCompact, PulseCard, ReorderTransitionList } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, OperationalContextShell } from '@lasyncro/shared/ui';
 import type { OperationalMapState } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import type { OperationalEpisodeProjection } from '@lasyncro/shared/contracts/operational-episode';
@@ -115,7 +113,6 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   // onOrderSelect removed 2026-06-28 — dead prop, zero consumers found
   // (only the interface + compiled .d.ts reflected it). Same pattern as
   // OV-02's onResolveAll. onOrderClick below is the real, wired mechanism.
-  onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
   /** Opens the shared EntityDetailModal for this order. See entity-detail-modal-playbook.md §2. */
   onOrderClick?: (orderId: string) => void;
 
@@ -129,17 +126,35 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
    * ORD-UX-01 — live Orders map surface supplied by the app shell.
    *
    * The module never decides map eligibility and never acquires floor or
-   * activity data; it only leases the left slot. When present, the canonical
-   * Live Intelligence layout renders (map + compact 280px decision rail).
-   * When absent, the triage-first layout is preserved for existing consumers.
+   * activity data; it only leases the primary slot of the shared
+   * OperationalContextShell. When absent, the same normalized composition
+   * renders with an empty primary slot — there is no triage-first variant.
    */
   mapContent?: ReactNode;
 
   /**
-   * D2B-RED — additive operational-episode presentation seam (declaration
-   * only in this slice; NOT yet consumed by any rendering logic below).
+   * SCREEN-ARCH — when true, the Ops Console is open and owns attention, so
+   * the Order health rail withdraws. Supplied by the app shell from global
+   * Ops Console state; this module never reads that state itself.
+   */
+  suppressOrderHealth?: boolean;
+
+  /**
+   * Canonical operational-episode lifecycle presentation for Order health.
    * One entry per order, D1/D2A-aggregated and dominant-resolved by the
    * caller — this module performs no lifecycle inference of its own.
+   *
+   *   null            -> lifecycle projection UNRESOLVED ("Checking
+   *                      operational state"; the exact V1 legacy pairings
+   *                      fail closed and are never shown as confirmed clear)
+   *   []              -> resolved, no current lifecycle episodes
+   *   [visuals...]    -> resolved lifecycle presentation (attention /
+   *                      Verifying / Just resolved reconciliation)
+   *   undefined       -> non-participating consumer; treated like []
+   *
+   * These semantics are identical for every primary composition — real map,
+   * LiveMapTeaser, no-floor setup state, or a direct consumer with no
+   * mapContent.
    */
   operationalEpisodeVisuals?: readonly OrdersOperationalEpisodeVisualInput[] | null;
 
@@ -203,13 +218,6 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────
-const TRIAGE_PREVIEW_LIMIT = 3;
-const PRIORITY_REORDER_HOLD_MS = 560;
-const PRIORITY_FLASH_MS = 1400;
-
-const fmtN = (n: number | null | undefined): string =>
-  n == null ? '—' : Math.round(n).toLocaleString();
-
 const fmtSlaAge = (hours: number): string => {
   const h = Math.round(hours);
   const d = Math.floor(h / 24);
@@ -219,102 +227,86 @@ const fmtSlaAge = (hours: number): string => {
   return `${d}d ${rem}h past`;
 };
 
-// ─── STAGE COLORS ─────────────────────────────────────────────
-// Domain-specific pipeline stage colors — no design-system token equivalent yet.
-// Tracked in B-08. When @lasyncro/ui-ft2 adds stage tokens, migrate here.
-const STAGE_COLORS: Record<string, string> = {
-  new:            '#9CA3AF',
-  ready:          '#10B981',
-  picking:        '#3B82F6',
-  packed:         '#6366F1',
-  blocked:        '#F97316',
-  breached:       '#EF4444',
-  awaiting_reply: '#F59E0B',
-  awaiting_stock: '#EAB308',
-};
+// ─── ORDER HEALTH RAIL PRESENTATION ───────────────────────────
+// Mirrors Overview's certified Operations Pulse rail grammar: 0.5px rule
+// group separators, uppercase 10px group labels, 12.5px rows, and the same
+// interactive-row treatment (6px radius, 0.12s background-color, --bg-3
+// hover, 2px accent focus ring). No other motion.
 
-/**
- * PrioritizeButton (THREAD B, 2026-06-30)
- * -----------------------------------------
- * Replaces the old "Release →" CTA, which navigated to /orders/flow and
- * did nothing else — dead-end, no actual prioritization happened.
- *
- * New behavior: flags the order via onPriorityFlag (ON-01, now
- * consolidated + pool-guarded), which sets is_priority_flagged on the
- * order. Prioritized orders surface at the top of the Orders Pool in
- * /orders/flow. No navigation on click.
- *
- * Three visual states:
- * - already prioritized (order.isPriorityFlagged === true, persisted)
- * - just clicked (local transient state, brief confirmation)
- * - default
- */
-function PrioritizeButton({
-  isPriorityFlagged,
-  onPrioritize,
-}: {
-  isPriorityFlagged: boolean;
-  onPrioritize: () => Promise<void>;
-}) {
-  const [justPrioritized, setJustPrioritized] = useState(false);
-  const [isPending, setIsPending] = useState(false);
+const HEALTH_ROW_INTERACTIVE_SX = {
+  // Native button reset — the row keeps its presentation.
+  appearance: 'none',
+  font: 'inherit',
+  color: 'inherit',
+  textAlign: 'left',
+  bgcolor: 'transparent',
+  border: 'none',
+  m: 0,
+  // Horizontal inset offset by negative margin so the hover surface does
+  // not shift content or change the group's dimensions.
+  px: '8px',
+  mx: '-8px',
+  py: '2px',
+  display: 'block',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  transition: 'background-color 0.12s',
+  '&:hover': { bgcolor: 'var(--bg-3)' },
+  '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+} as const;
 
-  const handleClick = async () => {
-    if (isPending || isPriorityFlagged || justPrioritized) return;
-    setIsPending(true);
-    try {
-      await onPrioritize();
-      setJustPrioritized(true);
-      setTimeout(() => setJustPrioritized(false), 2000);
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  const showConfirmed = isPriorityFlagged || justPrioritized;
-
+function HealthGroup({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <Box>
-      <Box
-        component="button"
-        onClick={handleClick}
-        disabled={isPending || showConfirmed}
-        sx={{
-          width: '100%',
-          fontSize: 12,
-          fontWeight: 600,
-          // CONFIRM-GHOST EXCEPTION (Thread B, 2026-06-30): documented
-          // deviation from the orange-only CTA system — see
-          // modules-ux-playbook.md §9. Confirmed/persisted state only,
-          // never used for an actionable CTA.
-          color: showConfirmed ? 'var(--confirm-ink)' : 'var(--accent-ink)',
-          bgcolor: showConfirmed ? 'var(--confirm-ghost)' : 'var(--accent)',
-          border: showConfirmed ? '1px solid var(--confirm-border)' : 'none',
-          borderRadius: '6px',
-          py: 1,
-          textAlign: 'center',
-          cursor: showConfirmed ? 'default' : 'pointer',
-          opacity: isPending ? 0.6 : 1,
-          '&:hover': { opacity: showConfirmed ? 1 : 0.88 },
-        }}
-      >
-        {showConfirmed ? 'Prioritized ✓' : isPending ? 'Prioritizing…' : 'Prioritize →'}
-      </Box>
-      {showConfirmed && (
-        <Typography
-          sx={{
-            fontSize: 10,
-            fontWeight: 400,
-            color: 'var(--ink-4)',
-            textAlign: 'center',
-            mt: 0.5,
-          }}
-        >
-          To be released in the next batch
+    <Box
+      role="group"
+      aria-label={label}
+      sx={{ display: 'flex', flexDirection: 'column', gap: '6px', py: '10px', borderTop: '0.5px solid var(--rule)', '&:first-of-type': { borderTop: 'none', pt: 0 } }}
+    >
+      {label && (
+        <Typography component="span" sx={{ display: 'block', fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>
+          {label}
         </Typography>
       )}
+      {children}
     </Box>
   );
+}
+
+function HealthMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+      <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, color: 'var(--ink-3)' }}>
+        {label}
+      </Typography>
+      <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 500, lineHeight: 1.45, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function LifecycleRow({
+  glyph,
+  group,
+  onOrderClick,
+}: {
+  glyph: '◌' | '✓';
+  group: { label: string; orderIds: string[] };
+  onOrderClick?: (orderId: string) => void;
+}) {
+  const text = (
+    <Typography component="span" sx={{ display: 'block', fontSize: 12.5, fontWeight: 500, lineHeight: 1.45, color: 'var(--ink)' }}>
+      {glyph} {group.orderIds.length} {group.label}
+    </Typography>
+  );
+  if (group.orderIds.length === 1 && onOrderClick) {
+    return (
+      <Box component="button" type="button" onClick={() => onOrderClick(group.orderIds[0])} sx={HEALTH_ROW_INTERACTIVE_SX}>
+        {text}
+      </Box>
+    );
+  }
+  return text;
 }
 
 // MAIN COMPONENT
@@ -323,13 +315,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const [showAllRailGroups, setShowAllRailGroups] = useState(false);
   const { 
     operationalControl, 
-    revenue, 
     operatorSummary, 
     currency, 
     onExport, 
     onOrderClick,
     mapContent,
-    onPriorityFlag,
+    suppressOrderHealth = false,
     operationalEpisodeVisuals
   } = props
 
@@ -340,8 +331,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const qReady         = operatorSummary?.queueCounts?.readyToShip ?? operationalControl?.queue_ready_to_ship ?? 0;
   const qPicking       = operationalControl?.pending_fulfillment ?? 0;
   const constrained    = operationalControl?.constrained_orders ?? 0;
-  const aging72        = operationalControl?.aging_72h_plus ?? 0;
-  const totalOrders    = props.orders?.total ?? 0;
   const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
 
   // ── Date / sync header ──────────────────────────────────────
@@ -358,153 +347,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     return `Last synced ${Math.round(diffMin / 60)}h ago`;
   })();
 
-  // ── Triage queues ────────────────────────────────────────────
-  // THREAD B (2026-06-30): prioritized orders sort to the bottom of
-  // Critical after a short confirmation hold. This prevents the row from
-  // teleporting immediately after the user clicks Prioritize.
-  const [expandedCriticalGroupKeys, setExpandedCriticalGroupKeys] =
-    useState<Set<string>>(() => new Set());
-  const [watchExpanded, setWatchExpanded] = useState(false);
-  const [bulkPriorityConfirmGroupKey, setBulkPriorityConfirmGroupKey] =
-    useState<string | null>(null);
-  const [bulkPriorityPendingGroupKey, setBulkPriorityPendingGroupKey] =
-    useState<string | null>(null);
-  const [bulkPriorityConfirmedGroupKey, setBulkPriorityConfirmedGroupKey] =
-    useState<string | null>(null);
-  const [bulkPriorityErrorGroupKey, setBulkPriorityErrorGroupKey] =
-    useState<string | null>(null);
+  // SCREEN-ARCH (C1C): a priority flag is Order Flow planning state, not a
+  // resolution. It never hides an order whose SLA/aging/constraint condition
+  // is still active from Order health, so no priority filtering happens here.
+  const allAgingOrders = operatorSummary?.agingOrders ?? [];
 
-  const toggleCriticalGroup = (key: string) => {
-    setExpandedCriticalGroupKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const [movementHeldOrderIds, setMovementHeldOrderIds] = useState<Set<string>>(() => new Set());
-  const [priorityFlashOrderIds, setPriorityFlashOrderIds] = useState<Set<string>>(() => new Set());
-
-  const holdPriorityMovement = (orderId: string) => {
-    setMovementHeldOrderIds(prev => {
-      const next = new Set(prev);
-      next.add(orderId);
-      return next;
-    });
-
-    window.setTimeout(() => {
-      setMovementHeldOrderIds(prev => {
-        const next = new Set(prev);
-        next.delete(orderId);
-        return next;
-      });
-    }, PRIORITY_REORDER_HOLD_MS);
-  };
-
-  const flashPriorityRow = (orderId: string) => {
-    setPriorityFlashOrderIds(prev => {
-      const next = new Set(prev);
-      next.add(orderId);
-      return next;
-    });
-
-    window.setTimeout(() => {
-      setPriorityFlashOrderIds(prev => {
-        const next = new Set(prev);
-        next.delete(orderId);
-        return next;
-      });
-    }, PRIORITY_FLASH_MS);
-  };
-
-  const handlePrioritizeOrder = async (orderId: string): Promise<void> => {
-    holdPriorityMovement(orderId);
-
-    try {
-      await onPriorityFlag?.([orderId], true);
-      flashPriorityRow(orderId);
-    } catch (error) {
-      setMovementHeldOrderIds(prev => {
-        const next = new Set(prev);
-        next.delete(orderId);
-        return next;
-      });
-
-      setPriorityFlashOrderIds(prev => {
-        const next = new Set(prev);
-        next.delete(orderId);
-        return next;
-      });
-
-      throw error;
-    }
-  };
-
-  const handlePrioritizeGroup = async (
-    groupKey: string,
-    orderIds: string[]
-  ): Promise<void> => {
-    if (!onPriorityFlag || orderIds.length === 0) return;
-
-    orderIds.forEach(holdPriorityMovement);
-    setBulkPriorityPendingGroupKey(groupKey);
-    setBulkPriorityErrorGroupKey(null);
-
-    try {
-      await onPriorityFlag(orderIds, true);
-      orderIds.forEach(flashPriorityRow);
-      setBulkPriorityConfirmGroupKey(null);
-      setBulkPriorityConfirmedGroupKey(groupKey);
-
-      window.setTimeout(() => {
-        setBulkPriorityConfirmedGroupKey(prev =>
-          prev === groupKey ? null : prev
-        );
-      }, 2000);
-    } catch {
-      setMovementHeldOrderIds(prev => {
-        const next = new Set(prev);
-        orderIds.forEach(id => next.delete(id));
-        return next;
-      });
-
-      setPriorityFlashOrderIds(prev => {
-        const next = new Set(prev);
-        orderIds.forEach(id => next.delete(id));
-        return next;
-      });
-
-      setBulkPriorityErrorGroupKey(groupKey);
-    } finally {
-      setBulkPriorityPendingGroupKey(null);
-    }
-  };
-
-  const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => {
-    const aPrioritySettled = a.isPriorityFlagged && !movementHeldOrderIds.has(a.lasyncro_order_id);
-    const bPrioritySettled = b.isPriorityFlagged && !movementHeldOrderIds.has(b.lasyncro_order_id);
-
-    if (aPrioritySettled !== bPrioritySettled) {
-      return aPrioritySettled ? 1 : -1;
-    }
-
-    return b.ageHours - a.ageHours;
-  });
-
-  // Critical/Watch contain only decisions that still need intervention.
-  // A successful priority action remains briefly during the existing movement
-  // hold, then leaves Needs a decision once that confirmation window expires.
-  const stillNeedsDecision = (order: (typeof allAgingOrders)[number]): boolean =>
-    !order.isPriorityFlagged ||
-    movementHeldOrderIds.has(order.lasyncro_order_id);
-
-  // Unconstrained orders already moving in a pick batch have no decision here.
+  // SCREEN-ARCH (C1D): pick-batch membership is fulfillment progress, not a
+  // resolution — a breached order stays represented while it is breached.
   const allBreachedOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
-  const breachedCriticalOrders = allBreachedOrders.filter(
-    o =>
-      stillNeedsDecision(o) &&
-      (o.constraintType !== null || !o.inPickBatch)
-  );
 
   /**
    * ORD-OVERVIEW-INVENTORY-01 — CANONICAL CONSTRAINT ADMISSION
@@ -595,8 +445,8 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // admitted only when no actionable constraint already owns that order, so
   // every order id appears exactly once and lands under its blocker's group
   // rather than being double-listed under Shipping SLA breached.
-  const criticalOrdersById = new Map<string, (typeof breachedCriticalOrders)[number]>();
-  for (const o of breachedCriticalOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
+  const criticalOrdersById = new Map<string, (typeof allBreachedOrders)[number]>();
+  for (const o of allBreachedOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
   for (const o of actionableConstrainedOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
   // DR-03B2 (#1114): returned_undelivered is excluded at admission
   // (isMerchantActionableConstraint) for actionableConstrainedOrders, but
@@ -689,77 +539,15 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const watchOrders = allAgingOrders.filter(
     o =>
       !o.isShippingSlaBreached &&
-      stillNeedsDecision(o) &&
       !actionableConstrainedIds.has(o.lasyncro_order_id)
   );
 
-  const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
-  const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
-  const prioritizedCriticalCount = criticalOrders.filter(o => o.isPriorityFlagged).length;
-  const unprioritizedCriticalCount = Math.max(criticalOrders.length - prioritizedCriticalCount, 0);
-  const pulseRows = [
-    { label: 'Breached', n: slaBreachedCount, color: STAGE_COLORS.breached },
-    { label: 'Picking',  n: qPicking, color: STAGE_COLORS.picking },
-    { label: 'Fulfillable', n: qReady, color: STAGE_COLORS.ready },
-    { label: 'Blocked',  n: constrained, color: STAGE_COLORS.blocked },
-  ];
-
-  const pulseMax = Math.max(...pulseRows.map(row => row.n), 1);
-
-  // FIX (2026-07-01): default branch fired identically for "operational
-  // constraint, unspecified type" AND "no constraint at all, just aging"
-  // — the second case is exactly every Watch-band order, which have zero
-  // constraint type by definition. Confirmed live: Watch rows showed
-  // "SLA breach · Xd past aging" on orders that were explicitly NOT
-  // SLA-breached (isShippingSlaBreached: false). Now takes the real
-  // breach flag so it can tell the two apart honestly.
-  const constraintLabel = (type: string | null, isBreached: boolean, blockType?: string | null): string => {
-    switch (type) {
-      case 'inventory': return 'Out of stock';
-      case 'customer':  return 'Address issue';
-      case 'operational':
-        // DR-03B2 (#1114): 'returned_undelivered' can no longer reach this
-        // function at all (excluded upstream at criticalOrders admission),
-        // but the label itself is fixed regardless — 'Pick exception' was
-        // stale/incorrect dead vocabulary (operationalConstraintEvaluator.ts
-        // is permanently inert; see RETURNS-BOUNDARY-01 in
-        // useConstrainedOrders.ts for the twin fix already made there).
-        // 'Operational hold' matches that module's neutral vocabulary.
-        void blockType;
-        return 'Operational hold';
-      default: return isBreached ? 'SLA breach' : 'Aging';
-    }
-  };
-
-  // ── Stage bar ───────────────────────────────────────────────
-  const stageData = [
-    // DC-04 (2026-08-15): queue_ready_to_ship counts every unblocked unfulfilled
-    // order — pool, batched, picking, packed alike. It is not a pipeline stage
-    // and not the order pool, which is the unbatched subset shown on Order Flow
-    // (3 vs 13 on shop 15). "Fulfillable" states the predicate: nothing is in
-    // this order's way. Key unchanged; renaming needs a consumer sweep.
-    { key: 'ready',          label: 'Fulfillable',    count: qReady      },
-    { key: 'picking',        label: 'Picking',        count: qPicking    },
-    { key: 'blocked',        label: 'Blocked',        count: constrained },
-    // DC-03: keeps the aging bucket — a pipeline age band sits naturally beside
-    // Ready/Picking/Blocked — but stops calling it a breach. Key unchanged;
-    // renaming it needs a sweep of consumers.
-    { key: 'breached',       label: 'Aging 3d+',      count: aging72     },
-    { key: 'awaiting_stock', label: 'Awaiting stock', count: operatorSummary?.constraintCounts?.inventory ?? 0 },
-    { key: 'awaiting_reply', label: 'Awaiting reply', count: operatorSummary?.constraintCounts?.customer  ?? 0 },
-  ];
-  const accountedFor = stageData.reduce((s, d) => s + d.count, 0);
-  const newCount     = Math.max(0, totalOrders - accountedFor);
-  const allStages    = [{ key: 'new', label: 'New', count: newCount }, ...stageData];
-  const stageTotal   = allStages.reduce((s, d) => s + d.count, 0) || 1;
-
   /**
-   * D2B — OPERATIONAL LIFECYCLE RECONCILIATION (Live Intelligence rail ONLY).
+   * D2B — OPERATIONAL LIFECYCLE RECONCILIATION (Order health rail).
    * ─────────────────────────────────────────────────────────────────────
    * Applies strictly AFTER `criticalGroups` (above) is established, and only
-   * feeds the mapContent/Live-Intelligence `railGroups` built below — the
-   * no-mapContent triage-first fallback keeps reading `criticalGroups`
-   * directly, untouched, and never looks at `operationalEpisodeVisuals`.
+   * feeds the Order health `railGroups` built below. There is one
+   * composition, so this applies whether or not mapContent is supplied.
    *
    * FAIL CLOSED: only a dominant problem of EXACTLY customer/
    * incomplete_address or inventory/oversell is ever consumed. Any other
@@ -829,7 +617,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     verifyingOrderIds.has(orderId) || justResolvedOrderIds.has(orderId);
 
   // Rail-only reconciled groups — a verifying/just_resolved order is removed
-  // from "Needs a decision" here, and (only while the canonical lifecycle is
+  // from the attention groups here, and (only while the canonical lifecycle is
   // UNRESOLVED) the exact V1 legacy pairing is fail-closed too. `criticalGroups`
   // itself is never mutated.
   const railCriticalGroups = criticalGroups
@@ -898,7 +686,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const episodeOnlyAttentionGroups = buildLifecycleRailGroups(episodeOnlyAttentionOrderIds);
 
   /**
-   * ORD-UX-01 — GROUP summaries for the 280px Live Intelligence rail.
+   * ORD-UX-01 — GROUP summaries for the Order health rail.
    *
    * Built from `railCriticalGroups` (D2B-reconciled — see above), same
    * commercial-consequence ordering (revenue at stake, descending), same
@@ -909,7 +697,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
    * group with honest null revenue/age. The rail only changes the
    * PRESENTATION — one line per issue class, never per order. Aging is
    * appended last because it is imminent risk rather than a realised
-   * blocker, matching the Watch band's meaning in the triage layout.
+   * blocker (the former Watch band's meaning).
    */
   const railGroups: Array<{
     key: string;
@@ -1019,789 +807,146 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         </Box>
       </Box>
 
-      {/* ── LIVE INTELLIGENCE BODY (ORD-UX-01) ────────────────── */}
-      {/* LEFT: live Orders map  |  RIGHT: fixed 280px decision rail.
-          The triage card, individual critical/watch order rows, expanded order
-          lists and the inline bulk-priority confirmation UI are deliberately
-          NOT rendered here — each group links to the workflow that owns the
-          detail, and bulk mutation stays in Order Flow. */}
-      {mapContent ? (
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.25, alignItems: 'stretch' }}>
-          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {mapContent}
-          </Box>
+      {/* ── ORDERS OPERATIONAL CONTEXT (SCREEN-ARCH) ─────────── */}
+      {/* PRIMARY: Orders workspace (map, teaser or setup state, leased from
+          the app shell)  |  RAIL: Order health — state and orientation only.
+          One composition for every input; there is no triage-first variant.
+          The rail withdraws while the Ops Console is open. */}
+      <OperationalContextShell
+        primary={mapContent ?? null}
+        suppressRail={suppressOrderHealth}
+        rail={
+          <Box
+            component="section"
+            role="region"
+            aria-label="Order health"
+            sx={{
+              minWidth: 0,
+              boxSizing: 'border-box',
+              bgcolor: 'var(--surface)',
+              border: '0.5px solid var(--rule)',
+              borderRadius: '14px',
+              px: '18px',
+              py: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignSelf: 'start',
+            }}
+          >
+            <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}>
+              Order health
+            </Typography>
 
-          <Box sx={{ flex: { xs: '1 1 auto', lg: '0 0 280px' }, width: { lg: 280 }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <HealthGroup>
+              <HealthMetric label="Breached" value={slaBreachedCount} />
+              <HealthMetric label="Blocked" value={constrained} />
+              <HealthMetric label="Picking" value={qPicking} />
+              <HealthMetric label="Fulfillable" value={qReady} />
+            </HealthGroup>
+
             {railGroups.length > 0 && (
-              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
-                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Needs a decision
-                  </Typography>
-                </Box>
-
-                {visibleRailGroups.map(group => (
-                  <Box
-                    key={group.key}
-                    onClick={() => {
-                      // A single concrete order is the natural action — open it.
-                      // Anything wider belongs to the workflow that owns it.
-                      if (group.orderIds.length === 1 && onOrderClick) {
-                        onOrderClick(group.orderIds[0]);
-                        return;
-                      }
-                      navigate('/orders/flow');
-                    }}
-                    sx={{
-                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1,
-                      px: 1.75, py: 1.25, cursor: 'pointer',
-                      borderBottom: '0.5px solid var(--rule)',
-                      '&:last-of-type': { borderBottom: 'none' },
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }}>
-                        {group.count} {group.label}
-                      </Typography>
-                      {group.oldestAgeHours != null && (
-                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }}>
-                          oldest {fmtSlaAge(group.oldestAgeHours)}
+              <HealthGroup label="Constraints & aging">
+                {visibleRailGroups.map(group => {
+                  // One concrete order opens Orders inspection; a multi-order
+                  // group is contextual state, not a workflow CTA.
+                  const inspectable = group.orderIds.length === 1 && !!onOrderClick;
+                  const contents = (
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography component="span" sx={{ display: 'block', fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45 }}>
+                          {group.count} {group.label}
+                        </Typography>
+                        {group.oldestAgeHours != null && (
+                          <Typography component="span" sx={{ display: 'block', fontSize: 11, color: 'var(--ink-4)' }}>
+                            oldest {fmtSlaAge(group.oldestAgeHours)}
+                          </Typography>
+                        )}
+                      </Box>
+                      {group.revenue != null && (
+                        <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', flexShrink: 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1.6 }}>
+                          {fmt$(group.revenue)}
                         </Typography>
                       )}
                     </Box>
-                    {group.revenue != null && (
-                      <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                        {fmt$(group.revenue)}
-                      </Typography>
-                    )}
-                  </Box>
-                ))}
+                  );
+                  return inspectable ? (
+                    <Box
+                      key={group.key}
+                      component="button"
+                      type="button"
+                      onClick={() => onOrderClick!(group.orderIds[0])}
+                      sx={HEALTH_ROW_INTERACTIVE_SX}
+                    >
+                      {contents}
+                    </Box>
+                  ) : (
+                    <Box key={group.key}>{contents}</Box>
+                  );
+                })}
 
                 {hiddenRailGroupCount > 0 && (
                   <Box
+                    component="button"
+                    type="button"
                     onClick={() => setShowAllRailGroups(true)}
-                    sx={{ px: 1.75, py: 1, borderTop: '0.5px solid var(--rule)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                    sx={HEALTH_ROW_INTERACTIVE_SX}
                   >
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
-                      See {hiddenRailGroupCount} more →
+                    <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--accent)' }}>
+                      See {hiddenRailGroupCount} more
                     </Typography>
                   </Box>
                 )}
-              </Box>
+              </HealthGroup>
             )}
 
-            {/* D2C — UNRESOLVED PRESENTATION: canonical lifecycle is not yet
-                known. Compact neutral copy only — no CTA, no navigation, no
-                lifecycle glyph, no Verifying/Just-resolved section (those
-                stay empty on their own while unresolved). Unrelated rail
-                groups above are unaffected and may coexist with this. */}
+            {/* D2C — UNRESOLVED: canonical lifecycle not yet known. Neutral
+                copy only — no CTA, no navigation, no lifecycle glyph. */}
             {isOperationalLifecycleUnresolved && (
-              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', px: 1.75, py: 1.25 }}>
-                <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-4)' }}>
+              <HealthGroup>
+                <Typography component="span" sx={{ display: 'block', fontSize: 12.5, lineHeight: 1.45, color: 'var(--ink-3)' }}>
                   Checking operational state
                 </Typography>
-              </Box>
+              </HealthGroup>
             )}
 
-            {/* D2B — Verifying / Just resolved: contextual, non-actionable
-                lifecycle sections. One order -> inspectable via
-                onOrderClick; more than one -> informational group only, no
-                Order Flow navigation. Deliberately no workflow CTA. */}
+            {/* D2B — Verifying / Just resolved: contextual lifecycle state.
+                One order -> inspectable; more than one -> informational only. */}
             {verifyingRailGroups.length > 0 && (
-              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
-                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Verifying
-                  </Typography>
-                </Box>
-                {verifyingRailGroups.map(group => {
-                  const singleOrder = group.orderIds.length === 1;
-                  const clickable = singleOrder && !!onOrderClick;
-                  return (
-                    <Box
-                      key={group.key}
-                      onClick={clickable ? () => onOrderClick!(group.orderIds[0]) : undefined}
-                      sx={{
-                        display: 'flex', alignItems: 'center', gap: 0.75,
-                        px: 1.75, py: 1.25,
-                        borderBottom: '0.5px solid var(--rule)',
-                        '&:last-of-type': { borderBottom: 'none' },
-                        cursor: clickable ? 'pointer' : 'default',
-                        '&:hover': clickable ? { bgcolor: 'action.hover' } : undefined,
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
-                        ◌ {group.orderIds.length} {group.label}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
+              <HealthGroup label="Verifying">
+                {verifyingRailGroups.map(group => (
+                  <LifecycleRow key={group.key} glyph="◌" group={group} onOrderClick={onOrderClick} />
+                ))}
+              </HealthGroup>
             )}
 
             {justResolvedRailGroups.length > 0 && (
-              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
-                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Just resolved
-                  </Typography>
-                </Box>
-                {justResolvedRailGroups.map(group => {
-                  const singleOrder = group.orderIds.length === 1;
-                  const clickable = singleOrder && !!onOrderClick;
-                  return (
-                    <Box
-                      key={group.key}
-                      onClick={clickable ? () => onOrderClick!(group.orderIds[0]) : undefined}
-                      sx={{
-                        display: 'flex', alignItems: 'center', gap: 0.75,
-                        px: 1.75, py: 1.25,
-                        borderBottom: '0.5px solid var(--rule)',
-                        '&:last-of-type': { borderBottom: 'none' },
-                        cursor: clickable ? 'pointer' : 'default',
-                        '&:hover': clickable ? { bgcolor: 'action.hover' } : undefined,
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
-                        ✓ {group.orderIds.length} {group.label}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
-            )}
-
-            <PulseCard
-            title="Today's pulse"
-            rows={[
-              { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
-              { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
-              { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
-              { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
-            ]}
-          />
-          </Box>
-        </Box>
-      ) : (
-      /* ── TRIAGE-FIRST GRID (compatibility fallback) ──────────
-         Preserved unchanged for consumers that supply no map surface. */
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }}>
-
-        {/* ── LEFT: Needs a decision ──────────────────────────── */}
-        <Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
-
-          {/* Card header */}
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }}>
-            <Box>
-              <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                Needs a decision
-              </Typography>
-              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                Ranked by commercial consequence
-              </Typography>
-            </Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-              {syncLabel}
-            </Typography>
-          </Box>
-
-          {/* Critical band */}
-          {criticalOrders.length > 0 ? (
-            <>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.07)' }}>
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }}>
-                  Critical — act today
-                </Typography>
-                <Box sx={{ flex: 1 }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  {criticalOrders.length} orders · {criticalGroups.length} {criticalGroups.length === 1 ? 'issue' : 'issues'}
-                </Typography>
-              </Box>
-
-              {criticalGroups.map(group => {
-                const expanded = expandedCriticalGroupKeys.has(group.key);
-                const bulkPriorityOrderIds =
-                  group.key === 'sla'
-                    ? group.orders
-                        .filter(order => !order.isPriorityFlagged)
-                        .map(order => order.lasyncro_order_id)
-                    : [];
-                const bulkPriorityPending =
-                  bulkPriorityPendingGroupKey === group.key;
-                const bulkPriorityConfirmed =
-                  bulkPriorityConfirmedGroupKey === group.key;
-
-                return (
-                  <Box key={group.key}>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
-                        gap: 1.75,
-                        alignItems: 'center',
-                        px: 2.5,
-                        py: 1.75,
-                        borderTop: '1px solid var(--rule)',
-                      }}
-                    >
-                      <Box
-                        component="button"
-                        type="button"
-                        onClick={() => toggleCriticalGroup(group.key)}
-                        sx={{
-                          display: 'block',
-                          width: '100%',
-                          p: 0,
-                          border: 'none',
-                          bgcolor: 'transparent',
-                          color: 'inherit',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          '&:hover': { opacity: 0.8 },
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
-                            {group.label}
-                          </Typography>
-                          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                        </Box>
-                        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)', mt: 0.375 }}>
-                          {group.orders.length} {group.orders.length === 1 ? 'order' : 'orders'} · oldest {fmtSlaAge(group.oldestAgeHours)}
-                        </Typography>
-                      </Box>
-
-                      <Box sx={{ textAlign: 'right' }}>
-                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                          {fmt$(group.revenue)}
-                        </Typography>
-                        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                          at stake
-                        </Typography>
-                      </Box>
-
-                      {group.key === 'sla' && !expanded ? (
-                        <Box
-                          component="button"
-                          type="button"
-                          disabled={
-                            !onPriorityFlag ||
-                            bulkPriorityPending ||
-                            bulkPriorityConfirmed ||
-                            bulkPriorityOrderIds.length === 0
-                          }
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (
-                              !onPriorityFlag ||
-                              bulkPriorityPending ||
-                              bulkPriorityConfirmed ||
-                              bulkPriorityOrderIds.length === 0
-                            ) return;
-
-                            setBulkPriorityErrorGroupKey(null);
-                            setBulkPriorityConfirmGroupKey(group.key);
-                          }}
-                          sx={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: bulkPriorityConfirmed
-                              ? 'var(--confirm-ink)'
-                              : 'var(--accent-ink)',
-                            bgcolor: bulkPriorityConfirmed
-                              ? 'var(--confirm-ghost)'
-                              : 'var(--accent)',
-                            border: bulkPriorityConfirmed
-                              ? '1px solid var(--confirm-border)'
-                              : 'none',
-                            borderRadius: '6px',
-                            py: 1,
-                            px: 1.25,
-                            textAlign: 'center',
-                            cursor:
-                              bulkPriorityPending || bulkPriorityConfirmed
-                                ? 'default'
-                                : 'pointer',
-                            opacity: bulkPriorityPending ? 0.6 : 1,
-                            '&:hover': {
-                              opacity:
-                                bulkPriorityPending || bulkPriorityConfirmed
-                                  ? 1
-                                  : 0.88,
-                            },
-                          }}
-                        >
-                          {bulkPriorityConfirmed
-                            ? 'Prioritized ✓'
-                            : bulkPriorityPending
-                              ? 'Prioritizing…'
-                              : 'Prioritize all…'}
-                        </Box>
-                      ) : (
-                        <Box />
-                      )}
-                    </Box>
-
-                    {group.key === 'sla' && expanded && (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 2,
-                          px: 2.5,
-                          py: 1.25,
-                          borderTop: '1px solid var(--rule)',
-                          bgcolor: 'var(--accent-ghost)',
-                        }}
-                      >
-                        <Box>
-                          <Typography
-                            sx={{
-                              fontSize: 10,
-                              fontWeight: 600,
-                              letterSpacing: '0.08em',
-                              textTransform: 'uppercase',
-                              color: 'var(--accent)',
-                              mb: 0.25,
-                            }}
-                          >
-                            Bulk action
-                          </Typography>
-
-                          <Typography
-                            sx={{
-                              fontSize: 12,
-                              fontWeight: 300,
-                              color: 'var(--ink-3)',
-                            }}
-                          >
-                            Apply to all {bulkPriorityOrderIds.length}{' '}
-                            {bulkPriorityOrderIds.length === 1
-                              ? 'order'
-                              : 'orders'}
-                          </Typography>
-                        </Box>
-
-                        <Box
-                          component="button"
-                          type="button"
-                          disabled={
-                            !onPriorityFlag ||
-                            bulkPriorityPending ||
-                            bulkPriorityConfirmed ||
-                            bulkPriorityOrderIds.length === 0
-                          }
-                          onClick={() => {
-                            if (
-                              !onPriorityFlag ||
-                              bulkPriorityPending ||
-                              bulkPriorityConfirmed ||
-                              bulkPriorityOrderIds.length === 0
-                            ) return;
-
-                            setBulkPriorityErrorGroupKey(null);
-                            setBulkPriorityConfirmGroupKey(group.key);
-                          }}
-                          sx={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: bulkPriorityConfirmed
-                              ? 'var(--confirm-ink)'
-                              : 'var(--accent-ink)',
-                            bgcolor: bulkPriorityConfirmed
-                              ? 'var(--confirm-ghost)'
-                              : 'var(--accent)',
-                            border: bulkPriorityConfirmed
-                              ? '1px solid var(--confirm-border)'
-                              : 'none',
-                            borderRadius: '6px',
-                            px: 1.5,
-                            py: 0.875,
-                            whiteSpace: 'nowrap',
-                            cursor:
-                              bulkPriorityPending || bulkPriorityConfirmed
-                                ? 'default'
-                                : 'pointer',
-                            opacity: bulkPriorityPending ? 0.6 : 1,
-                            '&:hover': {
-                              opacity:
-                                bulkPriorityPending || bulkPriorityConfirmed
-                                  ? 1
-                                  : 0.88,
-                            },
-                          }}
-                        >
-                          {bulkPriorityConfirmed
-                            ? 'Prioritized ✓'
-                            : bulkPriorityPending
-                              ? 'Prioritizing…'
-                              : 'Prioritize all…'}
-                        </Box>
-                      </Box>
-                    )}
-
-                    {group.key === 'sla' && (
-                      <Collapse
-                        in={bulkPriorityConfirmGroupKey === group.key}
-                        timeout={180}
-                        unmountOnExit
-                      >
-                        <Box
-                          sx={{
-                            px: 2.5,
-                            py: 1.5,
-                            borderTop: '1px solid var(--rule)',
-                            bgcolor: 'var(--accent-ghost)',
-                          }}
-                        >
-                          <Typography
-                            sx={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--ink)',
-                              mb: 0.375,
-                            }}
-                          >
-                            Prioritize all {bulkPriorityOrderIds.length} orders?
-                          </Typography>
-
-                          <Typography
-                            sx={{
-                              fontSize: 12,
-                              fontWeight: 300,
-                              color: 'var(--ink-4)',
-                              mb: 1.25,
-                            }}
-                          >
-                            They will move to the top of the Order Flow pool
-                            for the next release.
-                          </Typography>
-
-                          {bulkPriorityErrorGroupKey === group.key && (
-                            <Typography
-                              sx={{
-                                fontSize: 11,
-                                fontWeight: 500,
-                                color: 'var(--critical-ink)',
-                                mb: 1,
-                              }}
-                            >
-                              Prioritization failed. Nothing was changed.
-                            </Typography>
-                          )}
-
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              justifyContent: 'flex-end',
-                              gap: 1,
-                            }}
-                          >
-                            <Box
-                              component="button"
-                              type="button"
-                              disabled={bulkPriorityPending}
-                              onClick={() => {
-                                setBulkPriorityConfirmGroupKey(null);
-                                setBulkPriorityErrorGroupKey(null);
-                              }}
-                              sx={{
-                                border: '1px solid var(--rule)',
-                                bgcolor: 'transparent',
-                                color: 'var(--ink-3)',
-                                borderRadius: '6px',
-                                px: 1.5,
-                                py: 0.75,
-                                fontSize: 12,
-                                fontWeight: 500,
-                                cursor: bulkPriorityPending
-                                  ? 'not-allowed'
-                                  : 'pointer',
-                              }}
-                            >
-                              Cancel
-                            </Box>
-
-                            <Box
-                              component="button"
-                              type="button"
-                              disabled={
-                                bulkPriorityPending ||
-                                bulkPriorityOrderIds.length === 0
-                              }
-                              onClick={() =>
-                                void handlePrioritizeGroup(
-                                  group.key,
-                                  bulkPriorityOrderIds
-                                )
-                              }
-                              sx={{
-                                border: 'none',
-                                bgcolor: 'var(--accent)',
-                                color: 'var(--accent-ink)',
-                                borderRadius: '6px',
-                                px: 1.5,
-                                py: 0.75,
-                                fontSize: 12,
-                                fontWeight: 600,
-                                cursor: bulkPriorityPending
-                                  ? 'not-allowed'
-                                  : 'pointer',
-                                opacity: bulkPriorityPending ? 0.6 : 1,
-                                '&:hover': {
-                                  opacity: bulkPriorityPending ? 0.6 : 0.88,
-                                },
-                              }}
-                            >
-                              {bulkPriorityPending
-                                ? 'Prioritizing…'
-                                : 'Confirm priority'}
-                            </Box>
-                          </Box>
-                        </Box>
-                      </Collapse>
-                    )}
-
-                    <Collapse in={expanded} timeout={180} unmountOnExit>
-                      {group.orders.map(order => (
-                        <Box
-                          key={order.lasyncro_order_id}
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: order.constraintType === null
-                              ? 'minmax(0,1fr) 90px 118px'
-                              : 'minmax(0,1fr) 90px',
-                            gap: 1.75,
-                            alignItems: 'center',
-                            px: 2.5,
-                            py: 1.5,
-                            pl: 4,
-                            borderTop: '1px solid var(--rule)',
-                            bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                              ? 'rgba(16,185,129,0.08)'
-                              : 'var(--bg-2)',
-                            boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                              ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
-                              : 'none',
-                          }}
-                        >
-                          <Box
-                            component="button"
-                            type="button"
-                            aria-label={`View order #${
-                              order.externalOrderId
-                                ? order.externalOrderId
-                                : order.lasyncro_order_id.slice(0, 8).toUpperCase()
-                            } details`}
-                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                            sx={{
-                              display: 'block',
-                              width: '100%',
-                              p: 0,
-                              border: 'none',
-                              bgcolor: 'transparent',
-                              color: 'inherit',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              borderRadius: '6px',
-                              '&:hover': { opacity: 0.82 },
-                              '&:focus-visible': {
-                                outline: '1px solid var(--accent-border)',
-                                outlineOffset: '3px',
-                              },
-                            }}
-                          >
-                            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                              {order.externalOrderId
-                                ? `#${order.externalOrderId}`
-                                : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
-                              <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                                {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)}
-                              </Typography>
-                              <Typography
-                                sx={{
-                                  flexShrink: 0,
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  color: 'var(--accent)',
-                                  border: '1px solid var(--accent-border)',
-                                  bgcolor: 'var(--surface)',
-                                  borderRadius: '6px',
-                                  px: 0.75,
-                                  py: 0.25,
-                                  lineHeight: 1.2,
-                                }}
-                              >
-                                View →
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          <Box sx={{ textAlign: 'right', alignSelf: 'end' }}>
-                            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                              {fmt$(order.revenue)}
-                            </Typography>
-                          </Box>
-
-                          {order.constraintType === null ? (
-                            <PrioritizeButton
-                              isPriorityFlagged={order.isPriorityFlagged}
-                              onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
-                            />
-                          ) : (
-                            <Box />
-                          )}
-                        </Box>
-                      ))}
-                    </Collapse>
-                  </Box>
-                );
-              })}
-            </>
-          ) : (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(76,175,122,0.06)' }}>
-              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
-              <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#4CAF7A' }}>
-                All clear — no critical items
-              </Typography>
-            </Box>
-          )}
-
-          {/* Watch band */}
-            {watchOrders.length > 0 && (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(217,162,59,0.06)', borderTop: '1px solid var(--rule)' }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#D9A23B', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D9A23B' }}>
-                    Watch
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{watchOrders.length} items</Typography>
-                </Box>
-
-                {visibleWatchOrders.map(order => (
-                  <Box
-                    key={order.lasyncro_order_id}
-                    sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                  >
-                    <Box>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                        {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                        {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)} aging
-                      </Typography>
-                    </Box>
-                    <Box
-                      component="button"
-                      onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                      sx={{ display: 'inline-flex', alignItems: 'center',justifyContent: 'flex-end', px: 0, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                    >
-                      View →
-                    </Box>
-                  </Box>
+              <HealthGroup label="Just resolved">
+                {justResolvedRailGroups.map(group => (
+                  <LifecycleRow key={group.key} glyph="✓" group={group} onOrderClick={onOrderClick} />
                 ))}
-
-                {hiddenWatchOrders.length > 0 && (
-                  <>
-                    <Collapse in={watchExpanded} timeout={180} unmountOnExit>
-                      {hiddenWatchOrders.map(order => (
-                        <Box
-                          key={order.lasyncro_order_id}
-                          sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                        >
-                          <Box>
-                            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                              {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                            </Typography>
-                            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                              {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)} aging
-                            </Typography>
-                          </Box>
-                          <Box
-                            component="button"
-                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', px: 0, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                          >
-                            View →
-                          </Box>
-                        </Box>
-                      ))}
-                    </Collapse>
-
-                    <Box
-                      onClick={() => setWatchExpanded(v => !v)}
-                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
-                    >
-                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
-                        {watchExpanded ? 'Show less' : `See ${hiddenWatchOrders.length} more`}
-                      </Typography>
-                      {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </Box>
-                  </>
-                )}
-              </>
+              </HealthGroup>
             )}
-          {/* Footer */}
-          <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-              {constrained === 0 && watchOrders.length === 0 ? 'Everything else is on track · ' : ''}
-              {/* DC-02a (2026-08-15): "shipped today" was false. orders.fulfilled
-                  is queue.metrics.ts fulfilledOrders, bounded only by
-                  order_created_at <= snapshotCutoff — an upper bound, so the
-                  figure is cumulative, not daily. Shop 15 read 23 while nothing
-                  had shipped since 20 Jun. A correctly day-scoped count exists
-                  (wms.controller.ts:4664, shipped_at::date = CURRENT_DATE) but
-                  is not plumbed to this module; rewiring is DC-02c. */}
-              {fmtN(props.orders?.fulfilled)} fulfilled to date · {syncLabel}
-            </Typography>
-          </Box>
-        </Box>
 
-      {/* ── RIGHT: Today's pulse — PULSE-01 ───────────────────── */}
-        <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
-          <PulseCard
-            title="Today's pulse"
-            headline={{
-              value: `${fmtN(slaBreachedCount)} breached`,
-              tone: slaBreachedCount > 0 ? 'critical' : 'good',
-              colorOverride: slaBreachedCount > 0 ? STAGE_COLORS.breached : 'var(--ink)',
-              subtext: unprioritizedCriticalCount > 0
-                ? `${unprioritizedCriticalCount} still need priority`
-                : 'Critical queue is under control',
-            }}
-            rows={[
-              { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
-              { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
-              { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
-              { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
-            ]}
-            footerNote={
-              <>
-                {/* DC-02a/b: both figures are cumulative, not daily. fulfilled is
-                    an upper-bounded count (see above); revenue.earned is
-                    realized_revenue, summed with the same <= snapshotCutoff bound
-                    and no day scoping. Rendered inside a card titled "Today's
-                    pulse", they read as daily and contradicted the truthful
-                    "Revenue today $0" and "Value shipped this week $0.00" on
-                    adjacent screens. The numbers were always right; the words
-                    were not. */}
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmtN(props.orders?.fulfilled)}</Box>
-                {' fulfilled to date · '}
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(revenue?.earned)}</Box>
-                {' collected to date'}
-              </>
-            }
-            footerCta={{ label: 'View order flow', onClick: () => navigate('/orders/flow') }}
-          />
-        </Box>
-      </Box>
-      )}
+            {/* Contextual navigation only — release planning and execution
+                belong to Order Flow. */}
+            <HealthGroup>
+              <Box
+                component="button"
+                type="button"
+                onClick={() => navigate('/orders/flow')}
+                sx={HEALTH_ROW_INTERACTIVE_SX}
+              >
+                <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+                  View order flow
+                </Typography>
+                <Typography component="span" aria-hidden="true" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', ml: '4px' }}>
+                  →
+                </Typography>
+              </Box>
+            </HealthGroup>
+          </Box>
+        }
+      />
     </Box>
   );
 }

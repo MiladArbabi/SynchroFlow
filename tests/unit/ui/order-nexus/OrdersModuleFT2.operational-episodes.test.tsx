@@ -12,23 +12,23 @@
 // and are expected to already PASS today (nothing has been removed or
 // broken; the new prop is simply not consumed yet).
 //
-// Per the brief's IMPORTANT COMPOSITION RULE, this suite does NOT touch the
-// existing triage-first fallback (criticalGroups) except to prove it is
-// UNCHANGED (Contract 5's second half) — operational-lifecycle
-// reconciliation belongs in the mapContent / Live Intelligence rail path
-// only.
+// Operational-lifecycle reconciliation belongs in the Orders rail path. The
+// no-mapContent cases (Contract 5's second half, D2C Contract 7) only prove
+// the old triage-first fallback is not resurrected.
 //
-// Because no DOM structure exists yet for "Needs a decision" / "Verifying" /
-// "Just resolved" per-order rows in the rail (today's rail only renders
-// GROUP summaries — "N Address issues" — never individual order rows or
-// glyphs), these tests are deliberately structure-agnostic: they assert on
-// the total count of each lifecycle glyph ('!', '◌', '✓') anywhere in the
-// rendered output, plus presence/absence of the section vocabulary named by
-// the brief ("Needs a decision", "Verifying", "Just resolved"). This proves
-// the CONTRACT without presupposing a DOM shape the brief explicitly says
-// not to implement yet.
+// Lifecycle state is asserted through the contextual lifecycle vocabulary
+// ("Verifying", "Just resolved", "Checking operational state") and the
+// count of lifecycle glyphs ('◌', '✓') anywhere in the rendered output.
+//
+// SCREEN-ARCH: the rail is Order health (state/orientation), not a
+// "Needs a decision" inbox, and Ops Console owns actionable attention.
+// ATTENTION is proven semantically — the order is represented exactly once
+// in Order health's "Constraints & aging" state (constraintStateRows) — never
+// by counting a literal "!" label suffix, which is presentation only. The
+// no-map input keeps the same Orders screen identity rather than the old
+// triage-first dashboard.
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import OrdersModuleFT2, {
   type OrdersOperationalEpisodeVisualInput,
 } from '../../../../modules/order-nexus/src/ui/pages/OrdersModuleFT2';
@@ -46,6 +46,9 @@ jest.mock('@lasyncro/shared/ui', () => {
     formatCurrencyCompact: (value: number) => `$${value.toLocaleString()}`,
     PulseCard: ({ title }: any) => ReactLib.createElement('section', {}, title),
     ReorderTransitionList: ({ children }: any) => ReactLib.createElement(ReactLib.Fragment, {}, children),
+    // Composition-only double: primary always, rail unless suppressed.
+    OperationalContextShell: ({ primary, rail, suppressRail }: any) =>
+      ReactLib.createElement(ReactLib.Fragment, {}, primary, suppressRail ? null : rail),
   };
 });
 
@@ -104,9 +107,18 @@ function renderModule(props: Props) {
   return render(<OrdersModuleFT2 {...props} />);
 }
 
-/** Structure-agnostic glyph count — see file header. */
-function glyphCount(container: HTMLElement, glyph: '!' | '◌' | '✓'): number {
+/** Structure-agnostic lifecycle glyph count — see file header. */
+function glyphCount(container: HTMLElement, glyph: '◌' | '✓'): number {
   return (container.textContent?.match(new RegExp(glyph, 'g')) ?? []).length;
+}
+
+/**
+ * Rows in Order health's "Constraints & aging" state matching `label`.
+ * Attention is proven by constraint-state membership, not by a "!" count.
+ */
+function constraintStateRows(label: RegExp): HTMLElement[] {
+  const group = screen.queryByRole('group', { name: 'Constraints & aging' });
+  return group ? within(group).queryAllByText(label) : [];
 }
 
 function attentionVisual(
@@ -182,7 +194,7 @@ describe('OrdersModuleFT2 — D2B-RED structural type compatibility', () => {
 });
 
 describe('D2B-RED Contract 1 — ATTENTION + existing constraint (item 1)', () => {
-  it('renders exactly one actionable "!" representation, no duplicate, for an order with both an existing constraint and an attention episode', () => {
+  it('represents an order with both an existing constraint and an attention episode exactly once in constraint state, no duplicate', () => {
     const onOrderClick = jest.fn();
     const props = baseProps({
       mapContent: <div>map</div>,
@@ -203,9 +215,8 @@ describe('D2B-RED Contract 1 — ATTENTION + existing constraint (item 1)', () =
 
     const { container } = renderModule(props);
 
-    // RED today: nothing consumes operationalEpisodeVisuals yet, so the
-    // glyph never renders at all (count is 0, not 1).
-    expect(glyphCount(container, '!')).toBe(1);
+    // One constraint-state representation; no lifecycle-context duplicate.
+    expect(constraintStateRows(/Address issues/)).toHaveLength(1);
     expect(glyphCount(container, '◌')).toBe(0);
     expect(glyphCount(container, '✓')).toBe(0);
   });
@@ -238,7 +249,7 @@ describe('D2B-RED Contract 1 — ATTENTION + existing constraint (item 1)', () =
     expect(onOrderClick).toHaveBeenCalledWith('order-attn-2');
   });
 
-  it('D2B-GREEN FOLLOW-UP — a supported ATTENTION episode is admitted into Needs a decision even when absent from constrainedOrders/agingOrders entirely (canonical lifecycle independence)', () => {
+  it('D2B-GREEN FOLLOW-UP — a supported ATTENTION episode is classified as attention even when absent from constrainedOrders/agingOrders entirely (canonical lifecycle independence)', () => {
     const onOrderClick = jest.fn();
     const props = baseProps({
       mapContent: <div>map</div>,
@@ -253,7 +264,7 @@ describe('D2B-RED Contract 1 — ATTENTION + existing constraint (item 1)', () =
     const { container } = renderModule(props);
 
     expect(screen.getByText(/Address issues/i)).toBeInTheDocument();
-    expect(glyphCount(container, '!')).toBe(1);
+    expect(constraintStateRows(/Address issues/)).toHaveLength(1);
     expect(glyphCount(container, '◌')).toBe(0);
     expect(glyphCount(container, '✓')).toBe(0);
 
@@ -264,7 +275,7 @@ describe('D2B-RED Contract 1 — ATTENTION + existing constraint (item 1)', () =
 });
 
 describe('D2B-RED Contract 2 — VERIFYING suppresses re-action, not the order (item 2)', () => {
-  it('a verifying-only order is never counted as "!"-actionable and renders in a quieter Verifying context with "◌"', () => {
+  it('a verifying-only order is never in constraint state and renders in a quieter Verifying context with "◌"', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       operationalEpisodeVisuals: [verifyingVisual('order-verifying-1')],
@@ -274,11 +285,11 @@ describe('D2B-RED Contract 2 — VERIFYING suppresses re-action, not the order (
 
     // RED today: no Verifying section/glyph exists at all.
     expect(glyphCount(container, '◌')).toBe(1);
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Out of stock/)).toHaveLength(0);
     expect(screen.queryByText(/Verifying/i)).toBeInTheDocument();
   });
 
-  it('a verifying order backed by an existing constrained-orders row is NOT counted in "Needs a decision"', () => {
+  it('a verifying order backed by an existing constrained-orders row is NOT classified as attention', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       constrainedOrders: [
@@ -297,10 +308,9 @@ describe('D2B-RED Contract 2 — VERIFYING suppresses re-action, not the order (
 
     const { container } = renderModule(props);
 
-    // RED today: the module has no notion of "verifying" at all, so the
-    // existing constrained-orders admission still counts this order under
-    // "Needs a decision" ("Out of stock" / "!") unconditionally.
-    expect(glyphCount(container, '!')).toBe(0);
+    // The existing constrained-orders admission must not re-surface this
+    // order as attention ("Out of stock" constraint state) while it is verifying.
+    expect(constraintStateRows(/Out of stock/)).toHaveLength(0);
     expect(glyphCount(container, '◌')).toBe(1);
   });
 
@@ -327,7 +337,7 @@ describe('D2B-RED Contract 2 — VERIFYING suppresses re-action, not the order (
 });
 
 describe('D2B-RED Contract 3 — JUST_RESOLVED (item 3)', () => {
-  it('a just_resolved-only order never counts as "!"-actionable and renders in a transient Just-resolved context with "✓"', () => {
+  it('a just_resolved-only order is never in constraint state and renders in a transient Just-resolved context with "✓"', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       operationalEpisodeVisuals: [justResolvedVisual('order-resolved-1')],
@@ -337,7 +347,7 @@ describe('D2B-RED Contract 3 — JUST_RESOLVED (item 3)', () => {
 
     // RED today: no Just-resolved section/glyph exists at all.
     expect(glyphCount(container, '✓')).toBe(1);
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Address issues/)).toHaveLength(0);
     expect(screen.queryByText(/Just resolved/i)).toBeInTheDocument();
   });
 
@@ -357,7 +367,7 @@ describe('D2B-RED Contract 3 — JUST_RESOLVED (item 3)', () => {
 });
 
 describe('D2B-RED Contract 4 — mixed episodes same order, attention wins (item 4)', () => {
-  it('an order with both an attention episode and a verifying sibling episode renders once, and remains "!"-actionable', () => {
+  it('an order with both an attention episode and a verifying sibling episode renders once, and remains in constraint state', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       constrainedOrders: [
@@ -380,8 +390,8 @@ describe('D2B-RED Contract 4 — mixed episodes same order, attention wins (item
 
     const { container } = renderModule(props);
 
-    // RED today: glyph never renders regardless of dominance.
-    expect(glyphCount(container, '!')).toBe(1);
+    // Attention dominance: one constraint-state row, no Verifying duplicate.
+    expect(constraintStateRows(/Address issues/)).toHaveLength(1);
     expect(glyphCount(container, '◌')).toBe(0);
     expect(glyphCount(container, '✓')).toBe(0);
   });
@@ -410,7 +420,7 @@ describe('D2B-RED Contract 5 — legacy fallback is unchanged (item 5)', () => {
     const { container } = renderModule(props);
 
     expect(screen.getByText(/Address issues/i)).toBeInTheDocument();
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Address issues/)).toHaveLength(1);
     expect(glyphCount(container, '◌')).toBe(0);
     expect(glyphCount(container, '✓')).toBe(0);
 
@@ -418,7 +428,7 @@ describe('D2B-RED Contract 5 — legacy fallback is unchanged (item 5)', () => {
     expect(onOrderClick).toHaveBeenCalledWith('order-legacy-1');
   });
 
-  it('with no mapContent, the triage-first compatibility layout is unaffected by operationalEpisodeVisuals', () => {
+  it('with no mapContent, the Orders screen identity is kept and attention does not leak into Verifying / Just resolved', () => {
     const props = baseProps({
       constrainedOrders: [
         {
@@ -432,15 +442,16 @@ describe('D2B-RED Contract 5 — legacy fallback is unchanged (item 5)', () => {
         },
       ],
       operationalEpisodeVisuals: [attentionVisual('order-legacy-2')],
-      // mapContent deliberately omitted -> fallback triage-first grid.
+      // mapContent deliberately omitted — must not resurrect triage-first.
     });
 
     renderModule(props);
 
-    expect(screen.getByRole('button', { name: /Address issues/i })).toBeInTheDocument();
-    // The fallback grid must not read operationalEpisodeVisuals either.
+    expect(screen.getByText(/Address issues/i)).toBeInTheDocument();
     expect(screen.queryByText(/Verifying/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Just resolved/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ranked by commercial consequence')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs a decision')).not.toBeInTheDocument();
   });
 });
 
@@ -461,8 +472,8 @@ describe('D2B-RED Contract 6 — returned_undelivered ownership regression (item
     expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
     // Also guards against a future implementation accidentally admitting it
-    // as a generic "!" row.
-    expect(glyphCount(container, '!')).toBe(0);
+    // as a generic constraint-state row.
+    expect(screen.queryByRole('group', { name: 'Constraints & aging' })).not.toBeInTheDocument();
   });
 });
 
@@ -483,7 +494,7 @@ describe('D2B-RED Contract 6 — returned_undelivered ownership regression (item
 // behavior that must survive once the fix lands — see D2B-RED Contract 5/6
 // above for the `undefined`-path precedent these reuse.
 describe('D2C-RED Contract 3 — UNRESOLVED ADDRESS (item 3)', () => {
-  it('a customer/incomplete_address row is NOT rendered under Needs a decision while lifecycle is unresolved (null)', () => {
+  it('a customer/incomplete_address row is NOT rendered as attention while lifecycle is unresolved (null)', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       constrainedOrders: [
@@ -503,14 +514,14 @@ describe('D2C-RED Contract 3 — UNRESOLVED ADDRESS (item 3)', () => {
     const { container } = renderModule(props);
 
     expect(screen.queryByText(/Address issues/i)).not.toBeInTheDocument();
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Address issues/)).toHaveLength(0);
     expect(screen.getByText(/Checking operational state/i)).toBeInTheDocument();
     expect(screen.queryByText(/all orders on track/i)).not.toBeInTheDocument();
   });
 });
 
 describe('D2C-RED Contract 4 — UNRESOLVED OVERSELL (item 4)', () => {
-  it('an inventory/oversell row is NOT rendered under Needs a decision while lifecycle is unresolved (null)', () => {
+  it('an inventory/oversell row is NOT rendered as attention while lifecycle is unresolved (null)', () => {
     const props = baseProps({
       mapContent: <div>map</div>,
       constrainedOrders: [
@@ -530,7 +541,7 @@ describe('D2C-RED Contract 4 — UNRESOLVED OVERSELL (item 4)', () => {
     const { container } = renderModule(props);
 
     expect(screen.queryByText(/Out of stock/i)).not.toBeInTheDocument();
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Out of stock/)).toHaveLength(0);
     expect(screen.getByText(/Checking operational state/i)).toBeInTheDocument();
     expect(screen.queryByText(/all orders on track/i)).not.toBeInTheDocument();
   });
@@ -606,15 +617,20 @@ describe('D2C-RED Contract 6 — UNDEFINED preserves compatibility (item 6)', ()
 
     expect(screen.getByText(/Address issues/i)).toBeInTheDocument();
     expect(screen.queryByText(/Checking operational state/i)).not.toBeInTheDocument();
-    expect(glyphCount(container, '!')).toBe(0);
+    expect(constraintStateRows(/Address issues/)).toHaveLength(1);
 
     fireEvent.click(screen.getByText(/Address issues/i));
     expect(onOrderClick).toHaveBeenCalledWith('order-undefined-prop');
   });
 });
 
-describe('D2C-RED Contract 7 — NO-MAP COMPATIBILITY (item 7)', () => {
-  it('the no-mapContent triage-first layout does not adopt D2C readiness gating when operationalEpisodeVisuals=null', () => {
+describe('D2C-RED Contract 7 — NO-MAP IDENTITY (item 7)', () => {
+  // SCREEN-ARCH: the no-map input no longer has a separate triage-first
+  // layout to exempt from readiness gating. This case now proves only that
+  // the unresolved (null) lifecycle input does not resurrect that layout.
+  // Whether no-map null input gates V1 families like the map path is not
+  // asserted here.
+  it('the no-mapContent input does not resurrect the triage-first layout when operationalEpisodeVisuals=null', () => {
     const props = baseProps({
       constrainedOrders: [
         {
@@ -628,12 +644,13 @@ describe('D2C-RED Contract 7 — NO-MAP COMPATIBILITY (item 7)', () => {
         },
       ],
       operationalEpisodeVisuals: null,
-      // mapContent deliberately omitted -> fallback triage-first grid.
+      // mapContent deliberately omitted.
     });
 
     renderModule(props);
 
-    expect(screen.getByRole('button', { name: /Address issues/i })).toBeInTheDocument();
-    expect(screen.queryByText(/Checking operational state/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ranked by commercial consequence')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs a decision')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Prioritize/i)).not.toBeInTheDocument();
   });
 });

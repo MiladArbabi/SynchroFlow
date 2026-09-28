@@ -3,7 +3,10 @@
 // LIVE ACTIVITY SERVICE
 // ---------------------
 // Derives real-time floor state from existing tables — no new writers.
-// operator_positions: pickers use physical scans; packers use the active pack zone.
+// operator_positions: only operators with physical-location evidence — a
+//   picker's latest confirmed scan location. Packers have no location evidence
+//   (pack scans carry none) and unscanned pickers have none yet, so neither is
+//   placed on the floor; their batches still count in active_batches.
 // active_batches: pick_batches in picking/packing status + line progress.
 // stow_pressure: pending stow_tasks count anchored to RECEIVE-1.
 // Closes WG-11. See overview-live-map-playbook.md §6.
@@ -70,9 +73,6 @@ export async function getLiveActivity(shopId: number): Promise<LiveActivityPaylo
 
     const [
       pickerRows,
-      packerRows,
-      packZoneRow,
-      pickZoneRow,
       batchRows,
       stowRow,
       stowByBinRows,
@@ -116,54 +116,6 @@ export async function getLiveActivity(shopId: number): Promise<LiveActivityPaylo
         .orderBy('pb.pick_last_activity_at', 'desc')
         .distinctOn('pb.picked_by'),
 
-      // OV-132: pack_scan_log contributed nothing this query needed. It has no
-      // location column (OV-139), so position already came from the pack zone,
-      // and identity + recency both live on pick_batches. Joining it only added
-      // a failure mode — OV-147 found prod has zero pack scans, so the packer
-      // could never render there regardless of the time window. Assignment is
-      // the authority; the scan log was a proxy for it.
-      //
-      // pack_last_activity_at falls back to pick_last_activity_at: a batch in
-      // 'packing' has necessarily been picked, so the pick clock is a valid
-      // floor when the pack clock was never written (OV-149).
-      trx('pick_batches as pb')
-        .select(
-          trx.raw('COALESCE(pb.packed_by, pb.assigned_packer_id) AS operator_id'),
-          'pb.pick_batch_id',
-          trx.raw(
-            'COALESCE(pb.pack_last_activity_at, pb.pick_last_activity_at) AS batch_activity_at'
-          )
-        )
-        .where('pb.shop_id', shopId)
-        .where('pb.status', 'packing')
-        .whereRaw('COALESCE(pb.packed_by, pb.assigned_packer_id) IS NOT NULL')
-        .orderByRaw(
-          'COALESCE(pb.pack_last_activity_at, pb.pick_last_activity_at) DESC'
-        ),
-
-      // Pack scans currently have no station field. Anchor phase-level activity to
-      // the first active pack zone rather than falsely leaving the packer in picking.
-      trx('warehouse_locations as wl')
-        .select('wl.location_code')
-        .where({
-          'wl.shop_id': shopId,
-          'wl.zone_type': 'pack',
-          'wl.active': true,
-        })
-        .orderBy('wl.location_code', 'asc')
-        .first(),
-      // OV-132: a picker whose batch is live but who has not scanned yet has
-      // no bin. Same treatment as packers — anchor to the pick zone rather
-      // than dropping them from the floor. Presence is the batch's fact.
-      trx('warehouse_locations as wl')
-        .select('wl.location_code')
-        .where({
-          'wl.shop_id': shopId,
-          'wl.zone_type': 'pick',
-          'wl.active': true,
-        })
-        .orderBy('wl.location_code', 'asc')
-        .first(),
       // Active batches with line-level progress.
       trx('pick_batches as pb')
         .select(
@@ -257,53 +209,29 @@ export async function getLiveActivity(shopId: number): Promise<LiveActivityPaylo
         .first(),
     ]);
 
-    // OV-132: presence comes from the batch; position and freshness are
-    // reported separately so the client can grade staleness instead of the
-    // server hiding it. last_scan_at is null for packers by design — pack
-    // scans carry no location (OV-139), so there is no bin to be stale about.
-    const pickerPositionRows = pickerRows
+    // C2E — spatial truth: a position is emitted only where there is physical
+    // evidence, i.e. the picker's latest confirmed scan location, verbatim
+    // (even a lane/frame). An unscanned picker is NOT anchored to the first
+    // pick zone, and packers are NOT anchored to the first pack zone — pack
+    // scans carry no location (OV-139), so a packer's position is unknown.
+    // Their batches remain in activeBatches, so workflow counts are unchanged.
+    // Freshness for located pickers is still reported verbatim (last_scan_at,
+    // batch_activity_at) and graded by the client.
+    const operatorPositions = pickerRows
+      .filter(r => r.location_code != null && r.location_code !== '')
       .map(r => ({
         operator_id: String(r.operator_id),
-        location_code: (r.location_code ?? pickZoneRow?.location_code) as
-          | string
-          | undefined,
+        location_code: r.location_code as string,
         last_scan_at: r.last_scan_at ?? null,
         batch_activity_at: r.batch_activity_at,
         batch_id: r.pick_batch_id,
-      }))
-      .filter(r => Boolean(r.location_code));
-
-    const packerPositionRows = packZoneRow?.location_code
-      ? packerRows.map(r => ({
-          operator_id: String(r.operator_id),
-          location_code: packZoneRow.location_code as string,
-          last_scan_at: null,
-          batch_activity_at: r.batch_activity_at,
-          batch_id: r.pick_batch_id,
-        }))
-      : [];
-
-    // The packer query dropped DISTINCT ON — Postgres requires its expressions
-    // to lead ORDER BY, and a COALESCE there is fragile in knex. Both queries
-    // already order most-recent-first, so keeping the first row per operator
-    // is equivalent. Pickers precede packers: an operator holding both roles
-    // on different batches belongs at their physical bin, not the pack zone.
-    const seenOperators = new Set<string>();
-    const operatorPositions = [
-      ...pickerPositionRows,
-      ...packerPositionRows,
-    ].filter(r => {
-      if (seenOperators.has(r.operator_id)) return false;
-      seenOperators.add(r.operator_id);
-      return true;
-    });
+      }));
 
     return {
-    // OV-142: field name retained for compatibility — it carries packers too.
-    // OV-132: each entry now reports last_scan_at (null for packers, and for
-    // pickers who have not scanned yet) alongside batch_activity_at, which is
-    // never null on a live batch. The client grades freshness from these; the
-    // server no longer withholds a marker for being stale.
+    // OV-142: field name retained for compatibility. C2E: only operators with
+    // a confirmed scan location appear; each reports last_scan_at alongside
+    // batch_activity_at. The client grades freshness; the server no longer
+    // withholds a marker for being stale.
     pickerPositions: operatorPositions,
     activeBatches: batchRows.map(r => ({
         batch_id: r.pick_batch_id,

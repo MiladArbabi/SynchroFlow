@@ -256,7 +256,11 @@ describe('ORDLM-C — allowed with no positioned floor shows setup, never the ol
   });
 });
 
-it('uses the bounded desktop minimum height for both real-map and no-floor slots', () => {
+// SCREEN-ARCH C2A (TEST-VALUE-02 REWRITE): the stable spatial-slot minimum
+// height now follows certified Overview per state — live map 520, no-floor
+// teaching state 420 (OverviewFT2Page mapContent) — replacing the
+// pre-normalization { xs: 420, lg: 460 } Orders slot.
+it('keeps the certified Overview minimum height for the real-map and no-floor slots', () => {
   mockTier = 'growth';
   mockDecide = () => ALLOW;
   const { rerender } = render(<OrdersFT2Page />);
@@ -264,7 +268,7 @@ it('uses the bounded desktop minimum height for both real-map and no-floor slots
   const realMapSlot = mockOrdersModuleFT2.mock.calls[
     mockOrdersModuleFT2.mock.calls.length - 1
   ][0].mapContent as React.ReactElement<{ sx: { minHeight: unknown } }>;
-  expect(realMapSlot.props.sx.minHeight).toEqual({ xs: 420, lg: 460 });
+  expect(realMapSlot.props.sx.minHeight).toBe(520);
 
   mockUseFloorPlanning.mockReturnValue({
     ...PLACED_FLOOR,
@@ -275,7 +279,7 @@ it('uses the bounded desktop minimum height for both real-map and no-floor slots
   const noFloorSlot = mockOrdersModuleFT2.mock.calls[
     mockOrdersModuleFT2.mock.calls.length - 1
   ][0].mapContent as React.ReactElement<{ sx: { minHeight: unknown } }>;
-  expect(noFloorSlot.props.sx.minHeight).toEqual({ xs: 420, lg: 460 });
+  expect(noFloorSlot.props.sx.minHeight).toBe(420);
 });
 
 // ===========================================================================

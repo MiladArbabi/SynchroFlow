@@ -4,6 +4,11 @@
 // other tile ("Operational issues", "Shipping SLA breached") either. This
 // file previously asserted the tile's existence; it now asserts its
 // permanent absence under every admission path that used to produce it.
+//
+// SCREEN-ARCH: Critical Decisions is retired; the same invariant is now
+// asserted against the normalized Order health constraint state. Absence is
+// asserted by TEXT, not button role — normalized multi-order rows are not
+// buttons, so a role-only query would pass vacuously.
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -16,6 +21,9 @@ jest.mock('@lasyncro/shared/ui', () => {
     formatCurrencyCompact: (value: number) => `$${value.toLocaleString()}`,
     PulseCard: ({ title }: any) => React.createElement('section', {}, title),
     ReorderTransitionList: ({ children }: any) => React.createElement(React.Fragment, {}, children),
+    // Composition-only double: primary always, rail unless suppressed.
+    OperationalContextShell: ({ primary, rail, suppressRail }: any) =>
+      React.createElement(React.Fragment, {}, primary, suppressRail ? null : rail),
   };
 });
 
@@ -113,11 +121,12 @@ describe('OrdersModuleFT2 returned-undelivered semantics (DR-03B2, #1114)', () =
     expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pick exception/i)).not.toBeInTheDocument();
     // The aging-only returned_undelivered order must not surface under any
-    // other Critical Decisions tile either — it has no home here anymore.
-    expect(screen.queryByRole('button', { name: /Operational issues/i })).not.toBeInTheDocument();
+    // other Order health constraint group either — it has no home here.
+    expect(screen.queryByText(/Operational issues/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Shipping SLA breached/i)).not.toBeInTheDocument();
   });
 
-  it('A — a constrained-only returned package (no SLA-breach prerequisite) never appears in Critical Decisions', () => {
+  it('A — a constrained-only returned package (no SLA-breach prerequisite) never appears in Order health constraint state', () => {
     renderModule(
       makeProps({
         operatorSummary: {
@@ -142,11 +151,11 @@ describe('OrdersModuleFT2 returned-undelivered semantics (DR-03B2, #1114)', () =
     );
 
     expect(screen.queryByText('#900099')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Operational issues/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Operational issues/i)).not.toBeInTheDocument();
   });
 
-  it('B — an SLA-breached order that is also returned_undelivered never appears in Critical Decisions (not Package returned, not Shipping SLA breached)', () => {
+  it('B — an SLA-breached order that is also returned_undelivered never appears in Order health constraint state (not Package returned, not Shipping SLA breached)', () => {
     renderModule(
       makeProps({
         operatorSummary: {
@@ -184,15 +193,16 @@ describe('OrdersModuleFT2 returned-undelivered semantics (DR-03B2, #1114)', () =
       } as Partial<Props>)
     );
 
-    expect(screen.queryByRole('button', { name: /Shipping SLA breached/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Shipping SLA breached/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
     expect(screen.queryByText('#900099')).not.toBeInTheDocument();
   });
 
   it('C — an ordinary SLA-breached order without returned_undelivered stays under Shipping SLA breached, unaffected', () => {
+    const onOrderClick = jest.fn();
     renderModule(
       makeProps({
+        onOrderClick,
         operatorSummary: {
           constraintCounts: { inventory: 0, customer: 0, operational: 0 },
           topBlockingType: null,
@@ -218,8 +228,11 @@ describe('OrdersModuleFT2 returned-undelivered semantics (DR-03B2, #1114)', () =
       } as Partial<Props>)
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Shipping SLA breached/i }));
-    expect(screen.getByText('#2002')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Package returned/i })).not.toBeInTheDocument();
+    // Represented once in Order health constraint state; the single order
+    // remains inspectable through Orders-owned onOrderClick.
+    expect(screen.getByText('1 Shipping SLA breached')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('1 Shipping SLA breached'));
+    expect(onOrderClick).toHaveBeenCalledWith('order-sla');
+    expect(screen.queryByText(/Package returned/i)).not.toBeInTheDocument();
   });
 });

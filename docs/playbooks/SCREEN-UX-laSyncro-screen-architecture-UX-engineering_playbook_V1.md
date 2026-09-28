@@ -88,6 +88,124 @@ Escape + empty search
 Escape elsewhere inside Console
 → close Console
 
+### Shared visual-system reference
+
+Overview is the PROD CERTIFIED visual reference for shared LaSyncro app/module
+styling. This governs the shared visual language, not screen ownership,
+information architecture, or layout.
+
+The canonical styling contract is:
+`docs/playbooks/modules-ux-playbook.md`
+
+When normalizing a screen:
+
+- reuse shared components and established design tokens before creating local styling;
+- use the Overview/shared system as the reference for typography, color,
+  surfaces/cards, borders, radii, spacing rhythm, CTA hierarchy,
+  status/severity treatment, interaction states, and light/dark behavior;
+- inspect the canonical shared/Overview implementation before approximating a
+  local variant;
+- do not copy Overview's layout, map dominance, information hierarchy, or
+  screen composition unless the target screen contract independently requires it;
+  this does not prohibit parity where the target screen contract explicitly
+  calls for the same operational-screen composition — there, Overview's
+  certified grammar is the reference (see Reusable operational-screen
+  composition below);
+- specialized workflow reference implementations may govern workflow behavior,
+  but they inherit the shared visual system unless an explicit documented
+  exception exists.
+
+A new reusable visual pattern or intentional visual-system exception must be
+recorded in the Modules UX Playbook. New or changed runtime tokens must remain
+synchronized with the actual theme implementation.
+
+
+### Reusable operational-screen composition
+
+Operational screens should reuse the same interaction grammar when they solve
+the same UX problem. Domain differentiation should come from truth, ownership
+and workflow semantics rather than gratuitously different screen mechanics.
+
+Canonical reusable behavior:
+
+- the primary workspace remains stable when global shell surfaces open;
+- a domain-specific Pulse/state rail may occupy the canonical secondary rail;
+- when Ops Console opens, that domain rail withdraws completely rather than
+  competing with global attention;
+- Ops Console remains globally owned and must not be recreated inside modules;
+- shared spatial screens reuse canonical geometry, interaction language,
+  inspection treatment and workspace furniture where applicable;
+- domain screens keep their own spatial projection and domain semantics.
+
+The intended abstraction layers are:
+
+1. app/global shell — Ops Console, global search, top navigation;
+2. operational-screen shell — viewport composition and rail replacement;
+3. shared spatial system — workspace frame, shared spatial engine and common
+   interaction grammar;
+4. domain projection — Orders, Inventory, Overview and other domain truth.
+
+Extraction rule:
+create a shared abstraction only when at least two real consumers demonstrate
+the same stable contract. Do not create a universal operational dashboard or
+move domain-specific decision logic into shared UI merely for visual reuse.
+
+Overview parity rule:
+when an operational screen solves the same UX problem as Overview, it mirrors
+Overview's proven composition and interaction grammar as closely as domain
+ownership allows — geometry, spacing, surface treatment, typography hierarchy,
+CTA hierarchy, hover/focus behavior, selection/pinned behavior, transitions,
+state animation, responsive choreography, loading/setup states and Ops Console
+rail replacement. Domain differentiation comes from data, labels, projections,
+contextual facts and workflow ownership, not from gratuitously different layout
+or interaction mechanics. This applies only where the UX problem is the same;
+it does not override the rule above against copying Overview's composition
+into screens whose contract does not require it.
+
+Reuse-first rule:
+prefer the same existing component when it already owns the desired behavior —
+especially `LiveMapTeaser` and `IsometricCanvas` — rather than visually
+reproducing it locally.
+
+Responsive operational-screen shell (`OperationalContextShell`):
+
+- below `lg`: one-column composition;
+- `lg`+: `minmax(0, 3fr) minmax(260px, 1fr)`;
+- when Ops Console is open, the desktop secondary track stays reserved while
+  the domain rail content withdraws, so the primary workspace does not reflow;
+- below `lg`, a suppressed rail creates no empty stacked row or gap;
+- below `lg`, the primary workspace precedes the domain rail;
+- rail withdrawal is immediate — no fade, slide or width animation;
+- at `lg`+, replacing the domain rail with Ops Console must not change the
+  primary workspace's left, top or width.
+
+Spatial inspection eligibility:
+
+warehouse geometry ≠ domain inspection target.
+
+A domain screen may restrict hover, selection and pinned inspection to the
+locations for which it has truthful domain-specific facts. Non-inspectable
+geometry may remain visible for orientation, but it must not imply hover,
+selection or pinned interaction. The shared capability is optional
+(`IsometricCanvas` `inspectableLocationCodes`): callers that pass no
+eligibility set keep the historic inspect-all behaviour. Not every map must
+restrict inspection.
+
+Physical-location truth:
+
+workflow activity ≠ known physical location.
+
+An operator may be placed spatially only when there is actual physical-location
+evidence. Do not infer an operator's position from the first zone, the nearest
+zone, the workflow phase, parent/child geometry or a convenient renderer
+target. Unknown location stays unknown; workflow and batch counts remain valid
+without spatial placement.
+
+Motion parity, operational border hierarchy and the token rule are recorded in
+the Modules UX Playbook (Operational Screen Ecosystem Pattern — Overview →
+Orders).
+
+
 ## 3. Screen archetypes
 Every substantial screen gets one primary archetype.
 Archetype	Primary question	Typical screens
@@ -505,7 +623,7 @@ Recommended summary metrics:
 Then the registry:
 Screen	Route	Archetype	Spatial	Pulse	Ops Console	Scroll	Status
 Overview  /overview  Awareness  PRIMARY  Cross-domain  Global  PASS at 1440×720 + 1024×820  PROD CERTIFIED / reference
-Orders Overview	/orders	Context	CONTEXTUAL?	Audit	Global	Audit	Needs audit
+Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
 Order Flow	/orders/flow	Execution/context	ON-DEMAND	No?	Global	Candidate	Needs audit
 Inventory Intelligence	/inventory	Context	CONTEXTUAL	Audit	Global	Audit	Needs audit
 WMS	/wms	Execution	Conditional	likely no	Global	Audit	Needs audit
@@ -682,32 +800,228 @@ Production health: PASS
 Production browser certification: PASS
 Overview is the PROD CERTIFIED reference screen for the screen-by-screen UX normalization sprint.
 
-## 17. Current Orders hypothesis
-Not yet certified, but this is the starting hypothesis for its audit:
+## 17. Orders Overview registry record
+
 SCREEN
 Orders Overview
 
-ARCHETYPE
+ROUTE
+/orders
+
+PRIMARY ARCHETYPE
 Operational Context
 
 PURPOSE
-Understand overall order health, constraints and fulfilment state.
+Understand order health, constraints, lifecycle and fulfilment state without becoming a second Ops Console or Order Flow.
+
+PRIMARY USER QUESTION
+What is happening to my orders, why, and where is fulfilment pressure?
+
+OWNS
+Order health
+Constraint state
+SLA / aging state
+Order lifecycle context
+Commercial consequence
+Individual order inspection
+Order-domain spatial pressure
+
+REFERENCES
+Canonical warehouse geometry through the shared spatial engine
+Order-linked fulfilment activity
+Batch / picking activity where relevant to order context
+Inventory-location constraints affecting orders
+Order Flow state where contextual navigation is useful
+
+MUST NOT OWN
+Global attention inbox
+Cross-module actionable queue
+Release planning
+Release execution
+Priority mutation
+Whole-operation warehouse awareness
+Cross-module setup/remediation
+
+OPS CONSOLE
+Global attention remains owned by Ops Console.
+Orders may show the underlying order-domain state, severity and commercial consequence.
+Orders must not create a competing actionable attention inbox.
+The duplicate is removed architecturally rather than conditionally hidden when Ops Console opens.
+
+GLOBAL SEARCH
+Normal global-shell Cmd/Ctrl+K behavior.
+No Orders-specific replacement or override.
+
+PULSE
+YES — as a compact domain-specific state summary named Order health.
+It may summarize Breached, Blocked, Picking, Fulfillable and useful aging/risk state.
+It must not become an action queue or claim cumulative metrics are today's activity.
+The legacy "Today's pulse" naming is retired.
 
 SPATIAL MODE
-CONTEXTUAL — MUST PROVE VALUE
+CONTEXTUAL
 
-POSSIBLE SPATIAL STORY
-Where order-related fulfilment workload is physically concentrated.
+SPATIAL STORY
+Where is order-related fulfilment pressure physically concentrated?
 
-CURRENT RISKS
-Generic warehouse map may duplicate Overview.
-"Needs a Decision" may duplicate Ops Console.
-"Today's Pulse" may overlap Overview/Pulse.
-Export may consume unnecessary first-viewport attention.
+The Orders lens may use real order/batch activity projected onto canonical warehouse geometry.
+It must not reproduce the generic Overview warehouse story.
+It must not invent inventory occupancy or fabricated locations.
 
-NEXT
-Inventory audit before changing implementation.
-This is a hypothesis, not yet a locked target.
+SPATIAL INSPECTION
+Orders passes the shared optional inspection-eligibility set: only locations
+with a truthful Orders LocationPulse are hover/select/pin targets. Orders-silent
+bins remain plain geometry for orientation — no dimming, hover plate, selected
+outline, pinned plate or pinned action.
+
+OPERATOR PLACEMENT
+Operators are placed only from physical-location evidence (a picker's latest
+confirmed scan location). Unscanned pickers are not anchored to a first or
+nearest zone; their batches still count.
+
+CURRENT PACKER LIMITATION
+The current data model has no truthful packer station/location field (pack
+scans carry no location), so the current live spatial projection does not
+place packers. This is present data-contract reality, not permanent product
+doctrine; packer placement becomes valid once real location evidence exists.
+
+PRIMARY WORKSPACE
+Contextual Orders spatial workspace (live map, teaser, loading, error or
+floor-setup state in one stable slot; live frame min-height 520px; footer with
+"Open order flow →")
+
+DOMAIN RAIL
+Order health — Breached / Blocked / Picking / Fulfillable, Constraints & aging,
+Checking / Verifying / Just resolved lifecycle state, "View order flow →".
+State and orientation only: not a task queue, global attention, release
+planning or priority mutation.
+
+LOCAL EXCEPTIONS
+Orders Overview does not own workflow remediation.
+It may expose order-domain constraint truth and inspection context.
+Resolution remains with the workflow that actually owns the required action.
+
+ATTENTION HANDOFF
+Cross-workflow actionable attention goes to Ops Console.
+Orders retains the domain state behind that attention without duplicating the global action queue.
+
+INTERNAL SCROLL
+No accidental document-level scrolling at certified viewports.
+Workspace-owned internal scrolling is allowed where required to preserve information hierarchy and spatial legibility.
+
+OPERATIONAL SHELL (shared `OperationalContextShell`)
+lg+, Ops Console closed:
+[PRIMARY WORKSPACE][DOMAIN RAIL — Order health]
+
+lg+, Ops Console open:
+[PRIMARY WORKSPACE][OPS CONSOLE]
+Order health withdraws; the primary workspace left, top and width do not change.
+
+below lg:
+single column — primary spatial workspace first, Order health below it when
+Ops Console is closed; Order health suppressed cleanly (no empty row or gap)
+when Ops Console is open.
+
+FIRST-VIEWPORT CONTRACT
+At 1440 × 720:
+- the Orders spatial workspace is the dominant primary track;
+- Order health occupies the canonical right rail;
+- secondary utilities remain de-emphasized;
+- no local global-attention inbox;
+- no accidental document scroll.
+
+At 1024 × 820:
+- single column, spatial workspace first, Order health below;
+- no second-column geometry;
+- intentional workspace-owned scrolling is allowed;
+- no accidental document scroll.
+
+PRE-NORMALIZATION PROBLEMS (historical — resolved by the certified implementation)
+"Needs a decision" behaves too much like a mini Ops Console.
+"Today's pulse" mixes useful domain state with semantically incorrect cumulative metrics.
+Prioritization mutates Order Flow release planning and is owned by the wrong surface.
+Export receives excessive first-viewport prominence.
+The legacy no-map fallback changes Orders into a different triage-first architecture.
+
+COMPONENT DISPOSITIONS
+Orders-specific live map
+→ KEEP / REFINE as CONTEXTUAL Orders spatial lens
+
+"Needs a decision"
+→ RETIRE current actionable-inbox composition
+→ MERGE legitimate underlying state into Orders domain context
+
+Checking operational state
+→ KEEP / REFINE
+
+Verifying
+→ KEEP / REFINE
+
+Just resolved
+→ KEEP / REFINE
+
+"Today's pulse"
+→ REFINE / RENAME to Order health
+→ remove misleading today-vs-cumulative semantics
+
+Critical order inspection
+→ KEEP
+→ secondary / on-demand detail
+
+Watch / aging state
+→ KEEP STATE / REFINE presentation
+
+Individual order inspection
+→ KEEP
+
+Prioritize
+→ REMOVED from Orders Overview (Order Flow owns priority)
+
+Bulk prioritize
+→ REMOVED from Orders Overview (Order Flow owns priority)
+
+View order flow
+→ KEEP as contextual navigation
+
+Export
+→ KEEP as secondary utility / DE-EMPHASIZE
+
+Legacy triage-first no-map fallback
+→ RETIRED — one composition for every input; no triage-first variant
+
+CURRENT COMPOSITION
+ORDERS header — domain orientation + secondary utilities
+↓
+OPERATIONAL SHELL
+[Orders spatial workspace][Order health | Ops Console]
+
+NO local global-attention inbox
+NO release-priority mutation
+NO generic warehouse map
+NO duplicate Overview workspace
+NO duplicate Order Flow workspace
+
+CERTIFICATION (local, 2026-09-28)
+1440 × 720 desktop: PASS
+1024 × 820 below-lg: PASS
+Light / dark: PASS
+Ops Console rail replacement: PASS
+Primary workspace geometric stability: PASS
+Document / horizontal overflow ≤ 1: PASS at both viewports
+Silent-bin non-interactivity: PASS
+Projection-health ("Data is not updating") recovery: PASS
+Production: PENDING
+
+STATUS
+LOCAL CERTIFIED
+
+WORKSHOP
+Phase 3 approved 2026-09-27.
+
+IMPLEMENTATION
+Complete — shared OperationalContextShell, Order health rail, optional
+IsometricCanvas inspection eligibility, evidence-only operator placement.
+
 
 ## 18. Current Inventory hypothesis
 SCREEN

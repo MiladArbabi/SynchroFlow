@@ -41,6 +41,7 @@ import { useOperationalEpisodes } from '../orders/useOperationalEpisodes';
 import { projectOrdersOperationalEpisodes } from '../orders/ordersOperationalEpisodeProjection';
 import { projectOrdersOperationalVisuals } from '../orders/ordersOperationalEpisodeVisual';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import useConfig from 'hooks/useConfig';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
@@ -50,7 +51,7 @@ import { Box } from '@mui/system';
 import { Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
-import type { WarehouseZone, LiveBinActivity } from '@lasyncro/shared/ui';
+import type { WarehouseZone, LiveBinActivity, LocationPulse } from '@lasyncro/shared/ui';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
@@ -92,6 +93,9 @@ export default function OrdersFT2Page() {
       )
     : null;
   const { displayCurrency, locale, tier } = useEntitlements();
+  // SCREEN-ARCH — Order health withdraws while the topnav Ops Console is
+  // open. Read-only: the topnav trigger remains the sole owner.
+  const { state: { isOpsConsoleOpen } } = useConfig();
   const { rates } = useExchangeRates();
   const bulkSetPriority = useBulkSetPriority();
   const navigate = useNavigate();
@@ -168,6 +172,47 @@ export default function OrdersFT2Page() {
     return acc;
   }, {});
 
+  /**
+   * C2A — hover/pinned plates reuse IsometricCanvas's shared grammar. The
+   * page only states Orders facts that the live payload actually locates
+   * (picker positions and their batch phase); a bin with no Orders activity
+   * has no plate and stays silent.
+   */
+  const orderLocationPulseByCode: Record<string, LocationPulse> = {};
+  for (const [code, activity] of Object.entries(orderFloorActivity)) {
+    const phase = [
+      (activity.pickingCount ?? 0) > 0 ? 'Picking' : null,
+      (activity.packingCount ?? 0) > 0 ? 'Packing' : null,
+    ].filter(Boolean).join(' · ');
+    const rows: LocationPulse['rows'] = [
+      { label: 'Pickers here', value: String(activity.operatorCount ?? 0) },
+    ];
+    if (phase) rows.push({ label: 'Batch phase', value: phase, tone: 'muted' });
+    if ((activity.staleCount ?? 0) > 0) {
+      rows.push({
+        label: `No scan in ${ordersLiveActivity.data?.staleThresholdMinutes ?? 15}m`,
+        value: String(activity.staleCount),
+        tone: 'warning',
+      });
+    }
+    orderLocationPulseByCode[code] = { title: code, rows };
+  }
+
+  // C2D — pulse exists = Orders has something truthful to inspect there; no
+  // pulse = warehouse context only (not a hover/selection target).
+  const orderInspectableLocationCodes = new Set(Object.keys(orderLocationPulseByCode));
+
+  const [selectedLocationCode, setSelectedLocationCode] = useState<string | null>(null);
+  const selectedLocationHasOrderWork =
+    selectedLocationCode != null && orderLocationPulseByCode[selectedLocationCode] != null;
+
+  const activeOrderBatches = ordersLiveActivity.data?.activeBatches ?? [];
+  const pickingBatchCount = activeOrderBatches.filter(b => b.status === 'picking').length;
+  const packingBatchCount = activeOrderBatches.filter(b => b.status === 'packing').length;
+
+  // C2A — one stable spatial slot across every entry state, mirroring
+  // Overview's certified workspace grammar (OverviewFT2Page mapContent):
+  // teaser → floor loading → floor error → no-floor setup → live map.
   let mapContent: ReactNode;
 
   if (!hasMapAccess) {
@@ -179,21 +224,148 @@ export default function OrdersFT2Page() {
         onUpgrade={() => navigate('/settings/billing')}
       />
     );
-  } else if (hasPlacedFloor) {
+  } else if (floorPlanning.isLoading) {
+    // Holds the slot at full size while floor geometry is resolved, so the
+    // screen never flashes the setup state to a tenant with a placed floor.
     mapContent = (
       <Box sx={{
-        minHeight: { xs: 420, lg: 460 }, height: '100%', display: 'flex', flexDirection: 'column',
+        minHeight: 520, height: '100%', borderRadius: '14px', overflow: 'hidden',
+        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+        p: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px',
+        '@keyframes lsShimmer': {
+          '0%': { opacity: 0.45 }, '50%': { opacity: 0.9 }, '100%': { opacity: 0.45 },
+        },
+      }}>
+        <Box sx={{ width: 140, height: 14, borderRadius: '4px', bgcolor: 'var(--bg-3)', animation: 'lsShimmer 1.6s ease-in-out infinite' }} />
+        <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gridTemplateRows: 'repeat(3,1fr)', gap: '12px', mt: '8px' }}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <Box key={i} sx={{ borderRadius: '10px', bgcolor: 'var(--bg-2)', animation: 'lsShimmer 1.6s ease-in-out infinite', animationDelay: `${i * 0.12}s` }} />
+          ))}
+        </Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+          Loading your orders floor…
+        </Typography>
+      </Box>
+    );
+  } else if (floorPlanning.isError) {
+    // A failed floor request is not an unmapped floor — never tell a
+    // configured merchant to map their floor when the service failed.
+    mapContent = (
+      <Box sx={{
+        minHeight: 520, height: '100%', borderRadius: '14px', overflow: 'hidden',
+        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', gap: '16px', p: '40px', textAlign: 'center',
+      }}>
+        <Box sx={{
+          width: 44, height: 44, borderRadius: '50%',
+          border: '1px solid var(--critical-border)', bgcolor: 'var(--critical-ghost)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--critical-ink)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" />
+          </svg>
+        </Box>
+        <Typography sx={{ fontSize: 21, fontFamily: 'Instrument Serif', color: 'var(--ink)' }}>
+          We couldn't load your floor.
+        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', lineHeight: 1.6, maxWidth: 340 }}>
+          The floor service didn't respond. Your orders are unaffected — nothing has changed in your warehouse.
+        </Typography>
+        <Box
+          component="button"
+          type="button"
+          onClick={() => floorPlanning.refetch()}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: '8px', fontSize: 12.5,
+            fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+            border: 'none', borderRadius: '8px', px: '20px', py: '10px', cursor: 'pointer',
+            '&:hover': { opacity: 0.85 },
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+          }}
+        >
+          Retry
+        </Box>
+      </Box>
+    );
+  } else if (!hasPlacedFloor) {
+    mapContent = (
+      <Box sx={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', minHeight: 420, height: '100%', bgcolor: 'var(--surface)',
+        border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden',
+      }}>
+        <Box sx={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', textAlign: 'center', gap: '14px', p: '2.75rem 2rem',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Box sx={{
+              width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)',
+              '@keyframes ov03Blink': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
+              animation: 'ov03Blink 2.4s ease-in-out infinite',
+            }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Orders live map
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
+            Map your warehouse floor first
+          </Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', maxWidth: 420, lineHeight: 1.65 }}>
+            Place your zones and bins once, and this becomes a live view of where
+            today's orders are moving — and where they are getting stuck.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['Picker positions', 'Pick & pack by location'].map((chip) => (
+              <Box key={chip} sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, fontWeight: 300, color: 'var(--ink-2)', border: '0.5px solid var(--rule)', borderRadius: '999px', px: '12px', py: '5px' }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)' }} />
+                {chip}
+              </Box>
+            ))}
+          </Box>
+          <Box
+            component="button"
+            type="button"
+            onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px',
+              fontSize: 13, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+              border: 'none', borderRadius: '8px', cursor: 'pointer', mt: '6px',
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+              '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+            }}
+          >
+            Map the floor
+          </Box>
+        </Box>
+      </Box>
+    );
+  } else {
+    mapContent = (
+      <Box sx={{
+        minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
         borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)',
       }}>
-        <Box sx={{ flex: 1, minHeight: 0 }}>
+        <Box sx={{ flex: 1, minHeight: 360, minWidth: 0 }}>
           {/* No `occupancy` — stock levels are an Inventory question. This map
               answers where ORDER work is happening, from real operator
               positions and real batch phases only. */}
           <IsometricCanvas
             zones={floorZones}
             liveActivity={orderFloorActivity}
+            locationPulseByCode={orderLocationPulseByCode}
+            inspectableLocationCodes={orderInspectableLocationCodes}
+            selectedLocationCode={selectedLocationCode}
+            onSelect={setSelectedLocationCode}
+            onPinnedClose={() => setSelectedLocationCode(null)}
+            pinnedAction={selectedLocationHasOrderWork ? {
+              label: 'Open order flow →',
+              onClick: () => navigate('/orders/flow'),
+            } : null}
             showLegend={false}
             showControls={false}
+            showWarehouseContext
             enableHoverFocus
             disablePan
             autoFit
@@ -201,36 +373,38 @@ export default function OrdersFT2Page() {
             fitPadding={0.88}
           />
         </Box>
-      </Box>
-    );
-  } else {
-    mapContent = (
-      <Box sx={{
-        minHeight: { xs: 420, lg: 460 }, height: '100%', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-        gap: 1, p: 3,
-        borderRadius: '14px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
-      }}>
-        <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>
-          Map your warehouse floor first
-        </Typography>
-        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', maxWidth: 360, mb: 1.5 }}>
-          Place your zones and bins once, and this becomes a live view of where
-          today's orders are moving — and where they are getting stuck.
-        </Typography>
-        <Box
-          component="button"
-          type="button"
-          onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
-          sx={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            px: '14px', py: '7px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-            color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
-            border: 'none', borderRadius: '6px', cursor: 'pointer',
-            '&:hover': { opacity: 0.88 },
-          }}
-        >
-          Map the floor
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: '10px', px: '16px', py: '11px',
+          borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0,
+        }}>
+          {activeOrderBatches.length > 0 ? (
+            <>
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--confirm-ink)', flexShrink: 0 }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>
+                {pickingBatchCount > 0 && `${pickingBatchCount} picking`}
+                {pickingBatchCount > 0 && packingBatchCount > 0 && ' · '}
+                {packingBatchCount > 0 && `${packingBatchCount} packing`}
+              </Typography>
+            </>
+          ) : (
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+              No active batches
+            </Typography>
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Box
+            component="button"
+            type="button"
+            onClick={() => navigate('/orders/flow')}
+            sx={{
+              appearance: 'none', border: 'none', bgcolor: 'transparent', p: 0, fontFamily: 'inherit',
+              fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0,
+              '&:hover': { opacity: 0.75 },
+              '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+            }}
+          >
+            Open order flow →
+          </Box>
         </Box>
       </Box>
     );
@@ -273,9 +447,9 @@ export default function OrdersFT2Page() {
         constrainedOrders={constrainedQuery.data?.data ?? null}
         operationalEpisodeVisuals={operationalEpisodeVisuals}
         currency={{ displayCurrency, locale, rates }}
-        onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}
         mapContent={mapContent}
+        suppressOrderHealth={isOpsConsoleOpen}
         // §6 — Orders/Overview is specced as "Export → opens drawer with
         // format picker", same as Overview's Export brief). Keep this surface
         // focused on the canonical All Orders export; filtered variants remain
