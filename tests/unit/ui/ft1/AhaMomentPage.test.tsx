@@ -156,7 +156,7 @@ describe('AhaMomentPage — priorities 1/2/3/4/6 regression', () => {
   };
 
   const cases: Array<{ priority: 1 | 2 | 3 | 4 | 6; label: string; headline: string }> = [
-    { priority: 1, label: 'Needs attention', headline: '3 SKUs will stock out within 7 days' },
+    { priority: 1, label: 'Needs attention', headline: '3 SKUs need replenishment attention' },
     { priority: 2, label: 'Urgent', headline: '2 orders are arriving late' },
     { priority: 3, label: 'Strategic', headline: 'Revenue concentration risk' },
     { priority: 4, label: 'Operational', headline: '5 orders have been waiting over 72 hours' },

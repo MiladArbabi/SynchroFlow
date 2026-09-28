@@ -141,50 +141,50 @@ export async function getAhaSignal(req: Request, res: Response) {
       return res.json({ signal, evaluatedAt: new Date().toISOString() });
     }
 
-    // ── Signal 1: Stock-out risk ─────────────────────────────────────────────
-    // Condition: any SKU with < 7 days of stock at current 30-day velocity
+    // ── Signal 1: Current replenishment risk ─────────────────────────────────
+    // Qualification and displayed facts come from the same current demand
+    // computation. Generic inventory alerts are not stock-out authority.
 
-    const stockOutAlert = await withTenant(shopId, (trx) =>
-      trx('alerts')
-        .where({ shop_id: shopId, alert_type: 'inventory', is_active: true })
-        .whereNull('dismissed_at')
-        .orderBy('revenue_impact', 'desc')
-        .first('title', 'message', 'revenue_impact')
+    const demand = await computeDemandIntelligence(shopId);
+    const criticalSkus = demand.variants.filter(
+      (variant) => variant.reorder_urgency === 'critical'
     );
 
-    if (stockOutAlert) {
-      // Get supporting demand data for cards
-      const demand = await computeDemandIntelligence(shopId);
-      const criticalSkus = demand.variants.filter(v => v.reorder_urgency === 'critical');
+    if (criticalSkus.length > 0) {
+      const outOfStockNow = criticalSkus.filter(
+        (variant) => variant.available_quantity <= 0
+      ).length;
+
+      const criticalCount = criticalSkus.length;
 
       const signal: AhaSignal = {
         priority: 1,
-        headline: `${criticalSkus.length} SKU${criticalSkus.length === 1 ? '' : 's'} will stock out within 7 days`,
-        detail: "Here's the revenue at stake — and what LaSyncro found in your store.",
-        revenueImpact: stockOutAlert.revenue_impact ? Number(stockOutAlert.revenue_impact) : null,
+        headline: `${criticalCount} SKU${criticalCount === 1 ? '' : 's'} ${criticalCount === 1 ? 'needs' : 'need'} replenishment attention`,
+        detail:
+          'LaSyncro found current stock and demand signals that need action before they constrain fulfillment.',
+        revenueImpact: null,
         cards: [
           {
-            label: 'SKUs at critical risk',
-            value: String(criticalSkus.length),
-            sublabel: 'under 7 days of stock',
+            label: 'SKUs needing action',
+            value: String(criticalCount),
+            sublabel: 'current replenishment urgency',
+          },
+          {
+            label: 'Out of stock now',
+            value: String(outOfStockNow),
+            sublabel: 'zero available stock',
           },
           {
             label: 'Avg days of stock',
-            value: demand.summary.avg_days_of_stock != null
-              ? `${Math.round(demand.summary.avg_days_of_stock)}d`
-              : '—',
+            value:
+              demand.summary.avg_days_of_stock != null
+                ? `${Math.round(demand.summary.avg_days_of_stock)}d`
+                : '—',
             sublabel: 'across catalogue',
           },
-          {
-            label: 'Revenue at risk',
-            value: stockOutAlert.revenue_impact
-              ? `$${Math.round(Number(stockOutAlert.revenue_impact)).toLocaleString()}`
-              : '—',
-            sublabel: 'if not restocked',
-          },
         ],
-        deepLink: '/orders?filter=out_of_stock',
-        ctaLabel: 'View restock recommendations',
+        deepLink: '/demand?filter=critical',
+        ctaLabel: 'Review critical SKUs',
       };
 
       return res.json({ signal, evaluatedAt: new Date().toISOString() });
@@ -356,7 +356,6 @@ export async function getAhaSignal(req: Request, res: Response) {
     // ── Signal 6: Velocity intelligence fallback ──────────────────────────────
     // Always available — healthy operation confirmation
 
-    const demand = await computeDemandIntelligence(shopId);
     const topVariant = demand.variants
       .filter(v => v.velocity_per_day > 0)
       .sort((a, b) => (b.units_sold_30d ?? 0) - (a.units_sold_30d ?? 0))[0];
