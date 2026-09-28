@@ -109,6 +109,8 @@ import {
   httpCreateRecountFinding,
   httpListRecountFindings,
   httpPreviewSuggestedBins,
+  httpAddOpeningInventoryLine,
+  httpCompleteOpeningInventoryBin,
 } from './inventoryRecount.controller.js';
 import {
   httpGetOpeningInventoryProgress,
@@ -907,6 +909,26 @@ router.post(
   requireCapability('inventory.core'),
   requireAction('wms:recount:count'),
   httpCloseRecountTask
+);
+
+// #1164: opening_inventory counting actions. Same recount count RBAC as
+// /lines/:lineId/count; claimant ownership is enforced in the service.
+router.post(
+  '/recount-tasks/:taskId/opening-lines',
+  authenticateToken,
+  requireFt2,
+  requireCapability('inventory.core'),
+  requireAction('wms:recount:count'),
+  httpAddOpeningInventoryLine
+);
+
+router.post(
+  '/recount-tasks/:taskId/opening-complete',
+  authenticateToken,
+  requireFt2,
+  requireCapability('inventory.core'),
+  requireAction('wms:recount:count'),
+  httpCompleteOpeningInventoryBin
 );
 
 router.post(

@@ -24,6 +24,39 @@ interface AuthContextType extends AuthState {
 // --- Create Context ---
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * #1164 — CANONICAL JWT IDENTITY
+ * ───────────────────────────────
+ * The access token's user_id is the authenticated identity the backend acts
+ * on. A persisted `user` from an earlier session must never override it.
+ * Decoding is best-effort: an opaque/undecodable token yields null and the
+ * caller keeps the user it already has (normalization fails closed, it never
+ * logs anyone out).
+ */
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const segment = token.split('.')[1];
+    if (!segment) return null;
+    const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/')));
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function jwtUserId(token: string | null): number | null {
+  if (!token) return null;
+  const userId = decodeJwtPayload(token)?.user_id;
+  return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
+}
+
+/** Returns `user` with id following the token; the same object when already canonical. */
+function withTokenIdentity(user: PublicUser, token: string | null): PublicUser {
+  const tokenUserId = jwtUserId(token);
+  if (tokenUserId === null || user.id === tokenUserId) return user;
+  return { ...user, id: tokenUserId };
+}
+
 // --- Create Provider Component ---
 interface AuthProviderProps {
   children: ReactNode;
@@ -58,19 +91,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Decode JWT payload (base64) to extract shop_id and user claims.
       // No library needed — JWT payload is standard base64url.
       let decodedUser = null;
-      try {
-        const payload = JSON.parse(atob(tokenFromUrl.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      const payload = decodeJwtPayload(tokenFromUrl);
+      if (payload) {
         decodedUser = {
+          id: jwtUserId(tokenFromUrl),
           shop_id: payload.shop_id ?? null,
           plan: payload.plan ?? null,
           trial_ends_at: payload.trial_ends_at ?? null,
           created_at: payload.created_at ?? null,
-          userId: payload.user_id ?? null,
           role: payload.shop_roles?.[0] ?? 'owner',
           email: payload.email ?? null,
           first_name: payload.first_name ?? null,
-        };
-      } catch {
+        } as unknown as PublicUser;
+        // Persist so a hard reload rehydrates this identity, not a stale one.
+        localStorage.setItem('user', JSON.stringify(decodedUser));
+      } else {
         console.warn('[AUTH][OAUTH_HANDOFF] JWT decode failed — user will be null');
       }
       setAuthState({
@@ -99,7 +134,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const storedUser = localStorage.getItem('user');
       
       if (storedToken && storedUser) {
-        const parsedUser = JSON.parse(storedUser);
+        const storedParsedUser = JSON.parse(storedUser);
+        const parsedUser = storedParsedUser
+          ? withTokenIdentity(storedParsedUser, storedToken)
+          : storedParsedUser;
+        if (parsedUser !== storedParsedUser) {
+          localStorage.setItem('user', JSON.stringify(parsedUser));
+        }
         setAuthState({
           isLoggedIn: true,
           isLoading: false,
@@ -163,10 +204,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setOnTokenRefreshed((newToken: string) => {
       console.info('[AUTH] Silent refresh → React state synced');
       setAccessToken(newToken);
+      // #1164: identity follows the refreshed token, never a stale user.
+      setAuthState(prev => {
+        if (!prev.user) return prev;
+        const user = withTokenIdentity(prev.user, newToken);
+        if (user === prev.user) return prev;
+        localStorage.setItem('user', JSON.stringify(user));
+        return { ...prev, user };
+      });
     });
   }, [setAccessToken]);
 
-  const login = useCallback((user: PublicUser, accessToken: string) => {
+  const login = useCallback((suppliedUser: PublicUser, accessToken: string) => {
+    const user = withTokenIdentity(suppliedUser, accessToken);
     setAuthState({
       isLoggedIn: true,
       isLoading: false,

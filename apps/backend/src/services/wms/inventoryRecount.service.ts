@@ -2305,6 +2305,10 @@ export async function listRecountTasks(
       // RECOUNT-CLAIM-ABANDONED-131: exposed so the frontend can scope
       // browser-local provisional state to this specific claim instance.
       't.claim_generation',
+      // #1164: lets the counting session branch on opening_inventory and
+      // anchor a zero-line task to its frozen bin. Carries no quantity.
+      't.purpose',
+      't.scope_location_code',
       trx.raw(
         `(SELECT COUNT(*)::int FROM inventory_recount_lines l
           WHERE l.shop_id = t.shop_id AND l.recount_task_id = t.recount_task_id

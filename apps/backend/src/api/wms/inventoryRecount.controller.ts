@@ -18,6 +18,8 @@ import {
   listRecountFindings,
   previewSuggestedBins,
   resolveDefaultWarehouseId,
+  addOpeningInventoryRecountLine,
+  completeOpeningInventoryBin,
   type RecountFindingType,
 } from '../../services/wms/inventoryRecount.service.js';
 import {
@@ -65,7 +67,10 @@ function recountErrorStatus(message: string): number {
     message.includes('not in review') ||
     message.includes('not committable') ||
     // RECOUNT-CLAIM-ABANDONED-131
-    message.includes('not reassignable')
+    message.includes('not reassignable') ||
+    // #1164: opening-lines / opening-complete business rejections.
+    message.includes('not an opening_inventory task') ||
+    message.includes('not completable')
   ) {
     return 409;
   }
@@ -523,6 +528,78 @@ export const httpCloseRecountTask = async (req: Request, res: Response) => {
     return res.status(200).json(result);
   } catch (error) {
     return respondRecountError(res, 'CLOSE', error);
+  }
+};
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * #1164: opening_inventory discovery. The task owns the physical location
+ * (frozen scope_location_code) and the server owns expected_quantity (0), so
+ * only the variant is read from the body — any client location_code has no
+ * authority. Purpose, claimant, tenant variant and retry reuse are enforced
+ * by addOpeningInventoryRecountLine.
+ */
+export const httpAddOpeningInventoryLine = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const recountTaskId = String(req.params.taskId ?? '');
+  const { lasyncro_variant_id } = req.body ?? {};
+
+  if (!recountTaskId) {
+    return res.status(400).json({ error: 'taskId is required' });
+  }
+
+  if (typeof lasyncro_variant_id !== 'string' || !UUID_PATTERN.test(lasyncro_variant_id)) {
+    return res.status(400).json({ error: 'lasyncro_variant_id must be a valid UUID' });
+  }
+
+  try {
+    const line = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return addOpeningInventoryRecountLine(trx, {
+        shopId,
+        recountTaskId,
+        lasyncroVariantId: lasyncro_variant_id,
+        addedBy: userId,
+      });
+    });
+
+    return res.status(200).json({ line });
+  } catch (error) {
+    return respondRecountError(res, 'OPENING_LINE', error);
+  }
+};
+
+/**
+ * #1164: opening_inventory bin settlement — the physical-truth boundary for
+ * initial inventory. Generic /close and /commit are unchanged; settlement
+ * and committed-bin replay live in completeOpeningInventoryBin.
+ */
+export const httpCompleteOpeningInventoryBin = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const recountTaskId = String(req.params.taskId ?? '');
+  if (!recountTaskId) {
+    return res.status(400).json({ error: 'taskId is required' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return completeOpeningInventoryBin(trx, shopId, recountTaskId, userId);
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return respondRecountError(res, 'OPENING_COMPLETE', error);
   }
 };
 

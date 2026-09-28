@@ -2,6 +2,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from 'contexts/AuthContext'; // Use alias
 import React from 'react';
+import { clearToken, notifyTokenRefreshed } from 'utils/authStore';
 
 function fakeJwt(payload: Record<string, unknown>) {
   const encode = (value: unknown) =>
@@ -98,4 +99,85 @@ describe('AuthContext', () => {
      expect(window.location.search).not.toContain('connect=');
      expect(window.location.hash).toBe('#handoff');
    });
+});
+
+/**
+ * #1164 — canonical authenticated identity is the access token's user_id.
+ * AuthContext.user.id must follow the JWT, and the persisted `user` must not
+ * keep serving a stale identity from an earlier session.
+ */
+describe('AuthContext — JWT-authoritative identity (#1164)', () => {
+  const wrapper = ({ children }: { children: React.ReactNode }) => <AuthProvider>{children}</AuthProvider>;
+  const persistedUser = () => JSON.parse(localStorage.getItem('user') ?? 'null');
+
+  beforeEach(() => {
+    clearToken();
+    localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('OAuth handoff exposes and persists canonical user.id from the JWT user_id', async () => {
+    const token = fakeJwt({ user_id: 25, shop_id: 77, shop_roles: ['owner'] });
+    window.history.replaceState({}, '', `/overview?connect=success&token=${token}`);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoggedIn).toBe(true);
+    });
+    expect(result.current.user?.id).toBe(25);
+    expect(persistedUser()?.id).toBe(25);
+  });
+
+  it('hard reload repairs a stale persisted user.id to the access token user_id', async () => {
+    const token = fakeJwt({ user_id: 25, shop_id: 77 });
+    localStorage.setItem('accessToken', token);
+    localStorage.setItem('user', JSON.stringify({ id: 1, shop_id: 77, email: 'stale@example.test' }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoggedIn).toBe(true);
+    });
+    expect(result.current.user?.id).toBe(25);
+    expect(persistedUser()?.id).toBe(25);
+  });
+
+  it('normal login persists user.id and rehydrates it after reload', async () => {
+    const token = fakeJwt({ user_id: 9, shop_id: 77 });
+    const first = renderHook(() => useAuth(), { wrapper });
+
+    act(() => {
+      first.result.current.login({ id: 9, shop_id: 77, email: 'op@example.test' } as any, token);
+    });
+
+    expect(first.result.current.user?.id).toBe(9);
+    expect(persistedUser()?.id).toBe(9);
+    first.unmount();
+
+    const reloaded = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(reloaded.result.current.isLoggedIn).toBe(true);
+    });
+    expect(reloaded.result.current.user?.id).toBe(9);
+  });
+
+  it('silent token refresh moves canonical identity to the refreshed JWT user_id', async () => {
+    localStorage.setItem('accessToken', fakeJwt({ user_id: 1, shop_id: 77 }));
+    localStorage.setItem('user', JSON.stringify({ id: 1, shop_id: 77 }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isLoggedIn).toBe(true);
+    });
+
+    const refreshed = fakeJwt({ user_id: 25, shop_id: 77 });
+    act(() => {
+      notifyTokenRefreshed(refreshed);
+    });
+
+    expect(result.current.accessToken).toBe(refreshed);
+    expect(result.current.user?.id).toBe(25);
+    expect(persistedUser()?.id).toBe(25);
+  });
 });
