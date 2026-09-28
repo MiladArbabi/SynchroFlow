@@ -5,6 +5,7 @@ import { encrypt } from '../src/security/encryption.service.js';
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { runWithTenantContext } from '@lasyncro/backend-core/db.js';
+import { devSeedLineItemId } from './helpers/devSeedLineItemId.js';
 /**
  * DEV SEED — IDENTITY-AWARE
  * ------------------------
@@ -498,7 +499,7 @@ export async function seed(knex: Knex): Promise<void> {
                 edges: [
                   {
                     node: {
-                      id: `gid://shopify/LineItem/${externalOrderId}`,
+                      id: devSeedLineItemId(shop.id, externalOrderId),
                       product: {
                         id: `gid://shopify/Product/${externalProductId}`,
                       },
