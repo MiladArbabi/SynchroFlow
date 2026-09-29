@@ -1034,7 +1034,14 @@ export function IsometricCanvas({
   // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
   // showBins so toggling display filters never changes what merchants are
   // told about their actual data completeness.
-  const unplacedCount = zones.filter(z => z.position_x == null || z.position_y == null).length;
+  //
+  // GH-1177 / GH-1176: the warehouse root is the floor boundary, not a
+  // placeable child location. A configured root may legitimately keep an
+  // implicit null origin, so it must never manufacture an "unplaced location"
+  // warning. Ordinary child zones still count when either coordinate is absent.
+  const unplacedCount = zones.filter(
+    z => z.type !== 'warehouse' && (z.position_x == null || z.position_y == null)
+  ).length;
 
   // FP-LEGEND1: mirrors IsometricBox's fillOverride/focusFill thresholds
   // exactly — same zoneRGBVar keys, same alpha values — so the legend
