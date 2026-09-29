@@ -757,8 +757,9 @@ export async function getShopOpeningInventoryProgress(
  * Freeze the initial physical reconciliation cohort across every active
  * warehouse in the shop.
  *
- * The first successful call snapshots all ACTIVE BIN locations. Later
- * warehouses/bins never change this initial denominator.
+ * The first successful call snapshots all ACTIVE STOCK locations
+ * backed by bin + pick/storage semantics. Later warehouses/stock locations
+ * never change this initial denominator.
  */
 export async function startShopOpeningInventoryReconciliation(
   trx: Knex.Transaction,
@@ -845,6 +846,7 @@ export async function startShopOpeningInventoryReconciliation(
       'wl.active': true,
       'w.active': true,
     })
+    .whereIn('wl.zone_type', ['pick', 'storage'])
     .select(
       'wl.warehouse_id',
       'wl.location_code'
@@ -856,7 +858,7 @@ export async function startShopOpeningInventoryReconciliation(
 
   if (bins.length === 0) {
     throw new Error(
-      '[OPENING_RECOUNT_SHOP_START] Initial inventory reconciliation requires at least one active bin'
+      '[OPENING_RECOUNT_SHOP_START] Initial inventory reconciliation requires at least one active stock location'
     );
   }
 
@@ -984,12 +986,13 @@ export async function startOpeningInventoryReconciliation(
       type: 'bin',
       active: true,
     })
+    .whereIn('zone_type', ['pick', 'storage'])
     .select('location_code')
     .orderBy('location_code', 'asc');
 
   if (bins.length === 0) {
     throw new Error(
-      '[OPENING_RECOUNT_START] Initial inventory reconciliation requires at least one active bin'
+      '[OPENING_RECOUNT_START] Initial inventory reconciliation requires at least one active stock location'
     );
   }
 

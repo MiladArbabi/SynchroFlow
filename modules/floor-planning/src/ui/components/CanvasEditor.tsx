@@ -248,25 +248,23 @@ function selectableCodes(codes: Iterable<string>, zones: readonly WarehouseZone[
   return new Set([...codes].filter((code) => isSelectableZone(zoneByCode.get(code))));
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent }: {
+function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent, openItemRequest }: {
   zones: WarehouseZone[];
   codeSourceZones: readonly Pick<WarehouseZone, 'location_code'>[];
   unpositionedZones: WarehouseZone[];
   onPlace: (zone: WarehouseZone) => void;
   onCreateComponent: (item: FloorPlanningComponentDefinition, locationCode: string) => Promise<void>;
+  openItemRequest: { id: string; nonce: number } | null;
 }) {
   // Layout health — real checks computed from live zone state (WMS-FP-06).
   const healthIssues: string[] = [];
   const unpositioned = zones.filter((z) => z.type !== 'warehouse' && z.position_x == null).length;
   if (unpositioned > 0) healthIssues.push(`${unpositioned} zone${unpositioned !== 1 ? 's' : ''} not placed on the floor`);
-  const detachedBins = zones.filter((z) => z.type === 'bin' && z.zone_type !== 'quarantine' && z.parent_location_code == null).length;
-  if (detachedBins > 0) healthIssues.push(`${detachedBins} bin${detachedBins !== 1 ? 's' : ''} with no parent aisle`);
-  const unbarcoded = zones.filter((z) => z.type !== 'warehouse' && z.barcode == null).length;
-  if (unbarcoded > 0) healthIssues.push(`${unbarcoded} location${unbarcoded !== 1 ? 's' : ''} without a barcode`);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [locationCode, setLocationCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const handledOpenRequestNonceRef = useRef(0);
 
   function openCreate(item: FloorPlanningComponentDefinition) {
     if (creating) return;
@@ -274,6 +272,21 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
     setLocationCode(nextFloorPlanningLocationCode(item.codePrefix, codeSourceZones));
     setError(null);
   }
+
+  useEffect(() => {
+    if (!openItemRequest) return;
+    if (openItemRequest.nonce <= handledOpenRequestNonceRef.current) return;
+    if (creating) return;
+
+    const item = FLOOR_PLANNING_COMPONENTS.find(
+      (candidate) => candidate.id === openItemRequest.id
+    );
+
+    if (!item) return;
+
+    handledOpenRequestNonceRef.current = openItemRequest.nonce;
+    openCreate(item);
+  }, [openItemRequest, creating, codeSourceZones]);
 
   async function handleCreate(item: FloorPlanningComponentDefinition) {
     const normalizedCode = locationCode.trim().toUpperCase();
@@ -332,6 +345,11 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
                     <Typography sx={{ fontSize: 9, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
                       {item.label}
                     </Typography>
+                    {item.description && (
+                      <Typography sx={{ fontSize: 8, color: 'var(--ink-4)', textAlign: 'center', lineHeight: 1.2 }}>
+                        {item.description}
+                      </Typography>
+                    )}
                     {isActive && (
                       <Box sx={{ width: '100%', mt: 0.5 }} onClick={(event) => event.stopPropagation()}>
                         <Typography component="label" htmlFor={`location-code-${item.id}`} sx={{ display: 'block', fontSize: 8, color: 'var(--ink-4)', mb: 0.25 }}>
@@ -1055,12 +1073,44 @@ export function CanvasEditor({
   // a boundary concern only, independent of operational-floor readiness.
   // Anchored to Floor settings; opening the panel (either way) fulfils it.
   // Per-instance only — a refresh before bounds are set may show it again.
-  const [boundaryGuidanceDismissed, setBoundaryGuidanceDismissed] = useState(false);
-  const showBoundaryGuidance = warehouseRoot != null && !hasUsableWarehouseBounds(viewportRoot);
+  const [dismissedGuidancePhase, setDismissedGuidancePhase] = useState<'boundary' | 'stock' | null>(null);
+  const [paletteOpenRequest, setPaletteOpenRequest] = useState<{ id: string; nonce: number } | null>(null);
+
+  const showBoundaryGuidance =
+    warehouseRoot != null &&
+    !hasUsableWarehouseBounds(viewportRoot);
+
+  const hasStockLocation = [...zones, ...optimisticCreatedZones].some(
+    (zone) =>
+      zone.active &&
+      zone.type === 'bin' &&
+      (zone.zone_type === 'pick' || zone.zone_type === 'storage'),
+  );
+
+  const showStockGuidance =
+    warehouseRoot != null &&
+    hasUsableWarehouseBounds(viewportRoot) &&
+    !hasStockLocation;
+
+  const guidancePhase: 'boundary' | 'stock' | null =
+    showBoundaryGuidance
+      ? 'boundary'
+      : showStockGuidance
+        ? 'stock'
+        : null;
+
   const openFloorSettings = () => {
     setSelected(new Set());
     setFloorSettingsOpen(true);
-    setBoundaryGuidanceDismissed(true);
+    setDismissedGuidancePhase('boundary');
+  };
+
+  const openStockLocationCreation = () => {
+    setDismissedGuidancePhase('stock');
+    setPaletteOpenRequest((current) => ({
+      id: 'pick',
+      nonce: (current?.nonce ?? 0) + 1,
+    }));
   };
 
   const fitCurrentWarehouse = useCallback(() => {
@@ -2054,6 +2104,7 @@ export function CanvasEditor({
           onUpdateZone?.(zone.location_code, { position_x: centreX, position_y: centreY });
         }}
         onCreateComponent={createPaletteComponent}
+        openItemRequest={paletteOpenRequest}
       />
 
       {/* CENTER — canvas */}
@@ -2119,16 +2170,46 @@ export function CanvasEditor({
               >
                 Floor settings
               </Button>
-              {showBoundaryGuidance && (
-                <Box data-testid="floor-boundary-guidance" sx={{ position: 'absolute', top: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)', width: 320, zIndex: 10 }}>
+              {guidancePhase && (
+                <Box
+                  data-testid={
+                    guidancePhase === 'boundary'
+                      ? 'floor-boundary-guidance'
+                      : 'floor-stock-guidance'
+                  }
+                  sx={{
+                    position: 'absolute',
+                    top: 'calc(100% + 10px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 320,
+                    zIndex: 10,
+                  }}
+                >
                   <SpotlightCoachMark
-                    title="Set your warehouse boundary"
-                    body="Click Floor settings above, then enter your warehouse Width and Depth. We’ll use this boundary to place aisles, receiving, packing, shipping and storage areas."
-                    isDismissed={boundaryGuidanceDismissed}
-                    onDismiss={() => setBoundaryGuidanceDismissed(true)}
-                    actionLabel="Open Floor settings"
-                    onAction={openFloorSettings}
-                    direction="up"
+                    title={
+                      guidancePhase === 'boundary'
+                        ? 'Set your warehouse boundary'
+                        : 'Add where you keep your stock'
+                    }
+                    body={
+                      guidancePhase === 'boundary'
+                        ? 'Click Floor settings above, then enter your warehouse Width and Depth. We’ll use this boundary to place Stock locations, optional aisles, and work areas such as Receiving, Packing and Shipping.'
+                        : 'Start with a Stock location — the place your team stores, counts and picks products. Add an aisle only if your warehouse uses them. You can then add Receiving, Packing, Shipping and other work areas as needed.'
+                    }
+                    isDismissed={dismissedGuidancePhase === guidancePhase}
+                    onDismiss={() => setDismissedGuidancePhase(guidancePhase)}
+                    actionLabel={
+                      guidancePhase === 'boundary'
+                        ? 'Open Floor settings'
+                        : 'Add stock location'
+                    }
+                    onAction={
+                      guidancePhase === 'boundary'
+                        ? openFloorSettings
+                        : openStockLocationCreation
+                    }
+                    direction={guidancePhase === 'boundary' ? 'up' : undefined}
                     floating
                   />
                 </Box>

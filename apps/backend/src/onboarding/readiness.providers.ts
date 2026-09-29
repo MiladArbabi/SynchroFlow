@@ -212,10 +212,11 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
       .first();
     const enabled = Number(locationRow?.count ?? 0) > 0;
 
-    // GH-1160 first-entry mapping policy:
-    // root provisioning alone is not a merchant-authored warehouse map.
-    // The active default warehouse must contain at least one active bin.
-    // That bin is also eligible for the opening-inventory cohort.
+    // GH-1177 first-entry mapping policy:
+    // root provisioning or operational work areas alone are not a
+    // merchant-authored stock map. The active default warehouse must contain
+    // at least one active stock-holding bin (pick/storage), matching the
+    // opening-inventory cohort predicate.
     const defaultWarehouse = await db('warehouses')
       .where({
         shop_id: shopId,
@@ -233,6 +234,7 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
             type: 'bin',
             active: true,
           })
+          .whereIn('zone_type', ['pick', 'storage'])
           .count<{ count: string }>('location_code as count')
           .first()
       : null;

@@ -1130,7 +1130,7 @@ function FloorPlanningModuleFT2Inner({
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           Build your warehouse.
         </Typography>
-        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Configure aisles, shelves, and bins. Your layout is the foundation of every pick.</Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Map where you keep stock and the work areas your warehouse uses.</Typography>
       </>}
       {/* FP-13 — type filter parity with Barcodes tab; List view only, Canvas is spatial and doesn't need it */}
       {tab === 'setup' && !canvasView && (

@@ -25,16 +25,16 @@ export interface FloorPlanningComponentDefinition {
 // Creation defaults only. Existing zones always keep the semantic role carried
 // by their persisted type and zone_type; location_code is never role metadata.
 export const FLOOR_PLANNING_COMPONENTS = [
-  { id: 'aisle', label: 'Aisle', group: 'STRUCTURE', type: 'lane', zone_type: 'pick', defaultW: 4.4, defaultD: 1.0, defaultRackLevels: null, codePrefix: 'AISLE' },
-  { id: 'pick', label: 'Pick', group: 'FULFILLMENT', type: 'bin', zone_type: 'pick', defaultW: 1.0, defaultD: 0.5, defaultRackLevels: 3, codePrefix: 'PICK' },
-  { id: 'pack', label: 'Pack', group: 'FULFILLMENT', type: 'bin', zone_type: 'pack', defaultW: 2.0, defaultD: 1.5, defaultRackLevels: 2, codePrefix: 'PACK' },
-  { id: 'receive', label: 'Receive', group: 'FULFILLMENT', type: 'bin', zone_type: 'receive', defaultW: 3.0, defaultD: 3.0, defaultRackLevels: 1, codePrefix: 'RECEIVE' },
-  { id: 'ship', label: 'Ship', group: 'FULFILLMENT', type: 'bin', zone_type: 'ship', defaultW: 4.0, defaultD: 3.0, defaultRackLevels: 1, codePrefix: 'SHIP' },
+  { id: 'pick', label: 'Stock location', group: 'STRUCTURE', type: 'bin', zone_type: 'pick', defaultW: 1.0, defaultD: 0.5, defaultRackLevels: 3, codePrefix: 'PICK', description: 'Store & pick products' },
+  { id: 'aisle', label: 'Aisle', group: 'STRUCTURE', type: 'lane', zone_type: 'pick', defaultW: 4.4, defaultD: 1.0, defaultRackLevels: null, codePrefix: 'AISLE', description: 'Optional grouping' },
+  { id: 'pack', label: 'Pack', group: 'FULFILLMENT', type: 'bin', zone_type: 'pack', defaultW: 2.0, defaultD: 1.5, defaultRackLevels: 2, codePrefix: 'PACK', description: 'Pack orders' },
+  { id: 'receive', label: 'Receive', group: 'FULFILLMENT', type: 'bin', zone_type: 'receive', defaultW: 3.0, defaultD: 3.0, defaultRackLevels: 1, codePrefix: 'RECEIVE', description: 'Incoming deliveries' },
+  { id: 'ship', label: 'Ship', group: 'FULFILLMENT', type: 'bin', zone_type: 'ship', defaultW: 4.0, defaultD: 3.0, defaultRackLevels: 1, codePrefix: 'SHIP', description: 'Parcels ready to leave' },
   // Semantic floor component only; operational WMS problem-bin designation is a separate workflow.
-  { id: 'problem-area', label: 'Problem Area', group: 'EXCEPTIONS', type: 'bin', zone_type: 'problem', defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'PROBLEM' },
-  { id: 'returns', label: 'Returns', group: 'EXCEPTIONS', type: 'bin', zone_type: 'returns', defaultW: 3.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'RETURNS' },
-  { id: 'quarantine', label: 'Quarantine', group: 'EXCEPTIONS', type: 'bin', zone_type: 'quarantine', defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'QUARANTINE' },
-  { id: 'materials', label: 'Materials', group: 'OTHER', type: 'bin', zone_type: 'kitting', defaultW: 2.0, defaultD: 1.0, defaultRackLevels: 2, codePrefix: 'MATERIALS' },
+  { id: 'problem-area', label: 'Problem Area', group: 'EXCEPTIONS', type: 'bin', zone_type: 'problem', defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'PROBLEM', description: 'Items needing attention' },
+  { id: 'returns', label: 'Returns', group: 'EXCEPTIONS', type: 'bin', zone_type: 'returns', defaultW: 3.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'RETURNS', description: 'Process returned items' },
+  { id: 'quarantine', label: 'Quarantine', group: 'EXCEPTIONS', type: 'bin', zone_type: 'quarantine', defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1, codePrefix: 'QUARANTINE', description: 'Isolated stock' },
+  { id: 'materials', label: 'Materials', group: 'OTHER', type: 'bin', zone_type: 'kitting', defaultW: 2.0, defaultD: 1.0, defaultRackLevels: 2, codePrefix: 'MATERIALS', description: 'Packing/kitting supplies' },
 ] as const satisfies readonly FloorPlanningComponentDefinition[];
 
 function escapeRegExp(value: string): string {

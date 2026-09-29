@@ -399,7 +399,7 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
 
   const BOUNDARY_TITLE = 'Set your warehouse boundary';
   // Apostrophe style is normalized; the meaning is the contract.
-  const BOUNDARY_BODY = /Click Floor settings above, then enter your warehouse Width and Depth\. We.ll use this boundary to place aisles, receiving, packing, shipping and storage areas\./;
+  const BOUNDARY_BODY = /Click Floor settings above, then enter your warehouse Width and Depth\. We.ll use this boundary to place Stock locations, optional aisles, and work areas such as Receiving, Packing and Shipping\./;
 
   // Fresh root: no position, no Width/Depth yet.
   const freshRoot = zone({
@@ -501,6 +501,154 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
 
     expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
     expect(screen.queryByText(BOUNDARY_BODY)).not.toBeInTheDocument();
+  });
+});
+
+// ===========================================================================
+// GH1177 — post-boundary stock-location onboarding
+// ===========================================================================
+describe('GH1177 — post-boundary stock-location onboarding', () => {
+  let rectSpy: jest.SpyInstance;
+
+  const BOUNDARY_TITLE = 'Set your warehouse boundary';
+  const STOCK_TITLE = 'Add where you keep your stock';
+
+  const freshRoot = zone({
+    location_code: 'WH-1-ROOT',
+    type: 'warehouse',
+    zone_type: null,
+    position_x: null,
+    position_y: null,
+    width: null,
+    depth: null,
+  });
+
+  const boundedRoot = {
+    ...freshRoot,
+    width: 12,
+    depth: 10,
+  };
+
+  const operationalAreas = [
+    zone({
+      location_code: 'PACK-01',
+      zone_type: 'pack',
+      parent_location_code: null,
+    }),
+    zone({
+      location_code: 'RECEIVE-01',
+      zone_type: 'receive',
+      parent_location_code: null,
+    }),
+    zone({
+      location_code: 'SHIP-01',
+      zone_type: 'ship',
+      parent_location_code: null,
+    }),
+  ];
+
+  beforeEach(() => {
+    rectSpy = mockCanvasRect();
+  });
+
+  afterEach(() => {
+    rectSpy.mockRestore();
+  });
+
+  it('keeps boundary guidance authoritative before usable Width and Depth exist', () => {
+    render(<CanvasEditor zones={[freshRoot]} />);
+
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
+    expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add stock location' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('guides a bounded root-only warehouse to add its first stock location', () => {
+    render(<CanvasEditor zones={[boundedRoot]} />);
+
+    expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
+    expect(screen.getByText(STOCK_TITLE)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Stock location.*stores.*picks products/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/aisle.*only if/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Add stock location' })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps stock guidance visible when only operational work areas exist', () => {
+    render(
+      <CanvasEditor zones={[boundedRoot, ...operationalAreas]} />
+    );
+
+    expect(screen.getByText(STOCK_TITLE)).toBeInTheDocument();
+  });
+
+  it('hides stock guidance once an active stock-holding pick location exists', () => {
+    const stock = zone({
+      location_code: 'PICK-01',
+      type: 'bin',
+      zone_type: 'pick',
+      active: true,
+      parent_location_code: null,
+    });
+
+    render(
+      <CanvasEditor zones={[boundedRoot, ...operationalAreas, stock]} />
+    );
+
+    expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
+    expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['active storage location', 'storage', true, false],
+    ['inactive pick location', 'pick', false, true],
+  ])(
+    'GH1177: stock guidance follows active pick/storage semantics — %s',
+    (_caseName, zoneType, active, shouldShowGuidance) => {
+      const stock = zone({
+        location_code: 'STOCK-01',
+        type: 'bin',
+        zone_type: zoneType,
+        active,
+        parent_location_code: null,
+      });
+
+      render(
+        <CanvasEditor zones={[boundedRoot, stock]} />
+      );
+
+      if (shouldShowGuidance) {
+        expect(screen.getByText(STOCK_TITLE)).toBeInTheDocument();
+      } else {
+        expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+      }
+    }
+  );
+
+  it('reuses the existing Stock location inline creation flow from the guidance CTA', () => {
+    const onCreateZone = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <CanvasEditor
+        zones={[boundedRoot]}
+        onCreateZone={onCreateZone}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add stock location' })
+    );
+
+    expect(screen.getAllByLabelText('Location code')).toHaveLength(1);
+    expect(screen.getByLabelText('Location code')).toHaveValue('PICK-01');
+    expect(onCreateZone).not.toHaveBeenCalled();
   });
 });
 

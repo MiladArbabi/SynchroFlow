@@ -7,6 +7,11 @@ const canvasSource = fs.readFileSync(
   'utf8',
 );
 
+const pageSource = fs.readFileSync(
+  path.join(REPO, 'modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx'),
+  'utf8',
+);
+
 describe('CanvasEditor canonical component registry boundary', () => {
   it('consumes the canonical registry without retaining a second palette role table', () => {
     expect(canvasSource).toMatch(/from '\.\/floorPlanningComponents\.js'/);
@@ -30,9 +35,34 @@ describe('CanvasEditor canonical component registry boundary', () => {
     expect(canvasSource).not.toContain('floorPlanningDimensions');
   });
 
+  it('keeps onboarding coaching in one persistent SpotlightCoachMark slot', () => {
+    expect(canvasSource.match(/<SpotlightCoachMark\b/g) ?? []).toHaveLength(1);
+    expect(canvasSource).toContain("const guidancePhase: 'boundary' | 'stock' | null");
+    expect(canvasSource).toContain("Start with a Stock location — the place your team stores, counts and picks products. Add an aisle only if your warehouse uses them. You can then add Receiving, Packing, Shipping and other work areas as needed.");
+  });
+
   it('retains the existing canvas drag and resize interaction owners', () => {
     expect(canvasSource).toContain('function onRackMouseDown');
     expect(canvasSource).toContain('resizeRef.current');
     expect(canvasSource).toMatch(/onUpdateZone\(r\.locationCode, \{ width: local\.w, depth: local\.h \}\)/);
+  });
+});
+
+
+describe('GH1177 approved visual hierarchy contracts', () => {
+  it('points at Floor settings only during boundary guidance', () => {
+    expect(canvasSource).toContain(
+      "direction={guidancePhase === 'boundary' ? 'up' : undefined}",
+    );
+    expect(canvasSource).not.toContain('direction="up"');
+  });
+
+  it('keeps Setup copy aligned with the Stock location mental model', () => {
+    expect(pageSource).toContain(
+      'Map where you keep stock and the work areas your warehouse uses.',
+    );
+    expect(pageSource).not.toContain(
+      'Configure aisles, shelves, and bins.',
+    );
   });
 });

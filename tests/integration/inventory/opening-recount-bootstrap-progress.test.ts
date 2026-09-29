@@ -157,8 +157,85 @@ async function createFixture(
 }
 
 describe('opening inventory Recount bootstrap and progress', () => {
-  it('snapshots active bins into one durable task per bin and is retry-idempotent', async () => {
+  it('snapshots active stock locations into one durable task per location and is retry-idempotent', async () => {
     const fixture = await createFixture();
+
+    await withTenant(fixture.shopId, (trx) =>
+      trx('warehouse_locations').insert([
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'B-STORAGE-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'storage',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'PACK-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'pack',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'RECEIVE-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'receive',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'SHIP-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'ship',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'RETURNS-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'returns',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'PROBLEM-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'problem',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'QUARANTINE-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'quarantine',
+        },
+        {
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+          location_code: 'MATERIALS-01',
+          type: 'bin',
+          parent_location_code: `WH-${fixture.shopId}-ROOT`,
+          active: true,
+          zone_type: 'kitting',
+        },
+      ])
+    );
 
     const first = await withTenant(fixture.shopId, (trx) =>
       startOpeningInventoryReconciliation(trx, {
@@ -168,12 +245,13 @@ describe('opening inventory Recount bootstrap and progress', () => {
       })
     );
 
-    expect(first.total_bins).toBe(2);
-    expect(first.not_started_bins).toBe(2);
+    expect(first.total_bins).toBe(3);
+    expect(first.not_started_bins).toBe(3);
     expect(first.progress_pct).toBe(0);
     expect(first.bins.map((bin) => bin.location_code)).toEqual([
       'A-1',
       'A-2',
+      'B-STORAGE-01',
     ]);
 
     await withTenant(fixture.shopId, (trx) =>
@@ -196,10 +274,11 @@ describe('opening inventory Recount bootstrap and progress', () => {
       })
     );
 
-    expect(retry.total_bins).toBe(2);
+    expect(retry.total_bins).toBe(3);
     expect(retry.bins.map((bin) => bin.location_code)).toEqual([
       'A-1',
       'A-2',
+      'B-STORAGE-01',
     ]);
 
     const taskCount = await withTenant(fixture.shopId, (trx) =>
@@ -213,7 +292,7 @@ describe('opening inventory Recount bootstrap and progress', () => {
         .first()
     );
 
-    expect(Number(taskCount?.count ?? 0)).toBe(2);
+    expect(Number(taskCount?.count ?? 0)).toBe(3);
   });
 
   it('rejects initial reconciliation for a legacy bootstrap shop', async () => {

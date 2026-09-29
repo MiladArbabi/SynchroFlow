@@ -125,21 +125,44 @@ describe('GH-1160 first-entry fixture and readiness', () => {
   });
 
   it.each([
-    { type: 'bin', active: false, warehouseActive: true, mapped: false },
-    { type: 'bin', active: true, warehouseActive: true, mapped: true },
-    { type: 'bin', active: true, warehouseActive: false, mapped: false },
-    { type: 'lane', active: true, warehouseActive: true, mapped: false },
-  ])('mapping requires an opening-eligible bin: %j', async ({ type, active, warehouseActive, mapped }) => {
+    { type: 'bin', zoneType: 'pick', active: false, warehouseActive: true, mapped: false },
+    { type: 'bin', zoneType: 'pick', active: true, warehouseActive: true, mapped: true },
+    { type: 'bin', zoneType: 'storage', active: true, warehouseActive: true, mapped: true },
+    { type: 'bin', zoneType: 'pack', active: true, warehouseActive: true, mapped: false },
+    { type: 'bin', zoneType: 'receive', active: true, warehouseActive: true, mapped: false },
+    { type: 'bin', zoneType: 'ship', active: true, warehouseActive: true, mapped: false },
+    { type: 'bin', zoneType: 'pick', active: true, warehouseActive: false, mapped: false },
+    { type: 'lane', zoneType: 'pick', active: true, warehouseActive: true, mapped: false },
+  ])('mapping requires an opening-eligible stock bin: %j', async ({
+    type,
+    zoneType,
+    active,
+    warehouseActive,
+    mapped,
+  }) => {
     const fixture = await createFixture();
     await withTenant(fixture.shopId, async (trx) => {
-      await trx('warehouses').where({ shop_id: fixture.shopId, warehouse_id: fixture.warehouseId })
+      await trx('warehouses')
+        .where({
+          shop_id: fixture.shopId,
+          warehouse_id: fixture.warehouseId,
+        })
         .update({ active: warehouseActive });
+
       await trx('warehouse_locations').insert({
-        shop_id: fixture.shopId, warehouse_id: fixture.warehouseId,
-        location_code: 'A-1', parent_location_code: fixture.rootLocationCode, type, active,
+        shop_id: fixture.shopId,
+        warehouse_id: fixture.warehouseId,
+        location_code: 'A-1',
+        parent_location_code: fixture.rootLocationCode,
+        type,
+        zone_type: zoneType,
+        active,
       });
     });
-    expect((await signalsFor(fixture.shopId))['wms.zonesConfigured']).toBe(mapped);
+
+    expect(
+      (await signalsFor(fixture.shopId))['wms.zonesConfigured']
+    ).toBe(mapped);
   });
 
   it('does not treat an active bin in a non-default warehouse as mapped', async () => {
@@ -164,6 +187,7 @@ describe('GH-1160 first-entry fixture and readiness', () => {
           location_code: secondaryRoot,
           parent_location_code: null,
           type: 'warehouse',
+          zone_type: null,
           active: true,
         },
         {
@@ -172,6 +196,7 @@ describe('GH-1160 first-entry fixture and readiness', () => {
           location_code: 'SECONDARY-A-1',
           parent_location_code: secondaryRoot,
           type: 'bin',
+          zone_type: 'pick',
           active: true,
         },
       ]);

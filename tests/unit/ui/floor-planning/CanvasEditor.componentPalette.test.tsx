@@ -104,11 +104,37 @@ describe('CanvasEditor corrected inline creation flow', () => {
     const onCreateZone = jest.fn();
     render(<CanvasEditor zones={[]} onCreateZone={onCreateZone} />);
     openPaletteItem('Problem Area');
-    const { codeInput } = openPaletteItem('Pick');
+    const { codeInput } = openPaletteItem('Stock location');
 
     expect(screen.getAllByLabelText('Location code')).toHaveLength(1);
     expect(codeInput).toHaveValue('PICK-01');
     expect(onCreateZone).not.toHaveBeenCalled();
+  });
+
+  it('GH1177: Stock location keeps the existing pick creation identity and semantics', async () => {
+    const onCreateZone = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <CanvasEditor
+        zones={[zone({ location_code: 'PICK-01' })]}
+        onCreateZone={onCreateZone}
+      />
+    );
+
+    const { codeInput } = openPaletteItem('Stock location');
+
+    expect(codeInput).toHaveValue('PICK-02');
+
+    fireEvent.keyDown(codeInput, { key: 'Enter' });
+
+    await waitFor(() => expect(onCreateZone).toHaveBeenCalledTimes(1));
+    expect(onCreateZone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location_code: 'PICK-02',
+        type: 'bin',
+        zone_type: 'pick',
+      })
+    );
   });
 
   it('keeps visible error state and preserves the typed code for retry', async () => {
