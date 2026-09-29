@@ -116,6 +116,16 @@ export type ProductsOperatorSummary = {
       margin_lost_per_week: number;
     }>;
   } | null;
+  // Canonical whole-shop Inventory state snapshot (not period-scoped).
+  // null = read model unavailable; absent = older backend.
+  inventoryState?: {
+    onHandUnits: number;
+    availableUnits: number;
+    reservedUnits: number;
+    noValidPickLocationCount: number;
+    /** At least one canonical inventory_truth row exists for the shop */
+    hasInventoryTruth: boolean;
+  } | null;
 };
 
 /**

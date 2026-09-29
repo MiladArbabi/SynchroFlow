@@ -20,7 +20,7 @@
  * Render order: painter's algorithm — sort by (x + y) ascending so
  * back zones render first and front zones paint over them correctly.
  */
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation } from './IsometricCanvas.types.js';
 
@@ -665,6 +665,8 @@ export interface IsometricCanvasProps {
   selectedStationId?: string | null;
   /** Generic action for the pinned pulse card; caller owns label and behavior. */
   pinnedAction?: { label: string; onClick: () => void } | null;
+  /** Optional pinned card width in pixels; hover and default pinned width stay 228. */
+  pinnedPulseWidth?: number;
   /** Called when the pinned pulse close control clears selection. */
   onPinnedClose?: () => void;
   /**
@@ -697,6 +699,14 @@ export interface IsometricCanvasProps {
   /** Opt-in contrast for non-focused bins; default preserves existing rendering. */
   focusDimOpacity?: number;
   occupancy?: Record<string, { on_hand_quantity: number }>;
+  /**
+   * Optional occupancy knowledge. Absent: historic behaviour — once
+   * `occupancy` is supplied, a location missing from it paints the empty tier.
+   * Present: only listed location_codes may paint the empty tier when their
+   * occupancy entry is missing or zero; an unlisted code with no entry keeps
+   * the base (no-occupancy) fill, because missing data is not confirmed zero.
+   */
+  knownOccupancyLocationCodes?: ReadonlySet<string>;
   /**
    * OVERVIEW-LIVE-MAP-01 Slice D.1: 'neutral' suppresses the occupancy-driven
    * strong base-fill override (the red/orange/green heatmap in IsometricBox)
@@ -855,6 +865,7 @@ export function IsometricCanvas({
     onStationSelect,
     selectedStationId,
     pinnedAction,
+    pinnedPulseWidth,
     onPinnedClose,
     inspectableLocationCodes,
     filteredCodes, 
@@ -866,6 +877,7 @@ export function IsometricCanvas({
     focusTone,
     focusDimOpacity = 0.25,
     occupancy,
+    knownOccupancyLocationCodes,
     occupancyPresentation,
     operationalStateByLocation,
     operationalStateByStation,
@@ -914,6 +926,7 @@ export function IsometricCanvas({
   const [pinnedAnchor, setPinnedAnchor] = useState<{ x: number; y: number; leftX: number } | null>(null);
   const [flipped, setFlipped]   = useState(false);
   const [size, setSize]         = useState({ w: 0, h: 0 });
+  const [visibleCanvasBottom, setVisibleCanvasBottom] = useState(0);
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
   const zoomRef   = useRef(zoom);
   const offsetRef = useRef(offset);
@@ -1347,6 +1360,20 @@ export function IsometricCanvas({
     };
   }, []);
 
+  const measureVisibleCanvas = useCallback(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const bottom = Math.max(0, Math.min(rect.bottom, window.innerHeight) - rect.top);
+    setVisibleCanvasBottom(prev => prev === bottom ? prev : bottom);
+  }, []);
+
+  // Layout shifts can move the canvas without resize/scroll notifications.
+  // Refresh the pinned card's visible bound before it is painted.
+  useLayoutEffect(() => {
+    if (isPinnedPulse) measureVisibleCanvas();
+  }, [isPinnedPulse, pinnedAnchor, measureVisibleCanvas]);
+
   // Track the real rendered size of the canvas so the fit adapts to whatever
   // column / aspect ratio it lands in (Order Flow, detail embeds, etc.).
   useEffect(() => {
@@ -1358,10 +1385,18 @@ export function IsometricCanvas({
       const w = Math.round(r.width);
       const h = Math.round(r.height);
       setSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+      measureVisibleCanvas();
     });
     ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    measureVisibleCanvas();
+    window.addEventListener('resize', measureVisibleCanvas);
+    window.addEventListener('scroll', measureVisibleCanvas, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measureVisibleCanvas);
+      window.removeEventListener('scroll', measureVisibleCanvas, true);
+    };
+  }, [measureVisibleCanvas]);
 
   useEffect(() => {
     if (!autoFit || size.w === 0 || size.h === 0 || positionedZones.length === 0) return;
@@ -1463,7 +1498,13 @@ export function IsometricCanvas({
             // receives a fraction, so its existing fillOverride logic is
             // untouched and every other caller's heatmap keeps rendering
             // exactly as before.
-            const occupancyFraction = !isFrame && zone.active && occupancy && occupancyPresentation !== 'neutral'
+            // A location with no occupancy entry is only painted as empty
+            // when the caller confirms it knows that location's occupancy.
+            const occupancyKnown =
+              knownOccupancyLocationCodes == null ||
+              occ != null ||
+              knownOccupancyLocationCodes.has(zone.location_code);
+            const occupancyFraction = !isFrame && zone.active && occupancy && occupancyPresentation !== 'neutral' && occupancyKnown
               ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
               : undefined;
                         const activity = liveActivity?.[zone.location_code];
@@ -1557,30 +1598,56 @@ export function IsometricCanvas({
             // geometry. Physical floor labels remain world-aligned; warehouse selection
             // must stay readable and future-ready for multi-warehouse switching.
 
+            // Keyboard inspection shares the hover-focus eligibility: only an
+            // inspectable physical location of an inspection-enabled canvas is a
+            // keyboard target. Enter / Space run the same handleSelect toggle as
+            // a pointer click; Escape clears through clearPinnedPulse.
+            const isInspectionTarget =
+              enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code);
+            const selectionAnchor = () => ({
+              x: project(wx + ww, wy, wh, zoom, flipped).sx,
+              y: project(wx + ww, wy, wh, zoom, flipped).sy,
+              leftX: project(wx, wy + wd, 0, zoom, flipped).sx,
+            });
+            const showHoverFocus = () => {
+              setHovered(zone.location_code);
+              const a = project(wx + ww, wy, wh, zoom, flipped);
+              const aL = project(wx, wy + wd, 0, zoom, flipped);
+              setHoverAnchor({ x: a.sx, y: a.sy, leftX: aL.sx });
+            };
+            const clearHoverFocus = () => {
+              setHovered(current =>
+                current === zone.location_code ? null : current
+              );
+              setHoverAnchor(null);
+            };
+
             return (
               <g
                 key={zone.location_code}
-                onMouseEnter={
-                  enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code)
-                    ? () => {
-                        setHovered(zone.location_code);
-                        const a = project(wx + ww, wy, wh, zoom, flipped);
-                        const aL = project(wx, wy + wd, 0, zoom, flipped);
-                        setHoverAnchor({ x: a.sx, y: a.sy, leftX: aL.sx });
+                role={isInspectionTarget ? 'button' : undefined}
+                tabIndex={isInspectionTarget ? 0 : undefined}
+                // Focus remains visible through the geometry treatment and pulse.
+                style={isInspectionTarget ? { outline: 'none' } : undefined}
+                aria-label={isInspectionTarget ? `Inspect location ${zone.location_code}` : undefined}
+                aria-pressed={isInspectionTarget ? activeSelectedLocation === zone.location_code : undefined}
+                onKeyDown={
+                  isInspectionTarget
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+                          event.preventDefault();
+                          handleSelect(zone.location_code, selectionAnchor());
+                        } else if (event.key === 'Escape' && activeSelectedLocation != null) {
+                          event.preventDefault();
+                          clearPinnedPulse();
+                        }
                       }
                     : undefined
                 }
-                onMouseLeave={
-                  enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code)
-                    ? () =>
-                        {
-                          setHovered(current =>
-                            current === zone.location_code ? null : current
-                          );
-                          setHoverAnchor(null);
-                        }
-                    : undefined
-                }
+                onFocus={isInspectionTarget ? showHoverFocus : undefined}
+                onBlur={isInspectionTarget ? clearHoverFocus : undefined}
+                onMouseEnter={isInspectionTarget ? showHoverFocus : undefined}
+                onMouseLeave={isInspectionTarget ? clearHoverFocus : undefined}
               >
                 <IsometricBox
                   key={zone.location_code}
@@ -2102,7 +2169,8 @@ export function IsometricCanvas({
           the projection bbox and auto-fit. Flips left near the right edge and
           clamps vertically so it never leaves the map container. */}
       {activePulse && activePulseAnchor && (() => {
-        const PW = 228;
+        const HOVER_PULSE_WIDTH = 228;
+        const PW = isPinnedPulse ? pinnedPulseWidth ?? HOVER_PULSE_WIDTH : HOVER_PULSE_WIDTH;
         const GAP = 14;
         const rows = isPinnedPulse
           ? activePulse.rows.filter(row => row.label !== 'State')
@@ -2122,6 +2190,16 @@ export function IsometricCanvas({
             aria-hidden={!isPinnedPulse}
             data-testid="isometric-pulse-card"
             data-pinned={isPinnedPulse ? 'true' : 'false'}
+            onKeyDown={
+              isPinnedPulse
+                ? (event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      clearPinnedPulse();
+                    }
+                  }
+                : undefined
+            }
             sx={{
               position: 'absolute', left, top, width: PW, zIndex: 3,
               pointerEvents: isPinnedPulse ? 'auto' : 'none',
@@ -2131,9 +2209,21 @@ export function IsometricCanvas({
               px: 1.15,
               py: 0.9,
               boxShadow: isPinnedPulse ? 'none' : '0 4px 14px rgba(0,0,0,0.28)',
+              // Pinned cards also respect the viewport bottom. Keep the anchor
+              // fixed and scroll only the rows below the title / close control.
+              maxHeight: isPinnedPulse
+                ? Math.max(0, Math.min(size.h, visibleCanvasBottom) - top - 8)
+                : `calc(100% - ${Math.round(top) + 8}px)`,
+              boxSizing: isPinnedPulse ? 'border-box' : undefined,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              // Long unbroken identifiers break inside the fixed-width card.
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexShrink: 0 }}>
               <Typography sx={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
                 {activePulse.title}
               </Typography>
@@ -2165,16 +2255,16 @@ export function IsometricCanvas({
               )}
             </Box>
             {stateLine && (
-              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', flexShrink: 0 }}>
                 {stateLine}
               </Typography>
             )}
-            <Box sx={{ borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75 }}>
+            <Box sx={{ borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75, minHeight: 0, overflowY: 'auto' }}>
               {rows.map((r, i) => (
                 <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, py: 0.25 }}>
-                  <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>{r.label}</Typography>
+                  <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', minWidth: 0 }}>{r.label}</Typography>
                   <Typography sx={{
-                    fontSize: 10, fontFamily: 'monospace', textAlign: 'right',
+                    fontSize: 10, fontFamily: 'monospace', textAlign: 'right', minWidth: 0,
                     color: r.tone === 'critical' ? 'var(--critical-ink)'
                          : r.tone === 'warning'  ? 'var(--accent)'
                          : r.tone === 'muted'    ? 'var(--ink-3)'
@@ -2189,6 +2279,8 @@ export function IsometricCanvas({
                 type="button"
                 onClick={pinnedAction.onClick}
                 sx={{
+                  flexShrink: 0,
+                  alignSelf: 'flex-start',
                   mt: 0.9,
                   border: 'none',
                   bgcolor: 'transparent',

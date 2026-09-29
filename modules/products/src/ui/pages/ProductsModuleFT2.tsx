@@ -3,13 +3,18 @@
 // INVENTORY MODULE — FT2 OPERATOR SURFACE
 // Sprint 4 rebuild · May 2026
 // ─────────────────────────────────────────────────────────────
-// Layout:
-//   1. Header      — DM Sans 22px/500 + live signal line
-//   2. Stat Row    — 4 StatCards: Ready to Sell · Margin at Risk · Inbound · Dead Capital
-//   3. Action Queue — ranked by urgency × actionability (no PO > overdue PO > low stock > no SKU > dead capital)
-//   4. Inbound Pipeline — open POs with overdue flag + cash committed
-//   5. Warehouse Readiness — stock-no-bin intersection signal
-//   6. Return Leakage — top returned variants with restock CTA
+// Layout (live Inventory Intelligence — mapContent supplied):
+//   1. Header — title + static orientation copy + quiet Export utility
+//   2. Body   — shared OperationalContextShell:
+//                primary = supplied map surface (map, teaser or setup state)
+//                rail    = Inventory state (status / orientation only)
+//      The rail withdraws while the shared Ops Console is open; the caller
+//      decides that via suppressInventoryState. Ops Console owns actionable
+//      attention, so the rail carries no decisions, tasks or Console CTA.
+//
+// Legacy no-map body (Action queue · Inbound pipeline · Inventory pulse ·
+// Return leakage) is retained only as the fallback when no mapContent is
+// supplied.
 //
 // RULES:
 // - No hardcoded hex. CSS variables or theme.palette.* only.
@@ -18,13 +23,18 @@
 // - No fetching. All data via props.
 // - fontWeight max 500. border 0.5px solid var(--rule).
 
-import { useState } from 'react';
+import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
 import { Warehouse, RefreshCw } from 'lucide-react';
-import { formatCurrencyCompact, PulseCard, type PulseCardRowData } from '@lasyncro/shared/ui';
+import {
+  formatCurrencyCompact,
+  OperationalContextShell,
+  PulseCard,
+  type PulseCardRowData,
+} from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 // ─── PROPS ────────────────────────────────────────────────────
@@ -154,11 +164,33 @@ export interface ProductsModuleFT2DataProps {
    * INV-UX-01 2B — live map surface supplied by the app shell.
    *
    * The module never decides map eligibility or acquires floor data; it only
-   * leases the left slot. When present, the canonical live-intelligence layout
-   * renders (map + compact decision rail). When absent, the legacy layout is
-   * preserved so existing consumers keep working.
+   * leases the primary slot. When present, the canonical live-intelligence
+   * layout renders (map + Inventory state rail). When absent, the legacy
+   * layout is preserved so existing consumers keep working.
    */
   mapContent?: ReactNode;
+
+  /**
+   * Inventory state rail facts. null (or an absent object) means
+   * unknown / unavailable and renders as an em dash — never as 0.
+   */
+  inventoryState?: InventoryStateFacts | null;
+
+  /**
+   * Withdraws the Inventory state rail while the map stays mounted. The app
+   * shell passes its shared Ops Console state; the module reads none itself.
+   */
+  suppressInventoryState?: boolean;
+
+  /**
+   * Data status of the Inventory state rail, separate from the fact values.
+   * 'loading' → busy, no value shown as 0; 'error' → "Inventory state
+   * unavailable"; 'ready' (default) → the facts. Callers own the source.
+   */
+  inventoryStateStatus?: InventoryStateStatus;
+
+  /** Scoped technical retry for the Inventory state source (not an action queue). */
+  onRetryInventoryState?: () => void;
 
   trend?: unknown;
   signals?: unknown;
@@ -172,6 +204,28 @@ export interface ProductsModuleFT2DataProps {
 }
 
 export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
+
+/**
+ * Inventory state rail facts. Unit quantities (onHand / available / reserved)
+ * and SKU counts are kept distinct; every field is nullable and null means
+ * unknown / unavailable, never zero.
+ */
+export interface InventoryStateFacts {
+  onHandUnits: number | null;
+  availableUnits: number | null;
+  reservedUnits: number | null;
+  notReceivedCount: number | null;
+  phantomCount: number | null;
+  noValidPickLocationCount: number | null;
+  /**
+   * true  — canonical inventory truth exists (a 0 trio is a confirmed physical zero)
+   * false — no canonical truth yet (a 0 trio is not a physical fact)
+   * null  — unknown
+   */
+  hasInventoryTruth: boolean | null;
+}
+
+export type InventoryStateStatus = 'loading' | 'ready' | 'error';
 
 // ─── HELPERS ──────────────────────────────────────────────────
 const fmtN = (n: number | null | undefined): string =>
@@ -375,49 +429,135 @@ function InboundRow({ po, isOverdue }: {
   );
 }
 
-// ─── DECISION GROUP ROW ───────────────────────────────────────
-// INV-UX-01 2B: the rail carries GROUP summaries, not individual product / PO /
-// return rows. Detail belongs to the destination module, which is where the
-// operator acts on it.
+// ─── INVENTORY STATE RAIL ─────────────────────────────────────
+// Status / orientation only: permanent physical-state labels with their
+// current value. No tasks, no remediation, no Console entry point — Ops
+// Console owns actionable attention. Unknown values render as an em dash.
 
-type DecisionGroup = {
-  id: string;
-  tone: 'critical' | 'warning' | 'optimize';
+const INVENTORY_STATE_ROWS: Array<{
+  key: keyof InventoryStateFacts;
   label: string;
-  meta: string;
-  href: string;
-};
+  unit: 'units' | 'SKUs';
+}> = [
+  { key: 'onHandUnits',              label: 'On hand',                unit: 'units' },
+  { key: 'availableUnits',           label: 'Available',              unit: 'units' },
+  { key: 'reservedUnits',            label: 'Reserved',               unit: 'units' },
+  { key: 'notReceivedCount',         label: 'Not received',           unit: 'SKUs' },
+  { key: 'phantomCount',             label: 'Phantom',                unit: 'SKUs' },
+  { key: 'noValidPickLocationCount', label: 'No valid pick location', unit: 'SKUs' },
+];
 
-function DecisionGroupRow({ group }: { group: DecisionGroup }) {
-  const theme = useTheme();
-  const navigate = useNavigate();
+const QUANTITY_KEYS: ReadonlySet<keyof InventoryStateFacts> = new Set([
+  'onHandUnits', 'availableUnits', 'reservedUnits',
+]);
 
-  const dotColor =
-    group.tone === 'critical' ? theme.palette.error.main :
-    group.tone === 'warning'  ? theme.palette.warning.main :
-                                'var(--ink-4)';
+function InventoryStateRail({
+  facts,
+  status,
+  onRetry,
+}: {
+  facts: InventoryStateFacts | null | undefined;
+  status: InventoryStateStatus;
+  onRetry?: () => void;
+}) {
+  const headingId = useId();
+
+  const isLoading = status === 'loading';
+  const isError = status === 'error';
+  const isReady = status === 'ready';
+  // No canonical truth: a 0 quantity trio is not a physical fact.
+  const truthNotEstablished = isReady && facts?.hasInventoryTruth === false;
+  // Canonical truth exists and every physical quantity is zero.
+  const physicallyEmpty =
+    isReady &&
+    facts?.hasInventoryTruth === true &&
+    facts.onHandUnits === 0 &&
+    facts.availableUnits === 0 &&
+    facts.reservedUnits === 0;
+
+  const notice =
+    isError ? 'Inventory state unavailable'
+    : truthNotEstablished ? 'Inventory truth not established'
+    : physicallyEmpty ? 'Physically empty'
+    : null;
+
+  const displayValue = (key: keyof InventoryStateFacts): number | null => {
+    if (isLoading) return null;
+    if (truthNotEstablished && QUANTITY_KEYS.has(key)) return null;
+    const value = facts?.[key];
+    return typeof value === 'number' ? value : null;
+  };
 
   return (
     <Box
-      onClick={() => navigate(group.href)}
-      sx={{
-        display: 'flex', alignItems: 'flex-start', gap: 1.25,
-        px: 1.75, py: 1.25,
-        cursor: 'pointer',
-        borderBottom: '0.5px solid var(--rule)',
-        '&:last-of-type': { borderBottom: 'none' },
-        '&:hover': { bgcolor: 'action.hover' },
-      }}
+      component="section"
+      aria-labelledby={headingId}
+      aria-busy={isLoading ? 'true' : undefined}
+      sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}
     >
-      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0, mt: '5px' }} />
-      <Box sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }}>
-          {group.label}
-        </Typography>
-        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }}>
-          {group.meta}
+      <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+        <Typography
+          id={headingId}
+          component="h2"
+          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}
+        >
+          Inventory state
         </Typography>
       </Box>
+
+      {notice && (
+        <Box
+          sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5,
+            px: 1.75, py: 1, borderBottom: '0.5px solid var(--rule)',
+          }}
+        >
+          <Typography sx={{ fontSize: 12, color: isError ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+            {notice}
+          </Typography>
+          {isError && onRetry && (
+            <Box
+              component="button"
+              type="button"
+              onClick={onRetry}
+              sx={{
+                fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)',
+                bgcolor: 'transparent', border: '0.5px solid var(--accent-border)', borderRadius: '6px',
+                px: '10px', py: '4px', cursor: 'pointer', '&:hover': { opacity: 0.75 },
+              }}
+            >
+              Retry
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {INVENTORY_STATE_ROWS.map(row => {
+        const value = displayValue(row.key);
+        return (
+          <Box
+            key={row.key}
+            sx={{
+              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5,
+              px: 1.75, py: 1.125,
+              borderBottom: '0.5px solid var(--rule)',
+              '&:last-of-type': { borderBottom: 'none' },
+            }}
+          >
+            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-2)' }}>
+              {row.label}
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+              {fmtN(value)}
+              {value != null && (
+                <Box component="span" sx={{ ml: 0.5, fontSize: 11, fontWeight: 400, color: 'var(--ink-4)' }}>
+                  {row.unit}
+                </Box>
+              )}
+            </Typography>
+          </Box>
+        );
+      })}
     </Box>
   );
 }
@@ -427,7 +567,11 @@ function DecisionGroupRow({ group }: { group: DecisionGroup }) {
 export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { context, operatorSummary, dataFreshness, currency, onExport, mapContent } = props;
+  const {
+    operatorSummary, dataFreshness, currency, onExport, mapContent,
+    inventoryState, suppressInventoryState = false,
+    inventoryStateStatus = 'ready', onRetryInventoryState,
+  } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -491,95 +635,6 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
     },
   ];
 
-  // Determine signal line
-  const signalParts: string[] = [];
-  if (context.variantsObserved)   signalParts.push(`${context.variantsObserved} SKUs`);
-  if (phantom > 0)                 signalParts.push(`${phantom} phantom`);
-  if (zeroStock > 0)               signalParts.push(`${zeroStock} stocked out`);
-  if (os?.inbound?.total_units_expected) signalParts.push(`${os.inbound.total_units_expected} units inbound`);
-  if (os?.warehouse?.pick_zone_occupancy_pct != null) signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
-
-  // INV-UX-01 2B — grouped decisions for the live-intelligence rail.
-  // Same authoritative facts and same priority order as the legacy Action
-  // queue; only the presentation collapses to one row per problem class.
-  const uncoveredStockouts = (os?.demand?.reorder_now ?? []).filter(v => {
-    const coveredByPO = os?.inbound
-      ? [...os.inbound.overdue_pos, ...os.inbound.pending_pos].some(po =>
-          po.covers_stocked_out_skus.includes(v.lasyncro_variant_id)
-        )
-      : false;
-    return v.days_of_stock_remaining === 0 && !coveredByPO;
-  }).length;
-
-  const overdueCoveringStockouts = (os?.inbound?.overdue_pos ?? [])
-    .filter(po => po.covers_stocked_out_skus.length > 0).length;
-
-  const noBin = os?.warehouse?.variants_with_stock_no_bin ?? 0;
-  const criticallyLow = os?.demand
-    ? os.demand.critical_reorder_count - os.demand.stockout_count
-    : 0;
-  const unrestockedReturns = os?.topReturned.length ?? 0;
-  const deadCapital = os?.demand?.dead_capital_value ?? 0;
-
-  const decisionGroups: DecisionGroup[] = [
-    uncoveredStockouts > 0 && {
-      id: 'stockout-uncovered',
-      tone: 'critical' as const,
-      label: `${uncoveredStockouts} stocked out with no inbound cover`,
-      meta: 'Nothing on order to bring them back',
-      href: '/suppliers',
-    },
-    overdueCoveringStockouts > 0 && {
-      id: 'overdue-inbound',
-      tone: 'critical' as const,
-      label: `${overdueCoveringStockouts} overdue PO${overdueCoveringStockouts === 1 ? '' : 's'} covering stocked-out SKUs`,
-      meta: 'Chase the supplier',
-      href: '/orders/inbound',
-    },
-    noSku > 0 && {
-      id: 'no-sku',
-      tone: 'warning' as const,
-      label: `${noSku} SKUs have no product code`,
-      meta: 'Cannot be picked or received',
-      href: '/inventory/catalog',
-    },
-    noBin > 0 && {
-      id: 'no-bin',
-      tone: 'warning' as const,
-      label: `${noBin} SKUs have stock but no pick bin`,
-      meta: 'Stow before the next pick run',
-      href: '/wms/readiness',
-    },
-    criticallyLow > 0 && {
-      id: 'critically-low',
-      tone: 'warning' as const,
-      label: `${criticallyLow} SKUs under 7 days stock`,
-      meta: 'Order before they run out',
-      href: '/demand',
-    },
-    unrestockedReturns > 0 && {
-      id: 'unrestocked-returns',
-      tone: 'optimize' as const,
-      label: `${unrestockedReturns} returned product${unrestockedReturns === 1 ? '' : 's'} not restocked`,
-      meta: 'Refunded and not recovered',
-      href: '/returns',
-    },
-    deadCapital > 0 && {
-      id: 'dead-capital',
-      tone: 'optimize' as const,
-      label: `${fmt$(deadCapital)} in non-moving stock`,
-      meta: 'Stock with zero velocity',
-      href: '/demand',
-    },
-  ].filter(Boolean) as DecisionGroup[];
-
-  const DECISION_PREVIEW_LIMIT = 3;
-  const [showAllDecisions, setShowAllDecisions] = useState(false);
-  const visibleDecisionGroups = showAllDecisions
-    ? decisionGroups
-    : decisionGroups.slice(0, DECISION_PREVIEW_LIMIT);
-  const hiddenDecisionCount = decisionGroups.length - visibleDecisionGroups.length;
-
   return (
     <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
@@ -596,17 +651,11 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         mb: 2.5,
       }}>
       <Box sx={{ minWidth: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
-          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-            Live
-          </Typography>
-        </Box>
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           Inventory
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {signalParts.length > 0 ? signalParts.join(' · ') : 'Loading inventory signals…'}
+          Physical stock, availability and inventory truth by location
         </Typography>
       </Box>
         {/* Tier 2 ghost pill per modules-ux-playbook §2 and
@@ -643,72 +692,26 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         </Box>
       )}
 
-      {/* ── 4A. LIVE INTELLIGENCE BODY (INV-UX-01 2B) ─────────── */}
-      {/* LEFT: live map surface  |  RIGHT: fixed 280px decision rail.
-          The long parent detail sections (action queue rows, inbound pipeline,
-          return leakage list) are deliberately NOT rendered here — each group
-          links to the module that owns the detail. */}
+      {/* ── 4A. LIVE INTELLIGENCE BODY ───────────────────────── */}
+      {/* Shared OperationalContextShell owns the primary + rail composition.
+          Suppression withdraws only the rail content, so the supplied map
+          surface is never remounted when the Ops Console opens or closes. */}
       {mapContent ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', lg: 'row' },
-            gap: 2.25,
-            alignItems: 'stretch',
-          }}
-        >
-          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {mapContent}
-          </Box>
-
-          <Box
-            sx={{
-              flex: { xs: '1 1 auto', lg: '0 0 280px' },
-              width: { lg: 280 },
-              minWidth: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            {decisionGroups.length > 0 && (
-              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
-                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Needs a decision
-                  </Typography>
-                </Box>
-
-                {visibleDecisionGroups.map(group => (
-                  <DecisionGroupRow key={group.id} group={group} />
-                ))}
-
-                {hiddenDecisionCount > 0 && (
-                  <Box
-                    onClick={() => setShowAllDecisions(true)}
-                    sx={{
-                      px: 1.75, py: 1,
-                      borderTop: '0.5px solid var(--rule)',
-                      cursor: 'pointer',
-                      '&:hover': { opacity: 0.75 },
-                    }}
-                  >
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
-                      See {hiddenDecisionCount} more →
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
-
-            {os && (
-              <PulseCard
-                title="Inventory pulse"
-                rows={inventoryPulseRows}
-              />
-            )}
-          </Box>
-        </Box>
+        <OperationalContextShell
+          primary={
+            <Box sx={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              {mapContent}
+            </Box>
+          }
+          rail={
+            <InventoryStateRail
+              facts={inventoryState}
+              status={inventoryStateStatus}
+              onRetry={onRetryInventoryState}
+            />
+          }
+          suppressRail={suppressInventoryState}
+        />
       ) : (
       /* ── 4B. LEGACY TWO COLUMN BODY ─────────────────────────
          Preserved verbatim as the fallback when no map surface is supplied,

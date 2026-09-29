@@ -6,6 +6,19 @@
 **Last updated:** 2026-05-13  
 **Prepared by:** Engineering session with Milad Arbabi (Co-founder)
 
+> **Current Inventory Intelligence contract — LOCAL CERTIFIED.** The dated
+> status above and the legacy Intelligence presentation/data-flow descriptions
+> below are historical, not current production evidence. For `/inventory`, this
+> supersedes the $-ranked decision surface and old signal/rail composition in
+> §§1–2, 6, 10–11: spatial primary + contextual Inventory state rail through
+> `OperationalContextShell`; Ops Console owns global/actionable attention and
+> execution remains in owning workflows. The rail contains exactly On hand,
+> Available, Reserved, Not received, Phantom and No valid pick location.
+> Responsive shell behavior and shared `LocationPulse` / `IsometricCanvas`
+> inspection follow the [certified Inventory contract](../playbooks/SCREEN-UX-laSyncro-screen-architecture-UX-engineering_playbook_V1.md#18-certified-inventory-intelligence-contract--local-certified),
+> locally PASS at 1440×720 and 1024×820. Historical routes, other tabs and audit
+> descriptions are retained here; this note does not certify those surfaces.
+
 ---
 
 ## Table of Contents
@@ -313,13 +326,19 @@ Per-variant per-location inventory projection. Updated by WMS workflows.
 | `lasyncro_variant_id` | UUID | |
 | `location_code` | VARCHAR | Bin location |
 | `on_hand_quantity` | INT | Physical count |
-| `reserved_quantity` | INT | Allocated to orders |
-| `committed_quantity` | INT | In pick/pack workflow |
-| `available_quantity` | INT | Sellable stock |
-| `sellable_quantity` | INT | |
+| `reserved_quantity` | INT | Released-order reservation truth |
+| `committed_quantity` | INT | Deprecated / zero |
+| `available_quantity` | INT | Independently stored/clamped available truth |
+| `sellable_quantity` | INT | Sellable = Available |
 | `last_evaluated_at` | TIMESTAMP | Used in WMS Readiness freshness signal |
 
-**Variance signal:** `SUM(on_hand) != SUM(reserved + committed + available)` per variant → shrinkage or unrecorded movement
+**Inventory truth contract (supersedes the former arithmetic variance claim):**
+On hand is physical truth; Available is not an equality inferred from the
+other displayed quantities. Missing truth rows are not zero, and Not received
+is distinct from confirmed zero stock. Shopify initial stock is not physical
+warehouse truth. Receive / Reconcile establish truth; Stow relocates truth;
+Pick / Ship consume truth. The former `on_hand != reserved + committed + available`
+formula is not a certified shrinkage/unrecorded-movement signal.
 
 #### `inventory_unit_status`
 
@@ -555,7 +574,7 @@ The WMS Readiness tab (`/products/wms-readiness`) surfaces warehouse operability
 
 - **Not pickable (27):** Active variants with no SKU — WMS-Lite camera scan will fail at pick step. Fix: add SKU in Shopify and re-sync.
 - **No bin location (13):** SKU present but no `inventory_unit_status` row with `status = 'stowed'` — product exists in catalog but warehouse doesn't know where it is. Fix: create receive job and stow.
-- **Variance:** `inventory_truth` where `on_hand != reserved + committed + available` — signals shrinkage or unrecorded movements.
+- **Variance (historical):** the former `on_hand != reserved + committed + available` interpretation is superseded by the Inventory truth contract in §5; it is not a certified shrinkage signal.
 - **Last evaluation:** `MIN(last_evaluated_at)` across `inventory_truth` — how stale is the inventory projection.
 
 ---

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
-import type { WarehouseLocation, BinOccupancy } from '@lasyncro/shared/ui';
+import type { WarehouseLocation, BinOccupancy, LocationStockDetail } from '@lasyncro/shared/ui';
 
 /**
  * useWarehouseGrid — fetches grid layout (locations) for WarehouseGrid.
@@ -27,9 +27,16 @@ export function useWarehouseGrid() {
  * Polls every 60s to reflect live pick/stow activity.
  *
  * enabled prop allows callers to defer until grid is ready.
+ *
+ * occupancy           — legacy positive-only per-bin stock.
+ * inventoryInspection — every canonical truth row per location (positive,
+ *                       zero, negative); absent location = no truth record.
  */
 export function useWarehouseGridOccupancy(enabled = true) {
-  return useQuery<{ occupancy: Record<string, BinOccupancy> }>({
+  return useQuery<{
+    occupancy: Record<string, BinOccupancy>;
+    inventoryInspection?: Record<string, LocationStockDetail>;
+  }>({
     queryKey: ['floor-planning', 'grid', 'occupancy'],
     queryFn: () =>
       axiosInstance.get('/api/v1/floor-planning/grid/occupancy').then((r) => r.data),

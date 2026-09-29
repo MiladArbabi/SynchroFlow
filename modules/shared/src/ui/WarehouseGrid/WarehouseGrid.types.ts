@@ -48,6 +48,29 @@ export interface BinVariant {
   on_hand_quantity: number;
 }
 
+/**
+ * Canonical per-location stock detail: every truth row at the location
+ * (positive, zero and negative on_hand), each quantity summed from its own
+ * column. A location with no detail record has no truth record — not zero.
+ */
+export interface LocationStockDetail {
+  /** Signed sum of on_hand across the location's rows */
+  on_hand_quantity: number;
+  available_quantity: number;
+  reserved_quantity: number;
+  variants: LocationStockVariant[];
+}
+
+export interface LocationStockVariant {
+  lasyncro_variant_id: string;
+  sku: string | null;
+  product_title: string | null;
+  variant_title: string | null;
+  on_hand_quantity: number;
+  available_quantity: number;
+  reserved_quantity: number;
+}
+
 export type LiveBinStatus =
   | 'picking'   // operator actively picking from this bin
   | 'stowing'   // operator actively stowing into this bin

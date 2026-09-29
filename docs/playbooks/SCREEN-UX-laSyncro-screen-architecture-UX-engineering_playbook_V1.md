@@ -625,7 +625,7 @@ Screen	Route	Archetype	Spatial	Pulse	Ops Console	Scroll	Status
 Overview  /overview  Awareness  PRIMARY  Cross-domain  Global  PASS at 1440×720 + 1024×820  PROD CERTIFIED / reference
 Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	PROD CERTIFIED
 Order Flow	/orders/flow	Execution/context	ON-DEMAND	No?	Global	Candidate	Needs audit
-Inventory Intelligence	/inventory	Context	CONTEXTUAL	Audit	Global	Audit	Needs audit
+Inventory Intelligence	/inventory	Operational Context	CONTEXTUAL	Inventory state	Global	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
 WMS	/wms	Execution	Conditional	likely no	Global	Audit	Needs audit
 Receive	…	Execution	CONTEXTUAL	No	Global	Audit	Needs audit
 Stow	…	Execution	PRIMARY/CTX	No	Global	Audit	Needs audit
@@ -1033,38 +1033,87 @@ Complete — shared OperationalContextShell, Order health rail, optional
 IsometricCanvas inspection eligibility, evidence-only operator placement.
 
 
-## 18. Current Inventory hypothesis
-SCREEN
-Inventory Intelligence
+## 18. Certified Inventory Intelligence contract — LOCAL CERTIFIED
 
-ARCHETYPE
-Operational Context
+Supersedes the former Inventory hypothesis, candidate overlays and pending
+ownership audit in this section. This records local certification only.
 
-PURPOSE
-Understand inventory truth, availability, quality and physical distribution.
+**Screen:** `/inventory` · **Archetype:** Operational Context.
 
-SPATIAL MODE
-CONTEXTUAL / candidate for strong domain lens
+**JTBD:** “What inventory do I physically have, where is it, what is actually
+available, and where is inventory truth uncertain?”
 
-SPATIAL STORY
-Where inventory physically exists and where inventory problems are concentrated.
+**Orientation:** “Physical stock, availability and inventory truth by location”.
 
-POSSIBLE OVERLAYS
-SKU locations
-occupancy
-stockout
-phantom
-missing pick face
-dead stock
-inbound awaiting stow
+**Composition and ownership:** `OperationalContextShell` owns the spatial
+primary workspace and contextual **Inventory state** secondary rail. The rail
+contains exactly **On hand · Available · Reserved · Not received · Phantom ·
+No valid pick location**. It provides state/orientation, not a task queue.
+Ops Console owns global/actionable cross-workflow attention; execution remains
+in owning workflows. No duplicate mini Ops Console. **Needs a decision, Margin
+at risk, Inbound, Dead capital, Stocked out** and the legacy **Inventory Pulse**
+task-queue treatment are retired from this surface.
 
-CURRENT RISKS
-"Needs a Decision" may duplicate Ops Console.
-"Inventory Pulse" requires ownership review.
-Current map may not yet tell enough Inventory-specific truth.
+**Responsive contract:** `lg`+ uses canonical shell geometry
+`minmax(0, 3fr) minmax(260px, 1fr)`, not an Inventory-only fixed 280px rail.
+Below `lg`, primary comes first and Inventory state stacks below it. Opening
+Ops Console withdraws the domain rail at `lg`+ while the canonical secondary
+track remains reserved; below `lg`, Inventory state is fully suppressed with
+no blank row or gap. The app owns necessary below-`lg` content scrolling.
 
-NEXT
-Formal audit later.
+**Shared map interaction:** Overview defines the canonical grammar;
+Inventory changes the data through shared `LocationPulse` + `IsometricCanvas`,
+not a separate popup/modal/map system. Hover provides minimal orientation;
+click/select persists inspection through the same pulse. Shared `IsometricBox`
+accent/dashed selection and geometry focus + pulse provide accessible focus,
+without a browser rectangular focus box. Enter / Space select; Escape clears.
+Inventory map inspection is read-only, with no Receive/Stow/Recount/order
+mutation action.
+
+- Hover: location identity, On hand, Available, SKU count.
+- Selected/pinned: location identity/type, On hand, Available, Reserved;
+  exceptional Truth only when not Confirmed; compact full SKU list with
+  per-SKU On hand · Available · Reserved. All SKUs remain available through
+  internal scrolling, without repeated prose or a CTA.
+- Shared hover and ordinary pinned defaults remain 228px. The optional shared
+  `IsometricCanvas` capability `pinnedPulseWidth?: number` lets Inventory opt
+  into 288px for dense SKU inspection; it is not a global width requirement
+  or an Inventory-specific card. Pinned inspection remains viewport bounded
+  and internally scrollable.
+- Only positioned physical locations carrying canonical Inventory inspection
+  truth are inspectable. ROOT is not inspectable; missing occupancy/truth is
+  not rendered as confirmed empty.
+
+**Inventory truth:** On hand is physical truth; Reserved is released-order
+reservation truth; Available is independently stored/clamped available truth.
+Sellable = Available; Committed is deprecated / zero. Missing truth rows do
+not mean zero; Not received differs from confirmed zero stock. Shopify initial
+stock is not physical warehouse truth. Receive / Reconcile establish truth,
+Stow relocates truth, and Pick / Ship consume truth.
+
+**Commercial access:** The existing `inventory.live_map` access decision
+remains authoritative: denied means no geometry fetch + `LiveMapTeaser`;
+allowed uses floor planning, operational-floor eligibility and occupancy.
+
+**Local certification evidence supplied for this closeout:**
+
+- 1440×720: PASS. 1024×820: PASS.
+- At 1024×820, primary and Inventory state stack in one column; the rail is
+  reachable through the app-owned scroll surface. Ops Console suppresses it
+  completely, with no reserved blank gap; primary horizontal geometry stays
+  stable. Document horizontal overflow = 0; document vertical overflow = 0.
+- Local behavioral acceptance: PASS. Local visual acceptance: PASS.
+- Cumulative frontend Inventory/map regression: 11 suites / 85 tests PASS.
+  Backend Inventory integration: PASS via `backend-integration` +
+  `with-test-db.js`. Shared and backend typechecks: PASS. Frontend touched-source
+  errors: 0; frontend-wide baseline: 19 unrelated errors. `git diff --check`: PASS.
+- `F1_INVENTORY_PULSE_CONTENT=LOCKED`, `F2_LIVE_MAP_VISUAL_ALIGNMENT=LOCKED`,
+  `E2_PINNED_VIEWPORT_BOUNDING=LOCKED`,
+  `INVENTORY_UX_CUMULATIVE_REGRESSION=PASS`,
+  `INVENTORY_1440x720_CERTIFICATION=PASS`,
+  `INVENTORY_1024x820_CERTIFICATION=PASS`.
+
+These are local results, not production certification or deployment evidence.
 
 ## 19. Enforcement rule for engineers
 The registry should display this prominently:

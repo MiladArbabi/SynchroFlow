@@ -14,4 +14,4 @@ export { ProductsDiagnosticCard } from './components/ProductsDiagnosticCard.js';
 // types
 export type { ProductsFt1Scenario } from './types.js';
 export type { ProductsModuleProps } from './pages/ProductsPage.js';
-export type { ProductsModuleFT2Props } from './pages/ProductsModuleFT2.js';
+export type { ProductsModuleFT2Props, InventoryStateFacts, InventoryStateStatus } from './pages/ProductsModuleFT2.js';

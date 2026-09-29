@@ -64,7 +64,13 @@ const AppLayout = (props: AppLayoutProps) => {
     if (!saved || saved === ('CLOSED' as string)) return 'EXPANDED';
     return saved;
   });
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+
+  // ACCESS-01: operators work in task-oriented /wms surfaces with no
+  // application chrome. Role-driven, independent of execution focus; route
+  // admission stays owned by ProtectedRoute. These visibility booleans are
+  // the single source for both rendering chrome and reserving its space.
+  const isOperator = user?.role === 'operator';
   // Idle timeout — log out after 15min of inactivity, save route for return-to on re-login.
   useIdleTimeout(() => {
     const currentPath = window.location.pathname + window.location.search;
@@ -77,6 +83,8 @@ const AppLayout = (props: AppLayoutProps) => {
    * - FT2 → sidenav allowed
   */
   const isSidenavAllowed = phase === 'FT2_READY';
+  const showTopnav = !isExecutionFocused && !isOperator;
+  const showSidenav = isSidenavAllowed && !isExecutionFocused && !isOperator;
   const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
 
   /**
@@ -155,7 +163,7 @@ const AppLayout = (props: AppLayoutProps) => {
             operator is actively executing a Stow/Receive session
             (WAREHOUSE-FOCUS-SHELL-01A) — presentation only, not an
             authorization boundary. */}
-        {!isExecutionFocused && (
+        {showTopnav && (
           <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "0.5px solid var(--rule)", zIndex: 1200, display: "flex", alignItems: "center" }}>
             <TopnavbarContent
               isEditing={false}
@@ -177,7 +185,7 @@ const AppLayout = (props: AppLayoutProps) => {
               execution-focused, same as the topnav above. Does not mutate
               the saved sidenavState preference — it reappears exactly as
               the operator left it once focus clears. */}
-          {isSidenavAllowed && !isExecutionFocused && (
+          {showSidenav && (
             <Box
               sx={{
                 width: `${sidenavWidth}px`,
@@ -245,11 +253,13 @@ const AppLayout = (props: AppLayoutProps) => {
               />
             )}
 
-            {/* Trial banner — FT2 only */}
-            {isSidenavAllowed && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
+            {/* Trial banner — FT2 only. Commercial/billing chrome is owner/admin
+                only: operators cannot act on billing (ACCESS-01). The system
+                health banner above stays visible to operators. */}
+            {isSidenavAllowed && !isOperator && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
 
-            {/* POST-TRIAL INTERSTITIAL (UX-07) */}
-            <PostTrialInterstitial show={isPostTrial} />
+            {/* POST-TRIAL INTERSTITIAL (UX-07) — owner/admin only, as above */}
+            <PostTrialInterstitial show={isPostTrial && !isOperator} />
 
             {/* PAGE CONTENT */}
             <Box

@@ -4,7 +4,8 @@
 > **Last updated:** 2026-09-28
 > **2026-09-28 — Orders Overview (ORD-UX-02) production certified** (Fly v746) as the second consumer of the operational-context shell grammar. See §1 (Operational Screen Ecosystem Pattern) and the ORD-UX-02 entry.
 > **2026-09-14 — WMS operator-session UX contract ratified using Receive as the reference implementation.** See §22 for focus-shell, Work Note, scanner-focus, reconciliation, typography, completion-evidence, and handoff rules that future Receive / Stow / Pick session work must preserve.
-> **2026-07-22 — Inventory Intelligence adopted the shared `PulseCard`.** See §18, PULSE-02A, for the verified metric mapping and layout rules.
+> **Inventory Intelligence — LOCAL CERTIFIED.** Shared `OperationalContextShell`, Inventory state rail and canonical live-map inspection; see §18 for the current contract.
+> **2026-07-22 — Historical: Inventory Intelligence adopted the shared `PulseCard`.** The PULSE-02A layout is superseded by the certified Inventory contract in §18.
 > **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sends operators to the wrong workflow (reorder vs. check receiving).
 > **2026-06-21 — Suppliers Portal gained standalone supplier CRUD.** Suppliers were previously create-only inside the New-PO dialog; the portal's Suppliers list now supports add/edit/remove without a PO. Pattern: a single reusable `SupplierFormDialog` (mode `add` | `edit`) drives every supplier entry point for identical fields + validation; "Add supplier" uses the filled-accent CTA convention (per CTA-016); per-row Edit/Delete are outlined inline actions. Delete is a **soft-delete** (`active = false`) — `purchase_orders.supplier_id` is `ON DELETE RESTRICT`, so PO history is preserved and the supplier is hidden from new POs. Place record-management CRUD on the owning operational surface, not in Settings (which is for shop config, not records).
 > **2026-06-20 — Catalog adopted the canonical triage + compact health-rail layout.** Catalog is the reference for a **full-width sortable column grid**: a shared `gridTemplateColumns` constant drives both header and rows (Product · Variants · On-hand · Available · Status · Action), with every header sortable using the `↑/↓` affordance. Avoid the legacy fixed stat-card grid for new module surfaces.
@@ -172,8 +173,9 @@ same role. Keep the visual/semantic role, expressed through canonical tokens.
   reads no Ops Console, config or domain state;
 - below `lg`, the primary workspace precedes the domain rail.
 
-Certified consumers: Overview (reference) and Orders Overview (production
-certified, Fly v746). Orders uses the same shell and rail-replacement grammar;
+Certified consumers: Overview (reference), Orders Overview (production
+certified, Fly v746), and Inventory Intelligence (locally certified at
+1440×720 and 1024×820; see §18). Orders uses the same shell and rail-replacement grammar;
 its Order health rail content and semantics remain Orders-owned and are not a
 global module rule.
 
@@ -994,13 +996,13 @@ directly in new components — reference the token.
 | Today's Pulse (Orders Overview) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
 | Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ✅ Migrated 2026-07-22 |
 | Sourcing Pulse | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
-| Inventory Pulse (Inventory Intelligence) | `modules/products/src/ui/pages/ProductsModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
+| Inventory Pulse (Inventory Intelligence; historical) | `modules/products/src/ui/pages/ProductsModuleFT2.tsx` | Migrated 2026-07-22; superseded by Inventory state below |
 
 **Wrap-behavior consistency audit, 2026-07-22 — all five migrated surfaces use Overview's reference layout: breakpoint-based direction/wrapping plus `alignItems: 'stretch'`.**
 
-**PULSE-02A — Inventory Intelligence:** Six verified operator-summary metrics map into the shared severity model.
+**PULSE-02A — Inventory Intelligence (historical):** Six operator-summary metrics mapped into the shared severity model; superseded below.
 
-**2026-09-09 — INV-UX-01 supersedes the former Inventory Intelligence parent layout.** The canonical landing surface is now Live Intelligence:
+**2026-09-09 — INV-UX-01 (historical; superseded by the certified contract below).** This replaced the earlier Inventory Intelligence parent layout with Live Intelligence:
 
 - left: the Inventory live-map slot, `flex: 1 1 0`
 - right: a fixed `280px` Inventory Intelligence rail
@@ -1012,7 +1014,50 @@ directly in new components — reference the token.
 - Growth/Scale receive the real warehouse map
 - the previous Action Queue + Inbound Pipeline + Return Leakage layout remains only as a compatibility fallback when no `mapContent` is supplied
 
-The parent-screen rule is: **status → problem → consequence → action**. Spatial operational truth belongs on the map; non-spatial commercial/product problems remain in the decision/Pulse rail.
+The historical parent-screen rule was: **status → problem → consequence → action**,
+with non-spatial commercial/product problems in the decision/Pulse rail.
+
+**Inventory Intelligence — current locally certified contract.** Supersedes
+PULSE-02A and INV-UX-01's fixed 280px rail, decision/Pulse composition and
+parent-screen rule above for `/inventory`.
+
+- Operational Context screen using `OperationalContextShell`: spatial workspace
+  primary; **Inventory state** contextual rail with exactly **On hand,
+  Available, Reserved, Not received, Phantom, No valid pick location**.
+  State/orientation only; Ops Console owns global/actionable attention and
+  execution stays in owning workflows. No mini Ops Console. Needs a decision,
+  Margin at risk, Inbound, Dead capital, Stocked out and legacy Inventory Pulse
+  task-queue treatment are retired from this surface.
+- `lg`+: canonical `minmax(0, 3fr) minmax(260px, 1fr)` geometry. Below `lg`:
+  one column, primary first, Inventory state below through app-owned scrolling.
+  Ops Console open withdraws the `lg`+ domain rail within canonical shell/console
+  geometry; below `lg`, it suppresses the rail completely without a blank row
+  or gap.
+- Overview's shared `LocationPulse` + `IsometricCanvas` interaction grammar:
+  minimal hover, persistent click/select inspection, shared `IsometricBox`
+  accent/dashed selection and accessible geometry focus + pulse (no browser
+  rectangular focus box); Enter / Space select, Escape clears. No separate
+  Inventory popup/modal system and no map mutation actions.
+- Hover shows identity, On hand, Available and SKU count. Pinned inspection
+  shows identity/type, On hand, Available, Reserved, exceptional Truth only
+  when not Confirmed, and the complete compact SKU list with per-SKU
+  On hand · Available · Reserved; internal scrolling, no repeated prose or CTA.
+- Hover and ordinary shared pinned defaults remain **228px**. Inventory opts
+  into **288px** using optional shared `pinnedPulseWidth?: number`; this is a
+  presentation capability, not a new global default or Inventory-specific card.
+  Pinned inspection remains viewport bounded and internally scrollable.
+- Only positioned physical locations with canonical Inventory inspection truth
+  are inspectable; ROOT is excluded and missing truth is not confirmed empty.
+  Existing commercial access remains authoritative: denied → no geometry
+  fetch + `LiveMapTeaser`; allowed → floor planning + operational floor + occupancy.
+- Local certification: **1440×720 PASS; 1024×820 PASS**. At 1024×820, the stacked
+  rail is reachable through the app-owned scroll surface; Ops Console fully
+  suppresses it, leaves no blank gap and preserves primary horizontal geometry.
+  Document horizontal and vertical overflow were both **0**. Local behavioral
+  and visual acceptance PASS; no production certification is claimed.
+
+Full Inventory truth semantics and supplied regression/locked-slice evidence:
+[Screen UX playbook §18](SCREEN-UX-laSyncro-screen-architecture-UX-engineering_playbook_V1.md#18-certified-inventory-intelligence-contract--local-certified).
 
 **2026-09-10 — ORD-UX-01**
 

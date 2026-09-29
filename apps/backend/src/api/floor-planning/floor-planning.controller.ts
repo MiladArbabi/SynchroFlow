@@ -344,9 +344,19 @@ export async function httpGetGrid(req: Request, res: Response) {
  *
  * Loaded lazily after grid layout renders — keeps initial paint fast.
  *
- * Response shape: Record<location_code, BinOccupancy>
- *   BinOccupancy.on_hand_quantity — total units across all variants in bin
- *   BinOccupancy.variants[]       — per-variant breakdown
+ * Response shape:
+ *   occupancy: Record<location_code, BinOccupancy> — LEGACY, positive-only
+ *     BinOccupancy.on_hand_quantity — total units across all variants in bin
+ *     BinOccupancy.variants[]       — per-variant breakdown
+ *   inventoryInspection: Record<location_code, LocationStockDetail> — additive
+ *     Every canonical inventory_truth row (positive, zero AND negative
+ *     on_hand), with on_hand / available / reserved each summed from its own
+ *     column; on_hand stays signed. A location absent here has no canonical
+ *     truth record — it is not zero.
+ *
+ * Both projections come from ONE inventory_truth rowset. The legacy
+ * `occupancy` keeps only on_hand > 0 rows so Overview / Floor Planning never
+ * receive zero or signed rows through it.
  */
 export async function httpGetBinOccupancy(req: Request, res: Response) {
   const shopId = req.user?.shopId;
@@ -356,9 +366,10 @@ export async function httpGetBinOccupancy(req: Request, res: Response) {
     const rows = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // Canonical rowset — deliberately NOT filtered by on_hand > 0. Metadata
+      // joins are LEFT so a physical row never disappears for missing SKU/titles.
       return trx('inventory_truth as it')
         .where('it.shop_id', shopId)
-        .where('it.on_hand_quantity', '>', 0)
         .leftJoin('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
         .leftJoin('products as p', function () {
           this.on('p.lasyncro_product_id', 'v.lasyncro_product_id')
@@ -368,7 +379,10 @@ export async function httpGetBinOccupancy(req: Request, res: Response) {
           'it.location_code',
           'it.lasyncro_variant_id',
           'it.on_hand_quantity',
+          'it.available_quantity',
+          'it.reserved_quantity',
           'v.sku',
+          'v.title as variant_title',
           'p.title as product_title'
         )
         .orderBy('it.location_code', 'asc');
@@ -380,7 +394,51 @@ export async function httpGetBinOccupancy(req: Request, res: Response) {
       variants: { lasyncro_variant_id: string; sku: string | null; product_title: string | null; on_hand_quantity: number }[];
     }> = {};
 
+    // Additive inspection projection — every canonical row, signed.
+    const inventoryInspection: Record<string, {
+      on_hand_quantity: number;
+      available_quantity: number;
+      reserved_quantity: number;
+      variants: {
+        lasyncro_variant_id: string;
+        sku: string | null;
+        product_title: string | null;
+        variant_title: string | null;
+        on_hand_quantity: number;
+        available_quantity: number;
+        reserved_quantity: number;
+      }[];
+    }> = {};
+
     for (const row of rows) {
+      const onHand = Number(row.on_hand_quantity);
+      const available = Number(row.available_quantity);
+      const reserved = Number(row.reserved_quantity);
+
+      if (!inventoryInspection[row.location_code]) {
+        inventoryInspection[row.location_code] = {
+          on_hand_quantity: 0,
+          available_quantity: 0,
+          reserved_quantity: 0,
+          variants: [],
+        };
+      }
+      const inspection = inventoryInspection[row.location_code];
+      inspection.on_hand_quantity += onHand;
+      inspection.available_quantity += available;
+      inspection.reserved_quantity += reserved;
+      inspection.variants.push({
+        lasyncro_variant_id: row.lasyncro_variant_id,
+        sku: row.sku ?? null,
+        product_title: row.product_title ?? null,
+        variant_title: row.variant_title ?? null,
+        on_hand_quantity: onHand,
+        available_quantity: available,
+        reserved_quantity: reserved,
+      });
+
+      // Legacy projection — unchanged positive-only contract.
+      if (!(row.on_hand_quantity > 0)) continue;
       if (!occupancy[row.location_code]) {
         occupancy[row.location_code] = { on_hand_quantity: 0, variants: [] };
       }
@@ -393,7 +451,7 @@ export async function httpGetBinOccupancy(req: Request, res: Response) {
       });
     }
 
-    return res.json({ occupancy });
+    return res.json({ occupancy, inventoryInspection });
   } catch (err) {
     console.error('[floor-planning] httpGetBinOccupancy failed', err);
     return res.status(500).json({ error: 'Failed to fetch bin occupancy' });

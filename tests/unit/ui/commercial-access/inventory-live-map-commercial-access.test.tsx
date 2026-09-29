@@ -29,6 +29,9 @@ const mockProductsModuleFT2 = jest.fn((props: Record<string, unknown>) => (
     <div data-testid="operator-summary-prop">
       {props.operatorSummary ? 'present' : 'missing'}
     </div>
+    <div data-testid="inventory-state-suppressed-prop">
+      {String(props.suppressInventoryState)}
+    </div>
     <div data-testid="map-content">{(props.mapContent as React.ReactNode) ?? null}</div>
   </div>
 ));
@@ -214,7 +217,12 @@ describe('INVLM-A — canonical inventory.live_map DENY wins over a permissive l
     mockDecide = () => DENY_TIER_TOO_LOW('growth');
     render(<ProductsFT2Page />);
 
+    // Target rail is Inventory state (not Inventory Pulse / decisions): the
+    // authoritative facts still reach the module, and a commercial denial of
+    // the map does not withdraw the Inventory state rail — only the shared
+    // Ops Console does (default shared state here is closed).
     expect(screen.getByTestId('operator-summary-prop')).toHaveTextContent('present');
+    expect(screen.getByTestId('inventory-state-suppressed-prop')).toHaveTextContent('false');
   });
 });
 
