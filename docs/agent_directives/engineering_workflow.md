@@ -392,6 +392,30 @@ Default executor: Milad, guided by the engineering lead.
 
 A browser agent may prove mechanics when explicitly delegated, but cannot replace Milad's product/UX approval.
 
+Reuse the current localhost before provisioning another runtime.
+
+For visual-only acceptance, first inspect the already-running localhost.
+
+If the required visual state is already present or can be reached safely in the current localhost, capture screenshots from that runtime and review them directly. Do not create a new account, seed fixtures, or start a disposable runtime solely to reproduce a visual state that already exists.
+
+Escalate to a dedicated or disposable runtime only when it is needed to prove or safely reach the acceptance state, for example:
+
+\- authentication, role, or tenant gating;
+
+\- state transitions or CTA wiring;
+
+\- persistence or reload behaviour;
+
+\- backend/API/DB integration;
+
+\- destructive or consequential mutations;
+
+\- runtime isolation from parallel work;
+
+\- or a target state that cannot be reproduced reliably in the current localhost.
+
+Screenshots are visual evidence, not behavioural proof. They may satisfy the visual/UX gate when the relevant behaviour has already been proven separately, but they do not replace behavioural verification when wiring, state, persistence, authorization, or integration is the contract under test.
+
 4.4 Agent brief format
 
 Keep briefs small:
@@ -1306,7 +1330,17 @@ Milad verifies:
 
 Do not substitute curl for UI wiring when UI wiring itself is under test.
 
-Behavioural PASS and visual PASS are separate.
+For visual verification, prefer the lowest-cost faithful evidence:
+
+1\. reuse the current localhost when it already exposes the required state;
+
+2\. capture screenshots for visual/UX review;
+
+3\. provision additional fixtures, accounts, or disposable runtimes only when the required state cannot be reached safely/reliably or when behavioural mechanics must also be proven.
+
+Do not rebuild an environment merely to obtain a screenshot of a state that is already available in a trustworthy localhost runtime.
+
+Behavioural PASS and visual PASS are separate. A screenshot can prove visual composition; it does not by itself prove state transitions, persistence, authorization, API wiring, or other behavioural contracts.
 
 13.9 Partial verification
 
@@ -1924,6 +1958,8 @@ Do not use only migrate:latest as proof of independent shippability.
 79. For consequential behaviour, prefer static evidence plus executable/runtime evidence where practical.
 80. New attention-needing work discovered outside the current issue is routed to an existing GitHub issue or a new bounded issue; it does not drift the active issue.
 81. Every issue must make an explicit WORKFLOW DOCUMENTATION DECISION before DOC: determine whether `docs/agent_directives/engineering_workflow.md` and/or `docs/agent_directives/agent_operation_guidelines.md` require updates, and record the decision.
+
+82. Prefer screenshots from an already-running localhost for visual-only acceptance when it faithfully exposes the target state; do not provision accounts, fixtures, or disposable runtimes solely to reproduce visual evidence that is already available.
 
 ⸻
 

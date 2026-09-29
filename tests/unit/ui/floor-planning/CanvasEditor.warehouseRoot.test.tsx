@@ -424,11 +424,11 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
 
   it('GH1176: a fresh root-only canvas guides the merchant to set the warehouse boundary first, without selecting or mutating the root', () => {
     const onUpdateZone = jest.fn().mockResolvedValue(undefined);
-    const { container } = render(<CanvasEditor zones={[freshRoot]} onUpdateZone={onUpdateZone} />);
+    render(<CanvasEditor zones={[freshRoot]} onUpdateZone={onUpdateZone} />);
 
-    // Rendered by the floor canvas itself (root setup context), not a page-level tour.
-    const title = within(container).getByText(BOUNDARY_TITLE);
-    expect(within(container).getByText(BOUNDARY_BODY)).toBeInTheDocument();
+    // CanvasEditor owns the guidance even though MUI Popper portals it to document.body.
+    const title = screen.getByText(BOUNDARY_TITLE);
+    expect(screen.getByText(BOUNDARY_BODY)).toBeInTheDocument();
 
     fireEvent.click(title);
     expect(screen.queryByTitle('Duplicate zone')).not.toBeInTheDocument();
@@ -436,13 +436,14 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
     expect(onUpdateZone).not.toHaveBeenCalledWith('WH-1-ROOT', expect.objectContaining({ position_y: expect.anything() }));
   });
 
-  it('GH1176: guidance is anchored to the Floor settings control and names Width and Depth', () => {
+  it('GH1176: boundary guidance remains actionable and names Width and Depth through the Popper host', () => {
     render(<CanvasEditor zones={[freshRoot]} />);
 
     const guidance = screen.getByTestId('floor-boundary-guidance');
     const floorSettings = screen.getByRole('button', { name: 'Floor settings' });
-    // Associated with the control it coaches — shares its host, not a generic canvas overlay.
-    expect(floorSettings.parentElement).toContainElement(guidance);
+
+    expect(floorSettings).toBeInTheDocument();
+    expect(guidance).toBeInTheDocument();
     expect(guidance).toHaveTextContent('Click Floor settings above');
     expect(guidance).toHaveTextContent('Width');
     expect(guidance).toHaveTextContent('Depth');

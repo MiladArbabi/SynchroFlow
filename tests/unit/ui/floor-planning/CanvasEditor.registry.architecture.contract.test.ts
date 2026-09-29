@@ -50,11 +50,20 @@ describe('CanvasEditor canonical component registry boundary', () => {
 
 
 describe('GH1177 approved visual hierarchy contracts', () => {
-  it('points at Floor settings only during boundary guidance', () => {
+  it('anchors boundary guidance to Floor settings and stock guidance to the Stock location component', () => {
+    expect(canvasSource.match(/<Popper\b/g) ?? []).toHaveLength(1);
+    expect(canvasSource).toContain('anchorEl={guidanceAnchorEl}');
+    expect(canvasSource).toContain('ref={setFloorSettingsAnchorEl}');
     expect(canvasSource).toContain(
-      "direction={guidancePhase === 'boundary' ? 'up' : undefined}",
+      "ref={item.id === 'pick' ? onStockLocationAnchor : undefined}",
     );
-    expect(canvasSource).not.toContain('direction="up"');
+    expect(canvasSource).toContain(
+      "placement={guidancePhase === 'stock' ? 'right-start' : 'bottom'}",
+    );
+    expect(canvasSource).toMatch(
+      /direction=\{\s*guidancePhase === 'boundary'\s*\?\s*'up'\s*:\s*guidancePhase === 'stock'\s*\?\s*'left'\s*:\s*undefined\s*\}/s,
+    );
+    expect(canvasSource).not.toContain("top: 'calc(100% + 10px)'");
   });
 
   it('keeps Setup copy aligned with the Stock location mental model', () => {

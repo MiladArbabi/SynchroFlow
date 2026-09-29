@@ -15,7 +15,7 @@
  * Phase 3: same WarehouseLocation data feeds Three.js renderer unchanged.
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, Popper, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import {
@@ -248,13 +248,14 @@ function selectableCodes(codes: Iterable<string>, zones: readonly WarehouseZone[
   return new Set([...codes].filter((code) => isSelectableZone(zoneByCode.get(code))));
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent, openItemRequest }: {
+function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent, openItemRequest, onStockLocationAnchor }: {
   zones: WarehouseZone[];
   codeSourceZones: readonly Pick<WarehouseZone, 'location_code'>[];
   unpositionedZones: WarehouseZone[];
   onPlace: (zone: WarehouseZone) => void;
   onCreateComponent: (item: FloorPlanningComponentDefinition, locationCode: string) => Promise<void>;
   openItemRequest: { id: string; nonce: number } | null;
+  onStockLocationAnchor: (node: HTMLDivElement | null) => void;
 }) {
   // Layout health — real checks computed from live zone state (WMS-FP-06).
   const healthIssues: string[] = [];
@@ -329,6 +330,7 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
                 const isActive = activeItem === item.id;
                 return (
                   <Box key={item.id}
+                    ref={item.id === 'pick' ? onStockLocationAnchor : undefined}
                     role="button"
                     tabIndex={0}
                     aria-label={`Add ${item.label}`}
@@ -1075,6 +1077,8 @@ export function CanvasEditor({
   // Per-instance only — a refresh before bounds are set may show it again.
   const [dismissedGuidancePhase, setDismissedGuidancePhase] = useState<'boundary' | 'stock' | null>(null);
   const [paletteOpenRequest, setPaletteOpenRequest] = useState<{ id: string; nonce: number } | null>(null);
+  const [floorSettingsAnchorEl, setFloorSettingsAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [stockLocationAnchorEl, setStockLocationAnchorEl] = useState<HTMLDivElement | null>(null);
 
   const showBoundaryGuidance =
     warehouseRoot != null &&
@@ -1097,6 +1101,13 @@ export function CanvasEditor({
       ? 'boundary'
       : showStockGuidance
         ? 'stock'
+        : null;
+
+  const guidanceAnchorEl =
+    guidancePhase === 'boundary'
+      ? floorSettingsAnchorEl
+      : guidancePhase === 'stock'
+        ? stockLocationAnchorEl
         : null;
 
   const openFloorSettings = () => {
@@ -2105,6 +2116,7 @@ export function CanvasEditor({
         }}
         onCreateComponent={createPaletteComponent}
         openItemRequest={paletteOpenRequest}
+        onStockLocationAnchor={setStockLocationAnchorEl}
       />
 
       {/* CENTER — canvas */}
@@ -2161,6 +2173,7 @@ export function CanvasEditor({
             </ToggleButtonGroup>
             <Box sx={{ position: 'relative', display: 'inline-flex' }}>
               <Button
+                ref={setFloorSettingsAnchorEl}
                 size="small"
                 variant={floorSettingsOpen ? 'contained' : 'outlined'}
                 startIcon={<Settings2 size={12} />}
@@ -2170,21 +2183,23 @@ export function CanvasEditor({
               >
                 Floor settings
               </Button>
-              {guidancePhase && (
+              <Popper
+                open={guidancePhase != null && guidanceAnchorEl != null}
+                anchorEl={guidanceAnchorEl}
+                placement={guidancePhase === 'stock' ? 'right-start' : 'bottom'}
+                modifiers={[
+                  { name: 'offset', options: { offset: [0, 10] } },
+                  { name: 'preventOverflow', options: { padding: 8 } },
+                ]}
+                sx={{ zIndex: 1300 }}
+              >
                 <Box
                   data-testid={
-                    guidancePhase === 'boundary'
-                      ? 'floor-boundary-guidance'
-                      : 'floor-stock-guidance'
+                    guidancePhase === 'stock'
+                      ? 'floor-stock-guidance'
+                      : 'floor-boundary-guidance'
                   }
-                  sx={{
-                    position: 'absolute',
-                    top: 'calc(100% + 10px)',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 320,
-                    zIndex: 10,
-                  }}
+                  sx={{ width: 320 }}
                 >
                   <SpotlightCoachMark
                     title={
@@ -2197,8 +2212,13 @@ export function CanvasEditor({
                         ? 'Click Floor settings above, then enter your warehouse Width and Depth. We’ll use this boundary to place Stock locations, optional aisles, and work areas such as Receiving, Packing and Shipping.'
                         : 'Start with a Stock location — the place your team stores, counts and picks products. Add an aisle only if your warehouse uses them. You can then add Receiving, Packing, Shipping and other work areas as needed.'
                     }
-                    isDismissed={dismissedGuidancePhase === guidancePhase}
-                    onDismiss={() => setDismissedGuidancePhase(guidancePhase)}
+                    isDismissed={
+                      guidancePhase == null ||
+                      dismissedGuidancePhase === guidancePhase
+                    }
+                    onDismiss={() => {
+                      if (guidancePhase) setDismissedGuidancePhase(guidancePhase);
+                    }}
                     actionLabel={
                       guidancePhase === 'boundary'
                         ? 'Open Floor settings'
@@ -2209,11 +2229,17 @@ export function CanvasEditor({
                         ? openFloorSettings
                         : openStockLocationCreation
                     }
-                    direction={guidancePhase === 'boundary' ? 'up' : undefined}
+                    direction={
+                      guidancePhase === 'boundary'
+                        ? 'up'
+                        : guidancePhase === 'stock'
+                          ? 'left'
+                          : undefined
+                    }
                     floating
                   />
                 </Box>
-              )}
+              </Popper>
             </Box>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
               <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, z), z + delta)))}
