@@ -21,6 +21,7 @@
  */
 import crypto from 'crypto';
 import request from 'supertest';
+import { knex as knexFactory } from 'knex';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/backend-core/db.js';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
@@ -139,6 +140,87 @@ async function capacity(shopId: number, variantId: string): Promise<number> {
     readReleaseCapacity(trx, { shopId, variantIds: [variantId], lock: 'none' })
   );
   return rows.reduce((sum, row) => sum + row.availableQuantity, 0);
+}
+
+/**
+ * D1 moved the losers' canonical constraint projection to AFTER
+ * reserveBatchInventory, inside the same release db.transaction. This
+ * installs a TEST-ONLY trigger on the disposable synchroflow_test_* DB that
+ * RAISEs on the fixture orders' inventory order_constraints write. The RAISE
+ * message carries what the SAME transaction sees at that moment — the
+ * variant's reservation_hold total, inventory_truth reserved total, and the
+ * allocations held by the failing order and by the fixture orders overall —
+ * so the test proves the failure hit the loser after the winner reserved.
+ * No production source is touched.
+ */
+async function withLoserConstraintFailure<T>(
+  scope: { shopId: number; variantId: string; orderIds: string[] },
+  run: () => Promise<T>
+): Promise<T> {
+  const pgdb = process.env.PGDATABASE ?? '';
+  if (!/^synchroflow_test_[A-Za-z0-9_]+$/.test(pgdb)) {
+    throw new Error(`D1 rollback: refusing to run test DDL — PGDATABASE "${pgdb}" is not a disposable synchroflow_test_* database`);
+  }
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  if (!Number.isInteger(scope.shopId) || ![scope.variantId, ...scope.orderIds].every((id) => uuidRe.test(id))) {
+    throw new Error('D1 rollback: refusing to interpolate non-UUID / non-integer scope into test DDL');
+  }
+  const uniq = crypto.randomUUID().replace(/-/g, '');
+  const fnName = `d1_force_constraint_failure_${uniq}`;
+  const trgName = `d1_force_constraint_failure_trg_${uniq}`;
+  const orderList = scope.orderIds.map((id) => `'${id}'`).join(', ');
+
+  const admin = knexFactory({
+    client: 'pg',
+    connection: {
+      host: process.env.PGHOST,
+      port: Number(process.env.PGPORT),
+      user: process.env.PGMIGRATION_USER,
+      password: String(process.env.PGMIGRATION_PASSWORD || ''),
+      database: pgdb,
+    },
+    pool: { min: 0, max: 1 },
+  });
+
+  try {
+    const who = await admin.raw('SELECT current_database() AS db');
+    const connectedDb: string = who.rows[0].db;
+    if (connectedDb !== pgdb || !/^synchroflow_test_[A-Za-z0-9_]+$/.test(connectedDb)) {
+      throw new Error(`D1 rollback: admin connection resolved to "${connectedDb}" — refusing to install trigger`);
+    }
+
+    await admin.raw(`
+      CREATE FUNCTION ${fnName}() RETURNS trigger LANGUAGE plpgsql AS $$
+      DECLARE held int; reserved int; own_alloc int; fixture_alloc int;
+      BEGIN
+        SELECT COALESCE(SUM(quantity_delta), 0) INTO held FROM inventory_movements
+          WHERE shop_id = ${scope.shopId} AND movement_type = 'reservation_hold'
+            AND lasyncro_variant_id = '${scope.variantId}';
+        SELECT COALESCE(SUM(reserved_quantity), 0) INTO reserved FROM inventory_truth
+          WHERE shop_id = ${scope.shopId} AND lasyncro_variant_id = '${scope.variantId}';
+        SELECT COALESCE(SUM(quantity), 0) INTO own_alloc FROM pick_reservation_allocations
+          WHERE shop_id = ${scope.shopId} AND lasyncro_order_id = NEW.lasyncro_order_id;
+        SELECT COALESCE(SUM(quantity), 0) INTO fixture_alloc FROM pick_reservation_allocations
+          WHERE shop_id = ${scope.shopId} AND lasyncro_order_id::text IN (${orderList});
+        RAISE EXCEPTION 'D1_TEST_FORCED_CONSTRAINT_FAILURE order=% held=% reserved=% own_alloc=% fixture_alloc=%',
+          NEW.lasyncro_order_id, held, reserved, own_alloc, fixture_alloc;
+      END;
+      $$;
+    `);
+    await admin.raw(`
+      CREATE TRIGGER ${trgName}
+      BEFORE INSERT OR UPDATE ON order_constraints
+      FOR EACH ROW
+      WHEN (NEW.constraint_type = 'inventory' AND NEW.lasyncro_order_id::text IN (${orderList}))
+      EXECUTE FUNCTION ${fnName}();
+    `);
+
+    return await run();
+  } finally {
+    try { await admin.raw(`DROP TRIGGER IF EXISTS ${trgName} ON order_constraints;`); } catch { /* reported by post-assert */ }
+    try { await admin.raw(`DROP FUNCTION IF EXISTS ${fnName}();`); } catch { /* reported by post-assert */ }
+    await admin.destroy();
+  }
 }
 
 describe('GH-1145-A1 — v2 expectation vs physical capacity on the real release path', () => {
@@ -365,5 +447,271 @@ describe('GH-1145-A1 — v2 expectation vs physical capacity on the real release
       trx('pick_batch_orders').where({ shop_id: shopId, lasyncro_order_id: heldBackOrderId }).first('pick_batch_id')
     );
     expect(heldBackInBatch).toBeUndefined();
+
+    // ---- D1: persisted truth for the held-back order after commit --------
+    // Release told the merchant the held-back order moved to Blocked / Out of
+    // Stock. Persisted state must match: blocked for inventory, gone from the
+    // Order Pool, present in Blocked, and holding nothing.
+    expect(releaseFives.body.newly_blocked_orders).toEqual([
+      expect.objectContaining({ order_id: heldBackOrderId, block_type: 'oversell', label: 'Out of Stock' }),
+    ]);
+    expect(batchOrders[0].lasyncro_order_id).toBe(releasedOrderId);
+
+    const heldBackAllocations = await withTenant(shopId, (trx) =>
+      trx('pick_reservation_allocations')
+        .where({ shop_id: shopId, lasyncro_order_id: heldBackOrderId })
+        .select('pick_batch_id')
+    );
+    expect(heldBackAllocations).toEqual([]);
+
+    const truthRows: Array<{ on_hand_quantity: number; reserved_quantity: number; available_quantity: number }> =
+      await withTenant(shopId, (trx) =>
+        trx('inventory_truth')
+          .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+          .select('on_hand_quantity', 'reserved_quantity', 'available_quantity')
+      );
+    expect(truthRows.every((r) => Number(r.available_quantity) >= 0 && Number(r.reserved_quantity) >= 0)).toBe(true);
+    expect(truthRows.reduce((sum, r) => sum + Number(r.on_hand_quantity), 0)).toBe(5);
+    expect(truthRows.reduce((sum, r) => sum + Number(r.reserved_quantity), 0)).toBe(5);
+    expect(truthRows.reduce((sum, r) => sum + Number(r.available_quantity), 0)).toBe(0);
+
+    const heldBackActiveConstraints = await withTenant(shopId, (trx) =>
+      trx('order_constraints')
+        .where({ lasyncro_order_id: heldBackOrderId, is_active: true })
+        .select('constraint_type', 'block_type', 'target_id', 'resolved_at')
+    );
+    expect(heldBackActiveConstraints).toEqual([
+      expect.objectContaining({
+        constraint_type: 'inventory',
+        block_type: 'oversell',
+        target_id: variantId,
+        resolved_at: null,
+      }),
+    ]);
+
+    const poolAfter = await request(app)
+      .get('/api/v1/wms/order-pool')
+      .set('Authorization', `Bearer ${token}`);
+    expect(poolAfter.status).toBe(200);
+    expect(poolAfter.body.orders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id)).not.toContain(
+      heldBackOrderId
+    );
+    // Fixture shop holds exactly three orders: six (blocked), the winner
+    // (batched) and the held-back order — none is releasable.
+    expect(poolAfter.body.summary.ready_for_release_count).toBe(0);
+
+    const constrainedAfter = await request(app)
+      .get('/api/v1/orders/constrained')
+      .set('Authorization', `Bearer ${token}`);
+    expect(constrainedAfter.status).toBe(200);
+    expect(
+      constrainedAfter.body.data.filter((r: { order_id: string }) => r.order_id === heldBackOrderId)
+    ).toEqual([expect.objectContaining({ order_id: heldBackOrderId, constraint_type: 'inventory', block_type: 'oversell' })]);
+  }, 120000);
+
+  it('RELEASE-02 (D1 rollback): 5+5 vs physical 5 — a loser-constraint failure after the winner reservation rolls the whole release back', async () => {
+    const shopDomain = `gh1145a-d1rb-${crypto.randomBytes(4).toString('hex')}.myshopify.com`;
+    const { shopId, userId } = await hmacInstall(shopDomain);
+    const rootCode = `WH-${shopId}-ROOT`;
+
+    // ---- same fixture as RELEASE-01: v2 expectation 20, physical 5 -------
+    const productGid = `gid://shopify/Product/7${shopId}001`;
+    const variantGid = `gid://shopify/ProductVariant/6${shopId}001`;
+
+    await withTenant(shopId, (trx) =>
+      syncShopifyProducts({
+        trx,
+        shopId,
+        integrationId: 0,
+        accessToken: 'offline-no-network-call',
+        platformShopName: shopDomain,
+        products: [
+          {
+            node: {
+              id: productGid,
+              title: 'GH-1145-A1 D1 rollback product',
+              status: 'ACTIVE',
+              productType: 'Apparel',
+              featuredImage: { url: null },
+              variants: {
+                edges: [
+                  {
+                    node: {
+                      id: variantGid,
+                      sku: `A1RB-${shopId}`,
+                      title: 'Default Title',
+                      barcode: `1145${shopId}0002`,
+                      image: { url: null },
+                      inventoryItem: {
+                        id: `gid://shopify/InventoryItem/5${shopId}001`,
+                        unitCost: { amount: '5.00' },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const variant = await withTenant(shopId, (trx) =>
+      trx('variants').where({ shop_id: shopId, sku: `A1RB-${shopId}` }).first('lasyncro_variant_id')
+    );
+    const variantId = variant!.lasyncro_variant_id as string;
+
+    const shopifyClient = {
+      request: jest.fn().mockResolvedValue({
+        data: {
+          products: {
+            edges: [{ node: { variants: { edges: [{ node: { id: variantGid, inventoryQuantity: 20 } }] } } }],
+          },
+        },
+      }),
+    };
+    await withTenant(shopId, async (trx) => {
+      await seedShopifyOpeningBalances(trx, 'offline', shopDomain, shopId, shopifyClient);
+      await rebuildInventoryProjectionForVariants(shopId, [variantId], trx, new Date());
+    });
+
+    await withTenant(shopId, async (trx) => {
+      await trx('inventory_movements').insert({
+        lasyncro_inventory_movement_id: crypto.randomUUID(),
+        device_event_id: crypto.randomUUID(),
+        shop_id: shopId,
+        lasyncro_variant_id: variantId,
+        movement_type: 'inbound_purchase',
+        quantity_delta: 5,
+        reference_type: 'test_fixture_receipt',
+        reference_id: crypto.randomUUID(),
+        platform: 'wms',
+        location_code: rootCode,
+        occurred_at: new Date(),
+        triggered_by: 'receive_job',
+      });
+      await rebuildInventoryProjectionForVariants(shopId, [variantId], trx, new Date());
+    });
+    expect(await capacity(shopId, variantId)).toBe(5);
+
+    // ---- orders: 5, 5 through real intake ------------------------------
+    await withTenant(shopId, (trx) =>
+      syncShopifyOrders({
+        trx,
+        shopId,
+        orderEdges: [
+          orderEdge(shopId, 1, productGid, variantGid, 5),
+          orderEdge(shopId, 2, productGid, variantGid, 5),
+        ],
+      })
+    );
+    await withTenant(shopId, (trx) =>
+      trx('integrations').insert({
+        shop_id: shopId,
+        platform: 'shopify',
+        platform_shop_name: shopDomain,
+        access_token_encrypted: encrypt('offline-test-token-no-network-call'),
+        sync_status: 'COMPLETED',
+        updated_at: new Date(),
+      })
+    );
+
+    let cursor = 0;
+    cursor = await pumpEvents(shopId, cursor);
+    cursor = await pumpEvents(shopId, cursor);
+    cursor = await pumpEvents(shopId, cursor);
+
+    const token = issueTestToken({ userId, shopId, tier: 'core' });
+    const confirm = await request(app)
+      .post('/api/v1/lifecycle/ft2/confirm')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect(confirm.status).toBe(200);
+    await pumpEvents(shopId, cursor);
+
+    const fixtureOrderIds: string[] = (
+      await withTenant(shopId, (trx) =>
+        trx('orders').where({ shop_id: shopId }).orderBy('order_created_at', 'asc').select('lasyncro_order_id')
+      )
+    ).map((r: { lasyncro_order_id: string }) => r.lasyncro_order_id);
+    expect(fixtureOrderIds).toHaveLength(2);
+
+    // ---- pre-release state ----------------------------------------------
+    const releaseState = () =>
+      withTenant(shopId, async (trx) => ({
+        batches: await trx('pick_batches').where({ shop_id: shopId }).select('pick_batch_id'),
+        memberships: await trx('pick_batch_orders').where({ shop_id: shopId }).select('pick_batch_id', 'lasyncro_order_id'),
+        holds: await trx('inventory_movements')
+          .where({ shop_id: shopId, movement_type: 'reservation_hold' })
+          .select('lasyncro_inventory_movement_id'),
+        allocations: await trx('pick_reservation_allocations').where({ shop_id: shopId }).select('pick_batch_id'),
+        truth: await trx('inventory_truth')
+          .where({ shop_id: shopId })
+          .orderBy(['lasyncro_variant_id', 'location_code'])
+          .select('lasyncro_variant_id', 'location_code', 'on_hand_quantity', 'reserved_quantity', 'available_quantity'),
+        constraints: await trx('order_constraints')
+          .whereIn('lasyncro_order_id', fixtureOrderIds)
+          .orderBy(['lasyncro_order_id', 'constraint_type', 'target_id'])
+          .select('constraint_id', 'lasyncro_order_id', 'constraint_type', 'block_type', 'target_id',
+            'is_active', 'started_at', 'resolved_at', 'write_source'),
+      }));
+    const readyInPool = async () => {
+      const pool = await request(app).get('/api/v1/wms/order-pool').set('Authorization', `Bearer ${token}`);
+      expect(pool.status).toBe(200);
+      return fixtureOrderIds.filter((id) =>
+        pool.body.orders.some((o: { lasyncro_order_id: string }) => o.lasyncro_order_id === id)
+      );
+    };
+
+    const pre = await releaseState();
+    const prePool = await readyInPool();
+    expect(prePool).toEqual(fixtureOrderIds); // both individually READY
+    expect(pre.constraints.filter((c: { is_active: boolean }) => c.is_active)).toEqual([]);
+    expect(pre.holds).toEqual([]);
+    const preReserved = pre.truth.reduce((s: number, r: { reserved_quantity: number }) => s + Number(r.reserved_quantity), 0);
+
+    // ---- release both under the test-only loser-constraint failure ------
+    const res = await withLoserConstraintFailure({ shopId, variantId, orderIds: fixtureOrderIds }, () =>
+      request(app)
+        .post('/api/v1/wms/batch/release')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ priority_order_ids: fixtureOrderIds, exclusive: true })
+    );
+
+    // 1. controlled server failure from the release transaction
+    expect(res.status).toBe(500);
+    const fired = JSON.stringify(res.body).match(
+      /D1_TEST_FORCED_CONSTRAINT_FAILURE order=([0-9a-f-]{36}) held=(-?\d+) reserved=(-?\d+) own_alloc=(-?\d+) fixture_alloc=(-?\d+)/
+    );
+    expect(fired).not.toBeNull();
+    // Seam fired on a fixture order that holds no allocation, while the other
+    // fixture order already held 5 and the 5-unit hold was in inventory_truth.
+    expect(fixtureOrderIds).toContain(fired![1]);
+    expect(Number(fired![2])).toBe(5);
+    expect(Number(fired![3])).toBe(preReserved + 5);
+    expect(Number(fired![4])).toBe(0);
+    expect(Number(fired![5])).toBe(5);
+
+    const post = await releaseState();
+    expect(post.batches).toEqual(pre.batches);         // 2. no live pick_batch
+    expect(post.memberships).toEqual(pre.memberships); // 3. no membership for either order
+    expect(post.holds).toEqual(pre.holds);             // 4. no reservation_hold
+    expect(post.allocations).toEqual(pre.allocations); // 5. no pick_reservation_allocations
+    expect(post.truth).toEqual(pre.truth);             // 6. on_hand / reserved / available unchanged
+    expect(post.constraints).toEqual(pre.constraints); // 7. no partial loser constraint
+    expect(await readyInPool()).toEqual(prePool);      // 8. both still READY
+
+    // 9. seam removed in cleanup; the same release now commits normally
+    const seamLeft = await withTenant(shopId, (trx) =>
+      trx.raw(`SELECT count(*)::int AS c FROM pg_trigger WHERE tgname LIKE 'd1_force_constraint_failure_trg_%'`)
+    );
+    expect(seamLeft.rows[0].c).toBe(0);
+    const retry = await request(app)
+      .post('/api/v1/wms/batch/release')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ priority_order_ids: fixtureOrderIds, exclusive: true });
+    expect(retry.status).toBe(201);
+    expect(retry.body.order_count).toBe(1);
+    expect(retry.body.newly_blocked_orders).toEqual([expect.objectContaining({ block_type: 'oversell' })]);
   }, 120000);
 });

@@ -541,9 +541,28 @@ let allLineItems = await trx('order_line_items')
     }
   }
 
-  const newlyBlockedOrders: NewlyBlockedOrder[] = [];
+  let newlyBlockedOrders: NewlyBlockedOrder[] = [];
 
-  if (unsatisfiableOrderIds.length > 0) {
+  /**
+   * D1 — CANONICAL TRUTH BOUNDARY FOR RELEASE-DERIVED BLOCKS
+   * ---------------------------------------------------------
+   * The precheck above decides a loser against capacity *net of the
+   * winners ahead of it*, but evaluateOrderConstraints reads live
+   * inventory_truth. Run before the winners' reservation, the evaluator
+   * still sees the pre-reservation stock, emits inventory isActive=false,
+   * and the loser returns to the pool READY while the response says it
+   * moved to Blocked.
+   *
+   * So this runs only once inventory_truth reflects every surviving
+   * reservation: after reserveBatchInventory when winners remain, or
+   * straight away when every order starved (nothing is reserved, so truth
+   * is already final). An order is reported only after its canonical
+   * projection has run. Any throw here aborts the caller's transaction,
+   * rolling back the batch and any reservation with it.
+   */
+  const persistNewlyBlockedOrders = async (): Promise<NewlyBlockedOrder[]> => {
+    const persisted: NewlyBlockedOrder[] = [];
+
     const externalIds = await trx('external_order_identity_map')
       .whereIn('lasyncro_order_id', unsatisfiableOrderIds)
       .select('lasyncro_order_id', 'external_order_id');
@@ -601,7 +620,7 @@ let allLineItems = await trx('order_line_items')
         evaluations
       );
 
-      newlyBlockedOrders.push({
+      persisted.push({
         order_id: orderId,
         external_order_id: externalById.get(orderId) ?? null,
         block_type: 'oversell',
@@ -612,10 +631,14 @@ let allLineItems = await trx('order_line_items')
     console.info('[PICK_BATCH_RELEASE_ORDERS_NEWLY_BLOCKED]', {
       shopId,
       pickBatchId,
-      newly_blocked_count: newlyBlockedOrders.length,
+      newly_blocked_count: persisted.length,
       order_ids: unsatisfiableOrderIds,
     });
 
+    return persisted;
+  };
+
+  if (unsatisfiableOrderIds.length > 0) {
     selectedOrderIds = selectedOrderIds.filter(
       (id) => !unsatisfiableOrderIds.includes(id)
     );
@@ -675,6 +698,9 @@ let allLineItems = await trx('order_line_items')
    * reservation.
    */
   if (selectedOrderIds.length === 0) {
+    // No survivor, so no reservation: truth is already final for the losers.
+    newlyBlockedOrders = await persistNewlyBlockedOrders();
+
     console.info('[PICK_BATCH_RELEASE_ALL_ORDERS_NEWLY_BLOCKED]', {
       shopId,
       pickBatchId,
@@ -701,6 +727,12 @@ let allLineItems = await trx('order_line_items')
     releasedBy,
     lineItems: allLineItems,
   });
+
+  // D1: winners' reservation is now in inventory_truth — only now can the
+  // canonical evaluator see the shortage the precheck found for the losers.
+  if (unsatisfiableOrderIds.length > 0) {
+    newlyBlockedOrders = await persistNewlyBlockedOrders();
+  }
 
   console.info('[PICK_BATCH_RELEASED]', {
     pick_batch_id: pickBatchId,
