@@ -54,6 +54,16 @@ type Fixture = {
   openingTaskId: string;
 };
 
+type PreStartFixture = {
+  shopId: number;
+  warehouseId: string;
+  ownerId: number;
+  operatorAId: number;
+  operatorBId: number;
+  otherOwnerId: number;
+  ownerToken: string;
+};
+
 async function createMember(
   shopId: number,
   unique: string,
@@ -81,6 +91,161 @@ async function createMember(
 
     return userId;
   });
+}
+
+
+async function createUserWithoutMembership(
+  shopId: number,
+  unique: string,
+  label: string
+): Promise<number> {
+  return withTenant(shopId, async (trx) => {
+    const [row] = await trx('users')
+      .insert({
+        shop_id: shopId,
+        email: `opening-1164-${label}-${unique}@test.example`,
+        password_hash: 'not_a_real_hash',
+        first_name: label,
+        role: 'operator',
+      })
+      .returning('id');
+
+    return row.id as number;
+  });
+}
+
+/**
+ * Fresh opening-inventory shop whose initial cohort has NOT been created yet.
+ * Used only by the /opening-inventory/start HTTP contracts below.
+ */
+async function createPreStartFixture(): Promise<PreStartFixture> {
+  const unique = crypto.randomBytes(6).toString('hex');
+
+  const shopId = await systemTransaction(async (trx) => {
+    const id = await createTenantShop(trx, `opening-1164-start-${unique}`);
+    await setTenantContext(trx, id);
+    return id;
+  });
+
+  const ownerId = await createMember(shopId, unique, 'start-owner', 'owner');
+  const operatorAId = await createMember(shopId, unique, 'start-opA', 'operator');
+  const operatorBId = await createMember(shopId, unique, 'start-opB', 'operator');
+  const otherOwnerId = await createMember(shopId, unique, 'start-other-owner', 'owner');
+
+  const warehouseId = crypto.randomUUID();
+  const rootCode = `WH-${shopId}-ROOT`;
+
+  await withTenant(shopId, async (trx) => {
+    await trx('shop_subscriptions').insert({
+      shop_id: shopId,
+      tier: 'core',
+      allow_overage: true,
+      billing_provider: 'stripe',
+      stripe_customer_id: null,
+    });
+
+    await trx('shop_wms_settings').insert({
+      shop_id: shopId,
+      bootstrap_model: 'reconcile_opening_expectation_v2',
+    });
+
+    await trx('user_lifecycle_snapshot').insert({
+      shop_id: shopId,
+      user_id: ownerId,
+      phase: 'FT2',
+      since: new Date(),
+      last_event_id: crypto.randomUUID(),
+    });
+
+    await trx('warehouses').insert({
+      warehouse_id: warehouseId,
+      shop_id: shopId,
+      name: 'Opening 1164 start warehouse',
+      root_location_code: rootCode,
+      is_default: true,
+      active: true,
+    });
+
+    await trx('warehouse_locations').insert([
+      {
+        shop_id: shopId,
+        warehouse_id: warehouseId,
+        location_code: rootCode,
+        type: 'warehouse',
+        parent_location_code: null,
+        active: true,
+        zone_type: null,
+      },
+      {
+        shop_id: shopId,
+        warehouse_id: warehouseId,
+        location_code: OPENING_BIN,
+        type: 'bin',
+        parent_location_code: rootCode,
+        active: true,
+        zone_type: 'pick',
+      },
+      {
+        shop_id: shopId,
+        warehouse_id: warehouseId,
+        location_code: OTHER_BIN,
+        type: 'bin',
+        parent_location_code: rootCode,
+        active: true,
+        zone_type: 'pick',
+      },
+    ]);
+  });
+
+  return {
+    shopId,
+    warehouseId,
+    ownerId,
+    operatorAId,
+    operatorBId,
+    otherOwnerId,
+    ownerToken: issueTestToken({
+      userId: ownerId,
+      shopId,
+      tier: 'core',
+      roles: ['owner'],
+    }),
+  };
+}
+
+async function openingStartTasks(fixture: PreStartFixture) {
+  return withTenant(fixture.shopId, (trx) =>
+    trx('inventory_recount_tasks')
+      .where({
+        shop_id: fixture.shopId,
+        purpose: 'opening_inventory',
+      })
+      .select(
+        'recount_task_id',
+        'scope_location_code',
+        'status',
+        'assigned_to',
+        'claimed_by'
+      )
+      .orderBy('scope_location_code', 'asc')
+  );
+}
+
+function postOpeningStart(
+  fixture: PreStartFixture,
+  body: Record<string, unknown>
+) {
+  return request(app)
+    .post('/api/v1/wms/opening-inventory/start')
+    .set('Authorization', `Bearer ${fixture.ownerToken}`)
+    .send(body);
+}
+
+
+function getRecountAssignees(fixture: PreStartFixture) {
+  return request(app)
+    .get('/api/v1/operators/recount-assignees')
+    .set('Authorization', `Bearer ${fixture.ownerToken}`);
 }
 
 async function createFixture(): Promise<Fixture> {
@@ -264,6 +429,183 @@ function postOpeningComplete(taskId: string, token: string) {
     .set('Authorization', `Bearer ${token}`)
     .send({});
 }
+
+
+describe('#1164 GET /operators/recount-assignees assignment discovery', () => {
+  it('CONTRACT-1164-ASSIGNEES-01: exposes dispatcher self plus eligible operators, never another owner', async () => {
+    const fixture = await createPreStartFixture();
+
+    const response = await getRecountAssignees(fixture);
+
+    expect(response.status).toBe(200);
+
+    const ids = response.body.operators.map(
+      (operator: { user_id: number }) => operator.user_id
+    );
+
+    expect(ids).toContain(fixture.ownerId);
+    expect(ids).toContain(fixture.operatorAId);
+    expect(ids).toContain(fixture.operatorBId);
+    expect(ids).not.toContain(fixture.otherOwnerId);
+  });
+
+  it('CONTRACT-1164-ASSIGNEES-02: excludes operator-role targets without effective recount-count permission', async () => {
+    const fixture = await createPreStartFixture();
+
+    await withTenant(fixture.shopId, (trx) =>
+      trx('shop_role_permissions').insert({
+        shop_id: fixture.shopId,
+        action: 'wms:recount:count',
+        role: 'operator',
+        granted: false,
+      })
+    );
+
+    const response = await getRecountAssignees(fixture);
+
+    expect(response.status).toBe(200);
+
+    const ids = response.body.operators.map(
+      (operator: { user_id: number }) => operator.user_id
+    );
+
+    // Dispatcher remains available as "Me" when their own role can count.
+    expect(ids).toContain(fixture.ownerId);
+
+    // Both warehouse operators share the denied operator-role permission.
+    expect(ids).not.toContain(fixture.operatorAId);
+    expect(ids).not.toContain(fixture.operatorBId);
+
+    // Another owner/admin is never a generic floor execution target.
+    expect(ids).not.toContain(fixture.otherOwnerId);
+  });
+});
+
+describe('#1164 POST /opening-inventory/start assignment contract', () => {
+  it('CONTRACT-1164-START-01: explicit assigned_to is required', async () => {
+    const fixture = await createPreStartFixture();
+
+    const response = await postOpeningStart(fixture, {});
+
+    expect(response.status).toBe(400);
+    expect(response.body?.code).toBe('OPENING_START_INVALID_REQUEST');
+    expect(await openingStartTasks(fixture)).toHaveLength(0);
+  });
+
+  it.each([
+    ['null', null],
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['string', '1'],
+  ])(
+    'CONTRACT-1164-START-02: invalid assigned_to (%s) is rejected',
+    async (_label, assignedTo) => {
+      const fixture = await createPreStartFixture();
+
+      const response = await postOpeningStart(fixture, {
+        assigned_to: assignedTo,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body?.code).toBe('OPENING_START_INVALID_REQUEST');
+      expect(await openingStartTasks(fixture)).toHaveLength(0);
+    }
+  );
+
+  it('CONTRACT-1164-START-03: target without an active shop membership is rejected', async () => {
+    const fixture = await createPreStartFixture();
+    const unique = crypto.randomBytes(6).toString('hex');
+
+    const nonMemberId = await createUserWithoutMembership(
+      fixture.shopId,
+      unique,
+      'start-non-member'
+    );
+
+    const response = await postOpeningStart(fixture, {
+      assigned_to: nonMemberId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body?.code).toBe('OPENING_START_INVALID_ASSIGNEE');
+    expect(await openingStartTasks(fixture)).toHaveLength(0);
+  });
+
+  it('CONTRACT-1164-START-04: active member without recount-count permission is rejected', async () => {
+    const fixture = await createPreStartFixture();
+
+    await withTenant(fixture.shopId, (trx) =>
+      trx('shop_role_permissions').insert({
+        shop_id: fixture.shopId,
+        action: 'wms:recount:count',
+        role: 'operator',
+        granted: false,
+      })
+    );
+
+    const response = await postOpeningStart(fixture, {
+      assigned_to: fixture.operatorAId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body?.code).toBe('OPENING_START_INVALID_ASSIGNEE');
+    expect(await openingStartTasks(fixture)).toHaveLength(0);
+  });
+
+  it('CONTRACT-1164-START-05: valid assignee receives the frozen cohort dispatched and unclaimed', async () => {
+    const fixture = await createPreStartFixture();
+
+    const response = await postOpeningStart(fixture, {
+      assigned_to: fixture.operatorAId,
+    });
+
+    expect(response.status).toBe(200);
+
+    const tasks = await openingStartTasks(fixture);
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map((task) => task.scope_location_code)).toEqual([
+      OPENING_BIN,
+      OTHER_BIN,
+    ]);
+
+    for (const task of tasks) {
+      expect(task.status).toBe('dispatched');
+      expect(task.assigned_to).toBe(fixture.operatorAId);
+      expect(task.claimed_by).toBeNull();
+    }
+  });
+
+  it('CONTRACT-1164-START-06: replay preserves one cohort and its original assignment', async () => {
+    const fixture = await createPreStartFixture();
+
+    const first = await postOpeningStart(fixture, {
+      assigned_to: fixture.operatorAId,
+    });
+    expect(first.status).toBe(200);
+
+    const before = await openingStartTasks(fixture);
+    expect(before).toHaveLength(2);
+
+    const second = await postOpeningStart(fixture, {
+      assigned_to: fixture.operatorAId,
+    });
+    expect(second.status).toBe(200);
+
+    const after = await openingStartTasks(fixture);
+
+    expect(after.map((task) => task.recount_task_id)).toEqual(
+      before.map((task) => task.recount_task_id)
+    );
+
+    for (const task of after) {
+      expect(task.status).toBe('dispatched');
+      expect(task.assigned_to).toBe(fixture.operatorAId);
+      expect(task.claimed_by).toBeNull();
+    }
+  });
+});
 
 describe('#1164 POST /recount-tasks/:taskId/opening-lines', () => {
   it('CONTRACT-1164-LINE-01: claimed owner adds a line anchored to the frozen bin with expected 0', async () => {

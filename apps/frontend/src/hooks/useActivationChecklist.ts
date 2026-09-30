@@ -17,7 +17,7 @@
 // See docs/playbooks/onboarding-progressive-disclosure-playbook.md §2 Layer 1.
 
 import { useContext } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from '../api/axiosConfig';
 import { AuthContext } from '../contexts/AuthContext';
 
@@ -63,6 +63,21 @@ interface ActivationEventsResponse {
 }
 
 /**
+ * #1164 — one bin of the canonical ShopOpeningInventoryProgress, as returned
+ * by both GET /wms/opening-inventory/progress (under `progress`) and
+ * POST /wms/opening-inventory/start. Server-ordered by warehouse, location.
+ */
+export interface OpeningInventoryBin {
+  recount_task_id: string;
+  warehouse_id: string;
+  location_code: string;
+  status: string;
+  progress_state: 'not_started' | 'in_progress' | 'needs_review' | 'complete';
+  assigned_to: number | null;
+  claimed_by: number | null;
+}
+
+/**
  * Subset of the GET /api/v1/wms/opening-inventory/progress wire shape
  * (OpeningInventoryCutoverView) that the SETUP row reads.
  */
@@ -77,6 +92,7 @@ export interface OpeningInventoryProgressView {
       | 'review_required';
     total_bins: number;
     complete_bins: number;
+    bins?: OpeningInventoryBin[];
   };
   cutover: { status: 'prepared' | 'executing' | 'failed' | 'complete' } | null;
   shopify_synced_at: string | null;
@@ -85,6 +101,49 @@ export interface OpeningInventoryProgressView {
 export const OPENING_INVENTORY_SETUP_KEY = 'opening-inventory';
 const OPENING_INVENTORY_LABEL = 'Establish opening inventory';
 const WAREHOUSE_ROUTE = '/wms';
+
+/**
+ * #1164 — the single opening-task selection policy, shared by the Ops Console
+ * start flow and the counting-state Continue action:
+ *   1. the current user's own claimed/counting bin (resume);
+ *   2. otherwise the first dispatched, not-started bin explicitly assigned
+ *      to the current user, in server order;
+ *   3. otherwise null — nothing this user can enter.
+ * Server order is canonical; bins are never re-sorted here. It mirrors the
+ * entry rule WmsModuleFT2 applies to a `countTaskId` deep link.
+ */
+export function selectNextOpeningInventoryTask(
+  bins: readonly OpeningInventoryBin[] | null | undefined,
+  currentUserId: number | null,
+): OpeningInventoryBin | null {
+  const list = bins ?? [];
+  const own = currentUserId === null
+    ? undefined
+    : list.find((bin) =>
+        (bin.status === 'claimed' || bin.status === 'counting') && bin.claimed_by === currentUserId);
+  const assignedDispatched = currentUserId === null
+    ? undefined
+    : list.find(
+        (bin) =>
+          bin.status === 'dispatched' &&
+          bin.progress_state === 'not_started' &&
+          bin.assigned_to === currentUserId
+      );
+
+  return own ?? assignedDispatched ?? null;
+}
+
+/**
+ * #1164 / WAREHOUSE-FOCUS-SHELL — entering an Opening Inventory task starts
+ * the protected task session at its Brief. Claim/start changes ownership and
+ * execution phase; it does not establish shell ownership.
+ */
+export function openingInventoryCountRoute(recountTaskId: string): string {
+  return (
+    `${WAREHOUSE_ROUTE}?countTaskId=${encodeURIComponent(recountTaskId)}` +
+    '&warehouseFocus=count'
+  );
+}
 
 function findTask(modules: ReadinessResponse['modules'], moduleId: string, taskId: string): boolean {
   return modules
@@ -123,11 +182,15 @@ function isProgressView(value: unknown): value is OpeningInventoryProgressView {
  * `canStart` is an advisory UI gate only (owner/admin, mirroring the default
  * wms:recount:create grant); requireAction('wms:recount:create') on the start
  * endpoint remains the authority.
+ *
+ * #1164: while counting, Continue deep-links into the next actionable count
+ * task for `currentUserId`; with none, no Continue is offered.
  */
 export function buildOpeningInventoryItem(
   readinessComplete: boolean,
   view: OpeningInventoryProgressView | null,
   canStart: boolean,
+  currentUserId: number | null = null,
 ): ChecklistItem | null {
   const base = { key: OPENING_INVENTORY_SETUP_KEY, label: OPENING_INVENTORY_LABEL };
 
@@ -169,12 +232,16 @@ export function buildOpeningInventoryItem(
             action: { kind: 'command', label: 'Start opening count', command: 'opening_inventory_start' },
           }
         : { ...base, complete: false, subtitle: 'Owner or admin must start' };
-    case 'counting':
+    case 'counting': {
+      const next = selectNextOpeningInventoryTask(progress.bins, currentUserId);
       return {
         ...base, complete: false, meta: bins,
         subtitle: 'Warehouse Operations · Inventory checks',
-        action: openWarehouse('Continue'),
+        ...(next && {
+          action: { kind: 'navigate', label: 'Continue', route: openingInventoryCountRoute(next.recount_task_id) },
+        }),
       };
+    }
     case 'needs_bin_review':
     case 'review_required':
       return {
@@ -222,6 +289,7 @@ export function buildFirstEntrySetupItems(
   openingReadinessComplete: boolean,
   view: OpeningInventoryProgressView | null,
   canStart: boolean,
+  currentUserId: number | null = null,
 ): ChecklistItem[] {
   const map: ChecklistItem = {
     key: FIRST_ENTRY_MAP_KEY,
@@ -238,7 +306,7 @@ export function buildFirstEntrySetupItems(
   } else if (!zonesConfigured) {
     count = { ...countBase, complete: false, subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE };
   } else {
-    const lifecycle = buildOpeningInventoryItem(false, view, canStart);
+    const lifecycle = buildOpeningInventoryItem(false, view, canStart, currentUserId);
     count = lifecycle ? { ...lifecycle, ...countBase } : { ...countBase, complete: false };
   }
 
@@ -252,6 +320,7 @@ function taskComplete(modules: ReadinessResponse['modules'], moduleId: string, t
 }
 
 export function useActivationChecklist() {
+  const queryClient = useQueryClient();
   const readiness = useQuery<ReadinessResponse>({
     queryKey: ['onboarding', 'readiness'],
     queryFn: async () => (await axiosInstance.get('/api/v1/onboarding/readiness')).data,
@@ -274,8 +343,11 @@ export function useActivationChecklist() {
   // Advisory role gate for the Start command. Read without throwing so the
   // hook stays usable outside an AuthProvider; no role → no Start (fail
   // closed). The backend requireAction remains the authority.
-  const role = (useContext(AuthContext)?.user as { role?: string } | null | undefined)?.role;
+  const authUser = useContext(AuthContext)?.user as { id?: unknown; role?: string } | null | undefined;
+  const role = authUser?.role;
   const canStartOpeningInventory = role === 'owner' || role === 'admin';
+  // #1164: AuthContext canonicalizes user.id to the access token's user_id.
+  const currentUserId = typeof authUser?.id === 'number' ? authUser.id : null;
 
   // Presentation only — never completion. Read only when readiness says
   // opening inventory applies and is not yet reconciled. A failure here is NOT
@@ -296,6 +368,7 @@ export function useActivationChecklist() {
         openingReadinessComplete,
         isProgressView(openingProgress.data) ? openingProgress.data : null,
         canStartOpeningInventory,
+        currentUserId,
       )
     : null;
 
@@ -349,13 +422,21 @@ export function useActivationChecklist() {
         false,
         isProgressView(openingProgress.data) ? openingProgress.data : null,
         canStartOpeningInventory,
+        currentUserId,
       )
     : [];
 
   // GH-1156 — after an Opening Inventory command the canonical sources are
   // re-read; the row's next state comes only from what they return.
+  // GH-1164: the progress key is shared with the WMS page (useWms), and the
+  // WMS recount list is invalidated so a new cohort's countTaskId deep link
+  // resolves at once instead of on the next poll.
   const refreshOpeningInventory = async () => {
-    await Promise.all([readiness.refetch(), openingProgress.refetch()]);
+    await Promise.all([
+      readiness.refetch(),
+      openingProgress.refetch(),
+      queryClient.invalidateQueries({ queryKey: ['wms', 'recount-tasks'] }),
+    ]);
   };
 
   return {
@@ -368,6 +449,7 @@ export function useActivationChecklist() {
     // "nothing left to do". Completion logic above is untouched.
     isError: readiness.isError || events.isError,
     refreshOpeningInventory,
+    currentUserId,
     firstEntry,
     firstEntryItems,
   };

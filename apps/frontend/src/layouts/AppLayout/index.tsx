@@ -50,6 +50,7 @@ const AppLayout = (props: AppLayoutProps) => {
     const warehouseFocus = params.get('warehouseFocus');
     if (warehouseFocus === 'stow') return Boolean(params.get('stowTaskId'));
     if (warehouseFocus === 'receive') return Boolean(params.get('receiveJobId'));
+    if (warehouseFocus === 'count') return Boolean(params.get('countTaskId'));
     return false;
   }, [location.pathname, location.search]);
   const [isConnected, setIsConnected] = useState(false);

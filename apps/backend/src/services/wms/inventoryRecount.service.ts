@@ -389,6 +389,7 @@ export interface OpeningInventoryBinProgress {
   location_code: string;
   status: string;
   progress_state: OpeningInventoryProgressState;
+  assigned_to: number | null;
   claimed_by: number | null;
 }
 
@@ -436,6 +437,7 @@ export async function getOpeningInventoryProgress(
       'recount_task_id',
       'scope_location_code',
       'status',
+      'assigned_to',
       'claimed_by'
     )
     .orderBy('scope_location_code', 'asc');
@@ -445,6 +447,10 @@ export async function getOpeningInventoryProgress(
     location_code: String(row.scope_location_code),
     status: String(row.status),
     progress_state: openingInventoryProgressState(String(row.status)),
+    assigned_to:
+      row.assigned_to === null || row.assigned_to === undefined
+        ? null
+        : Number(row.assigned_to),
     claimed_by:
       row.claimed_by === null || row.claimed_by === undefined
         ? null
@@ -508,6 +514,7 @@ export interface ShopOpeningInventoryBinProgress {
   location_code: string;
   status: string;
   progress_state: OpeningInventoryProgressState;
+  assigned_to: number | null;
   claimed_by: number | null;
 }
 
@@ -606,6 +613,7 @@ export async function getShopOpeningInventoryProgress(
       'warehouse_id',
       'scope_location_code',
       'status',
+      'assigned_to',
       'claimed_by'
     )
     .orderBy([
@@ -622,6 +630,11 @@ export async function getShopOpeningInventoryProgress(
       progress_state: openingInventoryProgressState(
         String(row.status)
       ),
+      assigned_to:
+        row.assigned_to === null ||
+        row.assigned_to === undefined
+          ? null
+          : Number(row.assigned_to),
       claimed_by:
         row.claimed_by === null ||
         row.claimed_by === undefined
@@ -824,6 +837,41 @@ export async function startShopOpeningInventoryReconciliation(
     throw new Error(
       '[OPENING_RECOUNT_SHOP_START] Snapshot anchor exists but opening tasks are missing'
     );
+  }
+
+  // #1164: the initial shop-wide reconciliation may be explicitly dispatched
+  // to an operator. Validate the target using the same active-membership +
+  // configurable recount-count permission contract used by recount ownership.
+  //
+  // Deliberately after the existing-cohort replay above: a repeated start
+  // request may read the frozen cohort, but must never reassign it.
+  if (params.assignedTo !== undefined && params.assignedTo !== null) {
+    const membership = await trx('shop_memberships')
+      .where({
+        shop_id: shopId,
+        user_id: params.assignedTo,
+      })
+      .whereNull('revoked_at')
+      .select('role')
+      .first();
+
+    if (!membership) {
+      throw new Error(
+        '[OPENING_RECOUNT_SHOP_ASSIGNEE] Target is not an active member of this shop'
+      );
+    }
+
+    const targetCanCount = await isActionAllowed(
+      shopId,
+      'wms:recount:count',
+      membership.role
+    );
+
+    if (!targetCanCount) {
+      throw new Error(
+        '[OPENING_RECOUNT_SHOP_ASSIGNEE] Target does not have recount counting permission'
+      );
+    }
   }
 
   const bins = await trx(

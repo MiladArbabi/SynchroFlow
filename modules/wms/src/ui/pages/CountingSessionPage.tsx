@@ -21,6 +21,8 @@ import {
   Minus,
   PackageCheck,
 } from 'lucide-react';
+import {
+  DecisionConfirmationModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 
 // WMS-CTA-CONSISTENCY-34: canonical Tier-1 commit/workflow-action treatment —
 // same token pair already used by the Reconcile-inventory and Create-count
@@ -170,9 +172,21 @@ export type CountingSessionPageProps = {
   ) => Promise<CountingOpeningLine>;
   /** #1164: opening_inventory bin settlement; replaces onCloseTask for that purpose. */
   onCompleteOpening: (taskId: string) => Promise<void>;
+  /**
+   * #1164: first-time Opening Inventory count coaching. Dismissal persists in
+   * the app layer (useSpotlight); ignored for ordinary recounts.
+   */
+  openingInventorySpotlight?: { isDismissed: boolean; dismiss: () => void };
+  /**
+   * #1164 / WAREHOUSE-FOCUS-SHELL — Opening Inventory reports protected task
+   * focus. Protection begins at the Brief and stays continuous through claim,
+   * a failed claim, and execution; claim/start changes ownership and phase,
+   * not shell ownership. Session exit owns clearing focus.
+   */
+  onExecutionFocusChange?: (focused: boolean) => void;
 };
 
-type Phase = 'location' | 'bin';
+type Phase = 'brief' | 'location' | 'bin';
 
 type CountingBin = {
   location_code: string;
@@ -391,12 +405,18 @@ export default function CountingSessionPage({
   onCloseTask,
   onCreateOpeningLine,
   onCompleteOpening,
+  openingInventorySpotlight,
+  onExecutionFocusChange,
 }: CountingSessionPageProps) {
   const theme = useTheme();
   const locationInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
 
-  const [phase, setPhase] = useState<Phase>('location');
+  const [phase, setPhase] = useState<Phase>(
+    task.purpose === 'opening_inventory' && task.status === 'dispatched'
+      ? 'brief'
+      : 'location'
+  );
   const [lines, setLines] = useState<CountingLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -405,6 +425,7 @@ export default function CountingSessionPage({
   const [locationInput, setLocationInput] = useState('');
   const [scanInput, setScanInput] = useState('');
   const [scanTally, setScanTally] = useState<Record<string, number>>({});
+  const [emptyBinConfirmOpen, setEmptyBinConfirmOpen] = useState(false);
   const tallyStorageKey = useMemo(
     () => scanTallyStorageKey(task.recount_task_id, task.claim_generation),
     [task.recount_task_id, task.claim_generation]
@@ -485,6 +506,30 @@ export default function CountingSessionPage({
     activeBin && activeBinResolved === activeBin.lines.length
   );
 
+  // #1164 — Opening Inventory has a deliberate review boundary between
+  // recording the physical count and settling it into canonical truth.
+  //
+  // Do NOT derive this from zero lines: 0 resolved === 0 lines for a fresh
+  // empty bin, but that bin must remain scannable until the operator explicitly
+  // confirms it empty.
+  const openingBinReviewReady = Boolean(
+    isOpening &&
+      activeBin &&
+      activeBin.lines.length > 0 &&
+      activeBinLinesResolved
+  );
+
+  const openingRecordedUnits = activeBin
+    ? activeBin.lines.reduce(
+        (total, line) => total + Number(line.counted_quantity ?? 0),
+        0
+      )
+    : 0;
+
+  const openingRecordedProducts = activeBin
+    ? activeBin.lines.filter((line) => line.counted_at !== null).length
+    : 0;
+
   // #1164: an opening bin is finished only by explicit completion — zero
   // resolved of zero discovered lines is not a completed bin, and scanning
   // stays open for further discovery.
@@ -499,6 +544,14 @@ export default function CountingSessionPage({
     : 0;
   const isLocationPhase = phase === 'location';
   const isCountPhase = phase === 'bin';
+
+  // #1164 / WAREHOUSE-FOCUS-SHELL — Opening Inventory task focus begins
+  // at the Brief and remains continuous through claim and execution. The
+  // parent/session exit owns clearing focus when the task session ends.
+  useEffect(() => {
+    if (!isOpening) return;
+    onExecutionFocusChange?.(true);
+  }, [isOpening, onExecutionFocusChange]);
 
   const firstOpenBin = (fromIndex = 0): CountingBin | null => {
     for (let index = fromIndex; index < bins.length; index += 1) {
@@ -602,10 +655,15 @@ export default function CountingSessionPage({
     if (phase === 'location') {
       setTimeout(() => locationInputRef.current?.focus(), 50);
     }
-    if (phase === 'bin') {
+    if (phase === 'bin' && !openingBinReviewReady) {
       setTimeout(() => scanInputRef.current?.focus(), 50);
     }
-  }, [phase, activeBinCode]);
+  }, [phase, activeBinCode, openingBinReviewReady]);
+
+  useEffect(() => {
+    if (!openingBinReviewReady) return;
+    setScanInput('');
+  }, [openingBinReviewReady]);
 
   const handleStart = async () => {
     if (submitting || loading) return;
@@ -652,10 +710,17 @@ export default function CountingSessionPage({
 
   useEffect(() => {
     if (loading) return;
+
+    // #1164 — assignment is not execution. A dispatched Opening Inventory
+    // task stays on its Brief until the assigned operator explicitly claims
+    // and starts it. Already-claimed/counting work keeps the existing resume
+    // behavior, and ordinary recount semantics remain unchanged.
+    if (isOpening && task.status === 'dispatched') return;
+
     if (autoStartedForRef.current === task.recount_task_id) return;
     autoStartedForRef.current = task.recount_task_id;
     void handleStart();
-  }, [loading, task.recount_task_id]);
+  }, [loading, task.recount_task_id, task.status, isOpening]);
 
   const handleLocation = () => {
     if (!activeBin) {
@@ -680,7 +745,14 @@ export default function CountingSessionPage({
   const handleScan = async () => {
     const scanned = scanInput.trim();
 
-    if (!activeBin || !scanned || submitting) return;
+    if (
+      !activeBin ||
+      !scanned ||
+      submitting ||
+      openingBinReviewReady
+    ) {
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -969,6 +1041,20 @@ export default function CountingSessionPage({
     }
   };
 
+  const handleRequestEmptyBinConfirmation = () => {
+    if (!activeBin || submitting) return;
+
+    if (scanInput.trim()) {
+      setError(
+        'Submit or clear the product scan before confirming this bin is empty.'
+      );
+      return;
+    }
+
+    setError(null);
+    setEmptyBinConfirmOpen(true);
+  };
+
   // #1164: explicit operator completion of a verified opening bin — the
   // physical-truth boundary. Never routed through the generic close.
   const handleCompleteOpening = async () => {
@@ -992,11 +1078,160 @@ export default function CountingSessionPage({
     }
   };
 
+  const handleConfirmEmptyOpeningBin = () => {
+    if (submitting) return;
+    setEmptyBinConfirmOpen(false);
+    void handleCompleteOpening();
+  };
+
   if (loading) {
     return (
       <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
           <CircularProgress size={26} />
+        </Box>
+      </Box>
+    );
+  }
+
+  // #1164 — initial Opening Inventory mirrors the Receive execution
+  // boundary: opening assigned work shows a Brief first. Claim succeeds
+  // before any location/product scanner surface becomes available.
+  if (isOpening && phase === 'brief') {
+    return (
+      <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}
+          >
+            {task.label}
+          </Typography>
+
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: 26,
+              fontWeight: 700,
+              color: 'var(--ink)',
+              lineHeight: 1.1,
+            }}
+          >
+            Count opening inventory
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: 13,
+              fontWeight: 300,
+              color: 'var(--ink-3)',
+              mt: 0.75,
+            }}
+          >
+            Establish the physical starting stock for this warehouse bin.
+          </Typography>
+        </Box>
+
+        <Paper
+          variant="outlined"
+          sx={{
+            px: 2,
+            py: 1.5,
+            mb: 2,
+            borderRadius: '6px',
+            bgcolor: 'background.paper',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, minmax(0, 1fr))' },
+            gap: 1,
+          }}
+        >
+          {[
+            ['Action', 'Brief'],
+            ['Task', task.label],
+            ['Location', openingBinCode ?? 'Unavailable'],
+            ['Next', 'Claim & start count'],
+          ].map(([label, value]) => (
+            <Box key={label} sx={{ minWidth: 0 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontSize: 10, textTransform: 'uppercase' }}
+              >
+                {label}
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--ink)',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {value}
+              </Typography>
+            </Box>
+          ))}
+        </Paper>
+
+        <Box
+          component="ol"
+          sx={{
+            m: 0,
+            mb: 2,
+            pl: 2.5,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.75,
+          }}
+        >
+          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
+            Go to bin {openingBinCode ?? 'shown for this task'} and scan its label.
+          </Typography>
+          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
+            Scan each product you physically find there.
+          </Typography>
+          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
+            Complete the bin when the physical count is finished.
+          </Typography>
+        </Box>
+
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Shopify stock is a reference only. Your physical warehouse count is
+          what LaSyncro records as the opening stock for this bin.
+        </Alert>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => { void handleStart(); }}
+            disabled={submitting}
+            sx={{
+              ...WMS_TIER1_ACTION_SX,
+              borderRadius: '6px',
+              fontWeight: 700,
+            }}
+          >
+            {submitting ? 'Claiming…' : 'Claim & Start Count'}
+          </Button>
+
+          {/* #1164 — the protected shell hides app chrome from the Brief on,
+              so the Brief carries its own non-mutating exit (session exit
+              only: no claim, reassignment, count or close). */}
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => onComplete()}
+            disabled={submitting}
+            sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+          >
+            Leave count
+          </Button>
         </Box>
       </Box>
     );
@@ -1215,6 +1450,18 @@ export default function CountingSessionPage({
         </Typography>
       </Box>
 
+      {/* #1164: inline and dismissible — never blocks scanning. */}
+      {isOpening && openingInventorySpotlight && !openingInventorySpotlight.isDismissed && (
+        <Box data-testid="opening-inventory-count-spotlight" sx={{ mb: 2 }}>
+          <SpotlightCoachMark
+            title="Counting your opening stock"
+            body="Scan the bin label first, then scan each product you actually find in it. When you complete the bin, what you counted is recorded as its opening stock."
+            isDismissed={openingInventorySpotlight.isDismissed}
+            onDismiss={openingInventorySpotlight.dismiss}
+          />
+        </Box>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2, borderRadius: '10px' }}>
           {error}
@@ -1398,14 +1645,30 @@ export default function CountingSessionPage({
                 inputProps={{ autoComplete: 'off' }}
               />
 
-              <Button
-                variant="contained"
-                onClick={handleLocation}
-                disabled={!locationInput.trim() || submitting}
-                sx={{ ...WMS_TIER1_ACTION_SX, mt: 1.5 }}
-              >
-                Confirm bin
-              </Button>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1.5 }}>
+                <Button
+                  variant="contained"
+                  onClick={handleLocation}
+                  disabled={!locationInput.trim() || submitting}
+                  sx={{ ...WMS_TIER1_ACTION_SX }}
+                >
+                  Confirm bin
+                </Button>
+
+                {/* #1164 — protected Opening Inventory location confirmation
+                    has no app chrome; same non-mutating exit as the Brief. */}
+                {isOpening && (
+                  <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => onComplete()}
+                    disabled={submitting}
+                    sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+                  >
+                    Leave count
+                  </Button>
+                )}
+              </Box>
             </Box>
           )}
 
@@ -1451,24 +1714,60 @@ export default function CountingSessionPage({
                   mb: 1.25,
                 }}
               >
-                Progress is saved automatically.
+                {openingBinReviewReady
+                  ? 'Count saved. Review the quantities below, then complete the bin.'
+                  : isOpening
+                    ? 'Scans are kept during this task session until you save the bin count.'
+                    : 'Progress is saved automatically.'}
               </Typography>
 
-              <TextField
-                inputRef={scanInputRef}
-                fullWidth
-                size="small"
-                value={scanInput}
-                onChange={(event) => setScanInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void handleScan();
-                }}
-                placeholder="Scan product barcode"
-                disabled={submitting || activeBinComplete}
-                autoComplete="off"
-                inputProps={{ autoComplete: 'off' }}
-                sx={{ mb: 1.25 }}
-              />
+              {openingBinReviewReady ? (
+                <Box
+                  role="status"
+                  data-testid="opening-bin-count-recorded"
+                  sx={{
+                    mb: 1.25,
+                    px: 1.5,
+                    py: 1.25,
+                    border: '1px solid var(--rule)',
+                    borderRadius: 1,
+                    bgcolor: 'var(--surface)',
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{ fontWeight: 700, color: 'var(--ink)' }}
+                  >
+                    Count recorded
+                  </Typography>
+
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'var(--ink-2)' }}
+                  >
+                    {openingRecordedUnits} unit
+                    {openingRecordedUnits === 1 ? '' : 's'} counted ·{' '}
+                    {openingRecordedProducts} product
+                    {openingRecordedProducts === 1 ? '' : 's'}
+                  </Typography>
+                </Box>
+              ) : (
+                <TextField
+                  inputRef={scanInputRef}
+                  fullWidth
+                  size="small"
+                  value={scanInput}
+                  onChange={(event) => setScanInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void handleScan();
+                  }}
+                  placeholder="Scan product barcode"
+                  disabled={submitting || activeBinComplete}
+                  autoComplete="off"
+                  inputProps={{ autoComplete: 'off' }}
+                  sx={{ mb: 1.25 }}
+                />
+              )}
 
               <Box sx={{ borderTop: '1px solid var(--rule)' }}>
                 {activeBin.lines.map(renderRow)}
@@ -1478,7 +1777,13 @@ export default function CountingSessionPage({
                 activeBinLinesResolved ? (
                   <Button
                     variant="contained"
-                    onClick={() => void handleCompleteOpening()}
+                    onClick={() => {
+                      if (activeBin.lines.length === 0) {
+                        handleRequestEmptyBinConfirmation();
+                      } else {
+                        void handleCompleteOpening();
+                      }
+                    }}
                     disabled={submitting}
                     sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
                   >
@@ -1491,7 +1796,7 @@ export default function CountingSessionPage({
                     disabled={submitting}
                     sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
                   >
-                    Done With This Bin
+                    Save Bin Count
                   </Button>
                 )
               ) : activeBinComplete ? (
@@ -1528,6 +1833,22 @@ export default function CountingSessionPage({
           )}
         </Box>
       )}
+
+      <DecisionConfirmationModal
+        open={emptyBinConfirmOpen}
+        onClose={() => setEmptyBinConfirmOpen(false)}
+        onConfirm={handleConfirmEmptyOpeningBin}
+        title={`Confirm ${activeBin?.location_code ?? 'this bin'} is empty`}
+        description={
+          <>
+            No products were scanned in this bin. Confirming will record this
+            bin as having <strong>0 physical stock</strong> for Opening Inventory.
+          </>
+        }
+        confirmLabel="Confirm empty bin"
+        cancelLabel="Go back"
+        isPending={submitting}
+      />
 
       <Dialog
         open={findingDraft !== null}

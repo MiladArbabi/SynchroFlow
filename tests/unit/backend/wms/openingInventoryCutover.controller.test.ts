@@ -373,7 +373,7 @@ describe('GH-1156 — opening count start bridge', () => {
     not_started_bins: 3,
   };
 
-  it('invokes the canonical shop-wide start inside withTenant with req.user identity only, ignoring forged body scope', async () => {
+  it('uses req.user identity plus explicit assigned_to, ignoring forged body scope and economics', async () => {
     startMock.mockResolvedValue(STARTED_PROGRESS);
 
     const res = await request(buildApp())
@@ -397,10 +397,35 @@ describe('GH-1156 — opening count start bridge', () => {
     expect(withTenantMock).toHaveBeenCalledTimes(1);
     expect(withTenantMock.mock.calls[0][0]).toBe(41);
     expect(startMock).toHaveBeenCalledTimes(1);
-    expect(startMock).toHaveBeenCalledWith(FAKE_TRX, { shopId: 41, createdBy: 7 });
+    expect(startMock).toHaveBeenCalledWith(FAKE_TRX, {
+      shopId: 41,
+      createdBy: 7,
+      assignedTo: 555,
+    });
     expect(res.body).toEqual(STARTED_PROGRESS);
     expect(approveMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['missing', {}],
+    ['null', { assigned_to: null }],
+    ['zero', { assigned_to: 0 }],
+    ['negative', { assigned_to: -1 }],
+    ['fractional', { assigned_to: 1.5 }],
+    ['string', { assigned_to: '555' }],
+  ])(
+    'rejects %s assigned_to before entering the start service',
+    async (_label, body) => {
+      const res = await request(buildApp())
+        .post('/opening-inventory/start')
+        .send(body);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('OPENING_START_INVALID_REQUEST');
+      expect(withTenantMock).not.toHaveBeenCalled();
+      expect(startMock).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([[null], [{ shopId: 41 }], [{ userId: 7 }]])(
     'without complete req.user identity (%j) => 401 and no start',
@@ -424,7 +449,7 @@ describe('GH-1156 — opening count start bridge', () => {
 
     const res = await request(buildApp())
       .post('/opening-inventory/start')
-      .send({})
+      .send({ assigned_to: 555 })
       .expect(409);
 
     expect(res.body.code).toBe('OPENING_START_REJECTED');
@@ -442,7 +467,7 @@ describe('GH-1156 — opening count start bridge', () => {
 
     const res = await request(buildApp())
       .post('/opening-inventory/start')
-      .send({})
+      .send({ assigned_to: 555 })
       .expect(500);
 
     expect(res.body.code).toBe('OPENING_START_INTERNAL');

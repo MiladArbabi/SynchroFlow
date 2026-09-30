@@ -5,10 +5,16 @@
 // acceptance boolean (never shop/user identity). Card behaviour is covered
 // by OpeningInventoryCutoverCard.test.tsx.
 //
+// #1164: the canonical progress view is read through useWms on the shared
+// ['wms','opening-inventory','progress'] query (so an Ops Console start
+// refreshes this page too); the page re-reads it via refetchOpeningInventory.
+//
 // @lasyncro/wms is stubbed for the same structural reason documented in
 // WmsOperationsPage.floorPlanningNav.test.tsx (the real WmsModuleFT2 pulls
 // modules/shared `.js`-suffixed imports the frontend Jest project cannot
 // resolve); the stub captures the props the page passes.
+import fs from 'fs';
+import path from 'path';
 import { act, render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
@@ -32,6 +38,7 @@ jest.mock('components/UpgradePrompt', () => ({
 }));
 
 const mockRefetch = jest.fn();
+const mockRefetchOpeningInventory = jest.fn();
 jest.mock('pages/wms/useWms', () => ({
   useWms: () => ({
     data: { batches: [] },
@@ -43,6 +50,8 @@ jest.mock('pages/wms/useWms', () => ({
     openReceiveJobs: [],
     recountTasks: [],
     recountLocked: false,
+    openingInventory: mockOpeningView,
+    refetchOpeningInventory: mockRefetchOpeningInventory,
   }),
 }));
 
@@ -54,8 +63,17 @@ jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
   useWarehouseGrid: () => ({ data: { locations: [] } }),
 }));
 
+const mockUseSpotlight = jest.fn();
+const mockOpeningSpotlightDismiss = jest.fn();
 jest.mock('hooks/useSpotlight', () => ({
-  useSpotlight: () => ({ isDismissed: false, isLoading: false, dismiss: jest.fn() }),
+  useSpotlight: (key: string) => {
+    mockUseSpotlight(key);
+    return {
+      isDismissed: false,
+      isLoading: false,
+      dismiss: key === 'opening_inventory_count' ? mockOpeningSpotlightDismiss : jest.fn(),
+    };
+  },
 }));
 
 const mockModuleProps: { current: Record<string, any> | null } = { current: null };
@@ -72,11 +90,12 @@ jest.mock('@lasyncro/wms', () => ({
 const PROGRESS_URL = '/api/v1/wms/opening-inventory/progress';
 const CUTOVER_URL = '/api/v1/wms/opening-inventory/cutover';
 
-const VIEW = {
+const mockOpeningView = {
   progress: { state: 'review_required', difference_count: 2 },
   cutover: null,
   shopify_synced_at: null,
 };
+const VIEW = mockOpeningView;
 
 function progressGetCount() {
   return (axiosInstance.get as jest.Mock).mock.calls.filter(([url]) => url === PROGRESS_URL).length;
@@ -101,11 +120,12 @@ describe('WmsOperationsPage — opening inventory cutover wiring', () => {
     (axiosInstance.post as jest.Mock).mockResolvedValue({ data: { status: 'complete' } });
   });
 
-  test('GET progress on load and view + callback passed to WmsModuleFT2', async () => {
+  test('canonical view (from the shared useWms query) + callback passed to WmsModuleFT2; no page-local GET', async () => {
     renderPage();
 
     await waitFor(() => expect(mockModuleProps.current?.openingInventory).toEqual(VIEW));
-    expect(progressGetCount()).toBe(1);
+    // #1164: no second, page-local copy of the progress view.
+    expect(progressGetCount()).toBe(0);
     expect(mockModuleProps.current?.canApproveOpeningInventoryCutover).toBe(true);
     expect(typeof mockModuleProps.current?.onApproveOpeningInventoryCutover).toBe('function');
   });
@@ -122,20 +142,43 @@ describe('WmsOperationsPage — opening inventory cutover wiring', () => {
 
       expect(axiosInstance.post).toHaveBeenCalledTimes(1);
       expect(axiosInstance.post).toHaveBeenCalledWith(CUTOVER_URL, { accept_physical_truth: accept });
-      expect(progressGetCount()).toBe(2);
+      expect(mockRefetchOpeningInventory).toHaveBeenCalledTimes(1);
       expect(mockRefetch).toHaveBeenCalled();
     }
   );
 
   test('count-finished callback refreshes opening inventory progress', async () => {
     renderPage();
-    await waitFor(() => expect(progressGetCount()).toBe(1));
+    await waitFor(() => expect(mockModuleProps.current).not.toBeNull());
+    expect(mockRefetchOpeningInventory).not.toHaveBeenCalled();
 
     await act(async () => {
       mockModuleProps.current?.onCountFinished('Bin A-01');
     });
 
-    await waitFor(() => expect(progressGetCount()).toBe(2));
+    await waitFor(() => expect(mockRefetchOpeningInventory).toHaveBeenCalledTimes(1));
+  });
+
+  test('#1164: Opening Inventory count Spotlight uses the persisted useSpotlight convention', async () => {
+    renderPage();
+    await waitFor(() => expect(mockModuleProps.current).not.toBeNull());
+
+    expect(mockUseSpotlight).toHaveBeenCalledWith('opening_inventory_count');
+    const injected = mockModuleProps.current?.openingInventorySpotlight;
+    expect(injected?.isDismissed).toBe(false);
+    injected?.dismiss();
+    expect(mockOpeningSpotlightDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('#1164: the Spotlight key is registered in the server-side dismissal allow-list', () => {
+    // An unregistered key 400s on dismiss and the mark rolls back into view
+    // (see useSpotlight onError), so registration is part of persistence.
+    const controller = fs.readFileSync(
+      path.resolve(__dirname, '../../../../apps/backend/src/api/user-state/user-state.controller.ts'),
+      'utf8'
+    );
+    const allowList = controller.match(/const VALID_SPOTLIGHT_KEYS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
+    expect(allowList).toMatch(/'opening_inventory_count'/);
   });
 
   test('failed POST surfaces the server error message to the module', async () => {

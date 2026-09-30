@@ -13,6 +13,7 @@
 // Contract:
 //   warehouseFocus=stow    requires a present stowTaskId
 //   warehouseFocus=receive requires a present receiveJobId
+//   warehouseFocus=count   requires a present countTaskId
 // Anything else (no warehouseFocus, or warehouseFocus naming a session
 // whose matching identity param is absent — a stale/edited URL) is NOT
 // focused.
@@ -22,5 +23,6 @@ export function isWarehouseExecutionFocused(
   const warehouseFocus = searchParams.get('warehouseFocus');
   if (warehouseFocus === 'stow') return Boolean(searchParams.get('stowTaskId'));
   if (warehouseFocus === 'receive') return Boolean(searchParams.get('receiveJobId'));
+  if (warehouseFocus === 'count') return Boolean(searchParams.get('countTaskId'));
   return false;
 }

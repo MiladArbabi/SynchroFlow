@@ -89,7 +89,7 @@ const TIER_ORDER: Record<Tier, number> = {
 };
 
 export function usePlanEntitlement() {
-  const { tier } = useEntitlements();
+  const { tier, hasResolved } = useEntitlements();
 
   /**
    * Returns true if the current tier meets the minimum required for this feature.
@@ -113,5 +113,7 @@ export function usePlanEntitlement() {
     tier,
     can,
     mustUpgradeTo,
+    /** False until the entitlements snapshot resolves (tier defaults to starter until then). */
+    hasResolved,
   };
 }

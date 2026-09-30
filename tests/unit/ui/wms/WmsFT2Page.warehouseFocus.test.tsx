@@ -105,4 +105,25 @@ describe('WAREHOUSE-FOCUS-SHELL-01B — WmsFT2Page module tab bar execution focu
 
     expect(screen.getByTestId('module-tab-bar-stub')).toBeInTheDocument();
   });
+
+  it('unfocused count URL (countTaskId only, no warehouseFocus — e.g. after fail-open): module tabs visible', async () => {
+    renderAt('/?countTaskId=count-a');
+
+    expect(screen.getByTestId('module-tab-bar-stub')).toBeInTheDocument();
+    expect(await screen.findByTestId('wms-operations-content-stub')).toBeInTheDocument();
+  });
+
+  it('Active Count (warehouseFocus=count + countTaskId): module tabs absent, execution content preserved', async () => {
+    renderAt('/?countTaskId=count-a&warehouseFocus=count');
+
+    expect(screen.queryByTestId('module-tab-bar-stub')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('wms-operations-content-stub')).toBeInTheDocument();
+  });
+
+  it('warehouseFocus=count with no countTaskId does not hide tabs', () => {
+    renderAt('/?warehouseFocus=count');
+
+    expect(screen.getByTestId('module-tab-bar-stub')).toBeInTheDocument();
+  });
+
 });

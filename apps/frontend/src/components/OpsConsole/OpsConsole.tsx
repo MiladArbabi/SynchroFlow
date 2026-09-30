@@ -27,6 +27,9 @@
 //             collapsed until asked for, and always rendered below NOW.
 //             GH-1156: its Opening Inventory row may carry a `command` action,
 //             which this surface alone executes (runCommand below).
+//             GH-1164: that command first explains the physical count in an
+//             EntityDetailModal, then requires explicit operator assignment.
+//             Assignment creates dispatched work; it never claims or starts it.
 //             GH-1165: in first-entry mode (useActivationChecklist.firstEntry)
 //             the dedicated map → count projection replaces it, expanded and
 //             above NOW; the trigger auto-opens once (persisted server-side)
@@ -48,7 +51,19 @@
 // both resolve from the theme rather than baked-in surface hexes.
 
 import { type CSSProperties, type ReactNode, type Ref, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Box, Typography, IconButton, Tooltip, Badge, Slide, useMediaQuery } from '@mui/material';
+import {
+  Alert as MuiAlert,
+  Badge,
+  Box,
+  Button,
+  IconButton,
+  Paper,
+  Radio,
+  Slide,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -57,7 +72,12 @@ import { EntityDetailModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 import { axiosInstance } from '../../api/axiosConfig';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import useConfig from '../../hooks/useConfig';
-import { useActivationChecklist } from '../../hooks/useActivationChecklist';
+import {
+  useActivationChecklist,
+  openingInventoryCountRoute,
+  selectNextOpeningInventoryTask,
+  type OpeningInventoryBin,
+} from '../../hooks/useActivationChecklist';
 import { type Alert } from '../../pages/alerts/useAlerts';
 import { alertDeepLink } from '../../pages/alerts/alertDeepLink';
 import { useWaiting, type WaitingItem } from '../../pages/operations/useWaiting';
@@ -124,6 +144,29 @@ function isMacPlatform(): boolean {
  * entitlement) falls back to this sentence.
  */
 export const OPENING_START_FALLBACK_ERROR = 'The opening count could not be started. Try again.';
+
+/**
+ * GH-1164 — the count started but no bin is open for this user to enter (e.g.
+ * every bin is already being counted by someone else). Never a guessed route.
+ */
+export const OPENING_START_NO_TASK_ERROR =
+  'Your opening count has started, but no bin is ready for you to count right now. Open Warehouse Operations to see who is counting.';
+
+type OpeningInventoryAssignableOperator = {
+  id: number;
+  name: string;
+  role?: string;
+};
+
+type RecountAssigneeWire = {
+  user_id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  role?: string | null;
+};
+
+const RECOUNT_ASSIGNEES_URL = '/api/v1/operators/recount-assignees';
+const OPENING_START_URL = '/api/v1/wms/opening-inventory/start';
 
 function openingStartErrorMessage(error: unknown): string {
   const data = (error as { response?: { data?: { code?: unknown; error?: unknown } } })
@@ -808,7 +851,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
 
   const {
     items, isLoading: setupLoading, isError: setupError, refreshOpeningInventory,
-    firstEntry = false, firstEntryItems,
+    currentUserId = null, firstEntry = false, firstEntryItems,
   } = useActivationChecklist();
   const { data: flags } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
@@ -900,34 +943,258 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   const doneSetupRows = setupRows.filter((r) => r.status === 'verified');
   const allSetupComplete = setupRows.length > 0 && openSetupRows.length === 0;
 
-  const goto = (route: string) => { nav(route); };
+  const goto = (route: string) => {
+    // Hand the workspace to the destination immediately; the existing
+    // OpsConsolePanel Slide then reverses out to the right.
+    nav(route);
+    onClose();
+  };
 
-  // GH-1156 — console-owned command execution. The ref blocks a duplicate
-  // POST before React re-renders the disabled CTA; completion is never
-  // inferred here — the row's next state comes only from the canonical
-  // readiness/progress re-read after a successful start.
+  // GH-1156 — console-owned command execution.
+  //
+  // GH-1164 — initial Opening Inventory follows the same dispatch-before-
+  // execution contract as Receive:
+  //   explain -> choose explicit operator -> create dispatched cohort -> Brief.
+  //
+  // Assignment never claims work. Claim remains an explicit action on the
+  // count Brief. The refs close the pre-render duplicate-click windows.
   const [pendingCommand, setPendingCommand] = useState<OpsCommand | null>(null);
-  const [commandErrors, setCommandErrors] = useState<Partial<Record<OpsCommand, string>>>({});
+  const [openingStartOpen, setOpeningStartOpen] = useState(false);
+  const [openingStartError, setOpeningStartError] = useState<string | null>(null);
+
+  const [openingAssignmentOpen, setOpeningAssignmentOpen] = useState(false);
+  const [openingAssignableOperators, setOpeningAssignableOperators] =
+    useState<OpeningInventoryAssignableOperator[]>([]);
+  const [selectedOpeningOperatorId, setSelectedOpeningOperatorId] =
+    useState<number | null>(null);
+  const [openingAssigneesLoading, setOpeningAssigneesLoading] = useState(false);
+  const [openingAssignmentError, setOpeningAssignmentError] =
+    useState<string | null>(null);
+  const [openingAssignmentConfirmation, setOpeningAssignmentConfirmation] =
+    useState<string | null>(null);
+
   const commandInFlight = useRef(false);
-  const runCommand = useCallback(async (command: OpsCommand) => {
+  const assigneesInFlight = useRef(false);
+  const discoveryGeneration = useRef(0);
+  // One automatic discovery per modal session: an empty or failed result is
+  // terminal until the modal is closed and opened again.
+  const discoveryAttempted = useRef(false);
+
+  const runCommand = useCallback((command: OpsCommand) => {
     if (command !== 'opening_inventory_start') return;
+
+    discoveryGeneration.current += 1;
+    assigneesInFlight.current = false;
+    discoveryAttempted.current = false;
+    setOpeningAssigneesLoading(false);
+
+    setOpeningStartError(null);
+    setOpeningAssignmentError(null);
+    setOpeningAssignmentConfirmation(null);
+    setSelectedOpeningOperatorId(null);
+    setOpeningAssignableOperators([]);
+    setOpeningAssignmentOpen(false);
+    setOpeningStartOpen(true);
+  }, []);
+
+  const closeOpeningStart = useCallback(() => {
     if (commandInFlight.current) return;
-    commandInFlight.current = true;
-    setPendingCommand(command);
-    setCommandErrors((prev) => ({ ...prev, [command]: undefined }));
+    discoveryGeneration.current += 1;
+    assigneesInFlight.current = false;
+    discoveryAttempted.current = false;
+    setOpeningAssigneesLoading(false);
+    setOpeningStartOpen(false);
+    setOpeningStartError(null);
+    setOpeningAssignmentError(null);
+    setOpeningAssignmentConfirmation(null);
+    setSelectedOpeningOperatorId(null);
+    setOpeningAssignableOperators([]);
+  }, []);
+
+  /**
+   * The explanation CTA only advances into assignment discovery.
+   * No recount task exists yet.
+   */
+  const openOpeningAssignment = useCallback(async () => {
+    if (assigneesInFlight.current || commandInFlight.current) return;
+
+    const generation = ++discoveryGeneration.current;
+    assigneesInFlight.current = true;
+    setOpeningAssigneesLoading(true);
+    setOpeningStartError(null);
+
     try {
-      // No body: the canonical start service owns shop, cohort and replay.
-      await axiosInstance.post('/api/v1/wms/opening-inventory/start');
+      const response = await axiosInstance.get(RECOUNT_ASSIGNEES_URL);
+      if (generation !== discoveryGeneration.current) return;
+      const wire = (
+        response?.data as { operators?: RecountAssigneeWire[] } | undefined
+      )?.operators ?? [];
+
+      const operators = wire
+        .map((member): OpeningInventoryAssignableOperator | null => {
+          const id = Number(member.user_id);
+          if (!Number.isInteger(id) || id <= 0) return null;
+
+          const name = [member.first_name, member.last_name]
+            .filter((part): part is string =>
+              typeof part === 'string' && part.trim().length > 0
+            )
+            .map((part) => part.trim())
+            .join(' ');
+
+          return {
+            id,
+            name: name || `User ${id}`,
+            ...(typeof member.role === 'string' && member.role
+              ? { role: member.role }
+              : {}),
+          };
+        })
+        .filter(
+          (operator): operator is OpeningInventoryAssignableOperator =>
+            operator !== null
+        );
+
+      if (operators.length === 0) {
+        setOpeningStartError(
+          'No eligible warehouse operator is available for this count.'
+        );
+        return;
+      }
+
+      setOpeningAssignableOperators(operators);
+      setSelectedOpeningOperatorId(
+        operators.length === 1 && operators[0]?.id === currentUserId
+          ? currentUserId
+          : null
+      );
+      setOpeningAssignmentError(null);
+      setOpeningAssignmentConfirmation(null);
+    } catch {
+      if (generation !== discoveryGeneration.current) return;
+      setOpeningStartError(
+        'Could not load eligible warehouse operators. Try again.'
+      );
+    } finally {
+      if (generation === discoveryGeneration.current) {
+        assigneesInFlight.current = false;
+        setOpeningAssigneesLoading(false);
+      }
+    }
+  }, [currentUserId]);
+
+  // The combined setup modal discovers eligible operators as soon as it opens.
+  // Discovery is non-mutating; task creation remains confirmOpeningStart().
+  useEffect(() => {
+    if (
+      !openingStartOpen ||
+      discoveryAttempted.current ||
+      openingAssignableOperators.length > 0 ||
+      openingAssigneesLoading ||
+      assigneesInFlight.current
+    ) {
+      return;
+    }
+
+    discoveryAttempted.current = true;
+    void openOpeningAssignment();
+  }, [
+    openingAssignableOperators.length,
+    openingAssigneesLoading,
+    openingStartOpen,
+    openOpeningAssignment,
+  ]);
+
+  const closeOpeningAssignment = useCallback(() => {
+    if (commandInFlight.current) return;
+
+    setOpeningAssignmentOpen(false);
+    setSelectedOpeningOperatorId(null);
+    setOpeningAssignmentError(null);
+    setOpeningAssignmentConfirmation(null);
+  }, []);
+
+  /**
+   * Consequential boundary: this is the only action in this flow that creates
+   * the Opening Inventory cohort.
+   *
+   * The selected operator is sent explicitly. The backend creates dispatched,
+   * assigned, unclaimed tasks. Self-assignment opens the task Brief; assigning
+   * somebody else never enters that operator's work.
+   */
+  const confirmOpeningStart = useCallback(async () => {
+    if (
+      commandInFlight.current ||
+      selectedOpeningOperatorId == null
+    ) {
+      return;
+    }
+
+    const assignedTo = selectedOpeningOperatorId;
+    commandInFlight.current = true;
+    setPendingCommand('opening_inventory_start');
+    setOpeningAssignmentError(null);
+    setOpeningAssignmentConfirmation(null);
+
+    let route: string | null = null;
+
+    try {
+      const response = await axiosInstance.post(
+        OPENING_START_URL,
+        { assigned_to: assignedTo }
+      );
+
+      const bins = (
+        response?.data as { bins?: OpeningInventoryBin[] } | undefined
+      )?.bins;
+
+      // Re-read readiness, opening progress and recount tasks before navigation.
       await refreshOpeningInventory?.();
+
+      if (assignedTo === currentUserId) {
+        const next = selectNextOpeningInventoryTask(bins, currentUserId);
+
+        if (next) {
+          // Opening a task enters the protected session at its Brief.
+          // Claim/start changes ownership and execution phase only.
+          route = openingInventoryCountRoute(next.recount_task_id);
+        } else {
+          setOpeningAssignmentError(OPENING_START_NO_TASK_ERROR);
+        }
+      } else {
+        const selected = openingAssignableOperators.find(
+          (operator) => operator.id === assignedTo
+        );
+
+        setOpeningAssignmentConfirmation(
+          `Opening count assigned to ${selected?.name ?? 'operator'}. ` +
+          'They can open it in Warehouse Operations and claim & start the count there.'
+        );
+      }
     } catch (error) {
-      setCommandErrors((prev) => ({ ...prev, [command]: openingStartErrorMessage(error) }));
+      // Keep assignment open and preserve the selected operator for retry.
+      setOpeningAssignmentError(openingStartErrorMessage(error));
     } finally {
       commandInFlight.current = false;
       setPendingCommand(null);
     }
-  }, [refreshOpeningInventory]);
-  const commandErrorFor = (row: OpsRow) =>
-    row.action?.kind === 'command' ? commandErrors[row.action.command] ?? null : null;
+
+    if (route) {
+      setOpeningStartOpen(false);
+      setOpeningAssignmentOpen(false);
+      setSelectedOpeningOperatorId(null);
+      goto(route);
+    }
+  }, [
+    currentUserId,
+    nav,
+    openingAssignableOperators,
+    refreshOpeningInventory,
+    selectedOpeningOperatorId,
+  ]);
+
+  const openingStartPending =
+    pendingCommand === 'opening_inventory_start';
 
   // While the exit transition plays the rail is visual only: hidden from
   // assistive tech, out of the tab order, and click-through.
@@ -1070,9 +1337,8 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                     key={row.id}
                     row={row}
                     onNavigate={goto}
-                    onCommand={(command) => { void runCommand(command); }}
+                    onCommand={runCommand}
                     pendingCommand={pendingCommand}
-                    commandError={commandErrorFor(row)}
                   />
                 ))}
               </Box>
@@ -1167,9 +1433,8 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                             key={row.id}
                             row={row}
                             onNavigate={goto}
-                            onCommand={(command) => { void runCommand(command); }}
+                            onCommand={runCommand}
                             pendingCommand={pendingCommand}
-                            commandError={commandErrorFor(row)}
                           />
                         ))}
                         {doneSetupRows.length > 0 && (
@@ -1218,7 +1483,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         component="button"
         type="button"
         data-testid="ops-manage-alerts"
-        onClick={() => nav('/settings/alerts')}
+        onClick={() => goto('/settings/alerts')}
         sx={{
           flexShrink: 0, width: '100%', textAlign: 'left',
           boxSizing: 'border-box', maxWidth: '100%',
@@ -1282,6 +1547,451 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         variantId={selectedVariantId}
         onClose={() => setSelectedVariantId(null)}
       />
+
+      {/* GH-1164 — one setup surface: explain + choose ownership, then dispatch. */}
+      <EntityDetailModal
+        entityId={openingStartOpen ? 'opening-inventory-start' : null}
+        onClose={closeOpeningStart}
+        title="Start opening inventory count"
+        subtitle="Set your starting warehouse truth"
+        maxWidth="md"
+        footerActions={
+          openingAssignmentConfirmation ? (
+            <Button
+              variant="outlined"
+              onClick={closeOpeningStart}
+              sx={{
+                color: 'var(--ink-3)',
+                borderColor: 'var(--rule)',
+              }}
+            >
+              Close
+            </Button>
+          ) : (
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: 1,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Button
+                variant="outlined"
+                onClick={closeOpeningStart}
+                disabled={openingStartPending}
+                sx={{
+                  color: 'var(--ink-3)',
+                  borderColor: 'var(--rule)',
+                }}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="contained"
+                disabled={
+                  openingAssigneesLoading ||
+                  selectedOpeningOperatorId == null ||
+                  openingStartPending
+                }
+                onClick={() => { void confirmOpeningStart(); }}
+                sx={{
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': {
+                    bgcolor: 'var(--accent)',
+                    opacity: 0.88,
+                  },
+                }}
+              >
+                {openingAssigneesLoading
+                  ? 'Loading operators…'
+                  : openingStartPending
+                    ? 'Creating…'
+                    : 'Create opening count'}
+              </Button>
+            </Box>
+          )
+        }
+      >
+        <Box
+          sx={{
+            p: 2.5,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+          }}
+        >
+          {openingAssignmentConfirmation ? (
+            <MuiAlert severity="success">
+              {openingAssignmentConfirmation}
+            </MuiAlert>
+          ) : (
+            <>
+              <Typography
+                sx={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6 }}
+              >
+                Count what is physically in each warehouse bin. Shopify
+                quantities are reference only; your completed count becomes
+                LaSyncro&apos;s opening inventory.
+              </Typography>
+
+              <Box
+                component="ol"
+                sx={{
+                  m: 0,
+                  pl: 2.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0.5,
+                }}
+              >
+                {[
+                  'Confirm the bin you are standing at.',
+                  'Scan each product you physically find there.',
+                  'Complete the bin to establish its opening stock.',
+                ].map((step) => (
+                  <Typography
+                    key={step}
+                    component="li"
+                    sx={{
+                      fontSize: 12,
+                      color: 'var(--ink-2)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {step}
+                  </Typography>
+                ))}
+              </Box>
+
+              <Box sx={{ mt: 0.5 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  Who should count?
+                </Typography>
+
+                {openingAssigneesLoading ? (
+                  <Typography
+                    sx={{
+                      mt: 1,
+                      fontSize: 12,
+                      color: 'var(--ink-3)',
+                    }}
+                  >
+                    Loading eligible warehouse operators…
+                  </Typography>
+                ) : (
+                  <Box
+                    role="radiogroup"
+                    aria-label="Assign opening count to"
+                    sx={{ mt: 0.75, display: 'grid', gap: 0.5 }}
+                  >
+                    {openingAssignableOperators.map((operator) => {
+                      const isSelected =
+                        selectedOpeningOperatorId === operator.id;
+                      const isSelf = operator.id === currentUserId;
+
+                      return (
+                        <Box
+                          key={operator.id}
+                          role="radio"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onClick={() =>
+                            setSelectedOpeningOperatorId(operator.id)
+                          }
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === 'Enter' ||
+                              event.key === ' '
+                            ) {
+                              event.preventDefault();
+                              setSelectedOpeningOperatorId(operator.id);
+                            }
+                          }}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            px: 1,
+                            py: 0.75,
+                            border: '1px solid',
+                            borderColor: isSelected
+                              ? 'var(--accent)'
+                              : 'divider',
+                            borderRadius: 1,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Radio
+                            checked={isSelected}
+                            readOnly
+                            size="small"
+                            tabIndex={-1}
+                          />
+
+                          <Box>
+                            <Typography variant="body2" fontWeight={600}>
+                              {operator.name}{isSelf ? ' — Me' : ''}
+                            </Typography>
+
+                            {operator.role && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ textTransform: 'capitalize' }}
+                              >
+                                {operator.role}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                )}
+              </Box>
+
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  color: 'var(--ink-3)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Creating the count dispatches the work only. The operator
+                reviews the task Brief and explicitly claims &amp; starts it
+                before counting begins.
+              </Typography>
+
+              {(openingStartError || openingAssignmentError) && (
+                <MuiAlert severity="error">
+                  {openingStartError || openingAssignmentError}
+                </MuiAlert>
+              )}
+            </>
+          )}
+        </Box>
+      </EntityDetailModal>
+
+      {/* GH-1164 — explicit dispatch before claim/start, mirroring Receive. */}
+      <EntityDetailModal
+        entityId={openingAssignmentOpen ? 'opening-inventory-assignment' : null}
+        onClose={closeOpeningAssignment}
+        title="Assign opening count"
+        subtitle="Choose who will count your opening stock"
+        maxWidth="md"
+        footerActions={
+          openingAssignmentConfirmation ? (
+            <Button
+              variant="outlined"
+              onClick={closeOpeningAssignment}
+              sx={{
+                color: 'var(--ink-3)',
+                borderColor: 'var(--rule)',
+                '&:hover': {
+                  borderColor: 'var(--rule-2)',
+                  bgcolor: 'var(--surface)',
+                },
+              }}
+            >
+              Close
+            </Button>
+          ) : (
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: 1,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Button
+                variant="outlined"
+                onClick={closeOpeningAssignment}
+                disabled={openingStartPending}
+                sx={{
+                  color: 'var(--ink-3)',
+                  borderColor: 'var(--rule)',
+                  '&:hover': {
+                    borderColor: 'var(--rule-2)',
+                    bgcolor: 'var(--surface)',
+                  },
+                }}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="contained"
+                disabled={
+                  selectedOpeningOperatorId == null || openingStartPending
+                }
+                onClick={() => { void confirmOpeningStart(); }}
+                sx={{
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': {
+                    bgcolor: 'var(--accent)',
+                    opacity: 0.88,
+                  },
+                }}
+              >
+                {openingStartPending
+                  ? 'Assigning…'
+                  : 'Assign opening count'}
+              </Button>
+            </Box>
+          )
+        }
+      >
+        <Box sx={{ p: 2.5 }}>
+          {openingAssignmentConfirmation ? (
+            <MuiAlert severity="success">
+              {openingAssignmentConfirmation}
+            </MuiAlert>
+          ) : (
+            <>
+              <Typography
+                variant="body2"
+                sx={{ color: 'var(--ink-2)', lineHeight: 1.6 }}
+              >
+                Assignment sends the count work to Warehouse Operations.
+                It does not start the task. The assigned operator opens the
+                task Brief and claims &amp; starts the count there.
+              </Typography>
+
+              <Box sx={{ mt: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  Assign to
+                </Typography>
+
+                <Box
+                  role="radiogroup"
+                  aria-label="Assign opening count to"
+                  sx={{ mt: 0.75, display: 'grid', gap: 0.5 }}
+                >
+                  {openingAssignableOperators.map((operator) => {
+                    const isSelected =
+                      selectedOpeningOperatorId === operator.id;
+                    const isSelf = operator.id === currentUserId;
+
+                    return (
+                      <Box
+                        key={operator.id}
+                        role="radio"
+                        aria-checked={isSelected}
+                        tabIndex={0}
+                        onClick={() =>
+                          setSelectedOpeningOperatorId(operator.id)
+                        }
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === 'Enter' ||
+                            event.key === ' '
+                          ) {
+                            event.preventDefault();
+                            setSelectedOpeningOperatorId(operator.id);
+                          }
+                        }}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          px: 1,
+                          py: 0.75,
+                          border: '1px solid',
+                          borderColor: isSelected
+                            ? 'var(--accent)'
+                            : 'divider',
+                          borderRadius: 1,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Radio
+                          checked={isSelected}
+                          readOnly
+                          size="small"
+                          tabIndex={-1}
+                        />
+
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>
+                            {operator.name}{isSelf ? ' — Me' : ''}
+                          </Typography>
+
+                          {operator.role && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ textTransform: 'capitalize' }}
+                            >
+                              {operator.role}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+
+              <Paper
+                variant="outlined"
+                sx={{ mt: 2, p: 1.25, borderRadius: 1 }}
+              >
+                <Typography variant="caption" fontWeight={700}>
+                  Work identity
+                </Typography>
+                <Typography
+                  variant="caption"
+                  display="block"
+                  color="text.secondary"
+                >
+                  Action: Count opening inventory
+                </Typography>
+                <Typography
+                  variant="caption"
+                  display="block"
+                  color="text.secondary"
+                >
+                  Scope: Your active warehouse bins
+                </Typography>
+                <Typography
+                  variant="caption"
+                  display="block"
+                  color="text.secondary"
+                >
+                  Next: Assigned operator opens the Brief and claims &amp; starts Count
+                </Typography>
+              </Paper>
+
+              {openingAssignmentError && (
+                <MuiAlert severity="error" sx={{ mt: 2 }}>
+                  {openingAssignmentError}
+                </MuiAlert>
+              )}
+            </>
+          )}
+        </Box>
+      </EntityDetailModal>
     </Box>
   );
 });

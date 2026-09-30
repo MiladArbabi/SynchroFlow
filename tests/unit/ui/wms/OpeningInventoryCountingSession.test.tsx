@@ -14,7 +14,7 @@
 // CONTRACT-1164-UI-04: ordinary recount keeps the unexpected_item finding path.
 // CONTRACT-1164-UI-05: a zero-line opening bin is not implicitly complete;
 //   explicit operator completion invokes the opening-complete callback.
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CountingSessionPage, {
   type CountingLine,
   type CountingSessionPageProps,
@@ -186,10 +186,387 @@ describe('CONTRACT-1164-UI-05 — empty opening bin requires explicit completion
     expect(props.onCloseTask).not.toHaveBeenCalled();
     expect(props.onComplete).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /complete|finish|empty/i }));
+    // Opening the canonical confirmation is not completion.
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm bin is empty' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(props.onCompleteOpening).not.toHaveBeenCalled();
+
+    // "Go back" cancels without completing.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Go back' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(props.onCompleteOpening).not.toHaveBeenCalled();
+
+    // Only the explicit confirmation completes the bin, exactly once.
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm bin is empty' }));
+    fireEvent.click(within(await screen.findByRole('dialog'))
+      .getByRole('button', { name: 'Confirm empty bin' }));
 
     await waitFor(() => expect(props.onCompleteOpening).toHaveBeenCalledTimes(1));
     expect(props.onCompleteOpening.mock.calls[0][0]).toBe(TASK_ID);
     expect(props.onCloseTask).not.toHaveBeenCalled();
+  });
+});
+
+// #1164 — first-time Opening Inventory count coaching. The session only
+// renders the shared SpotlightCoachMark; dismissal/persistence belongs to the
+// app-layer useSpotlight('opening_inventory_count') injected by the page.
+describe('CONTRACT-1164-UI-06 — Opening Inventory count Spotlight', () => {
+  const SPOTLIGHT = 'opening-inventory-count-spotlight';
+  const spotlight = (isDismissed = false) => ({ isDismissed, dismiss: jest.fn() });
+
+  it('shows the coach mark for an opening_inventory session that has not been dismissed', async () => {
+    const props = { ...buildProps(openingTask, []), openingInventorySpotlight: spotlight() };
+    renderSession(props as ReturnType<typeof buildProps>);
+
+    expect(await screen.findByTestId(SPOTLIGHT)).toBeInTheDocument();
+  });
+
+  it('does not block execution: bin confirmation and product scanning still work with the mark present', async () => {
+    const props = { ...buildProps(openingTask, []), openingInventorySpotlight: spotlight() };
+    renderSession(props as ReturnType<typeof buildProps>);
+
+    const scanInput = await confirmBin(OPENING_BIN);
+    expect(scanInput).toBeEnabled();
+    scan('BC-1164-V');
+    await waitFor(() => expect(props.onCreateOpeningLine).toHaveBeenCalledTimes(1));
+  });
+
+  it('ordinary cycle recount never shows the Opening Inventory mark', async () => {
+    const cycleTask: OpeningCountingTask = {
+      ...openingTask, purpose: 'cycle_count', scope_location_code: null, line_count: 1,
+    };
+    const props = { ...buildProps(cycleTask, [{ ...discoveredLine, location_code: 'A-1' }]), openingInventorySpotlight: spotlight() };
+    renderSession(props as ReturnType<typeof buildProps>);
+
+    expect(await screen.findByPlaceholderText('Scan bin barcode')).toBeInTheDocument();
+    expect(screen.queryByTestId(SPOTLIGHT)).not.toBeInTheDocument();
+  });
+
+  it('a dismissed mark stays hidden, and dismissing delegates to the injected persistence callback', async () => {
+    const dismissed = { ...buildProps(openingTask, []), openingInventorySpotlight: spotlight(true) };
+    const { unmount } = render(<CountingSessionPage {...(dismissed as unknown as CountingSessionPageProps)} />);
+    expect(await screen.findByPlaceholderText('Scan bin barcode')).toBeInTheDocument();
+    expect(screen.queryByTestId(SPOTLIGHT)).not.toBeInTheDocument();
+    unmount();
+
+    const live = spotlight();
+    renderSession({ ...buildProps(openingTask, []), openingInventorySpotlight: live } as ReturnType<typeof buildProps>);
+    const mark = await screen.findByTestId(SPOTLIGHT);
+    fireEvent.click(within(mark).getByRole('button', { name: 'Got it' }));
+    expect(live.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('without an injected spotlight the session renders unchanged (no mark)', async () => {
+    renderSession(buildProps(openingTask, []));
+    expect(await screen.findByPlaceholderText('Scan bin barcode')).toBeInTheDocument();
+    expect(screen.queryByTestId(SPOTLIGHT)).not.toBeInTheDocument();
+  });
+});
+
+// #1164 — initial Opening Inventory uses a real pre-execution Brief.
+// Assignment creates dispatched work; opening the task must not claim it.
+// Claim & Start Count is the explicit execution boundary.
+describe('CONTRACT-1164-UI-07 — Opening Inventory Brief before execution', () => {
+  const dispatchedOpeningTask: OpeningCountingTask = {
+    ...openingTask,
+    status: 'dispatched',
+    claimed_by: null,
+    claimed_at: null,
+    claim_generation: null,
+  };
+
+  it('renders a Brief for assigned dispatched opening work without claiming or exposing scanner execution', async () => {
+    const props = renderSession(buildProps(dispatchedOpeningTask, []));
+
+    expect(
+      await screen.findByRole('heading', { name: /opening inventory|opening stock|count inventory/i })
+    ).toBeInTheDocument();
+
+    expect(screen.getByText(OPENING_BIN)).toBeInTheDocument();
+    expect(screen.getByText(/Shopify.*reference/i)).toBeInTheDocument();
+
+    expect(
+      screen.getByRole('button', { name: /claim.*start.*count/i })
+    ).toBeInTheDocument();
+
+    expect(props.onClaimTask).not.toHaveBeenCalled();
+
+    expect(
+      screen.queryByPlaceholderText('Scan bin barcode')
+    ).not.toBeInTheDocument();
+
+    expect(
+      screen.queryByPlaceholderText('Scan product barcode')
+    ).not.toBeInTheDocument();
+  });
+
+  it('claims exactly once from the Brief and enters execution only after claim succeeds', async () => {
+    let resolveClaim: () => void = () => undefined;
+
+    const props = buildProps(dispatchedOpeningTask, []);
+    props.onClaimTask = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveClaim = resolve;
+        })
+    );
+
+    renderSession(props);
+
+    const start = await screen.findByRole('button', {
+      name: /claim.*start.*count/i,
+    });
+
+    fireEvent.click(start);
+    fireEvent.click(start);
+
+    expect(props.onClaimTask).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByPlaceholderText('Scan bin barcode')
+    ).not.toBeInTheDocument();
+
+    resolveClaim();
+
+    expect(
+      await screen.findByPlaceholderText('Scan bin barcode')
+    ).toBeInTheDocument();
+
+    expect(props.onClaimTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('claim failure stays on the Brief and remains retryable without exposing execution', async () => {
+    const props = buildProps(dispatchedOpeningTask, []);
+    props.onClaimTask = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Claim unavailable'))
+      .mockResolvedValueOnce(undefined);
+
+    renderSession(props);
+
+    const start = await screen.findByRole('button', {
+      name: /claim.*start.*count/i,
+    });
+
+    fireEvent.click(start);
+
+    expect(
+      await screen.findByText(/Claim unavailable|Failed to start/i)
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByPlaceholderText('Scan bin barcode')
+    ).not.toBeInTheDocument();
+
+    expect(start).toBeEnabled();
+
+    fireEvent.click(start);
+
+    expect(
+      await screen.findByPlaceholderText('Scan bin barcode')
+    ).toBeInTheDocument();
+
+    expect(props.onClaimTask).toHaveBeenCalledTimes(2);
+  });
+
+  it('already claimed opening work resumes execution directly without showing the Brief or claiming again', async () => {
+    const props = renderSession(buildProps(openingTask, []));
+
+    expect(
+      await screen.findByPlaceholderText('Scan bin barcode')
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole('button', { name: /claim.*start.*count/i })
+    ).not.toBeInTheDocument();
+
+    expect(props.onClaimTask).not.toHaveBeenCalled();
+  });
+});
+
+// #1164 / WAREHOUSE-FOCUS-SHELL — the protected task session begins at the
+// Brief: Brief is focused; claim/start changes ownership and execution phase,
+// not shell ownership; failed claim stays on the protected Brief;
+// already-active canonical work restores focus on re-entry.
+describe('CONTRACT-1164-UI-08 — Opening Inventory execution focus', () => {
+  const dispatchedOpeningTask: OpeningCountingTask = {
+    ...openingTask,
+    status: 'dispatched',
+    claimed_by: null,
+    claimed_at: null,
+    claim_generation: null,
+  };
+
+  it('reports focused while dispatched Opening Inventory is on the protected Brief', async () => {
+    const onExecutionFocusChange = jest.fn();
+    const props = {
+      ...buildProps(dispatchedOpeningTask, []),
+      onExecutionFocusChange,
+    };
+
+    render(
+      <CountingSessionPage
+        {...(props as unknown as CountingSessionPageProps)}
+      />
+    );
+
+    expect(
+      await screen.findByRole('button', { name: /claim.*start.*count/i })
+    ).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(onExecutionFocusChange).toHaveBeenCalledWith(true)
+    );
+
+    expect(onExecutionFocusChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it('stays focused through a successful Claim & Start Count into execution', async () => {
+    const onExecutionFocusChange = jest.fn();
+    const props = {
+      ...buildProps(dispatchedOpeningTask, []),
+      onExecutionFocusChange,
+    };
+
+    render(
+      <CountingSessionPage
+        {...(props as unknown as CountingSessionPageProps)}
+      />
+    );
+
+    const start = await screen.findByRole('button', {
+      name: /claim.*start.*count/i,
+    });
+
+    fireEvent.click(start);
+
+    expect(
+      await screen.findByPlaceholderText('Scan bin barcode')
+    ).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(onExecutionFocusChange).toHaveBeenCalledWith(true)
+    );
+  });
+
+  it('failed claim stays focused on the protected Brief', async () => {
+    const onExecutionFocusChange = jest.fn();
+    const props = {
+      ...buildProps(dispatchedOpeningTask, []),
+      onClaimTask: jest.fn().mockRejectedValue(new Error('Claim unavailable')),
+      onExecutionFocusChange,
+    };
+
+    render(
+      <CountingSessionPage
+        {...(props as unknown as CountingSessionPageProps)}
+      />
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /claim.*start.*count/i,
+      })
+    );
+
+    expect(
+      await screen.findByText(/Claim unavailable/i)
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByPlaceholderText('Scan bin barcode')
+    ).not.toBeInTheDocument();
+
+    expect(onExecutionFocusChange).toHaveBeenLastCalledWith(true);
+    expect(onExecutionFocusChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it('already-claimed Opening Inventory restores focused execution on re-entry', async () => {
+    const onExecutionFocusChange = jest.fn();
+    const props = {
+      ...buildProps(openingTask, []),
+      onExecutionFocusChange,
+    };
+
+    render(
+      <CountingSessionPage
+        {...(props as unknown as CountingSessionPageProps)}
+      />
+    );
+
+    expect(
+      await screen.findByPlaceholderText('Scan bin barcode')
+    ).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(onExecutionFocusChange).toHaveBeenCalledWith(true)
+    );
+  });
+});
+
+// #1164 — the protected shell hides app chrome from the Brief onward, so every
+// pre-bin phase carries its own exit. Leave count is session exit only
+// (onComplete with no finished label): it never claims, counts or completes.
+describe('CONTRACT-1164-UI-10 — protected pre-bin phases have a non-mutating exit', () => {
+  const dispatchedOpeningTask: OpeningCountingTask = {
+    ...openingTask,
+    status: 'dispatched',
+    claimed_by: null,
+    claimed_at: null,
+    claim_generation: null,
+  };
+
+  const expectNoCountMutation = (props: ReturnType<typeof buildProps>) => {
+    expect(props.onRecordCount).not.toHaveBeenCalled();
+    expect(props.onSkipLine).not.toHaveBeenCalled();
+    expect(props.onCreateFinding).not.toHaveBeenCalled();
+    expect(props.onCreateOpeningLine).not.toHaveBeenCalled();
+    expect(props.onCompleteOpening).not.toHaveBeenCalled();
+    expect(props.onCloseTask).not.toHaveBeenCalled();
+  };
+
+  const expectPlainExit = (props: ReturnType<typeof buildProps>) => {
+    expect(props.onComplete).toHaveBeenCalledTimes(1);
+    expect(props.onComplete.mock.calls[0]).toEqual([]);
+  };
+
+  it('the Brief offers Leave count, which exits without claiming or mutating count data', async () => {
+    const props = renderSession(buildProps(dispatchedOpeningTask, []));
+
+    expect(await screen.findByRole('button', { name: /claim.*start.*count/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Leave count' }));
+
+    expectPlainExit(props);
+    expect(props.onClaimTask).not.toHaveBeenCalled();
+    expectNoCountMutation(props);
+  });
+
+  it('after a failed claim the operator stays on the Brief and Leave count remains available', async () => {
+    const props = renderSession({
+      ...buildProps(dispatchedOpeningTask, []),
+      onClaimTask: jest.fn().mockRejectedValue(new Error('Claim unavailable')),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /claim.*start.*count/i }));
+    expect(await screen.findByText(/Claim unavailable/i)).toBeInTheDocument();
+
+    const leave = screen.getByRole('button', { name: 'Leave count' });
+    expect(leave).toBeEnabled();
+    fireEvent.click(leave);
+
+    expectPlainExit(props);
+    expect(props.onClaimTask).toHaveBeenCalledTimes(1);
+    expectNoCountMutation(props);
+  });
+
+  it('the location confirmation phase offers Leave count, which exits without recording or completing anything', async () => {
+    const props = renderSession(buildProps(openingTask, []));
+
+    const input = await screen.findByPlaceholderText('Scan bin barcode');
+    fireEvent.change(input, { target: { value: OPENING_BIN } });
+    fireEvent.click(screen.getByRole('button', { name: 'Leave count' }));
+
+    expectPlainExit(props);
+    expectNoCountMutation(props);
+    expect(screen.queryByPlaceholderText('Scan product barcode')).not.toBeInTheDocument();
   });
 });

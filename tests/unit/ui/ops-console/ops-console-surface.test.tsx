@@ -36,7 +36,9 @@ const mockUseHistory = jest.fn();
 
 jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
 
+// #1164: the real pure selection/route helpers stay live; only the hook is mocked.
 jest.mock('hooks/useActivationChecklist', () => ({
+  ...jest.requireActual('hooks/useActivationChecklist'),
   useActivationChecklist: () => mockUseActivationChecklist(),
 }));
 
@@ -62,10 +64,12 @@ jest.mock('pages/operations/useWaiting', () => ({
 // below can assert "no navigation" without crashing on missing context.
 // GH-1165 — the first-contact Spotlight renders the REAL shared coach mark.
 jest.mock('@lasyncro/shared/ui', () => ({
-  EntityDetailModal: ({ entityId, title, children }: any) =>
+  EntityDetailModal: ({ entityId, title, children, footerActions, onClose }: any) =>
     entityId ? (
       <section data-testid="entity-detail-modal" aria-label={title}>
+        <button aria-label="Dismiss modal" onClick={onClose} />
         {children}
+        {footerActions}
       </section>
     ) : null,
   SpotlightCoachMark: jest.requireActual('../../../../modules/shared/src/ui/SpotlightCoachMark').SpotlightCoachMark,
@@ -1083,8 +1087,9 @@ describe('xs responsive layout', () => {
     for (const w of NARROW) expect(resolve(OPS_ROW_ACTION_COLUMN, w)).toBe('2 / -1');
     for (const w of [SM_BREAKPOINT, 1440]) expect(resolve(OPS_ROW_ACTION_COLUMN, w)).toBe('auto');
 
-    const source = fs.readFileSync(OPS_CONSOLE_SRC, 'utf8');
-    // Grid, not flex-wrap.
+    const source = opsConsoleRowSource();
+    // Grid, not flex-wrap, within the row itself. Unrelated modal/footer
+    // layouts may legitimately wrap their own controls.
     expect(source).toMatch(/gridColumn: OPS_ROW_ACTION_COLUMN/);
     expect(source).not.toMatch(/flexWrap:/);
   });
@@ -1682,6 +1687,7 @@ describe('theming', () => {
 
 describe('SETUP Opening Inventory command (GH-1156)', () => {
   const START_URL = '/api/v1/wms/opening-inventory/start';
+  const RECOUNT_ASSIGNEES_URL = '/api/v1/operators/recount-assignees';
   // The canonical lifecycle mapping, not a hand-written row: the surface is
   // exercised with exactly what the hook derives from canonical progress.
   const { buildOpeningInventoryItem } = jest.requireActual('hooks/useActivationChecklist');
@@ -1691,34 +1697,70 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     shopify_synced_at: null,
     ...over,
   });
+  // #1164 — canonical ShopOpeningInventoryProgress bins, in server order.
+  const bin = (id: string, over: Record<string, unknown> = {}) => ({
+    recount_task_id: id, warehouse_id: 'wh-1', location_code: `BIN-${id}`,
+    status: 'dispatched', progress_state: 'not_started',
+    assigned_to: 7, claimed_by: null, ...over,
+  });
+  const countingView = () => view('counting', {
+    progress: {
+      state: 'counting', total_bins: 17, complete_bins: 6,
+      bins: [bin('t-1', { status: 'committed', progress_state: 'complete' }), bin('t-2'), bin('t-3')],
+    },
+  });
+  /** The start endpoint returns ShopOpeningInventoryProgress (flat, not the cutover view). */
+  const startedProgress = (bins: unknown[]) => ({
+    data: { state: 'counting', total_bins: bins.length, complete_bins: 0, bins },
+  });
 
   let refresh: jest.Mock;
+  let getSpy: jest.SpyInstance;
   let postSpy: jest.SpyInstance;
 
   // canStart mirrors the hook's advisory owner/admin gate.
-  function withOpeningItem(progressView: unknown, canStart = true) {
+  function withOpeningItem(
+    progressView: unknown,
+    canStart = true,
+    currentUserId = 7
+  ) {
     mockUseActivationChecklist.mockReturnValue({
-      items: [...SETUP_ITEMS, buildOpeningInventoryItem(false, progressView, canStart)],
+      items: [
+        ...SETUP_ITEMS,
+        buildOpeningInventoryItem(
+          false,
+          progressView,
+          canStart,
+          currentUserId
+        ),
+      ],
       completedCount: 1, allComplete: false, isLoading: false, isError: false,
       refreshOpeningInventory: refresh,
+      currentUserId,
     });
   }
 
   const openingRow = () => screen.getByTestId('ops-row-setup:opening-inventory');
   const startButton = () => within(openingRow()).getByRole('button');
   const postCount = () => postSpy.mock.calls.filter(([url]) => url === START_URL).length;
+  const modal = () => screen.getByTestId('entity-detail-modal');
+  // GH-1164 — one combined modal: operator discovery, selection and the only
+  // mutating CTA (Create opening count). There is no Start-counting step.
+  const openingModal = () => screen.findByLabelText('Start opening inventory count');
 
   beforeEach(() => {
     refresh = jest.fn().mockResolvedValue(undefined);
+    getSpy = jest.spyOn(axiosInstance, 'get');
     postSpy = jest.spyOn(axiosInstance, 'post');
   });
 
   afterEach(() => {
+    getSpy.mockRestore();
     postSpy.mockRestore();
   });
 
-  it('not_started: renders a direct Start opening count command that POSTs once with no body and never navigates', async () => {
-    postSpy.mockResolvedValue({ data: {} });
+  it('not_started: Start opening count opens the explanation modal and does NOT POST', () => {
+    getSpy.mockImplementationOnce(() => new Promise(() => undefined));
     withOpeningItem(view('not_started', { progress: { state: 'not_started', total_bins: 0, complete_bins: 0 } }));
     renderPanel();
     expandSetup();
@@ -1726,62 +1768,502 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(openingRow()).toHaveTextContent('Establish opening inventory');
     expect(openingRow()).not.toHaveTextContent(/reconcile/i);
     expect(startButton()).toHaveTextContent(/^Start opening count$/);
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
 
     fireEvent.click(startButton());
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
 
-    expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy.mock.calls[0]).toEqual([START_URL]);
+    expect(modal()).toHaveAttribute('aria-label', 'Start opening inventory count');
+    expect(getSpy).toHaveBeenCalledWith(RECOUNT_ASSIGNEES_URL);
+    expect(within(modal()).getByRole('button', { name: 'Loading operators…' })).toBeDisabled();
+    expect(postCount()).toBe(0);
+    expect(refresh).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('rapid duplicate invocation issues exactly one POST; the action is disabled and reads Starting… while in flight', async () => {
-    let resolvePost: (value: unknown) => void = () => undefined;
-    postSpy.mockImplementation(() => new Promise((resolve) => { resolvePost = resolve; }));
+  it('Cancel stays enabled during operator discovery and late success cannot restore dismissed state', async () => {
+    let resolveGet!: (value: unknown) => void;
+    getSpy.mockImplementationOnce(() => new Promise((resolve) => { resolveGet = resolve; }));
+    getSpy.mockImplementationOnce(() => new Promise(() => undefined));
     withOpeningItem(view('not_started'));
     renderPanel();
     expandSetup();
 
-    const button = startButton();
-    act(() => {
-      button.click();
-      button.click();
-    });
-    fireEvent.click(button);
-
-    expect(postCount()).toBe(1);
-    expect(startButton()).toBeDisabled();
-    expect(startButton()).toHaveTextContent('Starting…');
+    fireEvent.click(startButton());
+    expect(modal()).toBeInTheDocument();
+    expect(getSpy).toHaveBeenCalledWith(RECOUNT_ASSIGNEES_URL);
+    const cancel = within(modal()).getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
 
     await act(async () => {
-      resolvePost({ data: {} });
+      resolveGet({ data: { operators: [{ user_id: 7, first_name: 'Stale', last_name: 'Owner' }] } });
+    });
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
+    fireEvent.click(startButton());
+    expect(getSpy).toHaveBeenCalledTimes(2);
+    expect(within(modal()).queryByRole('radio')).toBeNull();
+    expect(within(modal()).getByRole('button', { name: 'Loading operators…' })).toBeDisabled();
+    expect(postCount()).toBe(0);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('reopened discovery keeps the second response and selection when the first success arrives late', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    getSpy.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+    getSpy.mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+    fireEvent.click(within(modal()).getByRole('button', { name: 'Dismiss modal' }));
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
+    fireEvent.click(startButton());
+    expect(getSpy).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      resolveSecond({ data: { operators: [{ user_id: 8, first_name: 'Current', last_name: 'Operator' }] } });
+    });
+    const current = within(modal()).getByRole('radio', { name: /Current Operator/ });
+    fireEvent.click(current);
+    expect(current).toHaveAttribute('aria-checked', 'true');
+    await act(async () => {
+      resolveFirst({ data: { operators: [{ user_id: 7, first_name: 'Stale', last_name: 'Owner' }] } });
+    });
+    expect(within(modal()).getByRole('radio', { name: /Current Operator/ })).toHaveAttribute('aria-checked', 'true');
+    expect(within(modal()).queryByRole('radio', { name: /Stale Owner/ })).toBeNull();
+    expect(within(modal()).queryByRole('alert')).toBeNull();
+    expect(postCount()).toBe(0);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('late failed discovery cannot inject an error or clear loading in a newer session', async () => {
+    let rejectFirst!: (reason: Error) => void;
+    let resolveSecond!: (value: unknown) => void;
+    getSpy.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject; }));
+    getSpy.mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+    fireEvent.click(within(modal()).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(startButton());
+    await act(async () => { rejectFirst(new Error('Old discovery failed')); });
+    expect(getSpy).toHaveBeenCalledTimes(2);
+    expect(within(modal()).queryByRole('alert')).toBeNull();
+    expect(within(modal()).getByRole('button', { name: 'Loading operators…' })).toBeDisabled();
+    await act(async () => {
+      resolveSecond({ data: { operators: [{ user_id: 8, first_name: 'Current', last_name: 'Operator' }] } });
+    });
+    expect(within(modal()).getByRole('radio', { name: /Current Operator/ })).toBeInTheDocument();
+    expect(within(modal()).queryByRole('alert')).toBeNull();
+    expect(postCount()).toBe(0);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // #1164 — automatic discovery runs at most once per modal session: an empty
+  // or failed result is terminal until the modal is closed and reopened.
+  const discoveryGets = () =>
+    getSpy.mock.calls.filter(([url]) => url === RECOUNT_ASSIGNEES_URL).length;
+  const settle = async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => { await Promise.resolve(); });
+    }
+  };
+
+  it('an empty discovery result is terminal: exactly one GET while the modal stays open', async () => {
+    getSpy.mockResolvedValue({ data: { operators: [] } });
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+
+    expect(await within(modal()).findByText('No eligible warehouse operator is available for this count.'))
+      .toBeInTheDocument();
+    await settle();
+
+    expect(discoveryGets()).toBe(1);
+    expect(within(modal()).getByText('No eligible warehouse operator is available for this count.'))
+      .toBeInTheDocument();
+    expect(postCount()).toBe(0);
+  });
+
+  it('a failed discovery is terminal: exactly one GET while the modal stays open', async () => {
+    getSpy.mockRejectedValue(new Error('Discovery unavailable'));
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+
+    expect(await within(modal()).findByText('Could not load eligible warehouse operators. Try again.'))
+      .toBeInTheDocument();
+    await settle();
+
+    expect(discoveryGets()).toBe(1);
+    expect(within(modal()).getByText('Could not load eligible warehouse operators. Try again.'))
+      .toBeInTheDocument();
+    expect(postCount()).toBe(0);
+  });
+
+  it('closing and reopening the modal starts a new session with exactly one new discovery', async () => {
+    getSpy.mockResolvedValue({ data: { operators: [] } });
+    withOpeningItem(view('not_started'));
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+    await within(modal()).findByText('No eligible warehouse operator is available for this count.');
+    await settle();
+    expect(discoveryGets()).toBe(1);
+
+    fireEvent.click(within(modal()).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
+    fireEvent.click(startButton());
+    await within(modal()).findByText('No eligible warehouse operator is available for this count.');
+    await settle();
+
+    expect(discoveryGets()).toBe(2);
+    expect(postCount()).toBe(0);
+  });
+
+  it('Start opening count discovers operators inside the combined modal and does not create work before Create opening count', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+    // Prevent the CURRENT stale direct-POST behavior from escaping to a real request
+    // while this test is RED.
+    postSpy.mockResolvedValue(startedProgress([]));
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    await waitFor(() =>
+      expect(getSpy).toHaveBeenCalledWith(RECOUNT_ASSIGNEES_URL)
+    );
+
+    expect(modal()).toHaveAttribute('aria-label', 'Start opening inventory count');
+    expect(await within(modal()).findByText(/Mabu Owner.*Me/)).toBeInTheDocument();
+    expect(
+      within(modal()).getByRole('radiogroup', { name: 'Assign opening count to' })
+    ).toBeInTheDocument();
+    expect(within(modal()).getByText('Alex Operator')).toBeInTheDocument();
+
+    // Selecting an operator is still pre-mutation; only Create opening count POSTs.
+    fireEvent.click(within(modal()).getByRole('radio', { name: /Mabu Owner.*Me/i }));
+    expect(within(modal()).getByRole('button', { name: 'Create opening count' })).toBeEnabled();
+    expect(postCount()).toBe(0);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('self-assignment POSTs assigned_to and opens the assigned task protected Brief route', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+    postSpy.mockResolvedValueOnce(startedProgress([bin('task-self')]));
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    const assignment = await openingModal();
+
+    fireEvent.click(
+      await within(assignment).findByRole('radio', { name: /Mabu Owner.*Me/i })
+    );
+    fireEvent.click(
+      within(assignment).getByRole('button', { name: 'Create opening count' })
+    );
+
+    await waitFor(() =>
+      expect(postSpy).toHaveBeenCalledWith(
+        START_URL,
+        { assigned_to: 7 }
+      )
+    );
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('/wms?countTaskId=task-self&warehouseFocus=count')
+    );
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('assigning Opening Inventory to another operator dispatches work but never enters that operator task', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+    postSpy.mockResolvedValueOnce(startedProgress([bin('task-other')]));
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    const assignment = await openingModal();
+
+    fireEvent.click(
+      await within(assignment).findByRole('radio', { name: /Alex Operator/i })
+    );
+    fireEvent.click(
+      within(assignment).getByRole('button', { name: 'Create opening count' })
+    );
+
+    await waitFor(() =>
+      expect(postSpy).toHaveBeenCalledWith(
+        START_URL,
+        { assigned_to: 8 }
+      )
+    );
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('multiple bins: self-assignment opens the first assigned dispatched bin in server order', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
     });
 
-    await waitFor(() => expect(startButton()).toBeEnabled());
+    postSpy.mockResolvedValueOnce(
+      startedProgress([
+        bin('t-committed', {
+          status: 'committed',
+          progress_state: 'complete',
+        }),
+        bin('t-first-open', { location_code: 'Z-99' }),
+        bin('t-second-open', { location_code: 'A-01' }),
+      ])
+    );
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    const assignment = await openingModal();
+
+    fireEvent.click(
+      await within(assignment).findByRole('radio', { name: /Mabu Owner.*Me/i })
+    );
+    fireEvent.click(
+      within(assignment).getByRole('button', { name: 'Create opening count' })
+    );
+
+    await waitFor(() =>
+      expect(postSpy).toHaveBeenCalledWith(
+        START_URL,
+        { assigned_to: 7 }
+      )
+    );
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/wms?countTaskId=t-first-open&warehouseFocus=count'
+      )
+    );
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('self-assignment never enters an opening cohort owned by another operator', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+
+    postSpy.mockResolvedValueOnce(
+      startedProgress([
+        bin('t-other', { assigned_to: 8 }),
+      ])
+    );
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    const assignment = await openingModal();
+
+    fireEvent.click(
+      await within(assignment).findByRole('radio', { name: /Mabu Owner.*Me/i })
+    );
+    fireEvent.click(
+      within(assignment).getByRole('button', { name: 'Create opening count' })
+    );
+
+    expect(
+      await within(assignment).findByRole('alert')
+    ).toHaveTextContent(/\S/);
+
+    expect(postCount()).toBe(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('rapid duplicate assignment issues exactly one POST and disables the assignment CTA while in flight', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+
+    let resolvePost: (value: unknown) => void = () => undefined;
+
+    postSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        })
+    );
+
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+
+    fireEvent.click(startButton());
+
+    const assignment = modal();
+    await within(assignment).findByRole('radio', { name: /Mabu Owner.*Me/i });
+
+    fireEvent.click(
+      within(assignment).getByRole('radio', { name: /Mabu Owner.*Me/i })
+    );
+
+    const assign = within(assignment).getByRole('button', {
+      name: 'Create opening count',
+    });
+
+    act(() => {
+      assign.click();
+      assign.click();
+    });
+
+    expect(postCount()).toBe(1);
+    const cancel = within(assignment).getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeDisabled();
+    fireEvent.click(cancel);
+    fireEvent.click(within(assignment).getByRole('button', { name: 'Dismiss modal' }));
+    expect(modal()).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    expect(
+      within(assignment).getByRole('button', { name: 'Creating…' })
+    ).toBeDisabled();
+
+    await act(async () => {
+      resolvePost(startedProgress([bin('t-1')]));
+    });
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/wms?countTaskId=t-1&warehouseFocus=count'
+      )
+    );
+
     expect(postCount()).toBe(1);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('success refreshes canonical progress/readiness, and the re-read counting state cannot start again', async () => {
-    postSpy.mockResolvedValue({ data: {} });
-    withOpeningItem(view('not_started'));
+  it('successful self-assignment refreshes canonical state before entering the Brief', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+
+    postSpy.mockResolvedValueOnce(
+      startedProgress([bin('t-2')])
+    );
+
+    withOpeningItem(view('not_started'), true, 7);
     const { rerender } = renderPanel();
     expandSetup();
 
     fireEvent.click(startButton());
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
 
-    // The canonical re-read now reports counting.
-    withOpeningItem(view('counting'));
-    rerender(<OpsConsolePanel alerts={[alert()]} deepLink={deepLink} open onClose={jest.fn()} />);
+    const assignment = await openingModal();
 
-    expect(within(openingRow()).queryByRole('button', { name: /start opening count/i })).toBeNull();
-    expect(screen.getByTestId('ops-row-meta-setup:opening-inventory')).toHaveTextContent('6 / 17 bins');
-    expect(postSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      await within(assignment).findByRole('radio', { name: /Mabu Owner.*Me/i })
+    );
+    fireEvent.click(
+      within(assignment).getByRole('button', { name: 'Create opening count' })
+    );
+
+    await waitFor(() =>
+      expect(refresh).toHaveBeenCalledTimes(1)
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      '/wms?countTaskId=t-2&warehouseFocus=count'
+    );
+
+    // Canonical re-read now reports counting.
+    withOpeningItem(countingView(), true, 7);
+
+    rerender(
+      <OpsConsolePanel
+        alerts={[alert()]}
+        deepLink={deepLink}
+        open
+        onClose={jest.fn()}
+      />
+    );
+
+    expect(
+      within(openingRow()).queryByRole('button', {
+        name: /start opening count/i,
+      })
+    ).toBeNull();
+
+    expect(
+      screen.getByTestId('ops-row-meta-setup:opening-inventory')
+    ).toHaveTextContent('6 / 17 bins');
+
+    expect(postCount()).toBe(1);
   });
 
-  it('counting: shows canonical progress and continues to Warehouse Operations, with no start command', () => {
-    withOpeningItem(view('counting'));
+  it('counting: shows canonical progress and Continue deep-links to the next count task, with no start command', () => {
+    withOpeningItem(countingView());
     renderPanel();
     expandSetup();
 
@@ -1790,8 +2272,10 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(within(openingRow()).queryByRole('button', { name: /start/i })).toBeNull();
 
     fireEvent.click(within(openingRow()).getByRole('button', { name: /Continue/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    expect(mockNavigate).toHaveBeenCalledWith('/wms?countTaskId=t-2&warehouseFocus=count');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/wms');
     expect(postSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
   });
 
   it.each(['needs_bin_review', 'review_required'])(
@@ -1823,13 +2307,13 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('operator + counting: Continue is still offered and navigates to /wms', () => {
-    withOpeningItem(view('counting'), false);
+  it('operator + counting: Continue is still offered and deep-links to the next count task', () => {
+    withOpeningItem(countingView(), false);
     renderPanel();
     expandSetup();
 
     fireEvent.click(within(openingRow()).getByRole('button', { name: /Continue/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    expect(mockNavigate).toHaveBeenCalledWith('/wms?countTaskId=t-2&warehouseFocus=count');
     expect(postSpy).not.toHaveBeenCalled();
   });
 
@@ -1847,34 +2331,102 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(postSpy).not.toHaveBeenCalled();
   });
 
-  it('failure exposes stable merchant copy and stays retryable', async () => {
-    const rejected = 'The opening count could not be started. Check that your warehouse has active bins, then try again.';
+  it('assignment failure exposes stable merchant copy, preserves selection, and stays retryable', async () => {
+    const rejected =
+      'The opening count could not be started. Check that your warehouse has active bins, then try again.';
+
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+
     postSpy
-      .mockRejectedValueOnce({ response: { status: 409, data: { code: 'OPENING_START_REJECTED', error: rejected } } })
-      .mockRejectedValueOnce({ response: { status: 403, data: { error: 'Forbidden: raw permission text' } } })
-      .mockResolvedValueOnce({ data: {} });
-    withOpeningItem(view('not_started'));
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'OPENING_START_REJECTED',
+            error: rejected,
+          },
+        },
+      })
+      .mockRejectedValueOnce({
+        response: {
+          status: 403,
+          data: {
+            error: 'Forbidden: raw permission text',
+          },
+        },
+      })
+      .mockResolvedValueOnce(
+        startedProgress([bin('t-retry')])
+      );
+
+    withOpeningItem(view('not_started'), true, 7);
     renderPanel();
     expandSetup();
 
     fireEvent.click(startButton());
-    expect(await screen.findByRole('alert')).toHaveTextContent(rejected);
-    expect(startButton()).toBeEnabled();
-    expect(startButton()).toHaveTextContent('Start opening count');
+
+    const assignment = await openingModal();
+
+    const self = await within(assignment).findByRole('radio', {
+      name: /Mabu Owner.*Me/i,
+    });
+    fireEvent.click(self);
+
+    const assign = () =>
+      within(assignment).getByRole('button', {
+        name: /Create opening count|Creating…/,
+      });
+
+    fireEvent.click(assign());
+
+    expect(
+      await within(assignment).findByRole('alert')
+    ).toHaveTextContent(rejected);
+
+    expect(self).toHaveAttribute('aria-checked', 'true');
+    expect(assign()).toBeEnabled();
     expect(refresh).not.toHaveBeenCalled();
 
-    // A non-start-endpoint error never leaks its raw text.
-    fireEvent.click(startButton());
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('The opening count could not be started. Try again.')
-    );
-    expect(screen.getByRole('alert')).not.toHaveTextContent(/Forbidden/);
+    // Generic permission details must not leak, and the explicit assignee
+    // remains selected so the merchant can retry.
+    fireEvent.click(assign());
 
-    fireEvent.click(startButton());
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(assignment).getByRole('alert')
+      ).toHaveTextContent(
+        'The opening count could not be started. Try again.'
+      )
+    );
+
+    expect(
+      within(assignment).getByRole('alert')
+    ).not.toHaveTextContent(/Forbidden/);
+
+    expect(self).toHaveAttribute('aria-checked', 'true');
+    expect(refresh).not.toHaveBeenCalled();
+
+    fireEvent.click(assign());
+
+    await waitFor(() =>
+      expect(refresh).toHaveBeenCalledTimes(1)
+    );
+
     expect(postCount()).toBe(3);
-    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/wms?countTaskId=t-retry&warehouseFocus=count'
+      )
+    );
+
   });
 
   it('leaves generic setup/navigation rows unchanged alongside the command row', () => {
@@ -1921,6 +2473,7 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
 
 describe('first-entry Ops Console onboarding (GH-1165)', () => {
   const START_URL = '/api/v1/wms/opening-inventory/start';
+  const RECOUNT_ASSIGNEES_URL = '/api/v1/operators/recount-assignees';
   const INTRO_URL = '/api/v1/user-state/ops-console/intro-seen';
   const { buildFirstEntrySetupItems, buildOpeningInventoryItem } = jest.requireActual('hooks/useActivationChecklist');
   const { OPS_CONSOLE_AUTO_OPEN_DELAY_MS, OPS_CONSOLE_INTRO_SEEN_KEY } = jest.requireActual('components/OpsConsole/OpsConsole');
@@ -1930,6 +2483,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     shopify_synced_at: null,
   });
 
+  let getSpy: jest.SpyInstance;
   let postSpy: jest.SpyInstance;
   const rq = jest.requireMock('@tanstack/react-query') as { useQuery: () => unknown };
   const originalUseQuery = rq.useQuery;
@@ -1940,6 +2494,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
       items: [...SETUP_ITEMS, buildOpeningInventoryItem(false, view(state), canStart)],
       completedCount: 1, allComplete: false, isLoading: false, isError: false,
       refreshOpeningInventory: jest.fn().mockResolvedValue(undefined),
+      currentUserId: 7,
       firstEntry: true,
       firstEntryItems: buildFirstEntrySetupItems(zonesConfigured, false, view(state), canStart),
     });
@@ -1956,11 +2511,13 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
   const advance = (ms: number) => act(() => { jest.advanceTimersByTime(ms); });
 
   beforeEach(() => {
+    getSpy = jest.spyOn(axiosInstance, 'get');
     postSpy = jest.spyOn(axiosInstance, 'post').mockResolvedValue({ data: {} });
   });
 
   afterEach(() => {
     rq.useQuery = originalUseQuery;
+    getSpy.mockRestore();
     postSpy.mockRestore();
     jest.useRealTimers();
   });
@@ -2010,16 +2567,70 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(0);
   });
 
-  it('zonesConfigured=true + not_started + owner: map stays visible as verified; Start opening count POSTs', async () => {
+  it('zonesConfigured=true + not_started + owner: map stays verified; Start opening count advances to explicit assignment without creating work', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+
     firstEntryChecklist(true);
     renderPanel({ alerts: [] });
 
-    expect(screen.getByTestId('ops-row-setup:first-entry-map')).toHaveAttribute('data-status', 'verified');
-    expect(screen.getByTestId('ops-first-entry-setup-toggle')).toHaveTextContent('SETUP · 1 remaining');
+    expect(
+      screen.getByTestId('ops-row-setup:first-entry-map')
+    ).toHaveAttribute('data-status', 'verified');
+
+    expect(
+      screen.getByTestId('ops-first-entry-setup-toggle')
+    ).toHaveTextContent('SETUP · 1 remaining');
 
     const count = screen.getByTestId('ops-row-setup:first-entry-count');
-    fireEvent.click(within(count).getByRole('button', { name: 'Start opening count' }));
-    await waitFor(() => expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(1));
+
+    fireEvent.click(
+      within(count).getByRole('button', { name: 'Start opening count' })
+    );
+
+    const explanation = screen.getByTestId('entity-detail-modal');
+
+    expect(explanation).toHaveAttribute(
+      'aria-label',
+      'Start opening inventory count'
+    );
+
+    expect(
+      postSpy.mock.calls.filter(([url]) => url === START_URL)
+    ).toHaveLength(0);
+
+    await waitFor(() =>
+      expect(getSpy).toHaveBeenCalledWith(RECOUNT_ASSIGNEES_URL)
+    );
+
+    const assignment = explanation;
+
+    expect(
+      await within(assignment).findByText(/Mabu Owner.*Me/)
+    ).toBeInTheDocument();
+
+    expect(
+      within(assignment).getByRole('radiogroup', {
+        name: 'Assign opening count to',
+      })
+    ).toBeInTheDocument();
+
+    expect(
+      within(assignment).getByText('Alex Operator')
+    ).toBeInTheDocument();
+
+    // Assignment selection is still pre-mutation.
+    expect(
+      postSpy.mock.calls.filter(([url]) => url === START_URL)
+    ).toHaveLength(0);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('zonesConfigured=true + not_started + operator: no Start command', () => {
@@ -2265,22 +2876,28 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
       const row = within(rail).getByTestId(id);
       expect(inline.contains(row)).toBe(false);
     }
-    fireEvent.click(within(within(rail).getByTestId('ops-row-setup:first-entry-map'))
-      .getByRole('button', { name: /Map warehouse/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
-
+    // Dismissal removes the coach only. It runs while the rail is still open:
+    // any close clears the coach and a later open never raises it again.
     fireEvent.click(within(inline).getByRole('button', { name: 'Dismiss' }));
     expect(anySpotlight()).toBeNull();
     expect(dimmer()).toBeNull();
     expect(trigger()).toHaveAttribute('aria-expanded', 'true');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(within(rail).getByTestId('ops-row-setup:first-entry-count')).toBeInTheDocument();
+
+    fireEvent.click(within(within(rail).getByTestId('ops-row-setup:first-entry-map'))
+      .getByRole('button', { name: /Map warehouse/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
+    // GH-1164 — cross-page navigation hands the workspace to the destination
+    // and closes the rail. The real Ops Console trigger reports it; the SETUP
+    // disclosure (ops-first-entry-setup-toggle) is not the rail trigger.
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false');
     expect(postSpy.mock.calls.filter(([url]) => url !== INTRO_URL)).toHaveLength(0);
 
     // Later reopen: no Spotlight in either presentation.
-    fireEvent.click(trigger());
     advance(10 * OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
     fireEvent.click(trigger());
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('ops-console')).toBeInTheDocument();
     expect(anySpotlight()).toBeNull();
     expect(introPosts()).toBe(1);

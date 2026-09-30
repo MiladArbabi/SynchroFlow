@@ -176,6 +176,8 @@ const VALID_SPOTLIGHT_KEYS = new Set([
   'po_send_flow',
   'receive_dispatch_assignment',
   'receive_assigned_work',
+  // #1164: first-time Opening Inventory count coaching.
+  'opening_inventory_count',
 ]);
 
 export const dismissSpotlight = async (req: Request, res: Response) => {

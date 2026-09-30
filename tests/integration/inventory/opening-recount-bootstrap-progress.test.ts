@@ -69,6 +69,23 @@ async function createFixture(
     const ownerId = Number((ownerRow as any).id ?? ownerRow);
     const operatorId = Number((operatorRow as any).id ?? operatorRow);
 
+    // These users participate in real WMS assignment/claim flows, so the
+    // fixture must model the canonical active shop-membership boundary.
+    await trx('shop_memberships').insert([
+      {
+        shop_id: shopId,
+        user_id: ownerId,
+        role: 'owner',
+        revoked_at: null,
+      },
+      {
+        shop_id: shopId,
+        user_id: operatorId,
+        role: 'operator',
+        revoked_at: null,
+      },
+    ]);
+
     await trx('shop_wms_settings').insert({
       shop_id: shopId,
       bootstrap_model: bootstrapModel,
@@ -1179,6 +1196,15 @@ describe('shop-wide opening inventory reconciliation', () => {
       all_bins_settled: false,
     });
 
+    expect(shopProgress.bins).toHaveLength(4);
+    expect(
+      shopProgress.bins.every(
+        (bin) =>
+          (bin as { assigned_to?: number | null }).assigned_to ===
+          fixture.operatorId
+      )
+    ).toBe(true);
+
     const warehouseProgress = await withTenant(
       fixture.shopId,
       (trx) =>
@@ -1195,6 +1221,14 @@ describe('shop-wide opening inventory reconciliation', () => {
       progress_pct: 100,
       all_bins_settled: true,
     });
+
+    expect(
+      warehouseProgress.bins.every(
+        (bin) =>
+          (bin as { assigned_to?: number | null }).assigned_to ===
+          fixture.operatorId
+      )
+    ).toBe(true);
 
     const otherWarehouseProgress =
       await withTenant(

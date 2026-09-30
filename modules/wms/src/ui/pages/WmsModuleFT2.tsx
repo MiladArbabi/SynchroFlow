@@ -355,6 +355,11 @@ export type WmsModuleFT2Props = {
 
   /** Count execution — operator-facing tasks only. */
   recountTasks?: CountingTask[];
+  /**
+   * #1164 — true once recountTasks/recountLocked are definitive (not loading
+   * or refetching). Only then may an unresolvable countTaskId fail open.
+   */
+  recountTasksSettled?: boolean;
   onFetchCountingPreview: () => Promise<RecountPreviewBin[]>;
   onFetchCountingAssignees: () => Promise<Array<{
     user_id: number;
@@ -426,6 +431,13 @@ export type WmsModuleFT2Props = {
   /** Called when an operator enters a counting session. */
   onCountSessionEnter?: (taskId: string) => void;
   /**
+   * #1164 / WAREHOUSE-FOCUS-SHELL — reports protected-shell focus for the
+   * named count task: focused from its Brief onward, and unfocused when a
+   * requested task cannot produce a usable session (fail open). Parent owns
+   * URL persistence.
+   */
+  onCountSessionFocusChange?: (taskId: string, focused: boolean) => void;
+  /**
    * RECOUNT-FRESH-NOBINS-40: Reconcile Inventory's zero-bin empty state.
    * Navigation ownership stays at the page level (WmsOperationsPage), not
    * in this presentational module — same division already used for the
@@ -439,6 +451,8 @@ export type WmsModuleFT2Props = {
    * Rendered inline above the Receiving cards, never as a modal.
    */
   receiveAssignedWorkSpotlight?: { isDismissed: boolean; dismiss: () => void };
+  /** #1164: first-time Opening Inventory count coaching (useSpotlight in the app layer). */
+  openingInventorySpotlight?: { isDismissed: boolean; dismiss: () => void };
 
   /**
    * 4b-2b GRILL-04: canonical opening inventory view from
@@ -1281,6 +1295,7 @@ function WmsModuleFT2Inner({
   onReassignReceiveJob,
   recountLocked,
   recountTasks,
+  recountTasksSettled,
   onRecountUpgrade,
   onFetchCountingPreview,
   onFetchCountingAssignees,
@@ -1299,8 +1314,10 @@ function WmsModuleFT2Inner({
   canReassignCount,
   pendingCountTaskId,
   onCountSessionEnter,
+  onCountSessionFocusChange,
   onSetupBinsClick,
   receiveAssignedWorkSpotlight,
+  openingInventorySpotlight,
   openingInventory,
   canApproveOpeningInventoryCutover,
   openingInventoryCutoverSubmitting,
@@ -1641,6 +1658,22 @@ function WmsModuleFT2Inner({
     onReceiveSessionFocusChangeRef.current = onReceiveSessionFocusChange;
   }, [onReceiveSessionFocusChange]);
 
+  const onCountSessionFocusChangeRef = useRef(onCountSessionFocusChange);
+  useEffect(() => {
+    onCountSessionFocusChangeRef.current = onCountSessionFocusChange;
+  }, [onCountSessionFocusChange]);
+
+  // #1164 — same exit-race protection as Receive: stable callback identity,
+  // and only the CURRENT active count session is allowed to update the URL.
+  const handleCountExecutionFocusChange = useCallback((focused: boolean) => {
+    const current = activeSessionRef.current;
+    if (current?.type !== 'count') return;
+    onCountSessionFocusChangeRef.current?.(
+      current.task.recount_task_id,
+      focused
+    );
+  }, []);
+
   const handleReceiveExecutionFocusChange = useCallback((focused: boolean) => {
     const current = activeSessionRef.current;
     if (current?.type !== 'receive') return;
@@ -1659,9 +1692,23 @@ function WmsModuleFT2Inner({
     }
   }, [pendingReturnJobId]);
 
+  // #1164 — fail open. A focused count URL must not hide app chrome for a
+  // session that is not there: once count-task state has settled and the
+  // requested task cannot produce a usable session for this user (missing,
+  // another user's, locked, or the read failed), report it unfocused through
+  // the existing count-focus boundary, which keeps countTaskId and drops
+  // warehouseFocus. Loading never fails open; a live session never does.
+  const failOpenCountFocus = (taskId: string) => {
+    if (!recountTasksSettled) return;
+    const current = activeSessionRef.current;
+    if (current?.type === 'count' && current.task.recount_task_id === taskId) return;
+    onCountSessionFocusChangeRef.current?.(taskId, false);
+  };
+
   useEffect(() => {
     if (recountLocked) {
       setActiveSession((session) => session?.type === 'count' ? null : session);
+      if (pendingCountTaskId) failOpenCountFocus(pendingCountTaskId);
       return;
     }
 
@@ -1687,8 +1734,19 @@ function WmsModuleFT2Inner({
 
     if (task) {
       setActiveSession({ type: 'count', task });
+      // #1164 — the module owns the positive focus handoff for a resolved
+      // Opening Inventory session: protection begins at the Brief even when
+      // the URL arrived without warehouseFocus=count (e.g. after a fail-open).
+      // CountingSessionPage's own mount report can run before activeSessionRef
+      // syncs and be dropped; the parent's focus handler is idempotent.
+      if (task.purpose === 'opening_inventory') {
+        onCountSessionFocusChangeRef.current?.(task.recount_task_id, true);
+      }
+      return;
     }
-  }, [pendingCountTaskId, recountTasks, currentUserId, recountLocked]);
+
+    failOpenCountFocus(pendingCountTaskId);
+  }, [pendingCountTaskId, recountTasks, currentUserId, recountLocked, recountTasksSettled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (pendingPickBatchId) {
@@ -2036,6 +2094,8 @@ function WmsModuleFT2Inner({
         onCloseTask={onCloseCountingTask}
         onCreateOpeningLine={onCreateOpeningLine}
         onCompleteOpening={onCompleteOpening}
+        openingInventorySpotlight={openingInventorySpotlight}
+        onExecutionFocusChange={handleCountExecutionFocusChange}
       />
     );
   }

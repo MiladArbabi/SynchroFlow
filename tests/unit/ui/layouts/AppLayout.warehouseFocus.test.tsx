@@ -155,4 +155,27 @@ describe('WAREHOUSE-FOCUS-SHELL-01A — AppLayout URL-backed execution focus', (
     expect(screen.getByTestId('topnav-stub')).toBeInTheDocument();
     expect(screen.getByTestId('sidenav-stub')).toBeInTheDocument();
   });
+
+  it('unfocused count URL (countTaskId only, no warehouseFocus — e.g. after fail-open): nav visible', () => {
+    renderAt('/wms?countTaskId=count-a');
+
+    expect(screen.getByTestId('topnav-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('sidenav-stub')).toBeInTheDocument();
+  });
+
+  it('focused Count URL (warehouseFocus=count + countTaskId): topnav+sidenav absent', () => {
+    renderAt('/wms?countTaskId=count-a&warehouseFocus=count');
+
+    expect(screen.queryByTestId('topnav-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidenav-stub')).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-content')).toBeInTheDocument();
+  });
+
+  it('warehouseFocus=count with NO countTaskId does not gain focus', () => {
+    renderAt('/wms?warehouseFocus=count');
+
+    expect(screen.getByTestId('topnav-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('sidenav-stub')).toBeInTheDocument();
+  });
+
 });

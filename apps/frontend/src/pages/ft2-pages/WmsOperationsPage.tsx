@@ -22,7 +22,6 @@ import type {
   CountingSkipReason,
   CountingFinding,
   CountingFindingType,
-  OpeningInventoryCutoverView,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
@@ -115,7 +114,8 @@ export default function WmsOperationsPage() {
   const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
     data, isLoading, isError, refetch, stowTasks, settings,
-    openReceiveJobs, recountTasks, recountLocked,
+    openReceiveJobs, recountTasks, recountLocked, recountTasksSettled,
+    openingInventory = null, refetchOpeningInventory,
   } = useWms();
   const readyToPackQuery = useReadyToPack();
   const { data: gridData } = useWarehouseGrid();
@@ -129,6 +129,9 @@ export default function WmsOperationsPage() {
   // GH-1109 residual: teaches an assigned operator that assignment reserves
   // Receive work but does not start it — claim/start is a distinct step.
   const receiveAssignedWorkSpotlight = useSpotlight('receive_assigned_work');
+  // #1164: first-time Opening Inventory count coaching; shown only inside an
+  // opening_inventory count session (CountingSessionPage decides).
+  const openingInventorySpotlight = useSpotlight('opening_inventory_count');
   // RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only — backend
   // requireAction('wms:recount:reassign') is the real authority.
   const canReassignRecount = userRole === 'owner' || userRole === 'admin';
@@ -206,27 +209,14 @@ export default function WmsOperationsPage() {
   // 4b-2b GRILL-04 — opening inventory cutover. The backend owns readiness,
   // acceptance, economics and idempotency; the page only reads the canonical
   // view and posts the merchant's explicit physical-truth acceptance.
-  const [openingInventory, setOpeningInventory] =
-    useState<OpeningInventoryCutoverView | null>(null);
+  // #1164: the view comes from useWms's canonical progress query — the same
+  // one the Ops Console re-reads after a start — never a page-local copy.
   const [openingCutoverSubmitting, setOpeningCutoverSubmitting] = useState(false);
   const [openingCutoverError, setOpeningCutoverError] = useState<string | null>(null);
 
   const fetchOpeningInventory = useCallback(async () => {
-    try {
-      const { data } = await axiosInstance.get<OpeningInventoryCutoverView>(
-        '/api/v1/wms/opening-inventory/progress'
-      );
-      setOpeningInventory(data);
-    } catch {
-      // Keep the last known view; the card is informational until a read succeeds.
-      console.error('[WmsOperationsPage] Failed to load opening inventory progress');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (recountLocked) return;
-    void fetchOpeningInventory();
-  }, [recountLocked, fetchOpeningInventory]);
+    await refetchOpeningInventory?.();
+  }, [refetchOpeningInventory]);
 
   const handleApproveOpeningInventoryCutover = useCallback(async (acceptPhysicalTruth: boolean) => {
     setOpeningCutoverSubmitting(true);
@@ -833,6 +823,10 @@ export default function WmsOperationsPage() {
         isDismissed: receiveAssignedWorkSpotlight.isDismissed,
         dismiss: receiveAssignedWorkSpotlight.dismiss,
       }}
+      openingInventorySpotlight={{
+        isDismissed: openingInventorySpotlight.isDismissed,
+        dismiss: openingInventorySpotlight.dismiss,
+      }}
       onReceiveSessionEnter={(id) =>
         setSearchParams(
           { receiveJobId: id },
@@ -844,6 +838,7 @@ export default function WmsOperationsPage() {
       onReassignReceiveJob={handleReassignReceiveJob}
       recountLocked={recountLocked}
       recountTasks={recountTasks}
+      recountTasksSettled={recountTasksSettled}
       onRecountUpgrade={() => setRecountUpgradeOpen(true)}
       onFetchCountingPreview={handleFetchCountingPreview}
       onFetchCountingAssignees={handleFetchCountingAssignees}
@@ -862,9 +857,39 @@ export default function WmsOperationsPage() {
       currentUserId={currentUserId}
       canReassignCount={canReassignRecount}
       pendingCountTaskId={searchParams.get('countTaskId')}
-      onCountSessionEnter={(id) =>
-        setSearchParams({ countTaskId: id }, { replace: true })
-      }
+      // #1164 / WAREHOUSE-FOCUS-SHELL — opening an Opening Inventory task
+      // begins its protected task session at the Brief; claim/start changes
+      // task ownership/phase, not shell ownership. Ordinary cycle recounts
+      // keep the plain countTaskId entry, and an id that does not resolve
+      // here never invents protected focus.
+      onCountSessionEnter={(id) => {
+        const entered = recountTasks.find(
+          (task: { recount_task_id: string; purpose?: string | null }) =>
+            task.recount_task_id === id
+        );
+        setSearchParams(
+          entered?.purpose === 'opening_inventory'
+            ? { countTaskId: id, warehouseFocus: 'count' }
+            : { countTaskId: id },
+          { replace: true }
+        );
+      }}
+      onCountSessionFocusChange={(taskId, focused) => {
+        // #1164 — idempotent: the WMS fail-open path may report the same
+        // unfocused state repeatedly; only a real change touches the URL.
+        if (
+          searchParams.get('countTaskId') === taskId &&
+          (searchParams.get('warehouseFocus') === 'count') === focused
+        ) {
+          return;
+        }
+        setSearchParams(
+          focused
+            ? { countTaskId: taskId, warehouseFocus: 'count' }
+            : { countTaskId: taskId },
+          { replace: true }
+        );
+      }}
       onSetupBinsClick={handleSetupBinsClick}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}

@@ -17,10 +17,12 @@ import {
  * economic delta, Shopify preflight, durable batches, idempotency, retries,
  * completion and concurrency. This controller only:
  *   - takes shop/user identity exclusively from req.user;
- *   - validates the single client input (accept_physical_truth);
+ *   - validates the cutover POST's single client input (accept_physical_truth);
  *   - maps the service's public error classification to HTTP status.
  * Any other body field (shop/user/role/delta/location/variants) is ignored.
- * GH-1156 adds the thin start bridge, which accepts no client input at all.
+ * GH-1156 adds the thin start bridge; #1164 gives it exactly one client input,
+ * the explicit assigned_to operator. Identity, scope and economics remain
+ * server-authoritative there too.
  */
 
 const CUTOVER_ERROR_STATUS: Record<OpeningInventoryCutoverErrorCode, number> = {
@@ -78,14 +80,22 @@ export const httpGetOpeningInventoryProgress = async (req: Request, res: Respons
  * GH-1156: merchant bridge from `not_started` to the canonical shop-wide
  * opening start. startShopOpeningInventoryReconciliation() owns the v2
  * bootstrap check, the frozen bin cohort, the snapshot anchor and replay
- * (an already-started shop returns its existing progress). The request body
- * is ignored entirely: shop, warehouse, bins, cohort and quantities are never
- * client input.
+ * (an already-started shop returns its existing progress, never reassigned).
  *
- * Service rejections carry the leading [OPENING_RECOUNT_SHOP_START] prefix;
- * only that prefix is classified, and raw service text never reaches the
- * response body.
+ * #1164: the only client input is `assigned_to`, a required positive integer
+ * user id naming the operator the cohort is dispatched to; the service
+ * validates it against active shop membership and recount-count permission.
+ * Shop and creator identity come from req.user; warehouse, bins, cohort and
+ * quantities are never client input, and any other body field is ignored.
+ *
+ * Service rejections are classified only by their leading prefix —
+ * [OPENING_RECOUNT_SHOP_ASSIGNEE] (400) and [OPENING_RECOUNT_SHOP_START]
+ * (409) — and raw service text never reaches the response body.
  */
+const OPENING_START_INVALID_REQUEST_MESSAGE =
+  'Choose an operator before starting the opening count.';
+const OPENING_START_INVALID_ASSIGNEE_MESSAGE =
+  'The selected operator cannot perform inventory counts.';
 const OPENING_START_REJECTED_MESSAGE =
   'The opening count could not be started. Check that your warehouse has active bins, then try again.';
 const OPENING_START_INTERNAL_MESSAGE =
@@ -96,17 +106,42 @@ export const httpStartOpeningInventoryReconciliation = async (req: Request, res:
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const assignedTo = body.assigned_to;
+
+  // #1164: initial Opening Inventory is explicitly dispatched to one
+  // concrete operator. Unlike ordinary recount creation, first-claim
+  // assignment is not valid for this one-time reconciliation program.
+  if (
+    typeof assignedTo !== 'number' ||
+    !Number.isInteger(assignedTo) ||
+    assignedTo <= 0
+  ) {
+    return res.status(400).json({
+      code: 'OPENING_START_INVALID_REQUEST',
+      error: OPENING_START_INVALID_REQUEST_MESSAGE,
+    });
+  }
+
   try {
     const progress = await withTenant(Number(shopId), (trx) =>
       startShopOpeningInventoryReconciliation(trx, {
         shopId: Number(shopId),
         createdBy: Number(userId),
+        assignedTo,
       })
     );
     return res.json(progress);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[OPENING_START_FAILED]', { error: message });
+
+    if (message.startsWith('[OPENING_RECOUNT_SHOP_ASSIGNEE]')) {
+      return res.status(400).json({
+        code: 'OPENING_START_INVALID_ASSIGNEE',
+        error: OPENING_START_INVALID_ASSIGNEE_MESSAGE,
+      });
+    }
 
     if (message.startsWith('[OPENING_RECOUNT_SHOP_START]')) {
       return res.status(409).json({

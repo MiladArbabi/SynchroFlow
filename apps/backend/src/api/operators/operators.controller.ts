@@ -154,6 +154,81 @@ export const httpGetTeamOperators = async (req: Request, res: Response) => {
 };
 
 // ─────────────────────────────────────────
+// GET /api/v1/operators/recount-assignees
+// ─────────────────────────────────────────
+export const httpGetRecountAssignableOperators = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const dispatcherUserId = req.user?.userId;
+  if (!shopId || !dispatcherUserId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const members = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return trx('shop_memberships as sm')
+        .join('users as u', 'u.id', 'sm.user_id')
+        .where('sm.shop_id', shopId)
+        .whereNull('sm.revoked_at')
+        .whereIn('sm.role', ['operator', 'admin', 'owner'])
+        .select(
+          'u.id as user_id',
+          'u.first_name',
+          'u.last_name',
+          'sm.role',
+        )
+        .orderBy('sm.role')
+        .orderBy('u.first_name');
+    });
+
+    // Initial Opening Inventory follows the same explicit-dispatch model as
+    // Receive: the acting dispatcher may assign to themselves ("Me") or to a
+    // warehouse operator. Other owners/admins are not generic floor targets.
+    const dispatchTargets = members.filter(
+      (member: { user_id: number; role: string }) =>
+        member.role === 'operator' ||
+        member.user_id === dispatcherUserId
+    );
+
+    // Discovery must agree with the authoritative start/reassignment boundary:
+    // only expose roles that may actually record recount work for this shop.
+    const roles = [
+      ...new Set(
+        dispatchTargets.map(
+          (member: { role: string }) => member.role
+        )
+      ),
+    ];
+
+    const eligibilityEntries = await Promise.all(
+      roles.map(async (role) => [
+        role,
+        await isActionAllowed(shopId, 'wms:recount:count', role),
+      ] as const)
+    );
+
+    const eligibleByRole = new Map(eligibilityEntries);
+
+    const operators = dispatchTargets.filter(
+      (member: { role: string }) =>
+        eligibleByRole.get(member.role) === true
+    );
+
+    return res.json({ operators });
+  } catch (err: any) {
+    console.error('[RECOUNT_ASSIGNEES_LIST_FAILED]', {
+      shopId,
+      error: err.message,
+    });
+
+    return res.status(500).json({
+      error: 'Failed to fetch recount assignees',
+    });
+  }
+};
+
+// ─────────────────────────────────────────
 // GET /api/v1/operators/receive-assignees
 // ─────────────────────────────────────────
 export const httpGetReceiveAssignableOperators = async (req: Request, res: Response) => {

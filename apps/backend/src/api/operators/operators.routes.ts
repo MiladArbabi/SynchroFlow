@@ -6,6 +6,7 @@ import {
   httpUpsertAvailability,
   httpGetTeamAvailability,
   httpGetTeamOperators,
+  httpGetRecountAssignableOperators,
   httpGetReceiveAssignableOperators,
 } from './operators.controller.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
@@ -35,6 +36,17 @@ router.get(
   authenticateToken,
   requireAction('members:read'),
   httpGetTeamOperators
+);
+
+/**
+ * Owner/admin fetches only operators eligible to execute inventory recounts.
+ * GET /api/v1/operators/recount-assignees
+ */
+router.get(
+  '/recount-assignees',
+  authenticateToken,
+  requireAction('wms:recount:create'),
+  httpGetRecountAssignableOperators
 );
 
 /**

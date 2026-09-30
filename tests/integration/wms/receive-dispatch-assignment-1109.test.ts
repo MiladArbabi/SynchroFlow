@@ -562,6 +562,7 @@ describe('GH-1109 — Receive dispatch assignment', () => {
     it.each([
       'receive_dispatch_assignment',
       'receive_assigned_work',
+      'opening_inventory_count',
     ])('persists dismissal for %s', async (key) => {
       const dismissResponse = await request(app)
         .post(`/api/v1/user-state/spotlight/${key}/dismiss`)
