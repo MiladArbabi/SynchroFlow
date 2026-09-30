@@ -53,6 +53,7 @@ import { useNavigate } from 'react-router-dom';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { WarehouseZone, LiveBinActivity, LocationPulse } from '@lasyncro/shared/ui';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { LiveMapFooter, EDIT_FLOOR_MAP_ROUTE } from 'components/LiveMapFooter';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { hasOperationalFloor } from '../floor-planning/operationalFloor';
@@ -373,11 +374,10 @@ export default function OrdersFT2Page() {
             fitPadding={0.88}
           />
         </Box>
-        <Box sx={{
-          display: 'flex', alignItems: 'center', gap: '10px', px: '16px', py: '11px',
-          borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0,
-        }}>
-          {activeOrderBatches.length > 0 ? (
+        <LiveMapFooter
+          actions={[{ label: 'Open order flow →', onClick: () => navigate('/orders/flow') }]}
+          onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)}
+          status={activeOrderBatches.length > 0 ? (
             <>
               <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--confirm-ink)', flexShrink: 0 }} />
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>
@@ -391,21 +391,7 @@ export default function OrdersFT2Page() {
               No active batches
             </Typography>
           )}
-          <Box sx={{ flex: 1 }} />
-          <Box
-            component="button"
-            type="button"
-            onClick={() => navigate('/orders/flow')}
-            sx={{
-              appearance: 'none', border: 'none', bgcolor: 'transparent', p: 0, fontFamily: 'inherit',
-              fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0,
-              '&:hover': { opacity: 0.75 },
-              '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
-            }}
-          >
-            Open order flow →
-          </Box>
-        </Box>
+        />
       </Box>
     );
   }

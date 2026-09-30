@@ -9,7 +9,7 @@
 // states, by OverviewModuleFT2.ov-v1-operations-pulse.test.tsx (A), and
 // were removed here as duplicates.
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import OverviewModuleFT2, { type OverviewModuleFT2Props } from '../../../../modules/overview/src/ui/pages/OverviewModuleFT2';
 import { LiveMapTeaser } from '../../../../apps/frontend/src/components/LiveMapTeaser';
 
@@ -41,5 +41,21 @@ describe('Overview Live Intelligence teaser parity', () => {
     render(<OverviewModuleFT2 {...props} mapContent={<LiveMapTeaser title="Overview live map" description="Preview" requiredTier="growth" onUpgrade={() => {}} />} />);
 
     expect(screen.getByText('Overview live map')).toBeInTheDocument();
+  });
+});
+
+describe('CROSS-SCREEN-UX-01: Overview header Export utility', () => {
+  it('renders Export → only when supplied and fires onExport, never an onNavigate context route', () => {
+    const onExport = jest.fn();
+    const onNavigate = jest.fn();
+    const { unmount } = render(<OverviewModuleFT2 {...props} onNavigate={onNavigate} />);
+    expect(screen.queryByRole('button', { name: 'Export →' })).toBeNull();
+    unmount();
+
+    render(<OverviewModuleFT2 {...props} onNavigate={onNavigate} onExport={onExport} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export →' }));
+
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 });

@@ -29,7 +29,7 @@
 // (captured IsometricCanvas props) and the Inventory commercial-access suite.
 
 import React from 'react';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const mockNavigate = jest.fn();
 const mockCanvas = jest.fn();
@@ -62,7 +62,8 @@ jest.mock('components/ModuleTabBar', () => ({ ModuleTabBar: () => null }));
 jest.mock('components/CommercialGate', () => ({
   CommercialGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-jest.mock('components/ExportDrawer', () => ({ ExportDrawer: () => null }));
+const mockExportDrawer = jest.fn((_props: Record<string, unknown>) => null);
+jest.mock('components/ExportDrawer', () => ({ ExportDrawer: (props: Record<string, unknown>) => mockExportDrawer(props) }));
 jest.mock('pages/ft2-pages/ProductsCatalogPage', () => ({ __esModule: true, default: () => null }));
 jest.mock('pages/ft2-pages/ProductsCostsPage', () => ({ __esModule: true, default: () => null }));
 jest.mock('pages/ft2-pages/ProductsWmsReadinessPage', () => ({ __esModule: true, default: () => null }));
@@ -464,5 +465,24 @@ describe('INVENTORY F1: complete compact variant list', () => {
     } finally {
       mockOccupancyResponse.inventoryInspection['A-01'] = original;
     }
+  });
+});
+
+describe('CROSS-SCREEN-UX-01: Inventory export scope', () => {
+  it('keeps the Inventory ExportDrawer scoped to the products report', () => {
+    render(<ProductsFT2Page />);
+    const drawerProps = mockExportDrawer.mock.calls[mockExportDrawer.mock.calls.length - 1][0];
+    expect(drawerProps.reportIds).toEqual(['products']);
+  });
+});
+
+describe('CROSS-SCREEN-UX-01: Inventory live-map shortcut', () => {
+  it('exposes exactly one Edit floor map → to the floor setup canvas', () => {
+    render(<ProductsFT2Page />);
+
+    const shortcuts = screen.getAllByRole('button', { name: 'Edit floor map →' });
+    expect(shortcuts).toHaveLength(1);
+    fireEvent.click(shortcuts[0]);
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
   });
 });

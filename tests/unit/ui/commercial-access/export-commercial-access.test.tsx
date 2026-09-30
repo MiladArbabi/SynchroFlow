@@ -17,6 +17,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 jest.mock('hooks/useAppTheme', () => ({ useAppTheme: () => ({}) }));
 
@@ -88,7 +89,10 @@ describe('A3E-U1 — ExportDrawer obeys canonical exports.core decision (legacy 
   it('EXPECTED RED: legacy userTier says NOT eligible, canonical decision ALLOWs — download proceeds', async () => {
     mockDecide = () => ALLOW;
     const { container } = render(
-      <ExportDrawer open onClose={() => {}} userTier="starter" reportIds={['orders-all']} />,
+      // ExportDrawer's Reports footer navigates, so it needs router context.
+      <MemoryRouter>
+        <ExportDrawer open onClose={() => {}} userTier="starter" reportIds={['orders-all']} />
+      </MemoryRouter>,
     );
     const downloadIcon = container.querySelector('svg.lucide-download');
     expect(downloadIcon).not.toBeNull();
@@ -105,7 +109,9 @@ describe('A3E-U2 — ExportDrawer canonical DENY cannot be bypassed by a permiss
     mockDecide = () => DENY_TIER_TOO_LOW('core');
     const { container } = render(
       // 'growth' would satisfy the legacy isTierSufficient('growth','core') check.
-      <ExportDrawer open onClose={() => {}} userTier="growth" reportIds={['orders-all']} />,
+      <MemoryRouter>
+        <ExportDrawer open onClose={() => {}} userTier="growth" reportIds={['orders-all']} />
+      </MemoryRouter>,
     );
     const downloadIcon = container.querySelector('svg.lucide-download');
     expect(downloadIcon).not.toBeNull();

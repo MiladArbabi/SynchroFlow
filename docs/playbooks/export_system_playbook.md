@@ -133,7 +133,8 @@ hardcoded whitelist. No date filtering - products are not a time series.
 
 | Module / Submodule | CTA Label | Format | Tier Gate |
 |---|---|---|---|
-| Orders / Overview | `Export →` | CSV | Core+ |
+| Overview | `Export →` | CSV | Per report |
+| Orders / Overview tab | `Export →` | CSV | Core+ |
 | Returns | `Export →` | CSV | Core+ |
 | Finances | _(suppressed — module disabled, EXP-FINANCES-ORPHANED-139)_ | CSV | Core+ |
 | Products / Inventory Valuation | `Export ->` | CSV | Core+ |
@@ -143,8 +144,10 @@ hardcoded whitelist. No date filtering - products are not a time series.
 ### CTA Placement Rule
 - Always a **Tier 2 ghost pill** (per CTA playbook §2)
 - Placed top-right of page header, alongside any existing action buttons
-- Pre-filtered to current view (date range, status filters applied)
-- Opens a lightweight **drawer** (not modal) with format picker
+- Every page-level `Export →` opens the canonical lightweight **ExportDrawer**
+- Domain/module surfaces stay scoped to their own current-view report(s) via `reportIds`
+- **Overview is the deliberate cross-domain exception:** it opens the full canonical `QUICK_REPORTS` set because Overview represents the whole operation
+- Every ExportDrawer exposes one quiet persistent footer: `Go to Reports →` → `/settings/reports`
 
 ---
 
@@ -214,7 +217,10 @@ duplicate summaries already available inside the product.
 4. Stream directly — never buffer entire dataset in memory.
 5. Content-Disposition header must always be `attachment` — never `inline`.
 6. CSV: use `fast-csv` write stream piped to `res`.
-7. Frontend CTAs: always Tier 2 ghost pill, always pre-filtered to current view.
+7. Frontend CTAs: always Tier 2 ghost pill and always open `ExportDrawer`.
+   Domain/module drawers must remain scoped through `reportIds`; Overview is the
+   whole-operation exception and intentionally exposes the full `QUICK_REPORTS`
+   set. Every drawer must retain `Go to Reports →` → `/settings/reports`.
 8. Never duplicate column definitions - canonical lists live in
    `exports.controller.ts` (ORDERS_/RETURNS_/FINANCES_/PRODUCTS_COLUMNS).
 9. NEVER `COALESCE` an enum column against a string literal. Postgres
@@ -238,6 +244,15 @@ duplicate summaries already available inside the product.
     timestamptz, never the formatted string.
 
 ## 12. Changelog
+
+- **2026-09-30 — CROSS-SCREEN-UX-01:** unified page-level export behavior.
+  Overview, Orders and Inventory now use the canonical `ExportDrawer`.
+  Domain screens remain scoped through `reportIds`; Overview intentionally
+  exposes the full `QUICK_REPORTS` set as the whole-operation surface.
+  `ExportDrawer` now owns a persistent `Go to Reports →` footer linking to
+  `/settings/reports`. This supersedes the previous Overview direct-navigation
+  rule / `OVERVIEW-REPORTS-POINTER-142`. Local behavioral and visual UX
+  certification passed before this playbook update.
 
 - **2026-08-20** — EXP-PRODUCTS-11: added the Products export
   (`POST /api/v1/exports/products`), delivering the inventory valuation
@@ -1133,11 +1148,16 @@ ReturnsOverviewPage:278 ['returns']
 OrdersOutboundPage:1158 ['orders-outbound']
 ```
 
-**A module drawer exports that module's own data.** The full report set is
-offered only at `/settings/reports`. Overview has no `ExportDrawer` call site
-and is not getting one — it holds no data of its own, so an export there could
-only mean "all reports", which is the Reports page by another name. A pointer
-to Reports is tracked as `OVERVIEW-REPORTS-POINTER-142`.
+**A module drawer exports that module's own data.** Domain/module surfaces
+therefore keep explicit `reportIds` scopes.
+
+**Overview exception — CROSS-SCREEN-UX-01 (2026-09-30):** Overview is the
+whole-operation surface, so its page-level `Export →` intentionally opens the
+canonical `ExportDrawer` without `reportIds`, exposing the full `QUICK_REPORTS`
+set. The shared drawer footer provides `Go to Reports →` →
+`/settings/reports` for deeper report management. This supersedes the earlier
+direct-pointer-only `OVERVIEW-REPORTS-POINTER-142` plan. Report definitions
+remain single-source in `exportReports.ts`; Overview does not duplicate them.
 
 ### Withdrawn
 

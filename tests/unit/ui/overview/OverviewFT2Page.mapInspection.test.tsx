@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import OverviewPageFT2, { overviewLocationPulseTitle } from 'pages/ft2-pages/OverviewFT2Page';
 
@@ -10,6 +10,7 @@ const mockIsometricCanvas = jest.fn((_props: Record<string, unknown>) => (
   <div data-testid="live-map" />
 ));
 const mockNavigate = jest.fn();
+const mockExportDrawer = jest.fn((_props: Record<string, unknown>) => null);
 const mockUseMorningBriefSnapshot = jest.fn();
 const mockOverviewModuleFT2 = jest.fn((props: Record<string, unknown>) => (
   <div>{props.mapContent as React.ReactNode}</div>
@@ -43,6 +44,10 @@ jest.mock('@lasyncro/overview', () => ({
 
 jest.mock('@lasyncro/shared/ui', () => ({
   IsometricCanvas: (props: Record<string, unknown>) => mockIsometricCanvas(props),
+}));
+
+jest.mock('components/ExportDrawer', () => ({
+  ExportDrawer: (props: Record<string, unknown>) => mockExportDrawer(props),
 }));
 
 jest.mock('analytics/useUiEvents', () => ({
@@ -306,5 +311,34 @@ describe('Overview map inspection', () => {
       (latestCanvasProps().onPinnedClose as () => void)();
     });
     expect(latestCanvasProps().selectedLocationCode).toBeNull();
+  });
+});
+
+describe('CROSS-SCREEN-UX-01: Overview live state', () => {
+  it('header Export opens the canonical ExportDrawer with the full report set instead of navigating', () => {
+    renderMapContent();
+    const lastDrawerProps = () => mockExportDrawer.mock.calls[mockExportDrawer.mock.calls.length - 1][0];
+    expect(lastDrawerProps().open).toBe(false);
+
+    const moduleProps = mockOverviewModuleFT2.mock.calls[mockOverviewModuleFT2.mock.calls.length - 1][0];
+    act(() => { (moduleProps.onExport as () => void)(); });
+
+    expect(lastDrawerProps().open).toBe(true);
+    // No reportIds: Overview owns no scope, so the drawer shows every report.
+    expect(lastDrawerProps()).not.toHaveProperty('reportIds');
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    act(() => { (lastDrawerProps().onClose as () => void)(); });
+    expect(lastDrawerProps().open).toBe(false);
+  });
+
+  it('the live map exposes exactly one Edit floor map → shortcut to the floor setup canvas', () => {
+    renderMapContent();
+
+    const shortcuts = screen.getAllByRole('button', { name: 'Edit floor map →' });
+    expect(shortcuts).toHaveLength(1);
+    fireEvent.click(shortcuts[0]);
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
+    expect(screen.queryByText('Open floor →')).toBeNull();
   });
 });

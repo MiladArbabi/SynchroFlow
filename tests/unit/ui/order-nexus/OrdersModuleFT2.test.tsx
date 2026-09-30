@@ -46,7 +46,7 @@ describe('OrdersModuleFT2 (no map surface supplied)', () => {
   });
 
   it('renders safely when nullable blocks are null', () => {
-    const { container } = render(
+    render(
       <MemoryRouter>
         <OrdersModuleFT2
           {...({
@@ -60,10 +60,11 @@ describe('OrdersModuleFT2 (no map surface supplied)', () => {
       </MemoryRouter>
     );
 
-    // Unknown values must surface as an em dash rather than crashing or
-    // rendering a misleading zero — the original null-safety intent, kept.
+    // Null-safety: nullable legacy observability blocks must not crash the
+    // screen. They own no visible value here, so the contract is that the
+    // Orders identity and the Order health rail still render.
     expect(screen.getByText('Orders')).toBeInTheDocument();
-    expect(container.textContent).toContain('—');
+    expect(screen.getByText('Order health')).toBeInTheDocument();
   });
 
   it('keeps the Orders screen identity instead of the old triage-first dashboard', () => {
@@ -85,6 +86,16 @@ describe('OrdersModuleFT2 (no map surface supplied)', () => {
 
     fireEvent.click(screen.getByText(/Export/));
     expect(onExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('CROSS-SCREEN-UX-01: the page header carries no static channel or sync meta as identity truth', () => {
+    renderWithoutMap({
+      operationalControl: { snapshot_date: new Date().toISOString() },
+    } as unknown as Partial<React.ComponentProps<typeof OrdersModuleFT2>>);
+
+    expect(screen.getByText('Orders')).toBeInTheDocument();
+    expect(screen.queryByText(/Channels live/i)).toBeNull();
+    expect(screen.queryByText(/Last synced|Just synced|Syncing…/i)).toBeNull();
   });
 });
 

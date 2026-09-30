@@ -18,7 +18,7 @@
 // the map data hooks mocked so the live-map branch renders.
 
 import React from 'react';
-import { act } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
 import { renderWithProviders } from 'test-utils';
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
@@ -49,7 +49,8 @@ jest.mock('@lasyncro/shared/ui', () => ({
 
 jest.mock('pages/orders/OrderDetailModalBody', () => ({ __esModule: true, OrderDetailModalBody: () => null }));
 jest.mock('components/ModuleTabBar', () => ({ __esModule: true, ModuleTabBar: () => null }));
-jest.mock('components/ExportDrawer', () => ({ __esModule: true, ExportDrawer: () => null }));
+const mockExportDrawer = jest.fn((_props: any) => null);
+jest.mock('components/ExportDrawer', () => ({ __esModule: true, ExportDrawer: (props: any) => mockExportDrawer(props) }));
 jest.mock('components/LiveMapTeaser', () => ({ __esModule: true, LiveMapTeaser: () => null }));
 
 jest.mock('runtime/commercialContext', () => ({
@@ -189,5 +190,25 @@ describe('OrdersFT2Page — C2C live-map hover/pinned inspection wiring', () => 
     const props = lastCanvasProps();
     expect(props.selectedLocationCode).toBe('B-1');
     expect(props.pinnedAction).toBeNull();
+  });
+});
+
+describe('CROSS-SCREEN-UX-01: Orders live-map shortcuts', () => {
+  it('keeps Open order flow → and exposes exactly one Edit floor map → to the floor setup canvas', () => {
+    renderWithProviders(<OrdersFT2Page />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open order flow →' }));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/orders/flow');
+
+    const shortcuts = screen.getAllByRole('button', { name: 'Edit floor map →' });
+    expect(shortcuts).toHaveLength(1);
+    fireEvent.click(shortcuts[0]);
+    expect(mockNavigate).toHaveBeenLastCalledWith('/floor-planning?tab=setup&view=canvas');
+  });
+
+  it('keeps the Orders ExportDrawer scoped to the Orders report', () => {
+    renderWithProviders(<OrdersFT2Page />);
+    const drawerProps = mockExportDrawer.mock.calls[mockExportDrawer.mock.calls.length - 1][0];
+    expect(drawerProps.reportIds).toEqual(['orders-all']);
   });
 });

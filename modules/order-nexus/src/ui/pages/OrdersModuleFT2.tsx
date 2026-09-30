@@ -331,21 +331,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const qReady         = operatorSummary?.queueCounts?.readyToShip ?? operationalControl?.queue_ready_to_ship ?? 0;
   const qPicking       = operationalControl?.pending_fulfillment ?? 0;
   const constrained    = operationalControl?.constrained_orders ?? 0;
-  const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
-
-  // ── Date / sync header ──────────────────────────────────────
-  const now = new Date();
-  const dayLabel = now
-    .toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' })
-    .toUpperCase();
-  const syncLabel = (() => {
-    const snap = operationalControl?.snapshot_date;
-    if (!snap) return 'Syncing…';
-    const diffMin = Math.round((now.getTime() - new Date(snap).getTime()) / 60000);
-    if (diffMin < 1) return 'Just synced';
-    if (diffMin < 60) return `Last synced ${diffMin} min ago`;
-    return `Last synced ${Math.round(diffMin / 60)}h ago`;
-  })();
 
   // SCREEN-ARCH (C1C): a priority flag is Order Flow planning state, not a
   // resolution. It never hides an order whose SLA/aging/constraint condition
@@ -755,46 +740,30 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const hiddenRailGroupCount = railGroups.length - visibleRailGroups.length;
 
   return (
-    <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
+    <Box sx={{ p: { xs: 2, md: '24px 40px' }, minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
       {/* ── HEADER ────────────────────────────────────────────── */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
-            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-              {dayLabel} · Channels live · {syncLabel}
-            </Typography>
-          </Box>
+      {/* CROSS-SCREEN-UX-01: domain header = H1 + permanent orientation +
+          utility, same anatomy and breakpoint wrap as Inventory. Transient
+          date / channel / sync state is not page-identity truth; live order
+          state belongs to the Order health rail. */}
+      <Box sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 1.5,
+        mb: 2.5,
+      }}>
+        <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Orders
           </Typography>
-
-          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-            {constrained > 0
-            ? `${constrained} order${constrained === 1 ? '' : 's'} constrained · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
-              // FIX (2026-07-01): previously only checked `constrained`
-              // (order_constraints-based count) — completely blind to
-              // SLA-breached aging orders, which are a separate signal
-              // (isShippingSlaBreached, unconstrained but overdue).
-              // Confirmed live: headline said "All orders on track" while
-              // 8 orders sat in the Critical band below it, same page.
-              // Reuse the same criticalOrders/watchOrders arrays the
-              // bands already render from — single source, no new query.
-              // ORD-OVERVIEW-INVENTORY-01: this said "SLA-breached", which
-              // became false once canonical constraints are admitted without
-              // an SLA prerequisite — a freshly out-of-stock order is
-              // critical but not late. Critical is the accurate collective
-              // noun; SLA breach stays identifiable at group/order level via
-              // the "Shipping SLA breached" group.
-              : criticalOrders.length > 0
-                ? `${criticalOrders.length} critical order${criticalOrders.length === 1 ? '' : 's'} · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
-                : watchOrders.length > 0
-                  ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging · review soon`
-                  : 'All orders on track — nothing needs immediate action'}
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            Orders, fulfillment state and flow through the warehouse
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
           {onExport && (
             <Box
               onClick={onExport}

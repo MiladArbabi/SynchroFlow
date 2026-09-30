@@ -21,6 +21,8 @@ import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
 import type { SyntheticStation, LiveBinActivity, LocationPulse } from '@lasyncro/shared/ui';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { LiveMapFooter, EDIT_FLOOR_MAP_ROUTE } from 'components/LiveMapFooter';
+import { ExportDrawer } from 'components/ExportDrawer';
 import { AddressResolutionSessionModal } from '../orders/AddressResolutionSessionModal';
 import {
   useAddressResolutionOrders,
@@ -52,6 +54,9 @@ export function overviewLocationPulseTitle(code: string, zoneType?: string | nul
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
+  // CROSS-SCREEN-UX-01: Overview's Export → opens the canonical ExportDrawer
+  // with the full QUICK_REPORTS set (no reportIds — Overview owns no scope).
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
   // OVERVIEW-SCREEN-OPT-01 — Operations Pulse withdraws while the topnav Ops
   // Console is open. Read-only: the topnav trigger remains the sole owner.
@@ -818,11 +823,9 @@ export default function OverviewPageFT2() {
             fitPadding={0.88}
           />
         </Box>
-        <Box sx={{
-          display: 'flex', alignItems: 'center', gap: '10px', px: '16px', py: '11px',
-          borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0,
-        }}>
-          {hasIdleAlerts ? (
+        <LiveMapFooter
+          onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)}
+          status={hasIdleAlerts ? (
             <>
               <Box sx={{
                 width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--warning-ink)', flexShrink: 0,
@@ -857,14 +860,7 @@ export default function OverviewPageFT2() {
               Floor is clear · No active batches
             </Typography>
           )}
-          <Box sx={{ flex: 1 }} />
-          <Box
-            onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
-            sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0, '&:hover': { opacity: 0.75 } }}
-          >
-            Open floor →
-          </Box>
-        </Box>
+        />
       </Box>
     );
   }
@@ -979,9 +975,15 @@ export default function OverviewPageFT2() {
           mapContent={mapContent}
           operationsPulse={operationsPulse}
           suppressOperationsPulse={isOpsConsoleOpen}
+          onExport={() => setExportDrawerOpen(true)}
           onNavigate={(deepLink) => navigate(deepLink)}
           onRefreshBrief={() => { void morningBrief.refreshMorningBrief(); }}
           isRefreshingBrief={morningBrief.isRefreshingBrief}
+        />
+
+        <ExportDrawer
+          open={exportDrawerOpen}
+          onClose={() => setExportDrawerOpen(false)}
         />
     </>
   );

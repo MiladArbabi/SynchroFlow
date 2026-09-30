@@ -37,6 +37,7 @@ import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { WarehouseZone, LocationPulse, LocationStockDetail, LocationStockVariant } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { LiveMapFooter, EDIT_FLOOR_MAP_ROUTE } from 'components/LiveMapFooter';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { hasOperationalFloor } from '../floor-planning/operationalFloor';
@@ -295,6 +296,8 @@ function InventoryIntelligenceView({
             fitPadding={0.88}
           />
         </Box>
+        {/* Navigation only — the map itself never mutates Inventory. */}
+        <LiveMapFooter onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)} />
         {occupancyStatus !== 'ready' && (
           // Scoped inventory-location status over the kept geometry. Anchored
           // top-right: the shared canvas owns the top-left corner (unplaced-

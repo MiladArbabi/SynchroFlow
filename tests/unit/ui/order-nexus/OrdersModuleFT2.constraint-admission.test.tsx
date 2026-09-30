@@ -341,24 +341,20 @@ describe('OrdersModuleFT2 canonical constraint admission — ORD-OVERVIEW-INVENT
     expect(screen.queryByText(/Out of stock/i)).not.toBeInTheDocument();
   });
 
-  it('OV-CONSTRAINT-12 does not describe the constrained population as "SLA-breached" when it holds a fresh non-SLA constraint', () => {
+  it('OV-CONSTRAINT-12 admits and surfaces a fresh merchant-actionable non-SLA constraint without describing it as SLA-breached', () => {
     /**
-     * Critical holds two different things:
-     *   - active merchant-actionable canonical constraints, at any SLA state;
-     *   - unconstrained SLA-breached orders.
-     * So SLA breach is an urgency attribute, never the definition of
-     * Critical, and the summary must not name the whole population after it.
+     * SLA breach is an urgency attribute, never the definition of a
+     * constrained population: an active merchant-actionable canonical
+     * constraint is admitted at any SLA state.
      *
-     * `constrained_orders: 0` selects the signal-line branch that currently
-     * renders `${criticalOrders.length} SLA-breached · …` (OrdersModuleFT2
-     * :645). A stale/zero snapshot alongside a live constrained row is the
-     * real window in which that branch is reached.
+     * `constrained_orders: 0` alongside a live constrained row is the real
+     * stale/zero-snapshot window in which a snapshot-driven label could
+     * mislabel or drop the constraint.
      *
      * Both halves are asserted together on purpose. Asserting only the
-     * absence of "SLA-breached" would pass today for the wrong reason —
-     * nothing is admitted at all, so the line currently reads "All orders on
-     * track". The contract is: the fresh constraint IS surfaced as critical,
-     * AND the population is not mislabelled.
+     * absence of "SLA-breached" would pass for the wrong reason if nothing
+     * were admitted at all. The contract is: the fresh constraint IS
+     * surfaced in constraint state, AND it is not described as SLA-breached.
      */
     renderModule(
       makeProps({
@@ -379,11 +375,6 @@ describe('OrdersModuleFT2 canonical constraint admission — ORD-OVERVIEW-INVENT
 
     // 2. it is not described as an SLA breach
     expect(screen.queryByText(/SLA-breached/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/All orders on track/i)).not.toBeInTheDocument();
-
-    // 3. semantically accurate critical terminology is used instead.
-    //    Wording/punctuation deliberately unconstrained beyond this.
-    expect(screen.getAllByText(/critical/i).length).toBeGreaterThan(0);
   });
 
   it('OV-CONSTRAINT-13 keeps an actionable-constrained order in its constraint group only, never also as aging', () => {

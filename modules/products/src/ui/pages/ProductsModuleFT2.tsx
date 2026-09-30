@@ -433,19 +433,42 @@ function InboundRow({ po, isOverdue }: {
 // Status / orientation only: permanent physical-state labels with their
 // current value. No tasks, no remediation, no Console entry point — Ops
 // Console owns actionable attention. Unknown values render as an em dash.
+//
+// CROSS-SCREEN-UX-01: presentation mirrors the Overview Operations / Orders
+// Order health rail grammar (14px card, 14px sentence-case title, uppercase
+// 10px group labels, 0.5px rules between groups, 12.5px label/value rows).
+// Grouping is presentation only — every fact keeps its existing semantics.
 
-const INVENTORY_STATE_ROWS: Array<{
+type InventoryStateRow = {
   key: keyof InventoryStateFacts;
   label: string;
   unit: 'units' | 'SKUs';
-}> = [
-  { key: 'onHandUnits',              label: 'On hand',                unit: 'units' },
-  { key: 'availableUnits',           label: 'Available',              unit: 'units' },
-  { key: 'reservedUnits',            label: 'Reserved',               unit: 'units' },
-  { key: 'notReceivedCount',         label: 'Not received',           unit: 'SKUs' },
-  { key: 'phantomCount',             label: 'Phantom',                unit: 'SKUs' },
-  { key: 'noValidPickLocationCount', label: 'No valid pick location', unit: 'SKUs' },
+};
+
+const INVENTORY_STATE_GROUPS: Array<{ label: string; rows: InventoryStateRow[] }> = [
+  {
+    label: 'Stock',
+    rows: [
+      { key: 'onHandUnits',    label: 'On hand',   unit: 'units' },
+      { key: 'availableUnits', label: 'Available', unit: 'units' },
+      { key: 'reservedUnits',  label: 'Reserved',  unit: 'units' },
+    ],
+  },
+  {
+    label: 'Integrity',
+    rows: [
+      { key: 'notReceivedCount',         label: 'Not received',           unit: 'SKUs' },
+      { key: 'phantomCount',             label: 'Phantom',                unit: 'SKUs' },
+      { key: 'noValidPickLocationCount', label: 'No valid pick location', unit: 'SKUs' },
+    ],
+  },
 ];
+
+const RAIL_GROUP_SX = {
+  display: 'flex', flexDirection: 'column', gap: '6px', py: '10px',
+  borderTop: '0.5px solid var(--rule)',
+  '&:first-of-type': { borderTop: 'none', pt: 0 },
+} as const;
 
 const QUANTITY_KEYS: ReadonlySet<keyof InventoryStateFacts> = new Set([
   'onHandUnits', 'availableUnits', 'reservedUnits',
@@ -493,71 +516,75 @@ function InventoryStateRail({
       component="section"
       aria-labelledby={headingId}
       aria-busy={isLoading ? 'true' : undefined}
-      sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}
+      sx={{
+        minWidth: 0,
+        boxSizing: 'border-box',
+        bgcolor: 'var(--surface)',
+        border: '0.5px solid var(--rule)',
+        borderRadius: '14px',
+        px: '18px',
+        py: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
-      <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
-        <Typography
-          id={headingId}
-          component="h2"
-          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}
-        >
-          Inventory state
-        </Typography>
-      </Box>
+      <Typography
+        id={headingId}
+        component="h2"
+        sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}
+      >
+        Inventory state
+      </Typography>
 
       {notice && (
-        <Box
-          sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5,
-            px: 1.75, py: 1, borderBottom: '0.5px solid var(--rule)',
-          }}
-        >
-          <Typography sx={{ fontSize: 12, color: isError ? 'var(--ink-2)' : 'var(--ink-3)' }}>
-            {notice}
-          </Typography>
-          {isError && onRetry && (
-            <Box
-              component="button"
-              type="button"
-              onClick={onRetry}
-              sx={{
-                fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)',
-                bgcolor: 'transparent', border: '0.5px solid var(--accent-border)', borderRadius: '6px',
-                px: '10px', py: '4px', cursor: 'pointer', '&:hover': { opacity: 0.75 },
-              }}
-            >
-              Retry
-            </Box>
-          )}
+        <Box sx={RAIL_GROUP_SX}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography component="span" sx={{ fontSize: 12.5, lineHeight: 1.45, color: isError ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+              {notice}
+            </Typography>
+            {isError && onRetry && (
+              <Box
+                component="button"
+                type="button"
+                onClick={onRetry}
+                sx={{
+                  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)',
+                  bgcolor: 'transparent', border: '0.5px solid var(--accent-border)', borderRadius: '6px',
+                  px: '10px', py: '4px', cursor: 'pointer', flexShrink: 0, '&:hover': { opacity: 0.75 },
+                }}
+              >
+                Retry
+              </Box>
+            )}
+          </Box>
         </Box>
       )}
 
-      {INVENTORY_STATE_ROWS.map(row => {
-        const value = displayValue(row.key);
-        return (
-          <Box
-            key={row.key}
-            sx={{
-              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5,
-              px: 1.75, py: 1.125,
-              borderBottom: '0.5px solid var(--rule)',
-              '&:last-of-type': { borderBottom: 'none' },
-            }}
-          >
-            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-2)' }}>
-              {row.label}
-            </Typography>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-              {fmtN(value)}
-              {value != null && (
-                <Box component="span" sx={{ ml: 0.5, fontSize: 11, fontWeight: 400, color: 'var(--ink-4)' }}>
-                  {row.unit}
-                </Box>
-              )}
-            </Typography>
-          </Box>
-        );
-      })}
+      {INVENTORY_STATE_GROUPS.map(group => (
+        <Box key={group.label} role="group" aria-label={group.label} sx={RAIL_GROUP_SX}>
+          <Typography component="span" sx={{ display: 'block', fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>
+            {group.label}
+          </Typography>
+          {group.rows.map(row => {
+            const value = displayValue(row.key);
+            return (
+              <Box key={row.key} sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+                <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, color: 'var(--ink-3)' }}>
+                  {row.label}
+                </Typography>
+                <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 500, lineHeight: 1.45, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {fmtN(value)}
+                  {value != null && (
+                    <Box component="span" sx={{ ml: 0.5, fontSize: 11, fontWeight: 400, color: 'var(--ink-4)' }}>
+                      {row.unit}
+                    </Box>
+                  )}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -636,7 +663,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   ];
 
   return (
-    <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
+    <Box sx={{ p: { xs: 2, md: '24px 40px' }, minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
       {/* ── 1. HEADER ─────────────────────────────────────────── */}
       {/* EXP-CTA-INVENTORY-99: title column + action row.

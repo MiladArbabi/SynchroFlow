@@ -5,8 +5,13 @@
 // which docks inside a relative canvas. Lets the operator pick a report +
 // format instead of a hardcoded single download. Reuses config/exportReports
 // — never redefine reports here. v1 scope: CSV + PDF only, no .xlsx yet.
+//
+// CROSS-SCREEN-UX-01: every consumer inherits one quiet persistent footer,
+// "Go to Reports →" (/settings/reports) — the deeper Reports hub handoff,
+// mirroring the Ops Console footer grammar. Never a competing primary CTA.
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
 import { X, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
@@ -129,6 +134,7 @@ function ExportRow({
 }
 
 export function ExportDrawer({ open, onClose, reportIds }: ExportDrawerProps) {
+  const navigate = useNavigate();
   const reports = reportIds ? QUICK_REPORTS.filter(r => reportIds.includes(r.id)) : QUICK_REPORTS;
   // Only one picker open at a time across the drawer.
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
@@ -177,6 +183,22 @@ export function ExportDrawer({ open, onClose, reportIds }: ExportDrawerProps) {
               onTogglePicker={() => setOpenPickerId(prev => (prev === report.id ? null : report.id))}
             />
           ))}
+        </Box>
+        {/* FOOTER — the single, non-primary handoff to the full Reports hub. */}
+        <Box
+          component="button"
+          type="button"
+          onClick={() => { onClose(); navigate('/settings/reports'); }}
+          sx={{
+            flexShrink: 0, width: '100%', textAlign: 'left', boxSizing: 'border-box',
+            px: 3, py: 1.5, cursor: 'pointer',
+            bgcolor: 'transparent', border: 'none', borderTop: '1px solid var(--rule)',
+            fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: 'var(--ink-3)',
+            '&:hover': { color: 'var(--ink)', bgcolor: 'var(--surface)' },
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '-2px' },
+          }}
+        >
+          Go to Reports →
         </Box>
       </Box>
     </>

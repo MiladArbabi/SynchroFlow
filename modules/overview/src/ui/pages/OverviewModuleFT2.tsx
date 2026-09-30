@@ -14,7 +14,7 @@
 
 import { Fragment, type ReactNode } from 'react';
 import { Box, Typography } from '@mui/material';
-import { formatCurrencyCompact, ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ModuleErrorBoundary, OperationalContextShell } from '@lasyncro/shared/ui';
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -137,6 +137,13 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * two-column track list; the empty second column is deliberate.
    */
   suppressOperationsPulse?: boolean;
+  /**
+   * CROSS-SCREEN-UX-01: header Tier-2 ghost "Export →", same utility slot as
+   * the Orders and Inventory headers. The page owns the handler (it opens the
+   * canonical ExportDrawer); this is not an onNavigate context route. Hidden
+   * when absent.
+   */
+  onExport?: () => void;
 };
 
 // ─── HELPERS ──────────────────────────────────────────────────
@@ -330,35 +337,57 @@ function OverviewModuleV1({
   currency = 'USD',
   suppressOperationsPulse = false,
   onNavigate,
+  onExport,
 }: OverviewModuleFT2Props) {
   const greetingText = userName ? `Good ${timeOfDay()}, ${userName}.` : `Good ${timeOfDay()}.`;
 
   return (
-    <Box sx={{ p: { xs: 2, md: '28px 32px' }, display: 'flex', flexDirection: 'column', gap: '20px', bgcolor: 'var(--bg)', minHeight: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-      {/* ── COMPACT ORIENTATION HEADER — Live status belongs to the topnav ── */}
-      <Box>
-        <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: '#1D9E75', textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 2 }}>
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </Typography>
-        <Typography sx={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
-          {greetingText}
-        </Typography>
+    <Box sx={{ p: { xs: 2, md: '24px 40px' }, display: 'flex', flexDirection: 'column', gap: '20px', bgcolor: 'var(--bg)', minHeight: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+      {/* ── COMPACT ORIENTATION HEADER — Live status belongs to the topnav ──
+          Identity column + utility slot, same breakpoint wrap as the Orders
+          and Inventory domain headers. */}
+      <Box sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 1.5,
+      }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: '#1D9E75', textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 2 }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </Typography>
+          <Typography sx={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
+            {greetingText}
+          </Typography>
+        </Box>
+        {onExport && (
+          <Box
+            component="button"
+            type="button"
+            onClick={onExport}
+            sx={{
+              display: 'inline-flex', alignItems: 'center', flexShrink: 0, mt: 0.5,
+              px: '12px', py: '6px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+              color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent-border)',
+              borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 },
+              '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+            }}
+          >
+            Export →
+          </Box>
+        )}
       </Box>
 
-      {/* ── BODY — map ~75% + Operations Pulse ~25%; single column below lg ── */}
+      {/* ── BODY — shared OperationalContextShell: map ~75% + Operations
+          Pulse ~25%; single column below lg. Suppression withdraws only the
+          rail content, so the map surface is never remounted. ── */}
       {mapContent ? (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 3fr) minmax(260px, 1fr)' },
-            gap: 2.25,
-            alignItems: 'stretch',
-            minWidth: 0,
-          }}
-        >
-          <Box sx={{ minWidth: 0 }}>{mapContent}</Box>
-          {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} onNavigate={onNavigate} />}
-        </Box>
+        <OperationalContextShell
+          primary={mapContent}
+          rail={<OperationsPulse pulse={operationsPulse} currency={currency} onNavigate={onNavigate} />}
+          suppressRail={suppressOperationsPulse}
+        />
       ) : (
         <Box sx={{ minWidth: 0, maxWidth: 560 }}>
           {!suppressOperationsPulse && <OperationsPulse pulse={operationsPulse} currency={currency} onNavigate={onNavigate} />}
