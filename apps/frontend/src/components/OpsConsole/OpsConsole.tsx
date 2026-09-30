@@ -1062,12 +1062,9 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         return;
       }
 
+      // Discovery populates the list only. The merchant must explicitly choose
+      // who counts, even when the only eligible operator is themselves.
       setOpeningAssignableOperators(operators);
-      setSelectedOpeningOperatorId(
-        operators.length === 1 && operators[0]?.id === currentUserId
-          ? currentUserId
-          : null
-      );
       setOpeningAssignmentError(null);
       setOpeningAssignmentConfirmation(null);
     } catch {
@@ -1081,7 +1078,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         setOpeningAssigneesLoading(false);
       }
     }
-  }, [currentUserId]);
+  }, []);
 
   // The combined setup modal discovers eligible operators as soon as it opens.
   // Discovery is non-mutating; task creation remains confirmOpeningStart().

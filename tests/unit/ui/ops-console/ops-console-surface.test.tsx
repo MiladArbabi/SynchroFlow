@@ -1925,6 +1925,81 @@ describe('SETUP Opening Inventory command (GH-1156)', () => {
     expect(postCount()).toBe(0);
   });
 
+  // #1164 — no operator is ever preselected, not even when the only eligible
+  // assignee is the current user. Create stays disabled until an explicit choice.
+  const createButton = () =>
+    within(modal()).getByRole('button', { name: 'Create opening count' });
+
+  it('single self assignee: radio starts unchecked and Create stays disabled until explicitly clicked', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: { operators: [{ user_id: 42, role: 'owner' }] },
+    });
+    withOpeningItem(view('not_started'), true, 42);
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+
+    const self = await within(modal()).findByRole('radio', { name: /User 42.*Me/ });
+    expect(self).toHaveAttribute('aria-checked', 'false');
+    expect(createButton()).toBeDisabled();
+
+    fireEvent.click(self);
+
+    expect(self).toHaveAttribute('aria-checked', 'true');
+    expect(createButton()).toBeEnabled();
+    expect(postCount()).toBe(0);
+  });
+
+  it('cancel and reopen clears the previous explicit selection', async () => {
+    getSpy.mockResolvedValue({
+      data: { operators: [{ user_id: 42, role: 'owner' }] },
+    });
+    withOpeningItem(view('not_started'), true, 42);
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+
+    fireEvent.click(await within(modal()).findByRole('radio', { name: /User 42.*Me/ }));
+    expect(createButton()).toBeEnabled();
+
+    fireEvent.click(within(modal()).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('entity-detail-modal')).toBeNull();
+    fireEvent.click(startButton());
+
+    const self = await within(modal()).findByRole('radio', { name: /User 42.*Me/ });
+    expect(self).toHaveAttribute('aria-checked', 'false');
+    expect(createButton()).toBeDisabled();
+    expect(postCount()).toBe(0);
+  });
+
+  it('multiple assignees: none preselected; an explicitly chosen operator enables Create', async () => {
+    getSpy.mockResolvedValueOnce({
+      data: {
+        operators: [
+          { user_id: 7, first_name: 'Mabu', last_name: 'Owner', role: 'owner' },
+          { user_id: 8, first_name: 'Alex', last_name: 'Operator', role: 'operator' },
+        ],
+      },
+    });
+    withOpeningItem(view('not_started'), true, 7);
+    renderPanel();
+    expandSetup();
+    fireEvent.click(startButton());
+
+    const self = await within(modal()).findByRole('radio', { name: /Mabu Owner.*Me/ });
+    const alex = within(modal()).getByRole('radio', { name: /Alex Operator/ });
+    expect(self).toHaveAttribute('aria-checked', 'false');
+    expect(alex).toHaveAttribute('aria-checked', 'false');
+    expect(createButton()).toBeDisabled();
+
+    fireEvent.click(alex);
+
+    expect(alex).toHaveAttribute('aria-checked', 'true');
+    expect(self).toHaveAttribute('aria-checked', 'false');
+    expect(createButton()).toBeEnabled();
+    expect(postCount()).toBe(0);
+  });
+
   it('Start opening count discovers operators inside the combined modal and does not create work before Create opening count', async () => {
     getSpy.mockResolvedValueOnce({
       data: {
