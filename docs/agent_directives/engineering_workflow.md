@@ -525,6 +525,25 @@ Do not automatically reinstall dependencies.
 
 Do not automatically build.
 
+### 5.1 Verification-cost routing — targeted evidence first
+
+Verification must match the changed boundary and actual regression risk.
+Do not default to full application or monorepo builds.
+
+- `packages/*` changed → build the touched package. Build dependent packages/modules only when the changed public surface or dependency boundary requires it.
+- `modules/*` changed → build the touched module. Build dependent modules only when the changed public surface requires it.
+- `apps/backend/*` changed → targeted unit/integration/DB/runtime tests are the normal gate. Do not routinely run the full backend build. Run it only when build configuration, TypeScript/package boundaries, application bootstrap, dependency integration, or another specific risk requires it.
+- `apps/frontend/*` changed → targeted frontend tests plus localhost/browser verification are the normal gate. Do not routinely run the full frontend production build. Run it only when bundling, build configuration, routing/application integration, dependency boundaries, or another specific risk requires it.
+- root/shared configuration, workspace dependency, TypeScript configuration, build-system, or cross-cutting contract changes → broaden verification only to the affected dependency graph.
+- full application or monorepo builds are exceptional evidence, not a habitual phase gate.
+- do not rerun expensive verification when the exact certified patch has not changed.
+- after a forward-sync, rerun the smallest evidence necessary to cover the incoming delta plus the current issue; do not automatically repeat unrelated expensive gates.
+- CI/deployment may provide final full-build/runtime evidence where applicable, but does not replace required targeted pre-push behavioural verification.
+
+Canonical rule:
+
+**Targeted evidence first. Broaden only when the changed boundary or observed evidence justifies it.**
+
 Do not mutate environment until the missing prerequisite is proven.
 
 A test failure caused by missing workspace dependencies is an environment failure, not automatically a code failure.
