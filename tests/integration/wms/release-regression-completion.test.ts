@@ -879,17 +879,19 @@ describe('R17 / greedy fill honours the effective batch line-item cap', () => {
       trx('shop_wms_settings').where({ shop_id: shopId }).first('max_batch_line_items'));
     expect(Number(settings.max_batch_line_items)).toBe(CAP);
 
-    // three fresh single-line healthy orders on their own shop → combined 3 lines > CAP
+    // four fresh single-line healthy orders on their own shop → combined 4 lines > CAP
     const o1 = await seedHealthyOrder(shopId, { quantity: 1, variantId: seededVariant.lasyncro_variant_id, productId: seededVariant.lasyncro_product_id });
     const o2 = await seedHealthyOrder(shopId, { quantity: 1, variantId: seededVariant.lasyncro_variant_id, productId: seededVariant.lasyncro_product_id });
     const o3 = await seedHealthyOrder(shopId, { quantity: 1, variantId: seededVariant.lasyncro_variant_id, productId: seededVariant.lasyncro_product_id });
-    const fixtureIds = new Set([o1.orderId, o2.orderId, o3.orderId]);
+    const o4 = await seedHealthyOrder(shopId, { quantity: 1, variantId: seededVariant.lasyncro_variant_id, productId: seededVariant.lasyncro_product_id });
+    const allFixtureIds = [o1.orderId, o2.orderId, o3.orderId, o4.orderId];
+    const fixtureIds = new Set(allFixtureIds);
 
-    // Exclusive selection of exactly our three fixtures; greedy fill still
+    // Exclusive selection of exactly our four fixtures; greedy fill still
     // applies the max_batch_line_items ceiling, so only CAP of them can land in
     // the wave regardless of the pre-seeded pool.
     const wave1 = await postRelease(token, {
-      priority_order_ids: [o1.orderId, o2.orderId, o3.orderId], exclusive: true,
+      priority_order_ids: allFixtureIds, exclusive: true,
     });
     expect(wave1.status).toBe(201);
     const batch1: string = wave1.body.pick_batch_id;
@@ -906,24 +908,58 @@ describe('R17 / greedy fill honours the effective batch line-item cap', () => {
     expect(wave1Fixture.length).toBe(CAP);                 // exactly the cap, from our fixture
     expect(wave1Members.length).toBeLessThanOrEqual(CAP);  // no batch exceeds the cap
 
-    const leftover = [o1, o2, o3].map((o) => o.orderId).find((id) => !wave1Members.includes(id))!;
+    // Selection order within the explicit set is not asserted here (D3); the
+    // overflow set is derived from actual membership.
+    const overflow = allFixtureIds.filter((id) => !wave1Fixture.includes(id));
+    expect(wave1Fixture).toHaveLength(2);
+    expect(overflow).toHaveLength(2);
 
-    // overflow order is not corrupted / not lost: still pending, unbatched, releasable
-    const leftoverFs = await withTenant(shopId, (trx) =>
-      trx('order_fulfillment_status').where({ lasyncro_order_id: leftover }).first('status'));
-    expect(leftoverFs.status).toBe('pending');
-    expect(await batchMembership(shopId, leftover)).toHaveLength(0);
+    // overflow orders are not corrupted / not lost: still pending, unbatched,
+    // unconstrained, with no reservation allocation attributable to them
+    for (const id of overflow) {
+      const fs = await withTenant(shopId, (trx) =>
+        trx('order_fulfillment_status').where({ lasyncro_order_id: id }).first('status'));
+      expect(fs.status).toBe('pending');
+      expect(await batchMembership(shopId, id)).toHaveLength(0);
+      const activeConstraints = await withTenant(shopId, (trx) =>
+        trx('order_constraints').where({ lasyncro_order_id: id, is_active: true }).select('constraint_id'));
+      expect(activeConstraints).toHaveLength(0);
+      const allocations = await withTenant(shopId, (trx) =>
+        trx('pick_reservation_allocations').where({ shop_id: shopId, lasyncro_order_id: id }).select('allocation_id'));
+      expect(allocations).toHaveLength(0);
+    }
 
     // reservations correspond only to included orders
     const holds1 = await reservationHoldsForBatch(shopId, batch1);
     const reserved1 = holds1.reduce((s: number, h: any) => s + Number(h.quantity_delta), 0);
     expect(reserved1).toBe(wave1Fixture.length); // 1 unit per included fixture order
 
-    const wave2 = await postRelease(token, { priority_order_ids: [leftover], exclusive: true });
+    // the capacity-deferred set is releasable in a later wave under the same cap
+    const wave2 = await postRelease(token, { priority_order_ids: overflow, exclusive: true });
     expect(wave2.status).toBe(201);
-    expect(wave2.body.order_count).toBe(1);
+    expect(wave2.body.order_count).toBe(2);
     expect(wave2.body.pick_batch_id).toBeTruthy();
     expect(wave2.body.pick_batch_id).not.toBe(batch1);
+    const batch2Row = await withTenant(shopId, (trx) =>
+      trx('pick_batches').where({ pick_batch_id: wave2.body.pick_batch_id }).first());
+    expect(Number(batch2Row.total_line_items)).toBeLessThanOrEqual(CAP);
+    const wave2Members: string[] = (await withTenant(shopId, (trx) =>
+      trx('pick_batch_orders').where({ pick_batch_id: wave2.body.pick_batch_id }).select('lasyncro_order_id')))
+      .map((r: any) => r.lasyncro_order_id);
+    expect([...wave2Members].sort()).toEqual([...overflow].sort());
+
+    // D2 response accountability: every explicitly requested healthy order
+    // excluded solely by the line-item cap is reported in wave1 skipped_orders.
+    // Asserted last so the state-safety proof above runs regardless.
+    const capacitySkips = (wave1.body.skipped_orders ?? [])
+      .filter((s: any) => fixtureIds.has(s.order_id))
+      .map((s: any) => ({ order_id: s.order_id, reason: s.reason, label: s.label }))
+      .sort((a: any, b: any) => a.order_id.localeCompare(b.order_id));
+    expect(capacitySkips).toEqual(
+      [...overflow].sort().map((id) => ({
+        order_id: id, reason: 'batch_capacity', label: 'Batch capacity reached',
+      }))
+    );
   }, 150_000);
 });
 

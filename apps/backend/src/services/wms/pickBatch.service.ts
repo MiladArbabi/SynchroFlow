@@ -86,7 +86,8 @@ export type SkippedReleaseOrderReason =
   | 'status_changed'
   | 'no_releasable_lines'
   | 'intake_exception'
-  | 'not_in_pool';
+  | 'not_in_pool'
+  | 'batch_capacity';
 
 export interface SkippedReleaseOrder {
   order_id: string;
@@ -100,9 +101,11 @@ export interface SkippedReleaseOrder {
  * -----------------------------
  * An order that release found unsatisfiable, whose constraints were
  * re-evaluated and persisted as a result. DISTINCT from skipped_orders:
- * every skipped_orders reason describes a fact that already existed in
- * the data before the release attempt (already batched, status changed,
- * not in pool, already blocked). This one is a state change CAUSED by
+ * a skipped_orders entry is an order that was not released and did NOT
+ * move to Blocked — either a fact that already existed in the data
+ * before the release attempt (already batched, status changed, not in
+ * pool, already blocked) or a non-destructive wave deferral (batch
+ * capacity). This one is a state change CAUSED by
  * the release attempt — the order left the pool and entered Blocked
  * Orders during this call. Collapsing the two would tell the merchant
  * "N orders not released" without saying that some of them just moved.
@@ -117,7 +120,8 @@ export interface NewlyBlockedOrder {
 /**
  * FLOW-INVENTORY-TRIGGER-GAP-01: orders release found unsatisfiable and
  * moved to Blocked during this call. Distinct from skipped_orders, which
- * reports facts that already existed before the release attempt.
+ * reports orders not released that did NOT move to Blocked (pre-existing
+ * exclusions or a non-destructive batch-capacity deferral).
  */
 export interface NewlyBlockedOrder {
   order_id: string;
@@ -153,6 +157,7 @@ const getSkippedReleaseLabel = (
   if (reason === 'status_changed') return 'Status changed';
   if (reason === 'no_releasable_lines') return 'No releasable items';
   if (reason === 'intake_exception') return 'Needs review — intake exception';
+  if (reason === 'batch_capacity') return 'Batch capacity reached';
   return 'Not in release pool';
 };
 
@@ -385,6 +390,36 @@ export async function releaseBatch(
     runningLineItems += orderLineCount;
     runningUnits += orderUnitCount;
   }
+
+  // D2: explicit valid selections the greedy fill left out are deferred
+  // solely by the line-item cap. Captured here — before lock/revalidation —
+  // so an order lost later for a different reason is never labelled capacity.
+  if (exclusive && validPriorityIds.length > 0) {
+    const selectedAtCap = new Set(selectedOrderIds);
+    const capacityDeferredIds = [...new Set(validPriorityIds)]
+      .filter(id => !selectedAtCap.has(id));
+
+    if (capacityDeferredIds.length > 0) {
+      const capacityRows = await trx('orders as o')
+        .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .whereIn('o.lasyncro_order_id', capacityDeferredIds)
+        .select('o.lasyncro_order_id', 'eim.external_order_id');
+      const capacityExternalById = new Map(
+        capacityRows.map(row => [row.lasyncro_order_id, row.external_order_id])
+      );
+
+      for (const orderId of capacityDeferredIds) {
+        skippedOrders.push({
+          order_id: orderId,
+          external_order_id: capacityExternalById.get(orderId) ?? null,
+          reason: 'batch_capacity',
+          label: getSkippedReleaseLabel('batch_capacity'),
+        });
+      }
+    }
+  }
+
   if (selectedOrderIds.length === 0) {
     console.info('[PICK_BATCH_SERVICE] No orders fit within ceiling', { shopId, maxLineItems });
     return null;
