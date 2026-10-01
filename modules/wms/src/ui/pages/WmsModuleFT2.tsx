@@ -428,6 +428,12 @@ export type WmsModuleFT2Props = {
   canReassignCount?: boolean;
   /** Count task ID from URL param — restores an active counting session. */
   pendingCountTaskId?: string | null;
+  /**
+   * GH-1188 — the URL requested protected count focus (warehouseFocus=count).
+   * Holds the ordinary body only while that task is still resolving; it never
+   * authorizes a session on its own once count-task state has settled.
+   */
+  countFocusRequested?: boolean;
   /** Called when an operator enters a counting session. */
   onCountSessionEnter?: (taskId: string) => void;
   /**
@@ -1199,6 +1205,35 @@ function WorkQueueFamily({
   );
 }
 
+/**
+ * The count task this user may open from a countTaskId: dispatched to them
+ * (or unassigned), or already claimed by them. Shared by the session-resolution
+ * effect and the GH-1188 render hold so both apply the same usability rule.
+ */
+function findUsableCountTask(
+  recountTasks: CountingTask[] | undefined,
+  taskId: string,
+  currentUserId: number | null | undefined
+): CountingTask | undefined {
+  return (recountTasks ?? []).find(
+    (candidate) =>
+      candidate.recount_task_id === taskId &&
+      (
+        (
+          candidate.status === 'dispatched' &&
+          (
+            candidate.assigned_to === null ||
+            candidate.assigned_to === currentUserId
+          )
+        ) ||
+        (
+          (candidate.status === 'claimed' || candidate.status === 'counting') &&
+          candidate.claimed_by === currentUserId
+        )
+      )
+  );
+}
+
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; freeScanResult: PackFreeScanResult }
@@ -1313,6 +1348,7 @@ function WmsModuleFT2Inner({
   currentUserId,
   canReassignCount,
   pendingCountTaskId,
+  countFocusRequested,
   onCountSessionEnter,
   onCountSessionFocusChange,
   onSetupBinsClick,
@@ -1714,23 +1750,7 @@ function WmsModuleFT2Inner({
 
     if (!pendingCountTaskId) return;
 
-    const task = (recountTasks ?? []).find(
-      (candidate) =>
-        candidate.recount_task_id === pendingCountTaskId &&
-        (
-          (
-            candidate.status === 'dispatched' &&
-            (
-              candidate.assigned_to === null ||
-              candidate.assigned_to === currentUserId
-            )
-          ) ||
-          (
-            (candidate.status === 'claimed' || candidate.status === 'counting') &&
-            candidate.claimed_by === currentUserId
-          )
-        )
-    );
+    const task = findUsableCountTask(recountTasks, pendingCountTaskId, currentUserId);
 
     if (task) {
       setActiveSession({ type: 'count', task });
@@ -2110,6 +2130,34 @@ function WmsModuleFT2Inner({
         onCompleteReturnJob={onCompleteReturnJob}
         onComplete={exitSession}
       />
+    );
+  }
+
+  // GH-1188 — protected count mode begins at the Brief. While a focused count
+  // URL is still resolving (task read pending, or a usable task whose session
+  // the resolution effect has not committed yet) the ordinary Warehouse body
+  // must not paint. Once settled with no usable task this hold releases and
+  // the existing fail-open path proceeds; loading never fails open.
+  if (
+    countFocusRequested &&
+    pendingCountTaskId &&
+    activeSession?.type !== 'count' &&
+    (
+      !recountTasksSettled ||
+      (
+        !recountLocked &&
+        findUsableCountTask(recountTasks, pendingCountTaskId, currentUserId) !== undefined
+      )
+    )
+  ) {
+    return (
+      <Box
+        role="status"
+        aria-label="Loading count session"
+        sx={{ display: 'flex', justifyContent: 'center', py: 8 }}
+      >
+        <CircularProgress size={24} />
+      </Box>
     );
   }
 
