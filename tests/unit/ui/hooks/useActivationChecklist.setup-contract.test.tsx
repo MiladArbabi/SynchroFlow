@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { axiosInstance } from 'api/axiosConfig';
 import { AuthContext } from 'contexts/AuthContext';
+import { buildSetupRows } from 'components/OpsConsole/opsConsoleModel';
 import {
   useActivationChecklist,
   selectNextOpeningInventoryTask,
@@ -473,7 +474,8 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     // GH1176: serialized onboarding navigation into Floor Planning Setup > Canvas.
     expect(mapItem(result.current.firstEntryItems)).toEqual({
       key: 'first-entry-map',
-      label: 'Map your warehouse',
+      // GH-1183 contract correction: minimum basics, not whole-floor completion.
+      label: 'Map warehouse basics',
       complete: false,
       subtitle: 'Define where stock lives and work happens.',
       action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning?tab=setup&view=canvas' },
@@ -493,11 +495,16 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     });
   });
 
-  it.each(['owner', 'admin'])('zonesConfigured + not_started + %s => map verified, Start opening count', async (role) => {
+  it.each(['owner', 'admin'])('zonesConfigured + not_started + %s => minimum basics satisfied, mapping reachable, Start opening count', async (role) => {
     mockReadiness({ zonesConfigured: true, progress: progressView({ state: 'not_started' }) });
     const result = await renderFirstEntry(role);
 
     expect(mapItem(result.current.firstEntryItems)?.complete).toBe(true);
+    // GH-1183: satisfaction is explicitly limited to the minimum milestone.
+    expect(mapItem(result.current.firstEntryItems)?.label).toMatch(/map.*basics/i);
+    expect(buildSetupRows(result.current.firstEntryItems).find(row => row.id === 'setup:first-entry-map')?.action)
+      .toMatchObject({ kind: 'navigate', route: '/floor-planning?tab=setup&view=canvas' });
+
     const count = countItem(result.current.firstEntryItems);
     expect(count?.label).toBe('Count opening stock');
     expect(count?.complete).toBe(false);
@@ -633,5 +640,26 @@ describe('selectNextOpeningInventoryTask (#1164)', () => {
   it('returns null for an empty or missing bin list', () => {
     expect(selectNextOpeningInventoryTask([], CURRENT_USER_ID)).toBeNull();
     expect(selectNextOpeningInventoryTask(undefined, CURRENT_USER_ID)).toBeNull();
+  });
+});
+
+// GH-1183 desired hook contract. This additive read-only field is deliberately
+// RED until production exposes canonical minimum readiness independently of the
+// Map presentation. Unknown is null, never a manufactured false baseline.
+describe('GH-1183 canonical minimum mapping observation', () => {
+  beforeEach(() => jest.clearAllMocks());
+  it('keeps loading unknown, distinct from a successful explicit false', async () => {
+    mockReadiness({ readinessPending: true });
+    const loading = renderHook(() => useActivationChecklist(), { wrapper: makeWrapper() });
+    expect((loading.result.current as unknown as { minimumMappingReady: boolean | null }).minimumMappingReady).toBeNull();
+    loading.unmount();
+    mockReadiness({ zonesConfigured: false });
+    const loaded = await renderChecklist();
+    expect((loaded.current as unknown as { minimumMappingReady: boolean | null }).minimumMappingReady).toBe(false);
+  });
+  it('exposes confirmed true independently of the Map milestone presentation', async () => {
+    mockReadiness({ zonesConfigured: true });
+    const loaded = await renderChecklist();
+    expect((loaded.current as unknown as { minimumMappingReady: boolean | null }).minimumMappingReady).toBe(true);
   });
 });

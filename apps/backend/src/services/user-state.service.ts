@@ -10,6 +10,7 @@ import { logConflictIgnored, logConflictResolved } from '../conflict-resolution/
 
 /** GH-1165 — dedicated user_states key for the first-entry Ops Console intro. */
 export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
+export const OPS_CONSOLE_MAP_COUNT_SEEN_KEY = 'ops-console:map-count-handoff-seen';
 
 export type OnboardingTier = 'PCD_APPROVED' | 'PCD_PENDING' | 'BASIC_ACCESS';
 export type PlatformConnection = 'shopify' | 'quickbooks' | 'stripe' | 'klaviyo' | 'google_analytics';
@@ -512,7 +513,8 @@ export class UserStateService {
         .where(function () {
           this.where('key', 'like', 'checklist:%')
             .orWhere('key', 'like', 'spotlight:%')
-            .orWhere('key', OPS_CONSOLE_INTRO_SEEN_KEY);
+            .orWhere('key', OPS_CONSOLE_INTRO_SEEN_KEY)
+            .orWhere('key', OPS_CONSOLE_MAP_COUNT_SEEN_KEY);
         })
         .select('key', 'value');
     })) as { key: string; value: string }[];
@@ -529,6 +531,16 @@ export class UserStateService {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(shopId)}'`);
       await trx('user_states')
         .insert({ user_id: userId, key: OPS_CONSOLE_INTRO_SEEN_KEY, value: '1', updated_at: trx.fn.now() })
+        .onConflict(['user_id', 'key'])
+        .merge({ value: '1', updated_at: trx.fn.now() });
+    });
+  }
+
+  static async markOpsConsoleMapCountSeen(userId: number, shopId: number): Promise<void> {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(shopId)}'`);
+      await trx('user_states')
+        .insert({ user_id: userId, key: OPS_CONSOLE_MAP_COUNT_SEEN_KEY, value: '1', updated_at: trx.fn.now() })
         .onConflict(['user_id', 'key'])
         .merge({ value: '1', updated_at: trx.fn.now() });
     });

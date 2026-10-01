@@ -12,6 +12,7 @@ import {
   getOnboardingFlags,
   dismissChecklist,
   markOpsConsoleIntroSeen,
+  markOpsConsoleMapCountSeen,
 } from './user-state.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
@@ -30,5 +31,6 @@ router.get('/activation-events', authenticateToken, getActivationEvents);
 router.get('/onboarding-flags', authenticateToken, getOnboardingFlags);
 router.post('/checklist/dismiss', authenticateToken, dismissChecklist);
 router.post('/ops-console/intro-seen', authenticateToken, markOpsConsoleIntroSeen);
+router.post('/ops-console/map-count-handoff-seen', authenticateToken, markOpsConsoleMapCountSeen);
 
 export default router;

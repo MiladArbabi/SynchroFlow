@@ -50,7 +50,7 @@
 // All colour comes from useAppTheme() CSS-variable tokens, so light and dark
 // both resolve from the theme rather than baked-in surface hexes.
 
-import { type CSSProperties, type ReactNode, type Ref, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, type Ref, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert as MuiAlert,
   Badge,
@@ -70,6 +70,7 @@ import { useNavigate } from 'react-router-dom';
 import { EntityDetailModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
+import { AuthContext } from '../../contexts/AuthContext';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import useConfig from '../../hooks/useConfig';
 import {
@@ -114,6 +115,12 @@ const ONBOARDING_FLAGS_QUERY_KEY = ['user-state', 'onboarding-flags'] as const;
  */
 export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
 const OPS_CONSOLE_INTRO_SEEN_URL = '/api/v1/user-state/ops-console/intro-seen';
+const MAP_COUNT_SEEN_KEY = 'ops-console:map-count-handoff-seen';
+const MAP_COUNT_SEEN_URL = '/api/v1/user-state/ops-console/map-count-handoff-seen';
+const MAP_COUNT_SPOTLIGHT = {
+  title: 'Ready to count opening stock',
+  body: 'Your first stock location is mapped. You can start counting now, or keep mapping your warehouse first.',
+};
 /** Delay between the trigger pulse and the once-only first-entry auto-open. */
 export const OPS_CONSOLE_AUTO_OPEN_DELAY_MS = 650;
 /** GH-1165 — approved first-contact Spotlight copy. */
@@ -547,6 +554,7 @@ function OpsGlobalSearch({
   onActiveIndexChange,
   onActivate,
   inputRef,
+  onIntentChange,
 }: {
   open: boolean;
   query: string;
@@ -555,6 +563,7 @@ function OpsGlobalSearch({
   onActiveIndexChange: (index: number) => void;
   onActivate: (result: GlobalSearchResult) => void;
   inputRef?: React.Ref<HTMLInputElement>;
+  onIntentChange?: (active: boolean) => void;
 }) {
   const pal = useAppTheme();
   const search = useGlobalSearch(query, open);
@@ -662,9 +671,9 @@ function OpsGlobalSearch({
             component="input"
             ref={inputRef}
             value={query}
-            onChange={(event) => onQueryChange(event.currentTarget.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
+            onChange={(event) => { onQueryChange(event.currentTarget.value); onIntentChange?.(true); }}
+            onFocus={() => { setSearchFocused(true); onIntentChange?.(true); }}
+            onBlur={() => { setSearchFocused(false); onIntentChange?.(query.length > 0); }}
             onKeyDown={handleKeyDown}
             aria-label="Search orders, products, SKUs, barcodes, or batches"
             placeholder={OPS_SEARCH_HINT}
@@ -785,6 +794,11 @@ export interface OpsConsoleProps {
    */
   firstContactSpotlight?: boolean;
   onDismissFirstContactSpotlight?: () => void;
+  mapCountSpotlight?: boolean;
+  onDismissMapCountSpotlight?: () => void;
+  countAnchorRef?: Ref<HTMLDivElement>;
+  mapCountRequest?: number;
+  onSearchIntentChange?: (active: boolean) => void;
 }
 
 /**
@@ -824,6 +838,11 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   firstEntrySetupRef,
   firstContactSpotlight = false,
   onDismissFirstContactSpotlight,
+  mapCountSpotlight = false,
+  onDismissMapCountSpotlight,
+  countAnchorRef,
+  mapCountRequest = 0,
+  onSearchIntentChange,
   style,
 }, ref) {
   const pal = useAppTheme();
@@ -835,6 +854,11 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   const [setupExpanded, setSetupExpanded] = useState(false);
   // GH-1165 — first-entry SETUP is expanded by default.
   const [firstEntrySetupExpanded, setFirstEntrySetupExpanded] = useState(true);
+  useEffect(() => {
+    if (mapCountRequest === 0) return;
+    setTab('OPEN');
+    setFirstEntrySetupExpanded(true);
+  }, [mapCountRequest]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1290,6 +1314,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         onActiveIndexChange={setActiveSearchIndex}
         onActivate={activateSearchResult}
         inputRef={searchInputRef}
+        onIntentChange={onSearchIntentChange}
       />
 
       {/* BODY */}
@@ -1329,15 +1354,21 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                 >
                   SETUP · {firstEntryRemaining} remaining
                 </DisclosureLine>
-                {firstEntrySetupExpanded && firstEntryRows.map((row) => (
-                  <OpsConsoleRow
-                    key={row.id}
-                    row={row}
-                    onNavigate={goto}
-                    onCommand={runCommand}
-                    pendingCommand={pendingCommand}
-                  />
-                ))}
+                {firstEntrySetupExpanded && firstEntryRows.map((row) => {
+                  const content = <OpsConsoleRow key={row.id} row={row} onNavigate={goto} onCommand={runCommand} pendingCommand={pendingCommand} />;
+                  if (row.id !== 'setup:first-entry-count') return content;
+                  return (
+                    <Box key={row.id} ref={countAnchorRef}>
+                      {mapCountSpotlight && onDismissMapCountSpotlight && (
+                        <Box role="region" aria-label="Opening stock count guidance" sx={{ display: OPS_SPOTLIGHT_MOBILE_DISPLAY, px: 1.5, pt: 1 }}>
+                          <SpotlightCoachMark title={MAP_COUNT_SPOTLIGHT.title} body={MAP_COUNT_SPOTLIGHT.body}
+                            isDismissed={false} onDismiss={onDismissMapCountSpotlight} direction="down" />
+                        </Box>
+                      )}
+                      {content}
+                    </Box>
+                  );
+                })}
               </Box>
             )}
 
@@ -2011,9 +2042,11 @@ const SPOTLIGHT_MIN_Y = 140;
 function OpsFirstContactSpotlight({
   anchor,
   onDismiss,
+  mapCount = false,
 }: {
   anchor: HTMLElement | null;
   onDismiss: () => void;
+  mapCount?: boolean;
 }) {
   const [anchorY, setAnchorY] = useState(SPOTLIGHT_FALLBACK_Y);
 
@@ -2043,7 +2076,7 @@ function OpsFirstContactSpotlight({
           the coach's own X / Got it do. */}
       <Box
         aria-hidden
-        data-testid="ops-first-contact-dimmer"
+        data-testid={mapCount ? "ops-map-count-dimmer" : "ops-first-contact-dimmer"}
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 1149,
@@ -2052,8 +2085,8 @@ function OpsFirstContactSpotlight({
       />
       <Box
         role="region"
-        aria-label="Ops Console introduction"
-        data-testid="ops-first-contact-spotlight"
+        aria-label={mapCount ? "Opening stock count guidance" : "Ops Console introduction"}
+        data-testid={mapCount ? "ops-map-count-spotlight" : "ops-first-contact-spotlight"}
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', zIndex: 1151,
@@ -2064,8 +2097,8 @@ function OpsFirstContactSpotlight({
         }}
       >
         <SpotlightCoachMark
-          title={OPS_FIRST_CONTACT_SPOTLIGHT.title}
-          body={OPS_FIRST_CONTACT_SPOTLIGHT.body}
+          title={mapCount ? MAP_COUNT_SPOTLIGHT.title : OPS_FIRST_CONTACT_SPOTLIGHT.title}
+          body={mapCount ? MAP_COUNT_SPOTLIGHT.body : OPS_FIRST_CONTACT_SPOTLIGHT.body}
           isDismissed={false}
           onDismiss={onDismiss}
           direction="right"
@@ -2091,7 +2124,7 @@ export function OpsConsoleButton({
   // GH-1165 — first-entry onboarding uses the shared Ops open-state authority;
   // query/cache state remains local to the onboarding behavior.
   const queryClient = useQueryClient();
-  const { items, firstEntry = false, firstEntryItems } = useActivationChecklist();
+  const { items, firstEntry = false, firstEntryItems, minimumMappingReady = null } = useActivationChecklist();
   const { data: flags, isSuccess: flagsLoaded } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
 
@@ -2104,6 +2137,39 @@ export function OpsConsoleButton({
   // durable once-only contract stays that flag; any close clears it.
   const [spotlightActive, setSpotlightActive] = useState(false);
   const [setupAnchor, setSetupAnchor] = useState<HTMLDivElement | null>(null);
+  const [countAnchor, setCountAnchor] = useState<HTMLDivElement | null>(null);
+  const [mapCountActive, setMapCountActive] = useState(false);
+  const [mapCountPending, setMapCountPending] = useState(false);
+  const [mapCountRequest, setMapCountRequest] = useState(0);
+  const [searchIntent, setSearchIntent] = useState(false);
+  const mappingPrevious = useRef<boolean | null>(null);
+  const handoffConsumed = useRef(false);
+  const authUser = useContext(AuthContext)?.user;
+  const handoffScope = `${authUser?.shop_id ?? ''}:${authUser?.id ?? ''}`;
+  const scopeRef = useRef(handoffScope);
+
+  useEffect(() => {
+    if (scopeRef.current !== handoffScope) {
+      scopeRef.current = handoffScope;
+      mappingPrevious.current = null;
+      handoffConsumed.current = false;
+      setMapCountPending(false);
+      setMapCountActive(false);
+      return;
+    }
+    // Unknown observations preserve the last explicit baseline, never false.
+    if (minimumMappingReady === null) return;
+    if (!firstEntry) {
+      mappingPrevious.current = minimumMappingReady;
+      setMapCountPending(false);
+      setMapCountActive(false);
+      return;
+    }
+    if (mappingPrevious.current === false && minimumMappingReady === true && !handoffConsumed.current) {
+      setMapCountPending(true);
+    }
+    mappingPrevious.current = minimumMappingReady;
+  }, [minimumMappingReady, firstEntry, handoffScope]);
 
   // GH-1165 — once-only first-entry auto-open. Eligible only on positive
   // evidence: canonical first-entry mode AND a loaded flag read that lacks the
@@ -2145,6 +2211,32 @@ export function OpsConsoleButton({
     return () => clearTimeout(timer);
   }, [autoOpenEligible, claimIntro, dispatch]);
 
+  const countActionable = Boolean(firstEntryItems?.find(item => item.key === 'first-entry-count')?.action);
+  useEffect(() => {
+    if (!flagsLoaded) return;
+    if (flags?.[MAP_COUNT_SEEN_KEY] === true) {
+      handoffConsumed.current = true;
+      setMapCountPending(false);
+      return;
+    }
+    if (!mapCountPending || handoffConsumed.current || !firstEntry || minimumMappingReady !== true || !countActionable) return;
+    // First contact and explicit search intent always get their own moment.
+    if ((!introSeen && !introClaimed.current) || spotlightActive || searchIntent) return;
+    handoffConsumed.current = true;
+    setMapCountPending(false);
+    setSearchFocusRequest(0);
+    setMapCountRequest(n => n + 1);
+    setMapCountActive(true);
+    dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
+    axiosInstance.post(MAP_COUNT_SEEN_URL)
+      .then(() => queryClient.setQueryData<Record<string, boolean>>(
+        ONBOARDING_FLAGS_QUERY_KEY,
+        old => ({ ...(old ?? {}), [MAP_COUNT_SEEN_KEY]: true }),
+      ))
+      .catch(() => undefined); // Local consumption is not a claim of durable success.
+  }, [mapCountPending, flagsLoaded, flags, firstEntry, minimumMappingReady, countActionable,
+    introSeen, spotlightActive, searchIntent, dispatch, queryClient]);
+
   // Opening the console by any explicit means while the intro is pending
   // consumes it, so it can never pop open again behind the merchant.
   const autoOpenEligibleRef = useRef(autoOpenEligible);
@@ -2156,13 +2248,19 @@ export function OpsConsoleButton({
     if (autoOpenEligibleRef.current) claimIntro();
     setSearchFocusRequest(0);
     setSpotlightActive(firstContact && !open);
+    setMapCountActive(false);
+    setSearchIntent(false);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: !open });
   };
 
   // Closed by any path (including other ConfigContext writers): the Spotlight
   // never survives into a later open.
   useEffect(() => {
-    if (!open) setSpotlightActive(false);
+    if (!open) {
+      setSpotlightActive(false);
+      setMapCountActive(false);
+      setSearchIntent(false);
+    }
   }, [open]);
 
   // GH-1165 — Cmd+K (macOS) / Ctrl+K (elsewhere): open if closed, then focus
@@ -2179,6 +2277,8 @@ export function OpsConsoleButton({
       if (autoOpenEligibleRef.current) claimIntro();
       // Search intent wins: no coaching layer in front of Global Search.
       setSpotlightActive(false);
+      setMapCountActive(false);
+      setSearchIntent(true);
       dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
       setSearchFocusRequest((n) => n + 1);
     };
@@ -2264,6 +2364,9 @@ export function OpsConsoleButton({
         <OpsFirstContactSpotlight anchor={setupAnchor} onDismiss={() => setSpotlightActive(false)} />
       )}
 
+      {mapCountActive && open && firstEntry && (
+        <OpsFirstContactSpotlight mapCount anchor={countAnchor} onDismiss={() => setMapCountActive(false)} />
+      )}
       <OpsConsolePanel
         alerts={alerts}
         deepLink={deepLink}
@@ -2274,6 +2377,11 @@ export function OpsConsoleButton({
           dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
         }}
         searchFocusRequest={searchFocusRequest}
+        mapCountSpotlight={mapCountActive && open && firstEntry}
+        onDismissMapCountSpotlight={() => setMapCountActive(false)}
+        countAnchorRef={setCountAnchor}
+        mapCountRequest={mapCountRequest}
+        onSearchIntentChange={setSearchIntent}
         firstEntrySetupRef={setSetupAnchor}
         firstContactSpotlight={showSpotlight}
         onDismissFirstContactSpotlight={() => setSpotlightActive(false)}

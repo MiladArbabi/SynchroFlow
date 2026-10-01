@@ -83,6 +83,7 @@ export type FloorPlanningData = {
 } | null;
 
 export type FloorPlanningPageProps = {
+  minimumMappingReady?: boolean | null;
   data: FloorPlanningData;
   isLoading: boolean;
   isError: boolean;
@@ -1002,6 +1003,7 @@ function FloorPlanningModuleFT2Inner({
   onDuplicateZones,
   onPrintBarcode,
   onToggleZoneActive,
+  minimumMappingReady,
   onUpdateZone,
   onUpdateZonePositions,
   onUpdateProductBarcode,
@@ -1549,6 +1551,7 @@ function FloorPlanningModuleFT2Inner({
             {canvasView ? (
               <CanvasEditor
                 zones={zones}
+                minimumMappingReady={minimumMappingReady}
                 onUpdateZone={onUpdateZone}
                 onUpdateZonePositions={onUpdateZonePositions}
                 onDeleteZone={onDeleteZone}

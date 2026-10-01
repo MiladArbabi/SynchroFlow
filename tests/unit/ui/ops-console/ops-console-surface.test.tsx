@@ -2642,7 +2642,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(0);
   });
 
-  it('zonesConfigured=true + not_started + owner: map stays verified; Start opening count advances to explicit assignment without creating work', async () => {
+  it('zonesConfigured=true + not_started + owner: minimum basics satisfied and mapping remains reachable; Start opening count advances to explicit assignment without creating work', async () => {
     getSpy.mockResolvedValueOnce({
       data: {
         operators: [
@@ -2658,6 +2658,11 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(
       screen.getByTestId('ops-row-setup:first-entry-map')
     ).toHaveAttribute('data-status', 'verified');
+    // GH-1183 contract correction: verified minimum basics is not a finished floor.
+    const mapBasics = screen.getByTestId('ops-row-setup:first-entry-map');
+    expect(mapBasics).toHaveTextContent(/map.*basics/i);
+    expect(within(mapBasics).getByRole('button', { name: /map/i })).toBeEnabled();
+
 
     expect(
       screen.getByTestId('ops-first-entry-setup-toggle')
@@ -3000,8 +3005,10 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(OPS_SPOTLIGHT_MOBILE_DISPLAY).toEqual({ xs: 'block', sm: 'none' });
 
     const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
+    // Locates a test id as a quoted token, whether it is a plain attribute or
+    // one branch of a conditional (GH-1183 map→count reuses this presentation).
     const block = (testId: string) => {
-      const at = source.indexOf(`data-testid="${testId}"`);
+      const at = source.indexOf(`"${testId}"`);
       expect(at).toBeGreaterThan(-1);
       // The whole opening tag: from its `<Box` to the end of its sx.
       return source.slice(source.lastIndexOf('<Box', at), source.indexOf('>', source.indexOf('}}', at)));
@@ -3009,8 +3016,13 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     const dimmerBlock = block('ops-first-contact-dimmer');
     expect(dimmerBlock).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
     expect(dimmerBlock).not.toMatch(/onClick|onMouseDown|onPointerDown/);
-    expect(block('ops-first-contact-spotlight')).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
+    const spotlightBlock = block('ops-first-contact-spotlight');
+    expect(spotlightBlock).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
     expect(block('ops-first-contact-spotlight-inline')).toMatch(/display: OPS_SPOTLIGHT_MOBILE_DISPLAY/);
+    // The map→count ids are the same elements, so they cannot carry a weaker
+    // breakpoint or a dismissal handler of their own.
+    expect(block('ops-map-count-dimmer')).toBe(dimmerBlock);
+    expect(block('ops-map-count-spotlight')).toBe(spotlightBlock);
   });
 
   it('dismissal ("Got it" / close) removes coach + dimmer only; Ops stays open with SETUP expanded and nothing completed', () => {
@@ -3127,9 +3139,22 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
   it('adds no second persistence mechanism for the Spotlight', () => {
     const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
     expect(source).not.toMatch(/useSpotlight|spotlight:|localStorage|sessionStorage/);
-    // The only durable once-only write remains the existing intro-seen claim.
-    expect(source.match(/axiosInstance\.post\(/g)).toHaveLength(2);
+    // Both once-only claims (first contact, GH-1183 map→count) are server-side
+    // user_states flags written through the canonical user-state endpoint.
+    const urlOf = (name: string) => source.match(new RegExp(`const ${name} = '([^']+)'`))?.[1];
+    expect(urlOf('OPS_CONSOLE_INTRO_SEEN_URL')).toBe('/api/v1/user-state/ops-console/intro-seen');
+    expect(urlOf('MAP_COUNT_SEEN_URL')).toBe('/api/v1/user-state/ops-console/map-count-handoff-seen');
     expect(source).toMatch(/axiosInstance\.post\(OPS_CONSOLE_INTRO_SEEN_URL\)/);
+    expect(source).toMatch(/axiosInstance\.post\(MAP_COUNT_SEEN_URL\)/);
+    // No other user-state write exists: unrelated business writes are allowed,
+    // a second onboarding-state channel is not.
+    const userStateWrites = [...source.matchAll(/axiosInstance\.(?:post|put|patch|delete)\(\s*([A-Z_]+|'[^']*')/g)]
+      .map(([, target]) => (target.startsWith("'") ? target.slice(1, -1) : urlOf(target)))
+      .filter((url) => url === undefined || url.startsWith('/api/v1/user-state/'));
+    expect(userStateWrites.sort()).toEqual([
+      '/api/v1/user-state/ops-console/intro-seen',
+      '/api/v1/user-state/ops-console/map-count-handoff-seen',
+    ]);
   });
 
   // ── Persistence and ownership boundaries ──

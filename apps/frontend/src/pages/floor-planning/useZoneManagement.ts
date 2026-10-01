@@ -12,6 +12,7 @@ import type { WarehouseLocationType } from '@lasyncro/shared/ui';
 interface CreateZonePayload {
   location_code: string;
   type: WarehouseLocationType;
+  zone_type?: string | null;
   parent_location_code?: string;
   barcode?: string;
 }
@@ -36,8 +37,11 @@ export function useCreateZone() {
   return useMutation({
     mutationFn: (payload: CreateZonePayload) =>
       axiosInstance.post('/api/v1/floor-planning/zones', payload).then(r => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+      if (payload.type === 'bin' && (payload.zone_type == null || ['pick', 'storage'].includes(payload.zone_type))) {
+        void qc.invalidateQueries({ queryKey: ['onboarding', 'readiness'] });
+      }
     },
   });
 }
@@ -76,8 +80,11 @@ export function useUpdateZone() {
       if (context?.previous) qc.setQueryData(queryKey, context.previous);
       show('Failed to save changes — reverted to last saved value.', 'error');
     },
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+      if (payload.active !== undefined || payload.zone_type !== undefined) {
+        void qc.invalidateQueries({ queryKey: ['onboarding', 'readiness'] });
+      }
     },
   });
 }
@@ -204,8 +211,9 @@ export function useDeleteZones() {
         'error',
       );
     },
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+      void qc.invalidateQueries({ queryKey: ['onboarding', 'readiness'] });
     },
   });
 }
@@ -215,8 +223,9 @@ export function useDeleteZone() {
   return useMutation({
     mutationFn: (locationCode: string) =>
       axiosInstance.delete(`/api/v1/floor-planning/zones/${locationCode}`).then(r => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+      void qc.invalidateQueries({ queryKey: ['onboarding', 'readiness'] });
     },
   });
 }

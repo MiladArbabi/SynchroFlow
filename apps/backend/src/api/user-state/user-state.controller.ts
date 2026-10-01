@@ -258,3 +258,18 @@ export const markOpsConsoleIntroSeen = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to record Ops Console intro' });
   }
 };
+
+
+/** GH-1183: records attention only, never setup or inventory completion. */
+export const markOpsConsoleMapCountSeen = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const shopId = (req as any).user?.shopId;
+    if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+    await UserStateService.markOpsConsoleMapCountSeen(userId, shopId);
+    return res.status(200).json({ seen: true });
+  } catch (error) {
+    console.error('[OPS_CONSOLE_MAP_COUNT_SEEN_FAILED]', error);
+    return res.status(500).json({ error: 'Failed to record Ops Console map-count handoff' });
+  }
+};
