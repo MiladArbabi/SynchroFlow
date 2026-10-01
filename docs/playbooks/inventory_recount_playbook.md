@@ -162,7 +162,12 @@ Current terminology:
 - The UI does not send `blind`; blind counting remains enforced by the server.
 - `warehouse_id` is omitted and resolves through the backend default-warehouse rule.
 - After a successful create, the existing recount-task query is refreshed.
-- Creation does not auto-enter the counting session.
+- GH-1201 — post-create entry:
+  - a successful Owner/Admin create that is unassigned or assigned to the creator opens the created task's Brief immediately (task identity from the `201 { task }` response; the dispatch choice is the submitted `assigned_to`, which create does not return);
+  - assigning another operator leaves the creator on ordinary Operations — the task is only dispatched to that operator;
+  - creation and assignment never claim work; `Claim & Start Count` on the Brief is the explicit claim/start step, and every dispatched recount (ordinary or Opening Inventory) begins at its Brief;
+  - the ordinary Brief URL is `/wms?countTaskId=<id>` only — `warehouseFocus=count` remains Opening Inventory protected-focus semantics;
+  - `Leave count` on the Brief is non-mutating (no claim, count or close).
 
 ### Verification
 

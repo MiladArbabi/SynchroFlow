@@ -412,8 +412,10 @@ export default function CountingSessionPage({
   const locationInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
 
+  // GH-1201 — every dispatched recount (Opening Inventory or ordinary) begins
+  // at its Brief; claimed/counting work resumes execution directly.
   const [phase, setPhase] = useState<Phase>(
-    task.purpose === 'opening_inventory' && task.status === 'dispatched'
+    task.status === 'dispatched'
       ? 'brief'
       : 'location'
   );
@@ -711,11 +713,11 @@ export default function CountingSessionPage({
   useEffect(() => {
     if (loading) return;
 
-    // #1164 — assignment is not execution. A dispatched Opening Inventory
-    // task stays on its Brief until the assigned operator explicitly claims
-    // and starts it. Already-claimed/counting work keeps the existing resume
-    // behavior, and ordinary recount semantics remain unchanged.
-    if (isOpening && task.status === 'dispatched') return;
+    // #1164 / GH-1201 — assignment is not execution. A dispatched task
+    // (Opening Inventory or ordinary) stays on its Brief until the operator
+    // explicitly claims and starts it. Already-claimed/counting work keeps the
+    // existing resume behavior.
+    if (task.status === 'dispatched') return;
 
     if (autoStartedForRef.current === task.recount_task_id) return;
     autoStartedForRef.current = task.recount_task_id;
@@ -1097,7 +1099,35 @@ export default function CountingSessionPage({
   // #1164 — initial Opening Inventory mirrors the Receive execution
   // boundary: opening assigned work shows a Brief first. Claim succeeds
   // before any location/product scanner surface becomes available.
-  if (isOpening && phase === 'brief') {
+  // GH-1201 — ordinary dispatched recounts share this Brief with their own
+  // copy; the Shopify-reference notice stays Opening Inventory only.
+  if (phase === 'brief') {
+    const briefFacts = isOpening
+      ? [
+          ['Action', 'Brief'],
+          ['Task', task.label],
+          ['Location', openingBinCode ?? 'Unavailable'],
+          ['Next', 'Claim & start count'],
+        ]
+      : [
+          ['Action', 'Brief'],
+          ['Task', task.label],
+          ['Locations', loading ? '—' : String(bins.length)],
+          ['Next', 'Claim & start count'],
+        ];
+    const briefSteps = isOpening
+      ? [
+          `Go to bin ${openingBinCode ?? 'shown for this task'} and scan its label.`,
+          'Scan each product you physically find there.',
+          'Complete the bin when the physical count is finished.',
+        ]
+      : [
+          'Go to the first location and scan its bin label.',
+          'Count the products physically present there.',
+          'Complete each location until the inventory check is finished.',
+        ];
+
+
     return (
       <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
         <Box sx={{ mb: 3 }}>
@@ -1116,7 +1146,7 @@ export default function CountingSessionPage({
               lineHeight: 1.1,
             }}
           >
-            Count opening inventory
+            {isOpening ? 'Count opening inventory' : 'Count inventory'}
           </Typography>
 
           <Typography
@@ -1127,7 +1157,9 @@ export default function CountingSessionPage({
               mt: 0.75,
             }}
           >
-            Establish the physical starting stock for this warehouse bin.
+            {isOpening
+              ? 'Establish the physical starting stock for this warehouse bin.'
+              : 'Count what is physically in the selected locations and compare it with system stock.'}
           </Typography>
         </Box>
 
@@ -1144,12 +1176,7 @@ export default function CountingSessionPage({
             gap: 1,
           }}
         >
-          {[
-            ['Action', 'Brief'],
-            ['Task', task.label],
-            ['Location', openingBinCode ?? 'Unavailable'],
-            ['Next', 'Claim & start count'],
-          ].map(([label, value]) => (
+          {briefFacts.map(([label, value]) => (
             <Box key={label} sx={{ minWidth: 0 }}>
               <Typography
                 variant="caption"
@@ -1183,21 +1210,19 @@ export default function CountingSessionPage({
             gap: 0.75,
           }}
         >
-          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
-            Go to bin {openingBinCode ?? 'shown for this task'} and scan its label.
-          </Typography>
-          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
-            Scan each product you physically find there.
-          </Typography>
-          <Typography component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
-            Complete the bin when the physical count is finished.
-          </Typography>
+          {briefSteps.map((step) => (
+            <Typography key={step} component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
+              {step}
+            </Typography>
+          ))}
         </Box>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Shopify stock is a reference only. Your physical warehouse count is
-          what LaSyncro records as the opening stock for this bin.
-        </Alert>
+        {isOpening && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Shopify stock is a reference only. Your physical warehouse count is
+            what LaSyncro records as the opening stock for this bin.
+          </Alert>
+        )}
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -1222,7 +1247,8 @@ export default function CountingSessionPage({
 
           {/* #1164 — the protected shell hides app chrome from the Brief on,
               so the Brief carries its own non-mutating exit (session exit
-              only: no claim, reassignment, count or close). */}
+              only: no claim, reassignment, count or close). GH-1201 — the
+              ordinary Brief uses the same non-mutating exit. */}
           <Button
             variant="text"
             size="small"
