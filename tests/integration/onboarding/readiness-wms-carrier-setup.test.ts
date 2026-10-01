@@ -33,7 +33,7 @@ import db, { withTenant, setTenantContext, systemTransaction, runWithTenantConte
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { encrypt } from 'api-src/security/encryption.service';
 import { wmsOnboardingSignalProvider } from 'api-src/onboarding/readiness.providers';
-import { startShopOpeningInventoryReconciliation } from 'api-src/services/wms/inventoryRecount.service';
+import { startShopOpeningInventory } from 'api-src/services/wms/shopifyOpeningInventorySnapshot.service';
 
 async function createShop(prefix: string): Promise<number> {
   const unique = crypto.randomBytes(6).toString('hex');
@@ -276,17 +276,10 @@ describe('WMS onboarding readiness — legacy opening inventory isolation', () =
     ).toBe(true);
 
     await expect(
-      withTenant(
+      startShopOpeningInventory({
         shopId,
-        (trx) =>
-          startShopOpeningInventoryReconciliation(
-            trx,
-            {
-              shopId,
-              createdBy: 999999,
-            }
-          )
-      )
+        createdBy: 999999,
+      })
     ).rejects.toThrow(
       /bootstrap_model must be reconcile_opening_expectation_v2/
     );

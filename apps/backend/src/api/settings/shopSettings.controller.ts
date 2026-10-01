@@ -305,8 +305,9 @@ const OPENING_INVENTORY_MAPPING_LOCKED_RESPONSE = {
 /**
  * GH-1179: once Opening Inventory has started, its count is scoped to the
  * warehouse's Shopify Location. The mapping is frozen until the opening
- * Shopify sync completes. `lock` takes the same shop_wms_settings row lock
- * as startShopOpeningInventoryReconciliation, serializing the two.
+ * Shopify sync completes, and while a Shopify snapshot collection holds a
+ * live lease (an expired lease can never finalize). `lock` takes the same
+ * shop_wms_settings row lock as the opening start, serializing the two.
  */
 async function isOpeningInventoryMappingLocked(
   trx: Knex.Transaction,
@@ -322,10 +323,19 @@ async function isOpeningInventoryMappingLocked(
 
   const settings = await (lock ? query.forUpdate() : query).first();
 
-  return (
-    Boolean(settings?.opening_inventory_reconciliation_started_at) &&
+  if (
+    settings?.opening_inventory_reconciliation_started_at &&
     !settings?.opening_inventory_shopify_synced_at
-  );
+  ) {
+    return true;
+  }
+
+  const liveCollection = await trx('opening_inventory_shopify_snapshots')
+    .where({ shop_id: shopId, status: 'collecting' })
+    .where('lease_expires_at', '>', trx.fn.now())
+    .first('snapshot_id');
+
+  return Boolean(liveCollection);
 }
 
 /**

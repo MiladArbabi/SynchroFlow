@@ -35,8 +35,12 @@ import {
   completeOpeningInventoryBin,
   getShopOpeningInventoryProgress,
   recordCount,
-  startShopOpeningInventoryReconciliation,
 } from 'api-src/services/wms/inventoryRecount.service';
+
+import {
+  startShopOpeningInventory,
+  type OpeningInventoryLocationPageReader,
+} from 'api-src/services/wms/shopifyOpeningInventorySnapshot.service';
 
 import {
   approveAndRunOpeningInventoryCutover,
@@ -279,18 +283,32 @@ async function seedExpectation(
   );
 }
 
+// GH-1179: start captures a location-scoped Shopify on_hand snapshot. These
+// cutover contracts are not about that read, so the provider transport
+// returns the frozen mapped Location as active with no inventory levels;
+// reservation, validation and atomic finalize still run for real.
+const emptyMappedLocationReader: OpeningInventoryLocationPageReader =
+  async ({ variables }) => ({
+    data: {
+      location: {
+        id: variables.locationId,
+        isActive: true,
+        inventoryLevels: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [],
+        },
+      },
+    },
+  });
+
 async function startShop(fixture: Fixture) {
-  return withTenant(
-    fixture.shopId,
-    (trx) =>
-      startShopOpeningInventoryReconciliation(
-        trx,
-        {
-          shopId: fixture.shopId,
-          createdBy: fixture.ownerId,
-          assignedTo: fixture.operatorId,
-        }
-      )
+  return startShopOpeningInventory(
+    {
+      shopId: fixture.shopId,
+      createdBy: fixture.ownerId,
+      assignedTo: fixture.operatorId,
+    },
+    { readLocationPage: emptyMappedLocationReader }
   );
 }
 

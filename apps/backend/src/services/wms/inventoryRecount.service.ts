@@ -766,24 +766,23 @@ export async function getShopOpeningInventoryProgress(
   };
 }
 
-/**
- * Freeze the initial physical reconciliation cohort across every active
- * warehouse in the shop.
- *
- * The first successful call snapshots all ACTIVE STOCK locations
- * backed by bin + pick/storage semantics. Later warehouses/stock locations
- * never change this initial denominator.
- */
-export async function startShopOpeningInventoryReconciliation(
-  trx: Knex.Transaction,
-  params: {
-    shopId: number;
-    createdBy: number;
-    assignedTo?: number | null;
-  }
-): Promise<ShopOpeningInventoryProgress> {
-  const { shopId, createdBy } = params;
+export type OpeningInventoryStartGate =
+  | { kind: 'replay'; progress: ShopOpeningInventoryProgress }
+  | { kind: 'fresh' };
 
+/**
+ * Opening Inventory start gate (GH-1179).
+ *
+ * Takes the shop_wms_settings row lock for the caller's transaction. That
+ * lock serializes shop-wide start against itself and against the warehouse
+ * Shopify Location mapping PATCH.
+ *
+ * An already-started shop replays its frozen cohort and is never re-started.
+ */
+export async function lockOpeningInventoryStart(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<OpeningInventoryStartGate> {
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .select(
@@ -828,7 +827,10 @@ export async function startShopOpeningInventoryReconciliation(
       );
     }
 
-    return getShopOpeningInventoryProgress(trx, shopId);
+    return {
+      kind: 'replay',
+      progress: await getShopOpeningInventoryProgress(trx, shopId),
+    };
   }
 
   if (
@@ -839,12 +841,39 @@ export async function startShopOpeningInventoryReconciliation(
     );
   }
 
+  return { kind: 'fresh' };
+}
+
+export interface OpeningInventoryStartScope {
+  warehouseId: string;
+  externalLocationId: string;
+  bins: Array<{ warehouse_id: string; location_code: string }>;
+}
+
+/**
+ * Resolve the scope a shop-wide Opening Inventory start would freeze: the
+ * validated assignee, and every ACTIVE STOCK location backed by bin +
+ * pick/storage semantics.
+ *
+ * GH-1179: the cohort must belong to exactly one participating warehouse,
+ * explicitly mapped to a Shopify Location. There is no default/first Shopify
+ * Location fallback. Read-only; the caller owns the transaction.
+ */
+export async function resolveOpeningInventoryStartScope(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    assignedTo?: number | null;
+  }
+): Promise<OpeningInventoryStartScope> {
+  const { shopId } = params;
+
   // #1164: the initial shop-wide reconciliation may be explicitly dispatched
   // to an operator. Validate the target using the same active-membership +
   // configurable recount-count permission contract used by recount ownership.
   //
-  // Deliberately after the existing-cohort replay above: a repeated start
-  // request may read the frozen cohort, but must never reassign it.
+  // Callers resolve scope only after the existing-cohort replay: a repeated
+  // start request may read the frozen cohort, but must never reassign it.
   if (params.assignedTo !== undefined && params.assignedTo !== null) {
     const membership = await trx('shop_memberships')
       .where({
@@ -911,10 +940,6 @@ export async function startShopOpeningInventoryReconciliation(
     );
   }
 
-  // GH-1179: Opening Inventory is reconciled against exactly one Shopify
-  // Location. The participating warehouse is defined by the countable cohort
-  // above, and it must be explicitly mapped before any count state exists.
-  // There is no default/first Shopify Location fallback.
   const participatingWarehouseIds = new Set(
     bins.map((bin: any) => String(bin.warehouse_id))
   );
@@ -925,32 +950,60 @@ export async function startShopOpeningInventoryReconciliation(
     );
   }
 
-  if (!String(bins[0].external_location_id ?? '').trim()) {
+  const externalLocationId = String(bins[0].external_location_id ?? '').trim();
+
+  if (!externalLocationId) {
     throw new Error(
       '[OPENING_RECOUNT_SHOP_START] Shopify Location mapping is required for the participating warehouse before opening inventory can start'
     );
   }
 
+  return {
+    warehouseId: String(bins[0].warehouse_id),
+    externalLocationId,
+    bins: bins.map((bin: any) => ({
+      warehouse_id: String(bin.warehouse_id),
+      location_code: String(bin.location_code),
+    })),
+  };
+}
+
+/**
+ * Freeze the initial physical reconciliation cohort: one dispatched
+ * opening_inventory task per scope bin, plus the shop-wide started_at anchor.
+ * Later warehouses/stock locations never change this denominator.
+ *
+ * Only the Shopify-snapshot start orchestrator calls this, inside the same
+ * transaction that completes the location-scoped Shopify snapshot.
+ */
+export async function createOpeningInventoryCohort(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    createdBy: number;
+    assignedTo?: number | null;
+    bins: Array<{ warehouse_id: string; location_code: string }>;
+  }
+): Promise<ShopOpeningInventoryProgress> {
+  const { shopId, createdBy, bins } = params;
   const startedAt = new Date();
 
   for (const bin of bins) {
-    const warehouseId = String(bin.warehouse_id);
-    const locationCode = String(bin.location_code);
     const label = await nextRecountLabel(trx, shopId);
 
     await trx('inventory_recount_tasks').insert({
       shop_id: shopId,
-      warehouse_id: warehouseId,
+      warehouse_id: bin.warehouse_id,
       label,
       scope: 'location',
       purpose: 'opening_inventory',
-      scope_location_code: locationCode,
+      scope_location_code: bin.location_code,
       status: 'dispatched',
       blind: true,
       assigned_to: params.assignedTo ?? null,
       created_by: createdBy,
       notes:
-        `Initial inventory reconciliation: ${locationCode}`,
+        `Initial inventory reconciliation: ${bin.location_code}`,
     });
   }
 

@@ -38,16 +38,18 @@ jest.mock('api-src/services/wms/openingInventoryCutover.service', () => {
   };
 });
 
-// GH-1156: the canonical shop-wide start is mocked at its module boundary;
-// its cohort/anchor/replay semantics are integration-tested in
-// tests/integration/inventory/opening-recount-bootstrap-progress.test.ts.
-jest.mock('api-src/services/wms/inventoryRecount.service', () => ({
-  ...jest.requireActual('api-src/services/wms/inventoryRecount.service'),
-  startShopOpeningInventoryReconciliation: jest.fn(),
+// GH-1156 / GH-1179: the canonical shop-wide start orchestrator is mocked at
+// its module boundary. It owns its own transactions (reserve → Shopify
+// snapshot → atomic finalize); reservation, provider reads, snapshot lines,
+// leases and cohort creation are integration-tested in
+// tests/integration/inventory/opening-inventory-shopify-snapshot.service.test.ts
+// and opening-recount-bootstrap-progress.test.ts.
+jest.mock('api-src/services/wms/shopifyOpeningInventorySnapshot.service', () => ({
+  startShopOpeningInventory: jest.fn(),
 }));
 
 import { withTenant } from '@lasyncro/backend-core/db.js';
-import { startShopOpeningInventoryReconciliation } from 'api-src/services/wms/inventoryRecount.service';
+import { startShopOpeningInventory } from 'api-src/services/wms/shopifyOpeningInventorySnapshot.service';
 import {
   approveAndRunOpeningInventoryCutover,
   classifyOpeningInventoryCutoverError,
@@ -61,9 +63,8 @@ import {
 
 const approveMock = approveAndRunOpeningInventoryCutover as jest.Mock;
 const viewMock = getOpeningInventoryCutoverView as jest.Mock;
-const startMock = startShopOpeningInventoryReconciliation as jest.Mock;
+const startMock = startShopOpeningInventory as jest.Mock;
 const withTenantMock = withTenant as jest.Mock;
-const FAKE_TRX = { __trx: 'tenant-trx' };
 
 const AUTH_USER = { shopId: 41, userId: 7 };
 
@@ -97,7 +98,6 @@ const SNAPSHOT = {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  withTenantMock.mockImplementation((_shopId: number, fn: (trx: unknown) => unknown) => fn(FAKE_TRX));
 });
 
 afterEach(() => {
@@ -394,14 +394,17 @@ describe('GH-1156 — opening count start bridge', () => {
       })
       .expect(200);
 
-    expect(withTenantMock).toHaveBeenCalledTimes(1);
-    expect(withTenantMock.mock.calls[0][0]).toBe(41);
+    // The orchestrator owns its transactions; the controller opens none and
+    // passes only server-authoritative params (no deps/transport override).
+    expect(withTenantMock).not.toHaveBeenCalled();
     expect(startMock).toHaveBeenCalledTimes(1);
-    expect(startMock).toHaveBeenCalledWith(FAKE_TRX, {
-      shopId: 41,
-      createdBy: 7,
-      assignedTo: 555,
-    });
+    expect(startMock.mock.calls[0]).toEqual([
+      {
+        shopId: 41,
+        createdBy: 7,
+        assignedTo: 555,
+      },
+    ]);
     expect(res.body).toEqual(STARTED_PROGRESS);
     expect(approveMock).not.toHaveBeenCalled();
   });
@@ -422,7 +425,6 @@ describe('GH-1156 — opening count start bridge', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('OPENING_START_INVALID_REQUEST');
-      expect(withTenantMock).not.toHaveBeenCalled();
       expect(startMock).not.toHaveBeenCalled();
     }
   );
@@ -435,7 +437,6 @@ describe('GH-1156 — opening count start bridge', () => {
         .send({});
 
       expect(res.status).toBe(401);
-      expect(withTenantMock).not.toHaveBeenCalled();
       expect(startMock).not.toHaveBeenCalled();
     }
   );
@@ -457,6 +458,36 @@ describe('GH-1156 — opening count start bridge', () => {
     expect(res.body.error.length).toBeGreaterThan(0);
     expect(JSON.stringify(res.body)).not.toContain('[OPENING_RECOUNT_SHOP_START]');
     expect(JSON.stringify(res.body)).not.toContain(message.replace('[OPENING_RECOUNT_SHOP_START] ', ''));
+  });
+
+  it.each([
+    ['OPENING_START_IN_PROGRESS', 409],
+    ['OPENING_START_SHOPIFY_FAILED', 502],
+  ])('GH-1179 [%s] => %i with a fixed merchant-safe message, raw detail never exposed', async (code, status) => {
+    const responses: unknown[] = [];
+
+    for (const detail of [
+      'COLLECTION_IN_PROGRESS: snapshot 7d1f-secret-uuid lease held',
+      'SHOPIFY_GRAPHQL_ERROR: Throttled provider-secret-detail',
+    ]) {
+      startMock.mockReset();
+      startMock.mockRejectedValue(new Error(`[${code}] ${detail}`));
+
+      const res = await request(buildApp())
+        .post('/opening-inventory/start')
+        .send({ assigned_to: 555 });
+
+      expect(res.status).toBe(status);
+      expect(res.body.code).toBe(code);
+      expect(typeof res.body.error).toBe('string');
+      expect(res.body.error.length).toBeGreaterThan(0);
+      expect(JSON.stringify(res.body)).not.toContain(`[${code}]`);
+      expect(JSON.stringify(res.body)).not.toContain('secret');
+      responses.push(res.body);
+    }
+
+    // Fixed public message: independent of the internal/provider detail.
+    expect(responses[0]).toEqual(responses[1]);
   });
 
   it.each([

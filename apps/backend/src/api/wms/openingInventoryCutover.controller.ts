@@ -1,7 +1,6 @@
 // apps/backend/src/api/wms/openingInventoryCutover.controller.ts
 import { Request, Response } from 'express';
-import { withTenant } from '@lasyncro/backend-core/db.js';
-import { startShopOpeningInventoryReconciliation } from '../../services/wms/inventoryRecount.service.js';
+import { startShopOpeningInventory } from '../../services/wms/shopifyOpeningInventorySnapshot.service.js';
 import {
   approveAndRunOpeningInventoryCutover,
   classifyOpeningInventoryCutoverError,
@@ -78,9 +77,11 @@ export const httpGetOpeningInventoryProgress = async (req: Request, res: Respons
 
 /**
  * GH-1156: merchant bridge from `not_started` to the canonical shop-wide
- * opening start. startShopOpeningInventoryReconciliation() owns the v2
- * bootstrap check, the frozen bin cohort, the snapshot anchor and replay
- * (an already-started shop returns its existing progress, never reassigned).
+ * opening start. startShopOpeningInventory() owns the v2 bootstrap check, the
+ * frozen bin cohort, the snapshot anchor and replay (an already-started shop
+ * returns its existing progress, never reassigned). GH-1179: it also owns its
+ * transactions, because counting may only begin after a complete Shopify
+ * on_hand snapshot of the mapped Location is read outside any transaction.
  *
  * #1164: the only client input is `assigned_to`, a required positive integer
  * user id naming the operator the cohort is dispatched to; the service
@@ -89,8 +90,9 @@ export const httpGetOpeningInventoryProgress = async (req: Request, res: Respons
  * quantities are never client input, and any other body field is ignored.
  *
  * Service rejections are classified only by their leading prefix —
- * [OPENING_RECOUNT_SHOP_ASSIGNEE] (400) and [OPENING_RECOUNT_SHOP_START]
- * (409) — and raw service text never reaches the response body.
+ * [OPENING_RECOUNT_SHOP_ASSIGNEE] (400), [OPENING_RECOUNT_SHOP_START] (409),
+ * [OPENING_START_IN_PROGRESS] (409) and [OPENING_START_SHOPIFY_FAILED] (502) —
+ * and raw service/provider text never reaches the response body.
  */
 const OPENING_START_INVALID_REQUEST_MESSAGE =
   'Choose an operator before starting the opening count.';
@@ -100,6 +102,10 @@ const OPENING_START_REJECTED_MESSAGE =
   'The opening count could not be started. Check that your warehouse has active bins, then try again.';
 const OPENING_START_INTERNAL_MESSAGE =
   'The opening count could not be started. Try again.';
+const OPENING_START_IN_PROGRESS_MESSAGE =
+  'Opening inventory is already preparing. Try again shortly.';
+const OPENING_START_SHOPIFY_FAILED_MESSAGE =
+  'Shopify inventory could not be read for your warehouse location. Try again.';
 
 export const httpStartOpeningInventoryReconciliation = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
@@ -124,13 +130,11 @@ export const httpStartOpeningInventoryReconciliation = async (req: Request, res:
   }
 
   try {
-    const progress = await withTenant(Number(shopId), (trx) =>
-      startShopOpeningInventoryReconciliation(trx, {
-        shopId: Number(shopId),
-        createdBy: Number(userId),
-        assignedTo,
-      })
-    );
+    const progress = await startShopOpeningInventory({
+      shopId: Number(shopId),
+      createdBy: Number(userId),
+      assignedTo,
+    });
     return res.json(progress);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -147,6 +151,20 @@ export const httpStartOpeningInventoryReconciliation = async (req: Request, res:
       return res.status(409).json({
         code: 'OPENING_START_REJECTED',
         error: OPENING_START_REJECTED_MESSAGE,
+      });
+    }
+
+    if (message.startsWith('[OPENING_START_IN_PROGRESS]')) {
+      return res.status(409).json({
+        code: 'OPENING_START_IN_PROGRESS',
+        error: OPENING_START_IN_PROGRESS_MESSAGE,
+      });
+    }
+
+    if (message.startsWith('[OPENING_START_SHOPIFY_FAILED]')) {
+      return res.status(502).json({
+        code: 'OPENING_START_SHOPIFY_FAILED',
+        error: OPENING_START_SHOPIFY_FAILED_MESSAGE,
       });
     }
 

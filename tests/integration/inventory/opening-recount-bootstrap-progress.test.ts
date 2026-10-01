@@ -16,8 +16,11 @@ import {
   recordCount,
   skipLine,
   startOpeningInventoryReconciliation,
-  startShopOpeningInventoryReconciliation,
 } from 'api-src/services/wms/inventoryRecount.service';
+import {
+  startShopOpeningInventory,
+  type OpeningInventoryLocationPageReader,
+} from 'api-src/services/wms/shopifyOpeningInventorySnapshot.service';
 
 jest.setTimeout(30000);
 
@@ -1027,6 +1030,35 @@ async function addOpeningTestWarehouse(
   };
 }
 
+// GH-1179: shop-wide start captures a location-scoped Shopify on_hand
+// snapshot. These contracts cover cohort/progress semantics, so the provider
+// transport returns the frozen mapped Location as active with no inventory
+// levels; reservation, validation and atomic finalize still run for real.
+const emptyMappedLocationReader: OpeningInventoryLocationPageReader =
+  async ({ variables }) => ({
+    data: {
+      location: {
+        id: variables.locationId,
+        isActive: true,
+        inventoryLevels: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [],
+        },
+      },
+    },
+  });
+
+function startShopOpening(fixture: Fixture) {
+  return startShopOpeningInventory(
+    {
+      shopId: fixture.shopId,
+      createdBy: fixture.ownerId,
+      assignedTo: fixture.operatorId,
+    },
+    { readLocationPage: emptyMappedLocationReader }
+  );
+}
+
 async function commitOpeningBinEmpty(
   fixture: any,
   recountTaskId: string
@@ -1081,18 +1113,7 @@ describe('shop-wide opening inventory reconciliation', () => {
         .update({ active: false })
     );
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     expect(started.state).toBe('counting');
     expect(started.total_bins).toBe(1);
@@ -1134,18 +1155,7 @@ describe('shop-wide opening inventory reconciliation', () => {
       })
     );
 
-    const retry = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const retry = await startShopOpening(fixture);
 
     expect(retry.total_bins).toBe(1);
     expect(retry.started_at?.toISOString()).toBe(
@@ -1186,18 +1196,7 @@ describe('shop-wide opening inventory reconciliation', () => {
         binCount: 0,
       });
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     expect(started.total_bins).toBe(2);
     expect(
@@ -1302,18 +1301,7 @@ describe('shop-wide opening inventory reconciliation', () => {
         })
     );
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     for (const bin of started.bins) {
       await commitOpeningBinEmpty(
@@ -1356,18 +1344,7 @@ describe('shop-wide opening inventory reconciliation', () => {
         })
     );
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     for (const bin of started.bins) {
       await commitOpeningBinEmpty(
@@ -1418,18 +1395,7 @@ describe('shop-wide opening inventory reconciliation', () => {
   it('reports physical-only opening stock as review_required with expected zero', async () => {
     const fixture = await createFixture();
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     const firstBin = started.bins[0];
 
@@ -1505,18 +1471,7 @@ describe('shop-wide opening inventory reconciliation', () => {
   it('needs_bin_review dominates final comparison while any bin requires review', async () => {
     const fixture = await createFixture();
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     await withTenant(fixture.shopId, (trx) =>
       trx('inventory_recount_tasks')
@@ -1551,18 +1506,7 @@ describe('shop-wide opening inventory frozen cohort guard', () => {
   it('rejects warehouse-level expansion after the shop-wide opening cohort is frozen', async () => {
     const fixture = await createFixture();
 
-    const started = await withTenant(
-      fixture.shopId,
-      (trx) =>
-        startShopOpeningInventoryReconciliation(
-          trx,
-          {
-            shopId: fixture.shopId,
-            createdBy: fixture.ownerId,
-            assignedTo: fixture.operatorId,
-          }
-        )
-    );
+    const started = await startShopOpening(fixture);
 
     const frozenTotal = started.total_bins;
 
