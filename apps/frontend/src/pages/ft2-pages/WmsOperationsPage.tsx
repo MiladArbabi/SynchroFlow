@@ -857,6 +857,9 @@ export default function WmsOperationsPage() {
       currentUserId={currentUserId}
       canReassignCount={canReassignRecount}
       pendingCountTaskId={searchParams.get('countTaskId')}
+      // GH-1188 — URL count-focus intent; the module holds its ordinary body
+      // only while this task is still resolving.
+      countFocusRequested={searchParams.get('warehouseFocus') === 'count'}
       // #1164 / WAREHOUSE-FOCUS-SHELL — opening an Opening Inventory task
       // begins its protected task session at the Brief; claim/start changes
       // task ownership/phase, not shell ownership. Ordinary cycle recounts

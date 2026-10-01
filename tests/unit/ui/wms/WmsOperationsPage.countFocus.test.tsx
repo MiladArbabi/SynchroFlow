@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
@@ -108,6 +108,21 @@ describe('CONTRACT-1164-UI-12 — count session entry route is purpose-aware', (
     const params = enter([{ recount_task_id: 'oi-1', purpose: 'opening_inventory' }], 'ghost-1');
     expect(params.get('countTaskId')).toBe('ghost-1');
     expect(params.get('warehouseFocus')).toBeNull();
+  });
+
+  // GH-1188 — the module is router-free; the page hands it the URL's count
+  // focus intent so the module can hold its ordinary body while resolving.
+  it.each([
+    ['/wms?countTaskId=x&warehouseFocus=count', true],
+    ['/wms?countTaskId=x', false],
+  ])('%s passes countFocusRequested=%s to the module', (url, expected) => {
+    mockModuleProps.current = null;
+    render(
+      <MemoryRouter initialEntries={[url]}>
+        <WmsOperationsPage />
+      </MemoryRouter>
+    );
+    expect(mockModuleProps.current!.countFocusRequested).toBe(expected);
   });
 });
 
@@ -292,5 +307,102 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
 
     await waitFor(() => expect(p.onCountSessionFocusChange).toHaveBeenCalledWith(TASK_ID, true));
     expect(p.onCountSessionFocusChange).not.toHaveBeenCalledWith(TASK_ID, false);
+  });
+
+  // GH-1188 — protected mode begins at the Brief, so a focused count URL must
+  // never paint the ordinary Warehouse body while the task is resolving. The
+  // URL hint only covers the unresolved transition; settlement still decides.
+  describe('GH-1188 — focused count URL never paints the ordinary Warehouse body', () => {
+    const hold = () => screen.queryByRole('status', { name: 'Loading count session' });
+    const ordinaryControl = (root: HTMLElement) =>
+      within(root).queryByRole('button', { name: 'Reconcile inventory', hidden: true });
+
+    // RTL's render() flushes passive effects before returning, so the first
+    // committed frame is captured from the DOM mutations it produced.
+    function renderRecordingCommits(p: Record<string, unknown>) {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const observer = new MutationObserver(() => {});
+      observer.observe(container, { childList: true, subtree: true });
+      const result = render(<WmsModuleFT2 {...p} />, { container });
+      const inserted = observer
+        .takeRecords()
+        .flatMap((record) => Array.from(record.addedNodes))
+        .filter((node): node is HTMLElement => node instanceof HTMLElement);
+      observer.disconnect();
+      return { ...result, inserted };
+    }
+
+    it('pending resolution: protected hold, no ordinary body, no Brief, no fail-open', async () => {
+      const p = props({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
+      const { inserted } = renderRecordingCommits(p);
+
+      expect(inserted.some((node) => ordinaryControl(node))).toBe(false);
+      expect(screen.queryByRole('button', { name: 'Reconcile inventory' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Leave count' })).not.toBeInTheDocument();
+      expect(hold()).toBeInTheDocument();
+      await settle();
+      expect(p.onCountSessionFocusChange).not.toHaveBeenCalledWith(TASK_ID, false);
+    });
+
+    it('settled usable task on first render: the first committed frame is protected', async () => {
+      const p = props({ countFocusRequested: true, recountTasks: [openingTask()], recountTasksSettled: true });
+      const { inserted } = renderRecordingCommits(p);
+
+      expect(inserted.length).toBeGreaterThan(0);
+      const firstFrame = inserted[0];
+      expect(ordinaryControl(firstFrame)).toBeNull();
+      const firstFrameIsLoadingHold =
+        firstFrame.getAttribute('role') === 'status' &&
+        firstFrame.getAttribute('aria-label') === 'Loading count session';
+      const firstFrameContainsBrief =
+        within(firstFrame).queryByRole('button', {
+          name: 'Leave count',
+          hidden: true,
+        }) !== null;
+      expect(firstFrameIsLoadingHold || firstFrameContainsBrief).toBe(true);
+      expect(inserted.some((node) => ordinaryControl(node))).toBe(false);
+
+      expect(await screen.findByRole('button', { name: 'Leave count' })).toBeInTheDocument();
+      expect(hold()).not.toBeInTheDocument();
+    });
+
+    it('pending then resolved: the hold hands off to the Brief without the ordinary body', async () => {
+      const p = props({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
+      const { rerender } = render(<WmsModuleFT2 {...p} />);
+      expect(hold()).toBeInTheDocument();
+
+      rerender(<WmsModuleFT2 {...p} recountTasks={[openingTask()]} recountTasksSettled />);
+
+      expect(screen.queryByRole('button', { name: 'Reconcile inventory' })).not.toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Leave count' })).toBeInTheDocument();
+      await waitFor(() => expect(p.onCountSessionFocusChange).toHaveBeenCalledWith(TASK_ID, true));
+      expect(hold()).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['missing from settled tasks', { recountTasks: [] }],
+      ['dispatched to another operator', { recountTasks: [openingTask({ assigned_to: 99 })] }],
+      ['claimed by another operator', { recountTasks: [openingTask({ status: 'claimed', claimed_by: 99, assigned_to: 99 })] }],
+      // useWms maps a failed task read to recountLocked=true, so this row also
+      // covers the read-error state at the module boundary.
+      ['recount locked', { recountLocked: true, recountTasks: [openingTask()] }],
+    ])('settled unusable (%s): no hold, fail-open preserved, ordinary body available', async (_label, over) => {
+      const p = props({ countFocusRequested: true, recountTasksSettled: true, ...over });
+      render(<WmsModuleFT2 {...p} />);
+
+      await waitFor(() => expect(p.onCountSessionFocusChange).toHaveBeenCalledWith(TASK_ID, false));
+      expect(hold()).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reconcile inventory' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Leave count' })).not.toBeInTheDocument();
+    });
+
+    it('ordinary cycle recount entry (countTaskId only): no hold while resolving', () => {
+      const p = props({ countFocusRequested: false, recountTasks: [], recountTasksSettled: false });
+      render(<WmsModuleFT2 {...p} />);
+
+      expect(hold()).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reconcile inventory' })).toBeInTheDocument();
+    });
   });
 });
