@@ -279,13 +279,13 @@ export const FIRST_ENTRY_COUNT_LOCKED_SUBTITLE =
  * projection over the same canonical sources as the six-item checklist, which
  * stays unchanged beside it.
  *
- * Map completion is wms/map-zones (wms.zonesConfigured). Count completion is
+ * Map basics is minimum readiness (wms.zonesConfigured). Count completion is
  * wms/reconcile-inventory only. Until zones are configured the count row is
  * locked: no command, no navigation, so no start POST is reachable from it.
  * Once zones exist it reuses the GH-1156 lifecycle mapping verbatim.
  */
 export function buildFirstEntrySetupItems(
-  zonesConfigured: boolean,
+  zonesConfigured: boolean | null,
   openingReadinessComplete: boolean,
   view: OpeningInventoryProgressView | null,
   canStart: boolean,
@@ -293,8 +293,8 @@ export function buildFirstEntrySetupItems(
 ): ChecklistItem[] {
   const map: ChecklistItem = {
     key: FIRST_ENTRY_MAP_KEY,
-    label: 'Map your warehouse',
-    complete: zonesConfigured,
+    label: 'Map warehouse basics',
+    complete: zonesConfigured === true,
     subtitle: 'Define where stock lives and work happens.',
     action: { kind: 'navigate', label: 'Map warehouse', route: MAP_WAREHOUSE_ROUTE },
   };
@@ -303,7 +303,7 @@ export function buildFirstEntrySetupItems(
   let count: ChecklistItem;
   if (openingReadinessComplete) {
     count = { ...countBase, complete: true };
-  } else if (!zonesConfigured) {
+  } else if (zonesConfigured !== true) {
     count = { ...countBase, complete: false, subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE };
   } else {
     const lifecycle = buildOpeningInventoryItem(false, view, canStart, currentUserId);
@@ -334,6 +334,12 @@ export function useActivationChecklist() {
   });
 
   const modules = readiness.data?.modules ?? [];
+  // Minimum readiness is a server signal, never a missing-task fallback or a
+  // claim that the merchant has finished the entire floor plan.
+  const mappingSignal = modules.find(m => m.moduleId === 'wms')?.signals
+    ?.find(s => s.name === 'wms.zonesConfigured')?.value;
+  const minimumMappingReady: boolean | null = readiness.isSuccess && typeof mappingSignal === 'boolean'
+    ? mappingSignal : null;
   const openingReadinessComplete = findTask(modules, 'wms', 'reconcile-inventory');
   // null while readiness is loading or when the signal is missing/unknown.
   const reconciliationRequired = readiness.isSuccess
@@ -418,7 +424,7 @@ export function useActivationChecklist() {
   const firstEntry = reconciliationRequired === true && reconcileTask === false;
   const firstEntryItems: ChecklistItem[] = firstEntry
     ? buildFirstEntrySetupItems(
-        findTask(modules, 'wms', 'map-zones'),
+        minimumMappingReady,
         false,
         isProgressView(openingProgress.data) ? openingProgress.data : null,
         canStartOpeningInventory,
@@ -452,5 +458,6 @@ export function useActivationChecklist() {
     currentUserId,
     firstEntry,
     firstEntryItems,
+    minimumMappingReady,
   };
 }

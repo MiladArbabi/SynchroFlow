@@ -186,6 +186,7 @@ interface ResizeState {
 }
 
 interface CanvasEditorProps {
+  minimumMappingReady?: boolean | null;
   zones: WarehouseZone[];
   onUpdateZone?: (locationCode: string, payload: {
     position_x?: number | null;
@@ -963,7 +964,8 @@ function Ruler({ length, horizontal, scale, offset: off, zoom }: {
 
 // ── CanvasEditor ──────────────────────────────────────────────────────────────
 export function CanvasEditor({ 
-  zones, 
+  zones,
+  minimumMappingReady,
   onUpdateZone,
   onUpdateZonePositions,
   onDeleteZone,
@@ -1094,7 +1096,9 @@ export function CanvasEditor({
   const showStockGuidance =
     warehouseRoot != null &&
     hasUsableWarehouseBounds(viewportRoot) &&
-    !hasStockLocation;
+    // The app supplies canonical readiness; unknown must not become local truth.
+    // Standalone canvas consumers retain their existing layout-only guidance.
+    (minimumMappingReady === undefined ? !hasStockLocation : minimumMappingReady === false);
 
   const guidancePhase: 'boundary' | 'stock' | null =
     showBoundaryGuidance

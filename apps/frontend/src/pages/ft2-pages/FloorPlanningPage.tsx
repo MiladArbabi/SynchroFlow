@@ -1,5 +1,6 @@
 // apps/frontend/src/pages/ft2-pages/FloorPlanningPage.tsx
 import { useState, useEffect } from 'react';
+import { useActivationChecklist } from '../../hooks/useActivationChecklist';
 import { useSearchParams } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
 import { AxiosError } from 'axios';
@@ -38,6 +39,7 @@ import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
  * All HTTP calls live here — FloorPlanningModuleFT2 module stays decoupled.
  */
 export default function FloorPlanningPage() {
+  const { minimumMappingReady } = useActivationChecklist();
   const [activeBinLog, setActiveBinLog]   = useState<string | undefined>();
   const [selectedBin, setSelectedBin]     = useState<string | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -104,6 +106,7 @@ export default function FloorPlanningPage() {
       <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
       <FloorPlanningModuleFT2
         data={data ?? null}
+        minimumMappingReady={minimumMappingReady}
         isLoading={isLoading}
         isError={isError}
         onRefresh={refetch}

@@ -303,7 +303,8 @@ export function buildWaitingRows(items: WaitingItem[]): OpsRow[] {
  */
 export function buildSetupRows(items: ChecklistItem[]): OpsRow[] {
   return items.map((item) => {
-    const action: OpsRowAction | undefined = item.complete
+    // Satisfied basics never removes the merchant's ability to keep mapping.
+    const action: OpsRowAction | undefined = item.complete && item.key !== 'first-entry-map'
       ? undefined
       : item.action
         ?? (item.actionRoute ? { kind: 'navigate', label: 'Open', route: item.actionRoute } : undefined);
