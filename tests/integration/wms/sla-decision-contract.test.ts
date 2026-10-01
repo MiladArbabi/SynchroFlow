@@ -23,6 +23,10 @@
  *               release, mutating nothing.
  *   SLA-DEC-05  A fulfilled order is not actively Fulfillment-SLA breached —
  *               orderAgeProjection gates the breach on fulfilled_at IS NULL.
+ *   SLA-DEC-06  (D3-A) Explicit exclusive release selects WHICH orders are
+ *               candidates, not their ranking: the selected subset is ranked
+ *               priority > SLA urgency > oldest, whatever the payload order.
+ *               Added as a defect reproduction, unlike 01–05 below.
  *
  * These behaviours are already implemented; this file is added as permanent
  * regression coverage for existing verified behaviour, not to reproduce a
@@ -194,6 +198,16 @@ async function latestBreachFlag(shopId: number, orderId: string): Promise<boolea
       .first('is_shipping_sla_breached')
   );
   return Boolean(row?.is_shipping_sla_breached);
+}
+
+/** Sets manual priority the way set_order_priority_flag does (projection-guarded). */
+async function setPriorityFlag(shopId: number, orderId: string): Promise<void> {
+  await withTenant(shopId, async (trx) => {
+    await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+    await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: orderId })
+      .update({ is_priority_flagged: true, priority_flagged_at: new Date() });
+  });
 }
 
 /** Forces both comparison orders onto the same manual-priority footing. */
@@ -482,6 +496,105 @@ describe('ORD-DECISION-01 — SLA breach is prioritisation, never a blocker or a
 
       // And a fulfilled order is no longer pool-releasable either.
       expect(await poolIds(token)).not.toContain(orderId);
+    }, 120_000);
+  });
+
+  describe('SLA-DEC-06 — explicit release ranks the selected subset canonically (D3-A)', () => {
+    it('ignores priority_order_ids payload order: priority > SLA breach > oldest decides who wins batch capacity', async () => {
+      const { shopId, token } = await provisionFt2Shop('dec06');
+      const ids = await poolIds(token);
+      expect(ids.length).toBeGreaterThanOrEqual(3);
+
+      const [priorityOrder, breachedOrder, calmOrder] = ids;
+      const hour = 3600_000;
+
+      // priorityOrder: manually flagged, not breached, and the NEWEST order.
+      await setPriorityFlag(shopId, priorityOrder);
+      await setOrderCreatedAt(shopId, priorityOrder, new Date(Date.now() - 2 * hour));
+      await setOrderPaidAt(shopId, priorityOrder, new Date(Date.now() - 1 * hour));
+      await setShippingSlaBreached(shopId, priorityOrder, false);
+
+      // breachedOrder: unflagged, genuinely breached — persisted snapshot and
+      // canonical paid-time truth aligned exactly as SLA-DEC-02 does.
+      await clearPriorityFlag(shopId, breachedOrder);
+      await setOrderCreatedAt(shopId, breachedOrder, new Date(Date.now() - 7 * 24 * hour));
+      await setOrderPaidAt(shopId, breachedOrder, new Date(Date.now() - 96 * hour));
+      await setShippingSlaBreached(shopId, breachedOrder, true);
+
+      // calmOrder: unflagged, not breached, and the OLDEST order.
+      await clearPriorityFlag(shopId, calmOrder);
+      await setOrderCreatedAt(shopId, calmOrder, new Date(Date.now() - 30 * 24 * hour));
+      await setOrderPaidAt(shopId, calmOrder, new Date(Date.now() - 1 * hour));
+      await setShippingSlaBreached(shopId, calmOrder, false);
+
+      expect(await latestBreachFlag(shopId, priorityOrder)).toBe(false);
+      expect(await latestBreachFlag(shopId, breachedOrder)).toBe(true);
+      expect(await latestBreachFlag(shopId, calmOrder)).toBe(false);
+
+      // Canonical backend ranking, as the Order Pool reports it.
+      const pool = await poolIds(token);
+      expect(pool.indexOf(priorityOrder)).toBeGreaterThanOrEqual(0);
+      expect(pool.indexOf(priorityOrder)).toBeLessThan(pool.indexOf(breachedOrder));
+      expect(pool.indexOf(breachedOrder)).toBeLessThan(pool.indexOf(calmOrder));
+
+      // Cap fits priorityOrder + breachedOrder, never all three.
+      const lineCount = async (orderId: string) =>
+        Number((await withTenant(shopId, (trx) =>
+          trx('order_line_items').where({ lasyncro_order_id: orderId })
+            .count<{ c: string }>('* as c').first()))?.c ?? 0);
+      const priorityLines = await lineCount(priorityOrder);
+      const breachedLines = await lineCount(breachedOrder);
+      const calmLines = await lineCount(calmOrder);
+      expect(calmLines).toBeGreaterThanOrEqual(1);
+      const CAP = priorityLines + breachedLines;
+      expect(priorityLines + breachedLines + calmLines).toBeGreaterThan(CAP);
+      await withTenant(shopId, (trx) =>
+        trx('shop_wms_settings').where({ shop_id: shopId }).update({ max_batch_line_items: CAP }));
+
+      // Deliberately reversed payload order.
+      const requestOrder = [calmOrder, breachedOrder, priorityOrder];
+      const res = await postRelease(token, { priority_order_ids: requestOrder, exclusive: true });
+
+      const members: string[] = res.body.pick_batch_id
+        ? (await withTenant(shopId, (trx) =>
+          trx('pick_batch_orders').where({ pick_batch_id: res.body.pick_batch_id })
+            .select('lasyncro_order_id')))
+          .map((r: { lasyncro_order_id: string }) => r.lasyncro_order_id)
+        : [];
+
+      console.info('[SLA-DEC-06_OBSERVED]', {
+        priorityOrder, breachedOrder, calmOrder,
+        poolRank: {
+          priorityOrder: pool.indexOf(priorityOrder),
+          breachedOrder: pool.indexOf(breachedOrder),
+          calmOrder: pool.indexOf(calmOrder),
+        },
+        lines: { priorityLines, breachedLines, calmLines }, CAP,
+        requestOrder,
+        status: res.status,
+        order_count: res.body.order_count,
+        members,
+        skipped_orders: res.body.skipped_orders,
+        newly_blocked_orders: res.body.newly_blocked_orders,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.pick_batch_id).toBeTruthy();
+      expect([...members].sort()).toEqual([priorityOrder, breachedOrder].sort());
+      expect(members).not.toContain(calmOrder);
+      expect(res.body.order_count).toBe(2);
+
+      // calmOrder is deferred under the ratified D2 batch-capacity contract.
+      const calmMembership = await withTenant(shopId, (trx) =>
+        trx('pick_batch_orders').where({ lasyncro_order_id: calmOrder }).first());
+      expect(calmMembership).toBeUndefined();
+      expect(res.body.skipped_orders).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            order_id: calmOrder, reason: 'batch_capacity', label: 'Batch capacity reached',
+          }),
+        ])
+      );
     }, 120_000);
   });
 });

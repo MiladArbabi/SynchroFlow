@@ -171,8 +171,9 @@ export async function releaseBatch(
   /**
    * PRIORITY ORDER SELECTION (A2)
    * --------------------------------
-   * Owner-selected orders locked in first before greedy fill.
-   * All must be in the pool (constraint-free, unbatched).
+   * Owner-selected orders locked into the candidate set first before greedy
+   * fill; their execution order follows canonical backend ranking, never
+   * caller order. All must be in the pool (constraint-free, unbatched).
    * Invalid IDs are silently skipped — greedy fill compensates.
    * Priority-flagged orders (is_priority_flagged=true) always
    * precede non-flagged orders in greedy fill even without explicit selection.
@@ -249,12 +250,16 @@ export async function releaseBatch(
     
 
   // 3. Build ordered candidate list:
-  //    a) Owner-selected priority orders (priorityOrderIds) — validated against pool
+  //    a) Owner-selected priority orders (priorityOrderIds) — validated against pool,
+  //       ordered by eligibleOrders' canonical ranking (not request order)
   //    b) Pool priority-flagged orders not already selected
   //    c) Remaining pool orders oldest-first
   const eligibleSet = new Set(eligibleOrders.map(o => o.lasyncro_order_id));
   const requestedPriorityIds = priorityOrderIds ?? [];
-  const validPriorityIds = requestedPriorityIds.filter(id => eligibleSet.has(id));
+  const requestedPrioritySet = new Set(requestedPriorityIds);
+  const validPriorityIds = eligibleOrders
+    .filter(order => requestedPrioritySet.has(order.lasyncro_order_id))
+    .map(order => order.lasyncro_order_id);
   const invalidPriorityIds = requestedPriorityIds.filter(id => !eligibleSet.has(id));
 
   const skippedOrders: SkippedReleaseOrder[] = [];
