@@ -1689,6 +1689,12 @@ function WmsModuleFT2Inner({
     activeSessionRef.current = activeSession;
   }, [activeSession]);
 
+  // GH-1191 — the count task whose session explicitly began exit. Until the
+  // URL stops naming that task, the exit is authoritative over stale
+  // recountTasks: the restore effect must not re-create the session while the
+  // router's URL cleanup and the post-exit refetch are still in flight.
+  const exitedCountTaskIdRef = useRef<string | null>(null);
+
   const onReceiveSessionFocusChangeRef = useRef(onReceiveSessionFocusChange);
   useEffect(() => {
     onReceiveSessionFocusChangeRef.current = onReceiveSessionFocusChange;
@@ -1742,6 +1748,14 @@ function WmsModuleFT2Inner({
   };
 
   useEffect(() => {
+    // GH-1191 — the exit fence lasts only while the URL still names the
+    // exited task; once countTaskId is gone or names another task, clear it.
+    // It tracks URL ownership, not entitlement, so it clears even while locked.
+    const exitedTaskId = exitedCountTaskIdRef.current;
+    if (exitedTaskId && pendingCountTaskId !== exitedTaskId) {
+      exitedCountTaskIdRef.current = null;
+    }
+
     if (recountLocked) {
       setActiveSession((session) => session?.type === 'count' ? null : session);
       if (pendingCountTaskId) failOpenCountFocus(pendingCountTaskId);
@@ -1749,6 +1763,8 @@ function WmsModuleFT2Inner({
     }
 
     if (!pendingCountTaskId) return;
+
+    if (exitedCountTaskIdRef.current === pendingCountTaskId) return;
 
     const task = findUsableCountTask(recountTasks, pendingCountTaskId, currentUserId);
 
@@ -1942,6 +1958,10 @@ function WmsModuleFT2Inner({
   };
 
   const exitSession = (finishedLabel?: string) => {
+    const current = activeSessionRef.current;
+    if (current?.type === 'count') {
+      exitedCountTaskIdRef.current = current.task.recount_task_id;
+    }
     setActiveSession(null);
     onRefresh();
     onSessionExit?.();
