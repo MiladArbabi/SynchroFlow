@@ -4377,7 +4377,8 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
        * Returns all constraint-free, unbatched, pending/processing orders.
        * Enriched with: external_order_id, customer name, priority flag,
        * line item count, unit count, zone distribution.
-       * Priority-flagged orders surface first, then oldest-first.
+       * Priority-flagged orders surface first, then SLA urgency, then oldest-first,
+       * with lasyncro_order_id as the deterministic final tie-break.
        * Zone distribution: distinct zone_type values of bins holding
        * the order's variants — feeds pre-release preview UI.
        */
@@ -4418,7 +4419,7 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
         // Shopify order (unresolved intake exception) is not fully executable —
         // fail closed. Same shared predicate as eligibleOrders / the FILTER below.
         .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
-        .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC`)
+        .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC, o.lasyncro_order_id ASC`)
         .select(
           'o.lasyncro_order_id',
           'eim.external_order_id',

@@ -181,7 +181,7 @@ export async function releaseBatch(
    * same 24h fulfillment_sla_hours threshold AL-01's alerts use, see
    * orderAgeProjection.ts) precede non-breached orders within each
    * priority-flag group. Manual flag always outranks automatic breach
-   * status — see eligibleOrders query below for the full 3-key sort.
+   * status — see eligibleOrders query below for the full canonical sort.
    */
   priorityOrderIds?: string[],
   /**
@@ -206,7 +206,8 @@ export async function releaseBatch(
   const maxLineItems: number = settings.max_batch_line_items;
 
   // 2. Find eligible orders — constraint-free, unbatched, pending/processing.
-  //    Sort: priority-flagged first, then SLA-breached, then oldest-first.
+  //    Sort: priority-flagged first, then SLA-breached, then oldest-first,
+  //    with lasyncro_order_id as the deterministic final tie-break.
   //    latest_age_snapshot CTE matches sla.metrics.ts's established pattern —
   //    order_age_snapshot is append-only/versioned; DISTINCT ON +
   //    aggregate_version DESC guarantees one row per order. Without this,
@@ -245,7 +246,7 @@ export async function releaseBatch(
     // fully executable — fail closed here too, consistently with the pool query.
     .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
     .select('o.lasyncro_order_id', 'ofs.is_priority_flagged', trx.raw(`${currentSla.breached} as is_shipping_sla_breached`), trx.raw(`${currentSla.state} as sla_state`))
-    .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC`);
+    .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC, o.lasyncro_order_id ASC`);
   const eligibleOrders = await eligibleOrdersQuery.clone();
     
 
@@ -253,7 +254,7 @@ export async function releaseBatch(
   //    a) Owner-selected priority orders (priorityOrderIds) — validated against pool,
   //       ordered by eligibleOrders' canonical ranking (not request order)
   //    b) Pool priority-flagged orders not already selected
-  //    c) Remaining pool orders oldest-first
+  //    c) Remaining pool orders in eligibleOrders' canonical ranking
   const eligibleSet = new Set(eligibleOrders.map(o => o.lasyncro_order_id));
   const requestedPriorityIds = priorityOrderIds ?? [];
   const requestedPrioritySet = new Set(requestedPriorityIds);
