@@ -536,12 +536,23 @@ export default function OrderFlowPage() {
   const activeBatchCount = poolSummary?.active_batch_count ?? batches.length;
 
   // --- Next-wave derived totals --------------------------------------------
-  // If the user has hand-selected orders, the wave previews that subset;
-  // otherwise it previews the whole eligible pool.
-  const selectedOrders = poolOrders.filter(order => selected.has(order.lasyncro_order_id));
-  const useSubset = selected.size > 0;
-  const waveOrders = useSubset ? selected.size : poolOrders.length;
-  const waveSource = useSubset ? selectedOrders : poolOrders;
+  // D4: the filtered pool is the operator's working set. A hand-selection
+  // previews that subset; otherwise the wave previews the filtered pool.
+  // Selection is intersected with filteredPool here (not only in the
+  // reconcile effect) so a stale hidden ID can never reach the release.
+  const selectedOrders = filteredPool.filter(order => selected.has(order.lasyncro_order_id));
+  const selectedOrderIds = selectedOrders.map(order => order.lasyncro_order_id);
+  const useSubset = selectedOrders.length > 0;
+  const waveSource = useSubset ? selectedOrders : filteredPool;
+  const waveOrders = waveSource.length;
+  // Unfiltered with no selection keeps the backend's Release All
+  // (no priority_order_ids); a filtered subset is sent explicitly.
+  const isFilteredSubset = filteredPool.length > 0 && filteredPool.length < poolOrders.length;
+  const releaseOrderIds = useSubset
+    ? selectedOrderIds
+    : isFilteredSubset
+    ? filteredPool.map(order => order.lasyncro_order_id)
+    : undefined;
   const waveLineItems = waveSource.reduce((sum, order) => sum + order.line_item_count, 0);
   const waveUnits = waveSource.reduce((sum, order) => sum + order.unit_count, 0);
   const maxLineItems = orderPoolQuery.data?.max_batch_line_items ?? 108;
@@ -561,11 +572,11 @@ export default function OrderFlowPage() {
         dismiss: spotlightOrderFlowBatch.dismiss,
       };
     }
-    if (selected.size > 0) {
+    if (useSubset) {
       return {
         step: 1,
         title: 'Ready when you are',
-        body: `Hit Release ${selected.size} order${selected.size === 1 ? '' : 's'} to send this wave to the floor.`,
+        body: `Hit Release ${selectedOrderIds.length} order${selectedOrderIds.length === 1 ? '' : 's'} to send this wave to the floor.`,
         isDismissed: spotlightOrderFlowWave.isDismissed,
         dismiss: spotlightOrderFlowWave.dismiss,
       };
@@ -579,7 +590,8 @@ export default function OrderFlowPage() {
     };
   }, [
     batches.length,
-    selected.size,
+    useSubset,
+    selectedOrderIds.length,
     spotlightOrderFlowWave.isDismissed, spotlightOrderFlowWave.dismiss,
     spotlightOrderFlowBatch.isDismissed, spotlightOrderFlowBatch.dismiss,
   ]);
@@ -594,20 +606,33 @@ export default function OrderFlowPage() {
     });
   }, []);
 
+  // D4: Select All covers every filtered order across pages — never
+  // visiblePool, never orders hidden by search/filter.
   const toggleSelectAll = useCallback(() => {
+    const filteredIds = filteredPool.map(order => order.lasyncro_order_id);
     setSelected(prev =>
-      prev.size === poolOrders.length && poolOrders.length > 0
+      filteredIds.length > 0 && filteredIds.every(id => prev.has(id))
         ? new Set()
-        : new Set(poolOrders.map(order => order.lasyncro_order_id)),
+        : new Set(filteredIds),
     );
-  }, [poolOrders]);
+  }, [filteredPool]);
+
+  // D4: narrowing search/filter drops selections that left the working set.
+  // Keyed on filteredPool only, so sort and page changes never clear selection.
+  useEffect(() => {
+    const filteredIds = new Set(filteredPool.map(order => order.lasyncro_order_id));
+    setSelected(prev => {
+      const next = new Set([...prev].filter(id => filteredIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredPool]);
 
   const handleRelease = async () => {
     setReleaseError(null);
     try {
       const result = await releaseBatch.mutateAsync({
-        priority_order_ids: selected.size > 0 ? [...selected] : undefined,
-        exclusive: selected.size > 0 ? true : undefined,
+        priority_order_ids: releaseOrderIds,
+        exclusive: releaseOrderIds ? true : undefined,
         assigned_operator_id: operatorId ? Number(operatorId) : undefined,
       });
 
@@ -1307,8 +1332,8 @@ export default function OrderFlowPage() {
                           ? 'Releasing…'
                           : waveOrders === 0
                           ? 'Nothing to release'
-                          : selected.size > 0
-                          ? `Release ${selected.size} order${selected.size !==1 ? 's' : ''}`
+                          : useSubset
+                          ? `Release ${selectedOrderIds.length} order${selectedOrderIds.length !==1 ? 's' : ''}`
                           : `Release all ${waveOrders}`}
                       </Box>
                     </Box>
@@ -1353,8 +1378,8 @@ export default function OrderFlowPage() {
                     <Checkbox
                       size="small"
                       sx={{ p: 0 }}
-                      checked={selected.size === poolOrders.length && poolOrders.length > 0}
-                      indeterminate={selected.size > 0 && selected.size <poolOrders.length}
+                      checked={filteredPool.length > 0 && selectedOrders.length === filteredPool.length}
+                      indeterminate={selectedOrders.length > 0 && selectedOrders.length < filteredPool.length}
                       onChange={toggleSelectAll}
                     />
                     <Box />
