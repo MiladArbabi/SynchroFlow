@@ -897,7 +897,8 @@ export async function startShopOpeningInventoryReconciliation(
     .whereIn('wl.zone_type', ['pick', 'storage'])
     .select(
       'wl.warehouse_id',
-      'wl.location_code'
+      'wl.location_code',
+      'w.external_location_id'
     )
     .orderBy([
       { column: 'wl.warehouse_id', order: 'asc' },
@@ -907,6 +908,26 @@ export async function startShopOpeningInventoryReconciliation(
   if (bins.length === 0) {
     throw new Error(
       '[OPENING_RECOUNT_SHOP_START] Initial inventory reconciliation requires at least one active stock location'
+    );
+  }
+
+  // GH-1179: Opening Inventory is reconciled against exactly one Shopify
+  // Location. The participating warehouse is defined by the countable cohort
+  // above, and it must be explicitly mapped before any count state exists.
+  // There is no default/first Shopify Location fallback.
+  const participatingWarehouseIds = new Set(
+    bins.map((bin: any) => String(bin.warehouse_id))
+  );
+
+  if (participatingWarehouseIds.size > 1) {
+    throw new Error(
+      '[OPENING_RECOUNT_SHOP_START] Opening inventory supports exactly one participating warehouse'
+    );
+  }
+
+  if (!String(bins[0].external_location_id ?? '').trim()) {
+    throw new Error(
+      '[OPENING_RECOUNT_SHOP_START] Shopify Location mapping is required for the participating warehouse before opening inventory can start'
     );
   }
 

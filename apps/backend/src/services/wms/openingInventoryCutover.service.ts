@@ -401,37 +401,17 @@ export async function prepareOpeningInventoryCutover(
     const approvedAt =
       new Date();
 
+    /**
+     * GH-1179: differences are computed against
+     * shopify_opening_inventory_expectations, an aggregate per-variant
+     * snapshot with no warehouse or Shopify Location provenance. A zero
+     * difference therefore proves nothing about the mapped location's
+     * Shopify inventory and must never certify the opening Shopify sync.
+     */
     if (differences.length === 0) {
-      const completedAt =
-        new Date();
-
-      const [created] = await trx(CUTOVERS)
-        .insert({
-          cutover_id: cutoverId,
-          shop_id: shopId,
-          status: 'complete',
-          approved_by_actor_type: 'user',
-          approved_by_actor_id:
-            String(actingUserId),
-          approved_by_role: approvedRole,
-          approved_at: approvedAt,
-          physical_truth_accepted_at: null,
-          correction_variant_count: 0,
-          batch_count: 0,
-          last_error: null,
-          completed_at: completedAt,
-          updated_at: completedAt,
-        })
-        .returning('*');
-
-      await trx('shop_wms_settings')
-        .where({ shop_id: shopId })
-        .update({
-          opening_inventory_shopify_synced_at:
-            completedAt,
-        });
-
-      return snapshotFromRow(created);
+      throw new Error(
+        '[OPENING_CUTOVER_PREFLIGHT] A location-scoped Shopify inventory snapshot is required before opening inventory can be reconciled with Shopify'
+      );
     }
 
     await requireShopifyInstallation(

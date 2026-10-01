@@ -10,6 +10,7 @@
 // zone the merchant's warehouse actually sits in.
 
 import { Request, Response } from 'express';
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { decrypt } from '../../security/encryption.service.js';
 import { createShopifyGraphQLClient } from '../../services/shopify/shopifyClient.service.js';
@@ -295,6 +296,38 @@ export async function httpGetWarehouseShopifyLocations(
   }
 }
 
+const OPENING_INVENTORY_MAPPING_LOCKED_RESPONSE = {
+  code: 'OPENING_INVENTORY_MAPPING_LOCKED',
+  error:
+    'The Shopify location cannot be changed while opening inventory is in progress',
+};
+
+/**
+ * GH-1179: once Opening Inventory has started, its count is scoped to the
+ * warehouse's Shopify Location. The mapping is frozen until the opening
+ * Shopify sync completes. `lock` takes the same shop_wms_settings row lock
+ * as startShopOpeningInventoryReconciliation, serializing the two.
+ */
+async function isOpeningInventoryMappingLocked(
+  trx: Knex.Transaction,
+  shopId: number,
+  lock: boolean
+): Promise<boolean> {
+  const query = trx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .select(
+      'opening_inventory_reconciliation_started_at',
+      'opening_inventory_shopify_synced_at'
+    );
+
+  const settings = await (lock ? query.forUpdate() : query).first();
+
+  return (
+    Boolean(settings?.opening_inventory_reconciliation_started_at) &&
+    !settings?.opening_inventory_shopify_synced_at
+  );
+}
+
 /**
  * Persist one explicit warehouse → Shopify Location mapping.
  * null removes an existing mapping.
@@ -336,6 +369,15 @@ export async function httpPatchWarehouseShopifyLocation(
   }
 
   try {
+    const lockedBeforeValidation = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return isOpeningInventoryMappingLocked(trx, shopId, false);
+    });
+
+    if (lockedBeforeValidation) {
+      return res.status(409).json(OPENING_INVENTORY_MAPPING_LOCKED_RESPONSE);
+    }
+
     if (normalizedLocationId !== null) {
       const client = await loadShopifyLocationClient(shopId);
       const gid = `gid://shopify/Location/${normalizedLocationId}`;
@@ -367,9 +409,17 @@ export async function httpPatchWarehouseShopifyLocation(
           external_location_id: string | null;
         }
       | undefined;
+    let lockedAtUpdate = false;
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Re-check under the row lock: Opening Inventory may have started
+      // while the Shopify location was being validated.
+      if (await isOpeningInventoryMappingLocked(trx, shopId, true)) {
+        lockedAtUpdate = true;
+        return;
+      }
 
       const rows = await trx('warehouses')
         .where({
@@ -388,6 +438,10 @@ export async function httpPatchWarehouseShopifyLocation(
 
       updatedWarehouse = rows[0];
     });
+
+    if (lockedAtUpdate) {
+      return res.status(409).json(OPENING_INVENTORY_MAPPING_LOCKED_RESPONSE);
+    }
 
     if (!updatedWarehouse) {
       return res.status(404).json({ error: 'Warehouse not found' });

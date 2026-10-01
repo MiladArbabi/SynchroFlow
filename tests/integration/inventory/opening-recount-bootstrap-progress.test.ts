@@ -101,6 +101,9 @@ async function createFixture(
       root_location_code: rootCode,
       is_default: true,
       active: true,
+      // GH-1179: shop-wide Opening Inventory start requires the participating
+      // warehouse to be explicitly mapped to a Shopify Location.
+      external_location_id: `${shopId}0001`,
     });
 
     await trx('warehouse_locations').insert([
@@ -991,6 +994,9 @@ async function addOpeningTestWarehouse(
       root_location_code: rootCode,
       is_default: false,
       active: options?.active ?? true,
+      // GH-1179: mapped, so a start rejection can only come from scope rules
+      // under test, never from an accidentally missing mapping.
+      external_location_id: String(crypto.randomInt(1_000_000_000, 2_000_000_000)),
     });
 
     await trx('warehouse_locations').insert({
@@ -1045,13 +1051,19 @@ async function commitOpeningBinEmpty(
 }
 
 describe('shop-wide opening inventory reconciliation', () => {
-  it('freezes all active bins across active warehouses and keeps the denominator stable on retry', async () => {
+  // GH-1179: Opening Inventory has exactly one participating warehouse. The
+  // former cross-warehouse cohort contract is superseded; this keeps its
+  // durable value: only active countable bins of the participating warehouse
+  // freeze, and replay never re-derives or expands the frozen cohort.
+  it('freezes only active countable bins of the one participating warehouse and keeps the frozen cohort stable on replay', async () => {
     const fixture = await createFixture();
 
-    const secondWarehouse =
+    // Active warehouse with no countable bin: not a participating warehouse,
+    // so it must not trigger the multi-warehouse rejection.
+    const binlessWarehouse =
       await addOpeningTestWarehouse(fixture, {
         active: true,
-        binCount: 2,
+        binCount: 0,
       });
 
     await addOpeningTestWarehouse(fixture, {
@@ -1083,24 +1095,44 @@ describe('shop-wide opening inventory reconciliation', () => {
     );
 
     expect(started.state).toBe('counting');
-    expect(started.total_bins).toBe(3);
+    expect(started.total_bins).toBe(1);
     expect(started.complete_bins).toBe(0);
     expect(started.progress_pct).toBe(0);
     expect(started.started_at).toBeTruthy();
 
     expect(
-      started.bins.map((bin) => bin.location_code).sort()
-    ).toEqual(
-      ['A-1', ...secondWarehouse.binCodes].sort()
-    );
+      started.bins.map((bin) => bin.location_code)
+    ).toEqual(['A-1']);
+    expect(
+      started.bins.every(
+        (bin) => bin.warehouse_id === fixture.warehouseId
+      )
+    ).toBe(true);
+    expect(
+      started.bins.some(
+        (bin) => bin.warehouse_id === binlessWarehouse.warehouseId
+      )
+    ).toBe(false);
 
     const frozenStartedAt =
       started.started_at?.toISOString();
+    const frozenTaskIds = started.bins
+      .map((bin) => bin.recount_task_id)
+      .sort();
 
-    await addOpeningTestWarehouse(fixture, {
-      active: true,
-      binCount: 1,
-    });
+    // New countable geography in the participating warehouse after start
+    // must not expand the frozen cohort on replay.
+    await withTenant(fixture.shopId, (trx) =>
+      trx('warehouse_locations').insert({
+        shop_id: fixture.shopId,
+        warehouse_id: fixture.warehouseId,
+        location_code: 'A-3',
+        type: 'bin',
+        parent_location_code: `WH-${fixture.shopId}-ROOT`,
+        active: true,
+        zone_type: 'pick',
+      })
+    );
 
     const retry = await withTenant(
       fixture.shopId,
@@ -1115,10 +1147,13 @@ describe('shop-wide opening inventory reconciliation', () => {
         )
     );
 
-    expect(retry.total_bins).toBe(3);
+    expect(retry.total_bins).toBe(1);
     expect(retry.started_at?.toISOString()).toBe(
       frozenStartedAt
     );
+    expect(
+      retry.bins.map((bin) => bin.recount_task_id).sort()
+    ).toEqual(frozenTaskIds);
 
     const taskCount = await withTenant(
       fixture.shopId,
@@ -1136,16 +1171,19 @@ describe('shop-wide opening inventory reconciliation', () => {
         )
     );
 
-    expect(taskCount).toBe(3);
+    expect(taskCount).toBe(1);
   });
 
-  it('derives shop progress independently from warehouse-specific map progress', async () => {
+  // GH-1179: two participating warehouses are no longer allowed. The shop and
+  // warehouse read models must still agree on the one frozen cohort, and an
+  // active non-participating warehouse must not contaminate shop progress.
+  it('derives shop progress from the frozen cohort consistently with the participating warehouse progress', async () => {
     const fixture = await createFixture();
 
-    const secondWarehouse =
+    const binlessWarehouse =
       await addOpeningTestWarehouse(fixture, {
         active: true,
-        binCount: 2,
+        binCount: 0,
       });
 
     const started = await withTenant(
@@ -1161,22 +1199,17 @@ describe('shop-wide opening inventory reconciliation', () => {
         )
     );
 
-    expect(started.total_bins).toBe(4);
+    expect(started.total_bins).toBe(2);
+    expect(
+      started.bins.every(
+        (bin) => bin.warehouse_id === fixture.warehouseId
+      )
+    ).toBe(true);
 
-    const defaultWarehouseTasks =
-      started.bins.filter(
-        (bin) =>
-          bin.warehouse_id === fixture.warehouseId
-      );
-
-    expect(defaultWarehouseTasks).toHaveLength(2);
-
-    for (const bin of defaultWarehouseTasks) {
-      await commitOpeningBinEmpty(
-        fixture,
-        bin.recount_task_id
-      );
-    }
+    await commitOpeningBinEmpty(
+      fixture,
+      started.bins[0].recount_task_id
+    );
 
     const shopProgress = await withTenant(
       fixture.shopId,
@@ -1189,14 +1222,14 @@ describe('shop-wide opening inventory reconciliation', () => {
 
     expect(shopProgress).toMatchObject({
       state: 'counting',
-      total_bins: 4,
-      complete_bins: 2,
-      remaining_bins: 2,
+      total_bins: 2,
+      complete_bins: 1,
+      remaining_bins: 1,
       progress_pct: 50,
       all_bins_settled: false,
     });
 
-    expect(shopProgress.bins).toHaveLength(4);
+    expect(shopProgress.bins).toHaveLength(2);
     expect(
       shopProgress.bins.every(
         (bin) =>
@@ -1217,10 +1250,15 @@ describe('shop-wide opening inventory reconciliation', () => {
 
     expect(warehouseProgress).toMatchObject({
       total_bins: 2,
-      complete_bins: 2,
-      progress_pct: 100,
-      all_bins_settled: true,
+      complete_bins: 1,
+      progress_pct: 50,
+      all_bins_settled: false,
     });
+    expect(
+      warehouseProgress.bins.map((bin) => bin.recount_task_id).sort()
+    ).toEqual(
+      shopProgress.bins.map((bin) => bin.recount_task_id).sort()
+    );
 
     expect(
       warehouseProgress.bins.every(
@@ -1230,19 +1268,19 @@ describe('shop-wide opening inventory reconciliation', () => {
       )
     ).toBe(true);
 
-    const otherWarehouseProgress =
+    const nonParticipatingProgress =
       await withTenant(
         fixture.shopId,
         (trx) =>
           getOpeningInventoryProgress(
             trx,
             fixture.shopId,
-            secondWarehouse.warehouseId
+            binlessWarehouse.warehouseId
           )
       );
 
-    expect(otherWarehouseProgress).toMatchObject({
-      total_bins: 2,
+    expect(nonParticipatingProgress).toMatchObject({
+      total_bins: 0,
       complete_bins: 0,
       progress_pct: 0,
       all_bins_settled: false,

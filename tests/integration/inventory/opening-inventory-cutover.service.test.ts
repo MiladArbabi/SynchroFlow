@@ -1,5 +1,21 @@
+// GH-1179 RED-A: the warehouse → Shopify Location mapping route validates a
+// new location against Shopify before persisting it. Only that provider
+// client boundary is stubbed. Every existing cutover case injects its own
+// executor or never reaches a provider call, so this mock is inert for them.
+const mockShopifyRequest = jest.fn();
+
+const mockCreateShopifyGraphQLClient = jest.fn(() => ({
+  request: mockShopifyRequest,
+}));
+
+jest.mock('api-src/services/shopify/shopifyClient.service', () => ({
+  createShopifyGraphQLClient: (...args: any[]) =>
+    mockCreateShopifyGraphQLClient(...args),
+}));
+
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
+import { encrypt } from 'api-src/security/encryption.service';
 import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
 import { issueTestToken } from '../../unit/helpers/auth';
 import crypto from 'crypto';
@@ -658,16 +674,21 @@ describe(
     );
 
     it(
-      'C03/C04/C07/C08/C45 — owner/admin exact-match approval needs no mismatch acceptance or Shopify write',
+      'C03/C04/C07/C08/C45 — owner/admin exact-match approval passes authorization without mismatch acceptance, but legacy zero difference fails closed with no Shopify write (GH-1179)',
       async () => {
         for (const role of [
           'owner',
           'admin',
         ] as const) {
+          // GH-1179: Opening Inventory now requires a mapped warehouse to
+          // start, and a zero difference against the legacy aggregate
+          // expectation no longer certifies the Shopify sync. Owner/admin
+          // authority and "no acceptance demanded at exact match" are
+          // retained: rejection comes from scoped provenance, not from the
+          // role or acceptance gates.
           const fixture =
             await createFixture({
               installation: false,
-              mappedLocation: null,
             });
 
           await makeExactReady(
@@ -679,30 +700,33 @@ describe(
               ? fixture.ownerId
               : fixture.adminId;
 
-          const result =
-            await approveAndRunOpeningInventoryCutover(
+          const executorCalls: unknown[] = [];
+
+          await expect(
+            approveAndRunOpeningInventoryCutover(
               {
                 shopId:
                   fixture.shopId,
                 actingUserId,
+                executor: async (params) => {
+                  executorCalls.push(params);
+                  throw new Error(
+                    '[GH1179_TEST] provider executor must not be reached'
+                  );
+                },
               }
-            );
+            )
+          ).rejects.toThrow(
+            /^\[OPENING_CUTOVER_PREFLIGHT\]/
+          );
+
+          expect(executorCalls).toHaveLength(0);
 
           expect(
-            result.status
-          ).toBe('complete');
-
-          expect(
-            result.correction_variant_count
-          ).toBe(0);
-
-          expect(
-            result.batch_count
-          ).toBe(0);
-
-          expect(
-            result.physical_truth_accepted_at
-          ).toBeNull();
+            await readCutover(
+              fixture.shopId
+            )
+          ).toBeUndefined();
 
           expect(
             await readBatches(
@@ -714,7 +738,7 @@ describe(
             await readSyncedAt(
               fixture.shopId
             )
-          ).toBeTruthy();
+          ).toBeNull();
         }
       }
     );
@@ -2569,16 +2593,23 @@ describe(
     it(
       'GRILL-03F-DB4 — complete cutover reflects complete status and the persisted Shopify sync marker',
       async () => {
-        const fixture = await createFixture({
-          installation: false,
-          mappedLocation: null,
-        });
+        // GH-1179: the legacy zero-difference shortcut no longer completes a
+        // cutover. The read-model contract (complete status + persisted sync
+        // marker) is exercised through the confirmed-execution completion
+        // path instead, as C28 does. That path is itself due for replacement
+        // by the scoped snapshot/attempt slices.
+        const fixture = await createFixture();
 
-        await makeExactReady(fixture);
+        await makeNegativeReview(fixture, 4);
 
         await approveAndRunOpeningInventoryCutover({
           shopId: fixture.shopId,
           actingUserId: fixture.ownerId,
+          acceptPhysicalTruth: true,
+          executor: async () => ({
+            adjustmentGroupId:
+              'gid://shopify/InventoryAdjustmentGroup/db4-confirmed',
+          }),
         });
 
         const persistedSyncedAt =
@@ -2595,7 +2626,7 @@ describe(
 
         expect(view.cutover).toEqual({
           status: 'complete',
-          physical_truth_accepted: false,
+          physical_truth_accepted: true,
           error_code: null,
           error_message: null,
           completed_at: new Date(
@@ -2694,7 +2725,7 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
   }
 
   it(
-    'GRILL-05A — owner crosses real auth/FT2/Core/RBAC GET→POST→GET and exact match completes with zero Shopify batches',
+    'GRILL-05A — owner crosses real auth/FT2/Core/RBAC GET→POST→GET; legacy exact match is rejected as unscoped with no cutover, batches or sync marker (GH-1179)',
     async () => {
       const fixture = await createFixture();
 
@@ -2745,19 +2776,12 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
             accept_physical_truth: false,
           });
 
-      expect(approve.status).toBe(200);
+      // GH-1179: a zero difference against the legacy aggregate expectation
+      // carries no Shopify Location provenance and must not certify sync.
+      expect(approve.status).toBe(409);
       expect(
-        approve.body.status
-      ).toBe('complete');
-      expect(
-        approve.body.correction_variant_count
-      ).toBe(0);
-      expect(
-        approve.body.batch_count
-      ).toBe(0);
-      expect(
-        approve.body.completed_at
-      ).toBeTruthy();
+        approve.body.code
+      ).toBe('OPENING_CUTOVER_PREFLIGHT');
 
       const persisted =
         await withTenant(
@@ -2805,25 +2829,14 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
         );
 
       expect(
-        persisted.cutover.status
-      ).toBe('complete');
-      expect(
-        Number(
-          persisted.cutover
-            .correction_variant_count
-        )
-      ).toBe(0);
-      expect(
-        Number(
-          persisted.cutover.batch_count
-        )
-      ).toBe(0);
+        persisted.cutover
+      ).toBeUndefined();
       expect(
         persisted.batchCount
       ).toBe(0);
       expect(
         persisted.syncedAt
-      ).toBeTruthy();
+      ).toBeNull();
 
       const after =
         await request(app)
@@ -2837,21 +2850,14 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
 
       expect(after.status).toBe(200);
       expect(
-        after.body.cutover.status
-      ).toBe('complete');
+        after.body.progress.state
+      ).toBe('ready_for_cutover');
       expect(
         after.body.cutover
-          .physical_truth_accepted
-      ).toBe(false);
-      expect(
-        after.body.cutover.error_code
-      ).toBeNull();
-      expect(
-        after.body.cutover.error_message
       ).toBeNull();
       expect(
         after.body.shopify_synced_at
-      ).toBeTruthy();
+      ).toBeNull();
     }
   );
 
@@ -2901,4 +2907,223 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
       expect(rows).toHaveLength(0);
     }
   );
+});
+
+// GH-1179 RED-A — Opening Inventory cannot begin, or certify Shopify sync,
+// unless its Shopify inventory scope is provably safe:
+//   exactly one participating warehouse, explicitly mapped before count start;
+//   the mapping is frozen while the workflow is active;
+//   legacy aggregate expectations are not location-scoped evidence, even at
+//   zero difference.
+describe('GH-1179 RED-A — opening inventory start / Shopify scope safety', () => {
+  const app = createApp();
+
+  beforeEach(() => {
+    mockShopifyRequest.mockReset();
+    mockCreateShopifyGraphQLClient.mockClear();
+  });
+
+  async function openingStartState(shopId: number) {
+    return withTenant(shopId, async (trx) => {
+      const taskCount = await trx('inventory_recount_tasks')
+        .where({ shop_id: shopId, purpose: 'opening_inventory' })
+        .count<{ count: string }>('* as count')
+        .first();
+
+      const settings = await trx('shop_wms_settings')
+        .where({ shop_id: shopId })
+        .first('opening_inventory_reconciliation_started_at');
+
+      return {
+        openingTasks: Number(taskCount?.count ?? 0),
+        startedAt:
+          settings?.opening_inventory_reconciliation_started_at ?? null,
+      };
+    });
+  }
+
+  async function attemptStart(fixture: Fixture): Promise<unknown> {
+    try {
+      await startShop(fixture);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  async function readMapping(fixture: Fixture): Promise<string | null> {
+    const row = await withTenant(fixture.shopId, (trx) =>
+      trx('warehouses')
+        .where({ shop_id: fixture.shopId, warehouse_id: fixture.warehouseId })
+        .first('external_location_id')
+    );
+
+    return row?.external_location_id ?? null;
+  }
+
+  it('GH1179-A1 — unmapped single warehouse: shop-wide start is rejected before any opening cohort exists', async () => {
+    const fixture = await createFixture({ mappedLocation: null });
+
+    expect(await openingStartState(fixture.shopId)).toEqual({
+      openingTasks: 0,
+      startedAt: null,
+    });
+
+    const error = await attemptStart(fixture);
+
+    expect(await openingStartState(fixture.shopId)).toEqual({
+      openingTasks: 0,
+      startedAt: null,
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/shopify location/i);
+  });
+
+  it('GH1179-A2 — two countable active warehouses: start fails closed before any cross-warehouse cohort exists', async () => {
+    const fixture = await createFixture();
+
+    const secondWarehouseId = await addWarehouse(fixture, {
+      mappedLocation: `21${fixture.shopId}`,
+    });
+
+    await withTenant(fixture.shopId, async (trx) => {
+      const secondRoot = await trx('warehouses')
+        .where({ shop_id: fixture.shopId, warehouse_id: secondWarehouseId })
+        .first('root_location_code');
+
+      await trx('warehouse_locations').insert({
+        shop_id: fixture.shopId,
+        warehouse_id: secondWarehouseId,
+        location_code: `${secondRoot.root_location_code}-B1`,
+        type: 'bin',
+        parent_location_code: secondRoot.root_location_code,
+        active: true,
+        zone_type: 'storage',
+      });
+    });
+
+    expect(await openingStartState(fixture.shopId)).toEqual({
+      openingTasks: 0,
+      startedAt: null,
+    });
+
+    const error = await attemptStart(fixture);
+
+    expect(await openingStartState(fixture.shopId)).toEqual({
+      openingTasks: 0,
+      startedAt: null,
+    });
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  it('GH1179-A3 — once opening inventory has started, the warehouse Shopify Location mapping cannot be changed or cleared', async () => {
+    const fixture = await createFixture({ installation: false });
+
+    await withTenant(fixture.shopId, (trx) =>
+      trx('shopify_app_installations').insert({
+        shop_id: fixture.shopId,
+        shop_domain: `gh1179-a3-${fixture.shopId}.myshopify.com`,
+        access_token: encrypt('gh1179-a3-offline-token-no-network-call'),
+        scopes: 'read_locations,write_inventory',
+      })
+    );
+
+    mockShopifyRequest.mockImplementation(async (_query: string, options: any) => ({
+      data: {
+        node: {
+          id: options?.variables?.id,
+          name: 'GH-1179 stub location',
+          isActive: true,
+        },
+      },
+    }));
+
+    const ownerToken = issueTestToken({
+      userId: fixture.ownerId,
+      shopId: fixture.shopId,
+      tier: 'core',
+      roles: ['owner'],
+    });
+
+    const patchMapping = (shopifyLocationId: string | null) =>
+      request(app)
+        .patch(`/api/v1/settings/shop/warehouses/${fixture.warehouseId}/shopify-location`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ shopify_location_id: shopifyLocationId });
+
+    // Control: before Opening Inventory starts, the real route can remap.
+    const lockedLocationId = `31${fixture.shopId}`;
+    const preStart = await patchMapping(lockedLocationId);
+    expect(preStart.status).toBe(200);
+    expect(await readMapping(fixture)).toBe(lockedLocationId);
+
+    await startShop(fixture);
+    expect((await openingStartState(fixture.shopId)).openingTasks).toBeGreaterThan(0);
+
+    const change = await patchMapping(`32${fixture.shopId}`);
+    const mappingAfterChange = await readMapping(fixture);
+
+    const clear = await patchMapping(null);
+    const mappingAfterClear = await readMapping(fixture);
+
+    const statusClass = (status: number) =>
+      status >= 400 && status < 500 ? 'rejected_4xx' : `status_${status}`;
+
+    expect({
+      change: statusClass(change.status),
+      mappingAfterChange,
+      clear: statusClass(clear.status),
+      mappingAfterClear,
+    }).toEqual({
+      change: 'rejected_4xx',
+      mappingAfterChange: lockedLocationId,
+      clear: 'rejected_4xx',
+      mappingAfterClear: lockedLocationId,
+    });
+  });
+
+  it('GH1179-A4 — legacy aggregate expectation at exact zero difference does not certify Shopify sync', async () => {
+    const fixture = await createFixture();
+
+    // Legacy shopify_opening_inventory_expectations carries no warehouse or
+    // Shopify Location provenance. Observed physical count equals it exactly.
+    await seedExpectation(fixture, 2);
+    await makePositiveReview(fixture, 2);
+
+    const progress = await withTenant(fixture.shopId, (trx) =>
+      getShopOpeningInventoryProgress(trx, fixture.shopId)
+    );
+    expect(progress.state).toBe('ready_for_cutover');
+    expect(progress.difference_count).toBe(0);
+
+    const executorCalls: unknown[] = [];
+    let outcome: Awaited<ReturnType<typeof approveAndRunOpeningInventoryCutover>> | null = null;
+
+    try {
+      outcome = await approveAndRunOpeningInventoryCutover({
+        shopId: fixture.shopId,
+        actingUserId: fixture.ownerId,
+        executor: async (params) => {
+          executorCalls.push(params);
+          throw new Error('[GH1179_TEST] provider executor must not be reached');
+        },
+      });
+    } catch {
+      outcome = null;
+    }
+
+    const cutover = await readCutover(fixture.shopId);
+    const syncedAt = await readSyncedAt(fixture.shopId);
+
+    expect({
+      cutoverComplete: cutover?.status === 'complete',
+      shopifySynced: syncedAt != null,
+      resultComplete: outcome?.status === 'complete',
+    }).toEqual({
+      cutoverComplete: false,
+      shopifySynced: false,
+      resultComplete: false,
+    });
+    expect(executorCalls).toHaveLength(0);
+  });
 });
