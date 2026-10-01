@@ -56,7 +56,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
   {
     slug: 'getting-started',
     label: 'Getting Started',
-    description: 'Create your account, sign in, and connect Shopify.',
+    description: 'Get into LaSyncro, connect Shopify, and complete your first warehouse setup.',
     order: 1,
   },
   {
