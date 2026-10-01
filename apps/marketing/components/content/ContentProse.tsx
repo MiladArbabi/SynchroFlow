@@ -11,6 +11,7 @@ import type {
   TdHTMLAttributes,
   ThHTMLAttributes,
 } from 'react'
+import { HelpScreenshot, type HelpScreenshotProps } from './HelpScreenshot'
 import styles from './content.module.css'
 import { ContentLink, cx } from './link'
 
@@ -22,6 +23,7 @@ export interface ContentProseProps {
 }
 
 export type ContentMdxComponentMap = {
+  HelpScreenshot: (props: HelpScreenshotProps) => ReactNode
   h2: (props: HTMLAttributes<HTMLHeadingElement>) => ReactNode
   h3: (props: HTMLAttributes<HTMLHeadingElement>) => ReactNode
   p: (props: HTMLAttributes<HTMLParagraphElement>) => ReactNode
@@ -55,6 +57,7 @@ export function ContentProse({
 }
 
 export const contentMdxComponents: ContentMdxComponentMap = {
+  HelpScreenshot,
   h2: ({ className, ...props }) => <h2 className={cx(styles.proseH2, className)} {...props} />,
   h3: ({ className, ...props }) => <h3 className={cx(styles.proseH3, className)} {...props} />,
   p: ({ className, ...props }) => <p className={cx(styles.proseP, className)} {...props} />,

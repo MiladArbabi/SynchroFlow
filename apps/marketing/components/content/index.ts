@@ -1,3 +1,6 @@
+export { HelpScreenshot } from './HelpScreenshot'
+export type { HelpScreenshotProps } from './HelpScreenshot'
+
 export { ContentArticleShell } from './ContentArticleShell'
 export type { ContentArticleShellProps } from './ContentArticleShell'
 

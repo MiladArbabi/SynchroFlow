@@ -530,3 +530,47 @@
     font-size: 16px;
   }
 }
+
+.helpScreenshot {
+  width: 100%;
+  margin: 32px 0;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+}
+
+.helpScreenshotImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+}
+
+.helpScreenshotLabel {
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+}
+
+.helpScreenshotCaption {
+  margin-top: 12px;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+@media (min-width: 1024px) {
+  .helpScreenshotBreakout {
+    width: min(960px, 90vw);
+    margin-left: calc((100% - min(960px, 90vw)) / 2);
+  }
+}
