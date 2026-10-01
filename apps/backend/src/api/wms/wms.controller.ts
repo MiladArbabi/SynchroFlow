@@ -2930,12 +2930,21 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     // variant identity is read post-transaction; the destination comes
     // exclusively from confirmResult.locationCode, the exact FOR UPDATE-
     // locked destination this transaction used.
+    //
+    // GH-1193 — only inbound_stock is newly introduced warehouse stock.
+    // problem_center re-stows, return_restock and order_cancelled_mid_pick
+    // are physical placements of stock that must not raise Shopify
+    // availability through this generic Stow push.
     const stowedTask = await db('stow_tasks')
       .where({ stow_task_id: taskId, shop_id: shopId })
-      .select('lasyncro_variant_id')
+      .select('lasyncro_variant_id', 'trigger')
       .first();
 
-    if (stowedTask?.lasyncro_variant_id && confirmResult.locationCode) {
+    if (
+      stowedTask?.trigger === 'inbound_stock' &&
+      stowedTask.lasyncro_variant_id &&
+      confirmResult.locationCode
+    ) {
       const stowShopifyIdempotencyKey =
         `lasyncro:stow:${shopId}:${taskId}:${confirmResult.quantityPlaced}`;
 
