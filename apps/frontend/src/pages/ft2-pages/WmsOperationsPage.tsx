@@ -638,9 +638,21 @@ export default function WmsOperationsPage() {
     assigned_to?: number | null;
     notes?: string;
   }) => {
-    await axiosInstance.post('/api/v1/wms/recount-tasks', input);
+    const response = await axiosInstance.post('/api/v1/wms/recount-tasks', input);
     refetch();
-  }, [refetch]);
+
+    // GH-1201 — a creator who may count the new task (unassigned, or assigned
+    // to themselves) enters its Brief at once. Identity comes from the server;
+    // the dispatch choice is the just-persisted submitted assignment (create
+    // does not return it). Ordinary recount: countTaskId only — never
+    // warehouseFocus. Entry never claims; Claim & Start Count stays explicit.
+    const createdTaskId: unknown = response?.data?.task?.recount_task_id;
+    const assignedTo = input.assigned_to ?? null;
+    const creatorOwnsEntry = assignedTo === null || assignedTo === currentUserId;
+    if (creatorOwnsEntry && typeof createdTaskId === 'string' && createdTaskId) {
+      setSearchParams({ countTaskId: createdTaskId }, { replace: true });
+    }
+  }, [refetch, currentUserId, setSearchParams]);
 
   const handleCreateCountingFinding = useCallback(async (
     taskId: string,
