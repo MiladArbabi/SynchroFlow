@@ -236,6 +236,9 @@ export default function PickSessionPage({
 }: PickSessionPageProps) {
   const theme = useTheme();
   const { onInputChange, detectSourceAndReset, reset: resetScanDetector } = useScanSourceDetector();
+  // PICK-BATCH-IDENTITY-CONTINUITY-01: same first-8 batch token as Order Flow,
+  // Batch Detail and WMS batch surfaces; display only — pickBatchId stays the full UUID.
+  const batchShort = pickBatchId.slice(0, 8).toUpperCase();
 
   const locationInputRef  = useRef<HTMLInputElement>(null);
   const productInputRef   = useRef<HTMLInputElement>(null);
@@ -547,7 +550,7 @@ try {
   if (phase === 'brief') {
     return (
       <WmsSessionBrief
-        eyebrow={`Batch ${pickBatchId.slice(-6).toUpperCase()}`}
+        eyebrow={`Batch ${batchShort}`}
         title="Pick Session"
         description="Items are sorted by optimized pick route."
         facts={[
@@ -719,7 +722,7 @@ try {
               Pick
             </Typography>
             <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              Batch {pickBatchId.slice(-6).toUpperCase()}
+              Batch {batchShort}
             </Typography>
             <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
               Item {currentIndex + 1} of {lineItems.length}

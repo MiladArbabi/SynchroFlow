@@ -46,7 +46,7 @@ jest.mock('../../../../modules/wms/src/ui/components/WmsConnectionBadge', () => 
 
 const PICKING_ID = 'pickbat1-0000-4000-8000-00000d4e5f6';
 const PENDING_ID = 'pendbat1-0000-4000-8000-00000a1b2c3';
-const SHORT_ID = 'D4E5F6';
+const SHORT_ID = 'PICKBAT1';
 
 function wmsBatch(pick_batch_id: string, status: 'pending' | 'picking') {
   return {
@@ -269,6 +269,36 @@ describe('PICK-EXECUTION-SPATIAL-01A — session identity header', () => {
 
     expect(await screen.findByRole('button', { name: /start picking/i })).toBeInTheDocument();
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+});
+
+// PICK-BATCH-IDENTITY-CONTINUITY-01 — Order Flow, Batch Detail and WMS batch
+// surfaces show the first 8 UUID characters uppercased; Pick must match.
+describe('PICK-BATCH-IDENTITY-CONTINUITY-01 — canonical batch identity', () => {
+  const FIXTURE_ID = 'c4f7be77-7f36-4645-8a31-6e7c8da24369';
+
+  it('the Pick Brief shows the canonical first-8 batch identity', async () => {
+    render(
+      <WmsModuleFT2
+        {...baseProps({
+          data: { batches: [wmsBatch(FIXTURE_ID, 'pending')] },
+          pendingPickBatchId: FIXTURE_ID,
+        })}
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: /start picking/i })).toBeInTheDocument();
+    expect(screen.getByText('Batch C4F7BE77')).toBeInTheDocument();
+  });
+
+  it('active Pick execution shows the canonical first-8 batch identity', async () => {
+    await renderExecution({
+      data: { batches: [wmsBatch(FIXTURE_ID, 'picking')] },
+      pendingPickBatchId: FIXTURE_ID,
+    });
+
+    const header = screen.getByRole('banner');
+    expect(within(header).getByText('Batch C4F7BE77')).toBeInTheDocument();
   });
 });
 

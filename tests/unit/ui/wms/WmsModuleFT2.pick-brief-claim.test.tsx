@@ -269,7 +269,7 @@ describe('BATCH-DETAIL-HANDOFF-01 — Pick Brief claim boundary', () => {
 
     await startPicking();
     expect(props.onFetchLineItems).toHaveBeenCalledWith(PENDING_ID);
-    expect(screen.getByText(/A1B2C3/)).toBeInTheDocument();
+    expect(screen.getByText(/PENDBAT1/)).toBeInTheDocument();
     expect(locationScan()).not.toBeInTheDocument();
     expect(props.onClaimBatch).not.toHaveBeenCalled();
   });
@@ -408,7 +408,7 @@ describe('WMS-BRIEF-SYSTEM-01A — Pick Brief shared session Brief contract', ()
 
     // Stable session identity/title.
     expect(screen.getAllByRole('heading').length).toBeGreaterThan(0);
-    expect(screen.getByText(/A1B2C3/)).toBeInTheDocument();
+    expect(screen.getByText(/PENDBAT1/)).toBeInTheDocument();
 
     // Compact fact rail: line and unit facts derived from the batch lines.
     expect(screen.getByText('2')).toBeInTheDocument();
