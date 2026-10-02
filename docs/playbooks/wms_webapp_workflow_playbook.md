@@ -954,25 +954,34 @@ POST /api/v1/wms/orders/:orderId/generate-label
 
 ## 17. Opening Inventory Reconciliation & Shopify Cutover — 4b-2 (September 23, 2026)
 
+> **Status — GH-1179 Slices B–D (October 2, 2026).** This section describes
+> the current location-aware cutover architecture through completed Slice D
+> (immutable generation). Shopify execution, retry and convergence are Slice E
+> work and are **not** implemented on the new path yet. Where the original
+> 4b-2 aggregate / additive-delta model is still described, it is explicitly
+> marked as legacy.
+
 Opening inventory is a one-time transition from Shopify's existing stock
-expectation into LaSyncro's canonical physical inventory truth.
+evidence into LaSyncro's canonical physical inventory truth, followed by
+bringing Shopify into line with that truth.
 
 The workflow is:
 
 ```text
-Shopify opening expectation
+location-scoped Shopify opening snapshot (on_hand)
 → physical warehouse count
 → bin review / reconciliation
 → canonical LaSyncro physical truth
 → merchant final review
-→ Shopify delta correction
+→ immutable cutover generation (Slice D)
+→ Shopify execution + convergence proof (Slice E)
 → opening cutover complete
 ```
 
 ### Authority contract
 
-Shopify opening quantity is an **expectation only**. It must never directly
-create or overwrite LaSyncro physical inventory.
+Shopify opening quantity is **evidence only**. It must never directly create
+or overwrite LaSyncro physical inventory.
 
 Physical truth is established only by the opening recount workflow:
 
@@ -997,47 +1006,167 @@ The implementation may expose operational states such as
 - those movements establish LaSyncro physical truth;
 - Shopify never becomes the authority for the reconciled physical count.
 
-### Shopify correction is delta-based — never absolute
+### Opening snapshot — location-scoped `on_hand` evidence
 
-The frozen opening discrepancy is:
+The canonical opening snapshot is:
+
+- scoped to the single participating Shopify Location;
+- collected from that Location's Shopify inventory levels;
+- read with quantity semantic `on_hand`;
+- tied to the mapped participating warehouse;
+- persisted with its provider evidence (pagination / page count and Shopify
+  API version).
+
+The aggregate `ProductVariant.inventoryQuantity` is ambiguous across locations
+and is **not** cutover authority.
+
+### Participating warehouse and Shopify Location
+
+- The current Opening Inventory scope has exactly **one participating
+  warehouse**: the opening cohort and the complete opening snapshot must refer
+  to the same warehouse.
+- That warehouse must have a canonical Shopify Location mapping
+  (`warehouses.external_location_id`).
+- The snapshot, warehouse and Location GID are part of the frozen generation
+  scope.
+- Mapping or scope drift fails closed.
+- LaSyncro never distributes an aggregate discrepancy across several Shopify
+  locations.
+
+This applies to every generation, including one where no write is needed (see
+[No-op generation](#no-op-generation)).
+
+### Physical target
+
+The Shopify target for each item is the **current, guarded LaSyncro physical
+truth** for the participating warehouse.
+
+- The target is never derived from Shopify `available` inventory.
+- Physical readiness guards must pass before a generation can freeze; a
+  readiness failure blocks before any provider read.
+
+### Shopify mutation intent — absolute `on_hand` compare-and-set
+
+Shopify mutation intent is frozen as:
 
 ```text
-opening physical quantity - opening Shopify expectation
+mutation:           inventorySetQuantities
+name:               on_hand
+reason:             correction
+quantity:           absolute LaSyncro physical target
+changeFromQuantity: freshly observed Shopify on_hand at the participating Location
 ```
 
-That frozen **delta** is what LaSyncro applies to Shopify.
-
-Example:
+This is optimistic concurrency (compare-and-set). Example:
 
 ```text
-Shopify opening expectation = 100
-physical opening count      = 93
-frozen correction delta     = -7
+fresh Shopify on_hand observed = 100
+LaSyncro physical truth        = 93
+frozen request                 = "set on_hand to 93 only if Shopify still says 100"
 ```
 
-If Shopify changes to 95 before cutover executes, LaSyncro applies `-7`,
-producing 88.
+It does **not** mean "subtract 7 regardless of what Shopify now contains".
 
-LaSyncro must **not** absolute-set Shopify back to 93.
+A stale compare-and-set must fail rather than silently apply an old delta.
+How a stale CAS is recovered is a Slice E contract and is not specified here.
 
-This is required because Shopify may continue receiving legitimate external
-changes between opening snapshot and final merchant approval.
+The served Shopify Admin API version is recorded from provider response
+headers. A missing or unsupported served version, or one that changes between
+pagination pages, fails closed with no generation.
 
-### Exact-match cutover
+### Immutable generation authority
 
-When every opening variant already matches:
+The request authority for the new path is:
 
-```text
-opening physical == opening Shopify expectation
-```
+- `opening_inventory_cutover_generations` — one immutable header;
+- `opening_inventory_cutover_generation_entries` — exact immutable entries;
+- `opening_inventory_cutover_generation_batches` — exact immutable batches.
 
-the cutover completes with:
+All three tables ENABLE and FORCE tenant RLS. A generation is inserted
+`assembling`, may only transition to `frozen` within the same transaction, and
+is immutable afterwards (no update, delete or late append).
 
-- zero Shopify correction variants;
-- zero Shopify execution batches;
-- no Shopify inventory mutation;
-- no Shopify installation/location/item-identity dependency for the no-op;
-- `opening_inventory_shopify_synced_at` written only after completion.
+A frozen generation binds at least:
+
+- opening snapshot;
+- shop;
+- warehouse;
+- Shopify Location GID;
+- Shopify shop domain (provenance);
+- stable Shopify Shop GID;
+- requested and served Shopify Admin API versions;
+- the `on_hand` / `changeFromQuantity` CAS contract;
+- identity fingerprint;
+- physical target fingerprint;
+- provider-read fingerprint;
+- semantic generation fingerprint;
+- its exact entries and exact batches.
+
+Fingerprints are computed over canonical (key-sorted) JSON and exclude
+transient timestamps.
+
+Legacy `opening_inventory_cutovers` / `opening_inventory_cutover_batches`
+remain as **lifecycle precedent only**. They are not the economic / request
+authority for the new path.
+
+### Stable Shopify merchant identity
+
+- Canonical merchant identity is `shopify_app_installations.shop_gid`.
+- Accepted shape: `gid://shopify/Shop/<digits>` — exact canonical value only,
+  never normalized into validity.
+- The shop domain remains provenance, not stable identity authority.
+- A missing or invalid Shop GID on the active installation fails closed
+  **before** provider collection.
+- Shop GID drift between T1 and T2 fails closed, even when the domain is
+  unchanged.
+- The frozen generation persists the Shop GID (`shopify_shop_gid`, `NOT NULL`,
+  canonical-shape CHECK), and the semantic generation fingerprint includes it.
+- Migration 0202 refuses to add the column when generation evidence already
+  exists (identity is never inferred or backfilled), and its rollback refuses
+  to drop the column while generation evidence exists.
+
+### Transaction / provider boundary
+
+- **T1** reserves and validates local authority: approver, readiness, scope,
+  Location mapping, installation identity (domain + Shop GID), requested API
+  version and Shopify item identities.
+- **Shopify provider collection** runs outside any long database transaction.
+- **T2** re-validates approver, readiness, scope, mapping, installation
+  identity, API version and item identities, recomputes the physical target,
+  and freezes the generation. Any drift fails closed with no generation.
+- T2 runs at `REPEATABLE READ`: all local reconciliation state used to freeze
+  comes from one consistent PostgreSQL snapshot. Changes committed after T2's
+  snapshot begins do not leak into later target reads inside that same T2.
+
+### Batch contract
+
+- Maximum 250 quantity changes per batch, ordered by canonical item identity
+  (never by provider page order).
+- Each batch persists:
+  - the exact GraphQL document;
+  - canonical variables;
+  - a native Shopify idempotency key;
+  - a reference document URI;
+  - a request SHA-256;
+  - the requested / served API contract.
+- Retry must later consume these persisted request facts; it must never
+  rebuild economic intent from current inventory state.
+
+Execution of these batches is Slice E.
+
+### No-op generation
+
+When every target already equals the freshly observed Shopify `on_hand`:
+
+- `write_count = 0`;
+- the frozen generation may contain zero execution batches;
+- no Shopify mutation is required.
+
+The generation still depends on a valid scoped Shopify installation,
+Location, item identity and provider evidence. Those are what prove the state
+is actually a no-op.
+
+Slice D does **not** mark Opening Inventory complete.
 
 ### Merchant approval
 
@@ -1046,7 +1175,7 @@ Only an active owner/admin may approve opening cutover.
 For `ready_for_cutover` with no discrepancy:
 
 - no physical-truth acceptance is required;
-- owner/admin may complete the zero-difference cutover directly.
+- owner/admin may approve the zero-difference cutover directly.
 
 For `review_required`:
 
@@ -1055,89 +1184,42 @@ For `review_required`:
 - the approval authorizes Shopify correction only;
 - approval never mutates LaSyncro physical inventory.
 
-Persisted acceptance may be reused when retrying the same durable cutover.
 The frontend must never synthesize consent.
 
-### Multi-location rule
+### Slice E boundary
 
-Opening Shopify expectation is currently aggregate rather than location-scoped.
+Slice D is complete through the immutable generation.
 
-For a non-zero correction:
+Slice E owns:
 
-- there must be exactly one active warehouse;
-- that active warehouse must have a canonical Shopify location mapping in
-  `warehouses.external_location_id`;
-- any active unmapped warehouse fails closed;
-- multiple active mapped warehouses fail closed.
+- execution lease / ownership;
+- dispatch of the exact persisted request;
+- retry;
+- ambiguous transport-result handling;
+- stale CAS handling;
+- provider reread;
+- revalidation of current local readiness and target;
+- convergence proof;
+- writing the final completion marker.
 
-LaSyncro must never invent how an aggregate discrepancy should be distributed
-across several Shopify locations.
+This document does not prescribe the Slice E state machine.
 
-A zero-difference cutover needs no Shopify location distribution because no
-external write occurs.
+### Legacy 4b-2 execution path
 
-### Durable cutover and retry contract
+The original 4b-2 path is legacy and is superseded as cutover authority by
+the generation model above. It:
 
-Opening cutover uses:
+- treated Shopify opening expectation as aggregate rather than
+  location-scoped;
+- froze an additive opening delta (`name: available`, `delta`,
+  `changeFromQuantity: null`) instead of an absolute `on_hand` CAS;
+- persisted `opening_inventory_cutovers` / `opening_inventory_cutover_batches`
+  with `lasyncro:opening-cutover:<cutover_id>:<batch_sequence>` idempotency
+  keys, `in_flight` reclaim and a resumable persisted `executing` state.
 
-- one durable `opening_inventory_cutovers` aggregate per shop;
-- zero or more durable `opening_inventory_cutover_batches`;
-- maximum 250 Shopify quantity changes per batch.
-
-Each batch freezes:
-
-- exact Shopify mutation input;
-- audit snapshot;
-- deterministic idempotency key.
-
-Idempotency key:
-
-```text
-lasyncro:opening-cutover:<cutover_id>:<batch_sequence>
-```
-
-Every retry reads the already-persisted Shopify input and key. It must never
-rebuild the economic operation from current inventory state.
-
-A succeeded batch is monotonic and is never replayed.
-
-A stale failure from a concurrent executor must not regress a batch that has
-already succeeded or regress its parent cutover.
-
-A process crash with a batch left `in_flight` is recoverable: the same
-persisted economic operation is reclaimed and retried.
-
-### Persisted `executing` is resumable
-
-`executing` does not mean a merchant is permanently blocked.
-
-The UI distinguishes:
-
-- local HTTP request currently running → disabled `Syncing…` state;
-- persisted backend `executing` with no local request → owner/admin may
-  **Resume Shopify sync**.
-
-Resume calls the same cutover endpoint and continues the same durable cutover.
-It does not create a second economic operation.
-
-### Shopify mutation contract
-
-Opening corrections use additive Shopify inventory adjustment semantics:
-
-```text
-reason: correction
-name: available
-delta: frozen opening discrepancy
-changeFromQuantity: null
-```
-
-The implementation never sends LaSyncro's current physical/available quantity
-as an absolute Shopify target.
-
-The Shopify call runs outside the internal database transaction.
-
-A cutover becomes complete only when all required persisted batches have
-succeeded.
+As of Slice D, the HTTP cutover route below still drives this legacy prepare /
+execute path in source. Rewiring execution onto the immutable generation is
+Slice E. None of the legacy delta semantics are part of the new-path contract.
 
 ### Public error contract
 
@@ -1216,35 +1298,47 @@ components.
 `shop_wms_settings.opening_inventory_shopify_synced_at` is the durable
 onboarding completion marker.
 
-It remains `NULL` while cutover is incomplete or failed.
-
-It is written only when the cutover is durably complete.
+- It remains `NULL` while cutover is incomplete or failed.
+- Slice D never writes it.
+- On the new path it may be written only after Slice E execution / recovery /
+  readback / convergence proves that Shopify actually converged to current
+  guarded LaSyncro truth.
 
 ### Regression contract
 
-The 4b-2 certification covers:
+The original 4b-2 certification continues to cover the physical side:
+opening recount bootstrap and frozen-bin progress, canonical recount-origin
+inventory units and provenance, projection / historical-repair / fulfillment
+physical semantics, owner/admin authorization with explicit mismatch
+acceptance, and public error sanitization.
 
-- opening recount bootstrap and frozen-bin progress;
-- canonical recount-origin inventory units and provenance;
-- projection / historical-repair / fulfillment physical semantics;
-- cutover persistence and RLS;
-- owner/admin authorization and explicit mismatch acceptance;
-- frozen positive/negative economic deltas;
-- Shopify location and external identity preflight;
-- 250-change batching;
-- deterministic persisted idempotency;
-- stale `in_flight` recovery;
-- concurrent success/failure monotonicity;
-- resumable persisted `executing`;
-- public error sanitization;
-- exact-zero no-Shopify completion;
-- real Express + JWT + FT2 + commercial entitlement + RBAC + PostgreSQL
-  GET → POST → GET route proof.
+The new-path certification through Slice D covers:
+
+- location-scoped `on_hand` opening evidence;
+- physical target and readiness guards (readiness failure blocks before
+  provider I/O);
+- immutable generation schema, RLS and immutability;
+- 250-change batching with canonical ordering;
+- persisted exact request facts per batch;
+- canonical semantic and exact-request fingerprints;
+- served API version fail-closed;
+- provider identity disagreement fail-closed;
+- T2 identity / readiness / scope drift protection;
+- T2 `REPEATABLE READ` consistent snapshot;
+- stable Shop GID binding (preflight, T2 drift, persistence, fingerprint);
+- forward migration refusing retrospective identity invention;
+- rollback migration refusing destruction of durable identity evidence.
+
+Legacy additive-delta correction, stale `in_flight` recovery and the existing
+route execution proof are legacy 4b-2 certifications, not new-path guarantees.
+Execution, retry and convergence on the new path are Slice E certifications.
 
 The central invariant is:
 
-> LaSyncro owns physical truth. Shopify receives the frozen opening correction
-> delta needed to reconcile its independently evolving state to that truth.
+> LaSyncro owns physical truth. A frozen Opening Inventory generation binds
+> that truth to one exact Shopify merchant and Location and freezes an
+> absolute `on_hand` compare-and-set request. Execution may succeed only
+> against that persisted authority.
 
 ---
 

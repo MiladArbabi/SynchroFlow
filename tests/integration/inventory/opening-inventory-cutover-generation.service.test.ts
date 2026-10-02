@@ -85,6 +85,7 @@ type Fixture = {
   variantId: string;
   itemGid: string;
   variantGid: string;
+  shopGid: string;
 };
 
 type ProviderLevel = {
@@ -251,6 +252,9 @@ async function createFixture(): Promise<Fixture> {
   const variantGid =
     `gid://shopify/ProductVariant/${variantRaw}`;
 
+  const shopGid =
+    `gid://shopify/Shop/${shopId}`;
+
   let ownerId = 0;
   let operatorId = 0;
 
@@ -382,6 +386,7 @@ async function createFixture(): Promise<Fixture> {
       shop_id: shopId,
       shop_domain:
         `gh1179d-${unique}.myshopify.com`,
+      shop_gid: shopGid,
       access_token: 'test-token-no-network',
       scopes:
         'read_products,write_inventory',
@@ -401,6 +406,7 @@ async function createFixture(): Promise<Fixture> {
     variantId,
     itemGid,
     variantGid,
+    shopGid,
   };
 }
 
@@ -910,6 +916,71 @@ async function waitForD25<T>(
     `[GH1179_D25_TEST] waitFor timed out: ${label}`
   );
 }
+
+// D26 TEST-ONLY: commits a tenant-scoped change to the ACTIVE installation's
+// stable Shopify Shop GID. shop_domain is never touched.
+async function setActiveInstallationShopGid(
+  fixture: Fixture,
+  shopGid: string | null
+): Promise<void> {
+  const updated = await withTenant(
+    fixture.shopId,
+    (trx) =>
+      trx('shopify_app_installations')
+        .where({
+          shop_id:
+            fixture.shopId,
+        })
+        .whereNull(
+          'uninstalled_at'
+        )
+        .update({
+          shop_gid:
+            shopGid,
+        })
+  );
+
+  if (updated !== 1) {
+    throw new Error(
+      `[GH1179_D26_TEST] expected 1 active installation, updated ${updated}`
+    );
+  }
+}
+
+async function activeInstallationIdentity(
+  fixture: Fixture
+): Promise<{
+  shopDomain: string;
+  shopGid: string | null;
+}> {
+  const row = await withTenant(
+    fixture.shopId,
+    (trx) =>
+      trx('shopify_app_installations')
+        .where({
+          shop_id:
+            fixture.shopId,
+        })
+        .whereNull(
+          'uninstalled_at'
+        )
+        .first(
+          'shop_domain',
+          'shop_gid'
+        )
+  );
+
+  return {
+    shopDomain:
+      String(row.shop_domain),
+
+    shopGid:
+      row.shop_gid ?? null,
+  };
+}
+
+const D26_IDENTITY_ERROR =
+  /\[OPENING_CUTOVER_(PREFLIGHT|IDENTITY)\]/;
 
 describe(
   'GH-1179 Slice D — immutable cutover generation service',
@@ -2545,6 +2616,9 @@ describe(
             shopDomain:
               generation.shopify_shop_domain,
 
+            shopGid:
+              generation.shopify_shop_gid,
+
             requestedApiVersion:
               generation.requested_api_version,
 
@@ -3265,6 +3339,357 @@ describe(
           changeFromQuantity:
             8,
         });
+      }
+    );
+
+    it(
+      'D26a — missing or invalid stable Shopify Shop GID fails closed before provider read',
+      async () => {
+        const create =
+          requireGenerationCreator();
+
+        const fixture =
+          await createFixture();
+
+        await makeCountedReady(
+          fixture,
+          3
+        );
+
+        // Both cases share one ready fixture: fail-closed must leave no
+        // generation, so the second case starts from the same clean state.
+        const cases: Array<{
+          label: string;
+          shopGid: string | null;
+        }> = [
+          {
+            label: 'missing (NULL)',
+            shopGid: null,
+          },
+          {
+            label: 'wrong GID resource type',
+            shopGid:
+              `gid://shopify/Location/${fixture.shopId}`,
+          },
+        ];
+
+        for (const testCase of cases) {
+          await setActiveInstallationShopGid(
+            fixture,
+            testCase.shopGid
+          );
+
+          const provider =
+            jest.fn(
+              async () =>
+                providerPage({
+                  fixture,
+                  levels: [
+                    {
+                      itemGid:
+                        fixture.itemGid,
+
+                      variantGid:
+                        fixture.variantGid,
+
+                      onHand:
+                        8,
+                    },
+                  ],
+                })
+            );
+
+          const outcome =
+            await create(
+              {
+                shopId:
+                  fixture.shopId,
+
+                actingUserId:
+                  fixture.ownerId,
+
+                acceptPhysicalTruth:
+                  true,
+              },
+              {
+                readLocationPage:
+                  provider,
+              }
+            ).then(
+              (value: any) => ({
+                ok: true as const,
+                value,
+              }),
+              (error: unknown) => ({
+                ok: false as const,
+                error,
+              })
+            );
+
+          const state =
+            await generationState(
+              fixture.shopId
+            );
+
+          expect({
+            case: testCase.label,
+            providerCalls:
+              provider.mock.calls.length,
+          }).toEqual({
+            case: testCase.label,
+            providerCalls: 0,
+          });
+
+          expect({
+            case: testCase.label,
+            rejected:
+              outcome.ok === false,
+          }).toEqual({
+            case: testCase.label,
+            rejected: true,
+          });
+
+          expect(
+            String(
+              (outcome as any).error
+                ?.message
+            )
+          ).toMatch(
+            D26_IDENTITY_ERROR
+          );
+
+          expect({
+            case: testCase.label,
+            generations:
+              state.generations.length,
+          }).toEqual({
+            case: testCase.label,
+            generations: 0,
+          });
+        }
+      }
+    );
+
+    it(
+      'D26b — Shopify Shop GID drift during provider I/O blocks T2 freeze',
+      async () => {
+        const create =
+          requireGenerationCreator();
+
+        const fixture =
+          await createFixture();
+
+        await makeCountedReady(
+          fixture,
+          3
+        );
+
+        const shopGidA =
+          fixture.shopGid;
+
+        const shopGidB =
+          `gid://shopify/Shop/${fixture.shopId}999`;
+
+        expect(shopGidB)
+          .not.toBe(shopGidA);
+
+        const before =
+          await activeInstallationIdentity(
+            fixture
+          );
+
+        expect(before.shopGid)
+          .toBe(shopGidA);
+
+        const calls: Array<{
+          shopId: number;
+          variables: unknown;
+        }> = [];
+
+        const recordingReader =
+          pageReader(
+            [
+              providerPage({
+                fixture,
+
+                levels: [
+                  {
+                    itemGid:
+                      fixture.itemGid,
+
+                    variantGid:
+                      fixture.variantGid,
+
+                    onHand:
+                      8,
+                  },
+                ],
+              }),
+            ],
+            calls
+          );
+
+        // Commit stable-identity drift A -> B while provider I/O is in
+        // flight. shop_domain is deliberately left unchanged.
+        const reader:
+          OpeningInventoryLocationPageReader =
+            async (readerParams) => {
+              await setActiveInstallationShopGid(
+                fixture,
+                shopGidB
+              );
+
+              return recordingReader(
+                readerParams
+              );
+            };
+
+        const outcome =
+          await create(
+            {
+              shopId:
+                fixture.shopId,
+
+              actingUserId:
+                fixture.ownerId,
+
+              acceptPhysicalTruth:
+                true,
+            },
+            {
+              readLocationPage:
+                reader,
+            }
+          ).then(
+            (value: any) => ({
+              ok: true as const,
+              value,
+            }),
+            (error: unknown) => ({
+              ok: false as const,
+              error,
+            })
+          );
+
+        const after =
+          await activeInstallationIdentity(
+            fixture
+          );
+
+        const state =
+          await generationState(
+            fixture.shopId
+          );
+
+        // Drift really committed; domain really stayed equal.
+        expect(after).toEqual({
+          shopDomain:
+            before.shopDomain,
+
+          shopGid:
+            shopGidB,
+        });
+
+        expect(calls)
+          .toHaveLength(1);
+
+        expect(
+          outcome.ok
+        ).toBe(false);
+
+        expect(
+          String(
+            (outcome as any).error
+              ?.message
+          )
+        ).toMatch(
+          D26_IDENTITY_ERROR
+        );
+
+        expect(
+          state.generations
+        ).toHaveLength(0);
+      }
+    );
+
+    it(
+      'D26c — frozen generation persists the exact stable Shopify Shop GID',
+      async () => {
+        const create =
+          requireGenerationCreator();
+
+        const fixture =
+          await createFixture();
+
+        await makeCountedReady(
+          fixture,
+          3
+        );
+
+        const returned =
+          await create(
+            {
+              shopId:
+                fixture.shopId,
+
+              actingUserId:
+                fixture.ownerId,
+
+              acceptPhysicalTruth:
+                true,
+            },
+            {
+              readLocationPage:
+                pageReader([
+                  providerPage({
+                    fixture,
+
+                    levels: [
+                      {
+                        itemGid:
+                          fixture.itemGid,
+
+                        variantGid:
+                          fixture.variantGid,
+
+                        onHand:
+                          8,
+                      },
+                    ],
+                  }),
+                ]),
+            }
+          );
+
+        const state =
+          await generationState(
+            fixture.shopId
+          );
+
+        expect(
+          state.generations
+        ).toHaveLength(1);
+
+        expect(
+          state.generations[0]
+            .generation_id
+        ).toBe(
+          returned.generation_id
+        );
+
+        expect(
+          state.generations[0]
+            .shopify_shop_gid
+        ).toBe(
+          fixture.shopGid
+        );
+
+        // The service returns the raw persisted header row.
+        expect(
+          returned.shopify_shop_gid
+        ).toBe(
+          fixture.shopGid
+        );
       }
     );
 

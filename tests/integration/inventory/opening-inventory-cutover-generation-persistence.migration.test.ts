@@ -47,6 +47,7 @@ const GENERATION_COLUMNS: Record<string, ColumnContract> = {
   warehouse_id:                  { nullable: false, udt: ['uuid'] },
   shopify_location_gid:          { nullable: false, udt: TEXT },
   shopify_shop_domain:           { nullable: false, udt: TEXT },
+  shopify_shop_gid:              { nullable: false, udt: TEXT },
 
   requested_api_version:         { nullable: false, udt: TEXT },
   served_api_version:            { nullable: false, udt: TEXT },
@@ -245,6 +246,7 @@ function generationRow(
     warehouse_id: fixture.warehouseId,
     shopify_location_gid: `gid://shopify/Location/8${fixture.shopId}`,
     shopify_shop_domain: `shop-${fixture.shopId}.myshopify.com`,
+    shopify_shop_gid: `gid://shopify/Shop/${fixture.shopId}`,
 
     requested_api_version: '2026-04',
     served_api_version: '2026-04',
@@ -844,6 +846,92 @@ describe(
       );
 
       expect(persisted).toEqual([]);
+    });
+
+    it('D26-M1 — generation header exposes NOT NULL text stable Shopify Shop GID', async () => {
+      const fixture = await createFixture('gen-shop-gid-col');
+
+      const rows = await columnShape(
+        fixture.shopId,
+        GENERATIONS,
+        'shopify_shop_gid'
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(TEXT).toContain(rows[0].udt_name);
+      expect(rows[0].is_nullable).toBe('NO');
+    });
+
+    it('D26-M2 — generation header enforces canonical Shopify Shop GID shape', async () => {
+      const fixture = await createFixture('gen-shop-gid-check');
+
+      const checks = (
+        await constraintDefinitions(fixture.shopId, GENERATIONS)
+      ).filter(
+        (definition) =>
+          /^CHECK\b/i.test(definition) &&
+          /\bshopify_shop_gid\b/.test(definition)
+      );
+
+      // Extract case-sensitive POSIX match literals (`~ '...'`), excluding
+      // `!~` and `~*`, so formatting/casts in the rendered expression do not
+      // matter. Each candidate is then judged by PostgreSQL itself.
+      const patterns = checks.flatMap((definition) =>
+        Array.from(
+          definition.matchAll(/(?:^|[^!~])~\s*'((?:[^']|'')*)'/g),
+          (match) => match[1].replace(/''/g, "'")
+        )
+      );
+
+      const accept = [
+        'gid://shopify/Shop/1',
+        'gid://shopify/Shop/1234567890',
+      ];
+
+      const reject = [
+        '',
+        'gid://shopify/Shop/',
+        'gid://shopify/Shop/abc',
+        'gid://shopify/Shop/12a',
+        'gid://shopify/shop/1',
+        'gid://shopify/Location/1',
+        'xgid://shopify/Shop/1',
+        'gid://shopify/Shop/1/2',
+        'gid://shopify/Shop/1 ',
+        'shop.myshopify.com',
+      ];
+
+      const canonical: string[] = [];
+
+      for (const pattern of patterns) {
+        const { rows } = await withTenant(fixture.shopId, (trx) =>
+          trx.raw(
+            `
+              SELECT
+                bool_and(sample ~ ?) FILTER (WHERE expected) AS accepts_all,
+                bool_or(sample ~ ?) FILTER (WHERE NOT expected) AS accepts_any_invalid
+              FROM (
+                SELECT unnest(?::text[]) AS sample, true AS expected
+                UNION ALL
+                SELECT unnest(?::text[]) AS sample, false AS expected
+              ) samples
+            `,
+            [pattern, pattern, accept, reject]
+          )
+        );
+
+        if (
+          rows[0].accepts_all === true &&
+          rows[0].accepts_any_invalid === false
+        ) {
+          canonical.push(pattern);
+        }
+      }
+
+      expect({ checks, canonical }).toEqual({
+        checks: expect.any(Array),
+        canonical: expect.arrayContaining([expect.any(String)]),
+      });
     });
 
   }

@@ -164,6 +164,7 @@ interface OpeningInventoryGenerationReservation {
   warehouseId: string;
   locationGid: string;
   shopDomain: string;
+  shopGid: string;
   requestedApiVersion: string;
   approvedRole:
     | 'owner'
@@ -337,11 +338,25 @@ function assertGenerationProgress(
   }
 }
 
+// Stable Shopify merchant identity. Exact canonical values only: no trimming,
+// so a padded or otherwise malformed GID can never be normalized into validity.
+function validShopGid(
+  value: unknown
+): string | null {
+  return typeof value === 'string' &&
+    /^gid:\/\/shopify\/Shop\/[0-9]+$/.test(
+      value
+    )
+    ? value
+    : null;
+}
+
 async function readGenerationInstallation(
   trx: Knex.Transaction,
   shopId: number
 ): Promise<{
   shopDomain: string;
+  shopGid: string;
 }> {
   const installation =
     await trx(
@@ -355,6 +370,7 @@ async function readGenerationInstallation(
       )
       .select(
         'shop_domain',
+        'shop_gid',
         'access_token'
       )
       .first();
@@ -368,11 +384,24 @@ async function readGenerationInstallation(
     );
   }
 
+  const shopGid =
+    validShopGid(
+      installation.shop_gid
+    );
+
+  if (!shopGid) {
+    throw new Error(
+      `[OPENING_CUTOVER_PREFLIGHT] Active Shopify installation has no valid stable Shop GID for shop ${shopId}`
+    );
+  }
+
   return {
     shopDomain:
       String(
         installation.shop_domain
       ),
+
+    shopGid,
   };
 }
 
@@ -554,6 +583,9 @@ async function reserveOpeningInventoryCutoverGeneration(
 
           shopDomain:
             installation.shopDomain,
+
+          shopGid:
+            installation.shopGid,
 
           requestedApiVersion,
 
@@ -822,12 +854,16 @@ export async function createOpeningInventoryCutoverGeneration(
           shopId
         );
 
+      // Domain equality alone cannot prove the same merchant: the stable
+      // Shop GID must also be unchanged since T1.
       if (
         installation.shopDomain !==
-        reservation.shopDomain
+          reservation.shopDomain ||
+        installation.shopGid !==
+          reservation.shopGid
       ) {
         throw new Error(
-          '[OPENING_CUTOVER_PREFLIGHT] Shopify installation changed while inventory was being read'
+          '[OPENING_CUTOVER_PREFLIGHT] Shopify installation identity changed while inventory was being read'
         );
       }
 
@@ -1398,6 +1434,9 @@ export async function createOpeningInventoryCutoverGeneration(
           shopDomain:
             reservation.shopDomain,
 
+          shopGid:
+            reservation.shopGid,
+
           requestedApiVersion:
             reservation.requestedApiVersion,
 
@@ -1491,6 +1530,9 @@ export async function createOpeningInventoryCutoverGeneration(
 
         shopify_shop_domain:
           reservation.shopDomain,
+
+        shopify_shop_gid:
+          reservation.shopGid,
 
         requested_api_version:
           reservation.requestedApiVersion,
