@@ -33,6 +33,11 @@ let mockLiveActivityData: unknown = {
   staleThresholdMinutes: 15,
 };
 
+// GH-1179: preserve this operational page fixture's mature onboarding state.
+jest.mock('hooks/useActivationChecklist', () => ({
+  useActivationChecklist: () => ({ firstEntry: false, externalLocationMapped: true }),
+}));
+
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
   useSearchParams: () => mockUseSearchParams(),

@@ -7,7 +7,9 @@
 // Future: batch size, auto-release, idle threshold, problem bin (WM-35)
 
 import { useState, useEffect } from 'react';
-import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
+import { SpotlightCoachMark } from '@lasyncro/shared/ui';
+import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip, Popper } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle, Link2} from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
@@ -718,6 +720,15 @@ function PrintersSection() {
 }
 
 function ShopifyLocationMappingSection() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [guideAnchor, setGuideAnchor] = useState<HTMLDivElement | null>(null);
+  const guided = searchParams.get('guide') === 'shopify-location';
+  const clearGuide = () => {
+    if (!guided) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('guide');
+    setSearchParams(next, { replace: true });
+  };
   const queryClient = useQueryClient();
   const { show } = useToast();
 
@@ -737,9 +748,11 @@ function ShopifyLocationMappingSection() {
     }) => updateWarehouseShopifyLocation(warehouseId, shopifyLocationId),
 
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['warehouse-shopify-locations'],
-      });
+      clearGuide();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['warehouse-shopify-locations'] }),
+        queryClient.invalidateQueries({ queryKey: ['onboarding', 'readiness'] }),
+      ]);
       show('Shopify location mapping saved', 'success');
     },
 
@@ -747,6 +760,10 @@ function ShopifyLocationMappingSection() {
       show('Failed to save Shopify location mapping', 'error');
     },
   });
+
+  const guideWarehouse = mappings.data?.warehouses.find(w => w.active && w.is_default && !w.shopify_location_id)
+    ?? mappings.data?.warehouses.find(w => w.active && !w.shopify_location_id);
+  const showGuide = guided && mappings.isSuccess && !!guideWarehouse && !guideWarehouse.shopify_location_id;
 
   return (
     <SettingsCard
@@ -842,6 +859,7 @@ function ShopifyLocationMappingSection() {
                 </Box>
 
                 <FormControl
+                  ref={warehouse.warehouse_id === guideWarehouse?.warehouse_id ? setGuideAnchor : undefined}
                   size="small"
                   sx={{ width: { xs: '100%', sm: 260 } }}
                   disabled={!warehouse.active || updateMapping.isPending}
@@ -886,6 +904,18 @@ function ShopifyLocationMappingSection() {
           })}
         </Box>
       )}
+      <Popper open={showGuide && !!guideAnchor} anchorEl={guideAnchor} placement="bottom-end"
+        popperOptions={{ modifiers: [{ name: 'offset', options: { offset: [0, 8] } }] }}
+        sx={{ zIndex: 1300, width: 320, maxWidth: 'calc(100vw - 32px)' }}>
+        <SpotlightCoachMark
+          title="Choose your Shopify location"
+          body="Your Shopify store can have multiple locations. Select the one this warehouse represents. LaSyncro will use that location for opening stock and future inventory updates."
+          isDismissed={!showGuide}
+          onDismiss={clearGuide}
+          direction="up"
+          floating
+        />
+      </Popper>
     </SettingsCard>
   );
 }

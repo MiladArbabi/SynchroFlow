@@ -51,12 +51,19 @@ function deferred<T>() {
   const promise = new Promise<T>(r => { resolve = r; });
   return { promise, resolve };
 }
-function snapshot(ready: boolean | null, firstEntry = true) {
+function snapshot(
+  ready: boolean | null,
+  firstEntry = true,
+  externalLocationMapped = true,
+) {
   return { modules: [{ moduleId: 'wms', tasks: [
     ...(ready === null ? [] : [{ id: 'map-zones', complete: ready }]),
     { id: 'reconcile-inventory', complete: !firstEntry },
   ], signals: [
     ...(ready === null ? [] : [{ name: 'wms.zonesConfigured', value: ready }]),
+    // GH-1179: this GH-1183 suite starts after Shopify Location mapping.
+    // It isolates the later physical map → opening-count handoff.
+    { name: 'wms.externalLocationMapped', value: externalLocationMapped },
     { name: 'wms.openingInventoryReconciliationRequired', value: firstEntry },
     { name: 'wms.openingInventoryReconciled', value: !firstEntry },
   ] }] };
@@ -85,13 +92,14 @@ async function expectCoach() {
   expect(screen.getAllByText(body).length).toBeGreaterThan(0);
   noExecution();
 }
-async function mount(opts: { initial?: boolean | null; firstEntry?: boolean; flags?: Record<string, boolean>; pendingReadiness?: boolean; pendingFlags?: boolean; pendingProgress?: boolean; persistFails?: boolean; floor?: boolean } = {}) {
+async function mount(opts: { initial?: boolean | null; firstEntry?: boolean; externalLocationMapped?: boolean; flags?: Record<string, boolean>; pendingReadiness?: boolean; pendingFlags?: boolean; pendingProgress?: boolean; persistFails?: boolean; floor?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
   clients.push(client);
   const readinessGate = deferred<{ data: ReturnType<typeof snapshot> }>();
   const flagsGate = deferred<{ data: Record<string, boolean> }>();
   const progressGate = deferred<{ data: typeof progress }>();
-  let server = snapshot(opts.initial === undefined ? false : opts.initial, opts.firstEntry ?? true);
+  let locationMapped = opts.externalLocationMapped ?? true;
+  let server = snapshot(opts.initial === undefined ? false : opts.initial, opts.firstEntry ?? true, locationMapped);
   const flags = opts.flags ?? { [INTRO]: true };
   let readyPending = opts.pendingReadiness ?? false;
   (axiosInstance.get as jest.Mock).mockImplementation((url: string) => {
@@ -123,12 +131,24 @@ async function mount(opts: { initial?: boolean | null; firstEntry?: boolean; fla
   return {
     ...view, client, flags,
     async transition(ready: boolean | null) {
-      server = snapshot(ready, opts.firstEntry ?? true);
+      server = snapshot(ready, opts.firstEntry ?? true, locationMapped);
       await act(async () => { await client.refetchQueries({ queryKey: READY }); });
       await tick();
     },
+    async transitionLocationMapped(mapped: boolean) {
+      locationMapped = mapped;
+      server = snapshot(
+        opts.initial === undefined ? false : opts.initial,
+        opts.firstEntry ?? true,
+        locationMapped,
+      );
+      await act(async () => {
+        await client.refetchQueries({ queryKey: READY });
+      });
+      await tick();
+    },
     async resolveInitial(ready: boolean) {
-      readyPending = false; server = snapshot(ready, opts.firstEntry ?? true);
+      readyPending = false; server = snapshot(ready, opts.firstEntry ?? true, locationMapped);
       await act(async () => { readinessGate.resolve({ data: server }); }); await tick();
     },
     async resolveFlags() { await act(async () => { flagsGate.resolve({ data: { ...flags } }); }); await tick(); },
@@ -140,12 +160,198 @@ async function mount(opts: { initial?: boolean | null; firstEntry?: boolean; fla
       act(() => { request = client.refetchQueries({ queryKey: READY }); });
       await tick();
       expect(client.getQueryState(READY)?.fetchStatus).toBe('fetching');
-      await act(async () => { gate.resolve({ data: snapshot(ready) }); await request; }); await tick();
+      await act(async () => { gate.resolve({ data: snapshot(ready, opts.firstEntry ?? true, locationMapped) }); await request; }); await tick();
     },
   };
 }
 beforeEach(() => { jest.resetAllMocks(); jest.useFakeTimers(); opens = []; Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux' }); });
 afterEach(() => { cleanup(); clients.splice(0).forEach(c => c.clear()); jest.useRealTimers(); });
+
+
+// GH-1179 ratified location-first navigation, retaining the real readiness hook.
+describe('GH-1179 guided Shopify Location journey', () => {
+  const LOCATION_TITLE = 'Choose your Shopify location';
+  it('Start here closes Ops and navigates to Settings, without a second coach', async () => {
+    await mount({ initial: false, externalLocationMapped: false, flags: {} });
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    const coach = screen.getByTestId('ops-first-contact-spotlight');
+    expect(coach).toHaveTextContent('Ops Console shows what needs your attention and what to do next. First, tell LaSyncro which Shopify Location this warehouse represents.');
+    expect(within(coach).queryByRole('button', { name: 'Got it' })).toBeNull();
+    fireEvent.click(within(coach).getByRole('button', { name: 'Choose Shopify location' }));
+    expect(isOpen()).toBe(false);
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+  });
+  it('X dismisses only the intro and never raises a second location coach', async () => {
+    await mount({ initial: false, externalLocationMapped: false, flags: {} });
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    fireEvent.click(within(screen.getByTestId('ops-first-contact-spotlight')).getByRole('button', { name: 'Dismiss' }));
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(isOpen()).toBe(true);
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+    expect(within(screen.getByTestId('ops-row-setup:first-entry-map')).queryByRole('button', { name: /Map warehouse/ })).toBeNull();
+    noExecution();
+  });
+  it('seen intro never auto-opens an Ops-local location coach', async () => {
+    await mount({ initial: false, externalLocationMapped: false });
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    expect(isOpen()).toBe(false);
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+    expect((axiosInstance.post as jest.Mock).mock.calls.some(([url]) => url.includes('shopify-location-seen'))).toBe(false);
+  });
+
+  it('already mapped state skips prerequisite guidance and shows the verified row when the merchant opens Ops Console', async () => {
+    await mount({
+      initial: false,
+      externalLocationMapped: true,
+      flags: { [INTRO]: true },
+    });
+
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    // Already mapped + intro already seen must not auto-open or fabricate
+    // Shopify Location coaching.
+    expect(isOpen()).toBe(false);
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+
+    // The rail is mountOnEnter/unmountOnExit, so inspect its setup rows only
+    // after the merchant explicitly opens Ops Console.
+    fireEvent.click(
+      screen.getByRole('button', { name: /Ops Console —/ })
+    );
+
+    await waitFor(() => expect(isOpen()).toBe(true));
+
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+
+    expect(
+      screen.getByTestId('ops-row-setup:first-entry-shopify-location')
+    ).toHaveAttribute('data-status', 'verified');
+
+    expect(
+      within(
+        screen.getByTestId('ops-row-setup:first-entry-map')
+      ).getByRole('button', { name: /Map warehouse/ })
+    ).toBeVisible();
+
+    noExecution();
+  });
+
+  it('mapping completion retires location guidance and exposes Map warehouse as the next CTA', async () => {
+    const h = await mount({
+      initial: false,
+      externalLocationMapped: false,
+      flags: { [INTRO]: true },
+    });
+
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+    fireEvent.click(screen.getByRole('button', { name: /Ops Console —/ }));
+    expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
+
+    await h.transitionLocationMapped(true);
+
+    await waitFor(() =>
+      expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0)
+    );
+
+    expect(
+      screen.getByTestId('ops-row-setup:first-entry-shopify-location')
+    ).toHaveAttribute('data-status', 'verified');
+
+    expect(
+      within(
+        screen.getByTestId('ops-row-setup:first-entry-map')
+      ).getByRole('button', { name: /Map warehouse/ })
+    ).toBeVisible();
+
+    expect(
+      within(
+        screen.getByTestId('ops-row-setup:first-entry-count')
+      ).queryByRole('button', { name: 'Start opening count' })
+    ).not.toBeInTheDocument();
+
+    noExecution();
+  });
+
+  it('zones already ready + Shopify Location false→true raises Ready to count exactly once', async () => {
+    const h = await mount({
+      initial: true,
+      externalLocationMapped: false,
+      flags: {
+        [INTRO]: true,
+      },
+    });
+
+    // Physical mapping is already sufficient, but the combined prerequisite
+    // is still false because this warehouse is not mapped to Shopify yet.
+    await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
+
+    expect(isOpen()).toBe(false);
+    noHandoff();
+    noExecution();
+
+    expect(
+      (axiosInstance.post as jest.Mock).mock.calls.filter(
+        ([url]) => url === SEEN_URL,
+      ),
+    ).toHaveLength(0);
+
+    // Shopify Location completes last. Combined readiness now moves
+    // false → true even though zonesConfigured itself never changed.
+    await h.transitionLocationMapped(true);
+
+    await expectCoach();
+
+    expect(opens.filter(Boolean)).toHaveLength(1);
+
+    await waitFor(() =>
+      expect(h.client.getQueryData(FLAGS)).toMatchObject({
+        [SEEN]: true,
+      }),
+    );
+
+    expect(
+      (axiosInstance.post as jest.Mock).mock.calls.filter(
+        ([url]) => url === SEEN_URL,
+      ),
+    ).toHaveLength(1);
+
+    // Dismissal retires only the coach; it performs no opening-count work.
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Got it' })[0],
+    );
+    await tick();
+
+    noHandoff();
+    expect(isOpen()).toBe(true);
+    noExecution();
+
+    // A later false → true replay in the same mount must not raise or
+    // persist the handoff a second time.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Close Ops Console' }),
+    );
+    await tick(800);
+
+    await h.transitionLocationMapped(false);
+    await h.transitionLocationMapped(true);
+    await tick(800);
+
+    expect(isOpen()).toBe(false);
+    noHandoff();
+
+    expect(opens.filter(Boolean)).toHaveLength(1);
+
+    expect(
+      (axiosInstance.post as jest.Mock).mock.calls.filter(
+        ([url]) => url === SEEN_URL,
+      ),
+    ).toHaveLength(1);
+
+    noExecution();
+  });
+});
 
 describe('GH-1183 one-time canonical map→count handoff', () => {
   it('opens once on false→true, coaches Count, dismisses without execution, and preserves manual trigger', async () => {
@@ -216,7 +422,7 @@ describe('GH-1183 one-time canonical map→count handoff', () => {
     const h = await mount({ flags: {} }); await h.transition(true); noHandoff();
     await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
     expect(screen.getByTestId('ops-first-contact-spotlight')).toBeInTheDocument(); noHandoff();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Got it' })[0]);
+    fireEvent.click(within(screen.getByTestId('ops-first-contact-spotlight')).getByRole('button', { name: 'Dismiss' }));
     await expectCoach();
   });
   it('mature mode never arms a handoff', async () => {

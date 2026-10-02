@@ -164,6 +164,36 @@ function openingReconciliationRequired(modules: ReadinessResponse['modules']): b
   return typeof value === 'boolean' ? value : null;
 }
 
+/**
+ * GH-1179 — canonical wms.externalLocationMapped.
+ * Returns null when the signal is missing or not a boolean (unknown).
+ */
+function externalLocationMapped(modules: ReadinessResponse['modules']): boolean | null {
+  const value = modules
+    .find(m => m.moduleId === 'wms')
+    ?.signals?.find(s => s.name === 'wms.externalLocationMapped')
+    ?.value;
+  return typeof value === 'boolean' ? value : null;
+}
+
+/**
+ * GH-1179 — starting opening inventory requires canonical external location
+ * mapping; missing, unknown or false fails closed. Only the Start command is
+ * withheld: every already-started lifecycle action is left untouched.
+ */
+function gateOpeningStartOnMapping(item: ChecklistItem, mapped: boolean | null): ChecklistItem {
+  if (
+    mapped === true ||
+    item.action?.kind !== 'command' ||
+    item.action.command !== 'opening_inventory_start'
+  ) {
+    return item;
+  }
+  const gated: ChecklistItem = { ...item };
+  delete gated.action;
+  return gated;
+}
+
 function isProgressView(value: unknown): value is OpeningInventoryProgressView {
   const state = (value as OpeningInventoryProgressView | null | undefined)?.progress?.state;
   return typeof state === 'string';
@@ -268,35 +298,55 @@ export function buildOpeningInventoryItem(
  * map-zones action in the backend readiness manifest.
  */
 export const MAP_WAREHOUSE_ROUTE = '/floor-planning?tab=setup&view=canvas';
+export const SHOPIFY_LOCATION_ROUTE = '/settings/warehouse';
 
+export const FIRST_ENTRY_SHOPIFY_LOCATION_KEY = 'first-entry-shopify-location';
 export const FIRST_ENTRY_MAP_KEY = 'first-entry-map';
 export const FIRST_ENTRY_COUNT_KEY = 'first-entry-count';
+
+export const FIRST_ENTRY_LOCATION_LOCKED_SUBTITLE =
+  'Choose your Shopify location first so LaSyncro knows where inventory updates belong.';
+
 export const FIRST_ENTRY_COUNT_LOCKED_SUBTITLE =
   'Map your warehouse first so LaSyncro knows which locations must be counted.';
 
 /**
- * GH-1165 — the dedicated two-step first-entry setup: map, then count. A
+ * GH-1179 — the dedicated first-entry setup: Shopify Location, map, then count. A
  * projection over the same canonical sources as the six-item checklist, which
  * stays unchanged beside it.
  *
- * Map basics is minimum readiness (wms.zonesConfigured). Count completion is
+ * Shopify Location mapping is the first prerequisite. Map basics remains minimum
+ * physical readiness (wms.zonesConfigured). Count completion is
  * wms/reconcile-inventory only. Until zones are configured the count row is
  * locked: no command, no navigation, so no start POST is reachable from it.
  * Once zones exist it reuses the GH-1156 lifecycle mapping verbatim.
  */
 export function buildFirstEntrySetupItems(
   zonesConfigured: boolean | null,
+  externalLocationMapped: boolean | null,
   openingReadinessComplete: boolean,
   view: OpeningInventoryProgressView | null,
   canStart: boolean,
   currentUserId: number | null = null,
 ): ChecklistItem[] {
+  const shopifyLocation: ChecklistItem = {
+    key: FIRST_ENTRY_SHOPIFY_LOCATION_KEY,
+    label: 'Choose Shopify location',
+    complete: externalLocationMapped === true,
+    subtitle: 'Tell LaSyncro which Shopify Location this warehouse represents.',
+    action: externalLocationMapped !== true && canStart
+      ? { kind: 'navigate', label: 'Choose location', route: SHOPIFY_LOCATION_ROUTE }
+      : undefined,
+  };
+
   const map: ChecklistItem = {
     key: FIRST_ENTRY_MAP_KEY,
     label: 'Map warehouse basics',
     complete: zonesConfigured === true,
     subtitle: 'Define where stock lives and work happens.',
-    action: { kind: 'navigate', label: 'Map warehouse', route: MAP_WAREHOUSE_ROUTE },
+    action: externalLocationMapped === true
+      ? { kind: 'navigate', label: 'Map warehouse', route: MAP_WAREHOUSE_ROUTE }
+      : undefined,
   };
 
   const countBase = { key: FIRST_ENTRY_COUNT_KEY, label: 'Count opening stock' };
@@ -304,13 +354,19 @@ export function buildFirstEntrySetupItems(
   if (openingReadinessComplete) {
     count = { ...countBase, complete: true };
   } else if (zonesConfigured !== true) {
-    count = { ...countBase, complete: false, subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE };
+    count = {
+      ...countBase,
+      complete: false,
+      subtitle: externalLocationMapped === true
+        ? FIRST_ENTRY_COUNT_LOCKED_SUBTITLE
+        : FIRST_ENTRY_LOCATION_LOCKED_SUBTITLE,
+    };
   } else {
     const lifecycle = buildOpeningInventoryItem(false, view, canStart, currentUserId);
     count = lifecycle ? { ...lifecycle, ...countBase } : { ...countBase, complete: false };
   }
 
-  return [map, count];
+  return [shopifyLocation, map, count];
 }
 
 /** Canonical completion of one readiness task; null when it is absent (unknown). */
@@ -422,14 +478,18 @@ export function useActivationChecklist() {
   // through map → count → review/cutover until readiness says reconciled.
   const reconcileTask = readiness.isSuccess ? taskComplete(modules, 'wms', 'reconcile-inventory') : null;
   const firstEntry = reconciliationRequired === true && reconcileTask === false;
+  const locationMapped = readiness.isSuccess ? externalLocationMapped(modules) : null;
   const firstEntryItems: ChecklistItem[] = firstEntry
     ? buildFirstEntrySetupItems(
         minimumMappingReady,
+        locationMapped,
         false,
         isProgressView(openingProgress.data) ? openingProgress.data : null,
         canStartOpeningInventory,
         currentUserId,
-      )
+      ).map(item => (item.key === FIRST_ENTRY_COUNT_KEY
+        ? gateOpeningStartOnMapping(item, locationMapped)
+        : item))
     : [];
 
   // GH-1156 — after an Opening Inventory command the canonical sources are
@@ -459,5 +519,6 @@ export function useActivationChecklist() {
     firstEntry,
     firstEntryItems,
     minimumMappingReady,
+    externalLocationMapped: locationMapped,
   };
 }

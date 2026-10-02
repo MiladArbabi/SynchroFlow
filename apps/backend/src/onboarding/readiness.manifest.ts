@@ -57,7 +57,11 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
       // applies at all. Exposure only: the task stays required: false and
       // FT1 gating is unchanged.
       'wms.openingInventoryReconciliationRequired',
-      'wms.openingInventoryReconciled'
+      'wms.openingInventoryReconciled',
+      // GH-1179: exposed so the SETUP assembler can gate starting opening
+      // inventory on external location mapping. Exposure only: no task or
+      // completion rule reads it.
+      'wms.externalLocationMapped'
     ],
     tasks: [
       {

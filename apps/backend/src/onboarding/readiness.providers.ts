@@ -241,6 +241,26 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
 
     const zonesConfigured = Number(zonesRow?.count ?? 0) > 0;
 
+    // GH-1179: platform-neutral external commerce location mapping, derived
+    // only from warehouses.external_location_id (never a provider call). Fails
+    // closed: true only when at least one warehouse is active and no active
+    // warehouse is unmapped (null or blank), matching the cutover guard.
+    const activeWarehouseRow = await db('warehouses')
+      .where({ shop_id: shopId, active: true })
+      .count<{ count: string }>('warehouse_id as count')
+      .first();
+    const unmappedWarehouseRow = await db('warehouses')
+      .where({ shop_id: shopId, active: true })
+      .where((qb) => {
+        qb.whereNull('external_location_id')
+          .orWhereRaw("btrim(external_location_id) = ''");
+      })
+      .count<{ count: string }>('warehouse_id as count')
+      .first();
+    const externalLocationMapped =
+      Number(activeWarehouseRow?.count ?? 0) > 0 &&
+      Number(unmappedWarehouseRow?.count ?? 0) === 0;
+
     const printedRow = await db('warehouse_locations')
       .where({ shop_id: shopId })
       .whereNotNull('last_printed_at')
@@ -319,6 +339,7 @@ export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
     return [
       { name: 'wms.enabled', value: enabled },
       { name: 'wms.zonesConfigured', value: zonesConfigured },
+      { name: 'wms.externalLocationMapped', value: externalLocationMapped },
       { name: 'wms.barcodesPrinted', value: barcodesPrinted },
       { name: 'wms.carrierConfigured', value: carrierConfigured },
       {
