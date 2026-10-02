@@ -30,6 +30,7 @@ jest.mock('api-src/services/shopify/shopifyClient.service', () => ({
 }));
 
 import crypto from 'crypto';
+import { knex as knexFactory } from 'knex';
 
 import {
   setTenantContext,
@@ -883,6 +884,30 @@ async function seedAdditionalTargets(
 
       return result;
     }
+  );
+}
+
+// D25 TEST-ONLY: bounded poll that OBSERVES catalog/lock state. The barrier is
+// the blocker's row lock; this loop never gates transactions on elapsed time.
+async function waitForD25<T>(
+  probe: () => Promise<T>,
+  label: string,
+  { tries = 400, intervalMs = 25 } = {}
+): Promise<NonNullable<T>> {
+  for (let i = 0; i < tries; i += 1) {
+    const value = await probe();
+
+    if (value) {
+      return value as NonNullable<T>;
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, intervalMs)
+    );
+  }
+
+  throw new Error(
+    `[GH1179_D25_TEST] waitFor timed out: ${label}`
   );
 }
 
@@ -2816,6 +2841,430 @@ describe(
         expect(
           state.generations
         ).toHaveLength(0);
+      }
+    );
+
+    it(
+      'D25 — T2 reads one consistent snapshot while physical truth changes concurrently',
+      async () => {
+        const create =
+          requireGenerationCreator();
+
+        const fixture =
+          await createFixture();
+
+        await makeCountedReady(
+          fixture,
+          3
+        );
+
+        const testDb =
+          String(process.env.PGDATABASE);
+
+        expect(testDb)
+          .toMatch(/^synchroflow_test_[A-Za-z0-9_]+$/);
+
+        // Independent coordinator: read-only catalog probes only. Uses the
+        // restricted runtime role so it can see the generation backend's
+        // query text in pg_stat_activity (same role).
+        const coord = knexFactory({
+          client: 'pg',
+          connection: {
+            host: process.env.PGHOST,
+            port: Number(process.env.PGPORT),
+            user: process.env.PGUSER,
+            password:
+              String(process.env.PGPASSWORD || ''),
+            database: testDb,
+          },
+          pool: { min: 1, max: 1 },
+        });
+
+        let releaseBlocker: () => void =
+          () => undefined;
+
+        const blockerReleased =
+          new Promise<void>((resolve) => {
+            releaseBlocker = resolve;
+          });
+
+        let markBlockerLocked:
+          (pid: number) => void =
+            () => undefined;
+
+        const blockerLocked =
+          new Promise<number>((resolve) => {
+            markBlockerLocked = resolve;
+          });
+
+        let blockerPromise:
+          Promise<void> | null = null;
+
+        let generationOutcome:
+          Promise<
+            | { ok: true; value: any }
+            | { ok: false; error: unknown }
+          > | null = null;
+
+        let generationSettled = false;
+        let bodyOk = false;
+
+        const readerCalls: Array<{
+          shopId: number;
+          variables: unknown;
+        }> = [];
+
+        let outcome:
+          | { ok: true; value: any }
+          | { ok: false; error: unknown }
+          | undefined;
+
+        let evidence: Record<string, unknown> = {};
+        let leakedLocks: unknown[] = [];
+
+        try {
+          const who =
+            await coord.raw(
+              'SELECT current_database() AS db'
+            );
+
+          expect(who.rows[0].db).toBe(testDb);
+
+          // 1. Blocker: tenant-correct transaction holding a row-level
+          //    UPDATE lock on the fixture's Shopify identity row.
+          blockerPromise = withTenant(
+            fixture.shopId,
+            async (trx) => {
+              const pidResult =
+                await trx.raw(
+                  'SELECT pg_backend_pid() AS pid'
+                );
+
+              const locked =
+                await trx(
+                  'external_product_identity_map'
+                )
+                  .where({
+                    shop_id:
+                      fixture.shopId,
+
+                    lasyncro_variant_id:
+                      fixture.variantId,
+
+                    platform:
+                      'shopify',
+                  })
+                  .forUpdate()
+                  .select('id');
+
+              if (locked.length !== 1) {
+                throw new Error(
+                  '[GH1179_D25_TEST] fixture identity row not locked'
+                );
+              }
+
+              markBlockerLocked(
+                Number(pidResult.rows[0].pid)
+              );
+
+              await blockerReleased;
+            }
+          );
+
+          const blockerPid =
+            await Promise.race([
+              blockerLocked,
+              blockerPromise.then(() => {
+                throw new Error(
+                  '[GH1179_D25_TEST] blocker ended before locking'
+                );
+              }),
+            ]);
+
+          // 2. Start generation asynchronously with the mocked provider.
+          generationOutcome = create(
+            {
+              shopId:
+                fixture.shopId,
+
+              actingUserId:
+                fixture.ownerId,
+
+              acceptPhysicalTruth:
+                true,
+            },
+            {
+              readLocationPage:
+                pageReader(
+                  [
+                    providerPage({
+                      fixture,
+
+                      levels: [
+                        {
+                          itemGid:
+                            fixture.itemGid,
+
+                          variantGid:
+                            fixture.variantGid,
+
+                          onHand:
+                            8,
+                        },
+                      ],
+                    }),
+                  ],
+                  readerCalls
+                ),
+            }
+          ).then(
+            (value: any) => {
+              generationSettled = true;
+              return { ok: true as const, value };
+            },
+            (error: unknown) => {
+              generationSettled = true;
+              return { ok: false as const, error };
+            }
+          );
+
+          // 3. PROVE T2 is blocked by the blocker while already open.
+          const blocked =
+            await waitForD25(
+              async () => {
+                if (generationSettled) {
+                  throw new Error(
+                    '[GH1179_D25_TEST] generation settled before T2 was observed blocked: ' +
+                      JSON.stringify(
+                        await generationOutcome
+                      )
+                  );
+                }
+
+                const result =
+                  await coord.raw(
+                    `SELECT a.pid,
+                            a.state,
+                            a.wait_event_type,
+                            a.wait_event,
+                            a.query,
+                            pg_blocking_pids(a.pid) AS blockers,
+                            EXISTS (
+                              SELECT 1 FROM pg_locks l
+                               WHERE l.pid = a.pid
+                                 AND l.locktype = 'advisory'
+                                 AND l.granted
+                            ) AS holds_advisory_lock,
+                            EXISTS (
+                              SELECT 1 FROM pg_locks l
+                               WHERE l.pid = a.pid
+                                 AND l.locktype = 'tuple'
+                                 AND l.relation =
+                                   'external_product_identity_map'::regclass
+                            ) AS holds_identity_tuple_lock
+                       FROM pg_stat_activity a
+                      WHERE a.datname = current_database()
+                        AND a.backend_type = 'client backend'
+                        AND a.pid <> ?
+                        AND ? = ANY(pg_blocking_pids(a.pid))
+                      LIMIT 1`,
+                    [blockerPid, blockerPid]
+                  );
+
+                return result.rows[0] ?? null;
+              },
+              'generation T2 blocked by identity-row blocker'
+            );
+
+          expect(readerCalls).toHaveLength(1);
+          expect(blocked.wait_event_type).toBe('Lock');
+          expect(blocked.holds_advisory_lock).toBe(true);
+          expect(String(blocked.query))
+            .toMatch(/external_product_identity_map/);
+          expect(String(blocked.query))
+            .toMatch(/for share/i);
+
+          const t2Pid = Number(blocked.pid);
+
+          // 4. Concurrent committed truth mutation 3 -> 4 while T2 is open.
+          const truthBefore =
+            await withTenant(
+              fixture.shopId,
+              (trx) =>
+                trx('inventory_truth')
+                  .where({
+                    shop_id:
+                      fixture.shopId,
+
+                    lasyncro_variant_id:
+                      fixture.variantId,
+
+                    location_code:
+                      fixture.a1,
+                  })
+                  .first('on_hand_quantity')
+            );
+
+          await seedTruth(
+            fixture,
+            {
+              quantity:
+                4,
+            }
+          );
+
+          const truthCommitted =
+            await withTenant(
+              fixture.shopId,
+              (trx) =>
+                trx('inventory_truth')
+                  .where({
+                    shop_id:
+                      fixture.shopId,
+
+                    lasyncro_variant_id:
+                      fixture.variantId,
+
+                    location_code:
+                      fixture.a1,
+                  })
+                  .first('on_hand_quantity')
+            );
+
+          expect(
+            Number(truthBefore.on_hand_quantity)
+          ).toBe(3);
+
+          expect(
+            Number(truthCommitted.on_hand_quantity)
+          ).toBe(4);
+
+          // T2 is STILL blocked after the mutation committed.
+          const stillBlocked =
+            await coord.raw(
+              `SELECT ? = ANY(pg_blocking_pids(?)) AS blocked`,
+              [blockerPid, t2Pid]
+            );
+
+          expect(stillBlocked.rows[0].blocked).toBe(true);
+          expect(generationSettled).toBe(false);
+
+          evidence = {
+            blockerPid,
+            t2Pid,
+            blockers: blocked.blockers,
+            state: blocked.state,
+            waitEventType: blocked.wait_event_type,
+            waitEvent: blocked.wait_event,
+            holdsAdvisoryLock:
+              blocked.holds_advisory_lock,
+            holdsIdentityTupleLock:
+              blocked.holds_identity_tuple_lock,
+            query:
+              String(blocked.query)
+                .replace(/\s+/g, ' ')
+                .slice(0, 400),
+            truthBefore:
+              Number(truthBefore.on_hand_quantity),
+            truthCommitted:
+              Number(truthCommitted.on_hand_quantity),
+            t2StillBlockedAfterCommit:
+              stillBlocked.rows[0].blocked,
+          };
+
+          // 5. Release the blocker, then let generation finish.
+          releaseBlocker();
+          await blockerPromise;
+
+          outcome = await generationOutcome;
+          bodyOk = true;
+        } finally {
+          releaseBlocker();
+
+          if (blockerPromise) {
+            await blockerPromise.catch(
+              () => undefined
+            );
+          }
+
+          if (generationOutcome) {
+            await generationOutcome;
+          }
+
+          try {
+            const residual =
+              await coord.raw(
+                `SELECT pid, locktype, mode, granted
+                   FROM pg_locks
+                  WHERE relation =
+                          'external_product_identity_map'::regclass
+                    AND pid <> pg_backend_pid()`
+              );
+
+            leakedLocks = residual.rows;
+          } finally {
+            await coord.destroy();
+          }
+
+          // eslint-disable-next-line no-console
+          console.info(
+            '[GH1179_D25_OBSERVED]',
+            JSON.stringify({
+              ...evidence,
+              leakedLocks,
+            })
+          );
+
+          if (bodyOk && leakedLocks.length > 0) {
+            throw new Error(
+              `[GH1179_D25_TEST] leaked identity locks: ${JSON.stringify(leakedLocks)}`
+            );
+          }
+        }
+
+        if (!outcome || !outcome.ok) {
+          throw (outcome as any)?.error ??
+            new Error(
+              '[GH1179_D25_TEST] generation did not settle'
+            );
+        }
+
+        const state =
+          await generationState(
+            fixture.shopId
+          );
+
+        expect(
+          state.entries
+        ).toHaveLength(1);
+
+        expect(
+          state.entries[0]
+            .target_quantity
+        ).toBe(3);
+
+        expect(
+          state.entries[0]
+            .observed_on_hand_quantity
+        ).toBe(8);
+
+        const variables =
+          parseJson(
+            state.batches[0]
+              .canonical_variables
+          );
+
+        expect(
+          variables
+            .input
+            .quantities[0]
+        ).toMatchObject({
+          quantity:
+            3,
+
+          changeFromQuantity:
+            8,
+        });
       }
     );
 

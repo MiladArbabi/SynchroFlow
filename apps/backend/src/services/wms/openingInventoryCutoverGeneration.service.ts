@@ -1685,6 +1685,12 @@ export async function createOpeningInventoryCutoverGeneration(
       }
 
       return created;
+    },
+    // T2 reads all local reconciliation state from one snapshot: truth
+    // committed after T2 begins must not leak into its later target read.
+    {
+      isolationLevel:
+        'repeatable read',
     }
   );
 }

@@ -205,7 +205,8 @@ export async function setTenantContext(
 
 export async function withTenant<T>(
   shopId: number,
-  fn: (trx: Knex.Transaction) => Promise<T>
+  fn: (trx: Knex.Transaction) => Promise<T>,
+  transactionConfig?: Knex.TransactionConfig
 ): Promise<T> {
   assertValidShopId(shopId);
 
@@ -228,7 +229,7 @@ export async function withTenant<T>(
     await setTenantContext(trx, shopId);
 
     return fn(trx);
-    })
+    }, transactionConfig)
   );
 }
 
