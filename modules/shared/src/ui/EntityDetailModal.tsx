@@ -60,6 +60,20 @@ export interface EntityDetailModalProps {
   footerActions?: ReactNode;
   /** Default 'lg' — override only with a specific reason */
   maxWidth?: 'md' | 'lg' | 'xl';
+  /**
+   * PARENT NAVIGATION (BATCH-DETAIL-HANDOFF-01)
+   * --------------------------------------------
+   * Optional generic back affordance for an entity reached from another
+   * entity's detail (e.g. Order Detail opened from Batch Detail). Renders
+   * "← {label}" above the title in the header's identity column. It only
+   * calls onNavigate — never onClose — so returning to the parent and closing
+   * the whole inspection flow stay separate. The consumer owns the label and
+   * what "parent" means; the shell has no entity-specific knowledge.
+   */
+  parentNavigation?: {
+    label: ReactNode;
+    onNavigate: () => void;
+  };
 }
 
 export function EntityDetailModal({
@@ -73,6 +87,7 @@ export function EntityDetailModal({
   children,
   footerActions,
   maxWidth = 'lg',
+  parentNavigation,
 }: EntityDetailModalProps) {
   const open = entityId !== null;
 
@@ -114,6 +129,36 @@ export function EntityDetailModal({
         }}
       >
         <Box sx={{ minWidth: 0 }}>
+          {parentNavigation && (
+            <Box
+              component="button"
+              type="button"
+              onClick={parentNavigation.onNavigate}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
+                mb: 0.75,
+                p: 0,
+                border: 'none',
+                bgcolor: 'transparent',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                fontWeight: 500,
+                color: 'var(--ink-3)',
+                cursor: 'pointer',
+                '&:hover': { color: 'var(--accent)' },
+                '&:focus-visible': {
+                  outline: '2px solid var(--accent)',
+                  outlineOffset: '2px',
+                  borderRadius: '4px',
+                },
+              }}
+            >
+              <Box component="span" aria-hidden="true">←</Box>
+              {parentNavigation.label}
+            </Box>
+          )}
           <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
             {title}
           </Typography>
@@ -125,7 +170,7 @@ export function EntityDetailModal({
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, ml: 2 }}>
           {headerActions}
-          <IconButton onClick={onClose} size="small" sx={{ color: 'var(--ink-4)' }}>
+          <IconButton aria-label="Close" onClick={onClose} size="small" sx={{ color: 'var(--ink-4)' }}>
             <X size={18} />
           </IconButton>
         </Box>

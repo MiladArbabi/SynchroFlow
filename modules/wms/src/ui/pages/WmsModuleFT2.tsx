@@ -488,14 +488,13 @@ const STATUS_LABELS: Record<string, {
 
 const BatchCard = memo(function BatchCard({
   batch,
-  onClaim,
-  onContinuePick,
+  onOpenPick,
   gridLocations,
   onFetchLineItems,
 }: {
   batch: WmsBatch;
-  onClaim: (batchId: string) => void;
-  onContinuePick: (batchId: string) => void;
+  /** Opens the Pick Brief; the Brief's Start Picking owns any claim. */
+  onOpenPick: (batchId: string) => void;
   gridLocations?: WarehouseLocation[];
   onFetchLineItems?: (batchId: string) => Promise<{ location_code: string }[]>;
 }) {
@@ -531,15 +530,14 @@ const BatchCard = memo(function BatchCard({
   const isPickComplete = batch.status === 'pick_complete';
   const isPacking      = batch.status === 'packing';
 
-  const ctaLabel = isPending ? 'Claim & pick →'
+  const ctaLabel = isPending ? 'Open pick →'
     : isPicking      ? 'Continue picking →'
     : isPickComplete ? 'Ready to pack →'
     : isPacking      ? 'Continue packing →'
     : null;
 
   const handleCta = () => {
-    if (isPending) onClaim(batch.pick_batch_id);
-    else if (isPicking) onContinuePick(batch.pick_batch_id);
+    if (isPending || isPicking) onOpenPick(batch.pick_batch_id);
   };
 
   return (
@@ -1786,7 +1784,7 @@ function WmsModuleFT2Inner({
 
   useEffect(() => {
     if (pendingPickBatchId) {
-      enterPickSession(pendingPickBatchId, false).catch(() => {});
+      enterPickSession(pendingPickBatchId).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1893,11 +1891,12 @@ function WmsModuleFT2Inner({
     }
   };
 
-  const enterPickSession = async (batchId: string, claim: boolean) => {
+  // BATCH-DETAIL-HANDOFF-01 — opening pick work (Operations card or
+  // /wms?batchId= restore) only enters the Pick Brief. It never claims.
+  const enterPickSession = async (batchId: string) => {
     setLoadingSession(true);
     setSessionError(null);
     try {
-      if (claim) await onClaimBatch(batchId);
       const items = await onFetchLineItems(batchId);
       setActiveSession({ type: 'pick', batchId, lineItems: items });
       onPickSessionEnter?.(batchId);
@@ -1906,6 +1905,17 @@ function WmsModuleFT2Inner({
     } finally {
       setLoadingSession(false);
     }
+  };
+
+  // The Brief's Start Picking is the claim boundary. Whether a claim is needed
+  // derives from canonical WmsData batch.status: an already-picking batch
+  // continues without a duplicate claim; anything else (pending, or not yet
+  // in the loaded data) goes through the canonical claim, which the backend
+  // arbitrates. A rejection propagates so the Brief stays put and can retry.
+  const startPickBatch = async (batchId: string) => {
+    const status = batches.find((batch) => batch.pick_batch_id === batchId)?.status;
+    if (status === 'picking') return;
+    await onClaimBatch(batchId);
   };
 
   const [packScanLoading, setPackScanLoading] = useState(false);
@@ -1991,6 +2001,7 @@ function WmsModuleFT2Inner({
         onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
         onReportException={(params) => onReportException(activeSession.batchId, params)}
         onPickComplete={() => onPickComplete(activeSession.batchId)}
+        onStartPicking={() => startPickBatch(activeSession.batchId)}
       />
     );
   }
@@ -2983,8 +2994,7 @@ function WmsModuleFT2Inner({
         <BatchCard
           key={batch.pick_batch_id}
           batch={batch}
-          onClaim={(id) => void enterPickSession(id, true)}
-          onContinuePick={(id) => void enterPickSession(id, false)}
+          onOpenPick={(id) => void enterPickSession(id)}
           gridLocations={gridLocations}
           onFetchLineItems={onFetchLineItems}
         />
