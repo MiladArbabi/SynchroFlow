@@ -78,6 +78,7 @@ import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.servic
 import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
 import { STOW_TASK_OPEN_STATUSES } from '@lasyncro/shared';
 import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
+import { pickableLocationCondition } from '../../services/inventory/pickableLocation.js';
 import {
   persistBillingUsageThresholdAlert,
   type BillingUsageNotificationIntent,
@@ -3867,6 +3868,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // GH-1202: lock the task row before deciding it is still resolvable, so a
+      // resolution that waited behind a concurrent one re-checks the committed
+      // status instead of acting on a stale read.
       const task = await trx('problem_center_tasks')
         .where({ problem_task_id: taskId, shop_id: shopId })
         .select(
@@ -3878,10 +3882,42 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           'exception_type',
           'problem_bin_location'
         )
+        .forUpdate()
         .first();
 
       if (!task) throw new Error('TASK_NOT_FOUND');
       if (task.status === 'resolved') throw new Error('TASK_ALREADY_RESOLVED');
+
+      // GH-1202: the physical unit these tasks represent is OUTSIDE
+      // inventory_truth — a cancelled pick already left truth at Pick, and a
+      // repackaging return was never credited at intake. Their resolution must
+      // never select, debit or relocate an existing stock row.
+      const outsideTruth =
+        (task.exception_type === 'order_cancelled' && task.source === 'pick') ||
+        (task.exception_type === 'repackaging_required' && task.source === 'returns');
+
+      // Quarantine places that unit into the problem bin. Validate the
+      // destination before any write: it must be an existing location that is
+      // not pickable, so the credit is never an orphan and never releasable.
+      let quarantineBin: string | null = null;
+      if (outsideTruth && resolution_action === 'quarantine') {
+        if (!task.problem_bin_location) {
+          throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+        }
+
+        const location = await trx('warehouse_locations as wl')
+          .where({ 'wl.shop_id': shopId, 'wl.location_code': task.problem_bin_location })
+          .first(
+            'wl.location_code',
+            trx.raw('(?) AS pickable', [pickableLocationCondition(trx)])
+          );
+
+        if (!location || location.pickable) {
+          throw new Error('PROBLEM_BIN_INVALID');
+        }
+
+        quarantineBin = task.problem_bin_location;
+      }
 
       // ── Determine final status from resolution_action ──────
       const statusMap: Record<string, string> = {
@@ -3907,7 +3943,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // ── CASCADE: inventory_movements for write-off actions ──
       // discard = physical damage (product destroyed)
       // write_off = shrinkage (missing, unaccounted)
-      if (resolution_action === 'discard' || resolution_action === 'write_off') {
+      // GH-1202: an outside-truth unit's disposal changes no physical quantity.
+      // No movement, no truth write — the task resolution above is the record.
+      if (
+        !outsideTruth &&
+        (resolution_action === 'discard' || resolution_action === 'write_off')
+      ) {
         const movementType = resolution_action === 'discard' ? 'damage' : 'shrinkage';
 
         // INV-BLOCK-15: a write-off must own one physical stock location.
@@ -3982,8 +4023,73 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         await enqueueShopSnapshotJob(trx, shopId);
       }
 
+      // ── GH-1202: outside-truth quarantine — credit-only placement ─
+      // The unit was outside truth, so it is credited into the validated
+      // problem bin (location_transfer, as cancelled-pick recovery does)
+      // rather than moved from any existing stock row. The movement's
+      // shop/reference uniqueness is the idempotency backstop: truth is
+      // credited only when the movement was actually inserted.
+      if (quarantineBin) {
+        const insertedMovements = await trx('inventory_movements')
+          .insert({
+            lasyncro_inventory_movement_id: trx.raw('gen_random_uuid()'),
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            movement_type: 'location_transfer',
+            quantity_delta: task.quantity,
+            reference_type: 'problem_center_task',
+            reference_id: taskId,
+            location_code: quarantineBin,
+            shop_id: shopId,
+            platform: 'wms',
+            operator_id: userId,
+            triggered_by: 'problem_center',
+            occurred_at: new Date(),
+          })
+          .onConflict([
+            'shop_id',
+            'reference_type',
+            'reference_id',
+            'lasyncro_variant_id',
+            'location_code',
+            'movement_type',
+          ])
+          .ignore()
+          .returning('lasyncro_inventory_movement_id');
+
+        if (insertedMovements.length === 1) {
+          const now = new Date();
+          await trx('inventory_truth')
+            .insert({
+              shop_id: shopId,
+              lasyncro_variant_id: task.lasyncro_variant_id,
+              location_code: quarantineBin,
+              on_hand_quantity: task.quantity,
+              reserved_quantity: 0,
+              committed_quantity: 0,
+              available_quantity: task.quantity,
+              last_evaluated_at: now,
+            })
+            .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+            .merge({
+              on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [task.quantity]),
+              available_quantity: trx.raw('inventory_truth.available_quantity + ?', [task.quantity]),
+              last_evaluated_at: now,
+              updated_at: now,
+            });
+        }
+
+        console.info('[PROBLEM_CENTER_QUARANTINE_CREDIT]', {
+          problem_task_id: taskId,
+          variant_id: task.lasyncro_variant_id,
+          quantity: task.quantity,
+          problem_bin: quarantineBin,
+          credited: insertedMovements.length === 1,
+          shopId,
+        });
+      }
+
       // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─
-      if (resolution_action === 'quarantine') {
+      if (!outsideTruth && resolution_action === 'quarantine') {
         if (!task.problem_bin_location) {
           throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
         }
@@ -4031,11 +4137,16 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // left inventory_truth via the pick sale. Its recovery must therefore use the
       // dedicated order_cancelled_mid_pick stow trigger so confirmStow can credit the
       // destination without inventing a debit from PROBLEM.
+      // GH-1202: a repackaging return was never credited to the problem bin, so
+      // its recovery is the credit-only return_restock placement, not a
+      // problem_center transfer that would debit problem-bin truth.
       if (resolution_action === 're_stow') {
         const stowTrigger =
-          task.exception_type === 'order_cancelled'
+          task.exception_type === 'order_cancelled' && task.source === 'pick'
             ? 'order_cancelled_mid_pick'
-            : 'problem_center';
+            : task.exception_type === 'repackaging_required' && task.source === 'returns'
+              ? 'return_restock'
+              : 'problem_center';
 
         await trx('stow_tasks').insert({
           shop_id: shopId,
@@ -4151,6 +4262,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     }
     if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
       return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
+    }
+    if (message === 'PROBLEM_BIN_INVALID') {
+      return res.status(409).json({ error: 'Problem bin is not a valid quarantine location' });
     }
     console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Failed to resolve problem task: ${message}` });
