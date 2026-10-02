@@ -2175,7 +2175,7 @@ function WmsModuleFT2Inner({
   // requested session resolves, then render either the Pick Brief or an
   // explicit target-specific failure. Navigation/restoration remains
   // non-mutating; Start Picking is still the claim boundary.
-  if (pendingPickBatchId && activeSession?.type !== 'pick') {
+  if (pendingPickBatchId) {
     if (sessionError) {
       return (
         <Box
