@@ -21,7 +21,7 @@
  * Pending vs picking derives from canonical WmsData batch.status.
  */
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import WmsModuleFT2 from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 
@@ -126,6 +126,51 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+function deferredValue<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
+/**
+ * Records DOM nodes committed during render/effect flushing.
+ *
+ * This mirrors the already-ratified Counting first-paint regression strategy:
+ * eventual DOM is insufficient because the production defect is a transient
+ * ordinary-WMS frame before the requested Brief resolves.
+ */
+function renderRecordingCommits(props: Record<string, unknown>) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const observer = new MutationObserver(() => {});
+  observer.observe(container, { childList: true, subtree: true });
+
+  const result = render(<WmsModuleFT2 {...(props as any)} />, { container });
+
+  const inserted = observer
+    .takeRecords()
+    .flatMap((record) => Array.from(record.addedNodes))
+    .filter((node): node is HTMLElement => node instanceof HTMLElement);
+
+  observer.disconnect();
+
+  return { ...result, inserted };
+}
+
+function containsOrdinaryWarehouseBody(root: HTMLElement): boolean {
+  return (
+    within(root).queryByText('Warehouse', { exact: true }) !== null ||
+    (root.textContent ?? '').includes('Work waiting to be done.')
+  );
+}
+
 const startPicking = () => screen.findByRole('button', { name: /start picking/i });
 const locationScan = () => screen.queryByPlaceholderText(/scan bin barcode/i);
 
@@ -147,6 +192,76 @@ function batchCardAction(batchId: string): HTMLElement {
 afterEach(() => jest.clearAllMocks());
 
 describe('BATCH-DETAIL-HANDOFF-01 — Pick Brief claim boundary', () => {
+  it('PICK-HANDOFF-FIRST-PAINT-01 — targeted Pick restoration protects first paint until the Brief resolves', async () => {
+    const load = deferredValue<typeof lineItems>();
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onFetchLineItems: jest.fn(() => load.promise),
+    });
+
+    const { inserted } = renderRecordingCommits(props);
+
+    // The URL already names the intended session. Before resolution, the
+    // canonical Counting precedent requires a neutral protected hold rather
+    // than allowing ordinary Warehouse / Operations content to paint.
+    expect(
+      screen.getByRole('status', { name: 'Loading pick session' }),
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText('Warehouse', { exact: true })).not.toBeInTheDocument();
+
+    expect(
+      inserted.some((node) => containsOrdinaryWarehouseBody(node)),
+    ).toBe(false);
+
+    // Restoration/navigation is still non-mutating.
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      load.resolve(lineItems);
+      await load.promise;
+    });
+
+    expect(await startPicking()).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Loading pick session' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Warehouse', { exact: true })).not.toBeInTheDocument();
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+  });
+
+  it('PICK-HANDOFF-FIRST-PAINT-02 — failed targeted Pick resolution holds until an explicit error without claiming', async () => {
+    const load = deferredValue<typeof lineItems>();
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onFetchLineItems: jest.fn(() => load.promise),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+
+    expect(
+      screen.getByRole('status', { name: 'Loading pick session' }),
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText('Warehouse', { exact: true })).not.toBeInTheDocument();
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      load.reject(new Error('Pick session unavailable'));
+      await load.promise.catch(() => undefined);
+    });
+
+    expect(
+      await screen.findByText('Pick session unavailable'),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole('status', { name: 'Loading pick session' }),
+    ).not.toBeInTheDocument();
+
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+  });
+
   it('PICK-BRIEF-CLAIM-01 — pendingPickBatchId restores the exact pending Pick Brief without claiming', async () => {
     const props = baseProps({ pendingPickBatchId: PENDING_ID });
 

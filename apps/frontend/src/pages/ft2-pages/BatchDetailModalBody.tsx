@@ -145,7 +145,7 @@ function SummaryMetric({
         border: '1px solid var(--rule)',
         borderRadius: '8px',
         px: 1.25,
-        py: 1,
+        py: 0.75,
       }}
     >
       <Typography
@@ -196,7 +196,7 @@ function Section({
           alignItems: 'baseline',
           justifyContent: 'space-between',
           gap: 2,
-          mb: 1,
+          mb: 0.75,
         }}
       >
         <Typography
@@ -293,7 +293,7 @@ function CurrentWorkContent({ batch }: { batch: PickBatch }) {
 }
 
 const SECTION_DIVIDER_SX = {
-  pt: 1.25,
+  pt: 1,
   borderTop: '1px solid var(--rule)',
 } as const;
 
@@ -357,7 +357,7 @@ export function BatchDetailModalBody({
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 2,
+        gap: 1.25,
       }}
     >
       {/* STAGE */}
@@ -462,7 +462,7 @@ export function BatchDetailModalBody({
             type="button"
             onClick={() => navigate(execution.to)}
             sx={{
-              mt: 1.5,
+              mt: 1,
               display: 'inline-flex',
               alignItems: 'center',
               px: 1.25,
@@ -504,7 +504,7 @@ export function BatchDetailModalBody({
         </Typography>
         <Typography
           sx={{
-            mb: 1,
+            mb: 0.5,
             fontSize: 11,
             fontWeight: 300,
             color: 'var(--ink-4)',
@@ -548,7 +548,7 @@ export function BatchDetailModalBody({
           focusedBins.length > 0 && (
             <Box
               sx={{
-                height: 205,
+                height: 150,
                 border: '1px solid var(--rule)',
                 borderRadius: '8px',
                 overflow: 'hidden',
@@ -581,7 +581,7 @@ export function BatchDetailModalBody({
           !spatialLoading &&
           !floorPlanning.isError &&
           locationCodes.length > 0 && (
-          <Box sx={{ mt: 1.25, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+          <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             {locationCodes.map((code) => (
               <Box
                 key={code}

@@ -598,13 +598,23 @@ describe('GH-1058 — BatchDetailModalBody', () => {
     expect(screen.getByRole('button', { name: /View order #17000000000006/i })).toBeInTheDocument();
   });
 
-  it('keeps the pick footprint map compact', () => {
+  it('BATCH-UX-11 — keeps the canonical desktop Pick footprint inside the scroll-free density budget', () => {
     const source = fs.readFileSync(
       'apps/frontend/src/pages/ft2-pages/BatchDetailModalBody.tsx',
       'utf8',
     );
 
-    expect(source).toContain('height: 205');
+    const footprintHeight = source.match(
+      /focusedBins\.length > 0[\s\S]*?height:\s*(\d+),/,
+    );
+
+    expect(footprintHeight).not.toBeNull();
+
+    // BATCH-UX-11 — normal desktop Entity Detail should fit canonical
+    // reviewer-sized data without avoidable internal scrolling. The map is
+    // supporting spatial context, so it must stay inside this compact budget.
+    // Live browser remains the authority for actual scroll/no-scroll.
+    expect(Number(footprintHeight![1])).toBeLessThanOrEqual(160);
     expect(source).not.toMatch(/\bheight:\s*(3\d\d|[4-9]\d\d)\b/);
     expect(source).not.toMatch(/\bminHeight:\s*(3\d\d|[4-9]\d\d)\b/);
   });

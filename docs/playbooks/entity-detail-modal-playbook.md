@@ -16,6 +16,51 @@ Props: `entityId` (drives open state), `onClose`, `title`, `subtitle`, `headerAc
 
 **Each of the three consumers below supplies its own data-fetching and content. The shell has zero entity-specific logic.**
 
+
+### 1.1 Viewport / overflow contract — ratified 2026-10-02
+
+Entity Detail is an inspection surface, not a document reader.
+
+**Normal desktop contract**
+
+For canonical merchant data at a normal desktop viewport, Entity Detail
+consumers should avoid internal vertical scrolling as far as reasonably
+possible.
+
+Consumers must first prefer:
+
+- compact information density;
+- reduced decorative vertical space;
+- responsive reflow;
+- compact spatial visualizations;
+- concise fact rails;
+- dense repeated rows;
+- removal of redundant prose.
+
+Do **not** achieve a scroll-free appearance by clipping content or applying
+`overflow: hidden` to content that can exceed the available height.
+
+**Fallback contract**
+
+Body scrolling remains an accessibility and resilience fallback when:
+
+- viewport height is genuinely constrained;
+- content volume is unusually large;
+- localization / accessibility sizing increases content height;
+- the complete information cannot reasonably fit without harming usability.
+
+Header identity and footer actions should remain stable framing regions where
+the shell supports them.
+
+**Acceptance**
+
+For a canonical reviewer-sized desktop fixture, browser certification should
+explicitly check that the modal does not introduce an avoidable internal
+vertical scrollbar.
+
+When scrolling is required at constrained heights, all content and actions must
+remain reachable.
+
 ---
 
 ## 2. Orders — ✅ done (2026-06-28)

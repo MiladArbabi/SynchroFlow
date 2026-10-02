@@ -2164,6 +2164,57 @@ function WmsModuleFT2Inner({
     );
   }
 
+  // BATCH-DETAIL-HANDOFF-01 — protected Pick URL first paint.
+  //
+  // A targeted ?batchId= URL already declares which workflow the merchant
+  // intends to enter. enterPickSession() resolves from a passive effect, so
+  // without this synchronous render guard the ordinary Warehouse body can
+  // commit for one frame before the Pick Brief exists.
+  //
+  // Match the existing Counting precedent: hold the ordinary body while the
+  // requested session resolves, then render either the Pick Brief or an
+  // explicit target-specific failure. Navigation/restoration remains
+  // non-mutating; Start Picking is still the claim boundary.
+  if (pendingPickBatchId && activeSession?.type !== 'pick') {
+    if (sessionError) {
+      return (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            px: 2,
+            py: 8,
+          }}
+        >
+          <Alert
+            severity="error"
+            sx={{
+              width: '100%',
+              maxWidth: 560,
+              borderRadius: '10px',
+            }}
+          >
+            {sessionError}
+          </Alert>
+        </Box>
+      );
+    }
+
+    return (
+      <Box
+        role="status"
+        aria-label="Loading pick session"
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          py: 8,
+        }}
+      >
+        <CircularProgress size={24} />
+      </Box>
+    );
+  }
+
   // GH-1188 — protected count mode begins at the Brief. While a focused count
   // URL is still resolving (task read pending, or a usable task whose session
   // the resolution effect has not committed yet) the ordinary Warehouse body
