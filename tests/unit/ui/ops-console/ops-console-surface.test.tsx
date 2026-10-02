@@ -2564,14 +2564,25 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
   const originalUseQuery = rq.useQuery;
 
   /** First-entry hook output built by the real canonical projection. */
-  function firstEntryChecklist(zonesConfigured: boolean, state = 'not_started', canStart = true) {
+  function firstEntryChecklist(
+    zonesConfigured: boolean,
+    state = 'not_started',
+    canStart = true,
+    externalLocationMapped = false,
+  ) {
     mockUseActivationChecklist.mockReturnValue({
       items: [...SETUP_ITEMS, buildOpeningInventoryItem(false, view(state), canStart)],
       completedCount: 1, allComplete: false, isLoading: false, isError: false,
       refreshOpeningInventory: jest.fn().mockResolvedValue(undefined),
       currentUserId: 7,
       firstEntry: true,
-      firstEntryItems: buildFirstEntrySetupItems(zonesConfigured, false, view(state), canStart),
+      firstEntryItems: buildFirstEntrySetupItems(
+        zonesConfigured,
+        externalLocationMapped,
+        false,
+        view(state),
+        canStart,
+      ),
     });
   }
 
@@ -2599,7 +2610,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
 
   // ── Composition ──
 
-  it('fresh (#1160) first-entry: SETUP expanded first, exactly map + count, then NOW — no inline intro copy', () => {
+  it('fresh (#1160) first-entry: SETUP expanded first, exactly location + map + count, then NOW — no inline intro copy', () => {
     firstEntryChecklist(false);
     const { container } = renderPanel({ alerts: [alert({ id: 'a1' })] });
 
@@ -2609,10 +2620,14 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
 
     const toggle = screen.getByTestId('ops-first-entry-setup-toggle');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle).toHaveTextContent('SETUP · 2 remaining');
+    expect(toggle).toHaveTextContent('SETUP · 3 remaining');
 
     const setupRows = [...container.querySelectorAll('[data-section="SETUP"]')].map((el) => el.getAttribute('data-testid'));
-    expect(setupRows).toEqual(['ops-row-setup:first-entry-map', 'ops-row-setup:first-entry-count']);
+    expect(setupRows).toEqual([
+      'ops-row-setup:first-entry-shopify-location',
+      'ops-row-setup:first-entry-map',
+      'ops-row-setup:first-entry-count',
+    ]);
     // The mature six-item SETUP is not rendered alongside it.
     expect(screen.queryByTestId('ops-setup-toggle')).not.toBeInTheDocument();
 
@@ -2626,20 +2641,32 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(document.activeElement).not.toBe(searchInput());
   });
 
-  it('zonesConfigured=false: Count opening stock is locked — no command, no POST reachable', () => {
+  it('Shopify location unmapped: Choose location is the only setup action; Map and Count stay gated', () => {
     firstEntryChecklist(false);
     renderPanel({ alerts: [] });
 
+    const location = screen.getByTestId(
+      'ops-row-setup:first-entry-shopify-location',
+    );
+    fireEvent.click(
+      within(location).getByRole('button', { name: /Choose location/ }),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse');
+
     const map = screen.getByTestId('ops-row-setup:first-entry-map');
-    fireEvent.click(within(map).getByRole('button', { name: /Map warehouse/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
+    expect(map).toHaveTextContent('Map warehouse basics');
+    expect(within(map).queryByRole('button')).toBeNull();
 
     const count = screen.getByTestId('ops-row-setup:first-entry-count');
     expect(count).toHaveTextContent('Count opening stock');
-    expect(count).toHaveTextContent('Map your warehouse first so LaSyncro knows which locations must be counted.');
-    expect(count).toHaveAttribute('data-status', 'available');
+    expect(count).toHaveTextContent(
+      'Choose your Shopify location first so LaSyncro knows where inventory updates belong.',
+    );
     expect(within(count).queryByRole('button')).toBeNull();
-    expect(postSpy.mock.calls.filter(([url]) => url === START_URL)).toHaveLength(0);
+
+    expect(
+      postSpy.mock.calls.filter(([url]) => url === START_URL),
+    ).toHaveLength(0);
   });
 
   it('zonesConfigured=true + not_started + owner: minimum basics satisfied and mapping remains reachable; Start opening count advances to explicit assignment without creating work', async () => {
@@ -2652,8 +2679,12 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
       },
     });
 
-    firstEntryChecklist(true);
+    firstEntryChecklist(true, 'not_started', true, true);
     renderPanel({ alerts: [] });
+
+    expect(
+      screen.getByTestId('ops-row-setup:first-entry-shopify-location')
+    ).toHaveAttribute('data-status', 'verified');
 
     expect(
       screen.getByTestId('ops-row-setup:first-entry-map')
@@ -2714,7 +2745,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
   });
 
   it('zonesConfigured=true + not_started + operator: no Start command', () => {
-    firstEntryChecklist(true, 'not_started', false);
+    firstEntryChecklist(true, 'not_started', false, true);
     renderPanel({ alerts: [] });
 
     const count = screen.getByTestId('ops-row-setup:first-entry-count');
@@ -2909,7 +2940,7 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     const coach = spotlight()!;
     expect(coach).toHaveTextContent('Start here');
     expect(coach).toHaveTextContent(
-      'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.');
+      'Ops Console shows what needs your attention and what to do next. First, tell LaSyncro which Shopify Location this warehouse represents.');
     expect(OPS_FIRST_CONTACT_SPOTLIGHT.title).toBe('Start here');
     expect(dimmer()).toBeInTheDocument();
     // Outside the rail: SETUP stays inline in the rail, never inside the coach.
@@ -2928,14 +2959,15 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(dimmer()).toBeInTheDocument();
     expect(introPosts()).toBe(1);
 
-    fireEvent.click(within(coach).getByRole('button', { name: 'Got it' }));
+    expect(within(coach).queryByRole('button', { name: 'Got it' })).toBeNull();
+    fireEvent.click(within(coach).getByRole('button', { name: 'Choose Shopify location' }));
     expect(anySpotlight()).toBeNull();
     expect(dimmer()).toBeNull();
-    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByTestId('ops-first-entry-setup-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
   });
 
-  it('xs first auto-open: the same coach renders inside the rail above SETUP, with map/count usable; dismissal removes the coach only', () => {
+  it('xs first auto-open: the same coach renders inside the rail above location/map/count SETUP; dismissal removes the coach only', () => {
     jest.useFakeTimers();
     firstEntryChecklist(false);
     flagsRead({});
@@ -2946,13 +2978,17 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     const inline = inlineSpotlight()!;
     expect(inline).toHaveTextContent('Start here');
     expect(inline).toHaveTextContent(
-      'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.');
+      'Ops Console shows what needs your attention and what to do next. First, tell LaSyncro which Shopify Location this warehouse represents.');
     // Inside the rail's first-entry area, immediately above SETUP, never over its rows.
     const setupBlock = within(rail).getByTestId('ops-first-entry-setup');
     expect(setupBlock.contains(inline)).toBe(true);
     const toggle = within(rail).getByTestId('ops-first-entry-setup-toggle');
     expect(inline.nextElementSibling).toBe(toggle);
-    for (const id of ['ops-row-setup:first-entry-map', 'ops-row-setup:first-entry-count']) {
+    for (const id of [
+      'ops-row-setup:first-entry-shopify-location',
+      'ops-row-setup:first-entry-map',
+      'ops-row-setup:first-entry-count',
+    ]) {
       const row = within(rail).getByTestId(id);
       expect(inline.contains(row)).toBe(false);
     }
@@ -2965,9 +3001,14 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(within(rail).getByTestId('ops-row-setup:first-entry-count')).toBeInTheDocument();
 
-    fireEvent.click(within(within(rail).getByTestId('ops-row-setup:first-entry-map'))
-      .getByRole('button', { name: /Map warehouse/ }));
-    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
+    fireEvent.click(
+      within(
+        within(rail).getByTestId(
+          'ops-row-setup:first-entry-shopify-location',
+        ),
+      ).getByRole('button', { name: /Choose location/ }),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse');
     // GH-1164 — cross-page navigation hands the workspace to the destination
     // and closes the rail. The real Ops Console trigger reports it; the SETUP
     // disclosure (ops-first-entry-setup-toggle) is not the rail trigger.
@@ -3008,10 +3049,19 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     // Locates a test id as a quoted token, whether it is a plain attribute or
     // one branch of a conditional (GH-1183 map→count reuses this presentation).
     const block = (testId: string) => {
-      const at = source.indexOf(`"${testId}"`);
+      const escaped = testId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const match = source.match(
+        new RegExp(`['"]${escaped}['"]`),
+      );
+      const at = match?.index ?? -1;
+
       expect(at).toBeGreaterThan(-1);
+
       // The whole opening tag: from its `<Box` to the end of its sx.
-      return source.slice(source.lastIndexOf('<Box', at), source.indexOf('>', source.indexOf('}}', at)));
+      return source.slice(
+        source.lastIndexOf('<Box', at),
+        source.indexOf('>', source.indexOf('}}', at)),
+      );
     };
     const dimmerBlock = block('ops-first-contact-dimmer');
     expect(dimmerBlock).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
@@ -3019,14 +3069,13 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     const spotlightBlock = block('ops-first-contact-spotlight');
     expect(spotlightBlock).toMatch(/display: OPS_SPOTLIGHT_DESKTOP_DISPLAY/);
     expect(block('ops-first-contact-spotlight-inline')).toMatch(/display: OPS_SPOTLIGHT_MOBILE_DISPLAY/);
-    // The map→count ids are the same elements, so they cannot carry a weaker
-    // breakpoint or a dismissal handler of their own.
+    // Map→count reuses the same desktop presentation and dismissal layer.
     expect(block('ops-map-count-dimmer')).toBe(dimmerBlock);
     expect(block('ops-map-count-spotlight')).toBe(spotlightBlock);
   });
 
-  it('dismissal ("Got it" / close) removes coach + dimmer only; Ops stays open with SETUP expanded and nothing completed', () => {
-    for (const control of ['Got it', 'Dismiss']) {
+  it('dismissal (X) removes coach + dimmer only; Ops stays open with SETUP expanded and nothing completed', () => {
+    for (const control of ['Dismiss']) {
       jest.useFakeTimers();
       firstEntryChecklist(false);
       flagsRead({});
@@ -3139,10 +3188,12 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
   it('adds no second persistence mechanism for the Spotlight', () => {
     const source = codeOnly(fs.readFileSync(OPS_CONSOLE_SRC, 'utf8'));
     expect(source).not.toMatch(/useSpotlight|spotlight:|localStorage|sessionStorage/);
-    // Both once-only claims (first contact, GH-1183 map→count) are server-side
-    // user_states flags written through the canonical user-state endpoint.
+    // Both once-only guidance claims (first contact and
+    // GH-1183 map→count) are server-side user_states flags written through
+    // the canonical user-state endpoint.
     const urlOf = (name: string) => source.match(new RegExp(`const ${name} = '([^']+)'`))?.[1];
     expect(urlOf('OPS_CONSOLE_INTRO_SEEN_URL')).toBe('/api/v1/user-state/ops-console/intro-seen');
+    expect(source).not.toMatch(/SHOPIFY_LOCATION_SEEN|shopifyLocationActive|shopifyLocationRequest/);
     expect(urlOf('MAP_COUNT_SEEN_URL')).toBe('/api/v1/user-state/ops-console/map-count-handoff-seen');
     expect(source).toMatch(/axiosInstance\.post\(OPS_CONSOLE_INTRO_SEEN_URL\)/);
     expect(source).toMatch(/axiosInstance\.post\(MAP_COUNT_SEEN_URL\)/);

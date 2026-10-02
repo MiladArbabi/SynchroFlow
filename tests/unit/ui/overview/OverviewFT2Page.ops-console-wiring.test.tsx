@@ -8,7 +8,7 @@
 // (same module-scope dependency surface for OverviewFT2Page).
 
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import OverviewPageFT2 from 'pages/ft2-pages/OverviewFT2Page';
 import { ConfigProvider } from 'contexts/ConfigContext';
@@ -20,9 +20,13 @@ const mockUseAddressResolutionOrders = jest.fn();
 const mockInvalidateAddressResolution = jest.fn();
 const mockFloorPlanningRefetch = jest.fn();
 const mockNavigate = jest.fn();
+let mockLocationMapped: boolean | null = true;
+let mockFirstEntry = false;
+let mockFloorZones = [{ location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' }];
+jest.mock('hooks/useActivationChecklist', () => ({ useActivationChecklist: () => ({ firstEntry: mockFirstEntry, externalLocationMapped: mockLocationMapped }) }));
 const mockUseMorningBriefSnapshot = jest.fn();
 const mockRefreshMorningBrief = jest.fn();
-const mockOverviewModuleFT2 = jest.fn((_props: Record<string, unknown>) => <div data-testid="overview-module" />);
+const mockOverviewModuleFT2 = jest.fn((_props: Record<string, unknown>) => <div data-testid="overview-module">{_props.mapContent as React.ReactNode}</div>);
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -98,9 +102,7 @@ jest.mock('pages/overview/useMorningBriefSnapshot', () => ({
 jest.mock('pages/floor-planning/useFloorPlanning', () => ({
   useFloorPlanning: () => ({
     data: {
-      zones: [
-        { location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' },
-      ],
+      zones: mockFloorZones,
     },
     isLoading: false,
     isError: false,
@@ -161,6 +163,8 @@ function setSearchParams(search: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockLocationMapped = true; mockFirstEntry = false;
+  mockFloorZones = [{ location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' }];
   setSearchParams('');
   mockUseMorningBriefSnapshot.mockReturnValue({
     data: {
@@ -235,5 +239,32 @@ describe('OVERVIEW-SCREEN-OPT-01: Operations Pulse follows shared Ops Console st
 
     act(() => { screen.getByText('close console').click(); });
     expect(lastModuleProps().suppressOperationsPulse).toBe(false);
+  });
+});
+
+
+describe('GH-1179 central onboarding progression', () => {
+  it('unmapped location precedes floor setup even when a floor already exists', () => {
+    mockFirstEntry = true; mockLocationMapped = false;
+    render(<OverviewPageFT2 />);
+    expect(screen.getByText('Choose your Shopify location')).toBeInTheDocument();
+    expect(screen.queryByText('Build your floor.')).toBeNull();
+    expect(screen.queryByText('Set up floor planning →')).toBeNull();
+    expect(screen.getByText('Next step · 2 of 5')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Choose Shopify location →'));
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
+    expect(screen.getByText('Choose Shopify location')).toBeInTheDocument();
+  });
+  it('unmapped empty floor shows location first and mapped state resumes floor setup', () => {
+    mockFirstEntry = true; mockLocationMapped = false; mockFloorZones = [];
+    const view = render(<OverviewPageFT2 />);
+    expect(screen.getByText('Next step · 2 of 5')).toBeInTheDocument();
+    expect(screen.queryByText('Set up floor planning →')).toBeNull();
+    mockLocationMapped = true;
+    view.rerender(<OverviewPageFT2 />);
+    expect(screen.getByText('Build your floor.')).toBeInTheDocument();
+    expect(screen.getByText('Next step · 3 of 5')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Set up floor planning →'));
+    expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
   });
 });

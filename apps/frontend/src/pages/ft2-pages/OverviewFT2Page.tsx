@@ -13,6 +13,7 @@ import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import useConfig from 'hooks/useConfig';
+import { useActivationChecklist } from 'hooks/useActivationChecklist';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { hasOperationalFloor } from '../floor-planning/operationalFloor';
@@ -53,6 +54,8 @@ export function overviewLocationPulseTitle(code: string, zoneType?: string | nul
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
+  const { firstEntry, externalLocationMapped } = useActivationChecklist();
+  const needsShopifyLocation = firstEntry && externalLocationMapped !== true;
   const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
   // CROSS-SCREEN-UX-01: Overview's Export → opens the canonical ExportDrawer
   // with the full QUICK_REPORTS set (no reportIds — Overview owns no scope).
@@ -661,11 +664,11 @@ export default function OverviewPageFT2() {
         </Typography>
       </Box>
     );
-  } else if (!hasPlacedFloor) {
+  } else if (needsShopifyLocation || !hasPlacedFloor) {
     // Teaching empty state — no zones configured yet (issue #1040)
     // OV-03: expanded to match activation mockup — progress framing, feature
-    // chips, friction-reducer copy, 4-step rail. Rail state is intentionally
-    // partial (Option A): only "Connect Shopify" and "Map zones" reflect real
+    // chips, friction-reducer copy, milestone rail. Rail state is intentionally
+    // partial (Option A): connection, Shopify Location and zones reflect real
     // data. "Print barcodes"/"Invite pickers" have no backing endpoint or role
     // concept yet (see OV-05 follow-up) and render as static unchecked steps.
     // OV-03 fidelity pass: chip dots use var(--accent) uniformly — no green/
@@ -674,7 +677,8 @@ export default function OverviewPageFT2() {
     // were non-semantic and would have required hardcoding, which is banned.
     const activationSteps = [
       { label: 'Connect Shopify', done: true },
-      { label: 'Map warehouse zones', done: hasPlacedFloor, active: !hasPlacedFloor },
+      { label: 'Choose Shopify location', done: externalLocationMapped === true, active: needsShopifyLocation },
+      { label: 'Map warehouse zones', done: hasPlacedFloor, active: !needsShopifyLocation && !hasPlacedFloor },
       { label: 'Print location barcodes', done: false, active: false },
       { label: 'Invite your pickers', done: false, active: false },
     ];
@@ -695,14 +699,16 @@ export default function OverviewPageFT2() {
               animation: 'ov03Blink 2.4s ease-in-out infinite',
             }} />
             <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Next step · 2 of 4
+              Next step · {needsShopifyLocation ? 2 : 3} of {activationSteps.length}
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
-            Build your floor.
+            {needsShopifyLocation ? 'Choose your Shopify location' : 'Build your floor.'}
           </Typography>
           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', maxWidth: 420, lineHeight: 1.65 }}>
-            Map your warehouse zones once — receiving, racking, pick faces, packing — and this canvas turns into live inventory movement, picking activity and bottlenecks.
+            {needsShopifyLocation
+              ? 'Tell LaSyncro which Shopify Location this warehouse represents before mapping your warehouse and counting opening stock.'
+              : 'Map your warehouse zones once — receiving, racking, pick faces, packing — and this canvas turns into live inventory movement, picking activity and bottlenecks.'}
           </Typography>
           <Box sx={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
             {['Live stock by zone', 'Picker paths', 'Bottleneck alerts'].map((chip) => (
@@ -719,17 +725,17 @@ export default function OverviewPageFT2() {
             // exactly that tenant — so the default landed merchants on a dead
             // end two clicks from the tool the button promises. Matches the
             // idle-rail CTA below (same file, live-map branch).
-            onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
+            onClick={() => navigate(needsShopifyLocation ? '/settings/warehouse?guide=shopify-location' : '/floor-planning?tab=setup&view=canvas')}
             sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', mt: '6px', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
           >
-            Set up floor planning →
+            {needsShopifyLocation ? 'Choose Shopify location →' : 'Set up floor planning →'}
           </Box>
           <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
-            Takes about 10 minutes · You can start with one zone
+            {needsShopifyLocation ? 'Choose the location this warehouse represents' : 'Takes about 10 minutes · You can start with one zone'}
           </Typography>
         </Box>
         <Box sx={{
-          width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
+          width: '100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)',
         }}>
           {activationSteps.map((step, i) => (

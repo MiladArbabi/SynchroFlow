@@ -115,6 +115,7 @@ const ONBOARDING_FLAGS_QUERY_KEY = ['user-state', 'onboarding-flags'] as const;
  */
 export const OPS_CONSOLE_INTRO_SEEN_KEY = 'ops-console:intro-seen';
 const OPS_CONSOLE_INTRO_SEEN_URL = '/api/v1/user-state/ops-console/intro-seen';
+
 const MAP_COUNT_SEEN_KEY = 'ops-console:map-count-handoff-seen';
 const MAP_COUNT_SEEN_URL = '/api/v1/user-state/ops-console/map-count-handoff-seen';
 const MAP_COUNT_SPOTLIGHT = {
@@ -126,7 +127,7 @@ export const OPS_CONSOLE_AUTO_OPEN_DELAY_MS = 650;
 /** GH-1165 — approved first-contact Spotlight copy. */
 export const OPS_FIRST_CONTACT_SPOTLIGHT = {
   title: 'Start here',
-  body: 'Ops Console shows what needs your attention and what to do next. Begin by mapping your warehouse.',
+  body: 'Ops Console shows what needs your attention and what to do next. First, tell LaSyncro which Shopify Location this warehouse represents.',
 } as const;
 /**
  * GH-1165 — the two presentations of the ONE first-contact Spotlight. sm+:
@@ -794,6 +795,7 @@ export interface OpsConsoleProps {
    */
   firstContactSpotlight?: boolean;
   onDismissFirstContactSpotlight?: () => void;
+  onChooseShopifyLocation?: () => void;
   mapCountSpotlight?: boolean;
   onDismissMapCountSpotlight?: () => void;
   countAnchorRef?: Ref<HTMLDivElement>;
@@ -838,6 +840,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   firstEntrySetupRef,
   firstContactSpotlight = false,
   onDismissFirstContactSpotlight,
+  onChooseShopifyLocation,
   mapCountSpotlight = false,
   onDismissMapCountSpotlight,
   countAnchorRef,
@@ -1364,6 +1367,8 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                       body={OPS_FIRST_CONTACT_SPOTLIGHT.body}
                       isDismissed={false}
                       onDismiss={onDismissFirstContactSpotlight}
+                      actionLabel="Choose Shopify location"
+                      onAction={onChooseShopifyLocation}
                       direction="down"
                     />
                   </Box>
@@ -1377,7 +1382,9 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                 </DisclosureLine>
                 {firstEntrySetupExpanded && firstEntryRows.map((row) => {
                   const content = <OpsConsoleRow key={row.id} row={row} onNavigate={goto} onCommand={runCommand} pendingCommand={pendingCommand} />;
+
                   if (row.id !== 'setup:first-entry-count') return content;
+
                   return (
                     <Box key={row.id} ref={countAnchorRef}>
                       {mapCountSpotlight && onDismissMapCountSpotlight && (
@@ -2062,10 +2069,12 @@ const SPOTLIGHT_MIN_Y = 140;
 function OpsFirstContactSpotlight({
   anchor,
   onDismiss,
+  onAction,
   mapCount = false,
 }: {
   anchor: HTMLElement | null;
   onDismiss: () => void;
+  onAction?: () => void;
   mapCount?: boolean;
 }) {
   const [anchorY, setAnchorY] = useState(SPOTLIGHT_FALLBACK_Y);
@@ -2096,7 +2105,7 @@ function OpsFirstContactSpotlight({
           the coach's own X / Got it do. */}
       <Box
         aria-hidden
-        data-testid={mapCount ? "ops-map-count-dimmer" : "ops-first-contact-dimmer"}
+        data-testid={mapCount ? 'ops-map-count-dimmer' : 'ops-first-contact-dimmer'}
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 1149,
@@ -2105,8 +2114,8 @@ function OpsFirstContactSpotlight({
       />
       <Box
         role="region"
-        aria-label={mapCount ? "Opening stock count guidance" : "Ops Console introduction"}
-        data-testid={mapCount ? "ops-map-count-spotlight" : "ops-first-contact-spotlight"}
+        aria-label={mapCount ? 'Opening stock count guidance' : 'Ops Console introduction'}
+        data-testid={mapCount ? 'ops-map-count-spotlight' : 'ops-first-contact-spotlight'}
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', zIndex: 1151,
@@ -2121,6 +2130,8 @@ function OpsFirstContactSpotlight({
           body={mapCount ? MAP_COUNT_SPOTLIGHT.body : OPS_FIRST_CONTACT_SPOTLIGHT.body}
           isDismissed={false}
           onDismiss={onDismiss}
+          actionLabel={mapCount ? undefined : "Choose Shopify location"}
+          onAction={onAction}
           direction="right"
           floating
         />
@@ -2136,6 +2147,7 @@ export function OpsConsoleButton({
   deepLink = alertDeepLink,
 }: Pick<OpsConsoleProps, 'alerts' | 'deepLink'>) {
   const pal = useAppTheme();
+  const navigate = useNavigate();
   // OVERVIEW-SCREEN-OPT-01 — open/closed is shared ConfigContext state so the
   // Overview page can withdraw Operations Pulse while the console is open.
   const { state, dispatch } = useConfig();
@@ -2144,7 +2156,13 @@ export function OpsConsoleButton({
   // GH-1165 — first-entry onboarding uses the shared Ops open-state authority;
   // query/cache state remains local to the onboarding behavior.
   const queryClient = useQueryClient();
-  const { items, firstEntry = false, firstEntryItems, minimumMappingReady = null } = useActivationChecklist();
+  const {
+    items,
+    firstEntry = false,
+    firstEntryItems,
+    minimumMappingReady = null,
+    externalLocationMapped = null,
+  } = useActivationChecklist();
   const { data: flags, isSuccess: flagsLoaded } = useChecklistDismissed();
   const setupDismissed = flags?.['checklist:completed'] === true;
 
@@ -2157,12 +2175,22 @@ export function OpsConsoleButton({
   // durable once-only contract stays that flag; any close clears it.
   const [spotlightActive, setSpotlightActive] = useState(false);
   const [setupAnchor, setSetupAnchor] = useState<HTMLDivElement | null>(null);
+
   const [countAnchor, setCountAnchor] = useState<HTMLDivElement | null>(null);
   const [mapCountActive, setMapCountActive] = useState(false);
   const [mapCountPending, setMapCountPending] = useState(false);
   const [mapCountRequest, setMapCountRequest] = useState(0);
+
   const [searchIntent, setSearchIntent] = useState(false);
-  const mappingPrevious = useRef<boolean | null>(null);
+
+  // GH-1179: minimumMappingReady remains physical floor readiness only.
+  // Count readiness is the conjunction of both independently canonical facts.
+  const countReadiness =
+    minimumMappingReady === null || externalLocationMapped === null
+      ? null
+      : minimumMappingReady === true && externalLocationMapped === true;
+
+  const countReadinessPrevious = useRef<boolean | null>(null);
   const handoffConsumed = useRef(false);
   const authUser = useContext(AuthContext)?.user;
   const handoffScope = `${authUser?.shop_id ?? ''}:${authUser?.id ?? ''}`;
@@ -2171,25 +2199,34 @@ export function OpsConsoleButton({
   useEffect(() => {
     if (scopeRef.current !== handoffScope) {
       scopeRef.current = handoffScope;
-      mappingPrevious.current = null;
+      countReadinessPrevious.current = null;
       handoffConsumed.current = false;
       setMapCountPending(false);
       setMapCountActive(false);
       return;
     }
     // Unknown observations preserve the last explicit baseline, never false.
-    if (minimumMappingReady === null) return;
+    // The final handoff means Count is actually available, so both canonical
+    // prerequisites must now be true.
+    if (countReadiness === null) return;
+
     if (!firstEntry) {
-      mappingPrevious.current = minimumMappingReady;
+      countReadinessPrevious.current = countReadiness;
       setMapCountPending(false);
       setMapCountActive(false);
       return;
     }
-    if (mappingPrevious.current === false && minimumMappingReady === true && !handoffConsumed.current) {
+
+    if (
+      countReadinessPrevious.current === false &&
+      countReadiness === true &&
+      !handoffConsumed.current
+    ) {
       setMapCountPending(true);
     }
-    mappingPrevious.current = minimumMappingReady;
-  }, [minimumMappingReady, firstEntry, handoffScope]);
+
+    countReadinessPrevious.current = countReadiness;
+  }, [countReadiness, firstEntry, handoffScope]);
 
   // GH-1165 — once-only first-entry auto-open. Eligible only on positive
   // evidence: canonical first-entry mode AND a loaded flag read that lacks the
@@ -2241,7 +2278,11 @@ export function OpsConsoleButton({
     }
     if (!mapCountPending || handoffConsumed.current || !firstEntry || minimumMappingReady !== true || !countActionable) return;
     // First contact and explicit search intent always get their own moment.
-    if ((!introSeen && !introClaimed.current) || spotlightActive || searchIntent) return;
+    if (
+      (!introSeen && !introClaimed.current) ||
+      spotlightActive ||
+      searchIntent
+    ) return;
     handoffConsumed.current = true;
     setMapCountPending(false);
     setSearchFocusRequest(0);
@@ -2268,6 +2309,7 @@ export function OpsConsoleButton({
     if (autoOpenEligibleRef.current) claimIntro();
     setSearchFocusRequest(0);
     setSpotlightActive(firstContact && !open);
+
     setMapCountActive(false);
     setSearchIntent(false);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: !open });
@@ -2320,6 +2362,11 @@ export function OpsConsoleButton({
   ]);
   const hasAttention = badge > 0;
   const showSpotlight = spotlightActive && open && firstEntry;
+  const chooseShopifyLocation = () => {
+    setSpotlightActive(false);
+    dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
+    navigate('/settings/warehouse?guide=shopify-location');
+  };
 
   return (
     <>
@@ -2378,10 +2425,10 @@ export function OpsConsoleButton({
         </IconButton>
       </Tooltip>
 
-      {/* Before the rail in DOM order so Tab reaches "Got it" right after
+      {/* Before the rail in DOM order so Tab reaches "Choose Shopify location" right after
           the trigger. */}
       {showSpotlight && (
-        <OpsFirstContactSpotlight anchor={setupAnchor} onDismiss={() => setSpotlightActive(false)} />
+        <OpsFirstContactSpotlight anchor={setupAnchor} onDismiss={() => setSpotlightActive(false)} onAction={chooseShopifyLocation} />
       )}
 
       {mapCountActive && open && firstEntry && (
@@ -2405,6 +2452,7 @@ export function OpsConsoleButton({
         firstEntrySetupRef={setSetupAnchor}
         firstContactSpotlight={showSpotlight}
         onDismissFirstContactSpotlight={() => setSpotlightActive(false)}
+        onChooseShopifyLocation={chooseShopifyLocation}
       />
     </>
   );
