@@ -1,4 +1,5 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   CircularProgress,
@@ -22,6 +23,57 @@ interface BatchDetailModalBodyProps {
 }
 
 const DEFAULT_VISIBLE_ORDERS = 4;
+
+/**
+ * BATCH-DETAIL-HANDOFF-01 — stage model shared with the Order Flow
+ * fulfillment card. Position derives from canonical batch.status only.
+ */
+const STAGES = [
+  { key: 'picking', label: 'Picking' },
+  { key: 'pick_complete', label: 'Picked' },
+  { key: 'packing', label: 'Packing' },
+  { key: 'pack_complete', label: 'Packed' },
+] as const;
+
+const currentStageIndex = (status: PickBatch['status']): number => {
+  switch (status) {
+    case 'pending':
+    case 'picking':
+      return 0;
+    case 'pick_complete':
+      return 1;
+    case 'packing':
+      return 2;
+    case 'pack_complete':
+      return 3;
+    default:
+      return -1;
+  }
+};
+
+/**
+ * Execution handoff is navigation only (Tier 2). Pick work deep-links the
+ * exact batch into WMS Operations (?batchId= → Pick Brief, which owns the
+ * claim). Pack work is item-centric free-scan, so it lands on Operations.
+ */
+const executionTarget = (
+  batch: PickBatch,
+): { label: string; to: string } | null => {
+  const pickTarget = `/wms?batchId=${encodeURIComponent(batch.pick_batch_id)}`;
+
+  switch (batch.status) {
+    case 'pending':
+      return { label: 'Continue to Pick →', to: pickTarget };
+    case 'picking':
+      return { label: 'Resume Picking →', to: pickTarget };
+    case 'pick_complete':
+      return { label: 'Go to Packing →', to: '/wms' };
+    case 'packing':
+      return { label: 'Resume Packing →', to: '/wms' };
+    default:
+      return null;
+  }
+};
 
 const formatMoney = (
   value: number,
@@ -124,10 +176,135 @@ function SummaryMetric({
   );
 }
 
+/** Labelled region with the body's standard section heading. */
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  const headingId = useId();
+
+  return (
+    <Box component="section" aria-labelledby={headingId} sx={{ minWidth: 0 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 1,
+        }}
+      >
+        <Typography
+          id={headingId}
+          sx={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--ink)',
+          }}
+        >
+          {title}
+        </Typography>
+        {aside}
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+function WorkFact({ label, value }: { label: string; value: string }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-2)' }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function CurrentWorkContent({ batch }: { batch: PickBatch }) {
+  const picker = batch.picker_name ?? 'Unassigned';
+  const packer = batch.packer_name ?? 'Unassigned';
+
+  let headline: string;
+  let detail: string | null = null;
+  let facts: Array<[string, string]>;
+
+  switch (batch.status) {
+    case 'pending':
+      headline = 'Waiting to be picked';
+      facts = [['Picker', picker], ['Packer', packer]];
+      break;
+    case 'picking':
+      headline = 'Picking in progress';
+      facts = [
+        ['Picker', picker],
+        ['Picked', `${batch.units_picked} / ${batch.total_units} units`],
+      ];
+      break;
+    case 'pick_complete':
+      headline = 'Picking complete';
+      detail = 'Waiting for packing';
+      facts = [['Picker', picker], ['Packer', packer]];
+      break;
+    case 'packing':
+      headline = 'Packing in progress';
+      facts = [
+        ['Packer', packer],
+        ['Packed', `${batch.units_packed} / ${batch.total_units} units`],
+      ];
+      break;
+    case 'pack_complete':
+      headline = 'Packing complete';
+      facts = [
+        ['Packer', packer],
+        ['Completed', formatTimestamp(batch.pack_completed_at)],
+      ];
+      break;
+    default:
+      headline = formatStatus(batch.status);
+      facts = [];
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+        {headline}
+      </Typography>
+      {detail && (
+        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+          {detail}
+        </Typography>
+      )}
+      <Box sx={{ mt: 0.75, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+        {facts.map(([label, value]) => (
+          <WorkFact key={label} label={label} value={value} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+const SECTION_DIVIDER_SX = {
+  pt: 1.25,
+  borderTop: '1px solid var(--rule)',
+} as const;
+
+const ITEM_GRID_COLUMNS =
+  'minmax(56px, 0.8fr) minmax(0, 2fr) minmax(0, 1.1fr) 36px minmax(0, 1.2fr)';
+
 export function BatchDetailModalBody({
   batch,
   onNavigateToOrder,
 }: BatchDetailModalBodyProps) {
+  const navigate = useNavigate();
   const [ordersExpanded, setOrdersExpanded] = useState(false);
   const ordersQuery = usePickBatchOrders(batch.pick_batch_id);
   const lineItemsQuery = usePickBatchLineItems(batch.pick_batch_id);
@@ -160,18 +337,20 @@ export function BatchDetailModalBody({
     ? orders
     : orders.slice(0, DEFAULT_VISIBLE_ORDERS);
   const hiddenOrderCount = Math.max(orders.length - visibleOrders.length, 0);
+  const externalOrderIds = useMemo(
+    () =>
+      new Map(
+        orders.map((order) => [order.lasyncro_order_id, order.external_order_id]),
+      ),
+    [orders],
+  );
 
-  const activateOrder = (
-    orderId: string,
-    event?: KeyboardEvent<HTMLDivElement>,
-  ) => {
-    if (event) {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-    }
-
-    onNavigateToOrder(orderId);
-  };
+  // Facts that depend on a query stay unknown ('—') rather than a misleading
+  // operational zero while that query is loading or failed.
+  const ordersKnown = !ordersQuery.isLoading && !ordersQuery.isError;
+  const lineItemsKnown = !lineItemsQuery.isLoading && !lineItemsQuery.isError;
+  const stageIndex = currentStageIndex(batch.status);
+  const execution = executionTarget(batch);
 
   return (
     <Box
@@ -181,6 +360,65 @@ export function BatchDetailModalBody({
         gap: 2,
       }}
     >
+      {/* STAGE */}
+      <Box
+        component="ol"
+        aria-label="Batch stages"
+        sx={{
+          m: 0,
+          p: 0,
+          listStyle: 'none',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gap: 1,
+        }}
+      >
+        {STAGES.map((stage, index) => {
+          const isCurrent = index === stageIndex;
+          const isComplete =
+            index < stageIndex ||
+            (batch.status === 'pack_complete' && index === stageIndex);
+
+          return (
+            <Box
+              component="li"
+              key={stage.key}
+              aria-current={isCurrent ? 'step' : undefined}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5,
+                minWidth: 0,
+              }}
+            >
+              <Box
+                sx={{
+                  height: 4,
+                  borderRadius: '2px',
+                  bgcolor:
+                    isComplete || isCurrent ? 'var(--accent)' : 'var(--rule)',
+                  opacity: isCurrent && !isComplete ? 0.55 : 1,
+                }}
+              />
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontWeight: isCurrent ? 500 : 300,
+                  color: isCurrent
+                    ? 'var(--ink)'
+                    : isComplete
+                      ? 'var(--ink-2)'
+                      : 'var(--ink-4)',
+                }}
+              >
+                {stage.label}
+              </Typography>
+            </Box>
+          );
+        })}
+      </Box>
+
+      {/* FACTS */}
       <Box
         sx={{
           display: 'grid',
@@ -192,20 +430,14 @@ export function BatchDetailModalBody({
         }}
       >
         <SummaryMetric
-          label="Picking progress"
-          value={`${batch.units_picked} / ${batch.total_units} units`}
+          label="Orders"
+          value={ordersKnown ? String(orders.length) : '—'}
         />
+        <SummaryMetric label="Lines" value={String(batch.total_line_items)} />
+        <SummaryMetric label="Units" value={String(batch.total_units)} />
         <SummaryMetric
-          label="Packing progress"
-          value={`${batch.units_packed} / ${batch.total_units} units`}
-        />
-        <SummaryMetric
-          label="Picker"
-          value={batch.picker_name ?? 'Unassigned'}
-        />
-        <SummaryMetric
-          label="Packer"
-          value={batch.packer_name ?? 'Unassigned'}
+          label="Locations"
+          value={lineItemsKnown ? String(locationCodes.length) : '—'}
         />
       </Box>
 
@@ -218,73 +450,42 @@ export function BatchDetailModalBody({
           },
           gap: 1.5,
           alignItems: 'start',
-          pt: 1.25,
-          borderTop: '1px solid var(--rule)',
+          ...SECTION_DIVIDER_SX,
         }}
       >
+      <Section title="Current work">
+        <CurrentWorkContent batch={batch} />
 
-      <Box
-        sx={{
-          minWidth: 0,
-        }}
-      >
-        <Typography
-          sx={{
-            mb: 1,
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: 'var(--ink-4)',
-          }}
-        >
-          Lifecycle
-        </Typography>
-
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr)',
-            columnGap: 1.25,
-            rowGap: 0.5,
-          }}
-        >
-          {[
-            ['Released', batch.released_at],
-            ['Pick claimed', batch.pick_claimed_at],
-            ['Pick completed', batch.pick_completed_at],
-            ['Pack claimed', batch.pack_claimed_at],
-            ['Pack completed', batch.pack_completed_at],
-          ].map(([label, value]) => (
-            <Box
-              key={label}
-              sx={{
-                display: 'contents',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: 11,
-                  fontWeight: 300,
-                  color: 'var(--ink-4)',
-                }}
-              >
-                {label}
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: 11,
-                  fontWeight: 300,
-                  color: 'var(--ink-2)',
-                  textAlign: 'right',
-                }}
-              >
-                {formatTimestamp(value)}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-      </Box>
+        {execution && (
+          <Box
+            component="button"
+            type="button"
+            onClick={() => navigate(execution.to)}
+            sx={{
+              mt: 1.5,
+              display: 'inline-flex',
+              alignItems: 'center',
+              px: 1.25,
+              py: 0.5,
+              fontFamily: 'inherit',
+              fontSize: 11,
+              fontWeight: 500,
+              color: 'var(--accent)',
+              bgcolor: 'transparent',
+              border: '0.5px solid var(--accent)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.75 },
+              '&:focus-visible': {
+                outline: '2px solid var(--accent)',
+                outlineOffset: '2px',
+              },
+            }}
+          >
+            {execution.label}
+          </Box>
+        )}
+      </Section>
 
       <Box
         sx={{
@@ -403,42 +604,133 @@ export function BatchDetailModalBody({
       </Box>
       </Box>
 
-      <Box
-        sx={{
-          pt: 1.25,
-          borderTop: '1px solid var(--rule)',
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            gap: 2,
-            mb: 1,
-          }}
+      {/* ITEMS TO PICK — canonical batch line-item truth only */}
+      <Box sx={SECTION_DIVIDER_SX}>
+        <Section title="Items to pick">
+          {lineItemsQuery.isLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={22} sx={{ color: 'var(--accent)' }} />
+            </Box>
+          )}
+
+          {!lineItemsQuery.isLoading && lineItemsQuery.isError && (
+            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', py: 1 }}>
+              Could not load items to pick.
+            </Typography>
+          )}
+
+          {lineItemsKnown && lineItems.length === 0 && (
+            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', py: 1 }}>
+              No items are assigned to this batch.
+            </Typography>
+          )}
+
+          {lineItemsKnown && lineItems.length > 0 && (
+            <Box>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: ITEM_GRID_COLUMNS,
+                  gap: 1,
+                  px: 1.25,
+                  pb: 0.5,
+                }}
+              >
+                {['Location', 'Item', 'SKU', 'Qty', 'Order'].map((heading) => (
+                  <Typography
+                    key={heading}
+                    sx={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'var(--ink-4)',
+                      textAlign: heading === 'Qty' ? 'right' : 'left',
+                    }}
+                  >
+                    {heading}
+                  </Typography>
+                ))}
+              </Box>
+
+              <Box sx={{ maxHeight: 240, overflowY: 'auto' }}>
+                {lineItems.map((item) => {
+                  const externalOrderId = externalOrderIds.get(item.lasyncro_order_id);
+                  const location = item.location_code?.trim();
+
+                  return (
+                    <Box
+                      key={`${item.lasyncro_line_item_id}:${item.reservation_allocation_id ?? item.location_code}`}
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: ITEM_GRID_COLUMNS,
+                        gap: 1,
+                        alignItems: 'center',
+                        px: 1.25,
+                        py: 0.75,
+                        borderTop: '1px solid var(--rule)',
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-2)' }}>
+                        {location || '—'}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: 12,
+                          fontWeight: 300,
+                          color: 'var(--ink)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.title}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: 11,
+                          fontWeight: 300,
+                          color: 'var(--ink-3)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.sku ?? '—'}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', textAlign: 'right' }}>
+                        {item.quantity}
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                        {externalOrderId ? `#${externalOrderId}` : '—'}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
+        </Section>
+      </Box>
+
+      {/* MEMBER ORDERS */}
+      <Box sx={SECTION_DIVIDER_SX}>
+        <Section
+          title="Member orders"
+          aside={
+            ordersKnown ? (
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontWeight: 300,
+                  color: 'var(--ink-4)',
+                }}
+              >
+                {orders.length} {orders.length === 1 ? 'order' : 'orders'}
+              </Typography>
+            ) : undefined
+          }
         >
-          <Typography
-            sx={{
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--ink)',
-            }}
-          >
-            {orders.length} {orders.length === 1 ? 'order' : 'orders'}
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: 11,
-              fontWeight: 300,
-              color: 'var(--ink-4)',
-            }}
-          >
-            {batch.total_line_items} lines · {batch.total_units} units
-          </Typography>
-        </Box>
-
         {ordersQuery.isLoading && (
           <Box
             sx={{
@@ -467,8 +759,7 @@ export function BatchDetailModalBody({
           </Typography>
         )}
 
-        {!ordersQuery.isLoading &&
-          !ordersQuery.isError &&
+        {ordersKnown &&
           visibleOrders.map((order) => {
             const unitCount = order.line_items.reduce(
               (sum, line) => sum + Number(line.quantity),
@@ -478,32 +769,15 @@ export function BatchDetailModalBody({
             return (
               <Box
                 key={order.lasyncro_order_id}
-                role="button"
-                tabIndex={0}
-                aria-label={`Order #${order.external_order_id}`}
-                onClick={() =>
-                  onNavigateToOrder(order.lasyncro_order_id)
-                }
-                onKeyDown={(event) =>
-                  activateOrder(order.lasyncro_order_id, event)
-                }
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) auto',
-                  gap: 1,
+                  gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                  gap: 1.5,
                   alignItems: 'center',
                   p: '8px 10px',
                   mb: 0.5,
                   border: '1px solid var(--rule)',
                   borderRadius: '8px',
-                  cursor: 'pointer',
-                  '&:hover': {
-                    borderColor: 'var(--accent-border)',
-                  },
-                  '&:focus-visible': {
-                    outline: '2px solid var(--accent)',
-                    outlineOffset: '2px',
-                  },
                 }}
               >
                 <Box sx={{ minWidth: 0 }}>
@@ -546,11 +820,39 @@ export function BatchDetailModalBody({
                     order.currency,
                   )}
                 </Typography>
+
+                <Box
+                  component="button"
+                  type="button"
+                  aria-label={`View order #${order.external_order_id}`}
+                  onClick={() => onNavigateToOrder(order.lasyncro_order_id)}
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    px: 1,
+                    py: 0.375,
+                    fontFamily: 'inherit',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: 'var(--accent)',
+                    bgcolor: 'var(--surface)',
+                    border: '0.5px solid var(--accent-border)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    '&:hover': { opacity: 0.75 },
+                    '&:focus-visible': {
+                      outline: '2px solid var(--accent)',
+                      outlineOffset: '2px',
+                    },
+                  }}
+                >
+                  View →
+                </Box>
               </Box>
             );
           })}
-        {!ordersQuery.isLoading &&
-          !ordersQuery.isError &&
+        {ordersKnown &&
           hiddenOrderCount > 0 && (
             <Box
               component="button"
@@ -575,6 +877,7 @@ export function BatchDetailModalBody({
               Show {hiddenOrderCount} more
             </Box>
           )}
+        </Section>
       </Box>
     </Box>
   );

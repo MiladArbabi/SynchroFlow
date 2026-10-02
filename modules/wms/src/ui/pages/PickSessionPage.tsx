@@ -5,6 +5,7 @@ import {
   Paper,
   Typography,
   Button,
+  CircularProgress,
   LinearProgress,
   Alert,
   Dialog,
@@ -131,6 +132,13 @@ export interface PickSessionPageProps {
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
   onReportException: (params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
   onPickComplete: () => Promise<void>;
+  /**
+   * BATCH-DETAIL-HANDOFF-01 — the Brief's Start Picking is the explicit work
+   * boundary. Awaited before entering location_scan; a rejection keeps the
+   * operator on the Brief with a retryable error. The host decides what
+   * starting means (e.g. claiming a pending batch). Omitted: no start gate.
+   */
+  onStartPicking?: () => Promise<void>;
 }
 
 type SessionPhase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'summary' | 'done';
@@ -198,6 +206,7 @@ export default function PickSessionPage({
   onConfirmScan,
   onReportException,
   onPickComplete,
+  onStartPicking,
 }: PickSessionPageProps) {
   const theme = useTheme();
   const { onInputChange, detectSourceAndReset, reset: resetScanDetector } = useScanSourceDetector();
@@ -228,6 +237,10 @@ export default function PickSessionPage({
    * replays the same incident instead of creating a second one.
    */
   const [exceptionEventId, setExceptionEventId] = useState<string>(() => newEventId());
+
+  const [startingPick, setStartingPick] = useState(false);
+  const [startError,   setStartError]   = useState<string | null>(null);
+  const startingPickRef = useRef(false);
 
   const [pickResults,    setPickResults]    = useState<PickResult[]>([]);
   const [completingPick, setCompletingPick] = useState(false);
@@ -270,6 +283,27 @@ export default function PickSessionPage({
       setPhase('location_scan');
     }
   }, [currentIndex, lineItems.length, resetScanDetector]);
+
+  // ── Start (Brief → location_scan) ──────────────────────────
+  const handleStartPicking = useCallback(async () => {
+    if (startingPickRef.current) return;
+    startingPickRef.current = true;
+    setStartingPick(true);
+    setStartError(null);
+    try {
+      await onStartPicking?.();
+      setPhase('location_scan');
+    } catch (err) {
+      setStartError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not start picking. Try again.',
+      );
+    } finally {
+      startingPickRef.current = false;
+      setStartingPick(false);
+    }
+  }, [onStartPicking]);
 
   // ── Location scan ──────────────────────────────────────────
   const handleLocationScan = useCallback((value: string) => {
@@ -460,11 +494,17 @@ try {
           Items are sorted by optimized pick route. For each item: scan the bin barcode first, then scan the product barcode to confirm.
         </Alert>
 
+        {startError && (
+          <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{startError}</Alert>
+        )}
+
         <Button
           variant="contained"
           fullWidth
           size="large"
-          onClick={() => setPhase('location_scan')}
+          onClick={() => void handleStartPicking()}
+          disabled={startingPick}
+          startIcon={startingPick ? <CircularProgress size={16} color="inherit" /> : undefined}
           sx={{
             borderRadius: '6px',
             fontWeight: 600,

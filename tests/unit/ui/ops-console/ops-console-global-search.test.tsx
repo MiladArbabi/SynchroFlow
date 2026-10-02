@@ -24,10 +24,19 @@ jest.mock('pages/wms/useOrderPool', () => ({
   useBulkSetPriority: () => ({ mutateAsync: jest.fn() }),
 }));
 
+// Mirrors the shared EntityDetailModal shell contract (proven against the
+// real shell in tests/unit/ui/shared/EntityDetailModal.parent-navigation):
+// generic parentNavigation back control + a separately named Close control.
 jest.mock('@lasyncro/shared/ui', () => ({
-  EntityDetailModal: ({ entityId, title, children }: any) =>
+  EntityDetailModal: ({ entityId, title, onClose, parentNavigation, children }: any) =>
     entityId ? (
       <section data-testid="entity-detail-modal" aria-label={title}>
+        {parentNavigation && (
+          <button type="button" onClick={parentNavigation.onNavigate}>
+            ← {parentNavigation.label}
+          </button>
+        )}
+        <button type="button" aria-label="Close" onClick={onClose} />
         {children}
       </section>
     ) : null,
@@ -323,6 +332,51 @@ describe('Ops Console global search', () => {
 
     expect(screen.getByTestId('order-detail-body')).toHaveTextContent('ORDER:order-from-batch');
     expect(screen.queryByTestId('batch-detail-body')).not.toBeInTheDocument();
+  });
+
+  describe('BATCH-DETAIL-HANDOFF-01 — Ops Console Batch → Order neighbour regression', () => {
+    const openBatchThenOrder = () => {
+      mockUsePickBatches.mockReturnValue(activeBatchQuery());
+      renderPanel();
+      fireEvent.change(screen.getByLabelText('Search orders, products, SKUs, barcodes, or batches'), {
+        target: { value: '10' },
+      });
+      fireEvent.click(screen.getByTestId('ops-search-result-batch-batch-1'));
+      fireEvent.click(within(screen.getByTestId('batch-detail-body')).getByRole('button', { name: 'Open order' }));
+
+      // OPS-BATCH-HANDOFF-02: only one entity surface is visible at a time.
+      const modals = screen.getAllByTestId('entity-detail-modal');
+      expect(modals).toHaveLength(1);
+      expect(within(modals[0]).getByTestId('order-detail-body')).toHaveTextContent('ORDER:order-from-batch');
+      expect(screen.queryByTestId('batch-detail-body')).not.toBeInTheDocument();
+
+      return modals[0];
+    };
+
+    it('OPS-BATCH-HANDOFF-01/02/03 — Order Detail keeps the originating batch as parent and Back restores it', () => {
+      const orderModal = openBatchThenOrder();
+
+      // OPS-BATCH-HANDOFF-01: originating batch context retained as parent.
+      fireEvent.click(within(orderModal).getByRole('button', { name: /Batch BATCH-1/i }));
+
+      // OPS-BATCH-HANDOFF-03: Back returns to the same Batch Detail only.
+      expect(screen.getAllByTestId('entity-detail-modal')).toHaveLength(1);
+      expect(screen.queryByTestId('order-detail-body')).not.toBeInTheDocument();
+      expect(screen.getByTestId('batch-detail-body')).toHaveTextContent('BATCH:batch-1');
+    });
+
+    it('OPS-BATCH-HANDOFF-04 — Order X closes the full inspection flow without resurfacing Batch', () => {
+      const orderModal = openBatchThenOrder();
+
+      // Precondition: the batch context is retained, so closing must clear it.
+      expect(within(orderModal).getByRole('button', { name: /Batch BATCH-1/i })).toBeInTheDocument();
+
+      fireEvent.click(within(orderModal).getByRole('button', { name: 'Close' }));
+
+      expect(screen.queryAllByTestId('entity-detail-modal')).toHaveLength(0);
+      expect(screen.queryByTestId('order-detail-body')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('batch-detail-body')).not.toBeInTheDocument();
+    });
   });
 
   it('opens canonical variant detail over the current route without closing the console', () => {

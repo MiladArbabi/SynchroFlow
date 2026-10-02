@@ -5,10 +5,141 @@
  * - card click opens the exact batch detail
  * - Enter / Space provide equivalent keyboard access
  * - pending cancel remains an independent action and must not open detail
+ *
+ * BATCH-DETAIL-HANDOFF-01 — Batch → Order inspection handoff:
+ * - BATCH-HANDOFF-01: Batch → Order retains the originating batch context
+ * - BATCH-HANDOFF-02: Order → Back restores the same Batch Detail
+ * - BATCH-HANDOFF-03: Order X closes both Order and retained Batch context
+ * - BATCH-HANDOFF-04: Batch and Order modals are never open together
  */
 import * as ts from 'typescript';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import React from 'react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+
+import { renderWithProviders } from 'test-utils';
+import OrderFlowPage from 'pages/ft2-pages/OrderFlowPage';
+
+const mockFlowBatch = {
+  pick_batch_id: 'abcd1234-flow-batch',
+  status: 'picking',
+  release_trigger: 'manual',
+  total_line_items: 3,
+  total_units: 10,
+  units_picked: 4,
+  units_packed: 0,
+  picked_by: 7,
+  packed_by: null,
+  pick_claimed_at: '2026-09-08T12:00:00.000Z',
+  pick_completed_at: null,
+  pack_claimed_at: null,
+  pack_completed_at: null,
+  released_at: '2026-09-08T11:30:00.000Z',
+  assigned_operator_id: 7,
+  assigned_packer_id: null,
+  picker_name: 'Ava Picker',
+  packer_name: null,
+};
+
+const mockMutation = () => ({
+  mutate: jest.fn(),
+  mutateAsync: jest.fn().mockResolvedValue(undefined),
+  isPending: false,
+  isError: false,
+});
+
+jest.mock('pages/orders/useConstrainedOrders', () => ({
+  getAgeLabel: () => '',
+  getBlockerReason: () => '',
+  getConstraintLabel: () => '',
+  useConstrainedOrders: () => ({
+    data: { data: [] },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
+jest.mock('pages/wms/useOrderPool', () => ({
+  useOrderPool: () => ({
+    data: { orders: [], eligible_order_count: 0 },
+    isLoading: false,
+    isError: false,
+  }),
+  useReleaseBatch: () => mockMutation(),
+  useSetPriority: () => mockMutation(),
+  useBulkSetPriority: () => mockMutation(),
+}));
+
+jest.mock('pages/wms/usePickBatches', () => ({
+  usePickBatches: () => ({
+    data: { batches: [mockFlowBatch] },
+    isLoading: false,
+    isError: false,
+  }),
+  useCancelBatch: () => mockMutation(),
+}));
+
+jest.mock('pages/wms/useWmsOperators', () => ({
+  useWmsOperators: () => ({ data: { operators: [] } }),
+}));
+
+jest.mock('pages/wms/useWmsAnalytics', () => ({
+  useLiveCapacity: () => ({ data: undefined }),
+}));
+
+jest.mock('hooks/useSpotlight', () => ({
+  useSpotlight: () => ({
+    isDismissed: true,
+    isLoading: false,
+    dismiss: jest.fn(),
+  }),
+}));
+
+jest.mock('components/ModuleTabBar', () => ({
+  ModuleTabBar: () => null,
+}));
+
+// Real shared shell: the parent/back affordance and close semantics under
+// test are owned by EntityDetailModal itself.
+jest.mock('@lasyncro/shared/ui', () => ({
+  EntityDetailModal: jest.requireActual(
+    '../../../../modules/shared/src/ui/EntityDetailModal',
+  ).EntityDetailModal,
+  SpotlightCoachMark: () => null,
+}));
+
+jest.mock('pages/orders/OrderDetailModalBody', () => ({
+  OrderDetailModalBody: ({ orderId }: { orderId: string }) =>
+    require('react').createElement(
+      'div',
+      { 'data-testid': 'order-detail-body' },
+      `ORDER:${orderId}`,
+    ),
+}));
+
+jest.mock('pages/ft2-pages/BatchDetailModalBody', () => ({
+  BatchDetailModalBody: ({
+    batch,
+    onNavigateToOrder,
+  }: {
+    batch: { pick_batch_id: string };
+    onNavigateToOrder: (orderId: string) => void;
+  }) =>
+    require('react').createElement(
+      'div',
+      { 'data-testid': 'batch-detail-body' },
+      `BATCH:${batch.pick_batch_id}`,
+      require('react').createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => onNavigateToOrder('order-from-batch'),
+        },
+        'Open member order',
+      ),
+    ),
+}));
 
 it('GH-1058 — fulfillment batch card opens detail accessibly while cancel stays isolated', () => {
   const filename = resolve(
@@ -248,35 +379,82 @@ it('GH-1058 — fulfillment batch card opens detail accessibly while cancel stay
   expect(setSelectedBatchId).not.toHaveBeenCalled();
 });
 
-it('GH-1058 — selected batch uses EntityDetailModal and member-order navigation replaces it with Order Detail', () => {
-  const filename = resolve(
-    __dirname,
-    '../../../../apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx',
-  );
-  const text = readFileSync(filename, 'utf8');
+describe('BATCH-DETAIL-HANDOFF-01 — Order Flow Batch → Order inspection handoff', () => {
+  // Counts every mounted dialog, including any MUI marks aria-hidden when a
+  // second modal stacks on top — a nested/stacked modal must not be hidden
+  // from this count.
+  const dialogs = () => screen.queryAllByRole('dialog', { hidden: true });
 
-  expect(text).toContain(
-    "import { BatchDetailModalBody } from './BatchDetailModalBody';",
-  );
+  const openBatchThenOrder = async () => {
+    renderWithProviders(React.createElement(OrderFlowPage));
 
-  expect(text).toContain(
-    'const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);',
-  );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Inspect batch ABCD1234' }),
+    );
 
-  expect(text).toMatch(
-    /const selectedBatch = .*batches\.find\(\(batch\) => batch\.pick_batch_id === selectedBatchId\)/s,
-  );
+    await waitFor(() => expect(dialogs()).toHaveLength(1));
+    expect(screen.getByTestId('batch-detail-body')).toHaveTextContent(
+      'BATCH:abcd1234-flow-batch',
+    );
 
-  expect(text).toMatch(
-    /<EntityDetailModal[\s\S]*?entityId=\{selectedBatchId\}[\s\S]*?title=\{`Batch \$\{selectedBatchId\?\.slice\(0, 8\)\.toUpperCase\(\) \?\? ''\}`\}[\s\S]*?<BatchDetailModalBody[\s\S]*?batch=\{selectedBatch\}[\s\S]*?onNavigateToOrder=\{\(orderId\) => \{[\s\S]*?setSelectedBatchId\(null\);[\s\S]*?setSelectedOrderId\(orderId\);[\s\S]*?\}\}[\s\S]*?<\/EntityDetailModal>/s,
-  );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open member order' }),
+    );
 
-  // Existing Order Detail remains a separate shell, never a child of batch detail.
-  expect(
-    (text.match(/<EntityDetailModal/g) ?? []).length,
-  ).toBeGreaterThanOrEqual(2);
+    // BATCH-HANDOFF-04: Order Detail replaces the visible Batch Detail —
+    // never nested or stacked over it.
+    await waitFor(() => expect(dialogs()).toHaveLength(1));
+    expect(screen.getByTestId('order-detail-body')).toHaveTextContent(
+      'ORDER:order-from-batch',
+    );
+    expect(screen.queryByTestId('batch-detail-body')).not.toBeInTheDocument();
 
-  expect(text).toContain(
-    'entityId={selectedOrderId}',
-  );
+    return dialogs()[0];
+  };
+
+  it('BATCH-UX-01 — Batch Detail uses the canonical lg/default EntityDetailModal shell', async () => {
+    renderWithProviders(React.createElement(OrderFlowPage));
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Inspect batch ABCD1234' }),
+    );
+
+    await waitFor(() => expect(dialogs()).toHaveLength(1));
+    expect(screen.getByTestId('batch-detail-body')).toBeInTheDocument();
+    expect(dialogs()[0]).toHaveClass('MuiDialog-paperWidthLg');
+  });
+
+  it('BATCH-HANDOFF-01/02/04 — Order Detail exposes the retained batch as parent and Back restores the same Batch Detail', async () => {
+    const orderDialog = await openBatchThenOrder();
+
+    // BATCH-HANDOFF-01: the originating batch context is retained and
+    // exposed as the generic parent/back affordance on Order Detail.
+    const back = within(orderDialog).getByRole('button', {
+      name: /Batch ABCD1234/,
+    });
+
+    fireEvent.click(back);
+
+    // BATCH-HANDOFF-02: Back clears only Order Detail and restores the
+    // same Batch Detail.
+    await waitFor(() => expect(dialogs()).toHaveLength(1));
+    expect(screen.queryByTestId('order-detail-body')).not.toBeInTheDocument();
+    expect(screen.getByTestId('batch-detail-body')).toHaveTextContent(
+      'BATCH:abcd1234-flow-batch',
+    );
+  });
+
+  it('BATCH-HANDOFF-03 — Order X closes Order Detail and the retained Batch context', async () => {
+    const orderDialog = await openBatchThenOrder();
+
+    fireEvent.click(
+      within(orderDialog).getByRole('button', { name: /close/i }),
+    );
+
+    // A retained-but-uncleared batch would resurface here once Order
+    // Detail closes; the whole inspection flow must end instead.
+    await waitFor(() => expect(dialogs()).toHaveLength(0));
+    expect(screen.queryByTestId('order-detail-body')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('batch-detail-body')).not.toBeInTheDocument();
+  });
 });

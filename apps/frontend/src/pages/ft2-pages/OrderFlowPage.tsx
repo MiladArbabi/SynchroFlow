@@ -184,9 +184,27 @@ export default function OrderFlowPage() {
   );
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  // BATCH-DETAIL-HANDOFF-01: Order Detail opened from Batch Detail keeps the
+  // originating batch as its parent. X ends the whole inspection flow (order
+  // and retained batch); Back clears only the order. Clearing the batch is a
+  // no-op for an Order Detail opened without batch context.
   const handleCloseOrderDetail = useCallback(() => {
     setSelectedOrderId(null);
+    setSelectedBatchId(null);
   }, []);
+  const handleBackToBatch = useCallback(() => {
+    setSelectedOrderId(null);
+  }, []);
+  const orderParentNavigation = useMemo(
+    () =>
+      selectedBatchId
+        ? {
+            label: `Batch ${selectedBatchId.slice(0, 8).toUpperCase()}`,
+            onNavigate: handleBackToBatch,
+          }
+        : undefined,
+    [selectedBatchId, handleBackToBatch],
+  );
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
@@ -1907,8 +1925,10 @@ export default function OrderFlowPage() {
         header comment for why it lives in apps/frontend, not
         modules/shared).
       */}
+      {/* Batch Detail is suppressed (not stacked) while its member Order
+          Detail is showing; selectedBatchId is retained for Back. */}
       <EntityDetailModal
-        entityId={selectedBatchId}
+        entityId={selectedOrderId ? null : selectedBatchId}
         onClose={() => setSelectedBatchId(null)}
         title={`Batch ${selectedBatchId?.slice(0, 8).toUpperCase() ?? ''}`}
         subtitle={
@@ -1916,15 +1936,11 @@ export default function OrderFlowPage() {
             ? `${selectedBatch.status.replace(/_/g, ' ')} · ${selectedBatch.release_trigger ?? 'standard'} release`
             : undefined
         }
-        maxWidth="md"
       >
         {selectedBatch && (
           <BatchDetailModalBody
             batch={selectedBatch}
-            onNavigateToOrder={(orderId) => {
-              setSelectedBatchId(null);
-              setSelectedOrderId(orderId);
-            }}
+            onNavigateToOrder={setSelectedOrderId}
           />
         )}
       </EntityDetailModal>
@@ -1936,6 +1952,7 @@ export default function OrderFlowPage() {
         subtitle={modalSubtitle}
         maxWidth="md"
         footerActions={modalFooter}
+        parentNavigation={orderParentNavigation}
       >
         {selectedOrderId && (
           <OrderDetailModalBody

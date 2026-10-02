@@ -895,12 +895,33 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
     setSearchQuery('');
     setActiveSearchIndex(-1);
   }, []);
+  // BATCH-DETAIL-HANDOFF-01: same entity-inspection grammar as Order Flow.
+  // Order Detail opened from Batch Detail keeps the batch as its parent; X
+  // ends the whole flow (no-op batch clear for ordinary Order Detail), Back
+  // clears only the order.
   const handleCloseOrderDetail = useCallback(() => {
+    setSelectedOrderId(null);
+    setSelectedBatchId(null);
+    setModalTitle('');
+    setModalSubtitle(undefined);
+    setModalFooter(null);
+  }, []);
+  const handleBackToBatch = useCallback(() => {
     setSelectedOrderId(null);
     setModalTitle('');
     setModalSubtitle(undefined);
     setModalFooter(null);
   }, []);
+  const orderParentNavigation = useMemo(
+    () =>
+      selectedBatchId
+        ? {
+            label: `Batch ${selectedBatchId.slice(0, 8).toUpperCase()}`,
+            onNavigate: handleBackToBatch,
+          }
+        : undefined,
+    [selectedBatchId, handleBackToBatch],
+  );
   const activateSearchResult = useCallback((result: GlobalSearchResult) => {
     clearSearch();
     if (result.type === 'order') {
@@ -1528,8 +1549,10 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         Alert settings →
       </Box>
 
+      {/* Batch Detail is suppressed (not stacked) while its member Order
+          Detail is showing; selectedBatchId is retained for Back. */}
       <EntityDetailModal
-        entityId={selectedBatchId}
+        entityId={selectedOrderId ? null : selectedBatchId}
         onClose={() => setSelectedBatchId(null)}
         title={`Batch ${selectedBatchId?.slice(0, 8).toUpperCase() ?? ''}`}
         subtitle={
@@ -1537,15 +1560,11 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
             ? `${selectedBatch.status.replace(/_/g, ' ')} · ${selectedBatch.release_trigger ?? 'standard'} release`
             : undefined
         }
-        maxWidth="md"
       >
         {selectedBatch && (
           <BatchDetailModalBody
             batch={selectedBatch}
-            onNavigateToOrder={(orderId) => {
-              setSelectedBatchId(null);
-              setSelectedOrderId(orderId);
-            }}
+            onNavigateToOrder={setSelectedOrderId}
           />
         )}
       </EntityDetailModal>
@@ -1557,6 +1576,7 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
         subtitle={modalSubtitle}
         maxWidth="md"
         footerActions={modalFooter}
+        parentNavigation={orderParentNavigation}
       >
         {selectedOrderId && (
           <OrderDetailModalBody
