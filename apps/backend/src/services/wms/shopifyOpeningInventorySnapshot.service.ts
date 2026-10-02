@@ -136,7 +136,7 @@ const ownershipLost = () =>
     'Opening inventory snapshot collection no longer owns its reservation'
   );
 
-function normalizeShopifyGid(
+export function normalizeShopifyGid(
   kind: 'Location' | 'InventoryItem',
   value: unknown
 ): string | null {
@@ -166,13 +166,13 @@ function cohortFingerprint(
 
 // ─── identity ───────────────────────────────────────────────────────────────
 
-interface ShopifyItemIdentity {
+export interface ShopifyItemIdentity {
   lasyncroVariantId: string;
   externalVariantId: string | null;
   relevant: boolean;
 }
 
-interface ShopifyIdentityRow {
+export interface ShopifyIdentityRow {
   lasyncro_variant_id: string;
   external_variant_id: string | null;
   external_inventory_item_id: string | null;
@@ -186,7 +186,7 @@ interface ShopifyIdentityRow {
  * decides how a collected level is interpreted. `lockRows` share-locks the
  * identity rows for the rest of the caller's transaction.
  */
-async function selectShopifyIdentityRows(
+export async function selectShopifyIdentityRows(
   trx: Knex.Transaction,
   shopId: number,
   options: { lockRows?: boolean } = {}
@@ -219,7 +219,7 @@ async function selectShopifyIdentityRows(
  * binds a collected level to a LaSyncro variant, and the relevance fields
  * catch a variant/product entering or leaving the active physical cohort.
  */
-function identityFingerprint(rows: ShopifyIdentityRow[]): string {
+export function identityFingerprint(rows: ShopifyIdentityRow[]): string {
   const keys = rows
     .map((row) =>
       JSON.stringify([
@@ -242,7 +242,7 @@ function identityFingerprint(rows: ShopifyIdentityRow[]): string {
  * variant must carry an inventory item identity, and each one absent from the
  * Location enumeration is recorded as explicit not-present evidence.
  */
-function buildShopifyItemIdentities(
+export function buildShopifyItemIdentities(
   rows: ShopifyIdentityRow[]
 ): Map<string, ShopifyItemIdentity> {
   const byItem = new Map<string, ShopifyItemIdentity>();
@@ -421,7 +421,7 @@ async function reserveOpeningInventorySnapshot(
 
 // ─── collect (no transaction spans a provider call) ─────────────────────────
 
-interface SnapshotLine {
+export interface SnapshotLine {
   shopify_inventory_item_id: string;
   shopify_variant_id: string | null;
   lasyncro_variant_id: string | null;
@@ -544,7 +544,7 @@ async function refreshCollectionLease(
   if (updated !== 1) throw ownershipLost();
 }
 
-function createDefaultLocationPageReader(): OpeningInventoryLocationPageReader {
+export function createOpeningInventoryLocationPageReader(): OpeningInventoryLocationPageReader {
   let client: ReturnType<typeof CreateShopifyGraphQLClient> | null = null;
 
   return async ({ shopId, variables }) => {
@@ -583,15 +583,87 @@ function createDefaultLocationPageReader(): OpeningInventoryLocationPageReader {
   };
 }
 
-async function collectLocationSnapshot(
-  shopId: number,
-  reservation: SnapshotReservation,
-  readLocationPage: OpeningInventoryLocationPageReader
-): Promise<{ lines: SnapshotLine[]; pageCount: number }> {
-  const lines = new Map<string, SnapshotLine>();
-  const seenCursors = new Set<string>();
+function servedShopifyApiVersion(
+  response: unknown
+): string | null {
+  const headers = (response as any)?.headers;
+
+  if (!headers) return null;
+
+  if (typeof headers.get === 'function') {
+    const value =
+      headers.get('X-Shopify-API-Version') ??
+      headers.get('x-shopify-api-version');
+
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
+  }
+
+  if (typeof headers !== 'object') return null;
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== 'x-shopify-api-version') {
+      continue;
+    }
+
+    const raw =
+      Array.isArray(value)
+        ? value[0]
+        : value;
+
+    const normalized =
+      String(raw ?? '').trim();
+
+    return normalized || null;
+  }
+
+  return null;
+}
+
+export interface OpeningInventoryLocationEvidence {
+  lines: SnapshotLine[];
+  pageCount: number;
+  servedApiVersion: string | null;
+  readStartedAt: Date;
+  readCompletedAt: Date;
+}
+
+/**
+ * Reusable read-only Shopify Location.inventoryLevels collector.
+ *
+ * It owns no database transaction and performs no persistence. Opening start
+ * supplies `onPage` only for its lease heartbeat; Slice D uses the same
+ * parser/pagination semantics without creating or mutating historical
+ * snapshots.
+ */
+export async function collectOpeningInventoryLocationEvidence(params: {
+  shopId: number;
+  locationGid: string;
+  identities: Map<string, ShopifyItemIdentity>;
+  readLocationPage: OpeningInventoryLocationPageReader;
+  requireServedApiVersion?: boolean;
+  onPage?: () => Promise<void>;
+}): Promise<OpeningInventoryLocationEvidence> {
+  const {
+    shopId,
+    locationGid,
+    identities,
+    readLocationPage,
+    requireServedApiVersion = false,
+    onPage,
+  } = params;
+
+  const lines =
+    new Map<string, SnapshotLine>();
+
+  const seenCursors =
+    new Set<string>();
+
   let cursor: string | null = null;
   let pageCount = 0;
+  let servedApiVersion: string | null = null;
+
+  const readStartedAt = new Date();
 
   for (;;) {
     let response: unknown;
@@ -600,28 +672,79 @@ async function collectLocationSnapshot(
       response = await readLocationPage({
         shopId,
         variables: {
-          locationId: reservation.locationGid,
-          first: OPENING_INVENTORY_SNAPSHOT_PAGE_SIZE,
+          locationId: locationGid,
+          first:
+            OPENING_INVENTORY_SNAPSHOT_PAGE_SIZE,
           after: cursor,
         },
       });
     } catch (error) {
-      if (error instanceof OpeningInventorySnapshotError) throw error;
-      // Provider/network text is never propagated or persisted.
-      throw shopifyFailure('SHOPIFY_REQUEST_FAILED', 'Shopify inventory request failed');
+      if (
+        error instanceof
+        OpeningInventorySnapshotError
+      ) {
+        throw error;
+      }
+
+      throw shopifyFailure(
+        'SHOPIFY_REQUEST_FAILED',
+        'Shopify inventory request failed'
+      );
     }
 
     pageCount += 1;
 
-    const page = parseLocationPage(response, reservation.locationGid);
+    const pageServedVersion =
+      servedShopifyApiVersion(response);
+
+    if (
+      requireServedApiVersion &&
+      !pageServedVersion
+    ) {
+      throw shopifyFailure(
+        'SHOPIFY_SERVED_API_VERSION_MISSING',
+        'Shopify response did not identify the served Admin API version'
+      );
+    }
+
+    if (pageServedVersion) {
+      if (
+        servedApiVersion &&
+        servedApiVersion !==
+          pageServedVersion
+      ) {
+        throw shopifyFailure(
+          'SHOPIFY_SERVED_API_VERSION_CHANGED',
+          'Shopify served different Admin API versions during one inventory read'
+        );
+      }
+
+      servedApiVersion =
+        pageServedVersion;
+    }
+
+    const page =
+      parseLocationPage(
+        response,
+        locationGid
+      );
 
     if (page.hasNextPage) {
       if (!page.endCursor) {
-        throw shopifyFailure('SHOPIFY_CURSOR_INVALID', 'hasNextPage without endCursor');
+        throw shopifyFailure(
+          'SHOPIFY_CURSOR_INVALID',
+          'hasNextPage without endCursor'
+        );
       }
 
-      if (page.endCursor === cursor || seenCursors.has(page.endCursor)) {
-        throw shopifyFailure('SHOPIFY_CURSOR_STALLED', 'Pagination cursor did not advance');
+      if (
+        page.endCursor === cursor ||
+        seenCursors.has(page.endCursor)
+      ) {
+        throw shopifyFailure(
+          'SHOPIFY_CURSOR_STALLED',
+          'Pagination cursor did not advance'
+        );
       }
     }
 
@@ -633,51 +756,155 @@ async function collectLocationSnapshot(
         );
       }
 
-      const identity = reservation.identities.get(level.itemGid);
+      const identity =
+        identities.get(level.itemGid);
 
-      if (!identity && level.onHand !== 0) {
+      if (
+        !identity &&
+        level.onHand !== 0
+      ) {
         throw scopeFailure(
           'UNMAPPED_SHOPIFY_INVENTORY',
           'The Shopify Location holds on_hand for an item with no LaSyncro identity'
         );
       }
 
-      lines.set(level.itemGid, {
-        shopify_inventory_item_id: level.itemGid,
-        shopify_variant_id: level.variantGid ?? identity?.externalVariantId ?? null,
-        lasyncro_variant_id: identity?.lasyncroVariantId ?? null,
-        inventory_level_present: true,
-        inventory_level_active: level.active,
-        tracked: level.tracked,
-        on_hand_quantity: level.onHand,
-      });
+      lines.set(
+        level.itemGid,
+        {
+          shopify_inventory_item_id:
+            level.itemGid,
+
+          shopify_variant_id:
+            level.variantGid ??
+            identity?.externalVariantId ??
+            null,
+
+          lasyncro_variant_id:
+            identity?.lasyncroVariantId ??
+            null,
+
+          inventory_level_present:
+            true,
+
+          inventory_level_active:
+            level.active,
+
+          tracked:
+            level.tracked,
+
+          on_hand_quantity:
+            level.onHand,
+        }
+      );
     }
 
-    await refreshCollectionLease(shopId, reservation);
+    if (onPage) {
+      await onPage();
+    }
 
-    if (!page.hasNextPage) break;
+    if (!page.hasNextPage) {
+      break;
+    }
 
-    seenCursors.add(page.endCursor as string);
-    cursor = page.endCursor;
+    seenCursors.add(
+      page.endCursor as string
+    );
+
+    cursor =
+      page.endCursor;
   }
 
-  // Known relevant items Shopify does not stock at this Location: explicit
-  // not-present evidence, never zero.
-  for (const [itemGid, identity] of reservation.identities) {
-    if (!identity.relevant || lines.has(itemGid)) continue;
+  // A known relevant item absent from this Location remains explicit absence,
+  // never synthesized as zero.
+  for (
+    const [itemGid, identity]
+    of identities
+  ) {
+    if (
+      !identity.relevant ||
+      lines.has(itemGid)
+    ) {
+      continue;
+    }
 
-    lines.set(itemGid, {
-      shopify_inventory_item_id: itemGid,
-      shopify_variant_id: identity.externalVariantId,
-      lasyncro_variant_id: identity.lasyncroVariantId,
-      inventory_level_present: false,
-      inventory_level_active: null,
-      tracked: null,
-      on_hand_quantity: null,
+    lines.set(
+      itemGid,
+      {
+        shopify_inventory_item_id:
+          itemGid,
+
+        shopify_variant_id:
+          identity.externalVariantId,
+
+        lasyncro_variant_id:
+          identity.lasyncroVariantId,
+
+        inventory_level_present:
+          false,
+
+        inventory_level_active:
+          null,
+
+        tracked:
+          null,
+
+        on_hand_quantity:
+          null,
+      }
+    );
+  }
+
+  return {
+    lines:
+      [...lines.values()],
+
+    pageCount,
+
+    servedApiVersion,
+
+    readStartedAt,
+
+    readCompletedAt:
+      new Date(),
+  };
+}
+
+async function collectLocationSnapshot(
+  shopId: number,
+  reservation: SnapshotReservation,
+  readLocationPage:
+    OpeningInventoryLocationPageReader
+): Promise<{
+  lines: SnapshotLine[];
+  pageCount: number;
+}> {
+  const collected =
+    await collectOpeningInventoryLocationEvidence({
+      shopId,
+
+      locationGid:
+        reservation.locationGid,
+
+      identities:
+        reservation.identities,
+
+      readLocationPage,
+
+      onPage: () =>
+        refreshCollectionLease(
+          shopId,
+          reservation
+        ),
     });
-  }
 
-  return { lines: [...lines.values()], pageCount };
+  return {
+    lines:
+      collected.lines,
+
+    pageCount:
+      collected.pageCount,
+  };
 }
 
 // ─── T2 finalize ────────────────────────────────────────────────────────────
@@ -836,7 +1063,7 @@ export async function startShopOpeningInventory(
 
   const { reservation } = reserved;
   const readLocationPage =
-    deps.readLocationPage ?? createDefaultLocationPageReader();
+    deps.readLocationPage ?? createOpeningInventoryLocationPageReader();
 
   let collected: { lines: SnapshotLine[]; pageCount: number };
 

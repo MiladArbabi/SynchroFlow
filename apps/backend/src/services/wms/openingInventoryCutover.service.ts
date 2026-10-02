@@ -1209,3 +1209,9 @@ export async function getOpeningInventoryCutoverView(
     };
   });
 }
+
+export {
+  createOpeningInventoryCutoverGeneration,
+  type CreateOpeningInventoryCutoverGenerationParams,
+  type CreateOpeningInventoryCutoverGenerationDeps,
+} from './openingInventoryCutoverGeneration.service.js';
