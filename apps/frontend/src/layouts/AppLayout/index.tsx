@@ -14,6 +14,7 @@ import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
 import { TrialCountdownBanner } from "../../components/TrialCountdownBanner";
 import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
+import { getWarehouseFocusSession } from '../../utils/warehouseFocus';
 import { useAuth } from 'contexts/AuthContext';
 import { useIdleTimeout } from 'hooks/useIdleTimeout';
 import { ChevronLeft } from "lucide-react";
@@ -41,18 +42,20 @@ const AppLayout = (props: AppLayoutProps) => {
    * Valid only on /wms routes, and only when warehouseFocus names the
    * matching session identity — a bare warehouseFocus param with no
    * matching task/job id (e.g. a stale/edited URL) must not hide chrome
-   * for a session that isn't actually there.
+   * for a session that isn't actually there. The rule itself is the
+   * shared predicate WmsFT2Page also reads (utils/warehouseFocus).
    */
   const location = useLocation();
-  const isExecutionFocused = React.useMemo(() => {
-    if (!location.pathname.startsWith('/wms')) return false;
-    const params = new URLSearchParams(location.search);
-    const warehouseFocus = params.get('warehouseFocus');
-    if (warehouseFocus === 'stow') return Boolean(params.get('stowTaskId'));
-    if (warehouseFocus === 'receive') return Boolean(params.get('receiveJobId'));
-    if (warehouseFocus === 'count') return Boolean(params.get('countTaskId'));
-    return false;
+  const focusedSession = React.useMemo(() => {
+    if (!location.pathname.startsWith('/wms')) return null;
+    return getWarehouseFocusSession(new URLSearchParams(location.search));
   }, [location.pathname, location.search]);
+  const isExecutionFocused = focusedSession !== null;
+  // WAREHOUSE-SESSION-FOCUS-02A — a focused Pick also hides commercial
+  // chrome (trial banner, post-trial interstitial). Scoped to Pick in this
+  // slice: stow/receive/count focus keeps its existing shell unchanged.
+  // The system-health surface is never hidden by focus.
+  const hideCommercialChrome = focusedSession === 'pick';
   const [isConnected, setIsConnected] = useState(false);
   const { trialEndsAt, tier } = useEntitlements();
   // Post-trial: trial ended within last 7 days and user is now on starter
@@ -257,10 +260,10 @@ const AppLayout = (props: AppLayoutProps) => {
             {/* Trial banner — FT2 only. Commercial/billing chrome is owner/admin
                 only: operators cannot act on billing (ACCESS-01). The system
                 health banner above stays visible to operators. */}
-            {isSidenavAllowed && !isOperator && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
+            {isSidenavAllowed && !isOperator && !hideCommercialChrome && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
 
             {/* POST-TRIAL INTERSTITIAL (UX-07) — owner/admin only, as above */}
-            <PostTrialInterstitial show={isPostTrial && !isOperator} />
+            <PostTrialInterstitial show={isPostTrial && !isOperator && !hideCommercialChrome} />
 
             {/* PAGE CONTENT */}
             <Box

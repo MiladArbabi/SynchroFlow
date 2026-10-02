@@ -974,7 +974,13 @@ export default function WmsOperationsPage() {
         )
       }
       pendingPickBatchId={searchParams.get('batchId')}
-      onPickSessionEnter={(id) => setSearchParams({ batchId: id }, { replace: true })}
+      // WAREHOUSE-SESSION-FOCUS-02A — Pick is focused from its Brief onward:
+      // entering (or restoring) a Pick session always lands on the canonical
+      // focused URL and never strips warehouseFocus=pick. Only onSessionExit
+      // clears batchId + focus together.
+      onPickSessionEnter={(id) =>
+        setSearchParams({ batchId: id, warehouseFocus: 'pick' }, { replace: true })
+      }
       pendingPackBatchId={searchParams.get('packBatchId')}
       onPackSessionEnter={(id) => setSearchParams({ packBatchId: id }, { replace: true })}
       isOnline={isOnline}

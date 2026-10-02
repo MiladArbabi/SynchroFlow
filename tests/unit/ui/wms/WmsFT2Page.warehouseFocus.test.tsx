@@ -127,3 +127,22 @@ describe('WAREHOUSE-FOCUS-SHELL-01B — WmsFT2Page module tab bar execution focu
   });
 
 });
+
+// WAREHOUSE-SESSION-FOCUS-02A — Pick is execution-focused from the Pick Brief
+// onward (canonical /wms?batchId=<id>&warehouseFocus=pick). The module tab bar
+// is hidden for a focused Pick exactly as for Stow/Receive/Count; a stale
+// warehouseFocus=pick without batchId must not hide it.
+describe('WAREHOUSE-SESSION-FOCUS-02A — WmsFT2Page module tab bar for focused Pick', () => {
+  it('focused Pick (warehouseFocus=pick + batchId): module tabs absent, execution content preserved', async () => {
+    renderAt('/?batchId=batch-a&warehouseFocus=pick');
+
+    expect(screen.queryByTestId('module-tab-bar-stub')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('wms-operations-content-stub')).toBeInTheDocument();
+  });
+
+  it('warehouseFocus=pick with no batchId (stale/edited URL) does not hide tabs', () => {
+    renderAt('/?warehouseFocus=pick');
+
+    expect(screen.getByTestId('module-tab-bar-stub')).toBeInTheDocument();
+  });
+});

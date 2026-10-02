@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import {
   DecisionConfirmationModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
+import { WmsSessionBrief } from '../components/WmsSessionBrief.js';
 
 // WMS-CTA-CONSISTENCY-34: canonical Tier-1 commit/workflow-action treatment —
 // same token pair already used by the Reconcile-inventory and Create-count
@@ -1128,109 +1129,29 @@ export default function CountingSessionPage({
         ];
 
 
+    // WMS-BRIEF-SYSTEM-01A — composition comes from the shared WMS Brief;
+    // copy, claim/start and Leave count semantics are unchanged.
     return (
-      <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}
-          >
-            {task.label}
-          </Typography>
-
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: 26,
-              fontWeight: 700,
-              color: 'var(--ink)',
-              lineHeight: 1.1,
-            }}
-          >
-            {isOpening ? 'Count opening inventory' : 'Count inventory'}
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: 13,
-              fontWeight: 300,
-              color: 'var(--ink-3)',
-              mt: 0.75,
-            }}
-          >
-            {isOpening
-              ? 'Establish the physical starting stock for this warehouse bin.'
-              : 'Count what is physically in the selected locations and compare it with system stock.'}
-          </Typography>
-        </Box>
-
-        <Paper
-          variant="outlined"
-          sx={{
-            px: 2,
-            py: 1.5,
-            mb: 2,
-            borderRadius: '6px',
-            bgcolor: 'background.paper',
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, minmax(0, 1fr))' },
-            gap: 1,
-          }}
-        >
-          {briefFacts.map(([label, value]) => (
-            <Box key={label} sx={{ minWidth: 0 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontSize: 10, textTransform: 'uppercase' }}
-              >
-                {label}
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--ink)',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {value}
-              </Typography>
-            </Box>
-          ))}
-        </Paper>
-
-        <Box
-          component="ol"
-          sx={{
-            m: 0,
-            mb: 2,
-            pl: 2.5,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0.75,
-          }}
-        >
-          {briefSteps.map((step) => (
-            <Typography key={step} component="li" sx={{ fontSize: 13, color: 'var(--ink-2)' }}>
-              {step}
-            </Typography>
-          ))}
-        </Box>
-
-        {isOpening && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Shopify stock is a reference only. Your physical warehouse count is
-            what LaSyncro records as the opening stock for this bin.
-          </Alert>
-        )}
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <WmsSessionBrief
+        eyebrow={task.label}
+        title={isOpening ? 'Count opening inventory' : 'Count inventory'}
+        description={
+          isOpening
+            ? 'Establish the physical starting stock for this warehouse bin.'
+            : 'Count what is physically in the selected locations and compare it with system stock.'
+        }
+        facts={briefFacts.map(([label, value]) => ({ label, value }))}
+        steps={briefSteps}
+        notice={
+          isOpening && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Shopify stock is a reference only. Your physical warehouse count is
+              what LaSyncro records as the opening stock for this bin.
+            </Alert>
+          )
+        }
+        error={error}
+        primaryAction={
           <Button
             variant="contained"
             size="large"
@@ -1244,11 +1165,12 @@ export default function CountingSessionPage({
           >
             {submitting ? 'Claiming…' : 'Claim & Start Count'}
           </Button>
-
-          {/* #1164 — the protected shell hides app chrome from the Brief on,
-              so the Brief carries its own non-mutating exit (session exit
-              only: no claim, reassignment, count or close). GH-1201 — the
-              ordinary Brief uses the same non-mutating exit. */}
+        }
+        secondaryAction={
+          /* #1164 — the protected shell hides app chrome from the Brief on,
+             so the Brief carries its own non-mutating exit (session exit
+             only: no claim, reassignment, count or close). GH-1201 — the
+             ordinary Brief uses the same non-mutating exit. */
           <Button
             variant="text"
             size="small"
@@ -1258,8 +1180,8 @@ export default function CountingSessionPage({
           >
             Leave count
           </Button>
-        </Box>
-      </Box>
+        }
+      />
     );
   }
 
