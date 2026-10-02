@@ -1,8 +1,8 @@
-ENGINEERING WORKFLOW v3.2
+ENGINEERING WORKFLOW v3.3
 
 Mode: Solo-developer, main-first execution
 
-Effective: 2026-09-20
+Effective: 2026-10-02
 
 Primary repository: SynchroFlow
 
@@ -15,6 +15,8 @@ MAIN SYNC + CLEANLINESS GATE
 → ELI5
 
 → AUDIT
+
+→ CONTRACT INHERITANCE / PRECEDENT GATE
 
 → WORKSHOP [only when required]
 
@@ -214,6 +216,43 @@ A red test must be classified against its current invariant before production so
 DEPLOY-GATE-01
 
 Direct-main does not mean uncontrolled production deployment. Required pre-push verification must pass before pushing consequential code, and production deployment should not outrun required CI. If the deployment pipeline can publish a red main commit before required CI finishes, treat that pipeline ordering as infrastructure debt and use the strongest required local gate until it is corrected.
+
+CONTRACT-INHERITANCE-01
+
+Before mutating an existing product family, UX family, lifecycle, navigation
+pattern, shared component, or workflow, identify:
+
+- the canonical precedent;
+- applicable playbooks / blueprints;
+- already-solved sibling behaviours;
+- inherited invariants that must remain unchanged.
+
+Acceptance criteria and regression contracts must include inherited invariants,
+not only the new feature's intended happy path.
+
+Live/browser verification should primarily confirm the implementation against
+the pre-established contract. It must not be the normal mechanism for
+discovering rules that were already documented or embodied elsewhere in the
+system.
+
+PRECEDENT-REUSE-01
+
+When the same failure class has already been solved elsewhere in the system,
+audit and reuse that solution before designing a new mechanism.
+
+Examples include:
+
+- protected WMS session transitions / no parent-surface flash;
+- EntityDetailModal composition and overflow behaviour;
+- parent / child modal navigation;
+- URL restoration and hard-reload behaviour;
+- loading, error, and fail-open boundaries;
+- role / entitlement gating;
+- responsive layout and constrained-viewport fallbacks.
+
+A new local mechanism requires evidence that the existing precedent does not
+apply.
+
 
 ⸻
 
@@ -501,6 +540,61 @@ Examples:
 - staged diff + targeted regression suite.
 
 The second layer need not duplicate the first. It should prove the invariant from a different angle.
+
+4.7 Contract inheritance / precedent gate
+
+Purpose:
+
+Prevent implementation from becoming contract discovery.
+
+For work touching an existing product or UX family, this gate runs after AUDIT
+and before WORKSHOP / TEST STRATEGY / IMPLEMENT.
+
+Before production mutation:
+
+1. Identify the canonical component, lifecycle, navigation model, or workflow
+   that owns the behaviour.
+2. Read the applicable playbooks / blueprints rather than relying on memory.
+3. Search for sibling flows that already solved the same class of problem.
+4. Enumerate inherited invariants, including where applicable:
+   - loading / unresolved first paint;
+   - transition behaviour;
+   - error / fail-open behaviour;
+   - deep-link behaviour;
+   - refresh / restoration behaviour;
+   - authorization / role behaviour;
+   - responsive sizing;
+   - overflow / scrolling;
+   - accessibility;
+   - mutation boundaries;
+   - close / back semantics.
+5. Separate inherited contracts from genuinely new product decisions.
+6. Promote consequential inherited invariants into executable RED regression
+   tests before production code changes whenever practical.
+7. If no valid precedent exists, state that explicitly before designing a new
+   mechanism.
+
+Required gate output should be concise and explicit:
+
+CANONICAL_PRECEDENT=<component / flow / NONE>
+APPLICABLE_DOCS=<playbooks / blueprints>
+INHERITED_INVARIANTS=<decisive rules>
+NEW_DECISIONS=<issue-specific decisions only>
+RED_CONTRACT=<tests required before implementation>
+
+If live/browser verification later discovers an existing documented or
+already-implemented rule that this gate should have found, classify that as a
+workflow miss:
+
+1. correct the governing documentation if necessary;
+2. add or strengthen the executable regression contract where practical;
+3. then correct the implementation.
+
+Canonical rule:
+
+**Inherit first. Implement second. Verify third.**
+
+Verification confirms the contract; it should not repeatedly rediscover it.
 
 ⸻
 

@@ -8,6 +8,8 @@
  * - ENTITY-NAV-02: parent/back and X/close are separate controls with
  *   separate semantics — back never closes, close never navigates back.
  */
+import fs from 'fs';
+import path from 'path';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { EntityDetailModal } from '../../../../modules/shared/src/ui/EntityDetailModal';
 
@@ -80,4 +82,26 @@ describe('BATCH-DETAIL-HANDOFF-01 — EntityDetailModal parent navigation', () =
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveAccessibleName(/close/i);
   });
+  it('ENTITY-OVERFLOW-01 — preserves scrolling as a constrained-viewport fallback instead of clipping content', () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../../modules/shared/src/ui/EntityDetailModal.tsx',
+      ),
+      'utf8',
+    );
+
+    const bodyStart = source.indexOf('<DialogContent');
+    const bodyEnd = source.indexOf('</DialogContent>');
+
+    expect(bodyStart).toBeGreaterThan(-1);
+    expect(bodyEnd).toBeGreaterThan(bodyStart);
+
+    const bodySource = source.slice(bodyStart, bodyEnd);
+
+    // Scroll-free normal desktop composition must come from compact consumer
+    // layout, never by making overflowing detail content inaccessible.
+    expect(bodySource).not.toMatch(/overflow(?:Y)?\s*:\s*['"]hidden['"]/);
+  });
+
 });

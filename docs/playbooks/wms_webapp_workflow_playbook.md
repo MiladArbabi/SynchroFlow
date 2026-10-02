@@ -1245,3 +1245,92 @@ The central invariant is:
 
 > LaSyncro owns physical truth. Shopify receives the frozen opening correction
 > delta needed to reconcile its independently evolving state to that truth.
+
+---
+
+## URL-targeted session handoff / first-paint contract — ratified 2026-10-02
+
+A URL-targeted WMS session is already an instruction about which workflow the
+merchant intends to enter.
+
+Examples include:
+
+- `?batchId=<id>` for Pick;
+- `?countTaskId=<id>` for Counting;
+- equivalent persisted session identifiers for other WMS flows.
+
+### First-paint invariant
+
+While a URL-targeted session is resolving, the ordinary Warehouse / Operations
+body must **not** paint even for a transient frame.
+
+The allowed sequence is:
+
+```text
+targeted URL
+→ protected neutral resolving state
+→ requested Brief / restored session
+```
+
+Never:
+
+```text
+targeted URL
+→ ordinary WMS body
+→ requested Brief / restored session
+```
+
+This applies both to:
+
+- internal navigation into the targeted URL; and
+- direct hard reload / restoration of the same URL.
+
+### Precedent
+
+Counting already implements the canonical protected-transition pattern:
+while a focused count task is unresolved, `WmsModuleFT2` renders a neutral
+session-loading hold so ordinary Warehouse content cannot flash underneath.
+
+New WMS session handoffs should reuse that pattern rather than inventing a
+second transition mechanism.
+
+### Mutation boundary
+
+Session navigation / restoration is not itself a workflow mutation.
+
+For Pick specifically:
+
+```text
+/wms?batchId=<id>
+→ resolve requested batch
+→ Pick Brief
+→ Start Picking
+→ claim
+→ scanner
+```
+
+`Start Picking` remains the consequential claim boundary.
+
+Opening or restoring the Pick Brief must never claim the batch.
+
+### Failure behaviour
+
+A targeted session must not remain in an unresolved hold forever.
+
+Once resolution has definitively failed, surface the flow's explicit error or
+existing fail-open behaviour without first rendering unrelated ordinary WMS
+content as a transient frame.
+
+### Regression contract
+
+For URL-targeted session transitions, prefer tests that protect the committed
+frames, not merely the eventual final DOM.
+
+Where practical, cover:
+
+1. unresolved target → neutral protected hold;
+2. ordinary WMS content absent during the unresolved frame;
+3. successful resolution → requested Brief directly;
+4. direct hard reload obeys the same transition contract;
+5. failed resolution reaches an explicit failure path;
+6. navigation / restoration performs zero workflow mutations.
