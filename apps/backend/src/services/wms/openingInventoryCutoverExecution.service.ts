@@ -15,9 +15,14 @@
 //   frozen requested API version, with zero SDK retries;
 // - batches run strictly sequentially; anything but confirmed success stops.
 //
-// Out of scope (later Slice E): ambiguity readback/recovery, final
-// convergence, verification rows, opening_inventory_shopify_synced_at, N+1
-// regeneration. E02 never converges and never mutates Slice-D rows.
+// E03 (recoverOpeningInventoryCutoverAmbiguity) adds READ-ONLY ambiguity
+// readback: a fresh Shopify Location read judges whether a frozen batch that
+// may have executed appears applied. Nothing is ever resent; an applied batch
+// continues through the same owned-execution path.
+//
+// Out of scope (later Slice E): final convergence,
+// opening_inventory_shopify_synced_at, N+1 regeneration. Neither entrypoint
+// converges or mutates Slice-D rows.
 
 import type { Knex } from 'knex';
 import {
@@ -39,17 +44,25 @@ import {
   resolveOpeningInventoryParticipatingWarehouse,
 } from './openingInventoryPhysicalTarget.service.js';
 import {
+  buildShopifyItemIdentities,
+  collectOpeningInventoryLocationEvidence,
   identityFingerprint,
   normalizeShopifyGid,
+  OPENING_INVENTORY_SNAPSHOT_QUERY,
   selectShopifyIdentityRows,
   servedShopifyApiVersion,
+  type OpeningInventoryLocationEvidence,
+  type ShopifyItemIdentity,
 } from './shopifyOpeningInventorySnapshot.service.js';
 
 const GENERATIONS = 'opening_inventory_cutover_generations';
+const GENERATION_ENTRIES = 'opening_inventory_cutover_generation_entries';
 const GENERATION_BATCHES = 'opening_inventory_cutover_generation_batches';
 const EXECUTIONS = 'opening_inventory_cutover_executions';
 const BATCH_EXECUTIONS = 'opening_inventory_cutover_batch_executions';
 const ATTEMPTS = 'opening_inventory_cutover_batch_attempts';
+const VERIFICATIONS = 'opening_inventory_cutover_verifications';
+const VERIFICATION_LINES = 'opening_inventory_cutover_verification_lines';
 
 /** Conservative default; no heartbeat in E02. */
 export const OPENING_INVENTORY_CUTOVER_EXECUTION_LEASE_MS = 5 * 60 * 1000;
@@ -61,6 +74,18 @@ export const OPENING_CUTOVER_EXECUTION_STALE_CLAIM =
 const REVALIDATION_FAILED = 'OPENING_CUTOVER_EXECUTION_REVALIDATION_FAILED';
 const PROVIDER_REJECTED = 'OPENING_CUTOVER_EXECUTION_PROVIDER_REJECTED';
 const LEASE_RECLAIMED = 'OPENING_CUTOVER_EXECUTION_LEASE_RECLAIMED';
+
+export const OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS =
+  'OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS';
+export const OPENING_CUTOVER_RECOVERY_FROZEN_REQUEST_INTEGRITY =
+  'OPENING_CUTOVER_RECOVERY_FROZEN_REQUEST_INTEGRITY';
+export const OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT =
+  'OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT';
+export const OPENING_CUTOVER_RECOVERY_NOT_RECOVERED =
+  'OPENING_CUTOVER_RECOVERY_NOT_RECOVERED';
+export const OPENING_CUTOVER_RECOVERY_READ_FAILED =
+  'OPENING_CUTOVER_RECOVERY_READ_FAILED';
+const RECOVERY_INSTALLATION_MISSING = 'OPENING_CUTOVER_RECOVERY_INSTALLATION_MISSING';
 
 const ERROR_DETAIL_MAX = 2000;
 
@@ -100,7 +125,8 @@ export type OpeningInventoryCutoverExecutionOutcome =
   | 'requires_regeneration'
   | 'converged'
   | 'busy'
-  | 'stale_claim';
+  | 'stale_claim'
+  | 'not_ambiguous';
 
 export interface OpeningInventoryCutoverExecutionResult {
   outcome: OpeningInventoryCutoverExecutionOutcome;
@@ -179,10 +205,18 @@ type Claim =
   | { kind: 'owner'; lease: Lease }
   | { kind: 'done'; result: OpeningInventoryCutoverExecutionResult };
 
+/**
+ * `recover` (E03) never creates an execution and never reclaims one whose
+ * first unfinished batch is not ambiguous (or an interrupted dispatch, which
+ * reclaim turns ambiguous). Busy / terminal handling is identical.
+ */
+type ClaimMode = 'execute' | 'recover';
+
 async function claimExecution(
   shopId: number,
   generationId: string,
-  leaseMs: number
+  leaseMs: number,
+  mode: ClaimMode = 'execute'
 ): Promise<Claim> {
   return withTenant(shopId, async (trx) => {
     // Same per-shop serialization as Slice-D generation creation.
@@ -212,6 +246,17 @@ async function claimExecution(
           '(lease_expires_at IS NOT NULL AND lease_expires_at > now()) AS lease_live'
         )
       );
+
+    if (!existing && mode === 'recover') {
+      return {
+        kind: 'done' as const,
+        result: result('not_ambiguous', {
+          generationId,
+          executionId: null,
+          code: OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS,
+        }),
+      };
+    }
 
     if (!existing) {
       const [created] = await trx(EXECUTIONS)
@@ -278,6 +323,26 @@ async function claimExecution(
       };
     }
 
+    if (mode === 'recover') {
+      const unfinished = await trx(BATCH_EXECUTIONS)
+        .where({ shop_id: shopId, execution_id: executionId })
+        .whereNot('status', 'succeeded')
+        .orderBy('batch_index', 'asc')
+        .first('status');
+
+      // Pending / rejected batches need execution, not recovery.
+      if (!unfinished || !['ambiguous', 'dispatching'].includes(unfinished.status)) {
+        return {
+          kind: 'done' as const,
+          result: result('not_ambiguous', {
+            generationId,
+            executionId,
+            code: OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS,
+          }),
+        };
+      }
+    }
+
     // Expired lease: issue a NEW token; the old token loses authority now.
     const [reclaimed] = await trx(EXECUTIONS)
       .where({
@@ -321,6 +386,17 @@ async function claimExecution(
     await trx(BATCH_EXECUTIONS)
       .where({ shop_id: shopId, execution_id: executionId, status: 'dispatching' })
       .update({ status: 'ambiguous', updated_at: trx.fn.now() });
+
+    // A readback the old owner left collecting can never be finalized by it:
+    // abandon it under the new lease before any new inspection begins.
+    await trx(VERIFICATIONS)
+      .where({ shop_id: shopId, execution_id: executionId, status: 'collecting' })
+      .update({
+        status: 'abandoned',
+        read_completed_at: trx.fn.now(),
+        finalized_by_lease_token: leaseToken,
+        verdict: null,
+      });
 
     return {
       kind: 'owner' as const,
@@ -450,23 +526,32 @@ async function revalidateCurrentAuthority(
   );
 }
 
+/** Inside a lease-owned transaction: executing → requires_regeneration. */
+async function requireRegenerationInTrx(
+  trx: Knex.Transaction,
+  lease: Lease,
+  terminalReason: string
+): Promise<void> {
+  await trx(EXECUTIONS)
+    .where({ execution_id: lease.executionId, shop_id: lease.shopId })
+    .update({
+      status: 'requires_regeneration',
+      terminal_at: trx.fn.now(),
+      terminal_reason: terminalReason,
+      lease_token: null,
+      lease_expires_at: null,
+      lease_heartbeat_at: null,
+      updated_at: trx.fn.now(),
+    });
+}
+
 async function markRequiresRegeneration(
   lease: Lease,
   reason: string
 ): Promise<void> {
-  await withLease(lease, async (trx) => {
-    await trx(EXECUTIONS)
-      .where({ execution_id: lease.executionId, shop_id: lease.shopId })
-      .update({
-        status: 'requires_regeneration',
-        terminal_at: trx.fn.now(),
-        terminal_reason: `${REVALIDATION_FAILED}:${reason}`,
-        lease_token: null,
-        lease_expires_at: null,
-        lease_heartbeat_at: null,
-        updated_at: trx.fn.now(),
-      });
-  });
+  await withLease(lease, (trx) =>
+    requireRegenerationInTrx(trx, lease, `${REVALIDATION_FAILED}:${reason}`)
+  );
 }
 
 // ─── batch plan ──────────────────────────────────────────────────────────────
@@ -885,7 +970,7 @@ async function runOwnedExecution(
       lease.generationId
     );
 
-    if (!authority.ok) {
+    if (authority.ok === false) {
       await markRequiresRegeneration(lease, authority.reason);
       return result('requires_regeneration', ids);
     }
@@ -905,7 +990,7 @@ async function runOwnedExecution(
       lease.generationId
     );
 
-    if (!authority.ok) {
+    if (authority.ok === false) {
       await markRequiresRegeneration(lease, authority.reason);
       return result('requires_regeneration', ids);
     }
@@ -987,6 +1072,697 @@ export async function executeOpeningInventoryCutoverGeneration(
 
   try {
     return await runOwnedExecution(claim.lease, deps);
+  } catch (error) {
+    if (error instanceof OpeningInventoryCutoverStaleClaimError) {
+      return result('stale_claim', {
+        generationId,
+        executionId: claim.lease.executionId,
+        code: OPENING_CUTOVER_EXECUTION_STALE_CLAIM,
+      });
+    }
+
+    throw error;
+  }
+}
+
+// ─── E03 ambiguity recovery ──────────────────────────────────────────────────
+
+interface FrozenRecoveryEntry {
+  itemGid: string;
+  targetQuantity: number;
+  frozenChangeFrom: number;
+  batchPosition: number;
+}
+
+interface FrozenRecoveryBatch {
+  batchIndex: number;
+  batchStatus: string;
+  requestedApiVersion: string;
+  servedApiVersion: string;
+  shopGid: string;
+  locationGid: string;
+  idempotencyKey: string;
+  entryCount: number;
+  canonicalVariables: string;
+  entries: FrozenRecoveryEntry[];
+}
+
+/** First unfinished batch plus its immutable Slice-D request and entries. */
+async function readFrozenRecoveryBatch(
+  lease: Lease
+): Promise<FrozenRecoveryBatch | null> {
+  return withTenant(lease.shopId, async (trx) => {
+    const unfinished = await trx(BATCH_EXECUTIONS)
+      .where({ shop_id: lease.shopId, execution_id: lease.executionId })
+      .whereNot('status', 'succeeded')
+      .orderBy('batch_index', 'asc')
+      .first('batch_index', 'status');
+
+    if (!unfinished) return null;
+
+    const batchIndex = Number(unfinished.batch_index);
+
+    const generation = await trx(GENERATIONS)
+      .where({ shop_id: lease.shopId, generation_id: lease.generationId })
+      .first(
+        'requested_api_version',
+        'served_api_version',
+        'shopify_shop_gid',
+        'shopify_location_gid'
+      );
+
+    const batch = await trx(GENERATION_BATCHES)
+      .where({
+        shop_id: lease.shopId,
+        generation_id: lease.generationId,
+        batch_index: batchIndex,
+      })
+      .first('canonical_variables', 'idempotency_key', 'entry_count');
+
+    if (!generation || !batch) {
+      throw new Error(
+        '[OPENING_CUTOVER_RECOVERY_INTERNAL] Immutable generation batch is missing'
+      );
+    }
+
+    // Frozen entries are the ONLY recovery comparison authority.
+    const entries = await trx(GENERATION_ENTRIES)
+      .where({
+        shop_id: lease.shopId,
+        generation_id: lease.generationId,
+        disposition: 'write',
+        batch_index: batchIndex,
+      })
+      .orderBy('batch_position', 'asc')
+      .select(
+        'shopify_inventory_item_gid',
+        'target_quantity',
+        'observed_on_hand_quantity',
+        'batch_position'
+      );
+
+    return {
+      batchIndex,
+      batchStatus: String(unfinished.status),
+      requestedApiVersion: String(generation.requested_api_version),
+      servedApiVersion: String(generation.served_api_version),
+      shopGid: String(generation.shopify_shop_gid),
+      locationGid: String(generation.shopify_location_gid),
+      idempotencyKey: String(batch.idempotency_key),
+      entryCount: Number(batch.entry_count),
+      canonicalVariables: String(batch.canonical_variables),
+      entries: entries.map((entry: any) => ({
+        itemGid: String(entry.shopify_inventory_item_gid),
+        targetQuantity: Number(entry.target_quantity),
+        frozenChangeFrom: Number(entry.observed_on_hand_quantity),
+        batchPosition: Number(entry.batch_position),
+      })),
+    };
+  });
+}
+
+function sameKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+
+  return (
+    actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index])
+  );
+}
+
+/**
+ * The persisted request must still say exactly what the frozen entries say.
+ * Read only: canonical_variables are parsed, never recomputed or rewritten.
+ * Returns null when consistent, otherwise a stable mismatch reason.
+ */
+function frozenRequestIntegrityViolation(
+  frozen: FrozenRecoveryBatch
+): string | null {
+  let variables: any;
+
+  try {
+    variables = JSON.parse(frozen.canonicalVariables);
+  } catch {
+    return 'VARIABLES_UNPARSEABLE';
+  }
+
+  if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
+    return 'VARIABLES_SHAPE';
+  }
+
+  if (!sameKeys(variables, ['idempotencyKey', 'input'])) {
+    return 'VARIABLES_SHAPE';
+  }
+
+  if (variables.idempotencyKey !== frozen.idempotencyKey) {
+    return 'IDEMPOTENCY_KEY';
+  }
+
+  const input = variables.input;
+
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    !sameKeys(input, ['name', 'reason', 'referenceDocumentUri', 'quantities']) ||
+    input.name !== 'on_hand' ||
+    input.reason !== 'correction' ||
+    !Array.isArray(input.quantities)
+  ) {
+    return 'INPUT_SHAPE';
+  }
+
+  if (
+    frozen.entries.length === 0 ||
+    frozen.entries.length !== frozen.entryCount
+  ) {
+    return 'ENTRY_UNIVERSE';
+  }
+
+  const entryByItem = new Map(
+    frozen.entries.map((entry) => [entry.itemGid, entry])
+  );
+  const seen = new Set<string>();
+
+  for (const quantity of input.quantities) {
+    if (
+      !quantity ||
+      typeof quantity !== 'object' ||
+      !sameKeys(quantity, [
+        'inventoryItemId',
+        'locationId',
+        'quantity',
+        'changeFromQuantity',
+      ])
+    ) {
+      return 'QUANTITY_SHAPE';
+    }
+
+    const itemGid = String(quantity.inventoryItemId);
+
+    if (seen.has(itemGid)) return 'DUPLICATE_ITEM';
+    seen.add(itemGid);
+
+    const entry = entryByItem.get(itemGid);
+
+    if (!entry) return 'EXTRA_ITEM';
+
+    if (quantity.locationId !== frozen.locationGid) return 'LOCATION';
+    if (quantity.quantity !== entry.targetQuantity) return 'TARGET_QUANTITY';
+    if (quantity.changeFromQuantity !== entry.frozenChangeFrom) {
+      return 'CHANGE_FROM_QUANTITY';
+    }
+  }
+
+  if (seen.size !== entryByItem.size) return 'MISSING_ITEM';
+
+  return null;
+}
+
+/** Short lease-owned transaction committed BEFORE any Shopify read. */
+async function beginAmbiguityInspection(
+  lease: Lease,
+  frozen: FrozenRecoveryBatch
+): Promise<string> {
+  return withLease(lease, async (trx) => {
+    const batch = await trx(BATCH_EXECUTIONS)
+      .where({
+        shop_id: lease.shopId,
+        execution_id: lease.executionId,
+        batch_index: frozen.batchIndex,
+      })
+      .forUpdate()
+      .first('status');
+
+    if (batch?.status !== 'ambiguous') {
+      throw new Error(
+        '[OPENING_CUTOVER_RECOVERY_INTERNAL] Recovery batch is no longer ambiguous'
+      );
+    }
+
+    const collecting = await trx(VERIFICATIONS)
+      .where({
+        shop_id: lease.shopId,
+        execution_id: lease.executionId,
+        batch_index: frozen.batchIndex,
+        status: 'collecting',
+      })
+      .first('verification_id');
+
+    if (collecting) {
+      throw new Error(
+        '[OPENING_CUTOVER_RECOVERY_INTERNAL] A collecting ambiguity inspection already exists'
+      );
+    }
+
+    const [verification] = await trx(VERIFICATIONS)
+      .insert({
+        shop_id: lease.shopId,
+        execution_id: lease.executionId,
+        generation_id: lease.generationId,
+        purpose: 'ambiguity_inspection',
+        batch_index: frozen.batchIndex,
+        started_by_lease_token: lease.leaseToken,
+        status: 'collecting',
+        requested_api_version: frozen.requestedApiVersion,
+        shop_gid: frozen.shopGid,
+        location_gid: frozen.locationGid,
+      })
+      .returning(['verification_id']);
+
+    return String(verification.verification_id);
+  });
+}
+
+/** Read-only liveness: never heartbeats, never extends the lease. */
+async function assertLeaseLive(lease: Lease): Promise<void> {
+  const live = await withTenant(lease.shopId, (trx) =>
+    trx(EXECUTIONS)
+      .where({
+        execution_id: lease.executionId,
+        shop_id: lease.shopId,
+        lease_token: lease.leaseToken,
+        status: 'executing',
+      })
+      .whereRaw('lease_expires_at > now()')
+      .first('execution_id')
+  );
+
+  if (!live) {
+    throw new OpeningInventoryCutoverStaleClaimError();
+  }
+}
+
+/** Collecting header still started by THIS lease; anything else is internal. */
+async function closeVerification(
+  trx: Knex.Transaction,
+  lease: Lease,
+  verificationId: string,
+  fields: Record<string, unknown>
+): Promise<void> {
+  const closed = await trx(VERIFICATIONS)
+    .where({
+      verification_id: verificationId,
+      shop_id: lease.shopId,
+      status: 'collecting',
+      started_by_lease_token: lease.leaseToken,
+    })
+    .update({
+      read_completed_at: trx.fn.now(),
+      finalized_by_lease_token: lease.leaseToken,
+      ...fields,
+    });
+
+  if (closed !== 1) {
+    throw new Error(
+      '[OPENING_CUTOVER_RECOVERY_INTERNAL] Ambiguity inspection is no longer collecting'
+    );
+  }
+}
+
+/**
+ * Failed inspection without lines. `terminalReason` set → deterministic
+ * structural failure (requires_regeneration); null → transient/protocol read
+ * failure (execution stays executing under the same live lease).
+ */
+async function failAmbiguityInspection(
+  lease: Lease,
+  verificationId: string,
+  terminalReason: string | null
+): Promise<void> {
+  await withLease(lease, async (trx) => {
+    await closeVerification(trx, lease, verificationId, {
+      status: 'failed',
+      verdict: null,
+    });
+
+    if (terminalReason) {
+      await requireRegenerationInTrx(trx, lease, terminalReason);
+    }
+  });
+}
+
+type LineVerdict = 'match' | 'old_state' | 'mismatch' | 'inactive' | 'untracked';
+type InspectionVerdict = 'applied' | 'not_applied' | 'mixed';
+
+interface InspectionLine {
+  shopify_inventory_item_gid: string;
+  observed_on_hand: number | null;
+  level_present: boolean;
+  active: boolean | null;
+  tracked: boolean | null;
+  expected_target: number;
+  frozen_change_from: number;
+  line_verdict: LineVerdict;
+}
+
+/**
+ * Lines ONLY for frozen batch entries. Malformed eligibility evidence
+ * (present with active/tracked NULL) → null: nothing partial is persisted.
+ */
+function evaluateInspectionLines(
+  frozen: FrozenRecoveryBatch,
+  collected: OpeningInventoryLocationEvidence
+): InspectionLine[] | null {
+  const observedByItem = new Map(
+    collected.lines.map((line) => [line.shopify_inventory_item_id, line])
+  );
+
+  const lines: InspectionLine[] = [];
+
+  for (const entry of frozen.entries) {
+    const observed = observedByItem.get(entry.itemGid);
+    const base = {
+      shopify_inventory_item_gid: entry.itemGid,
+      expected_target: entry.targetQuantity,
+      frozen_change_from: entry.frozenChangeFrom,
+    };
+
+    if (!observed || observed.inventory_level_present !== true) {
+      lines.push({
+        ...base,
+        observed_on_hand: null,
+        level_present: false,
+        active: null,
+        tracked: null,
+        line_verdict: 'mismatch',
+      });
+      continue;
+    }
+
+    const evidence = {
+      ...base,
+      observed_on_hand: observed.on_hand_quantity,
+      level_present: true,
+      active: observed.inventory_level_active,
+      tracked: observed.tracked,
+    };
+
+    if (observed.inventory_level_active === false) {
+      lines.push({ ...evidence, line_verdict: 'inactive' });
+      continue;
+    }
+
+    if (observed.tracked === false) {
+      lines.push({ ...evidence, line_verdict: 'untracked' });
+      continue;
+    }
+
+    if (
+      observed.inventory_level_active !== true ||
+      observed.tracked !== true ||
+      !Number.isSafeInteger(observed.on_hand_quantity)
+    ) {
+      return null;
+    }
+
+    lines.push({
+      ...evidence,
+      line_verdict:
+        observed.on_hand_quantity === entry.targetQuantity
+          ? 'match'
+          : observed.on_hand_quantity === entry.frozenChangeFrom
+            ? 'old_state'
+            : 'mismatch',
+    });
+  }
+
+  return lines;
+}
+
+function inspectionVerdict(lines: InspectionLine[]): InspectionVerdict {
+  if (lines.every((line) => line.line_verdict === 'match')) return 'applied';
+  if (lines.every((line) => line.line_verdict === 'old_state')) return 'not_applied';
+  return 'mixed';
+}
+
+/**
+ * One lease-owned transaction: immutable lines, complete header, then either
+ * ambiguous → succeeded (applied; no adjustment group is fabricated or copied)
+ * or executing → requires_regeneration. not_applied is evidence only.
+ */
+async function completeAmbiguityInspection(
+  lease: Lease,
+  frozen: FrozenRecoveryBatch,
+  verificationId: string,
+  collected: OpeningInventoryLocationEvidence,
+  lines: InspectionLine[],
+  verdict: InspectionVerdict
+): Promise<void> {
+  await withLease(lease, async (trx) => {
+    await trx(VERIFICATION_LINES).insert(
+      lines.map((line) => ({
+        ...line,
+        verification_id: verificationId,
+        shop_id: lease.shopId,
+      }))
+    );
+
+    await closeVerification(trx, lease, verificationId, {
+      status: 'complete',
+      verdict,
+      served_api_version: collected.servedApiVersion,
+      page_count: collected.pageCount,
+    });
+
+    if (verdict !== 'applied') {
+      await requireRegenerationInTrx(
+        trx,
+        lease,
+        `${OPENING_CUTOVER_RECOVERY_NOT_RECOVERED}:${verdict}`
+      );
+      return;
+    }
+
+    const succeeded = await trx(BATCH_EXECUTIONS)
+      .where({
+        generation_id: lease.generationId,
+        batch_index: frozen.batchIndex,
+        shop_id: lease.shopId,
+        execution_id: lease.executionId,
+        status: 'ambiguous',
+      })
+      .update({
+        status: 'succeeded',
+        succeeded_at: trx.fn.now(),
+        shopify_adjustment_group_id: null,
+        updated_at: trx.fn.now(),
+      });
+
+    if (succeeded !== 1) {
+      throw new Error(
+        '[OPENING_CUTOVER_RECOVERY_INTERNAL] Recovered batch is no longer ambiguous'
+      );
+    }
+  });
+}
+
+// Collector failure codes that prove deterministic drift. Every other
+// collector failure (transport, GraphQL, malformed page, served version,
+// cursor) is a transient/protocol read failure that proves nothing.
+const STRUCTURAL_READ_FAILURES = new Set([
+  'SHOPIFY_LOCATION_NOT_FOUND',
+  'SHOPIFY_LOCATION_MISMATCH',
+  'SHOPIFY_LOCATION_INACTIVE',
+  'UNMAPPED_SHOPIFY_INVENTORY',
+  'SHOPIFY_IDENTITY_AMBIGUOUS',
+  'SHOPIFY_IDENTITY_INCOMPLETE',
+]);
+
+function collectorFailureCode(error: unknown): string | null {
+  const code = (error as any)?.failureCode;
+  return typeof code === 'string' && code ? code : null;
+}
+
+async function runOwnedRecovery(
+  lease: Lease,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  const ids = {
+    generationId: lease.generationId,
+    executionId: lease.executionId,
+  };
+
+  const frozen = await readFrozenRecoveryBatch(lease);
+
+  if (!frozen || frozen.batchStatus !== 'ambiguous') {
+    return result('not_ambiguous', {
+      ...ids,
+      code: OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS,
+    });
+  }
+
+  // Inconsistent durable request authority: nothing trustworthy to compare.
+  const violation = frozenRequestIntegrityViolation(frozen);
+
+  if (violation) {
+    await withLease(lease, (trx) =>
+      requireRegenerationInTrx(
+        trx,
+        lease,
+        `${OPENING_CUTOVER_RECOVERY_FROZEN_REQUEST_INTEGRITY}:${violation}`
+      )
+    );
+
+    return result('requires_regeneration', {
+      ...ids,
+      code: OPENING_CUTOVER_RECOVERY_FROZEN_REQUEST_INTEGRITY,
+    });
+  }
+
+  const installation = await withTenant(lease.shopId, (trx) =>
+    trx('shopify_app_installations')
+      .where({ shop_id: lease.shopId })
+      .whereNull('uninstalled_at')
+      .first('shop_domain', 'access_token')
+  );
+
+  if (!installation?.shop_domain || !installation?.access_token) {
+    await withLease(lease, (trx) =>
+      requireRegenerationInTrx(trx, lease, RECOVERY_INSTALLATION_MISSING)
+    );
+
+    return result('requires_regeneration', {
+      ...ids,
+      code: RECOVERY_INSTALLATION_MISSING,
+    });
+  }
+
+  const verificationId = await beginAmbiguityInspection(lease, frozen);
+
+  const structural = async (code: string) => {
+    await failAmbiguityInspection(
+      lease,
+      verificationId,
+      `${OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT}:${code}`
+    );
+
+    return result('requires_regeneration', {
+      ...ids,
+      code: OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT,
+    });
+  };
+
+  const transient = async (code: string) => {
+    await failAmbiguityInspection(lease, verificationId, null);
+
+    return result('ambiguous', {
+      ...ids,
+      code: `${OPENING_CUTOVER_RECOVERY_READ_FAILED}:${code}`,
+    });
+  };
+
+  // Current identity is collector CONTEXT only (mapped extras); frozen
+  // entries alone define what is judged.
+  let identities: Map<string, ShopifyItemIdentity>;
+
+  try {
+    identities = await withTenant(lease.shopId, async (trx) =>
+      buildShopifyItemIdentities(await selectShopifyIdentityRows(trx, lease.shopId))
+    );
+  } catch (error) {
+    const code = collectorFailureCode(error);
+    if (code && STRUCTURAL_READ_FAILURES.has(code)) return structural(code);
+    throw error;
+  }
+
+  const factory =
+    deps.createShopifyGraphQLClient ?? (await defaultClientFactory());
+
+  const client = factory({
+    shopId: lease.shopId,
+    platformShopName: String(installation.shop_domain),
+    accessToken: decrypt(
+      installation.access_token,
+      'wms.openingInventoryCutover'
+    ),
+    // Frozen authority, never the process-global current version.
+    apiVersion: frozen.requestedApiVersion,
+  });
+
+  // No transaction is open while Shopify is awaited.
+  let collected: OpeningInventoryLocationEvidence;
+
+  try {
+    collected = await collectOpeningInventoryLocationEvidence({
+      shopId: lease.shopId,
+      locationGid: frozen.locationGid,
+      identities,
+      readLocationPage: ({ variables }) =>
+        client.request(OPENING_INVENTORY_SNAPSHOT_QUERY, {
+          variables,
+          retries: 0,
+        }),
+      requireServedApiVersion: true,
+      onPage: () => assertLeaseLive(lease),
+    });
+  } catch (error) {
+    if (error instanceof OpeningInventoryCutoverStaleClaimError) throw error;
+
+    const code = collectorFailureCode(error);
+    if (!code) throw error;
+
+    return STRUCTURAL_READ_FAILURES.has(code) ? structural(code) : transient(code);
+  }
+
+  if (collected.servedApiVersion !== frozen.servedApiVersion) {
+    return transient('SHOPIFY_SERVED_API_VERSION_MISMATCH');
+  }
+
+  const lines = evaluateInspectionLines(frozen, collected);
+
+  if (!lines) {
+    return structural('MALFORMED_ELIGIBILITY_EVIDENCE');
+  }
+
+  const verdict = inspectionVerdict(lines);
+
+  await completeAmbiguityInspection(
+    lease,
+    frozen,
+    verificationId,
+    collected,
+    lines,
+    verdict
+  );
+
+  if (verdict !== 'applied') {
+    return result('requires_regeneration', {
+      ...ids,
+      code: `${OPENING_CUTOVER_RECOVERY_NOT_RECOVERED}:${verdict}`,
+    });
+  }
+
+  // Same lease, normal E02 rules: revalidate, durable attempt, dispatch the
+  // next pending batch exactly once, or verifying when all succeeded.
+  return runOwnedExecution(lease, deps);
+}
+
+/**
+ * E03: read-only Shopify readback for the first unfinished batch when it is
+ * ambiguous. Never resends; never converges; never writes the completion
+ * marker; never mutates Slice-D rows.
+ */
+export async function recoverOpeningInventoryCutoverAmbiguity(
+  params: ExecuteOpeningInventoryCutoverGenerationParams,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps = {}
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  const { shopId, generationId } = params;
+
+  if (typeof generationId !== 'string' || !UUID_PATTERN.test(generationId)) {
+    throw new Error('[OPENING_CUTOVER_RECOVERY] generationId must be a UUID');
+  }
+
+  const leaseMs = resolveLeaseMs(deps.leaseDurationMs);
+
+  const claim = await claimExecution(shopId, generationId, leaseMs, 'recover');
+
+  if (claim.kind === 'done') {
+    return claim.result;
+  }
+
+  try {
+    return await runOwnedRecovery(claim.lease, deps);
   } catch (error) {
     if (error instanceof OpeningInventoryCutoverStaleClaimError) {
       return result('stale_claim', {
