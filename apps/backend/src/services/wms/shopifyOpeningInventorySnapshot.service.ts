@@ -642,6 +642,9 @@ export async function collectOpeningInventoryLocationEvidence(params: {
   identities: Map<string, ShopifyItemIdentity>;
   readLocationPage: OpeningInventoryLocationPageReader;
   requireServedApiVersion?: boolean;
+  /** Recovery must retain unknown nonzero items as scope-hazard evidence.
+   * Opening snapshot / generation callers keep the fail-closed default. */
+  retainUnknownItems?: boolean;
   onPage?: () => Promise<void>;
 }): Promise<OpeningInventoryLocationEvidence> {
   const {
@@ -650,6 +653,7 @@ export async function collectOpeningInventoryLocationEvidence(params: {
     identities,
     readLocationPage,
     requireServedApiVersion = false,
+    retainUnknownItems = false,
     onPage,
   } = params;
 
@@ -761,7 +765,8 @@ export async function collectOpeningInventoryLocationEvidence(params: {
 
       if (
         !identity &&
-        level.onHand !== 0
+        level.onHand !== 0 &&
+        !retainUnknownItems
       ) {
         throw scopeFailure(
           'UNMAPPED_SHOPIFY_INVENTORY',

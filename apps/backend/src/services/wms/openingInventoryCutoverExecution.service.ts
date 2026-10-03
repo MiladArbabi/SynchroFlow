@@ -111,14 +111,14 @@ export interface OpeningInventoryCutoverExecutionResult {
 
 // ─── lease ───────────────────────────────────────────────────────────────────
 
-interface Lease {
+export interface Lease {
   shopId: number;
   generationId: string;
   executionId: string;
   leaseToken: string;
 }
 
-class OpeningInventoryCutoverStaleClaimError extends Error {
+export class OpeningInventoryCutoverStaleClaimError extends Error {
   readonly code = OPENING_CUTOVER_EXECUTION_STALE_CLAIM;
 
   constructor() {
@@ -137,9 +137,10 @@ function leaseExpiry(trx: Knex.Transaction, leaseMs: number) {
  * Lease CAS: every authoritative executor transaction starts here. The row
  * lock it takes serializes against a concurrent reclaim; zero rows = stale.
  */
-async function withLease<T>(
+export async function withLease<T>(
   lease: Lease,
-  fn: (trx: Knex.Transaction) => Promise<T>
+  fn: (trx: Knex.Transaction) => Promise<T>,
+  transactionConfig?: Knex.TransactionConfig
 ): Promise<T> {
   return withTenant(lease.shopId, async (trx) => {
     const owned = await trx(EXECUTIONS)
@@ -158,7 +159,7 @@ async function withLease<T>(
     }
 
     return fn(trx);
-  });
+  }, transactionConfig);
 }
 
 function result(
@@ -348,106 +349,111 @@ async function revalidateCurrentAuthority(
   shopId: number,
   generationId: string
 ): Promise<Authority> {
-  return withTenant(
-    shopId,
-    async (trx) => {
-      const generation = await trx(GENERATIONS)
-        .where({ shop_id: shopId, generation_id: generationId })
-        .first();
+  return withTenant(shopId,
+    (trx) => revalidateOpeningInventoryCutoverAuthorityInTransaction(trx, shopId, generationId),
+    { isolationLevel: 'repeatable read' });
+}
 
-      if (!generation || generation.status !== 'frozen') {
-        return drift('GENERATION_NOT_FROZEN');
-      }
+/** Shared E02 authority rules; callers supply one REPEATABLE READ snapshot. */
+export async function revalidateOpeningInventoryCutoverAuthorityInTransaction(
+  trx: Knex.Transaction,
+  shopId: number,
+  generationId: string
+): Promise<Authority> {
+  const generation = await trx(GENERATIONS)
+    .where({ shop_id: shopId, generation_id: generationId })
+    .first();
 
-      const installation = await trx('shopify_app_installations')
-        .where({ shop_id: shopId })
-        .whereNull('uninstalled_at')
-        .first('shop_domain', 'shop_gid', 'access_token');
+  if (!generation || generation.status !== 'frozen') {
+    return drift('GENERATION_NOT_FROZEN');
+  }
 
-      if (!installation?.shop_domain || !installation?.access_token) {
-        return drift('INSTALLATION_MISSING');
-      }
+  const installation = await trx('shopify_app_installations')
+    .where({ shop_id: shopId })
+    .whereNull('uninstalled_at')
+    .first('shop_domain', 'shop_gid', 'access_token');
 
-      if (installation.shop_gid !== generation.shopify_shop_gid) {
-        return drift('SHOP_GID_CHANGED');
-      }
+  if (!installation?.shop_domain || !installation?.access_token) {
+    return drift('INSTALLATION_MISSING');
+  }
 
-      try {
-        const scope = await resolveOpeningInventoryParticipatingWarehouse(
-          trx,
-          shopId
-        );
+  if (installation.shop_gid !== generation.shopify_shop_gid) {
+    return drift('SHOP_GID_CHANGED');
+  }
 
-        if (
-          scope.snapshotId !== String(generation.opening_snapshot_id) ||
-          scope.warehouseId !== String(generation.warehouse_id) ||
-          normalizeShopifyGid('Location', scope.shopifyLocationId) !==
-            generation.shopify_location_gid
-        ) {
-          return drift('SCOPE_CHANGED');
-        }
+  try {
+    const scope = await resolveOpeningInventoryParticipatingWarehouse(
+      trx,
+      shopId
+    );
 
-        const warehouse = await trx('warehouses')
-          .where({ shop_id: shopId, warehouse_id: scope.warehouseId })
-          .first('external_location_id');
+    if (
+      scope.snapshotId !== String(generation.opening_snapshot_id) ||
+      scope.warehouseId !== String(generation.warehouse_id) ||
+      normalizeShopifyGid('Location', scope.shopifyLocationId) !==
+        generation.shopify_location_gid
+    ) {
+      return drift('SCOPE_CHANGED');
+    }
 
-        if (
-          !warehouse ||
-          normalizeShopifyGid('Location', warehouse.external_location_id) !==
-            generation.shopify_location_gid
-        ) {
-          return drift('LOCATION_MAPPING_CHANGED');
-        }
+    const warehouse = await trx('warehouses')
+      .where({ shop_id: shopId, warehouse_id: scope.warehouseId })
+      .first('external_location_id');
 
-        await assertOpeningInventoryPhysicalReadiness(
-          trx,
-          shopId,
-          scope.warehouseId
-        );
+    if (
+      !warehouse ||
+      normalizeShopifyGid('Location', warehouse.external_location_id) !==
+        generation.shopify_location_gid
+    ) {
+      return drift('LOCATION_MAPPING_CHANGED');
+    }
 
-        const target = await buildOpeningInventoryPhysicalTarget(
-          trx,
-          shopId,
-          scope.warehouseId
-        );
+    await assertOpeningInventoryPhysicalReadiness(
+      trx,
+      shopId,
+      scope.warehouseId
+    );
 
-        // Same algorithm and shape Slice D froze.
-        const targetFingerprint = generationFingerprint(
-          target.map((row) => ({
-            lasyncroVariantId: row.lasyncroVariantId,
-            targetQuantity: row.targetQuantity,
-          }))
-        );
+    const target = await buildOpeningInventoryPhysicalTarget(
+      trx,
+      shopId,
+      scope.warehouseId
+    );
 
-        if (targetFingerprint !== generation.target_fingerprint) {
-          return drift('PHYSICAL_TARGET_CHANGED');
-        }
-      } catch (error) {
-        if (error instanceof OpeningInventoryPhysicalScopeError) {
-          return drift(`SCOPE_${error.code}`);
-        }
+    // Same algorithm and shape Slice D froze.
+    const targetFingerprint = generationFingerprint(
+      target.map((row) => ({
+        lasyncroVariantId: row.lasyncroVariantId,
+        targetQuantity: row.targetQuantity,
+      }))
+    );
 
-        if (error instanceof OpeningInventoryPhysicalReadinessError) {
-          return drift(`PHYSICAL_NOT_READY:${error.reasons.join(',')}`);
-        }
+    if (targetFingerprint !== generation.target_fingerprint) {
+      return drift('PHYSICAL_TARGET_CHANGED');
+    }
+  } catch (error) {
+    if (error instanceof OpeningInventoryPhysicalScopeError) {
+      return drift(`SCOPE_${error.code}`);
+    }
 
-        throw error;
-      }
+    if (error instanceof OpeningInventoryPhysicalReadinessError) {
+      return drift(`PHYSICAL_NOT_READY:${error.reasons.join(',')}`);
+    }
 
-      const identityRows = await selectShopifyIdentityRows(trx, shopId);
+    throw error;
+  }
 
-      if (identityFingerprint(identityRows) !== generation.identity_fingerprint) {
-        return drift('IDENTITY_CHANGED');
-      }
+  const identityRows = await selectShopifyIdentityRows(trx, shopId);
 
-      return {
-        ok: true as const,
-        shopDomain: String(installation.shop_domain),
-        encryptedAccessToken: installation.access_token,
-      };
-    },
-    { isolationLevel: 'repeatable read' }
-  );
+  if (identityFingerprint(identityRows) !== generation.identity_fingerprint) {
+    return drift('IDENTITY_CHANGED');
+  }
+
+  return {
+    ok: true as const,
+    shopDomain: String(installation.shop_domain),
+    encryptedAccessToken: installation.access_token,
+  };
 }
 
 async function markRequiresRegeneration(
@@ -855,7 +861,7 @@ async function markVerifying(lease: Lease): Promise<void> {
   });
 }
 
-async function defaultClientFactory(): Promise<OpeningInventoryCutoverShopifyClientFactory> {
+export async function defaultClientFactory(): Promise<OpeningInventoryCutoverShopifyClientFactory> {
   // Loaded lazily: the Shopify SDK validates its configuration at import.
   const { createShopifyGraphQLClient } = await import(
     '../shopify/shopifyClient.service.js'
@@ -955,7 +961,7 @@ async function runOwnedExecution(
   return result('verifying', ids);
 }
 
-function resolveLeaseMs(value: number | undefined): number {
+export function resolveLeaseMs(value: number | undefined): number {
   const leaseMs = value ?? OPENING_INVENTORY_CUTOVER_EXECUTION_LEASE_MS;
 
   if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0) {
