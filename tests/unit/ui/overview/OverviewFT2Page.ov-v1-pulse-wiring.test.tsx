@@ -63,6 +63,11 @@ const mockUseOverviewModulesFt2Snapshot = jest.fn();
 const mockUseWmsLiveActivity = jest.fn();
 const mockOverviewModuleFT2 = jest.fn((_props: Record<string, unknown>) => <div data-testid="overview-module" />);
 
+// GH-1179: preserve this operational page fixture's mature onboarding state.
+jest.mock('hooks/useActivationChecklist', () => ({
+  useActivationChecklist: () => ({ firstEntry: false, externalLocationMapped: true }),
+}));
+
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
   useSearchParams: () => mockUseSearchParams(),

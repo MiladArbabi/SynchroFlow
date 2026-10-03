@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, memo, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useState, memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   Box,
   Typography,
@@ -47,6 +47,7 @@ import {
   mapRecountPreviewBinsToCanvas,
   selectAllRecountBins,
   toggleRecountBinSelection,
+  warehouseLocationToZone,
   type RecountPreviewBin,
 } from './recountSelection.js';
 import { RecountEmptyState } from '../components/RecountEmptyState.js';
@@ -1793,6 +1794,14 @@ function WmsModuleFT2Inner({
 
   const batches = data?.batches ?? [];
 
+  // PICK-EXECUTION-SPATIAL-01B — canonical warehouse geometry for the Pick
+  // execution map, via the shared WMS adapter. undefined (grid not resolved)
+  // stays undefined: missing geometry is never turned into an empty floor.
+  const pickFloorZones = useMemo(
+    () => gridLocations?.map(warehouseLocationToZone),
+    [gridLocations],
+  );
+
   // GH-1109 — Operations is an assigned-work queue, never an unassigned pool.
   // Derive cards and tally from this exact same projection so the two cannot
   // drift. Owner/admin broader API visibility does not broaden floor work:
@@ -1896,10 +1905,16 @@ function WmsModuleFT2Inner({
   const enterPickSession = async (batchId: string) => {
     setLoadingSession(true);
     setSessionError(null);
+
+    // WAREHOUSE-SESSION-FOCUS-02B — report identity before the fetch (same
+    // precedent as enterReceiveSession) so the host lands on the focused Pick
+    // URL immediately instead of leaving ordinary chrome up while line items
+    // load. Reporting is non-mutating; Start Picking still owns the claim.
+    onPickSessionEnter?.(batchId);
+
     try {
       const items = await onFetchLineItems(batchId);
       setActiveSession({ type: 'pick', batchId, lineItems: items });
-      onPickSessionEnter?.(batchId);
     } catch (err: any) {
       setSessionError(err?.message ?? 'Failed to start pick session.');
     } finally {
@@ -2002,6 +2017,15 @@ function WmsModuleFT2Inner({
         onReportException={(params) => onReportException(activeSession.batchId, params)}
         onPickComplete={() => onPickComplete(activeSession.batchId)}
         onStartPicking={() => startPickBatch(activeSession.batchId)}
+        // PICK-RESUME-SEMANTICS-01 — only exact canonical `picking` resumes
+        // execution; unknown/unresolved status keeps the Brief. Derived per
+        // render so status resolving after the session still applies.
+        resumePicking={
+          batches.find((batch) => batch.pick_batch_id === activeSession.batchId)?.status === 'picking'
+        }
+        floorZones={pickFloorZones}
+        isOnline={isOnline}
+        queuedCount={queuedCount}
       />
     );
   }
@@ -2177,11 +2201,16 @@ function WmsModuleFT2Inner({
   // non-mutating; Start Picking is still the claim boundary.
   if (pendingPickBatchId) {
     if (sessionError) {
+      // WAREHOUSE-SESSION-FOCUS-02B — a focused Pick hides all navigation, so
+      // the failure carries its own non-mutating exit through the existing
+      // session exit (clears batchId + focus). No claim, no fabricated Brief.
       return (
         <Box
           sx={{
             display: 'flex',
-            justifyContent: 'center',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 2,
             px: 2,
             py: 8,
           }}
@@ -2196,6 +2225,17 @@ function WmsModuleFT2Inner({
           >
             {sessionError}
           </Alert>
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => {
+              setSessionError(null);
+              exitSession();
+            }}
+            sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+          >
+            Leave pick
+          </Button>
         </Box>
       );
     }

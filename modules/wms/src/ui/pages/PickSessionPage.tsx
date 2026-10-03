@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/PickSessionPage.tsx
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -17,6 +17,11 @@ import {
 } from '@mui/material';
 import { CheckCircle, AlertTriangle, MapPin, Package, Hash } from 'lucide-react';
 import { useScanSourceDetector } from '../hooks/useScanSourceDetector.js';
+import { WmsSessionBrief } from '../components/WmsSessionBrief.js';
+import { WMS_TIER1_ACTION_SX } from './CountingSessionPage.js';
+import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
 
 /**
  * PICK SESSION PAGE — WEBAPP
@@ -139,6 +144,23 @@ export interface PickSessionPageProps {
    * starting means (e.g. claiming a pending batch). Omitted: no start gate.
    */
   onStartPicking?: () => Promise<void>;
+  /**
+   * PICK-RESUME-SEMANTICS-01 — the host's canonical batch status is exactly
+   * `picking`: the batch is already started, so the session resumes execution
+   * (location_scan for the first remaining line) instead of showing the
+   * Brief. May turn true after mount when canonical data resolves late; it
+   * only ever moves Brief → execution, so later polls never reset progress.
+   */
+  resumePicking?: boolean;
+  /**
+   * PICK-EXECUTION-SPATIAL-01B — canonical warehouse geometry for the
+   * execution map. undefined = geometry not available to the host; only the
+   * map degrades, never the scanner workflow.
+   */
+  floorZones?: WarehouseZone[];
+  /** Canonical connection state; the header badge renders only when supplied. */
+  isOnline?: boolean;
+  queuedCount?: number;
 }
 
 type SessionPhase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'summary' | 'done';
@@ -207,9 +229,16 @@ export default function PickSessionPage({
   onReportException,
   onPickComplete,
   onStartPicking,
+  resumePicking = false,
+  floorZones,
+  isOnline,
+  queuedCount = 0,
 }: PickSessionPageProps) {
   const theme = useTheme();
   const { onInputChange, detectSourceAndReset, reset: resetScanDetector } = useScanSourceDetector();
+  // PICK-BATCH-IDENTITY-CONTINUITY-01: same first-8 batch token as Order Flow,
+  // Batch Detail and WMS batch surfaces; display only — pickBatchId stays the full UUID.
+  const batchShort = pickBatchId.slice(0, 8).toUpperCase();
 
   const locationInputRef  = useRef<HTMLInputElement>(null);
   const productInputRef   = useRef<HTMLInputElement>(null);
@@ -217,7 +246,9 @@ export default function PickSessionPage({
   // WEB-PICK-UNIT-01: carries LSU- unit ID from product_scan into qty_confirm path.
   const resolvedUnitIdRef = useRef<string | undefined>(undefined);
 
-  const [phase, setPhase]               = useState<SessionPhase>('brief');
+  const [phase, setPhase]               = useState<SessionPhase>(
+    () => (resumePicking ? 'location_scan' : 'brief'),
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [locationInput, setLocationInput] = useState('');
   const [productInput,  setProductInput]  = useState('');
@@ -254,6 +285,38 @@ export default function PickSessionPage({
   const isQtyPhase      = phase === 'qty_confirm';
   const needsQtyConfirm = (currentItem?.quantity ?? 1) > 1;
 
+  // PICK-EXECUTION-SPATIAL-01B — remaining route only: lineItems from the
+  // current item on, by location, first occurrence kept. Nothing absent from
+  // lineItems is ever treated as completed or visited (a resumed allocation
+  // pick returns remaining work only), so no history is derived here.
+  const remainingRoute = useMemo(() => {
+    const seen = new Set<string>();
+    const route: string[] = [];
+    for (const item of lineItems.slice(currentIndex)) {
+      if (!seen.has(item.location_code)) {
+        seen.add(item.location_code);
+        route.push(item.location_code);
+      }
+    }
+    return route;
+  }, [lineItems, currentIndex]);
+
+  const routeStateByLocation = useMemo(
+    () =>
+      Object.fromEntries(
+        remainingRoute.map((code) => [code, 'active' as OperationalMapState]),
+      ),
+    [remainingRoute],
+  );
+
+  // Orientation map, not manager inspection: only the current stop is an
+  // inspection target, so it stays selected and nothing else is clickable.
+  const currentLocationCode = currentItem?.location_code ?? null;
+  const inspectableCodes = useMemo(
+    () => new Set(currentLocationCode ? [currentLocationCode] : []),
+    [currentLocationCode],
+  );
+
   // ── Focus management ───────────────────────────────────────
   useEffect(() => {
     if (phase === 'location_scan') setTimeout(() => locationInputRef.current?.focus(), 50);
@@ -283,6 +346,15 @@ export default function PickSessionPage({
       setPhase('location_scan');
     }
   }, [currentIndex, lineItems.length, resetScanDetector]);
+
+  // ── Resume (Brief → location_scan, already-picking batch) ──
+  // One-way and Brief-only: never touches an execution phase, and never
+  // pre-empts an in-flight Start Picking, whose own result decides.
+  useEffect(() => {
+    if (resumePicking && phase === 'brief' && !startingPickRef.current) {
+      setPhase('location_scan');
+    }
+  }, [resumePicking, phase]);
 
   // ── Start (Brief → location_scan) ──────────────────────────
   const handleStartPicking = useCallback(async () => {
@@ -469,52 +541,57 @@ try {
   }, []);
 
   // ── BRIEF ──────────────────────────────────────────────────
+  // WMS-BRIEF-SYSTEM-01A / WAREHOUSE-SESSION-FOCUS-02A — Pick is focused from
+  // its Brief onward (warehouseFocus=pick hides all app navigation), so the
+  // shared WMS Brief carries an explicit non-mutating Leave pick. It routes
+  // through the existing session exit (onComplete → host session exit),
+  // never claims, and stays available after a failed Start Picking. Start
+  // Picking remains the only claim boundary; no scanner control renders here.
   if (phase === 'brief') {
     return (
-      <Box sx={{ p: 2, maxWidth: 480, mx: 'auto' }}>
-        <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-          Pick Session
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Batch {pickBatchId.slice(-6).toUpperCase()}
-        </Typography>
-
-        <Paper variant="outlined" sx={{ borderRadius: 2, p: 2, mb: 2, display: 'flex', gap: 2 }}>
-          <Box sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="h4" fontWeight={600}>{lineItems.length}</Typography>
-            <Typography variant="caption" color="text.secondary">Line items</Typography>
-          </Box>
-          <Box sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="h4" fontWeight={600}>{totalUnits}</Typography>
-            <Typography variant="caption" color="text.secondary">Total units</Typography>
-          </Box>
-        </Paper>
-
-        <Alert icon={false} sx={{ mb: 3, borderRadius: 2 }}>
-          Items are sorted by optimized pick route. For each item: scan the bin barcode first, then scan the product barcode to confirm.
-        </Alert>
-
-        {startError && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{startError}</Alert>
-        )}
-
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          onClick={() => void handleStartPicking()}
-          disabled={startingPick}
-          startIcon={startingPick ? <CircularProgress size={16} color="inherit" /> : undefined}
-          sx={{
-            borderRadius: '6px',
-            fontWeight: 600,
-            bgcolor: 'var(--accent)',
-            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-          }}
-        >
-          Start Picking
-        </Button>
-      </Box>
+      <WmsSessionBrief
+        eyebrow={`Batch ${batchShort}`}
+        title="Pick Session"
+        description="Items are sorted by optimized pick route."
+        facts={[
+          { label: 'Action', value: 'Brief' },
+          { label: 'Lines', value: String(lineItems.length) },
+          { label: 'Units', value: String(totalUnits) },
+          { label: 'Next', value: 'Start picking' },
+        ]}
+        steps={[
+          'For each item, scan the bin barcode first.',
+          'Then scan the product barcode to confirm.',
+        ]}
+        error={startError}
+        primaryAction={
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => void handleStartPicking()}
+            disabled={startingPick}
+            startIcon={startingPick ? <CircularProgress size={16} color="inherit" /> : undefined}
+            sx={{
+              ...WMS_TIER1_ACTION_SX,
+              borderRadius: '6px',
+              fontWeight: 600,
+            }}
+          >
+            Start Picking
+          </Button>
+        }
+        secondaryAction={
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => onComplete()}
+            disabled={startingPick}
+            sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+          >
+            Leave pick
+          </Button>
+        }
+      />
     );
   }
 
@@ -632,17 +709,28 @@ try {
     : [];
 
   return (
-    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    // PICK-EXECUTION-SPATIAL-01B — viewport-bound execution. Normal desktop
+    // fits without scrolling (the map absorbs remaining height); a genuinely
+    // short viewport scrolls vertically instead of clipping controls.
+    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: 'auto' }}>
 
-      {/* PROGRESS */}
-      <Box sx={{ px: 2, pt: 1.5, pb: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-          <Typography variant="caption" color="text.secondary">
-            Item {currentIndex + 1} of {lineItems.length}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Batch {pickBatchId.slice(-6).toUpperCase()}
-          </Typography>
+      {/* SESSION HEADER — task, batch identity, progress, connection */}
+      <Box component="header" sx={{ px: 2, pt: 1.5, pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.25, minWidth: 0, flexWrap: 'wrap' }}>
+            <Typography component="h1" sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+              Pick
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              Batch {batchShort}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              Item {currentIndex + 1} of {lineItems.length}
+            </Typography>
+          </Box>
+          {isOnline !== undefined && (
+            <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
+          )}
         </Box>
         <LinearProgress
           variant="determinate"
@@ -859,8 +947,75 @@ try {
         </Paper>
       )}
       
+      {/* ROUTE + MAP — orientation only. Fills the remaining height (flex: 1,
+          minHeight: 0) so it never pushes the scan controls below the fold;
+          controls stay outside this region. */}
+      <Box
+        component="section"
+        aria-label="Pick route map"
+        sx={{ mx: 2, mt: 1.5, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
+      >
+        <Box
+          component="ol"
+          aria-label="Pick route"
+          sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexWrap: 'wrap', alignItems: 'center', rowGap: 0.5 }}
+        >
+          {remainingRoute.map((code) => (
+            <Box
+              component="li"
+              key={code}
+              aria-current={code === currentLocationCode ? 'location' : undefined}
+              sx={{
+                fontSize: 12,
+                fontFamily: 'monospace',
+                fontWeight: code === currentLocationCode ? 600 : 400,
+                color: code === currentLocationCode ? 'var(--accent)' : 'var(--ink-3)',
+                '&:not(:first-of-type)::before': {
+                  content: '"→"',
+                  mx: 0.75,
+                  color: 'var(--ink-4)',
+                },
+              }}
+            >
+              {code}
+            </Box>
+          ))}
+        </Box>
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+            border: '1px solid var(--rule)',
+            borderRadius: '8px',
+            bgcolor: 'var(--bg-2)',
+            overflow: 'hidden',
+          }}
+        >
+          {floorZones && floorZones.length > 0 ? (
+            <IsometricCanvas
+              zones={floorZones}
+              selectedLocationCode={currentLocationCode}
+              inspectableLocationCodes={inspectableCodes}
+              operationalStateByLocation={routeStateByLocation}
+              showLegend={false}
+              showControls={false}
+              disablePan
+              autoFit
+            />
+          ) : (
+            <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+              <Typography role="status" sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                Floor map unavailable.
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </Box>
+
       {/* SCAN AREA */}
-      <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Box sx={{ mx: 2, mt: 1.5, mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
 
         {scanError && (
           <Alert severity="error" sx={{ borderRadius: 2, py: 0.5 }}>{scanError}</Alert>

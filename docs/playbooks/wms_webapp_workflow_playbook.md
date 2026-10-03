@@ -486,7 +486,7 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 
 ### Pick *(allocation-backed — INV-RES-01 complete 2026-08-10)*
 
-- **Brief:** batch summary (line item count, total units), optimized route instruction, Start Picking CTA.
+- **Brief:** batch summary (line item count, total units), optimized route instruction, Start Picking CTA, and a non-mutating `Leave pick`. Shown only for a `pending` batch — a canonical `picking` batch resumes directly into execution (see *Focused WMS sessions & Pick execution*).
 
 - **Inspect:** single physical reservation task per screen. A commerce line may appear more than once when its reservation spans multiple locations.
 
@@ -543,7 +543,9 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 
 - **Legacy compatibility:** batches with zero `pick_reservation_allocations` retain the historical line-based completion behavior.
 
-- **Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`.
+- **Session key:** focused URL `/wms?batchId=<id>&warehouseFocus=pick`, reported by `onPickSessionEnter` before the line-item fetch and cleared (both params) by `onSessionExit`.
+
+- **Execution workspace:** session header, current instruction, spatial route map and scan controls — see *Focused WMS sessions & Pick execution*.
 
 - **Exception behavior — allocation-backed tasks — GH-1049:** allocation-backed Pick exceptions are live. The picker reports against `reservation_allocation_id`; the order remains in the batch and healthy work continues. `item_missing` creates no fake physical movement. `short_pick` records the physically found quantity plus a missing-quantity exception atomically. The server creates one linked Problem Center task in the same transaction. See `docs/playbooks/pick_exception_workflow.md`.
 
@@ -1395,9 +1397,9 @@ Session navigation / restoration is not itself a workflow mutation.
 For Pick specifically:
 
 ```text
-/wms?batchId=<id>
+/wms?batchId=<id>&warehouseFocus=pick
 → resolve requested batch
-→ Pick Brief
+→ Pick Brief            (pending only)
 → Start Picking
 → claim
 → scanner
@@ -1428,3 +1430,147 @@ Where practical, cover:
 4. direct hard reload obeys the same transition contract;
 5. failed resolution reaches an explicit failure path;
 6. navigation / restoration performs zero workflow mutations.
+
+---
+
+## Focused WMS sessions & Pick execution — ratified 2026-10-02
+
+Extends the URL-targeted handoff contract above. Status: **current contract,
+implemented and locally browser-certified** unless marked *Future direction*.
+
+### WAREHOUSE-SESSION-FOCUS-02 — a task owns the viewport from its Brief
+
+A physical WMS task owns the viewport from its Brief onward while its focused
+session URL is active. For Pick:
+
+```text
+/wms?batchId=<id>&warehouseFocus=pick
+```
+
+- The URL is the source of truth. One shared predicate decides focus for every
+  shell surface; no React context or duplicated session state.
+- `warehouseFocus=pick` is valid only with `batchId`. A stale
+  `?warehouseFocus=pick` without `batchId` fails open to the ordinary shell.
+- Focused Pick hides app top navigation, app side navigation, Warehouse module
+  tabs and trial/payment/commercial chrome.
+- Critical system/task notices (system health, task errors) are not suppressed
+  by focus.
+- Hard reload of the focused URL reconstructs the same focused session.
+- Focus is present at handoff: the originating navigation (Batch Detail,
+  Operations card entry, restore) produces the focused URL itself. Focus is
+  never applied later by an effect that lets the ordinary shell flash first.
+- Because navigation is hidden, every focused surface carries its own
+  non-mutating exit (`Leave pick` on the Brief and on a failed session
+  resolution). Exit clears both `batchId` and `warehouseFocus`.
+- Stow/Receive/Count keep their own existing focus semantics.
+
+### PICK-RESUME-SEMANTICS-01 — canonical status decides Brief vs execution
+
+```text
+pending  → focused Pick Brief → Start Picking → claim exactly once → execution
+picking  → focused execution directly (no Brief, no Start Picking, no claim)
+unknown  → treated as not-picking: the Brief and its claim boundary stay
+           until canonical status resolves
+```
+
+- Only exact canonical batch status `picking` bypasses the Brief, on every
+  entry path (Operations card and focused URL restore).
+- Canonical status may resolve after the session mounts; resume follows it.
+- Resume moves Brief → execution only. Polling or status refresh never resets
+  active scanner progress.
+- A failed Start Picking stays on the Brief with its inline error.
+
+### PICK-EXECUTION-SPATIAL-01 — spatial context is primary
+
+Active Pick execution is spatial-first and reuses the shared renderer:
+
+```text
+@lasyncro/shared/ui IsometricCanvas
+```
+
+Never create Pick-specific warehouse geometry, a forked canvas, or renderer-side
+business inference. Geometry uses the canonical WMS
+`WarehouseLocation → WarehouseZone` adapter; Pick semantics live in the WMS
+composition layer and are passed as caller-owned props.
+
+**Truth model**
+
+- Current location = the current remaining Pick line's `location_code`.
+- Remaining route = remaining line items in canonical order, location codes
+  de-duplicated keeping first occurrence (`B-4, B-4, C-2, D-6, C-2` →
+  `B-4 → C-2 → D-6`).
+- Current + upcoming stops may be visualized (selected current location;
+  `active` operational state on remaining stops only; everything else neutral).
+- A resumed allocation-backed response returns remaining work only. Absence
+  from that response is **not** proof that a location was completed.
+- Never fabricate completed bins, visited bins, historical route or
+  merchant-facing activity events from transient UI state, `currentIndex`
+  history, `pickResults` or missing lines.
+- The map is orientation context, not manager inspection: only the current
+  stop is an inspection target. An accessible ordered route list (`Pick route`)
+  accompanies the map as text fallback.
+
+### Session identity
+
+Active execution (not the Brief) exposes a compact session header: Pick task
+identity, batch/session reference, progress (`Item N of M`) and connection
+state via the existing `WmsConnectionBadge`. It persists through
+`location_scan`, `product_scan` and `qty_confirm`. Operator display identity is
+shown only when canonical display data exists — never a raw user id.
+
+### Execution viewport contract
+
+Normal supported desktop:
+
+- focused execution is scroll-free and its root owns the available viewport;
+- header, current instruction, scan controls and Report problem stay visible;
+- the spatial workspace consumes the remaining height (flex-safe,
+  `minHeight: 0`), never a fixed height that pushes controls below the fold;
+- the map never creates its own vertical scrollbar.
+
+Constrained height / accessibility scaling: graceful vertical page scrolling is
+preferred over clipping. Required controls or content are never hidden to keep
+a no-scroll appearance.
+
+### Spatial degradation
+
+Missing or unavailable floor geometry degrades only the spatial surface, which
+shows a quiet unavailable state. It must not block scanning, alter claim state,
+create a workflow failure, or present missing geometry as zero or completed
+locations. The text route and scanner workflow remain usable.
+
+### Trace boundary
+
+Pick execution may later show a compact, secondary canonical Trace rail. No
+client-side activity history may be fabricated in the meantime. Canonical,
+meaningful Trace composition is owned by **GH-1148**. Trace is supporting
+evidence, not the primary Pick workspace. *Not implemented today.*
+
+### Certified local behaviour (2026-10-02)
+
+Locally browser-certified:
+
+- Operations → focused Pick;
+- no ordinary Warehouse-shell first-paint flash;
+- direct resume for canonical `picking`;
+- focused hard reload;
+- scanner and Report problem continuously visible;
+- page fits a 589px-high browser viewport with no page or map vertical scrolling.
+
+### Future direction — WMS-SPATIAL-GUIDANCE-01 *(non-binding; not implemented)*
+
+A possible shared SVG guidance layer for Pick and Stow, built as its own
+future slice and **not** part of PICK-EXECUTION-SPATIAL-01:
+
+- subtle current-destination pulse;
+- transition emphasis from completed/current → next;
+- route-order cues;
+- gentle spatial refocus where useful;
+- reduced onboarding burden for new/seasonal warehouse operators.
+
+Guardrails:
+
+- functional guidance, not decorative animation;
+- no fake precise turn-by-turn navigation without trustworthy positioning;
+- WMS owns workflow truth; the renderer owns visual animation only;
+- accessibility and reduced-motion support are required.

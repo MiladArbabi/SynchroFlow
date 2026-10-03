@@ -16,6 +16,34 @@ export type RecountBinCanvasSelection = {
   selectableCodes: Set<string>;
 };
 
+/**
+ * Canonical WMS adapter from warehouse-grid geometry (WarehouseLocation) to
+ * the shared IsometricCanvas zone shape. Fields the grid does not carry get
+ * the same neutral defaults everywhere (no children count, auto dock face,
+ * no print/name metadata). Shared by the recount bin canvas and the Pick
+ * execution map (PICK-EXECUTION-SPATIAL-01B) so the mapping cannot drift.
+ */
+export function warehouseLocationToZone(location: WarehouseLocation): WarehouseZone {
+  return {
+    location_code: location.location_code,
+    type: location.type,
+    parent_location_code: location.parent_location_code,
+    barcode: location.barcode,
+    active: location.active,
+    children_count: 0,
+    position_x: location.position_x,
+    position_y: location.position_y,
+    width: location.width,
+    depth: location.depth,
+    orientation: location.orientation,
+    rack_levels: location.rack_levels,
+    zone_type: location.zone_type,
+    dock_face: null,
+    last_printed_at: null,
+    warehouse_name: null,
+  };
+}
+
 export function mapRecountPreviewBinsToCanvas(
   gridLocations: WarehouseLocation[] | undefined,
   previewBins: RecountPreviewBin[]
@@ -36,25 +64,7 @@ export function mapRecountPreviewBinsToCanvas(
     )
     .map((location): WarehouseZone => {
       representedCodes.add(location.location_code);
-
-      return {
-        location_code: location.location_code,
-        type: location.type,
-        parent_location_code: location.parent_location_code,
-        barcode: location.barcode,
-        active: location.active,
-        children_count: 0,
-        position_x: location.position_x,
-        position_y: location.position_y,
-        width: location.width,
-        depth: location.depth,
-        orientation: location.orientation,
-        rack_levels: location.rack_levels,
-        zone_type: location.zone_type,
-        dock_face: null,
-        last_printed_at: null,
-        warehouse_name: null,
-      };
+      return warehouseLocationToZone(location);
     });
 
   return {

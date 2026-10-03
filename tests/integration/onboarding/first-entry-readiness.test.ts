@@ -233,3 +233,73 @@ describe('GH-1160 first-entry fixture and readiness', () => {
     expect(await resolveAuthUserByEmail(fixture.email)).toMatchObject({ id: fixture.ownerId });
   });
 });
+
+// GH-1179 desired onboarding contract. Deliberately RED until readiness
+// exposes the warehouse's external commerce location mapping
+// (warehouses.external_location_id) as its own fact. It is separate from
+// wms.zonesConfigured, which keeps meaning "an opening-eligible stock bin".
+const EXTERNAL_LOCATION_MAPPED = 'wms.externalLocationMapped';
+const MAPPED_EXTERNAL_LOCATION_ID = '1179001';
+
+async function addOpeningEligibleBin(fixture: { shopId: number; warehouseId: string; rootLocationCode: string }) {
+  await withTenant(fixture.shopId, (trx) => trx('warehouse_locations').insert({
+    shop_id: fixture.shopId,
+    warehouse_id: fixture.warehouseId,
+    location_code: 'PICK-01',
+    parent_location_code: fixture.rootLocationCode,
+    type: 'bin',
+    zone_type: 'pick',
+    active: true,
+  }));
+}
+
+async function externalLocationIdOf(fixture: { shopId: number; warehouseId: string }) {
+  const warehouse = await withTenant(fixture.shopId, (trx) => trx('warehouses')
+    .where({ shop_id: fixture.shopId, warehouse_id: fixture.warehouseId })
+    .first('external_location_id'));
+  return warehouse?.external_location_id ?? null;
+}
+
+describe('GH-1179 opening inventory requires external location mapping readiness', () => {
+  it('stock bin + unmapped active warehouse => zones configured, external location NOT mapped', async () => {
+    const fixture = await createFixture();
+    await addOpeningEligibleBin(fixture);
+    expect(await externalLocationIdOf(fixture)).toBeNull();
+
+    expect(await signalsFor(fixture.shopId)).toMatchObject({
+      'wms.zonesConfigured': true,
+      [EXTERNAL_LOCATION_MAPPED]: false,
+    });
+  });
+
+  it('stock bin + mapped active warehouse => zones configured and external location mapped', async () => {
+    const fixture = await createFixture();
+    await addOpeningEligibleBin(fixture);
+    await withTenant(fixture.shopId, (trx) => trx('warehouses')
+      .where({ shop_id: fixture.shopId, warehouse_id: fixture.warehouseId })
+      .update({ external_location_id: MAPPED_EXTERNAL_LOCATION_ID }));
+    expect(await externalLocationIdOf(fixture)).toBe(MAPPED_EXTERNAL_LOCATION_ID);
+
+    expect(await signalsFor(fixture.shopId)).toMatchObject({
+      'wms.zonesConfigured': true,
+      [EXTERNAL_LOCATION_MAPPED]: true,
+    });
+  });
+
+  it('authenticated onboarding readiness exposes the mapping fact beside zonesConfigured', async () => {
+    const fixture = await createFixture();
+    await addOpeningEligibleBin(fixture);
+    const login = await request(app).post('/api/v1/auth/login').send({ email: fixture.email, password });
+    expect(login.status).toBe(200);
+    const response = await request(app).get('/api/v1/onboarding/readiness')
+      .set('Authorization', `Bearer ${login.body.accessToken}`);
+    expect(response.status).toBe(200);
+    const wms = response.body.modules.find((module: { moduleId: string }) => module.moduleId === 'wms');
+    expect(wms.signals).toEqual(expect.arrayContaining([
+      { name: 'wms.zonesConfigured', value: true },
+      { name: EXTERNAL_LOCATION_MAPPED, value: false },
+    ]));
+    expect(await withTenant(fixture.shopId, (trx) => trx('inventory_recount_tasks')
+      .where({ shop_id: fixture.shopId, purpose: 'opening_inventory' }))).toEqual([]);
+  });
+});

@@ -107,15 +107,21 @@ function mockReadiness(opts: {
   readinessPending?: boolean;
   /** GH-1165 — wms.zonesConfigured and its map-zones task; default false. */
   zonesConfigured?: boolean;
+  /** GH-1179 — wms.externalLocationMapped; omitted from readiness unless set. */
+  externalLocationMapped?: boolean;
 } = {}) {
   const required = opts.reconciliationRequired ?? true;
   const zones = opts.zonesConfigured ?? false;
+  const mappingSignals = opts.externalLocationMapped === undefined
+    ? []
+    : [{ name: 'wms.externalLocationMapped', value: opts.externalLocationMapped }];
   const wmsSignals = required === 'missing'
-    ? [{ name: 'wms.zonesConfigured', value: zones }]
+    ? [{ name: 'wms.zonesConfigured', value: zones }, ...mappingSignals]
     : [
         { name: 'wms.zonesConfigured', value: zones },
         { name: 'wms.openingInventoryReconciliationRequired', value: required },
         { name: 'wms.openingInventoryReconciled', value: opts.reconcileComplete ?? false },
+        ...mappingSignals,
       ];
   mockedGet.mockImplementation((url: string) => {
     if (url === READINESS_URL) {
@@ -454,31 +460,48 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     return result;
   }
 
-  it('#1160 / GH1176 fresh state (required, unreconciled, unmapped) => first-entry mode with exactly map + count; map deep-links to Setup > Canvas', async () => {
+  it('#1160 / GH1176 / GH1179 fresh state projects location → map → count and exposes only the first prerequisite', async () => {
     mockReadiness({ progress: progressView({ state: 'not_started' }) });
     const result = await renderFirstEntry('owner');
 
-    expect(result.current.firstEntryItems.map((i) => i.key)).toEqual(['first-entry-map', 'first-entry-count']);
+    expect(result.current.firstEntryItems.map((i) => i.key)).toEqual([
+      'first-entry-shopify-location',
+      'first-entry-map',
+      'first-entry-count',
+    ]);
 
-    // zonesConfigured=false: locked — no command and no navigation, even for an owner.
+    const location = result.current.firstEntryItems.find(
+      (i) => i.key === 'first-entry-shopify-location',
+    );
+
+    expect(location).toEqual({
+      key: 'first-entry-shopify-location',
+      label: 'Choose Shopify location',
+      complete: false,
+      subtitle: 'Tell LaSyncro which Shopify Location this warehouse represents.',
+      action: {
+        kind: 'navigate',
+        label: 'Choose location',
+        route: '/settings/warehouse',
+      },
+    });
+
+    // GH-1179: floor mapping remains visible as the next milestone, but is not
+    // actionable until the Shopify Location prerequisite is satisfied.
+    expect(mapItem(result.current.firstEntryItems)).toEqual({
+      key: 'first-entry-map',
+      label: 'Map warehouse basics',
+      complete: false,
+      subtitle: 'Define where stock lives and work happens.',
+    });
+
     const count = countItem(result.current.firstEntryItems);
+
     expect(count).toEqual({
       key: 'first-entry-count',
       label: 'Count opening stock',
       complete: false,
-      subtitle: FIRST_ENTRY_COUNT_LOCKED_SUBTITLE,
-    });
-    expect(FIRST_ENTRY_COUNT_LOCKED_SUBTITLE)
-      .toBe('Map your warehouse first so LaSyncro knows which locations must be counted.');
-
-    // GH1176: serialized onboarding navigation into Floor Planning Setup > Canvas.
-    expect(mapItem(result.current.firstEntryItems)).toEqual({
-      key: 'first-entry-map',
-      // GH-1183 contract correction: minimum basics, not whole-floor completion.
-      label: 'Map warehouse basics',
-      complete: false,
-      subtitle: 'Define where stock lives and work happens.',
-      action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning?tab=setup&view=canvas' },
+      subtitle: 'Choose your Shopify location first so LaSyncro knows where inventory updates belong.',
     });
   });
 
@@ -496,7 +519,7 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
   });
 
   it.each(['owner', 'admin'])('zonesConfigured + not_started + %s => minimum basics satisfied, mapping reachable, Start opening count', async (role) => {
-    mockReadiness({ zonesConfigured: true, progress: progressView({ state: 'not_started' }) });
+    mockReadiness({ zonesConfigured: true, externalLocationMapped: true, progress: progressView({ state: 'not_started' }) });
     const result = await renderFirstEntry(role);
 
     expect(mapItem(result.current.firstEntryItems)?.complete).toBe(true);
@@ -661,5 +684,193 @@ describe('GH-1183 canonical minimum mapping observation', () => {
     mockReadiness({ zonesConfigured: true });
     const loaded = await renderChecklist();
     expect((loaded.current as unknown as { minimumMappingReady: boolean | null }).minimumMappingReady).toBe(true);
+  });
+});
+
+
+// GH-1179 revised first-entry dependency graph: Shopify Location precedes floor mapping.
+// The merchant gets one obvious next setup action at a time:
+// Shopify Location → Map warehouse basics → Count opening stock.
+describe('GH-1179 first-entry Shopify Location milestone', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const locationItem = (items: ChecklistItem[]) =>
+    items.find((i) => i.key === 'first-entry-shopify-location');
+
+  const mapItem = (items: ChecklistItem[]) =>
+    items.find((i) => i.key === 'first-entry-map');
+
+  const countItem = (items: ChecklistItem[]) =>
+    items.find((i) => i.key === 'first-entry-count');
+
+  async function renderFirstEntry(
+    externalLocationMapped: boolean,
+    zonesConfigured = false,
+  ) {
+    mockReadiness({
+      zonesConfigured,
+      externalLocationMapped,
+      progress: progressView({ state: 'not_started' }),
+    });
+
+    const result = await renderWithProgressApplied('owner');
+    await waitFor(() => expect(result.current.firstEntry).toBe(true));
+    return result;
+  }
+
+  it('unmapped fresh entry projects Shopify Location first and exposes it as the only setup CTA', async () => {
+    const result = await renderFirstEntry(false, false);
+
+    expect(result.current.firstEntryItems.map((item) => item.key)).toEqual([
+      'first-entry-shopify-location',
+      'first-entry-map',
+      'first-entry-count',
+    ]);
+
+    expect(locationItem(result.current.firstEntryItems)).toEqual({
+      key: 'first-entry-shopify-location',
+      label: 'Choose Shopify location',
+      complete: false,
+      subtitle: 'Tell LaSyncro which Shopify Location this warehouse represents.',
+      action: {
+        kind: 'navigate',
+        label: 'Choose location',
+        route: '/settings/warehouse',
+      },
+    });
+
+    expect(mapItem(result.current.firstEntryItems)).toMatchObject({
+      key: 'first-entry-map',
+      label: 'Map warehouse basics',
+      complete: false,
+    });
+
+    expect(mapItem(result.current.firstEntryItems)?.action).toBeUndefined();
+
+    expect(countItem(result.current.firstEntryItems)).toMatchObject({
+      key: 'first-entry-count',
+      label: 'Count opening stock',
+      complete: false,
+    });
+
+    expect(countItem(result.current.firstEntryItems)?.action).toBeUndefined();
+
+    const rows = buildSetupRows(result.current.firstEntryItems);
+
+    expect(rows.map((row) => row.id)).toEqual([
+      'setup:first-entry-shopify-location',
+      'setup:first-entry-map',
+      'setup:first-entry-count',
+    ]);
+
+    expect(rows[0]?.action).toEqual({
+      kind: 'navigate',
+      label: 'Choose location',
+      route: '/settings/warehouse',
+    });
+
+    expect(rows[1]?.action).toBeUndefined();
+    expect(rows[2]?.action).toBeUndefined();
+  });
+
+  it('mapped but not floor-ready verifies Shopify Location and makes Map warehouse the next action', async () => {
+    const result = await renderFirstEntry(true, false);
+
+    expect(result.current.firstEntryItems.map((item) => item.key)).toEqual([
+      'first-entry-shopify-location',
+      'first-entry-map',
+      'first-entry-count',
+    ]);
+
+    expect(locationItem(result.current.firstEntryItems)).toEqual({
+      key: 'first-entry-shopify-location',
+      label: 'Choose Shopify location',
+      complete: true,
+      subtitle: 'Tell LaSyncro which Shopify Location this warehouse represents.',
+    });
+
+    expect(mapItem(result.current.firstEntryItems)?.action).toEqual({
+      kind: 'navigate',
+      label: 'Map warehouse',
+      route: '/floor-planning?tab=setup&view=canvas',
+    });
+
+    expect(countItem(result.current.firstEntryItems)?.action).toBeUndefined();
+  });
+
+  it('preserves truthful out-of-order state: mapped floor does not hide a missing Shopify Location', async () => {
+    const result = await renderFirstEntry(false, true);
+
+    expect(locationItem(result.current.firstEntryItems)).toMatchObject({
+      complete: false,
+      action: {
+        kind: 'navigate',
+        label: 'Choose location',
+        route: '/settings/warehouse',
+      },
+    });
+
+    expect(mapItem(result.current.firstEntryItems)).toMatchObject({
+      complete: true,
+    });
+
+    expect(countItem(result.current.firstEntryItems)?.action).toBeUndefined();
+  });
+});
+
+// GH-1179 desired onboarding contract. Deliberately RED until the hook consumes
+// canonical wms.externalLocationMapped: an opening-eligible stock bin alone no
+// longer makes Count opening stock startable. Ops Console consumes this
+// projection verbatim through buildSetupRows, so the row is asserted here too.
+describe('GH-1179 Count opening stock requires external location mapping', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const START_COMMAND = { kind: 'command', label: 'Start opening count', command: 'opening_inventory_start' };
+  const countItem = (items: ChecklistItem[]) => items.find((i) => i.key === 'first-entry-count');
+
+  /**
+   * Waits until the canonical progress view is applied, so "no Start" can never
+   * pass vacuously on the pre-progress row (which has no action either).
+   */
+  async function renderFirstEntry(role: string) {
+    const result = await renderWithProgressApplied(role);
+    await waitFor(() => expect(result.current.firstEntry).toBe(true));
+    return result;
+  }
+
+  it.each(['owner', 'admin'])('zonesConfigured + not_started + %s + unmapped => Count opening stock is not startable', async (role) => {
+    mockReadiness({
+      zonesConfigured: true,
+      externalLocationMapped: false,
+      progress: progressView({ state: 'not_started' }),
+    });
+    const result = await renderFirstEntry(role);
+
+    // Mapping is a separate fact: zonesConfigured keeps its meaning.
+    expect(result.current.minimumMappingReady).toBe(true);
+
+    const count = countItem(result.current.firstEntryItems);
+    expect(count?.label).toBe('Count opening stock');
+    expect(count?.complete).toBe(false);
+    expect(count?.action).not.toEqual(START_COMMAND);
+
+    const row = buildSetupRows(result.current.firstEntryItems).find((r) => r.id === 'setup:first-entry-count');
+    expect(row?.action).not.toEqual(expect.objectContaining({ kind: 'command' }));
+  });
+
+  it.each(['owner', 'admin'])('zonesConfigured + not_started + %s + mapped => Start opening count is available', async (role) => {
+    mockReadiness({
+      zonesConfigured: true,
+      externalLocationMapped: true,
+      progress: progressView({ state: 'not_started' }),
+    });
+    const result = await renderFirstEntry(role);
+
+    const count = countItem(result.current.firstEntryItems);
+    expect(count?.complete).toBe(false);
+    expect(count?.action).toEqual(START_COMMAND);
+
+    const row = buildSetupRows(result.current.firstEntryItems).find((r) => r.id === 'setup:first-entry-count');
+    expect(row?.action).toEqual(START_COMMAND);
   });
 });

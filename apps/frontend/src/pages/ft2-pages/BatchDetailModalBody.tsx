@@ -55,11 +55,16 @@ const currentStageIndex = (status: PickBatch['status']): number => {
  * Execution handoff is navigation only (Tier 2). Pick work deep-links the
  * exact batch into WMS Operations (?batchId= → Pick Brief, which owns the
  * claim). Pack work is item-centric free-scan, so it lands on Operations.
+ *
+ * WAREHOUSE-SESSION-FOCUS-02A — Pick is focused from its Brief onward, so
+ * the handoff URL itself carries warehouseFocus=pick: the shell is focused
+ * on first paint rather than gaining focus after the Brief resolves.
  */
 const executionTarget = (
   batch: PickBatch,
 ): { label: string; to: string } | null => {
-  const pickTarget = `/wms?batchId=${encodeURIComponent(batch.pick_batch_id)}`;
+  const pickTarget =
+    `/wms?batchId=${encodeURIComponent(batch.pick_batch_id)}&warehouseFocus=pick`;
 
   switch (batch.status) {
     case 'pending':

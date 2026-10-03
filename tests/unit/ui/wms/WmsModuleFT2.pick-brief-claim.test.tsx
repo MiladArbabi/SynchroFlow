@@ -269,7 +269,7 @@ describe('BATCH-DETAIL-HANDOFF-01 — Pick Brief claim boundary', () => {
 
     await startPicking();
     expect(props.onFetchLineItems).toHaveBeenCalledWith(PENDING_ID);
-    expect(screen.getByText(/A1B2C3/)).toBeInTheDocument();
+    expect(screen.getByText(/PENDBAT1/)).toBeInTheDocument();
     expect(locationScan()).not.toBeInTheDocument();
     expect(props.onClaimBatch).not.toHaveBeenCalled();
   });
@@ -338,20 +338,281 @@ describe('BATCH-DETAIL-HANDOFF-01 — Pick Brief claim boundary', () => {
     expect(props.onClaimBatch).toHaveBeenCalledWith(PENDING_ID);
   });
 
-  it('PICK-BRIEF-CLAIM-02 — an already-picking batch restored from pendingPickBatchId continues without a duplicate claim', async () => {
+  // PICK-RESUME-SEMANTICS-01 — strengthened: a canonical `picking` batch is
+  // already started, so restoration resumes execution directly. It never
+  // shows the Brief, never offers Start Picking and never claims.
+  it('PICK-BRIEF-CLAIM-02 — an already-picking batch restored from pendingPickBatchId resumes execution directly without Brief or claim', async () => {
     const props = baseProps({ pendingPickBatchId: PICKING_ID });
 
     render(<WmsModuleFT2 {...props} />);
 
     // Refresh/session recovery: the exact batch session is re-entered and
     // re-reported for URL recovery.
-    await startPicking();
+    await waitFor(() => expect(locationScan()).toBeInTheDocument());
     expect(props.onFetchLineItems).toHaveBeenCalledWith(PICKING_ID);
     expect(props.onPickSessionEnter).toHaveBeenCalledWith(PICKING_ID);
 
-    fireEvent.click(screen.getByRole('button', { name: /start picking/i }));
+    expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Brief', { exact: true })).not.toBeInTheDocument();
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * WMS-BRIEF-SYSTEM-01A / WAREHOUSE-SESSION-FOCUS-02A — shared WMS session Brief.
+ *
+ * Pick is execution-focused from its Brief onward, so the focused Brief hides
+ * all app navigation. Like the Opening Inventory Brief (Leave count), the Pick
+ * Brief must therefore carry its own explicit, non-mutating exit. Shared Brief
+ * contract: stable session identity/title, compact fact rail, operational
+ * instruction, primary Start action, secondary Leave action, inline start
+ * error, and no scanner execution control before a successful Start.
+ *
+ * Session exit is observed at the module boundary (onSessionExit), which the
+ * host maps to clearing batchId + warehouseFocus and restoring the ordinary
+ * Warehouse shell.
+ */
+const twoLineItems = [
+  { ...lineItems[0], lasyncro_line_item_id: 'line-pbc-1', quantity: 2 },
+  {
+    ...lineItems[0],
+    lasyncro_line_item_id: 'line-pbc-2',
+    lasyncro_variant_id: 'variant-pbc-2',
+    reservation_allocation_id: 'alloc-pbc-2',
+    sku: 'PBC-SKU-2',
+    location_code: 'A-1-1-2',
+    quantity: 3,
+  },
+];
+
+const leavePick = () => screen.queryByRole('button', { name: /^leave (pick|task)$/i });
+
+function expectNoPickMutation(props: ReturnType<typeof baseProps>) {
+  expect(props.onConfirmScan).not.toHaveBeenCalled();
+  expect(props.onReportException).not.toHaveBeenCalled();
+  expect(props.onCreateProblemTask).not.toHaveBeenCalled();
+  expect(props.onPickComplete).not.toHaveBeenCalled();
+}
+
+describe('WMS-BRIEF-SYSTEM-01A — Pick Brief shared session Brief contract', () => {
+  it('the Pick Brief presents identity, facts, instruction, Start and Leave — with no scanner before Start', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onFetchLineItems: jest.fn().mockResolvedValue(twoLineItems),
+      onSessionExit: jest.fn(),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+
+    const start = await startPicking();
+
+    // Stable session identity/title.
+    expect(screen.getAllByRole('heading').length).toBeGreaterThan(0);
+    expect(screen.getByText(/PENDBAT1/)).toBeInTheDocument();
+
+    // Compact fact rail: line and unit facts derived from the batch lines.
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+
+    // Operational instruction / next step.
+    expect(screen.getAllByText(/scan/i).length).toBeGreaterThan(0);
+
+    // Primary Start and secondary Leave.
+    expect(start).toBeEnabled();
+    expect(leavePick()).toBeInTheDocument();
+
+    // No scanner execution control before a successful Start.
+    expect(locationScan()).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+  });
+
+  it('Leave pick on the Brief exits the session without claiming or mutating pick data', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onSessionExit: jest.fn(),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+    await startPicking();
+
+    const leave = leavePick();
+    expect(leave).toBeInTheDocument();
+    fireEvent.click(leave!);
+
+    expect(props.onSessionExit).toHaveBeenCalledTimes(1);
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+    expectNoPickMutation(props);
+  });
+
+  it('a failed Start Picking stays on the Brief with an inline error, never exits, and Leave pick remains available', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onClaimBatch: jest.fn().mockRejectedValue(new Error('Batch already claimed')),
+      onSessionExit: jest.fn(),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+    fireEvent.click(await startPicking());
+
+    expect(await screen.findByText('Batch already claimed')).toBeInTheDocument();
+    expect(locationScan()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start picking/i })).toBeInTheDocument();
+    // Failure never ends the focused session on its own.
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+
+    const leave = leavePick();
+    expect(leave).toBeInTheDocument();
+    expect(leave).toBeEnabled();
+    fireEvent.click(leave!);
+
+    expect(props.onSessionExit).toHaveBeenCalledTimes(1);
+    expect(props.onClaimBatch).toHaveBeenCalledTimes(1);
+    expectNoPickMutation(props);
+  });
+
+  it('a successful Start Picking enters location scan without exiting the focused session', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onSessionExit: jest.fn(),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+    fireEvent.click(await startPicking());
 
     await waitFor(() => expect(locationScan()).toBeInTheDocument());
+    expect(props.onClaimBatch).toHaveBeenCalledTimes(1);
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * WAREHOUSE-SESSION-FOCUS-02B — focused Pick residual contracts.
+ *
+ * - Opening Pick from an Operations card reports the Pick session identity
+ *   (which the host maps to /wms?batchId=<id>&warehouseFocus=pick) BEFORE the
+ *   line-item fetch resolves, following enterReceiveSession's
+ *   identity-before-fetch precedent — so ordinary Warehouse chrome is not
+ *   left visible while line items load. Entry stays non-mutating and is
+ *   reported once.
+ * - A failed targeted Pick resolution is a focused surface with navigation
+ *   hidden, so it keeps its explicit error and offers a non-mutating Leave
+ *   pick through the existing session exit — no claim, no fabricated Brief.
+ */
+describe('WAREHOUSE-SESSION-FOCUS-02B — Pick entry focus and focused error exit', () => {
+  it('opening Pick from an Operations card reports session identity before line items resolve, once, without claiming', async () => {
+    const load = deferredValue<typeof lineItems>();
+    const props = baseProps({ onFetchLineItems: jest.fn(() => load.promise) });
+
+    render(<WmsModuleFT2 {...props} />);
+
+    fireEvent.click(batchCardAction(PENDING_ID));
+
+    // Fetch still unresolved: identity is already reported, nothing claimed.
+    expect(props.onFetchLineItems).toHaveBeenCalledWith(PENDING_ID);
+    expect(props.onPickSessionEnter).toHaveBeenCalledTimes(1);
+    expect(props.onPickSessionEnter).toHaveBeenCalledWith(PENDING_ID);
     expect(props.onClaimBatch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      load.resolve(lineItems);
+      await load.promise;
+    });
+
+    expect(await startPicking()).toBeInTheDocument();
+    // No duplicate session-entry report once the Brief resolves.
+    expect(props.onPickSessionEnter).toHaveBeenCalledTimes(1);
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+  });
+
+  it('a failed targeted Pick resolution keeps its error and offers Leave pick, which exits without claiming', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PENDING_ID,
+      onFetchLineItems: jest.fn().mockRejectedValue(new Error('Pick session unavailable')),
+      onSessionExit: jest.fn(),
+    });
+
+    render(<WmsModuleFT2 {...props} />);
+
+    expect(await screen.findByText('Pick session unavailable')).toBeInTheDocument();
+    // The failure never fabricates a Brief.
+    expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
+
+    const leave = leavePick();
+    expect(leave).toBeInTheDocument();
+    fireEvent.click(leave!);
+
+    expect(props.onSessionExit).toHaveBeenCalledTimes(1);
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+    expectNoPickMutation(props);
+  });
+});
+
+/**
+ * PICK-RESUME-SEMANTICS-01 — only an exact canonical `picking` status bypasses
+ * the Brief, on every entry path.
+ *
+ * - pending → focused Brief; Start Picking stays the claim boundary
+ *   (covered by PICK-BRIEF-CLAIM-01 above).
+ * - picking → active execution directly: no Brief, no Start Picking, no claim
+ *   (restore covered by PICK-BRIEF-CLAIM-02 above; Operations card below).
+ * - unknown / not-yet-resolved status never counts as picking. Canonical batch
+ *   data can resolve AFTER the Pick session (the restore effect is mount-only
+ *   and WmsData polls), so the resume must follow late status — without
+ *   resetting execution on later polls.
+ */
+describe('PICK-RESUME-SEMANTICS-01 — canonical picking status resumes execution', () => {
+  it('Operations-card Continue picking on a canonical picking batch resumes execution directly', async () => {
+    const props = baseProps();
+
+    render(<WmsModuleFT2 {...props} />);
+
+    fireEvent.click(batchCardAction(PICKING_ID));
+
+    await waitFor(() => expect(locationScan()).toBeInTheDocument());
+    expect(props.onFetchLineItems).toHaveBeenCalledWith(PICKING_ID);
+    expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Brief', { exact: true })).not.toBeInTheDocument();
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+    expect(props.onPickSessionEnter).toHaveBeenCalledTimes(1);
+    expect(props.onPickSessionEnter).toHaveBeenCalledWith(PICKING_ID);
+  });
+
+  it('unresolved batch status never bypasses the Brief; a later canonical picking status resumes execution and later polls keep it', async () => {
+    const props = baseProps({
+      pendingPickBatchId: PICKING_ID,
+      data: { batches: [] },
+    });
+
+    const { rerender } = render(<WmsModuleFT2 {...props} />);
+
+    // Status unknown: the Brief is shown and execution is not.
+    expect(await startPicking()).toBeInTheDocument();
+    expect(locationScan()).not.toBeInTheDocument();
+
+    // Canonical WmsData resolves after the Pick session: exact `picking`.
+    rerender(
+      <WmsModuleFT2
+        {...props}
+        data={{ batches: [wmsBatch(PENDING_ID, 'pending'), wmsBatch(PICKING_ID, 'picking')] }}
+      />,
+    );
+
+    await waitFor(() => expect(locationScan()).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
+
+    // A later poll (fresh data object, same status) does not reset execution.
+    rerender(
+      <WmsModuleFT2
+        {...props}
+        data={{ batches: [wmsBatch(PENDING_ID, 'pending'), wmsBatch(PICKING_ID, 'picking')] }}
+      />,
+    );
+
+    expect(locationScan()).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
+    expect(props.onClaimBatch).not.toHaveBeenCalled();
+    expect(props.onPickSessionEnter).toHaveBeenCalledTimes(1);
   });
 });
