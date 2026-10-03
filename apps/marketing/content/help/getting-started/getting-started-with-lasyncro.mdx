@@ -1,6 +1,6 @@
 ---
 title: "Getting started with LaSyncro"
-description: "Connect Shopify, map your first stock location, and get ready to count opening stock in your warehouse."
+description: "Connect Shopify, choose your Shopify Location, map warehouse basics, and get ready to count opening stock."
 category: "Getting Started"
 audience:
   - "Owner"
@@ -10,6 +10,8 @@ keywords:
   - "first setup"
   - "onboarding"
   - "Ops Console"
+  - "Shopify Location"
+  - "Shopify inventory location"
   - "map warehouse"
   - "warehouse setup"
   - "warehouse boundary"
@@ -21,8 +23,9 @@ searchAliases:
   - "start here"
   - "count opening stock"
   - "Shopify warehouse setup"
+  - "choose Shopify location"
 order: 0
-lastReviewed: "2026-10-01"
+lastReviewed: "2026-10-03"
 relatedArticles:
   - "/help/getting-started/connect-your-shopify-store"
   - "/help/warehouse/use-floor-planning"
@@ -33,32 +36,38 @@ relatedArticles:
 
 ## Quick answer
 
-Your first warehouse setup has two immediate goals: map where stock can physically live, and become ready to establish what inventory is physically present.
+Your first warehouse setup links your warehouse to a Shopify Location, maps where stock can physically live, and gets you ready to establish what inventory is physically present.
 
-**Connect Shopify → Map warehouse basics → Count opening stock**
+**Connect Shopify → Choose Shopify Location → Map warehouse basics → Count opening stock**
 
 Start by [connecting your Shopify store](/help/getting-started/connect-your-shopify-store). After **Unlock Insights**, Ops Console introduces the next setup action with **Start here**.
 
-You only need one valid, active **Pick** or **Storage** Stock location to complete **Map warehouse basics** and make **Count opening stock** available. This is the minimum mapping milestone, not a fully mapped warehouse or completed inventory reconciliation.
+Choose your Shopify Location before mapping your warehouse or counting opening stock. With that Shopify Location mapped, you only need one valid, active **Pick** or **Storage** Stock location to complete **Map warehouse basics** and make **Count opening stock** available. This is the minimum internal mapping milestone, not a fully mapped warehouse or completed inventory reconciliation.
 
 ## Start with Ops Console
 
-The **Start here** Spotlight introduces Ops Console as your guide to what needs attention and what to do next. On first entry, it surfaces the next meaningful setup action: **Map warehouse basics**.
+The **Start here** Spotlight introduces Ops Console as your guide to what needs attention and what to do next. On first entry, it surfaces **Choose Shopify location**, which takes you to **Settings → Warehouse**. Selecting a Shopify Location tells LaSyncro which Shopify inventory location this warehouse represents.
 
 You can close Ops Console and reopen it later to return to your next action.
 
 <HelpScreenshot
   src="/help/getting-started/01-start-here.png"
-  alt="Ops Console highlighting Map warehouse basics beside the Start here Spotlight."
-  width="1951"
-  height="1055"
+  alt="Overview showing Choose your Shopify location as the next step, with Ops Console and the Start here Spotlight open."
+  width="2751"
+  height="1491"
   label="Spotlight 1: Start here"
-  caption="Ops Console points you to your next setup action."
+  caption="Start here directs you to choose the Shopify Location this warehouse represents."
 />
+
+## Choose your Shopify Location
+
+A **Shopify Location** is Shopify's external inventory location mapped to this LaSyncro warehouse. It is not a shelf, bin, Pick location, Storage location, or another physical place inside your warehouse.
+
+LaSyncro uses your selected Shopify Location for opening-stock expectations and future inventory updates. After you select it in **Settings → Warehouse**, the next setup action is **Map warehouse basics**.
 
 ## Define your warehouse floor
 
-The **Set your warehouse boundary** Spotlight introduces the physical floor that will contain your operational locations. In Floor Settings, use **Width** and **Depth** to define that boundary.
+With your Shopify Location selected, begin mapping your warehouse floor. The **Set your warehouse boundary** Spotlight introduces the physical floor that will contain your operational locations. In Floor Settings, use **Width** and **Depth** to define that boundary.
 
 **A warehouse boundary is not a Stock location.** It describes the extent of your floor, not a place where inventory is stored or counted. Defining the boundary alone does not complete Map warehouse basics.
 
@@ -77,7 +86,7 @@ The **Add where you keep your stock** Spotlight guides you to create your first 
 
 Use a code that identifies a real place in your warehouse, such as **PICK-01**, **STORAGE-A-01**, or **BIN-B-04**. Create a valid, active Stock location of type **Pick** or **Storage**.
 
-**You do not need to finish mapping your entire warehouse before continuing.** One valid Pick/Storage Stock location satisfies **Map warehouse basics**. You can add more locations as you continue setting up the warehouse.
+**You do not need to finish mapping your entire warehouse before continuing.** With your Shopify Location mapped, one valid, active Pick/Storage Stock location satisfies **Map warehouse basics**. You can add more locations as you continue setting up the warehouse.
 
 <HelpScreenshot
   src="/help/getting-started/03-add-first-stock-location.png"
@@ -90,9 +99,9 @@ Use a code that identifies a real place in your warehouse, such as **PICK-01**, 
 
 ## Start establishing your inventory truth
 
-Once your first valid Stock location exists, the setup transition is:
+Count opening stock requires both a mapped Shopify Location and your first valid, active Pick/Storage Stock location. The setup transition is:
 
-**First valid Stock location → Map warehouse basics complete → Count opening stock available**
+**Shopify Location mapped + first valid, active Pick/Storage Stock location → Map warehouse basics complete → Count opening stock available**
 
 Ops Console can then show **Ready to count opening stock**:
 
@@ -105,7 +114,7 @@ Both choices are valid:
 - **Start counting now** if you are ready to establish opening stock.
 - **Keep mapping first** if you want to add more of your warehouse locations before counting.
 
-**Opening count does not start automatically.** Making Count opening stock available leaves that choice with you.
+**Opening count does not start automatically.** Making Count opening stock available leaves that choice with you. Your explicit action to start opening count creates the count.
 
 <HelpScreenshot
   src="/help/getting-started/04-ready-to-count-opening-stock.png"
@@ -113,18 +122,18 @@ Both choices are valid:
   width="1940"
   height="903"
   label="Spotlight 4: Ready to count opening stock"
-  caption="Your first Stock location unlocks opening count; you choose when to start."
+  caption="With your Shopify Location mapped and your first valid, active Pick/Storage Stock location ready, you choose when to start opening count."
 />
 
 ## Common questions
 
 ### Do I need to map my entire warehouse first?
 
-No. One valid, active Pick/Storage Stock location completes the minimum mapping milestone. You can start opening count at that point or keep mapping first.
+No. With your Shopify Location mapped, one valid, active Pick/Storage Stock location completes the minimum mapping milestone. You can start opening count at that point or keep mapping first.
 
 ### Why was Count opening stock locked?
 
-In this first setup sequence, Count opening stock becomes available after your first valid Stock location exists. Setting the warehouse boundary alone does not satisfy that requirement.
+Count opening stock requires both a selected Shopify Location and at least one valid, active Pick/Storage Stock location. Setting the warehouse boundary alone does not satisfy those requirements.
 
 ### Will LaSyncro start counting automatically?
 
