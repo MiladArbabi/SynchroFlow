@@ -33,10 +33,14 @@ export const createShopifyGraphQLClient = ({
   accessToken,
   platformShopName,
   shopId,
+  apiVersion,
 }: {
   accessToken: string;
   platformShopName: string;
   shopId: number;
+  // Optional SDK per-client override. Omitted → the configured
+  // SHOPIFY_API_VERSION, exactly as before.
+  apiVersion?: string;
 }) => {
   const session = new Session({
     id: `session-sync-${shopId}`,
@@ -46,5 +50,8 @@ export const createShopifyGraphQLClient = ({
     accessToken,
   });
 
-  return new shopify.clients.Graphql({ session });
+  return new shopify.clients.Graphql({
+    session,
+    apiVersion: apiVersion as ApiVersion | undefined,
+  });
 };

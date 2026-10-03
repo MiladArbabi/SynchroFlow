@@ -583,7 +583,7 @@ export function createOpeningInventoryLocationPageReader(): OpeningInventoryLoca
   };
 }
 
-function servedShopifyApiVersion(
+export function servedShopifyApiVersion(
   response: unknown
 ): string | null {
   const headers = (response as any)?.headers;

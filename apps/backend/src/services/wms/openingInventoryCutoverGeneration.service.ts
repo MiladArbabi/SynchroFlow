@@ -284,7 +284,7 @@ function canonicalGenerationJson(
   );
 }
 
-function generationFingerprint(
+export function generationFingerprint(
   value: unknown
 ): string {
   return generationSha256(
