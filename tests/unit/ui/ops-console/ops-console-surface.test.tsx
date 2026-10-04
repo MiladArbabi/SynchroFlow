@@ -667,6 +667,20 @@ describe('HISTORY V1 semantics — backend-classified verified outcome', () => {
 // ─── CORRECTION 2 — PERSISTENT CONSOLE, COMPACT COMPLETED SETUP ──────────────
 
 describe('setup completion and dismissal', () => {
+  it('#1207 empty mature SETUP never synthesizes a setup-complete state', () => {
+    mockUseActivationChecklist.mockReturnValue({
+      items: [], completedCount: 0, allComplete: true,
+      firstEntry: false, firstEntryItems: [], isLoading: false, isError: false,
+    });
+
+    renderPanel({ alerts: [] });
+
+    expect(screen.getByTestId('ops-console')).toBeInTheDocument();
+    expect(screen.queryByText('Setup complete · 0/0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-setup-complete')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-setup-completed-toggle')).not.toBeInTheDocument();
+  });
+
   it('keeps the console reachable after every setup item completes', () => {
     mockUseActivationChecklist.mockReturnValue({
       items: SETUP_ITEMS.map(i => ({ ...i, complete: true })),

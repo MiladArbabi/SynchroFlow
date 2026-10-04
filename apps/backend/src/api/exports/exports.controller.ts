@@ -133,7 +133,7 @@ interface ColumnDef {
   sql: string;
 }
 
-type ExportResource = 'orders' | 'returns' | 'finances' | 'products';
+type ExportResource = 'orders' | 'outbound' | 'returns' | 'finances' | 'products';
 
 export const EXPORT_COLUMNS: Record<ExportResource, ColumnDef[]> = {
   orders: [
@@ -150,6 +150,33 @@ export const EXPORT_COLUMNS: Record<ExportResource, ColumnDef[]> = {
       FROM order_constraints oc
       WHERE oc.lasyncro_order_id = o.lasyncro_order_id AND oc.is_active = true
     )` },
+    { key: 'channel', label: 'Channel', sql: "COALESCE(o.source, '—')" },
+    { key: 'sku_count', label: 'SKUs', sql: 'COALESCE(ru.sku_count, 0)' },
+    { key: 'shipping_country', label: 'Ship-to country', sql: "COALESCE(o.shipping_country_code, '—')" },
+  ],
+  // Canonical Outbound (physical shipment) dataset — same truth as
+  // GET /api/v1/orders/outbound. Keyed 'outbound' so ColumnPicker's
+  // resourceFromEndpoint('/api/v1/exports/orders/outbound') resolves it.
+  // `ost` is the single latest tracking row (see exportOutboundOrders).
+  outbound: [
+    { key: 'order_id', label: 'Order ID', sql: 'o.lasyncro_order_id' },
+    // Scalar subquery, not a join: an order can map to more than one
+    // external identity, and a join would fan it out into several rows.
+    { key: 'external_order_id', label: 'Order number', sql: `COALESCE((
+      SELECT eim.external_order_id
+      FROM external_order_identity_map eim
+      WHERE eim.lasyncro_order_id = o.lasyncro_order_id AND eim.shop_id = o.shop_id
+      ORDER BY eim.id ASC
+      LIMIT 1
+    ), '—')` },
+    { key: 'shipped_at', label: 'Shipped', sql: "to_char(ows.shipped_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'total_price', label: 'Total', sql: 'o.total_price' },
+    { key: 'currency', label: 'Currency', sql: 'o.currency' },
+    { key: 'tracking_number', label: 'Tracking number', sql: "COALESCE(ost.tracking_number, '—')" },
+    // Physical carrier only. ost.carrier_code is the label PROVIDER
+    // (sendcloud / shippo) and is never exported as the carrier.
+    { key: 'carrier', label: 'Carrier', sql: "COALESCE(ost.provider_carrier_code, '—')" },
+    { key: 'live_status', label: 'Live status', sql: "COALESCE(ost.latest_status, '—')" },
     { key: 'channel', label: 'Channel', sql: "COALESCE(o.source, '—')" },
     { key: 'sku_count', label: 'SKUs', sql: 'COALESCE(ru.sku_count, 0)' },
     { key: 'shipping_country', label: 'Ship-to country', sql: "COALESCE(o.shipping_country_code, '—')" },
@@ -344,6 +371,90 @@ export async function exportOrders(req: Request, res: Response) {
     }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportOrders failed', { shopId, msg, ...pgErrorInfo(err) });
+    if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
+  }
+}
+
+// ─── OUTBOUND ORDERS CSV ──────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/exports/orders/outbound
+ *
+ * Canonical Outbound report: the same physical-shipment domain as
+ * GET /api/v1/orders/outbound. Deliberately separate from exportOrders —
+ * that export's filters.status reads order_fulfillment_status, which a
+ * Shopify-only fulfillment satisfies without any physical shipment.
+ *
+ * Membership: order_warehouse_status.status = 'shipped' AND shipped_at IS
+ * NOT NULL. partially_shipped and shipped→cancelled history are out of scope.
+ *
+ * Tracking: the single latest order_shipment_tracking row per order —
+ * created_at DESC, id DESC, the Outbound read model's convention — via
+ * LEFT JOIN LATERAL ... LIMIT 1, so an order exports exactly one row.
+ *
+ * shipped_at is shop-local (shops.timezone), 'YYYY-MM-DD HH24:MI:SS'.
+ * The tier data window applies on order_created_at, exactly as exportOrders.
+ * filters.columns follows the same exports.column_selection gate.
+ */
+export async function exportOutboundOrders(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+  const tier = resolvedTier(req);
+  const since = tierDataWindowSince(tier);
+
+  try {
+    const filters = req.body?.filters ?? {};
+    const { columns } = filters;
+
+    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+      return;
+    }
+
+    const columnDefs = resolveColumns('outbound', columns);
+
+    const rows = await withTenant(shopId, async (trx) => {
+      let query = trx('orders as o')
+        .join('shops as s', 's.id', 'o.shop_id')
+        .join('order_warehouse_status as ows', 'ows.lasyncro_order_id', 'o.lasyncro_order_id')
+        .joinRaw(`
+          LEFT JOIN LATERAL (
+            SELECT t.tracking_number, t.provider_carrier_code, t.latest_status
+            FROM order_shipment_tracking t
+            WHERE t.lasyncro_order_id = o.lasyncro_order_id
+              AND t.shop_id = o.shop_id
+            ORDER BY t.created_at DESC, t.id DESC
+            LIMIT 1
+          ) ost ON true
+        `)
+        .leftJoin(
+          trx('order_revenue_units').select('lasyncro_order_id').count('* as sku_count').groupBy('lasyncro_order_id').as('ru'),
+          'ru.lasyncro_order_id', 'o.lasyncro_order_id'
+        )
+        .where('o.shop_id', shopId)
+        .where('ows.status', 'shipped')
+        .whereNotNull('ows.shipped_at')
+        .select(...buildSelect(trx, columnDefs))
+        .orderBy('ows.shipped_at', 'desc')
+        .orderBy('o.lasyncro_order_id', 'asc');
+
+      if (since) query = query.where('o.order_created_at', '>=', since);
+
+      return query;
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename('outbound-orders', 'csv')}"`);
+
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.key), alwaysWriteHeaders: true });
+    csvStream.pipe(res);
+    for (const row of rows) csvStream.write(row);
+    csvStream.end();
+
+  } catch (err: unknown) {
+    if (err instanceof InvalidFilterError) {
+      return res.status(400).json({ error: err.code, message: err.message });
+    }
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[exports] exportOutboundOrders failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
   }
 }

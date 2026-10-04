@@ -1,8 +1,8 @@
 // tests/unit/ui/hooks/useActivationChecklist.print-barcodes.test.tsx
 //
-// Focused regression coverage for GitHub #1129.
-// The barcode SETUP item must deep-link to the canonical Barcodes tab while
-// preserving completion state from the existing WMS readiness task.
+// #1207 — print-barcodes is excluded from mature Ops Console SETUP.
+// This protects SETUP membership only; backend barcode readiness remains
+// a separate capability regardless of its completion state.
 
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -54,12 +54,12 @@ function mockReadiness(complete: boolean) {
   });
 }
 
-describe('useActivationChecklist — print-barcodes item', () => {
+describe('useActivationChecklist — #1207 print-barcodes exclusion from mature Ops Console SETUP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('deep-links "Print your first location barcode" to the canonical Barcodes tab', async () => {
+  it('excludes print-barcodes from mature SETUP when readiness reports incomplete', async () => {
     mockReadiness(false);
 
     const { result } = renderHook(() => useActivationChecklist(), {
@@ -68,19 +68,10 @@ describe('useActivationChecklist — print-barcodes item', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    const item = result.current.items.find(
-      (candidate) => candidate.key === 'print-barcodes'
-    );
-
-    expect(item).toEqual({
-      key: 'print-barcodes',
-      label: 'Print your first location barcode',
-      complete: false,
-      actionRoute: '/floor-planning?tab=barcodes',
-    });
+    expect(result.current.items.map((item) => item.key)).not.toContain('print-barcodes');
   });
 
-  it('continues to derive completion from wms / print-barcodes readiness', async () => {
+  it('excludes print-barcodes from mature SETUP when readiness reports complete', async () => {
     mockReadiness(true);
 
     const { result } = renderHook(() => useActivationChecklist(), {
@@ -89,10 +80,6 @@ describe('useActivationChecklist — print-barcodes item', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    const item = result.current.items.find(
-      (candidate) => candidate.key === 'print-barcodes'
-    );
-
-    expect(item?.complete).toBe(true);
+    expect(result.current.items.map((item) => item.key)).not.toContain('print-barcodes');
   });
 });

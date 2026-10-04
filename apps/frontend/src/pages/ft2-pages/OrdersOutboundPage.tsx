@@ -1,115 +1,130 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx
 //
-// OUTBOUND TAB — Shipped orders
+// OUTBOUND TAB — Shipped orders — OPERATIONAL CONTEXT
 // Route: /orders/outbound
 //
+// Layout:
+//   1. Header — title + permanent orientation + export
+//   2. Body   — shared OperationalContextShell:
+//               primary Shipped orders ledger | Shipping state rail
+//
+// Ops Console owns cross-workflow attention: the Shipping state rail
+// withdraws while it is open, and this page keeps no local attention inbox
+// and no handoff / label execution surfaces.
+//
 // RULES: No alpha(). No useTheme(). No fontFamily overrides. 1px borders. 12px inner cards, 14px table.
-import { useMemo, useRef, useState, useCallback, ReactNode } from 'react';
-import { EntityDetailModal, PulseCard } from '@lasyncro/shared/ui';
+import { useMemo, useState, useCallback, ReactNode, ChangeEvent } from 'react';
+import { EntityDetailModal, OperationalContextShell } from '@lasyncro/shared/ui';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 import { useBulkSetPriority } from '../wms/useOrderPool';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { ExportDrawer } from 'components/ExportDrawer';
+import useConfig from 'hooks/useConfig';
 import {
   Box,
-  Collapse,
   Typography,
   CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
 } from '@mui/material';
-import { ChevronDown, ChevronUp, Clock, Package } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Package } from 'lucide-react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
 import { useNavigate } from 'react-router-dom';
 
 // ─── TYPES ────────────────────────────────────────────
-interface FulfilledOrder {
+/** Row of GET /api/v1/orders/outbound — physically shipped orders. */
+interface OutboundOrder {
   lasyncro_order_id: string;
   external_order_id: string | null;
+  shipped_at: string;
   total_price: string;
-  order_created_at: string;
-  fulfilled_at: string;
-  hours_to_fulfil: string;
+  currency: string;
   tracking_number: string | null;
-  tracking_url: string | null;
-  carrier_code: string | null;
+  carrier: string | null;
+  carrier_provider: string | null;
   latest_status: string | null;
-  latest_location: string | null;
   latest_event_at: string | null;
-  is_stalled: boolean;
+  is_stalled: boolean | null;
 }
 
-interface FulfilledOrdersResponse {
-  orders: FulfilledOrder[];
+/** Period-scoped Shipping State summary. Never narrowed by state, q or page. */
+interface OutboundSummary {
+  shipped_count: number;
+  with_tracking_count: number;
+  missing_tracking_count: number;
+  tracking_coverage_pct: number | null;
+  avg_time_to_ship_hours: number | null;
+}
+
+interface OutboundOrdersResponse {
+  orders: OutboundOrder[];
   total: number;
   page: number;
   limit: number;
+  summary?: OutboundSummary;
+}
+
+/** Response tagged with the period it was requested for (summary compatibility). */
+interface OutboundOrdersResult extends OutboundOrdersResponse {
+  requestedPeriod: OutboundPeriod;
 }
 
 interface CarrierSettingsResponse {
-  carriers: unknown[];
-}
-
-interface PackedHandoffOrder {
-  lasyncro_order_id: string;
-  external_order_id: string | null;
-  pick_batch_id: string | null;
-  packed_at: string;
-  total_price: string;
-  currency: string;
-  carrier_code: string | null;
-  tracking_number: string | null;
-  latest_status: string | null;
-}
-
-interface PackedHandoffResponse {
-  orders: PackedHandoffOrder[];
-  total: number;
+  carriers: { carrier_code: string; is_active: boolean }[];
 }
 
 // ─── HOOK ─────────────────────────────────────────────
-type SortField = 'fulfilled_at' | 'order_created_at' | 'total_price' | 'hours_to_fulfil';
+type SortField = 'shipped_at';
 type SortDir   = 'asc' | 'desc';
-type DateRange = 'week' | 'month' | 'all';
-type LedgerFilter = 'needs_action' | DateRange;
+type OutboundState = 'all' | 'needs_action' | 'missing_tracking' | 'in_transit' | 'delivered';
+type OutboundPeriod = 'week' | 'month' | 'all';
 
-/**
- * Outbound SLA signal: once an order is fulfilled, long creation→fulfilment
- * time is surfaced as operational risk, not hidden inside the ledger.
- */
-const OUTBOUND_SLA_BREACH_HOURS = 72;
-const TRIAGE_PREVIEW_LIMIT = 3;
+const STATE_OPTIONS: { key: OutboundState; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'needs_action', label: 'Needs action' },
+  { key: 'missing_tracking', label: 'Missing tracking' },
+  { key: 'in_transit', label: 'In transit' },
+  { key: 'delivered', label: 'Delivered' },
+];
 
-function useFulfilledOrders(page: number, perPage: number, sortField: SortField, sortDir: SortDir, dateRange: DateRange) {
-  return useQuery<FulfilledOrdersResponse, Error, FulfilledOrdersResponse>({
-    queryKey: ['orders', 'fulfilled', page, perPage, sortField, sortDir, dateRange],
-    queryFn: async (): Promise<FulfilledOrdersResponse> => {
-      const params = new URLSearchParams({ limit: String(perPage), page: String(page), sort: sortField, dir: sortDir, range: dateRange });
-      const { data } = await axiosInstance.get<FulfilledOrdersResponse>(`/api/v1/orders/fulfilled?${params}`);
-      return data;
-    },
-    refetchInterval: 60_000,
-    placeholderData: keepPreviousData,
-  });
+const PERIOD_OPTIONS: { key: OutboundPeriod; label: string }[] = [
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
+  { key: 'all', label: 'All time' },
+];
+
+interface OutboundQuery {
+  state: OutboundState;
+  period: OutboundPeriod;
+  q: string;
+  page: number;
+  perPage: number;
+  sortField: SortField;
+  sortDir: SortDir;
 }
 
 /**
- * Temporary summary source until `/orders/fulfilled` returns server-side outbound aggregates.
- * Keeps decision cards from being distorted by the visible ledger page size.
+ * Shipped Orders ledger. The server owns membership, state / period / search
+ * filtering, sorting and pagination — the page renders exactly the returned
+ * working set and never filters or slices it locally.
  */
-function useOutboundSignalOrders() {
-  return useQuery<FulfilledOrdersResponse, Error, FulfilledOrdersResponse>({
-    queryKey: ['orders', 'fulfilled', 'outbound-signals'],
-    queryFn: async (): Promise<FulfilledOrdersResponse> => {
-      const params = new URLSearchParams({ limit: '100', page: '1', sort: 'fulfilled_at', dir: 'desc', range: 'all' });
-      const { data } = await axiosInstance.get<FulfilledOrdersResponse>(`/api/v1/orders/fulfilled?${params}`);
-      return data;
+function useOutboundOrders({ state, period, q, page, perPage, sortField, sortDir }: OutboundQuery) {
+  return useQuery<OutboundOrdersResult, Error, OutboundOrdersResult>({
+    queryKey: ['orders', 'outbound', { state, period, q, page, perPage, sortField, sortDir }],
+    queryFn: async (): Promise<OutboundOrdersResult> => {
+      const params = new URLSearchParams({
+        state,
+        period,
+        page: String(page),
+        limit: String(perPage),
+        sort: sortField,
+        dir: sortDir,
+      });
+      if (q) params.set('q', q);
+      const { data } = await axiosInstance.get<OutboundOrdersResponse>(`/api/v1/orders/outbound?${params}`);
+      return { ...data, requestedPeriod: period };
     },
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
@@ -132,62 +147,20 @@ function useCarrierSettings() {
   });
 }
 
-function usePackedHandoffQueue() {
-  return useQuery<PackedHandoffResponse>({
-    queryKey: ['outbound', 'handoff-queue'],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get<PackedHandoffResponse>(
-        '/api/v1/wms/outbound/handoff-queue'
-      );
-      return data;
-    },
-    refetchInterval: 30_000,
-  });
-}
-
-function useConfirmCarrierHandoff() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    void,
-    Error,
-    { pickBatchId: string; orderId: string }
-  >({
-    mutationFn: async ({ pickBatchId, orderId }) => {
-      await axiosInstance.post(`/api/v1/wms/batch/${pickBatchId}/ship`, {
-        lasyncro_order_id: orderId,
-        partial_shipment: false,
-      });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['outbound', 'handoff-queue'] }),
-        queryClient.invalidateQueries({ queryKey: ['orders', 'fulfilled'] }),
-      ]);
-    },
-  });
-}
-
-function useBulkBackfillLabels() {
-  const queryClient = useQueryClient();
-  return useMutation<
-    { summary: { total: number; succeeded: number; failed: number }; results: Array<{ orderId: string; success: boolean; error?: string }> },
-    Error,
-    string[]
-  >({
-    mutationFn: async (orderIds) => {
-      const { data } = await axiosInstance.post('/api/v1/wms/orders/bulk-generate-label', { order_ids: orderIds });
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['orders', 'fulfilled'] });
-    },
-  });
-}
 // ─── HELPERS ──────────────────────────────────────────
 
-const fmt$ = (price: string): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(price));
+/**
+ * Each order is formatted in its own stored currency. Malformed currency data
+ * falls back to amount + the provided code — never silently to USD.
+ */
+const fmtMoney = (price: string, currency: string, locale: string): string => {
+  const amount = Number(price);
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency ?? ''}`.trim();
+  }
+};
 
 const fmtRelative = (iso: string): string => {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -204,37 +177,151 @@ const STATUS_LABEL: Record<string, string> = {
   delivered: 'Delivered',
   exception: 'Exception',
   returned: 'Returned',
+  unknown: 'Unknown',
 };
 
-const fmtDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+/** Carrier states where a missing recent event means the parcel may be stuck. */
+const STALL_CAN_APPLY = new Set(['announced', 'in_transit', 'out_for_delivery']);
 
-const fmtFulfilTime = (hours: string): string => {
-  const h = Number(hours);
-  if (h < 1) return '<1h';
-  const hr = Math.round(h);
+type LiveTone = 'good' | 'warn' | 'critical' | 'neutral';
+
+/**
+ * Live carrier status presentation. is_stalled adds staleness context to an
+ * in-flight state; it never replaces the carrier's state, and a carrier
+ * exception stays an exception.
+ */
+function liveStatus(order: OutboundOrder): { label: string; tone: LiveTone } {
+  const status = order.latest_status;
+
+  if (!status) {
+    return order.tracking_number
+      ? { label: 'Status unavailable', tone: 'neutral' }
+      : { label: '—', tone: 'neutral' };
+  }
+
+  const base = STATUS_LABEL[status] ?? 'Unknown';
+
+  if (order.is_stalled && STALL_CAN_APPLY.has(status)) {
+    return { label: `${base} · No recent update`, tone: 'critical' };
+  }
+
+  switch (status) {
+    case 'delivered':
+      return { label: base, tone: 'good' };
+    case 'exception':
+    case 'returned':
+      return { label: base, tone: 'critical' };
+    case 'unknown':
+      return { label: base, tone: 'neutral' };
+    default:
+      return { label: base, tone: 'warn' };
+  }
+}
+
+const LIVE_TONE_STYLE: Record<LiveTone, { bg: string; ink: string }> = {
+  good: { bg: 'rgba(76,175,122,0.1)', ink: '#4CAF7A' },
+  warn: { bg: 'rgba(217,162,59,0.1)', ink: '#D9A23B' },
+  critical: { bg: 'rgba(229,72,77,0.1)', ink: '#E5484D' },
+  neutral: { bg: 'var(--bg-2)', ink: 'var(--ink-3)' },
+};
+
+/** Human-readable duration; semantics unchanged (hours). */
+const fmtHours = (hours: number): string => {
+  if (hours < 1) return '<1h';
+  const hr = Math.round(hours);
   if (hr < 24) return `${hr}h`;
   const d = Math.floor(hr / 24);
   const rem = hr % 24;
   return rem === 0 ? `${d}d` : `${d}d ${rem}h`;
 };
 
-const isThisWeek = (iso: string): boolean => {
-  const date = new Date(iso);
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  return date >= weekAgo;
+const fmtPct = (pct: number): string => `${Math.round(pct * 10) / 10}%`;
+
+const fmtDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+// ─── SHIPPING STATE RAIL ──────────────────────────────
+// Contextual state only — same section anatomy as the Order health and
+// Inventory state rails. No remediation queue; the single contextual CTA is
+// carrier setup navigation.
+
+type StateTone = 'critical' | 'good' | 'neutral';
+
+const STATE_TONE_COLOR: Record<StateTone, string> = {
+  critical: 'var(--critical-ink)',
+  good: 'var(--good-ink)',
+  neutral: 'var(--ink)',
 };
+
+const STATE_GROUP_SX = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px',
+  py: '10px',
+  borderTop: '0.5px solid var(--rule)',
+  '&:first-of-type': { borderTop: 'none', pt: 0 },
+} as const;
+
+function StateMetric({ label, value, tone = 'neutral' }: { label: string; value: ReactNode; tone?: StateTone }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+      <Typography component="span" sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+        {label}
+      </Typography>
+      <Typography component="span" sx={{ fontSize: 13, fontWeight: 500, color: STATE_TONE_COLOR[tone], fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+// ─── LEDGER FILTER CHIPS ──────────────────────────────
+
+function FilterChipGroup<T extends string>({ label, options, active, onSelect }: {
+  label: string;
+  options: { key: T; label: string }[];
+  active: T;
+  onSelect: (key: T) => void;
+}) {
+  return (
+    <Box role="group" aria-label={label} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {options.map(option => (
+        <Box
+          key={option.key}
+          component="button"
+          type="button"
+          aria-pressed={active === option.key}
+          onClick={() => onSelect(option.key)}
+          sx={{
+            px: 1.5, py: 0.625, borderRadius: '6px', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+            bgcolor: active === option.key ? 'var(--accent)' : 'var(--surface)',
+            color: active === option.key ? 'var(--accent-ink)' : 'var(--ink-3)',
+            border: '1px solid',
+            borderColor: active === option.key ? 'var(--accent)' : 'var(--rule)',
+            transition: 'all 0.12s ease',
+          }}
+        >
+          {option.label}
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 // ─── MAIN ─────────────────────────────────────────────
 export default function OrdersOutboundPage() {
   const navigate = useNavigate();
+  const { state: { isOpsConsoleOpen } } = useConfig();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
-  const [sortField, setSortField] = useState<SortField>('fulfilled_at');
+  const [sortField, setSortField] = useState<SortField>('shipped_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [dateRange, setDateRange] = useState<DateRange>('all');
-  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('needs_action');
-  const ledgerRef = useRef<HTMLDivElement>(null);
+  // Independent dimensions: operational state and shipped period intersect;
+  // search narrows within both. Each change returns the ledger to page 1.
+  const [shippingState, setShippingState] = useState<OutboundState>('all');
+  const [period, setPeriod] = useState<OutboundPeriod>('week');
+  const [search, setSearch] = useState('');
   // ISS-05 FIX: replaces 4× navigate('/orders/:id') full-page routes with
   // the standardized EntityDetailModal, matching OrdersFT2Page.tsx exactly
   // (entity-detail-modal-playbook.md §2). OrderDetailPage.tsx removed 2026-07-11
@@ -246,8 +333,6 @@ export default function OrdersOutboundPage() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
-  const [handoffConfirmOrder, setHandoffConfirmOrder] =
-    useState<PackedHandoffOrder | null>(null);
   const bulkSetPriority = useBulkSetPriority();
   const onPriorityFlag = useCallback(
   async (orderIds: string[], flagged: boolean) => {
@@ -255,33 +340,28 @@ export default function OrdersOutboundPage() {
   },
   [bulkSetPriority]
 );
-  const [watchExpanded, setWatchExpanded] = useState(false);
-  const [backfillExpanded, setBackfillExpanded] = useState(false);
-  const [backfillResult, setBackfillResult] = useState<{
-    summary: { total: number; succeeded: number; failed: number };
-    results: Array<{ orderId: string; success: boolean; error?: string }>;
-  } | null>(null);
 
-  const { mutate: runBulkBackfill, isPending: backfillRunning } = useBulkBackfillLabels();
-  const { data, isLoading, isError } = useFulfilledOrders(page, perPage, sortField, sortDir, dateRange);
-  const { data: signalData } = useOutboundSignalOrders();
-  const { data: carrierSettings } = useCarrierSettings();
+  const { data, isLoading, isError } = useOutboundOrders({
+    state: shippingState,
+    period,
+    q: search.trim(),
+    page,
+    perPage,
+    sortField,
+    sortDir,
+  });
   const {
-    data: handoffData,
-    isLoading: handoffLoading,
-    isError: handoffError,
-  } = usePackedHandoffQueue();
-  const confirmCarrierHandoff = useConfirmCarrierHandoff();
+    data: carrierSettings,
+    isError: carrierSettingsError,
+  } = useCarrierSettings();
 
-  const carriersConfigured = (carrierSettings?.carriers?.length ?? 0) > 0;
-  const packedHandoffOrders = handoffData?.orders ?? [];
-
-  const handleConfirmBackfill = () => {
-    const orderIds = outboundSignals.missingTracking.map(o => o.lasyncro_order_id);
-    runBulkBackfill(orderIds, {
-      onSuccess: (data) => setBackfillResult(data),
-    });
-  };
+  /**
+   * Carrier setup truth: readiness requires an ACTIVE carrier. Unresolved and
+   * failed lookups are their own states — never "Not configured".
+   */
+  const carrierSetup: 'checking' | 'unavailable' | 'not_configured' | 'ready' = carrierSettings
+    ? (carrierSettings.carriers ?? []).some(c => c.is_active === true) ? 'ready' : 'not_configured'
+    : carrierSettingsError ? 'unavailable' : 'checking';
 
   const handleSort = (field: SortField) => {
     if (field === sortField) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -289,576 +369,161 @@ export default function OrdersOutboundPage() {
     setPage(1);
   };
 
-  // Date filters were removed from the Outbound UI. The shipped-orders list stays action-first.
   // ISS-03 FIX: was a hardcoded blob-download bypassing the established
   // ExportDrawer pattern (export_system_playbook.md §6) — same bug class
   // as ORDM-01, never applied here. 'orders-outbound' report ID added to
   // exportReports.ts to carry the fulfilled-status filter.
-  const { tier } = useEntitlements();
+  const { tier, locale } = useEntitlements();
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const handleExportOutbound = async () => setExportDrawerOpen(true);
 
-  const orders = useMemo(() => data?.orders ?? [], [data?.orders]);
-  const signalOrders = useMemo(() => signalData?.orders ?? orders, [signalData?.orders, orders]);
+  // Ledger rows, total and paging are exactly the server response.
+  const ledgerRows = useMemo(() => data?.orders ?? [], [data?.orders]);
+  const ledgerTotal = data?.total ?? 0;
 
-  /**
-    * Exception-first ledger filter. Backend currently supports date ranges only,
-    * so needs-action is derived from the loaded fulfilled ledger rows.
-    */
-  const visibleOrders = useMemo(() => {
-    if (ledgerFilter !== 'needs_action') return orders;
-
-    return signalOrders.filter(order =>
-      !order.tracking_number || Number(order.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS
-    );
-  }, [orders, signalOrders, ledgerFilter]);
-
-    const sortedLedgerSource = useMemo(() => {
-  if (ledgerFilter !== 'needs_action') return visibleOrders;
-
-  return [...visibleOrders].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-
-    if (sortField === 'total_price' || sortField === 'hours_to_fulfil') {
-      return (Number(a[sortField]) - Number(b[sortField])) * direction;
-    }
-
-    return (new Date(a[sortField]).getTime() - new Date(b[sortField]).getTime()) * direction;
-      });
-    }, [visibleOrders, ledgerFilter, sortField, sortDir]);
-
-    const ledgerTotal = ledgerFilter === 'needs_action' ? sortedLedgerSource.length : (data?.total ?? 0);
-    const ledgerRows = ledgerFilter === 'needs_action'
-      ? sortedLedgerSource.slice((page - 1) * perPage, page * perPage)
-      : sortedLedgerSource;
-
-    const pulse = useMemo(() => {
-    const thisWeek = orders.filter(o => isThisWeek(o.fulfilled_at));
-    const revenueThisWeek = thisWeek.reduce((s, o) => s + Number(o.total_price), 0);
-    const allHours = orders.map(o => Number(o.hours_to_fulfil)).filter(h => !isNaN(h) && h > 0);
-    const avgHours = allHours.length > 0 ? allHours.reduce((s, h) => s + h, 0) / allHours.length : null;
-
-    return {
-      shippedThisWeek: thisWeek.length,
-      revenueThisWeek,
-      avgFulfilHours: avgHours,
-      total: data?.total ?? 0,
-      trackedCount: thisWeek.filter(o => o.tracking_number).length,
-    };
-  }, [orders, data?.total]);
-
-  const outboundSignals = useMemo(() => {
-  const stalled = signalOrders.filter(o => o.is_stalled);
-  const missingTracking = signalOrders.filter(o => !o.tracking_number);
-  const breachedSla = signalOrders.filter(o => Number(o.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS);
-  const needsAction = Array.from(
-    new Map([...stalled, ...missingTracking, ...breachedSla].map(order => [order.lasyncro_order_id, order])).values()
-  );
-
-    return {
-      stalled,
-      missingTracking,
-      breachedSla,
-      needsAction,
-      needsActionCount: needsAction.length,
-      stalledCount: stalled.length,
-      missingTrackingCount: missingTracking.length,
-      breachedSlaCount: breachedSla.length,
-    };
-  }, [signalOrders]);
-
-  const handleRangeChange = (filter: LedgerFilter) => {
-    setLedgerFilter(filter);
-    setDateRange(filter === 'needs_action' ? 'all' : filter);
+  const handleStateChange = (next: OutboundState) => {
+    setShippingState(next);
     setPage(1);
   };
 
-  const visibleBreachedSla = outboundSignals.breachedSla.slice(0, TRIAGE_PREVIEW_LIMIT);
-  const hiddenBreachedSla = outboundSignals.breachedSla.slice(TRIAGE_PREVIEW_LIMIT);
+  const handlePeriodChange = (next: OutboundPeriod) => {
+    setPeriod(next);
+    setPage(1);
+  };
 
-  const outboundTotal = signalData?.total ?? pulse.total;
-  const trackingCoverage = outboundTotal > 0
-    ? Math.round(((outboundTotal - outboundSignals.missingTrackingCount) / outboundTotal) * 100)
-    : 0;
+  const handleSearchChange = (next: string) => {
+    setSearch(next);
+    setPage(1);
+  };
+
+  /**
+   * Shipping State comes only from the canonical response's summary, which is
+   * PERIOD-scoped. Placeholder data kept across a state / search / page change
+   * carries the same period and stays valid; placeholder data from another
+   * period is not current truth, so the rail reads as unresolved until the
+   * selected period's response arrives. Errors and absent summaries are
+   * unknown — never zero.
+   */
+  const summary: OutboundSummary | null =
+    !isError && data?.summary && data.requestedPeriod === period ? data.summary : null;
+
+  const handleReviewMissingTracking = () => handleStateChange('missing_tracking');
+
+  // Empty-state truth: never-shipped only when nothing narrows the population.
+  const isUnfiltered = shippingState === 'all' && period === 'all' && search.trim() === '';
 
   return (
-    <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%' }}>
+    // VIEWPORT GEOMETRY — from lg the page is a bounded flex chain inside the
+    // AppLayout content area (Order Flow precedent): root height:100% →
+    // content flex:1/minHeight:0 → workspace flex:1/minHeight:0 → shell row
+    // minmax(0,1fr). Primary and rail share one track height; only the ledger
+    // rows viewport scrolls. Below lg everything keeps its natural height and
+    // the AppLayout content area owns vertical scrolling.
+    <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', height: { lg: '100%' }, display: 'flex', flexDirection: 'column' }}>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
 
-      <Box sx={{ p: '32px 40px' }}>
+      <Box sx={{ p: { xs: 2, md: '24px 40px' }, flex: { lg: 1 }, minHeight: { lg: 0 }, display: 'flex', flexDirection: 'column' }}>
 
-                {/* HEADER */}
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }}>
-          <Box>
+        {/* HEADER — H1 + permanent orientation + utility, same anatomy and
+            breakpoint wrap as the Orders and Inventory domain headers. Live
+            shipping state belongs to the Shipping state rail. */}
+        <Box sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 1.5,
+          mb: 2.5,
+          flexShrink: 0,
+        }}>
+          <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
               Outbound
             </Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-              {isLoading
-                ? '—'
-                : `${outboundTotal} shipped · ${outboundSignals.missingTrackingCount} missing tracking · ${carriersConfigured ? 'carrier connected' : 'carrier not configured'}`}
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+              Shipped orders, tracking and carrier state after fulfillment
             </Typography>
           </Box>
 
-          <Box
-            onClick={handleExportOutbound}
-            sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: '6px', '&:hover': { opacity: 0.75 } }}
-          >
-            Export →
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
+            <Box
+              onClick={handleExportOutbound}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+            >
+              Export →
+            </Box>
           </Box>
         </Box>
 
-        {(handoffLoading || handoffError || packedHandoffOrders.length > 0) && (
-          <Box sx={{
-            mb: 3,
-            bgcolor: 'var(--surface)',
-            border: '1px solid var(--rule)',
-            borderRadius: '14px',
-            overflow: 'hidden',
-          }}>
-            <Box sx={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: 2,
-              px: 2.5,
-              py: 1.75,
-              borderBottom: '1px solid var(--rule)',
-            }}>
-              <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                  Awaiting carrier handoff
-                </Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  {carriersConfigured
-                    ? 'Carrier movement clears this queue automatically. Confirm manually only after physical pickup.'
-                    : 'Confirm only after parcels physically leave the warehouse.'}
-                </Typography>
-              </Box>
-              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-4)', flexShrink: 0 }}>
-                {handoffLoading ? 'Loading…' : `${packedHandoffOrders.length} packed`}
-              </Typography>
-            </Box>
+        {/* OUTBOUND OPERATIONAL CONTEXT — PRIMARY: Shipped orders ledger |
+            RAIL: Shipping state, withdrawn while the Ops Console is open. */}
+        {/* Operational workspace: owns the remaining height from lg. The shared
+            shell is untouched; its root (data-operational-context-shell) is
+            given the bounded height and a single minmax(0,1fr) row here so
+            both tracks stretch to the same top and bottom edge. */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: { lg: 1 },
+            minHeight: { lg: 0 },
+            '& > [data-operational-context-shell]': {
+              flex: { lg: 1 },
+              minHeight: { lg: 0 },
+              gridTemplateRows: { lg: 'minmax(0, 1fr)' },
+            },
+          }}
+        >
+        <OperationalContextShell
+          suppressRail={isOpsConsoleOpen}
+          primary={
+            <Box
+              component="section"
+              role="region"
+              aria-label="Shipped orders"
+              sx={{ minWidth: 0, height: { lg: '100%' }, display: 'flex', flexDirection: 'column' }}
+            >
 
-            {handoffError && (
-              <Typography sx={{ px: 2.5, py: 1.5, fontSize: 12, color: '#E5484D' }}>
-                Failed to load packed orders.
-              </Typography>
-            )}
-
-            {confirmCarrierHandoff.isError && (
-              <Typography sx={{ px: 2.5, py: 1.5, fontSize: 12, color: '#E5484D', borderTop: '1px solid var(--rule)' }}>
-                Handoff confirmation failed. The order was not marked shipped.
-              </Typography>
-            )}
-
-            {packedHandoffOrders.map(order => {
-              const isConfirming =
-                confirmCarrierHandoff.isPending &&
-                confirmCarrierHandoff.variables?.orderId === order.lasyncro_order_id;
-
-              return (
-                <Box
-                  key={order.lasyncro_order_id}
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0,1fr) 150px',
-                    gap: 2,
-                    alignItems: 'center',
-                    px: 2.5,
-                    py: 1.5,
-                    borderTop: '1px solid var(--rule)',
-                  }}
-                >
-                  <Box>
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                      {order.external_order_id
-                        ? `#${order.external_order_id}`
-                        : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                    </Typography>
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                      Packed {fmtRelative(order.packed_at)}
-                      {order.tracking_number ? ` · ${order.tracking_number}` : ' · tracking pending'}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    component="button"
-                    type="button"
-                    disabled={!order.pick_batch_id || isConfirming}
-                    onClick={() => {
-                      if (!order.pick_batch_id) return;
-                      setHandoffConfirmOrder(order);
-                    }}
-                    sx={{
-                      border: '1px solid var(--accent-border)',
-                      bgcolor: 'transparent',
-                      color: 'var(--accent)',
-                      borderRadius: '6px',
-                      px: 1.5,
-                      py: 0.75,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      cursor: order.pick_batch_id && !isConfirming ? 'pointer' : 'not-allowed',
-                      opacity: order.pick_batch_id && !isConfirming ? 1 : 0.5,
-                    }}
-                  >
-                    {!order.pick_batch_id
-                      ? 'Batch unavailable'
-                      : isConfirming
-                        ? 'Confirming…'
-                        : 'Confirm carrier pickup'}
-                  </Box>
+              {isError && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.25, mb: 2, flexShrink: 0, bgcolor: 'rgba(229,72,77,0.07)', border: '1px solid rgba(229,72,77,0.2)', borderRadius: '10px' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink)' }}>Couldn't load shipped orders.</Typography>
                 </Box>
-              );
-            })}
-          </Box>
-        )}
-
-        {isError && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.25, mb: 3, bgcolor: 'rgba(229,72,77,0.07)', border: '1px solid rgba(229,72,77,0.2)', borderRadius: '10px' }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink)' }}>Failed to load fulfilled orders.</Typography>
-          </Box>
-        )}
-
-        {/* TRIAGE-FIRST OUTBOUND SNAPSHOT */}
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch', mb: 3 }}>
-          <Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }}>
-              <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                  Needs attention
-                </Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  Fix missing tracking, carrier setup, or delayed shipping before customers ask
-                </Typography>
-              </Box>
-              <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                {isLoading ? 'Syncing…' : 'Live'}
-              </Typography>
-            </Box>
-
-            {outboundSignals.stalledCount > 0 && (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.09)' }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }}>
-                    Critical — stalled in transit
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                    {outboundSignals.stalledCount} shipments
-                  </Typography>
-                </Box>
-
-                {outboundSignals.stalled.slice(0, TRIAGE_PREVIEW_LIMIT).map(order => (
-                  <Box
-                    key={order.lasyncro_order_id}
-                    sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                  >
-                    <Box>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                        {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                        No carrier update{order.latest_event_at ? ` since ${fmtRelative(order.latest_event_at)}` : ''}
-                      </Typography>
-                    </Box>
-                    <Box
-                      component="button"
-                      onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
-                      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                    >
-                      View order →
-                    </Box>
-                  </Box>
-                ))}
-              </>
-            )}
-
-            {outboundSignals.missingTrackingCount > 0 && (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.07)' }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }}>
-                    Critical — tracking missing
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                    {outboundSignals.missingTrackingCount} affected
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
-                  <Box>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                      Tracking missing
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                      {carriersConfigured
-                        ? 'These shipped orders are missing customer-visible tracking. Review the shipped orders below.'
-                        : 'Carrier settings are not configured, so fulfilled orders cannot receive customer-visible tracking yet.'}
-                    </Typography>
-                  </Box>
-                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: 130 }}>
-                    <Box
-                      component="button"
-                      onClick={() => carriersConfigured
-                        ? (setLedgerFilter('needs_action'), ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-                        : navigate('/settings/carriers')}
-                      sx={{ width: '100%', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                    >
-                      {carriersConfigured ? 'Review orders →' : 'Configure →'}
-                    </Box>
-                    {carriersConfigured && (
-                      <Box
-                        component="button"
-                        onClick={() => { setBackfillExpanded(v => !v); setBackfillResult(null); }}
-                        sx={{ width: '100%', boxSizing: 'border-box', border: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                      >
-                        Backfill labels
-                        {backfillExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                      </Box>
-                    )}
-                  </Box>
-                </Box>
-                <Collapse in={backfillExpanded} timeout={180} unmountOnExit>
-                  <Box sx={{ px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
-                    {!backfillResult ? (
-                      <>
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
-                          Generate labels for {outboundSignals.missingTrackingCount} orders?
-                        </Typography>
-                        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)', mb: 1.25 }}>
-                          {outboundSignals.missingTracking.map(o =>
-                            o.external_order_id ? `#${o.external_order_id}` : o.lasyncro_order_id.slice(0, 8).toUpperCase()
-                          ).join(', ')}
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Box
-                            component="button"
-                            onClick={handleConfirmBackfill}
-                            disabled={backfillRunning}
-                            sx={{ border: 'none', px: 1.5, py: 0.625, fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: backfillRunning ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 } }}
-                          >
-                            {backfillRunning ? 'Generating…' : `Confirm — generate ${outboundSignals.missingTrackingCount} labels`}
-                          </Box>
-                          <Box
-                            component="button"
-                            onClick={() => setBackfillExpanded(false)}
-                            sx={{ px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', bgcolor: 'transparent', border: '0.5px solid var(--rule)', borderRadius: '6px', cursor: 'pointer' }}
-                          >
-                            Cancel
-                          </Box>
-                        </Box>
-                      </>
-                    ) : (
-                      <>
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', mb: 0.5 }}>
-                          {backfillResult.summary.succeeded} of {backfillResult.summary.total} labels generated
-                          {backfillResult.summary.failed > 0 ? `, ${backfillResult.summary.failed} failed` : ''}
-                        </Typography>
-                        {backfillResult.results.filter(r => !r.success).length > 0 && (
-                          <Box sx={{ mb: 1 }}>
-                            {backfillResult.results.filter(r => !r.success).map(r => (
-                              <Typography key={r.orderId} sx={{ fontSize: 11.5, fontWeight: 300, color: '#E5484D' }}>
-                                {r.orderId.slice(0, 8).toUpperCase()} — {r.error}
-                              </Typography>
-                            ))}
-                          </Box>
-                        )}
-                        <Box
-                          component="button"
-                          onClick={() => { setBackfillExpanded(false); setBackfillResult(null); }}
-                          sx={{ px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer' }}
-                        >
-                          Done
-                        </Box>
-                      </>
-                    )}
-                  </Box>
-                </Collapse>
-              </>
-            )}
-
-            {outboundSignals.breachedSlaCount > 0 && (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(217,162,59,0.06)', borderTop: '1px solid var(--rule)' }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#D9A23B', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D9A23B' }}>
-                    Watch — customer promise impact
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                    {outboundSignals.breachedSlaCount} orders
-                  </Typography>
-                </Box>
-
-                {visibleBreachedSla.map(order => (
-                  <Box
-                    key={order.lasyncro_order_id}
-                    sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                  >
-                    <Box>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                        {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                        Delayed before shipping · {fmtFulfilTime(order.hours_to_fulfil)}
-                      </Typography>
-                    </Box>
-                    <Box
-                      component="button"
-                      onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
-                      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                    >
-                      View order →
-                    </Box>
-                  </Box>
-                ))}
-
-                {hiddenBreachedSla.length > 0 && (
-                  <>
-                    <Collapse in={watchExpanded} timeout={180} unmountOnExit>
-                      {hiddenBreachedSla.map(order => (
-                        <Box
-                          key={order.lasyncro_order_id}
-                          sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                        >
-                          <Box>
-                            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                              {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                            </Typography>
-                            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                              Delayed before shipping · {fmtFulfilTime(order.hours_to_fulfil)}
-                            </Typography>
-                          </Box>
-                          <Box
-                            component="button"
-                            onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
-                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                          >
-                            View order →
-                          </Box>
-                        </Box>
-                      ))}
-                    </Collapse>
-
-                    <Box
-                      onClick={() => setWatchExpanded(v => !v)}
-                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
-                    >
-                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
-                        {watchExpanded ? 'Show less' : `See ${hiddenBreachedSla.length} more`}
-                      </Typography>
-                      {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </Box>
-                  </>
-                )}
-              </>
-            )}
-
-            {carriersConfigured && outboundSignals.needsActionCount === 0 && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(76,175,122,0.06)' }}>
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#4CAF7A' }}>
-                  All clear — outbound is healthy
-                </Typography>
-              </Box>
-            )}
-
-            <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                {outboundSignals.missingTrackingCount} missing tracking · {outboundSignals.breachedSlaCount} breached 72h+ · {pulse.total} shipped total
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <PulseCard
-              title="Shipping health"
-              rows={[
-                {
-                  id: 'shipped-orders',
-                  label: 'Shipped orders',
-                  value: outboundTotal,
-                },
-                {
-                  id: 'with-tracking',
-                  label: 'With tracking',
-                  value: Math.max(outboundTotal - outboundSignals.missingTrackingCount, 0),
-                  tone: outboundTotal - outboundSignals.missingTrackingCount > 0 ? 'good' : 'critical',
-                },
-                {
-                  id: 'missing-tracking',
-                  label: 'Missing tracking',
-                  value: outboundSignals.missingTrackingCount,
-                  tone: outboundSignals.missingTrackingCount > 0 ? 'critical' : 'good',
-                },
-                {
-                  id: 'tracking-coverage',
-                  label: 'Tracking coverage',
-                  value: `${trackingCoverage}%`,
-                  tone: trackingCoverage > 0 ? 'good' : 'critical',
-                },
-                carriersConfigured
-                  ? { id: 'carrier-setup', label: 'Carrier setup', value: 'Ready', tone: 'good' }
-                  : { id: 'carrier-setup', label: 'Carrier setup', value: '', action: { label: 'Set up →', onClick: () => navigate('/settings/carriers') } },
-                {
-                  id: 'value-shipped-week',
-                  label: 'Value shipped this week',
-                  value: fmt$(String(pulse.revenueThisWeek)),
-                  group: 'context',
-                },
-                {
-                  id: 'avg-time-to-ship',
-                  label: 'Avg time to ship',
-                  value: pulse.avgFulfilHours === null ? '—' : fmtFulfilTime(String(pulse.avgFulfilHours)),
-                  // TODO: tone once fulfillment_sla_hours is threaded to this page — see follow-up issue
-                  group: 'context',
-                },
-              ]}
-            />
-          </Box>
-        </Box>
+              )}
 
         {/* SHIPPED ORDERS FILTERS */}
-        <Box ref={ledgerRef} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexShrink: 0 }}>
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', mb: 0.25 }}>
               Shipped orders
             </Typography>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {([
-              { key: 'needs_action', label: 'Needs action' },
-              { key: 'week', label: 'This week' },
-              { key: 'month', label: 'This month' },
-              { key: 'all', label: 'All time' },
-            ] as { key: LedgerFilter; label: string }[]).map(({ key, label }) => (
-            <Box
-              key={key}
-              onClick={() => handleRangeChange(key)}
-              sx={{
-                px: 1.5, py: 0.625, borderRadius: '6px', cursor: 'pointer',
-                fontSize: 12, fontWeight: 500,
-                bgcolor: ledgerFilter === key ? 'var(--accent)' : 'var(--surface)',
-                color: ledgerFilter === key ? 'var(--accent-ink)' : 'var(--ink-3)',
-                border: '1px solid',
-                borderColor: ledgerFilter === key ? 'var(--accent)' : 'var(--rule)',
-                transition: 'all 0.12s ease',
-              }}
-            >
-              {label}
-            </Box>
-          ))}
-        </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            {/* Operational state and shipped period are separate, simultaneously
+                selected dimensions. */}
+            <FilterChipGroup label="Shipping state filter" options={STATE_OPTIONS} active={shippingState} onSelect={handleStateChange} />
+            <FilterChipGroup label="Shipped period" options={PERIOD_OPTIONS} active={period} onSelect={handlePeriodChange} />
+          </Box>
+
+          {/* Search runs server-side and intersects the state and period above. */}
+          <Box
+            component="input"
+            type="search"
+            placeholder="Search by order number, SKU, or customer"
+            aria-label="Search by order number, SKU, or customer"
+            value={search}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => handleSearchChange(e.target.value)}
+            sx={{
+              mt: 1, width: '100%', maxWidth: 360, px: 1.25, py: 0.625,
+              bgcolor: 'var(--bg)', border: '1px solid var(--rule)',
+              borderRadius: '8px', color: 'var(--ink)',
+              fontSize: 12, fontFamily: 'inherit', outline: 'none',
+            }}
+          />
           </Box>
       </Box>
 
         {/* SHIPPED ORDERS TABLE */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
-          {/* Fulfilled is not enough unless tracking and handoff are clear. */}
+        <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden', flex: { lg: 1 }, minHeight: { lg: 0 }, display: 'flex', flexDirection: 'column' }}>
             <Box
               sx={{
                 display: 'grid',
@@ -870,12 +535,13 @@ export default function OrdersOutboundPage() {
                 py: 1.25,
                 bgcolor: 'var(--bg-2)',
                 borderBottom: '1px solid var(--rule)',
+                flexShrink: 0,
               }}
             >
               {([
                 { label: 'Order',    field: null },
-                { label: 'Shipped',  field: 'fulfilled_at' },
-                { label: 'Proof',    field: null },
+                { label: 'Shipped',  field: 'shipped_at' },
+                { label: 'Tracking', field: null },
                 { label: 'Carrier',  field: null },
                 { label: 'Live status', field: null },
                 { label: 'Action',   field: null },
@@ -893,6 +559,10 @@ export default function OrdersOutboundPage() {
             ))}
           </Box>
 
+          {/* Rows viewport — the only vertically scrolling region of the page
+              from lg; header controls, column header and footer stay fixed. */}
+          <Box sx={{ flex: { lg: 1 }, minHeight: { lg: 0 }, overflowY: { lg: 'auto' } }}>
+
           {/* Loading */}
           {isLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
@@ -900,18 +570,20 @@ export default function OrdersOutboundPage() {
             </Box>
           )}
 
-          {/* Empty */}
-          {!isLoading && visibleOrders.length === 0 && (
+          {/* Empty — only for a successful response. Never-shipped only when
+              nothing narrows the population; otherwise the filters are empty. */}
+          {!isLoading && !isError && data && ledgerTotal === 0 && (
             <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
               <Package size={32} style={{ opacity: 0.2, marginBottom: 8 }} />
               <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
-                No shipped orders yet.
+                {isUnfiltered ? 'No shipped orders yet.' : 'No orders match these filters.'}
               </Typography>
             </Box>
           )}
 
           {/* Rows */}
-          {ledgerRows.map(order => {
+          {!isError && ledgerRows.map(order => {
+            const live = liveStatus(order);
             return (
               <Box
                 key={order.lasyncro_order_id}
@@ -934,67 +606,44 @@ export default function OrdersOutboundPage() {
                     {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                   </Typography>
                   <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                    {fmt$(order.total_price)}
+                    {fmtMoney(order.total_price, order.currency, locale)}
                   </Typography>
                 </Box>
 
                 {/* Shipped */}
                 <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
-                  {fmtDate(order.fulfilled_at)}
+                  {fmtDate(order.shipped_at)}
                 </Typography>
 
-                {/* Proof */}
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', width: 'fit-content', bgcolor: order.tracking_number ? 'rgba(76,175,122,0.1)' : 'rgba(255,107,43,0.1)' }}>
-                  <Clock size={10} color={order.tracking_number ? '#4CAF7A' : 'var(--accent)'} />
-                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: order.tracking_number ? '#4CAF7A' : 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>
-                    {order.tracking_number ? 'Confirmed' : 'Missing'}
+                {/* Tracking — the canonical tracking number, or Missing. */}
+                {order.tracking_number ? (
+                  <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {order.tracking_number}
                   </Typography>
-                </Box>
+                ) : (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', width: 'fit-content', bgcolor: 'rgba(255,107,43,0.1)' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+                      Missing
+                    </Typography>
+                  </Box>
+                )}
 
-                {/* Carrier */}
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: order.carrier_code ? 'var(--ink-3)' : 'var(--ink-4)' }}>
-                  {order.carrier_code ?? 'No carrier'}
+                {/* Carrier — the physical carrier only; the label provider
+                    (sendcloud / shippo) is not carrier identity. */}
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: order.carrier ? 'var(--ink-3)' : 'var(--ink-4)' }}>
+                  {order.carrier ? order.carrier.toUpperCase() : '—'}
                 </Typography>
 
                 {/* Live status */}
-                {order.is_stalled ? (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(229,72,77,0.1)', width: 'fit-content' }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#E5484D' }}>
-                      No update{order.latest_event_at ? ` · ${fmtRelative(order.latest_event_at)}` : ''}
-                    </Typography>
-                  </Box>
-                ) : order.latest_status === 'delivered' ? (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(76,175,122,0.1)', width: 'fit-content' }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#4CAF7A' }}>
-                      Delivered{order.latest_location ? ` · ${order.latest_location}` : ''}
-                    </Typography>
-                  </Box>
-                ) : order.latest_status ? (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(217,162,59,0.1)', width: 'fit-content' }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#D9A23B' }}>
-                      {STATUS_LABEL[order.latest_status] ?? order.latest_status}
-                      {order.latest_location ? ` · ${order.latest_location}` : ''}
+                {order.latest_status ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: LIVE_TONE_STYLE[live.tone].bg, width: 'fit-content' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: LIVE_TONE_STYLE[live.tone].ink }}>
+                      {live.label}
                       {order.latest_event_at ? ` · ${fmtRelative(order.latest_event_at)}` : ''}
                     </Typography>
                   </Box>
-                ) : order.tracking_number ? (
-                  order.tracking_url ? (
-                    <Box component="a" href={order.tracking_url} target="_blank" rel="noopener noreferrer"
-                      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', width: 'fit-content', textDecoration: 'none', '&:hover': { opacity: 0.8 } }}
-                    >
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.04em' }}>
-                        {order.tracking_number}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', width: 'fit-content' }}>
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-3)', letterSpacing: '0.04em' }}>
-                        {order.tracking_number}
-                      </Typography>
-                    </Box>
-                  )
                 ) : (
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>Not sent</Typography>
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{live.label}</Typography>
                 )}
 
                 {/* Action */}
@@ -1009,16 +658,16 @@ export default function OrdersOutboundPage() {
             );
           })}
 
+          </Box>
+
           {/* Footer + pagination */}
-          {!isLoading && data && data.total > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg-2)', borderTop: '1px solid var(--rule)' }}>
+          {!isLoading && !isError && ledgerTotal > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg-2)', borderTop: '1px solid var(--rule)', flexShrink: 0 }}>
 
               {/* Left: count + page size */}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  {ledgerFilter === 'needs_action'
-                    ? `${ledgerTotal === 0 ? 0 : ((page - 1) * perPage) + 1}-${Math.min(page * perPage, ledgerTotal)} of ${ledgerTotal} orders needing action`
-                    : `${((page - 1) * perPage) + 1}-${Math.min(page * perPage, data.total)} of ${data.total} orders`}
+                  {`${((page - 1) * perPage) + 1}-${Math.min(page * perPage, ledgerTotal)} of ${ledgerTotal} orders`}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 0.5 }}>
                   {[10, 25, 50, 100].map(n => (
@@ -1069,90 +718,98 @@ export default function OrdersOutboundPage() {
             </Box>
           )}
         </Box>
-      </Box>
-      <Dialog
-        open={handoffConfirmOrder !== null}
-        onClose={() => {
-          if (!confirmCarrierHandoff.isPending) {
-            setHandoffConfirmOrder(null);
+            </Box>
           }
-        }}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
-          Confirm carrier pickup?
-        </DialogTitle>
+          rail={
+            <Box
+              component="section"
+              role="region"
+              aria-label="Shipping state"
+              sx={{
+                minWidth: 0,
+                boxSizing: 'border-box',
+                bgcolor: 'var(--surface)',
+                border: '0.5px solid var(--rule)',
+                borderRadius: '14px',
+                px: '18px',
+                py: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignSelf: 'start',
+                // From lg the rail surface fills the shared track height, so
+                // its top and bottom edges match the Shipped Orders surface.
+                height: { lg: '100%' },
+                overflowY: { lg: 'auto' },
+              }}
+            >
+              <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px' }}>
+                Shipping state
+              </Typography>
 
-        <DialogContent>
-          <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', mb: 1.25 }}>
-            Only confirm after this parcel has physically left your warehouse.
-          </Typography>
-          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-            This will mark the order shipped in laSyncro and send the fulfillment
-            update to Shopify.
-          </Typography>
-        </DialogContent>
+              {/* Period-scoped summary. '—' = not known for the selected period
+                  (loading, failed, or absent); 0 only when the server says 0. */}
+              <Box sx={STATE_GROUP_SX}>
+                <StateMetric label="Shipped orders" value={summary ? summary.shipped_count : '—'} />
+                <StateMetric
+                  label="With tracking"
+                  value={summary ? summary.with_tracking_count : '—'}
+                  tone={summary && summary.shipped_count > 0 ? (summary.with_tracking_count > 0 ? 'good' : 'critical') : 'neutral'}
+                />
+                <StateMetric
+                  label="Missing tracking"
+                  value={summary ? summary.missing_tracking_count : '—'}
+                  tone={summary ? (summary.missing_tracking_count > 0 ? 'critical' : 'good') : 'neutral'}
+                />
+                <StateMetric
+                  label="Tracking coverage"
+                  value={summary?.tracking_coverage_pct != null ? fmtPct(summary.tracking_coverage_pct) : '—'}
+                  tone={summary?.tracking_coverage_pct != null ? (summary.tracking_coverage_pct > 0 ? 'good' : 'critical') : 'neutral'}
+                />
+                <StateMetric
+                  label="Avg time to ship"
+                  value={summary?.avg_time_to_ship_hours != null ? fmtHours(summary.avg_time_to_ship_hours) : '—'}
+                />
+                {/* Navigation into the ledger only — no remediation here. */}
+                {summary && summary.missing_tracking_count > 0 && (
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={handleReviewMissingTracking}
+                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                  >
+                    Review missing tracking →
+                  </Box>
+                )}
+              </Box>
 
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-          <Box
-            component="button"
-            type="button"
-            disabled={confirmCarrierHandoff.isPending}
-            onClick={() => setHandoffConfirmOrder(null)}
-            sx={{
-              border: '1px solid var(--rule)',
-              bgcolor: 'transparent',
-              color: 'var(--ink-3)',
-              borderRadius: '6px',
-              px: 2,
-              py: 0.875,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: confirmCarrierHandoff.isPending ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Cancel
-          </Box>
-
-          <Box
-            component="button"
-            type="button"
-            disabled={
-              confirmCarrierHandoff.isPending ||
-              !handoffConfirmOrder?.pick_batch_id
-            }
-            onClick={() => {
-              if (!handoffConfirmOrder?.pick_batch_id) return;
-
-              confirmCarrierHandoff.mutate(
-                {
-                  pickBatchId: handoffConfirmOrder.pick_batch_id,
-                  orderId: handoffConfirmOrder.lasyncro_order_id,
-                },
-                {
-                  onSuccess: () => setHandoffConfirmOrder(null),
-                }
-              );
-            }}
-            sx={{
-              border: 'none',
-              bgcolor: 'var(--accent)',
-              color: 'var(--accent-ink)',
-              borderRadius: '6px',
-              px: 2,
-              py: 0.875,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: confirmCarrierHandoff.isPending ? 'not-allowed' : 'pointer',
-              opacity: confirmCarrierHandoff.isPending ? 0.6 : 1,
-              '&:hover': { opacity: confirmCarrierHandoff.isPending ? 0.6 : 0.88 },
-            }}
-          >
-            {confirmCarrierHandoff.isPending ? 'Confirming…' : 'Confirm pickup'}
-          </Box>
-        </DialogActions>
-      </Dialog>
+              {/* Contextual navigation only — carrier setup is owned by Settings. */}
+              <Box sx={STATE_GROUP_SX}>
+                <StateMetric
+                  label="Carrier setup"
+                  value={{
+                    checking: 'Checking',
+                    unavailable: 'Unavailable',
+                    not_configured: 'Not configured',
+                    ready: 'Ready',
+                  }[carrierSetup]}
+                  tone={carrierSetup === 'ready' ? 'good' : carrierSetup === 'not_configured' ? 'critical' : 'neutral'}
+                />
+                {carrierSetup === 'not_configured' && (
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={() => navigate('/settings/carriers')}
+                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                  >
+                    Set up →
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          }
+        />
+        </Box>
+      </Box>
 
       <ExportDrawer
         open={exportDrawerOpen}

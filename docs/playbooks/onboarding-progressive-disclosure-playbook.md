@@ -1,6 +1,6 @@
 # LaSyncro — Onboarding & Progressive Disclosure Playbook
 
-> **Status:** v1.2 — 2026-09-18
+> **Status:** v1.3 — 2026-10-04 (#1207 SETUP contract)
 > **Author:** Product + Engineering session (ISS-RQ series)
 > **Reading order:** Read `lifecycle_playbook.md` and `modules-ux-playbook.md` before this.
 > **Purpose:** Canonical reference for onboarding, Ops Console setup guidance, spotlight coaching,
@@ -69,7 +69,7 @@ WAITING
   [live — GET /api/v1/operations/waiting; see "WAITING V1 certification" below]
 
 SETUP
-  incomplete onboarding/configuration work
+  incomplete mandatory prerequisites only
 
 HISTORY
   canonically verified resolved operational episodes
@@ -89,23 +89,54 @@ rows:
 - `FT_MINUS_ONE` owns Shopify connection / reconnect through `ConnectStorePage`.
 - `FT0` / `FT0_PREPARING` own initial sync through `SyncAnimationPage`.
 
-Ops Console does not own or render either of those workflows. `useActivationChecklist`
-remains the single frontend assembler and completion authority for the five
-in-app setup rows below.
+Ops Console does not own or render either of those workflows.
 
-| # | Label | Authoritative condition | Action |
+**Current contract — #1207:** mature Ops Console SETUP contains mandatory
+prerequisites only. `useActivationChecklist().items` is the single frontend
+assembler for these rows:
+
+| Key | Label | Authoritative condition | Action |
 |---|---|---|---|
-| 1 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
-| 2 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
-| 3 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning?tab=barcodes` |
-| 4 | Connect your shipping carrier | readiness `wms / connect-carrier` | `/settings/carriers` |
-| 5 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
+| `map-zones` | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning?tab=setup&view=canvas` |
+| `opening-inventory` | Establish opening inventory | applicable only when canonical `wms.openingInventoryReconciliationRequired` is `true`; completion only from readiness `wms / reconcile-inventory` | canonical opening-inventory lifecycle action (Start / Continue / review / cutover), when available |
 
-The old `Export your first brief` checklist item is no longer part of the Layer
-1 setup contract. Backend/platform readiness (`platform / connect-store`,
-`platform / complete-sync`) still exists and remains valid for lifecycle/pre-app
-consumers — those definitions were not removed, only excluded from this
-Ops Console checklist assembler.
+Opening inventory is omitted when canonical applicability is false, unknown,
+or unresolved. Its progress view supplies lifecycle presentation and actions,
+never completion. First-entry locking and the map/count handoff are unchanged.
+
+These are **not mandatory SETUP rows** and are excluded from mature SETUP:
+
+- Fix missing product costs (`fix-costs`)
+- Print location barcodes (`print-barcodes`)
+- Connect shipping carrier (`connect-carrier`)
+- Release first batch (`wave-released`)
+
+Exclusion from SETUP does not remove backend readiness facts, persisted
+activation events, or contextual capability surfaces. Product costs remain in
+the catalog, barcode tools in Floor Planning, carriers in Settings, and batch
+release in Order Flow. Backend/platform readiness (`platform / connect-store`,
+`platform / complete-sync`) remains available to lifecycle/pre-app consumers.
+The old `Export your first brief` item also remains outside this SETUP contract.
+There are no barcode or picker-invite onboarding milestones.
+
+**Canonical first-entry progression:** Shopify Location → Map warehouse basics
+→ Count opening stock. After pre-app Shopify connection and initial sync, choose
+the Shopify Location that this warehouse represents before mapping its physical
+Stock locations. Location mapping comes from canonical
+`wms.externalLocationMapped`; minimum physical mapping comes from
+`wms.zonesConfigured`; count completion comes only from `wms / reconcile-inventory`.
+
+Overview must consume `useActivationChecklist().firstEntryItems` for this
+progression and its completion states, rather than maintain a separate
+hard-coded onboarding progression. The same canonical projection owns Ops
+Console first-entry guidance. Existing location/map/count locks and canonical
+map/count handoff semantics remain intact.
+
+**#1207 verification recorded for this documentation slice:** targeted 213/213
+GREEN; neighbour frontend 27/27 GREEN; backend readiness 5/5 GREEN. Local browser
+verification was intentionally skipped. Production browser certification is
+**REQUIRED after deployment**; the historical certifications below do not
+certify #1207.
 
 **Development readiness.** Normal development uses canonical onboarding
 readiness. A synthetic platform connected/synced readiness override is
@@ -117,10 +148,12 @@ synthetic readiness provider.
 Opening a destination does not complete a setup item.
 
 Incomplete items remain individually actionable. Completed items are visually
-subordinate/collapsible. When all five are complete, the section collapses to a
-compact `Setup complete · 5/5` state rather than rendering five permanent rows.
+subordinate/collapsible. Completion counts include only the current mandatory
+rows: map-zones and, when canonically applicable, opening-inventory. Optional
+capabilities do not enter the SETUP completion denominator.
 
-`wms.carrierConfigured` represents configuration readiness, not live provider
+**Preserved optional backend capability:** `wms.carrierConfigured` represents
+configuration readiness, not live provider
 verification. It is true only when the shop has at least one active supported
 carrier configuration with the required persisted credential material:
 Sendcloud requires both `public_key` and `private_key`; Shippo requires
@@ -282,10 +315,14 @@ Automated recovery coverage includes the Ops Console model and surface contracts
 Overview address-resolution wiring, commercial-access boundary, session-state
 contract and existing Order Detail address treatment.
 
-#### 2026-09-18 SETUP V1 production certification
+#### 2026-09-18 SETUP V1 production certification — historical / superseded by #1207
+
+This record preserves the production observations for the former five-row
+SETUP contract. #1207 supersedes its SETUP membership and completion denominator;
+it is not certification of the current mandatory-prerequisites-only contract.
 
 Production Ops Console `SETUP` was directly observed rendering exactly the five
-journeys defined in the §2 setup contract table above, in order:
+journeys in the then-current contract, in order:
 
 1. Fix missing product costs
 2. Map your warehouse zones
@@ -317,6 +354,11 @@ separate product layer to certify. The five-row SETUP contract itself is
 unchanged by this note.
 
 #### 2026-09-18 — NOW V1 certification
+
+**Historical SETUP evidence — superseded by #1207:** references below to
+missing costs as a SETUP row and the three-remaining/two-completed SETUP counts
+record the former contract. They are preserved as observed evidence, not current
+SETUP requirements. This note does not change the NOW certification.
 
 This section documents the ratified `NOW` architecture, its LOCAL
 verification evidence, and its subsequent production certification.

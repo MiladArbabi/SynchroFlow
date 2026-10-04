@@ -8,7 +8,8 @@
 // (same module-scope dependency surface for OverviewFT2Page).
 
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ChecklistItem } from 'hooks/useActivationChecklist';
 
 import OverviewPageFT2 from 'pages/ft2-pages/OverviewFT2Page';
 import { ConfigProvider } from 'contexts/ConfigContext';
@@ -22,8 +23,9 @@ const mockFloorPlanningRefetch = jest.fn();
 const mockNavigate = jest.fn();
 let mockLocationMapped: boolean | null = true;
 let mockFirstEntry = false;
+let mockFirstEntryItems: ChecklistItem[] = [];
 let mockFloorZones = [{ location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' }];
-jest.mock('hooks/useActivationChecklist', () => ({ useActivationChecklist: () => ({ firstEntry: mockFirstEntry, externalLocationMapped: mockLocationMapped }) }));
+jest.mock('hooks/useActivationChecklist', () => ({ useActivationChecklist: () => ({ firstEntry: mockFirstEntry, firstEntryItems: mockFirstEntryItems, externalLocationMapped: mockLocationMapped }) }));
 const mockUseMorningBriefSnapshot = jest.fn();
 const mockRefreshMorningBrief = jest.fn();
 const mockOverviewModuleFT2 = jest.fn((_props: Record<string, unknown>) => <div data-testid="overview-module">{_props.mapContent as React.ReactNode}</div>);
@@ -163,7 +165,7 @@ function setSearchParams(search: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLocationMapped = true; mockFirstEntry = false;
+  mockLocationMapped = true; mockFirstEntry = false; mockFirstEntryItems = [];
   mockFloorZones = [{ location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' }];
   setSearchParams('');
   mockUseMorningBriefSnapshot.mockReturnValue({
@@ -246,25 +248,92 @@ describe('OVERVIEW-SCREEN-OPT-01: Operations Pulse follows shared Ops Console st
 describe('GH-1179 central onboarding progression', () => {
   it('unmapped location precedes floor setup even when a floor already exists', () => {
     mockFirstEntry = true; mockLocationMapped = false;
+    mockFirstEntryItems = [
+      {
+        key: 'first-entry-shopify-location', label: 'Choose Shopify location', complete: false,
+        action: { kind: 'navigate', label: 'Choose location', route: '/settings/warehouse' },
+      },
+      { key: 'first-entry-map', label: 'Map warehouse basics', complete: true },
+      { key: 'first-entry-count', label: 'Count opening stock', complete: false },
+    ];
     render(<OverviewPageFT2 />);
     expect(screen.getByText('Choose your Shopify location')).toBeInTheDocument();
     expect(screen.queryByText('Build your floor.')).toBeNull();
     expect(screen.queryByText('Set up floor planning →')).toBeNull();
-    expect(screen.getByText('Next step · 2 of 5')).toBeInTheDocument();
+    expect(screen.getByText(`Next step · ${mockFirstEntryItems.findIndex(item => !item.complete) + 1} of ${mockFirstEntryItems.length}`)).toBeInTheDocument();
+    const overview = within(screen.getByTestId('overview-module'));
+    for (const item of mockFirstEntryItems) expect(overview.getByText(item.label)).toBeVisible();
+    expect(overview.queryByText('Print location barcodes')).not.toBeInTheDocument();
+    expect(overview.queryByText('Invite your pickers')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Choose Shopify location →'));
     expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
     expect(screen.getByText('Choose Shopify location')).toBeInTheDocument();
   });
   it('unmapped empty floor shows location first and mapped state resumes floor setup', () => {
     mockFirstEntry = true; mockLocationMapped = false; mockFloorZones = [];
+    mockFirstEntryItems = [
+      {
+        key: 'first-entry-shopify-location', label: 'Choose Shopify location', complete: false,
+        action: { kind: 'navigate', label: 'Choose location', route: '/settings/warehouse' },
+      },
+      { key: 'first-entry-map', label: 'Map warehouse basics', complete: false },
+      { key: 'first-entry-count', label: 'Count opening stock', complete: false },
+    ];
     const view = render(<OverviewPageFT2 />);
-    expect(screen.getByText('Next step · 2 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Choose your Shopify location')).toBeInTheDocument();
+    expect(screen.getByText(`Next step · ${mockFirstEntryItems.findIndex(item => !item.complete) + 1} of ${mockFirstEntryItems.length}`)).toBeInTheDocument();
     expect(screen.queryByText('Set up floor planning →')).toBeNull();
+    const overview = within(screen.getByTestId('overview-module'));
+    for (const item of mockFirstEntryItems) expect(overview.getByText(item.label)).toBeVisible();
+    expect(overview.queryByText('Print location barcodes')).not.toBeInTheDocument();
+    expect(overview.queryByText('Invite your pickers')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Choose Shopify location →'));
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
+
     mockLocationMapped = true;
+    mockFirstEntryItems = [
+      { key: 'first-entry-shopify-location', label: 'Choose Shopify location', complete: true },
+      {
+        key: 'first-entry-map', label: 'Map warehouse basics', complete: false,
+        action: { kind: 'navigate', label: 'Map warehouse', route: '/floor-planning?tab=setup&view=canvas' },
+      },
+      { key: 'first-entry-count', label: 'Count opening stock', complete: false },
+    ];
     view.rerender(<OverviewPageFT2 />);
     expect(screen.getByText('Build your floor.')).toBeInTheDocument();
-    expect(screen.getByText('Next step · 3 of 5')).toBeInTheDocument();
+    expect(screen.getByText(`Next step · ${mockFirstEntryItems.findIndex(item => !item.complete) + 1} of ${mockFirstEntryItems.length}`)).toBeInTheDocument();
+    for (const item of mockFirstEntryItems) expect(overview.getByText(item.label)).toBeVisible();
+    expect(overview.queryByText('Print location barcodes')).not.toBeInTheDocument();
+    expect(overview.queryByText('Invite your pickers')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Set up floor planning →'));
     expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
+  });
+});
+
+
+describe('#1207 Overview canonical first-entry progression', () => {
+  it('renders Location → Map → Count from firstEntryItems without optional setup milestones', () => {
+    mockFirstEntry = true;
+    mockLocationMapped = false;
+    mockFloorZones = [];
+    mockFirstEntryItems = [
+      {
+        key: 'first-entry-shopify-location', label: 'Choose Shopify location', complete: false,
+        action: { kind: 'navigate', label: 'Choose location', route: '/settings/warehouse' },
+      },
+      { key: 'first-entry-map', label: 'Map warehouse basics', complete: false },
+      { key: 'first-entry-count', label: 'Count opening stock', complete: false },
+    ];
+
+    render(<OverviewPageFT2 />);
+
+    const overview = within(screen.getByTestId('overview-module'));
+    expect(overview.queryByText('Print location barcodes')).not.toBeInTheDocument();
+    expect(overview.queryByText('Invite your pickers')).not.toBeInTheDocument();
+    const milestones = mockFirstEntryItems.map(item => overview.getByText(item.label));
+    for (const milestone of milestones) expect(milestone).toBeVisible();
+    // Ordering is the Location → Map → Count prerequisite contract.
+    expect(milestones[0].compareDocumentPosition(milestones[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(milestones[1].compareDocumentPosition(milestones[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

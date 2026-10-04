@@ -624,6 +624,7 @@ Then the registry:
 Screen	Route	Archetype	Spatial	Pulse	Ops Console	Scroll	Status
 Overview  /overview  Awareness  PRIMARY  Cross-domain  Global  PASS at 1440×720 + 1024×820  PROD CERTIFIED / reference
 Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	PROD CERTIFIED
+Orders Outbound	/orders/outbound	Operational Context	NONE	NO	Global / canonical rail replacement	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
 Order Flow	/orders/flow	Execution/context	ON-DEMAND	No?	Global	Candidate	Needs audit
 Inventory Intelligence	/inventory	Operational Context	CONTEXTUAL	Inventory state	Global	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
 WMS	/wms	Execution	Conditional	likely no	Global	Audit	Needs audit
@@ -1114,6 +1115,167 @@ allowed uses floor planning, operational-floor eligibility and occupancy.
   `INVENTORY_1024x820_CERTIFICATION=PASS`.
 
 These are local results, not production certification or deployment evidence.
+
+## 18A. Orders Outbound registry record — LOCAL CERTIFIED
+
+SCREEN
+Orders Outbound
+
+ROUTE
+/orders/outbound
+
+PRIMARY ARCHETYPE
+Operational Context
+
+PURPOSE
+Understand what has physically shipped, whether shipment tracking/carrier
+truth is complete, and inspect outbound shipment state.
+
+PRIMARY USER QUESTION
+What has shipped, what tracking/carrier truth is missing or exceptional,
+and what outbound state needs review?
+
+PRIMARY WORKSPACE
+Shipped Orders ledger
+
+DOMAIN RAIL
+Shipping State
+
+SPATIAL MODE
+NONE
+
+PULSE
+NO
+
+ATTENTION OWNERSHIP
+No local actionable inbox. Cross-workflow actionable attention remains
+Ops Console-owned. Outbound may expose domain state and contextual filtering.
+"Review missing tracking" is navigation/filtering into the ledger, not
+remediation ownership.
+
+OPS CONSOLE
+Uses canonical OperationalContextShell rail replacement:
+- lg+ Shipping State withdraws;
+- the secondary track remains reserved;
+- primary geometry remains stable;
+- below lg the rail is fully suppressed with no blank stacked gap.
+
+CANONICAL DATA
+GET /api/v1/orders/outbound
+
+MEMBERSHIP
+Physical shipment truth only:
+order_warehouse_status.status='shipped'
+AND shipped_at IS NOT NULL
+
+Generic Shopify fulfillment alone does not establish Outbound membership.
+
+FILTER MODEL
+Independent filters:
+- state: All / Needs action / Missing tracking / In transit / Delivered;
+- period: This week / This month / All time;
+- search: order number / SKU / customer.
+
+Server owns pagination, sort and filtering.
+
+PERIOD
+Calendar periods in shop timezone using shipped_at.
+
+SHIPPING STATE RAIL
+Period-scoped backend summary:
+- Shipped orders;
+- With tracking;
+- Missing tracking;
+- Tracking coverage;
+- Avg time to ship;
+- Carrier setup.
+
+Known zero is distinct from unavailable/unknown.
+No Value shipped aggregate: multiple order currencies may exist and no
+truthful single-currency aggregate is currently established.
+
+TRACKING / CARRIER TRUTH
+Tracking replaces legacy "Proof".
+Physical carrier uses provider_carrier_code when known.
+shippo/sendcloud are providers and are not presented as physical carriers.
+Live status preserves announced / in_transit / out_for_delivery / delivered /
+exception / returned / unknown.
+Stalled context does not erase the underlying carrier state.
+No fabricated "Not sent" or "No carrier".
+
+CURRENCY
+Per-row actual order currency.
+
+ORDER DETAIL
+Canonical EntityDetailModal + OrderDetailModalBody.
+
+EXPORT
+Shared ExportDrawer report id:
+orders-outbound
+
+Canonical export:
+POST /api/v1/exports/orders/outbound
+
+Uses the same physical-shipment membership and latest tracking truth as the
+screen. Required export truth includes:
+- external_order_id;
+- shipped_at;
+- total_price;
+- currency;
+- tracking_number;
+- carrier;
+- live_status.
+
+External identity selection is deterministic:
+earliest external_order_identity_map row by eim.id ASC.
+
+SCROLL / VIEWPORT
+At 1440×720:
+- [Shipped Orders][Shipping State];
+- equal top edges and equal bottom edges;
+- ledger rows scroll internally;
+- filters/header/pagination remain fixed;
+- no accidental document vertical/horizontal overflow;
+- Ops Console replacement leaves primary geometry unchanged.
+
+At 1024×820:
+- single column, primary first, Shipping State below;
+- app/workspace-owned scrolling allowed;
+- Ops Console suppresses the rail with no blank gap;
+- no horizontal overflow.
+
+LOCAL CERTIFICATION
+Evidence supplied for this documentation gate:
+- Slice A architecture tests: PASS;
+- Slice B backend read-model tests: 9/9 PASS;
+- Slice C filter-model tests: 8/8 PASS;
+- Slice D truth-model tests: 19/19 PASS;
+- Slice E Outbound automated matrix: 40/40 PASS;
+- Slice E neighbor regression: 48/48 PASS;
+- Slice E browser: 1440×720 dark/light PASS; 1024×820 dark/light PASS;
+  Ops Console open/closed PASS; equal-height desktop PASS;
+  internal ledger scroll PASS;
+- Slice F export contract: 8/8 PASS;
+- export commercial/access regressions: PASS;
+- backend typecheck: PASS;
+- frontend touched-source errors: 0; pre-existing global baseline unchanged.
+
+STATUS
+LOCAL CERTIFIED
+
+This records local certification only. Deployment SHA, Fly release,
+production browser certification and production data certification do not
+exist yet.
+
+DEFERRED / KNOWN LIMITATIONS
+Recorded without remediation in this documentation gate:
+- partially_shipped representation;
+- shipped→cancelled historical Outbound membership;
+- Shopify-side tracking ingestion;
+- multi-parcel representation beyond the latest tracking row;
+- truthful cross-currency aggregate "Value shipped";
+- broader Ops Console admission policy for carrier alerts;
+- pagination footer may need future condensation at very large page counts.
 
 ## 19. Enforcement rule for engineers
 The registry should display this prominently:
