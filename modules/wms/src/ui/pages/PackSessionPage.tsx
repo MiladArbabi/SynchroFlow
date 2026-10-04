@@ -41,6 +41,8 @@ export interface PackLineItem {
   product_title: string;
   variant_title: string | null;
   quantity: number;
+  packed_quantity: number;
+  packable_quantity: number;
   pack_scanned: boolean;
   has_tracked_unit: boolean;
 }

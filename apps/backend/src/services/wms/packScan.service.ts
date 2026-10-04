@@ -1,7 +1,7 @@
 // apps/backend/src/services/wms/packScan.service.ts
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
-import { assertOrderPackEligible } from './packEligibility.service.js';
+import { assertOrderPackEligible, getOrderPackEligibility } from './packEligibility.service.js';
 
 /**
  * PACK SCAN SERVICE
@@ -18,7 +18,8 @@ import { assertOrderPackEligible } from './packEligibility.service.js';
  * - Writes to pack_scan_log only
  *
  * Idempotency:
- * - Guard on (pick_batch_id, lasyncro_line_item_id, status=confirmed)
+ * - Exact LSU scans guard confirmed unit identity within the shop and batch
+ * - Legacy scans retain the confirmed-line guard
  * - Prevents double-scan at pack station
  *
  * Caller must:
@@ -39,7 +40,7 @@ export interface PackScanInput {
 
 export interface PackScanResult {
   scan_id: string;
-  order_complete: boolean; // true if all line items for this order are now scanned
+  order_complete: boolean; // true when every line has reached its Pack quantity ceiling
 }
 
 export async function confirmPackScan(
@@ -87,6 +88,23 @@ export async function confirmPackScan(
     );
   }
 
+  // Exact-unit input must be backed by independently attributed Pick evidence.
+  if (lasyncroUnitId) {
+    const pickEvidence = await trx('pick_scan_log')
+      .where({
+        shop_id: shopId,
+        pick_batch_id: pickBatchId,
+        lasyncro_line_item_id: lasyncroLineItemId,
+        lasyncro_variant_id: lasyncroVariantId,
+        lasyncro_unit_id: lasyncroUnitId,
+        status: 'confirmed',
+      })
+      .first('scan_id');
+    if (!pickEvidence) {
+      throw new Error(`[PACK_SCAN] No confirmed Pick evidence for unit: ${lasyncroUnitId}`);
+    }
+  }
+
   /**
    * 3b. PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
    * ----------------------------------------------------
@@ -108,16 +126,23 @@ export async function confirmPackScan(
     quantityConfirmed,
   });
 
-  // 4. Guard against duplicate confirmed scan
+  // Exact scans guard unit identity; generic scans retain legacy line behavior.
   const existingScan = await trx('pack_scan_log')
     .where({
+      shop_id: shopId,
       pick_batch_id: pickBatchId,
-      lasyncro_line_item_id: lasyncroLineItemId,
+      ...(lasyncroUnitId
+        ? { lasyncro_unit_id: lasyncroUnitId }
+        : { lasyncro_line_item_id: lasyncroLineItemId }),
       status: 'confirmed',
     })
     .first();
 
-  if (existingScan) throw new Error(`[PACK_SCAN] Line item already scanned at pack: ${lasyncroLineItemId}`);
+  if (existingScan) {
+    throw new Error(lasyncroUnitId
+      ? `[PACK_SCAN] Unit already scanned at pack: ${lasyncroUnitId}`
+      : `[PACK_SCAN] Line item already scanned at pack: ${lasyncroLineItemId}`);
+  }
 
   const scannedAt = new Date();
   const scanId = randomUUID();
@@ -146,14 +171,27 @@ export async function confirmPackScan(
       updated_at: scannedAt,
     });
 
-  // 7. Transition line item warehouse status → packed
-  await trx('order_line_item_warehouse_status')
-    .where({ lasyncro_line_item_id: lasyncroLineItemId })
-    .update({
-      status: 'packed',
-      status_updated_at: scannedAt,
-      updated_at: scannedAt,
-    });
+  // Re-read authoritative cumulative progress after appending this scan.
+  const eligibility = await getOrderPackEligibility(trx, {
+    shopId, pickBatchId, lasyncroOrderId,
+  });
+  const lineProgress = eligibility?.lines.find(
+    (line) => line.lasyncroLineItemId === lasyncroLineItemId
+  );
+  if (!eligibility || !lineProgress) {
+    throw new Error('[PACK_SCAN] Post-scan Pack progress unavailable');
+  }
+
+  // An incomplete line keeps its existing warehouse status.
+  if (lineProgress.packedQuantity >= lineProgress.packableQuantity) {
+    await trx('order_line_item_warehouse_status')
+      .where({ shop_id: shopId, lasyncro_line_item_id: lasyncroLineItemId })
+      .update({
+        status: 'packed',
+        status_updated_at: scannedAt,
+        updated_at: scannedAt,
+      });
+  }
 
   // 8. Transition inventory_units → packed (WM-46 authoritative table).
   // If a specific unit was scanned via LSU-, update it directly.
@@ -168,23 +206,8 @@ export async function confirmPackScan(
       .update({ status: 'packed', updated_at: scannedAt });
   }
 
-  // 9. Check if all line items for this order are now scanned at pack
-  const totalLineItems = await trx('order_line_items')
-    .where({ lasyncro_order_id: lasyncroOrderId })
-    .count<{ count: string }>('lasyncro_line_item_id as count')
-    .first();
-
-  const scannedLineItems = await trx('pack_scan_log')
-    .where({
-      pick_batch_id: pickBatchId,
-      lasyncro_order_id: lasyncroOrderId,
-      status: 'confirmed',
-    })
-    .count<{ count: string }>('scan_id as count')
-    .first();
-
-  const orderComplete =
-    Number(scannedLineItems?.count ?? 0) >= Number(totalLineItems?.count ?? 0);
+  // Contents completion follows quantities, independently of parcel closure.
+  const orderComplete = eligibility.packEvidenceComplete;
 
   // All contents are verified, but the order remains packing until its LSO is scanned.
   console.info('[PACK_SCAN_CONFIRMED]', {

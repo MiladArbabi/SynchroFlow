@@ -989,6 +989,8 @@ export interface PackFreeScanLineItem {
   quantity: number;
   image_url: string | null;
   sku: string | null;
+  packed_quantity: number;
+  packable_quantity: number;
   pack_scanned: boolean;
   has_tracked_unit: boolean;
 }
@@ -1022,6 +1024,8 @@ export interface PackFreeScanResult {
     quantity: number;
     image_url: string | null;
     sku: string | null;
+    packed_quantity: number;
+    packable_quantity: number;
     pack_scanned: boolean;
     has_tracked_unit: boolean;
   }[];
