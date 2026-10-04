@@ -241,7 +241,7 @@ function result(
 // ─── claim / reclaim ─────────────────────────────────────────────────────────
 
 type Claim =
-  | { kind: 'owner'; lease: Lease }
+  | { kind: 'owner'; lease: Lease; status: LeasedStatus }
   | { kind: 'done'; result: OpeningInventoryCutoverExecutionResult };
 
 /**
@@ -252,8 +252,13 @@ type Claim =
  * `converge` (E04) never creates an execution and owns only a VERIFYING
  * execution: live lease → busy; expired → reclaim the same row. Executing is
  * not convergence work; terminal / blocked states are returned as they are.
+ *
+ * `advance` (E06) owns whichever leased state the execution is in: it creates
+ * like `execute`, and reclaims an expired executing OR verifying row with the
+ * same protections. Live leases are busy; terminal / blocked states are
+ * returned as they are.
  */
-type ClaimMode = 'execute' | 'recover' | 'converge';
+type ClaimMode = 'execute' | 'recover' | 'converge' | 'advance';
 
 async function claimExecution(
   shopId: number,
@@ -354,11 +359,15 @@ async function claimExecution(
           executionId: String(created.execution_id),
           leaseToken: String(created.lease_token),
         },
+        status: 'executing' as const,
       };
     }
 
     const executionId = String(existing.execution_id);
-    const ownedStatus: LeasedStatus = mode === 'converge' ? 'verifying' : 'executing';
+    const ownedStatus: LeasedStatus =
+      mode === 'converge' || (mode === 'advance' && existing.status === 'verifying')
+        ? 'verifying'
+        : 'executing';
 
     if (existing.status !== ownedStatus) {
       if (mode === 'converge' && existing.status === 'executing') {
@@ -378,7 +387,8 @@ async function claimExecution(
           generationId,
           executionId,
           code:
-            mode === 'converge' && existing.status === 'converged'
+            (mode === 'converge' || mode === 'advance') &&
+            existing.status === 'converged'
               ? OPENING_CUTOVER_ALREADY_CONVERGED
               : null,
         }),
@@ -475,6 +485,7 @@ async function claimExecution(
     return {
       kind: 'owner' as const,
       lease: { shopId, generationId, executionId, leaseToken },
+      status: ownedStatus,
     };
   });
 }
@@ -2720,6 +2731,154 @@ export async function verifyOpeningInventoryCutoverConvergence(
         executionId: claim.lease.executionId,
         code: OPENING_CUTOVER_EXECUTION_STALE_CLAIM,
       });
+    }
+
+    throw error;
+  }
+}
+
+// ─── E06 orchestration ───────────────────────────────────────────────────────
+
+/** Backend-only summary of where an advanced execution now stands. */
+export type OpeningInventoryCutoverAdvanceState =
+  | 'pending'
+  | 'blocked'
+  | 'requires_regeneration'
+  | 'converged';
+
+export interface OpeningInventoryCutoverAdvanceResult
+  extends OpeningInventoryCutoverExecutionResult {
+  state: OpeningInventoryCutoverAdvanceState;
+}
+
+function advanceResult(
+  outcome: OpeningInventoryCutoverExecutionResult
+): OpeningInventoryCutoverAdvanceResult {
+  const state: OpeningInventoryCutoverAdvanceState =
+    outcome.outcome === 'converged' ||
+    outcome.outcome === 'blocked' ||
+    outcome.outcome === 'requires_regeneration'
+      ? outcome.outcome
+      : 'pending';
+
+  return { ...outcome, state };
+}
+
+/**
+ * Same-owner lease renewal at a stage boundary: CAS on the exact execution,
+ * token and status with a still-live lease; extends lease_expires_at in DB
+ * time. Never issues a new token or transfers ownership; zero rows = stale.
+ */
+async function renewOwnedLease(
+  lease: Lease,
+  expectedStatus: LeasedStatus,
+  leaseMs: number
+): Promise<void> {
+  const renewed = await withTenant(lease.shopId, (trx) =>
+    trx(EXECUTIONS)
+      .where({
+        execution_id: lease.executionId,
+        shop_id: lease.shopId,
+        lease_token: lease.leaseToken,
+        status: expectedStatus,
+      })
+      .whereRaw('lease_expires_at > now()')
+      .update({
+        lease_expires_at: leaseExpiry(trx, leaseMs),
+        updated_at: trx.fn.now(),
+      })
+      .returning('execution_id')
+  );
+
+  if (renewed.length !== 1) {
+    throw new OpeningInventoryCutoverStaleClaimError();
+  }
+}
+
+/** Is the first unfinished batch of this owned execution ambiguous? */
+async function firstUnfinishedBatchAmbiguous(lease: Lease): Promise<boolean> {
+  const unfinished = await withTenant(lease.shopId, (trx) =>
+    trx(BATCH_EXECUTIONS)
+      .where({ shop_id: lease.shopId, execution_id: lease.executionId })
+      .whereNot('status', 'succeeded')
+      .orderBy('batch_index', 'asc')
+      .first('status')
+  );
+
+  return unfinished?.status === 'ambiguous';
+}
+
+/**
+ * One owner, existing stages only:
+ * - verifying (reclaimed) → owned E04;
+ * - executing with an ambiguous first unfinished batch (reclaimed after
+ *   expiry; reclaim also turns an interrupted dispatch ambiguous) → owned E03,
+ *   which itself continues normal E02 execution when applied;
+ * - otherwise → owned E02.
+ * A stage that ends verifying under THIS lease renews the same token and hands
+ * straight to owned E04. An ambiguous E02 dispatch stops here: no immediate
+ * readback, no resend.
+ */
+async function runOwnedAdvance(
+  lease: Lease,
+  status: LeasedStatus,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps,
+  leaseMs: number
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  if (status === 'verifying') {
+    return runOwnedConvergence(lease, deps);
+  }
+
+  const staged = (await firstUnfinishedBatchAmbiguous(lease))
+    ? await runOwnedRecovery(lease, deps)
+    : await runOwnedExecution(lease, deps);
+
+  if (staged.outcome !== 'verifying') {
+    return staged;
+  }
+
+  await renewOwnedLease(lease, 'verifying', leaseMs);
+
+  return runOwnedConvergence(lease, deps);
+}
+
+/**
+ * E06: advance ONE already-frozen generation as far as is safe in this call,
+ * through the existing E02 / E03 / E04 state machine. Never creates a
+ * generation (N+1 is E05's, on a new approval). E02/E03/E04 entrypoints keep
+ * their standalone semantics.
+ */
+export async function advanceOpeningInventoryCutoverExecution(
+  params: ExecuteOpeningInventoryCutoverGenerationParams,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps = {}
+): Promise<OpeningInventoryCutoverAdvanceResult> {
+  const { shopId, generationId } = params;
+
+  if (typeof generationId !== 'string' || !UUID_PATTERN.test(generationId)) {
+    throw new Error('[OPENING_CUTOVER_EXECUTION] generationId must be a UUID');
+  }
+
+  const leaseMs = resolveLeaseMs(deps.leaseDurationMs);
+
+  const claim = await claimExecution(shopId, generationId, leaseMs, 'advance');
+
+  if (claim.kind === 'done') {
+    return advanceResult(claim.result);
+  }
+
+  try {
+    return advanceResult(
+      await runOwnedAdvance(claim.lease, claim.status, deps, leaseMs)
+    );
+  } catch (error) {
+    if (error instanceof OpeningInventoryCutoverStaleClaimError) {
+      return advanceResult(
+        result('stale_claim', {
+          generationId,
+          executionId: claim.lease.executionId,
+          code: OPENING_CUTOVER_EXECUTION_STALE_CLAIM,
+        })
+      );
     }
 
     throw error;

@@ -956,12 +956,11 @@ POST /api/v1/wms/orders/:orderId/generate-label
 
 ## 17. Opening Inventory Reconciliation & Shopify Cutover — 4b-2 (September 23, 2026)
 
-> **Status — GH-1179 Slices B–D (October 2, 2026).** This section describes
-> the current location-aware cutover architecture through completed Slice D
-> (immutable generation). Shopify execution, retry and convergence are Slice E
-> work and are **not** implemented on the new path yet. Where the original
-> 4b-2 aggregate / additive-delta model is still described, it is explicitly
-> marked as legacy.
+> **Status — GH-1179 Slices B–E / E06 (October 4, 2026).** The active
+> backend cutover route uses immutable location-aware Slice-D generations and
+> Slice-E orchestration, execution, recovery and final convergence verification.
+> The modern POST response contract is ratified below. Descriptions of the
+> retired 4b-2 aggregate / additive-delta authority are explicitly legacy.
 
 Opening inventory is a one-time transition from Shopify's existing stock
 evidence into LaSyncro's canonical physical inventory truth, followed by
@@ -1204,7 +1203,29 @@ Slice E owns:
 - convergence proof;
 - writing the final completion marker.
 
-This document does not prescribe the Slice E state machine.
+The active POST economic path is:
+
+```text
+create/replay immutable location-aware Slice-D generation
+→ Slice-E orchestration
+→ inventorySetQuantities
+→ name: on_hand
+→ absolute quantity with changeFromQuantity CAS
+→ E04 final convergence verification
+→ E04 completion-marker write
+```
+
+On the same-request happy path, E02 confirms execution, the same owner renews
+its lease, and E04 verifies convergence. There is no artificial five-minute
+lease wait.
+
+An ambiguous mutation returns pending/executing without immediate readback
+or resend. A later retry after lease expiry uses E03 recovery.
+
+When newly discovered drift requires regeneration, the current request ends
+with `requires_regeneration` (public cutover status `failed`). Only a later
+**new merchant approval request** may create generation N+1 through E05; the
+request that discovers drift never automatically creates N+1.
 
 ### Legacy 4b-2 execution path
 
@@ -1219,9 +1240,11 @@ the generation model above. It:
   with `lasyncro:opening-cutover:<cutover_id>:<batch_sequence>` idempotency
   keys, `in_flight` reclaim and a resumable persisted `executing` state.
 
-As of Slice D, the HTTP cutover route below still drives this legacy prepare /
-execute path in source. Rewiring execution onto the immutable generation is
-Slice E. None of the legacy delta semantics are part of the new-path contract.
+The active POST route no longer uses the legacy `executeOpeningInventoryCutover`
+/ `inventoryAdjustQuantities` path (`available`, additive `delta`,
+`changeFromQuantity: null`). Historical legacy services and data remain for
+old evidence and fallback reads; they are superseded as active economic
+authority. None of the legacy delta semantics are part of the modern contract.
 
 ### Public error contract
 
@@ -1236,9 +1259,11 @@ error_code
 error_message
 ```
 
-Known cutover failures use stable `OPENING_CUTOVER_*` classifications.
-Unknown/unprefixed runtime failures are returned as a generic
-`OPENING_CUTOVER_INTERNAL` message.
+Controller error responses and historical legacy read failures use stable
+`OPENING_CUTOVER_*` classifications. Unknown/unprefixed controller failures
+are returned as a generic `OPENING_CUTOVER_INTERNAL` message.
+The Slice-E projection exposes persisted durable failure reasons in
+`error_code` and `error_message`; converged success returns both as `null`.
 
 ### HTTP boundary
 
@@ -1267,7 +1292,8 @@ authenticateToken
 → requireAction('wms:recount:commit')
 ```
 
-The POST body contains only:
+The POST input remains `{ accept_physical_truth?: boolean }`. Explicit
+`true` is required when mismatch acceptance is required:
 
 ```json
 {
@@ -1275,7 +1301,38 @@ The POST body contains only:
 }
 ```
 
-when mismatch acceptance is required.
+The ratified successful POST response contains exactly:
+
+```text
+{
+  status,
+  physical_truth_accepted,
+  error_code,
+  error_message,
+  completed_at
+}
+```
+
+This intentionally replaces the historical legacy cutover snapshot response
+fields: `cutover_id`, `shop_id`, `correction_variant_count`, `batch_count`,
+`approved_by_actor_id`, `approved_by_role`, `approved_at`,
+`physical_truth_accepted_at` and `last_error`. Those fields represented the
+retired legacy delta authority and cannot all be truthfully reconstructed from
+Slice-E. Generation/execution IDs are not aliased as legacy cutover IDs, and
+modern CAS counts are not returned under legacy correction/batch semantics.
+
+`physical_truth_accepted` comes from persisted generation acceptance.
+`completed_at` comes from the converged execution's `terminal_at`, and is
+`null` before convergence. HTTP success may carry a durable pending or failed
+outcome; `status` retains the vocabulary `prepared`, `executing`, `failed`,
+`complete`.
+
+Error responses preserve `{ code, error }` under the existing controller
+status mapping.
+
+GET retains the same status vocabulary and reads modern generation/execution
+authority. If no Slice-E generation exists, GET retains the historical legacy
+fallback read model.
 
 Shop/user identity always comes from authenticated `req.user`.
 Client-supplied shop, user, role, delta, location, variant or Shopify payload
@@ -1302,9 +1359,9 @@ onboarding completion marker.
 
 - It remains `NULL` while cutover is incomplete or failed.
 - Slice D never writes it.
-- On the new path it may be written only after Slice E execution / recovery /
-  readback / convergence proves that Shopify actually converged to current
-  guarded LaSyncro truth.
+- E04 is the active completion-marker writer for the modern route, only after
+  final convergence verification proves that Shopify converged to current
+  guarded LaSyncro truth. Legacy execution is not the modern marker authority.
 
 ### Regression contract
 

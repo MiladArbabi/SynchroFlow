@@ -2,19 +2,22 @@
 import { Request, Response } from 'express';
 import { startShopOpeningInventory } from '../../services/wms/shopifyOpeningInventorySnapshot.service.js';
 import {
-  approveAndRunOpeningInventoryCutover,
   classifyOpeningInventoryCutoverError,
   getOpeningInventoryCutoverView,
   type OpeningInventoryCutoverErrorCode,
 } from '../../services/wms/openingInventoryCutover.service.js';
+import { createOpeningInventoryCutoverGeneration } from '../../services/wms/openingInventoryCutoverGeneration.service.js';
+import { advanceOpeningInventoryCutoverExecution } from '../../services/wms/openingInventoryCutoverExecution.service.js';
 
 /**
  * Opening inventory cutover HTTP boundary (4b-2b GRILL-03).
  *
- * Thin by design. openingInventoryCutover.service.ts owns owner/admin
- * membership, readiness, explicit physical-truth acceptance, the immutable
- * economic delta, Shopify preflight, durable batches, idempotency, retries,
- * completion and concurrency. This controller only:
+ * Thin by design. GH-1179 E06: approval creates (or replays / regenerates)
+ * the immutable Slice-D generation, which owns owner/admin membership,
+ * readiness, explicit physical-truth acceptance and the absolute on_hand CAS
+ * requests; the Slice-E orchestrator then advances it (execution, ambiguity
+ * recovery, convergence and the completion marker). The legacy delta cutover
+ * is no longer reachable from this route. This controller only:
  *   - takes shop/user identity exclusively from req.user;
  *   - validates the cutover POST's single client input (accept_physical_truth);
  *   - maps the service's public error classification to HTTP status.
@@ -193,12 +196,23 @@ export const httpApproveOpeningInventoryCutover = async (req: Request, res: Resp
   }
 
   try {
-    const result = await approveAndRunOpeningInventoryCutover({
+    const generation = await createOpeningInventoryCutoverGeneration({
       shopId: Number(shopId),
       actingUserId: Number(userId),
       acceptPhysicalTruth: body.accept_physical_truth === true,
     });
-    return res.json(result);
+
+    // Advances only THIS generation. Drift discovered here ends this request
+    // (requires_regeneration); a fresh N+1 needs a new approval request.
+    await advanceOpeningInventoryCutoverExecution({
+      shopId: Number(shopId),
+      generationId: String(generation.generation_id),
+    });
+
+    // Durable outcomes (complete / executing / failed) are a compatible
+    // cutover snapshot, never an error.
+    const view = await getOpeningInventoryCutoverView(Number(shopId));
+    return res.json(view.cutover);
   } catch (error) {
     return respondCutoverError(res, 'APPROVE', error);
   }

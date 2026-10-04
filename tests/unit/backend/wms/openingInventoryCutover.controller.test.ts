@@ -2,13 +2,14 @@
 //
 // 4b-2b GRILL-03 — merchant cutover HTTP boundary.
 //
-// DB-free controller layer: the cutover service is mocked at its module
-// boundary so these tests prove only what the controller owns —
+// DB-free controller layer: the cutover services are mocked at their module
+// boundaries so these tests prove only what the controller owns —
 // authenticated identity authority, body validation, stable error mapping
-// and read passthrough. Readiness, acceptance, membership, economics,
-// idempotency and retries remain owned (and integration-tested) by
-// openingInventoryCutover.service.ts — tests/integration/inventory/
-// opening-inventory-cutover.service.test.ts.
+// and read passthrough. GH-1179 E06: approval is Slice-D generation
+// (readiness, acceptance, membership, absolute CAS requests) followed by the
+// Slice-E orchestrator; both are integration-tested in tests/integration/
+// inventory/opening-inventory-cutover-{regeneration,orchestration,
+// modern-route}.service.test.ts. The legacy delta cutover is never called.
 //
 // Middleware registration order (GRILL-03G) is a source contract in
 // tests/contract/opening-inventory-cutover-routes.contract.test.ts.
@@ -48,8 +49,20 @@ jest.mock('api-src/services/wms/shopifyOpeningInventorySnapshot.service', () => 
   startShopOpeningInventory: jest.fn(),
 }));
 
+// GH-1179 E06: the approval chain — Slice-D generation, then the Slice-E
+// orchestrator — mocked at its module boundaries.
+jest.mock('api-src/services/wms/openingInventoryCutoverGeneration.service', () => ({
+  createOpeningInventoryCutoverGeneration: jest.fn(),
+}));
+
+jest.mock('api-src/services/wms/openingInventoryCutoverExecution.service', () => ({
+  advanceOpeningInventoryCutoverExecution: jest.fn(),
+}));
+
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { startShopOpeningInventory } from 'api-src/services/wms/shopifyOpeningInventorySnapshot.service';
+import { createOpeningInventoryCutoverGeneration } from 'api-src/services/wms/openingInventoryCutoverGeneration.service';
+import { advanceOpeningInventoryCutoverExecution } from 'api-src/services/wms/openingInventoryCutoverExecution.service';
 import {
   approveAndRunOpeningInventoryCutover,
   classifyOpeningInventoryCutoverError,
@@ -61,7 +74,9 @@ import {
   httpStartOpeningInventoryReconciliation,
 } from 'api-src/api/wms/openingInventoryCutover.controller';
 
-const approveMock = approveAndRunOpeningInventoryCutover as jest.Mock;
+const generationMock = createOpeningInventoryCutoverGeneration as jest.Mock;
+const advanceMock = advanceOpeningInventoryCutoverExecution as jest.Mock;
+const legacyApproveMock = approveAndRunOpeningInventoryCutover as jest.Mock;
 const viewMock = getOpeningInventoryCutoverView as jest.Mock;
 const startMock = startShopOpeningInventory as jest.Mock;
 const withTenantMock = withTenant as jest.Mock;
@@ -81,19 +96,22 @@ function buildApp(user: Record<string, unknown> | null = AUTH_USER) {
   return app;
 }
 
+const GENERATION = { generation_id: '11111111-1111-4111-8111-111111111111' };
+
+// POST success returns the composed cutover view (existing GET shape).
 const SNAPSHOT = {
-  cutover_id: 'c-1',
-  shop_id: 41,
   status: 'complete',
-  correction_variant_count: 2,
-  batch_count: 1,
-  approved_by_actor_id: '7',
-  approved_by_role: 'owner',
-  approved_at: '2026-09-23T10:00:00.000Z',
-  physical_truth_accepted_at: '2026-09-23T10:00:00.000Z',
+  physical_truth_accepted: true,
+  error_code: null,
+  error_message: null,
   completed_at: '2026-09-23T10:00:05.000Z',
-  last_error: null,
 };
+
+function approvalSucceeds() {
+  generationMock.mockResolvedValue(GENERATION);
+  advanceMock.mockResolvedValue({ outcome: 'converged', state: 'converged' });
+  viewMock.mockResolvedValue({ progress: {}, cutover: SNAPSHOT, shopify_synced_at: null });
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -106,7 +124,7 @@ afterEach(() => {
 
 describe('GRILL-03A — authenticated identity authority', () => {
   it('POST uses req.user shopId/userId only, ignoring forged body identity and economics', async () => {
-    approveMock.mockResolvedValue(SNAPSHOT);
+    approvalSucceeds();
 
     const res = await request(buildApp())
       .post('/opening-inventory/cutover')
@@ -124,12 +142,20 @@ describe('GRILL-03A — authenticated identity authority', () => {
       })
       .expect(200);
 
-    expect(approveMock).toHaveBeenCalledTimes(1);
-    expect(approveMock).toHaveBeenCalledWith({
+    expect(generationMock).toHaveBeenCalledTimes(1);
+    expect(generationMock).toHaveBeenCalledWith({
       shopId: 41,
       actingUserId: 7,
       acceptPhysicalTruth: true,
     });
+    // Advances exactly the generation that approval created / replayed.
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    expect(advanceMock).toHaveBeenCalledWith({
+      shopId: 41,
+      generationId: GENERATION.generation_id,
+    });
+    expect(viewMock).toHaveBeenCalledWith(41);
+    expect(legacyApproveMock).not.toHaveBeenCalled();
     expect(res.body).toEqual(SNAPSHOT);
   });
 
@@ -146,14 +172,14 @@ describe('GRILL-03A — authenticated identity authority', () => {
   });
 
   it('absent acceptance is passed as false, never undefined/truthy', async () => {
-    approveMock.mockResolvedValue(SNAPSHOT);
+    approvalSucceeds();
 
     await request(buildApp())
       .post('/opening-inventory/cutover')
       .send({})
       .expect(200);
 
-    expect(approveMock).toHaveBeenCalledWith({
+    expect(generationMock).toHaveBeenCalledWith({
       shopId: 41,
       actingUserId: 7,
       acceptPhysicalTruth: false,
@@ -173,7 +199,7 @@ describe('GRILL-03A — authenticated identity authority', () => {
 
     expect(res.status).toBe(401);
     expect(viewMock).not.toHaveBeenCalled();
-    expect(approveMock).not.toHaveBeenCalled();
+    expect(generationMock).not.toHaveBeenCalled();
   });
 });
 
@@ -187,7 +213,7 @@ describe('GRILL-03B — accept_physical_truth type validation', () => {
         .expect(400);
 
       expect(res.body.code).toBe('OPENING_CUTOVER_INVALID_REQUEST');
-      expect(approveMock).not.toHaveBeenCalled();
+      expect(generationMock).not.toHaveBeenCalled();
     }
   );
 });
@@ -203,7 +229,7 @@ describe('GRILL-03C/D/E — stable service error mapping', () => {
     ['[OPENING_CUTOVER_SHOPIFY] userErrors: [{"message":"x"}]', 502, 'OPENING_CUTOVER_SHOPIFY'],
     ['[OPENING_CUTOVER_EXECUTE] Batch 1 missing', 502, 'OPENING_CUTOVER_EXECUTE'],
   ])('%s => %i', async (message, status, code) => {
-    approveMock.mockRejectedValue(new Error(message));
+    generationMock.mockRejectedValue(new Error(message));
 
     const res = await request(buildApp())
       .post('/opening-inventory/cutover')
@@ -216,7 +242,7 @@ describe('GRILL-03C/D/E — stable service error mapping', () => {
   });
 
   it('GRILL-03C: review_required without acceptance stays service-controlled (controller passes false, maps 409)', async () => {
-    approveMock.mockRejectedValue(
+    generationMock.mockRejectedValue(
       new Error('[OPENING_CUTOVER_ACCEPTANCE_REQUIRED] Merchant must explicitly accept LaSyncro physical count as truth')
     );
 
@@ -225,7 +251,7 @@ describe('GRILL-03C/D/E — stable service error mapping', () => {
       .send({})
       .expect(409);
 
-    expect(approveMock).toHaveBeenCalledWith({
+    expect(generationMock).toHaveBeenCalledWith({
       shopId: 41,
       actingUserId: 7,
       acceptPhysicalTruth: false,
@@ -234,7 +260,7 @@ describe('GRILL-03C/D/E — stable service error mapping', () => {
   });
 
   it('unknown/internal errors => 500 without leaking the raw internal message', async () => {
-    approveMock.mockRejectedValue(new Error('connect ECONNREFUSED secret-host:5432 token=abc'));
+    generationMock.mockRejectedValue(new Error('connect ECONNREFUSED secret-host:5432 token=abc'));
 
     const res = await request(buildApp())
       .post('/opening-inventory/cutover')
@@ -247,7 +273,7 @@ describe('GRILL-03C/D/E — stable service error mapping', () => {
   });
 
   it('a stable prefix appearing mid-message is not treated as a mapped code', async () => {
-    approveMock.mockRejectedValue(new Error('wrapped: [OPENING_CUTOVER_FORBIDDEN] nope'));
+    generationMock.mockRejectedValue(new Error('wrapped: [OPENING_CUTOVER_FORBIDDEN] nope'));
 
     const res = await request(buildApp())
       .post('/opening-inventory/cutover')
@@ -305,7 +331,7 @@ describe('GRILL-03F — GET returns canonical progress + cutover status + synced
       .expect(200);
 
     expect(res.body).toEqual(view);
-    expect(approveMock).not.toHaveBeenCalled();
+    expect(generationMock).not.toHaveBeenCalled();
   });
 });
 
@@ -349,7 +375,7 @@ describe('GRILL-03H/03I — shared public error classifier (POST + GET read mode
   });
 
   it('POST 502 body carries the fixed Shopify message, never the provider payload', async () => {
-    approveMock.mockRejectedValue(
+    generationMock.mockRejectedValue(
       new Error('[OPENING_CUTOVER_SHOPIFY] userErrors: [{"message":"secret-provider-detail"}]')
     );
 
@@ -406,7 +432,7 @@ describe('GH-1156 — opening count start bridge', () => {
       },
     ]);
     expect(res.body).toEqual(STARTED_PROGRESS);
-    expect(approveMock).not.toHaveBeenCalled();
+    expect(generationMock).not.toHaveBeenCalled();
   });
 
   it.each([

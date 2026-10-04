@@ -2743,7 +2743,7 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
   }
 
   it(
-    'GRILL-05A — owner crosses real auth/FT2/Core/RBAC GET→POST→GET; legacy exact match is rejected as unscoped with no cutover, batches or sync marker (GH-1179)',
+    'GRILL-05A — owner crosses real auth/FT2/Core/RBAC GET→POST→GET; missing stable Shopify Shop GID fails preflight with no cutover, batches or sync marker (GH-1179)',
     async () => {
       const fixture = await createFixture();
 
@@ -2794,8 +2794,8 @@ describe('GRILL-05 — real WMS route + middleware + Postgres cutover proof', ()
             accept_physical_truth: false,
           });
 
-      // GH-1179: a zero difference against the legacy aggregate expectation
-      // carries no Shopify Location provenance and must not certify sync.
+      // GH-1179: this fixture has no stable Shopify Shop GID; the modern
+      // generation preflight rejects it before provider collection.
       expect(approve.status).toBe(409);
       expect(
         approve.body.code

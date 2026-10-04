@@ -1132,14 +1132,22 @@ export function classifyOpeningInventoryCutoverError(
   };
 }
 
+type OpeningInventoryCutoverViewState = NonNullable<
+  OpeningInventoryCutoverView['cutover']
+>;
+
 export interface OpeningInventoryCutoverView {
   progress: ShopOpeningInventoryProgress;
   cutover: {
     status: OpeningInventoryCutoverStatus;
     /** Derived only from persisted physical_truth_accepted_at. */
     physical_truth_accepted: boolean;
-    /** Public classification of persisted last_error; raw text is never exposed. */
-    error_code: OpeningInventoryCutoverErrorCode | null;
+    /**
+     * Legacy: public classification of persisted last_error (raw text never
+     * exposed). Slice E: the persisted durable failure reason
+     * (blocked_reason / terminal_reason), an internal stable code.
+     */
+    error_code: OpeningInventoryCutoverErrorCode | (string & {}) | null;
     error_message: string | null;
     completed_at: Date | null;
   } | null;
@@ -1147,13 +1155,87 @@ export interface OpeningInventoryCutoverView {
 }
 
 /**
+ * GH-1179 E06: Slice-D/E authority for the existing view shape and status
+ * vocabulary. The latest frozen generation and its execution decide; null
+ * when the shop has no Slice-D generation (legacy read model applies).
+ */
+async function readSliceECutoverState(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<OpeningInventoryCutoverViewState | null> {
+  const generation = await trx('opening_inventory_cutover_generations')
+    .where({ shop_id: shopId, status: 'frozen' })
+    .orderBy('generation_sequence', 'desc')
+    .first('generation_id', 'physical_truth_accepted_at');
+
+  if (!generation) {
+    return null;
+  }
+
+  const execution = await trx('opening_inventory_cutover_executions')
+    .where({ shop_id: shopId, generation_id: generation.generation_id })
+    .first('status', 'blocked_reason', 'terminal_reason', 'terminal_at');
+
+  const base = {
+    physical_truth_accepted:
+      generation.physical_truth_accepted_at !== null &&
+      generation.physical_truth_accepted_at !== undefined,
+    error_code: null,
+    error_message: null,
+    completed_at: null,
+  };
+
+  if (!execution) {
+    return { ...base, status: 'prepared' };
+  }
+
+  switch (execution.status) {
+    case 'executing':
+    case 'verifying':
+      return { ...base, status: 'executing' };
+
+    case 'blocked':
+    case 'requires_regeneration': {
+      const reason = String(
+        (execution.status === 'blocked'
+          ? execution.blocked_reason
+          : execution.terminal_reason) ?? execution.status
+      );
+
+      return {
+        ...base,
+        status: 'failed',
+        error_code: reason,
+        error_message: reason,
+      };
+    }
+
+    case 'converged':
+      return {
+        ...base,
+        status: 'complete',
+        completed_at: new Date(execution.terminal_at),
+      };
+
+    default:
+      throw new Error(
+        `[OPENING_CUTOVER_INTERNAL] Unknown opening cutover execution status ${String(
+          execution.status
+        )}`
+      );
+  }
+}
+
+/**
  * Read-only merchant view for the opening inventory cutover surface.
  *
  * Composes the canonical shop-wide opening reconciliation progress with the
  * persisted cutover execution state and the shop-level Shopify sync marker.
- * Takes no lock and never prepares, executes or mutates a cutover. The
- * persisted diagnostic last_error stays in the database; only its public
- * classification is returned.
+ * Slice-D/E state wins whenever a frozen generation exists; otherwise the
+ * historical legacy cutover is read unchanged. Takes no lock and never
+ * prepares, executes or mutates a cutover. The legacy persisted diagnostic
+ * last_error stays in the database; only its public classification is
+ * returned.
  */
 export async function getOpeningInventoryCutoverView(
   shopId: number
@@ -1165,15 +1247,35 @@ export async function getOpeningInventoryCutoverView(
         shopId
       );
 
-    const cutover = await readCutover(
-      trx,
-      shopId
-    );
-
     const settings = await trx('shop_wms_settings')
       .where({ shop_id: shopId })
       .select('opening_inventory_shopify_synced_at')
       .first();
+
+    const shopifySyncedAt =
+      settings?.opening_inventory_shopify_synced_at
+        ? new Date(
+            settings.opening_inventory_shopify_synced_at
+          )
+        : null;
+
+    const sliceE = await readSliceECutoverState(
+      trx,
+      shopId
+    );
+
+    if (sliceE) {
+      return {
+        progress,
+        cutover: sliceE,
+        shopify_synced_at: shopifySyncedAt,
+      };
+    }
+
+    const cutover = await readCutover(
+      trx,
+      shopId
+    );
 
     const snapshot = cutover
       ? snapshotFromRow(cutover)
@@ -1200,12 +1302,7 @@ export async function getOpeningInventoryCutoverView(
             completed_at: snapshot.completed_at,
           }
         : null,
-      shopify_synced_at:
-        settings?.opening_inventory_shopify_synced_at
-          ? new Date(
-              settings.opening_inventory_shopify_synced_at
-            )
-          : null,
+      shopify_synced_at: shopifySyncedAt,
     };
   });
 }
