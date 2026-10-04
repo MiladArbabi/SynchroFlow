@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { WarehouseZone } from '../../../../modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2';
 import { CanvasEditor } from '../../../../modules/floor-planning/src/ui/components/CanvasEditor';
@@ -86,6 +88,8 @@ describe('CanvasEditor floor settings', () => {
 
     expect(screen.getByLabelText('Floor width')).toHaveValue('14');
     expect(screen.getByLabelText('Floor depth')).toHaveValue('10');
+    expect(screen.getByLabelText('Floor width')).toHaveAttribute('autocomplete', 'off');
+    expect(screen.getByLabelText('Floor depth')).toHaveAttribute('autocomplete', 'off');
     expect(onUpdateZone).not.toHaveBeenCalled();
   });
 
@@ -136,6 +140,31 @@ describe('CanvasEditor floor settings', () => {
     expect(screen.getByRole('button', { name: 'Save & continue' })).toBeEnabled();
   });
 
+  it('GH1192: uses the canonical Tier-1 token, typography, focus and interaction contract', () => {
+    render(<CanvasEditor zones={[warehouse]} onUpdateZone={jest.fn().mockResolvedValue(undefined)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    const save = screen.getByRole('button', { name: 'Save & continue' });
+
+    expect(save).toHaveStyle({
+      backgroundColor: 'var(--accent)', color: 'var(--accent-ink)',
+      borderRadius: '6px', fontWeight: 600, boxShadow: 'none',
+    });
+    // JSDOM normalizes transition serialization and does not simulate CSS
+    // hover/press/focus. Scope source assertions to this CTA, without depending
+    // on Emotion's generated class names or whitespace around transition commas.
+    const source = fs.readFileSync(path.resolve(__dirname,
+      '../../../../modules/floor-planning/src/ui/components/CanvasEditor.tsx'), 'utf8');
+    const panelStart = source.indexOf('function FloorSettingsPanel(');
+    const panelEnd = source.indexOf('function BulkSelectionPanel(', panelStart);
+    const panel = source.slice(panelStart, panelEnd);
+    const cta = panel.slice(panel.indexOf('<Button'), panel.indexOf('</Button>'));
+    expect(cta).toMatch(/transition:\s*'transform 150ms ease\s*,\s*opacity 150ms ease\s*,\s*background-color 150ms ease'/);
+    expect(cta).toMatch(/'&:hover':\s*\{\s*bgcolor: 'var\(--accent\)', opacity: 0\.88, boxShadow: 'none'/);
+    expect(cta).toMatch(/'&:active':\s*\{\s*transform: 'scale\(0\.97\)'/);
+    expect(cta).toMatch(/'&:focus-visible':\s*\{\s*outline: '2px solid var\(--accent\)', outlineOffset: '2px'/);
+    expect(cta).toMatch(/'&\.Mui-disabled':\s*\{\s*bgcolor: 'var\(--accent\)', color: 'var\(--accent-ink\)', opacity: 0\.5/);
+  });
+
   it('GH1192: incomplete, non-finite, zero and negative draft dimensions cannot commit', () => {
     const onUpdateZone = jest.fn().mockResolvedValue(undefined);
     render(<CanvasEditor zones={[{ ...warehouse, width: null, depth: null }]} onUpdateZone={onUpdateZone} />);
@@ -147,6 +176,7 @@ describe('CanvasEditor floor settings', () => {
     const cannotCommit = () => {
       expect(save).toBeVisible();
       expect(save).toBeDisabled();
+      expect(save).toHaveStyle({ opacity: 0.5 });
       fireEvent.click(save);
       expect(onUpdateZone).not.toHaveBeenCalled();
     };
@@ -200,10 +230,14 @@ describe('CanvasEditor floor settings', () => {
     const save = screen.getByRole('button', { name: 'Save & continue' });
     fireEvent.click(save);
 
+    expect(save).toHaveAccessibleName('Saving…');
     expect(save).toBeDisabled();
+    expect(save).toHaveStyle({ backgroundColor: 'var(--accent)', color: 'var(--accent-ink)', opacity: 0.5 });
     fireEvent.click(save);
     expect(onUpdateZone).toHaveBeenCalledTimes(1);
     await act(async () => { finishSave(); });
+    expect(save).toHaveAccessibleName('Save & continue');
+    expect(save).toBeEnabled();
   });
 
   it('GH1192: rejected persistence stays recoverable without local guidance completion', async () => {

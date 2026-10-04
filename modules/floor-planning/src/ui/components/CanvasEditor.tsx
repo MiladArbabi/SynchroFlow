@@ -538,6 +538,7 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
               }}
               onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
               inputProps={{
+                autoComplete: 'off',
                 'aria-label': `Floor ${dimension.label.toLowerCase()}`,
                 'aria-describedby': dimensionError ? FLOOR_DIMENSION_ERROR_ID : undefined,
                 style: { fontFamily: 'monospace', fontSize: 11, padding: '8px 8px 4px', textAlign: 'center' },
@@ -562,9 +563,20 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
           type="button"
           disabled={!canSave}
           onClick={() => void saveDimensions()}
-          sx={{ textTransform: 'none', fontSize: 10 }}
+          sx={{
+            textTransform: 'none', fontSize: 10, fontWeight: 600, borderRadius: '6px',
+            bgcolor: 'var(--accent)', color: 'var(--accent-ink)', boxShadow: 'none',
+            transition: 'transform 150ms ease, opacity 150ms ease, background-color 150ms ease',
+            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88, boxShadow: 'none' },
+            '&:active': { transform: 'scale(0.97)' },
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+            '&.Mui-disabled': {
+              bgcolor: 'var(--accent)', color: 'var(--accent-ink)', opacity: 0.5,
+              boxShadow: 'none',
+            },
+          }}
         >
-          Save &amp; continue
+          {saving ? 'Saving…' : 'Save & continue'}
         </Button>
       </Box>
     </Box>
