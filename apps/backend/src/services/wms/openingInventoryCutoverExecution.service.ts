@@ -20,9 +20,14 @@
 // may have executed appears applied. Nothing is ever resent; an applied batch
 // continues through the same owned-execution path.
 //
-// Out of scope (later Slice E): final convergence,
-// opening_inventory_shopify_synced_at, N+1 regeneration. Neither entrypoint
-// converges or mutates Slice-D rows.
+// E04 (verifyOpeningInventoryCutoverConvergence) is the separate, READ-ONLY
+// final certification of a verifying execution: a fresh Shopify Location read
+// compared against the frozen generation and current local authority, with
+// lines + header + execution + opening_inventory_shopify_synced_at written in
+// ONE final REPEATABLE READ transaction. E02/E03 never chain into it.
+//
+// Out of scope (later Slice E): N+1 regeneration. No entrypoint mutates
+// Slice-D rows.
 
 import type { Knex } from 'knex';
 import {
@@ -42,6 +47,7 @@ import {
   OpeningInventoryPhysicalReadinessError,
   OpeningInventoryPhysicalScopeError,
   resolveOpeningInventoryParticipatingWarehouse,
+  type OpeningInventoryPhysicalTargetRow,
 } from './openingInventoryPhysicalTarget.service.js';
 import {
   buildShopifyItemIdentities,
@@ -52,7 +58,9 @@ import {
   selectShopifyIdentityRows,
   servedShopifyApiVersion,
   type OpeningInventoryLocationEvidence,
+  type ShopifyIdentityRow,
   type ShopifyItemIdentity,
+  type SnapshotLine,
 } from './shopifyOpeningInventorySnapshot.service.js';
 
 const GENERATIONS = 'opening_inventory_cutover_generations';
@@ -86,6 +94,23 @@ export const OPENING_CUTOVER_RECOVERY_NOT_RECOVERED =
 export const OPENING_CUTOVER_RECOVERY_READ_FAILED =
   'OPENING_CUTOVER_RECOVERY_READ_FAILED';
 const RECOVERY_INSTALLATION_MISSING = 'OPENING_CUTOVER_RECOVERY_INSTALLATION_MISSING';
+
+export const OPENING_CUTOVER_CONVERGED = 'OPENING_CUTOVER_CONVERGED';
+export const OPENING_CUTOVER_ALREADY_CONVERGED = 'OPENING_CUTOVER_ALREADY_CONVERGED';
+export const OPENING_CUTOVER_CONVERGENCE_NOT_VERIFYING =
+  'OPENING_CUTOVER_CONVERGENCE_NOT_VERIFYING';
+export const OPENING_CUTOVER_FINAL_NOT_CONVERGED =
+  'OPENING_CUTOVER_FINAL_NOT_CONVERGED';
+export const OPENING_CUTOVER_FINAL_LOCAL_DRIFT = 'OPENING_CUTOVER_FINAL_LOCAL_DRIFT';
+export const OPENING_CUTOVER_FINAL_STRUCTURAL_DRIFT =
+  'OPENING_CUTOVER_FINAL_STRUCTURAL_DRIFT';
+export const OPENING_CUTOVER_FINAL_READ_FAILED = 'OPENING_CUTOVER_FINAL_READ_FAILED';
+export const OPENING_CUTOVER_FINAL_SERIALIZATION_CONFLICT =
+  'OPENING_CUTOVER_FINAL_SERIALIZATION_CONFLICT';
+export const OPENING_CUTOVER_LEGACY_COMPLETION_MARKER_PRESENT =
+  'OPENING_CUTOVER_LEGACY_COMPLETION_MARKER_PRESENT';
+
+const PG_SERIALIZATION_FAILURE = '40001';
 
 const ERROR_DETAIL_MAX = 2000;
 
@@ -126,7 +151,8 @@ export type OpeningInventoryCutoverExecutionOutcome =
   | 'converged'
   | 'busy'
   | 'stale_claim'
-  | 'not_ambiguous';
+  | 'not_ambiguous'
+  | 'not_verifying';
 
 export interface OpeningInventoryCutoverExecutionResult {
   outcome: OpeningInventoryCutoverExecutionOutcome;
@@ -159,29 +185,42 @@ function leaseExpiry(trx: Knex.Transaction, leaseMs: number) {
   return trx.raw(`now() + (? * interval '1 millisecond')`, [leaseMs]);
 }
 
+/** Leased (owned-work) execution states: E02/E03 own executing, E04 verifying. */
+type LeasedStatus = 'executing' | 'verifying';
+
 /**
- * Lease CAS: every authoritative executor transaction starts here. The row
- * lock it takes serializes against a concurrent reclaim; zero rows = stale.
+ * Lease CAS inside an open transaction. The row lock it takes serializes
+ * against a concurrent reclaim; zero rows = stale.
  */
+async function casLease(
+  trx: Knex.Transaction,
+  lease: Lease,
+  expectedStatus: LeasedStatus
+): Promise<void> {
+  const owned = await trx(EXECUTIONS)
+    .where({
+      execution_id: lease.executionId,
+      shop_id: lease.shopId,
+      lease_token: lease.leaseToken,
+      status: expectedStatus,
+    })
+    .whereRaw('lease_expires_at > now()')
+    .update({ updated_at: trx.fn.now() })
+    .returning('execution_id');
+
+  if (owned.length !== 1) {
+    throw new OpeningInventoryCutoverStaleClaimError();
+  }
+}
+
+/** Every authoritative executor transaction starts with the lease CAS. */
 async function withLease<T>(
   lease: Lease,
-  fn: (trx: Knex.Transaction) => Promise<T>
+  fn: (trx: Knex.Transaction) => Promise<T>,
+  expectedStatus: LeasedStatus = 'executing'
 ): Promise<T> {
   return withTenant(lease.shopId, async (trx) => {
-    const owned = await trx(EXECUTIONS)
-      .where({
-        execution_id: lease.executionId,
-        shop_id: lease.shopId,
-        lease_token: lease.leaseToken,
-        status: 'executing',
-      })
-      .whereRaw('lease_expires_at > now()')
-      .update({ updated_at: trx.fn.now() })
-      .returning('execution_id');
-
-    if (owned.length !== 1) {
-      throw new OpeningInventoryCutoverStaleClaimError();
-    }
+    await casLease(trx, lease, expectedStatus);
 
     return fn(trx);
   });
@@ -209,8 +248,12 @@ type Claim =
  * `recover` (E03) never creates an execution and never reclaims one whose
  * first unfinished batch is not ambiguous (or an interrupted dispatch, which
  * reclaim turns ambiguous). Busy / terminal handling is identical.
+ *
+ * `converge` (E04) never creates an execution and owns only a VERIFYING
+ * execution: live lease → busy; expired → reclaim the same row. Executing is
+ * not convergence work; terminal / blocked states are returned as they are.
  */
-type ClaimMode = 'execute' | 'recover';
+type ClaimMode = 'execute' | 'recover' | 'converge';
 
 async function claimExecution(
   shopId: number,
@@ -254,6 +297,17 @@ async function claimExecution(
           generationId,
           executionId: null,
           code: OPENING_CUTOVER_RECOVERY_NOT_AMBIGUOUS,
+        }),
+      };
+    }
+
+    if (!existing && mode === 'converge') {
+      return {
+        kind: 'done' as const,
+        result: result('not_verifying', {
+          generationId,
+          executionId: null,
+          code: OPENING_CUTOVER_CONVERGENCE_NOT_VERIFYING,
         }),
       };
     }
@@ -304,11 +358,30 @@ async function claimExecution(
     }
 
     const executionId = String(existing.execution_id);
+    const ownedStatus: LeasedStatus = mode === 'converge' ? 'verifying' : 'executing';
 
-    if (existing.status !== 'executing') {
+    if (existing.status !== ownedStatus) {
+      if (mode === 'converge' && existing.status === 'executing') {
+        return {
+          kind: 'done' as const,
+          result: result('not_verifying', {
+            generationId,
+            executionId,
+            code: OPENING_CUTOVER_CONVERGENCE_NOT_VERIFYING,
+          }),
+        };
+      }
+
       return {
         kind: 'done' as const,
-        result: result(existing.status, { generationId, executionId }),
+        result: result(existing.status, {
+          generationId,
+          executionId,
+          code:
+            mode === 'converge' && existing.status === 'converged'
+              ? OPENING_CUTOVER_ALREADY_CONVERGED
+              : null,
+        }),
       };
     }
 
@@ -348,7 +421,7 @@ async function claimExecution(
       .where({
         execution_id: executionId,
         shop_id: shopId,
-        status: 'executing',
+        status: ownedStatus,
         lease_token: existing.lease_token,
       })
       .whereRaw('lease_expires_at <= now()')
@@ -387,8 +460,9 @@ async function claimExecution(
       .where({ shop_id: shopId, execution_id: executionId, status: 'dispatching' })
       .update({ status: 'ambiguous', updated_at: trx.fn.now() });
 
-    // A readback the old owner left collecting can never be finalized by it:
-    // abandon it under the new lease before any new inspection begins.
+    // A readback the old owner left collecting (ambiguity_inspection or
+    // final_convergence) can never be finalized by it: abandon it under the
+    // new lease before any new inspection begins.
     await trx(VERIFICATIONS)
       .where({ shop_id: shopId, execution_id: executionId, status: 'collecting' })
       .update({
@@ -411,119 +485,186 @@ type Authority =
   | { ok: true; shopDomain: string; encryptedAccessToken: string }
   | { ok: false; reason: string };
 
-function drift(reason: string): Authority {
+/**
+ * Current local authority as one consistent capture. Every field is proven
+ * equal to the frozen generation by the capture itself; E04 additionally
+ * compares two captures (V1 / V2) field by field.
+ */
+interface CapturedAuthority {
+  shopGid: string;
+  shopDomain: string;
+  encryptedAccessToken: string;
+  snapshotId: string;
+  warehouseId: string;
+  locationGid: string;
+  readinessPassed: true;
+  targetRows: OpeningInventoryPhysicalTargetRow[];
+  targetFingerprint: string;
+  identityRows: ShopifyIdentityRow[];
+  identityFingerprint: string;
+}
+
+type AuthorityCapture =
+  | { ok: true; authority: CapturedAuthority }
+  | { ok: false; reason: string };
+
+function drift(reason: string): { ok: false; reason: string } {
   return { ok: false, reason };
+}
+
+/** Deterministic identity-row order (the fingerprint's own key form). */
+function canonicalIdentityRows(rows: ShopifyIdentityRow[]): ShopifyIdentityRow[] {
+  const key = (row: ShopifyIdentityRow) =>
+    JSON.stringify([
+      String(row.lasyncro_variant_id),
+      row.external_inventory_item_id ?? null,
+      row.external_variant_id ?? null,
+      row.variant_status ?? null,
+      row.product_status ?? null,
+      row.product_type ?? null,
+    ]);
+
+  return [...rows].sort((left, right) =>
+    key(left) < key(right) ? -1 : key(left) > key(right) ? 1 : 0
+  );
+}
+
+/**
+ * The ONE canonical local-authority algorithm, inside the caller's EXISTING
+ * transaction (E02 revalidation, E04 V1 and the E04 final V2 transaction).
+ * Read only. Authority errors become drift; anything else propagates.
+ */
+async function captureCurrentAuthorityInTrx(
+  trx: Knex.Transaction,
+  shopId: number,
+  generationId: string
+): Promise<AuthorityCapture> {
+  const generation = await trx(GENERATIONS)
+    .where({ shop_id: shopId, generation_id: generationId })
+    .first();
+
+  if (!generation || generation.status !== 'frozen') {
+    return drift('GENERATION_NOT_FROZEN');
+  }
+
+  const installation = await trx('shopify_app_installations')
+    .where({ shop_id: shopId })
+    .whereNull('uninstalled_at')
+    .first('shop_domain', 'shop_gid', 'access_token');
+
+  if (!installation?.shop_domain || !installation?.access_token) {
+    return drift('INSTALLATION_MISSING');
+  }
+
+  if (installation.shop_gid !== generation.shopify_shop_gid) {
+    return drift('SHOP_GID_CHANGED');
+  }
+
+  let scope: Awaited<ReturnType<typeof resolveOpeningInventoryParticipatingWarehouse>>;
+  let target: OpeningInventoryPhysicalTargetRow[];
+  let targetFingerprint: string;
+
+  try {
+    scope = await resolveOpeningInventoryParticipatingWarehouse(trx, shopId);
+
+    if (
+      scope.snapshotId !== String(generation.opening_snapshot_id) ||
+      scope.warehouseId !== String(generation.warehouse_id) ||
+      normalizeShopifyGid('Location', scope.shopifyLocationId) !==
+        generation.shopify_location_gid
+    ) {
+      return drift('SCOPE_CHANGED');
+    }
+
+    const warehouse = await trx('warehouses')
+      .where({ shop_id: shopId, warehouse_id: scope.warehouseId })
+      .first('external_location_id');
+
+    if (
+      !warehouse ||
+      normalizeShopifyGid('Location', warehouse.external_location_id) !==
+        generation.shopify_location_gid
+    ) {
+      return drift('LOCATION_MAPPING_CHANGED');
+    }
+
+    await assertOpeningInventoryPhysicalReadiness(trx, shopId, scope.warehouseId);
+
+    target = await buildOpeningInventoryPhysicalTarget(
+      trx,
+      shopId,
+      scope.warehouseId
+    );
+
+    // Same algorithm and shape Slice D froze.
+    targetFingerprint = generationFingerprint(
+      target.map((row) => ({
+        lasyncroVariantId: row.lasyncroVariantId,
+        targetQuantity: row.targetQuantity,
+      }))
+    );
+
+    if (targetFingerprint !== generation.target_fingerprint) {
+      return drift('PHYSICAL_TARGET_CHANGED');
+    }
+  } catch (error) {
+    if (error instanceof OpeningInventoryPhysicalScopeError) {
+      return drift(`SCOPE_${error.code}`);
+    }
+
+    if (error instanceof OpeningInventoryPhysicalReadinessError) {
+      return drift(`PHYSICAL_NOT_READY:${error.reasons.join(',')}`);
+    }
+
+    throw error;
+  }
+
+  const identityRows = await selectShopifyIdentityRows(trx, shopId);
+  const currentIdentityFingerprint = identityFingerprint(identityRows);
+
+  if (currentIdentityFingerprint !== generation.identity_fingerprint) {
+    return drift('IDENTITY_CHANGED');
+  }
+
+  return {
+    ok: true as const,
+    authority: {
+      shopGid: String(installation.shop_gid),
+      shopDomain: String(installation.shop_domain),
+      encryptedAccessToken: installation.access_token,
+      snapshotId: scope.snapshotId,
+      warehouseId: scope.warehouseId,
+      locationGid: String(normalizeShopifyGid('Location', scope.shopifyLocationId)),
+      readinessPassed: true as const,
+      targetRows: target,
+      targetFingerprint,
+      identityRows: canonicalIdentityRows(identityRows),
+      identityFingerprint: currentIdentityFingerprint,
+    },
+  };
 }
 
 /**
  * One REPEATABLE READ snapshot (taken by withTenant's set_config) for every
- * authority read. Read only. Authority errors become drift; anything else
- * propagates.
+ * authority read. Read only.
  */
 async function revalidateCurrentAuthority(
   shopId: number,
   generationId: string
 ): Promise<Authority> {
-  return withTenant(
+  const captured = await withTenant(
     shopId,
-    async (trx) => {
-      const generation = await trx(GENERATIONS)
-        .where({ shop_id: shopId, generation_id: generationId })
-        .first();
-
-      if (!generation || generation.status !== 'frozen') {
-        return drift('GENERATION_NOT_FROZEN');
-      }
-
-      const installation = await trx('shopify_app_installations')
-        .where({ shop_id: shopId })
-        .whereNull('uninstalled_at')
-        .first('shop_domain', 'shop_gid', 'access_token');
-
-      if (!installation?.shop_domain || !installation?.access_token) {
-        return drift('INSTALLATION_MISSING');
-      }
-
-      if (installation.shop_gid !== generation.shopify_shop_gid) {
-        return drift('SHOP_GID_CHANGED');
-      }
-
-      try {
-        const scope = await resolveOpeningInventoryParticipatingWarehouse(
-          trx,
-          shopId
-        );
-
-        if (
-          scope.snapshotId !== String(generation.opening_snapshot_id) ||
-          scope.warehouseId !== String(generation.warehouse_id) ||
-          normalizeShopifyGid('Location', scope.shopifyLocationId) !==
-            generation.shopify_location_gid
-        ) {
-          return drift('SCOPE_CHANGED');
-        }
-
-        const warehouse = await trx('warehouses')
-          .where({ shop_id: shopId, warehouse_id: scope.warehouseId })
-          .first('external_location_id');
-
-        if (
-          !warehouse ||
-          normalizeShopifyGid('Location', warehouse.external_location_id) !==
-            generation.shopify_location_gid
-        ) {
-          return drift('LOCATION_MAPPING_CHANGED');
-        }
-
-        await assertOpeningInventoryPhysicalReadiness(
-          trx,
-          shopId,
-          scope.warehouseId
-        );
-
-        const target = await buildOpeningInventoryPhysicalTarget(
-          trx,
-          shopId,
-          scope.warehouseId
-        );
-
-        // Same algorithm and shape Slice D froze.
-        const targetFingerprint = generationFingerprint(
-          target.map((row) => ({
-            lasyncroVariantId: row.lasyncroVariantId,
-            targetQuantity: row.targetQuantity,
-          }))
-        );
-
-        if (targetFingerprint !== generation.target_fingerprint) {
-          return drift('PHYSICAL_TARGET_CHANGED');
-        }
-      } catch (error) {
-        if (error instanceof OpeningInventoryPhysicalScopeError) {
-          return drift(`SCOPE_${error.code}`);
-        }
-
-        if (error instanceof OpeningInventoryPhysicalReadinessError) {
-          return drift(`PHYSICAL_NOT_READY:${error.reasons.join(',')}`);
-        }
-
-        throw error;
-      }
-
-      const identityRows = await selectShopifyIdentityRows(trx, shopId);
-
-      if (identityFingerprint(identityRows) !== generation.identity_fingerprint) {
-        return drift('IDENTITY_CHANGED');
-      }
-
-      return {
-        ok: true as const,
-        shopDomain: String(installation.shop_domain),
-        encryptedAccessToken: installation.access_token,
-      };
-    },
+    (trx) => captureCurrentAuthorityInTrx(trx, shopId, generationId),
     { isolationLevel: 'repeatable read' }
   );
+
+  if (captured.ok === false) return captured;
+
+  return {
+    ok: true as const,
+    shopDomain: captured.authority.shopDomain,
+    encryptedAccessToken: captured.authority.encryptedAccessToken,
+  };
 }
 
 /** Inside a lease-owned transaction: executing → requires_regeneration. */
@@ -1335,14 +1476,17 @@ async function beginAmbiguityInspection(
 }
 
 /** Read-only liveness: never heartbeats, never extends the lease. */
-async function assertLeaseLive(lease: Lease): Promise<void> {
+async function assertLeaseLive(
+  lease: Lease,
+  expectedStatus: LeasedStatus = 'executing'
+): Promise<void> {
   const live = await withTenant(lease.shopId, (trx) =>
     trx(EXECUTIONS)
       .where({
         execution_id: lease.executionId,
         shop_id: lease.shopId,
         lease_token: lease.leaseToken,
-        status: 'executing',
+        status: expectedStatus,
       })
       .whereRaw('lease_expires_at > now()')
       .first('execution_id')
@@ -1763,6 +1907,812 @@ export async function recoverOpeningInventoryCutoverAmbiguity(
 
   try {
     return await runOwnedRecovery(claim.lease, deps);
+  } catch (error) {
+    if (error instanceof OpeningInventoryCutoverStaleClaimError) {
+      return result('stale_claim', {
+        generationId,
+        executionId: claim.lease.executionId,
+        code: OPENING_CUTOVER_EXECUTION_STALE_CLAIM,
+      });
+    }
+
+    throw error;
+  }
+}
+
+// ─── E04 final convergence ───────────────────────────────────────────────────
+
+type FrozenDisposition = 'write' | 'no_op' | 'provider_only_zero';
+
+interface FrozenConvergenceEntry {
+  itemGid: string;
+  variantGid: string | null;
+  lasyncroVariantId: string | null;
+  disposition: FrozenDisposition;
+  targetQuantity: number | null;
+  observedOnHand: number;
+}
+
+/** Immutable Slice-D authority: the generation header and ALL its entries. */
+interface FrozenConvergenceAuthority {
+  requestedApiVersion: string;
+  servedApiVersion: string;
+  shopGid: string;
+  locationGid: string;
+  snapshotId: string;
+  warehouseId: string;
+  targetFingerprint: string;
+  identityFingerprint: string;
+  entries: FrozenConvergenceEntry[];
+}
+
+async function readFrozenConvergenceAuthority(
+  lease: Lease
+): Promise<FrozenConvergenceAuthority> {
+  return withTenant(lease.shopId, async (trx) => {
+    const generation = await trx(GENERATIONS)
+      .where({ shop_id: lease.shopId, generation_id: lease.generationId })
+      .first(
+        'requested_api_version',
+        'served_api_version',
+        'shopify_shop_gid',
+        'shopify_location_gid',
+        'opening_snapshot_id',
+        'warehouse_id',
+        'target_fingerprint',
+        'identity_fingerprint'
+      );
+
+    if (!generation) {
+      throw new Error(
+        '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] Immutable generation is missing'
+      );
+    }
+
+    // write + no_op + provider_only_zero: every frozen entry is authority.
+    const entries = await trx(GENERATION_ENTRIES)
+      .where({ shop_id: lease.shopId, generation_id: lease.generationId })
+      .orderBy('ordinal', 'asc')
+      .select(
+        'shopify_inventory_item_gid',
+        'shopify_variant_gid',
+        'lasyncro_variant_id',
+        'disposition',
+        'target_quantity',
+        'observed_on_hand_quantity'
+      );
+
+    return {
+      requestedApiVersion: String(generation.requested_api_version),
+      servedApiVersion: String(generation.served_api_version),
+      shopGid: String(generation.shopify_shop_gid),
+      locationGid: String(generation.shopify_location_gid),
+      snapshotId: String(generation.opening_snapshot_id),
+      warehouseId: String(generation.warehouse_id),
+      targetFingerprint: String(generation.target_fingerprint),
+      identityFingerprint: String(generation.identity_fingerprint),
+      entries: entries.map((entry: any) => ({
+        itemGid: String(entry.shopify_inventory_item_gid),
+        variantGid: entry.shopify_variant_gid ? String(entry.shopify_variant_gid) : null,
+        lasyncroVariantId: entry.lasyncro_variant_id
+          ? String(entry.lasyncro_variant_id)
+          : null,
+        disposition: entry.disposition as FrozenDisposition,
+        targetQuantity:
+          entry.target_quantity === null ? null : Number(entry.target_quantity),
+        observedOnHand: Number(entry.observed_on_hand_quantity),
+      })),
+    };
+  });
+}
+
+/** Independent proof that a capture still IS the frozen generation authority. */
+function frozenAuthorityViolation(
+  captured: CapturedAuthority,
+  frozen: FrozenConvergenceAuthority
+): string | null {
+  if (captured.readinessPassed !== true) return 'READINESS';
+  if (captured.shopGid !== frozen.shopGid) return 'SHOP_GID';
+  if (captured.snapshotId !== frozen.snapshotId) return 'SNAPSHOT';
+  if (captured.warehouseId !== frozen.warehouseId) return 'WAREHOUSE';
+  if (captured.locationGid !== frozen.locationGid) return 'LOCATION';
+  if (captured.targetFingerprint !== frozen.targetFingerprint) return 'TARGET';
+  if (captured.identityFingerprint !== frozen.identityFingerprint) return 'IDENTITY';
+  return null;
+}
+
+/** V1 == V2 over all material authority, canonical rows included. */
+function authorityDifference(
+  v1: CapturedAuthority,
+  v2: CapturedAuthority
+): string | null {
+  if (v1.shopGid !== v2.shopGid) return 'SHOP_GID';
+  if (v1.shopDomain !== v2.shopDomain) return 'SHOP_DOMAIN';
+  if (v1.snapshotId !== v2.snapshotId) return 'SNAPSHOT';
+  if (v1.warehouseId !== v2.warehouseId) return 'WAREHOUSE';
+  if (v1.locationGid !== v2.locationGid) return 'LOCATION';
+  if (v1.readinessPassed !== v2.readinessPassed) return 'READINESS';
+  if (v1.targetFingerprint !== v2.targetFingerprint) return 'TARGET';
+  if (v1.identityFingerprint !== v2.identityFingerprint) return 'IDENTITY';
+
+  if (JSON.stringify(v1.targetRows) !== JSON.stringify(v2.targetRows)) {
+    return 'TARGET_ROWS';
+  }
+
+  if (JSON.stringify(v1.identityRows) !== JSON.stringify(v2.identityRows)) {
+    return 'IDENTITY_ROWS';
+  }
+
+  return null;
+}
+
+/** Inside a lease-owned transaction: verifying → blocked, marker untouched. */
+async function blockForLegacyMarkerInTrx(
+  trx: Knex.Transaction,
+  lease: Lease
+): Promise<void> {
+  const blocked = await trx(EXECUTIONS)
+    .where({
+      execution_id: lease.executionId,
+      shop_id: lease.shopId,
+      status: 'verifying',
+      lease_token: lease.leaseToken,
+    })
+    .update({
+      status: 'blocked',
+      blocked_at: trx.fn.now(),
+      blocked_reason: OPENING_CUTOVER_LEGACY_COMPLETION_MARKER_PRESENT,
+      lease_token: null,
+      lease_expires_at: null,
+      lease_heartbeat_at: null,
+      updated_at: trx.fn.now(),
+    });
+
+  if (blocked !== 1) {
+    throw new Error(
+      '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] Verifying execution could not be blocked'
+    );
+  }
+}
+
+async function legacyMarkerPresent(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<boolean> {
+  const settings = await trx('shop_wms_settings')
+    .where({ shop_id: shopId })
+    .first('opening_inventory_shopify_synced_at');
+
+  return (
+    settings?.opening_inventory_shopify_synced_at !== null &&
+    settings?.opening_inventory_shopify_synced_at !== undefined
+  );
+}
+
+type FinalConvergenceStart =
+  | { kind: 'blocked' }
+  | { kind: 'started'; verificationId: string };
+
+/**
+ * Short lease-owned transaction committed BEFORE any Shopify read: legacy
+ * completion-marker conflict check, then exactly one collecting header.
+ */
+async function beginFinalConvergence(
+  lease: Lease,
+  frozen: FrozenConvergenceAuthority
+): Promise<FinalConvergenceStart> {
+  return withLease(
+    lease,
+    async (trx) => {
+      if (await legacyMarkerPresent(trx, lease.shopId)) {
+        await blockForLegacyMarkerInTrx(trx, lease);
+        return { kind: 'blocked' as const };
+      }
+
+      const collecting = await trx(VERIFICATIONS)
+        .where({
+          shop_id: lease.shopId,
+          execution_id: lease.executionId,
+          purpose: 'final_convergence',
+          status: 'collecting',
+        })
+        .first('verification_id');
+
+      if (collecting) {
+        throw new Error(
+          '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] A collecting final verification already exists'
+        );
+      }
+
+      const [verification] = await trx(VERIFICATIONS)
+        .insert({
+          shop_id: lease.shopId,
+          execution_id: lease.executionId,
+          generation_id: lease.generationId,
+          purpose: 'final_convergence',
+          batch_index: null,
+          started_by_lease_token: lease.leaseToken,
+          status: 'collecting',
+          requested_api_version: frozen.requestedApiVersion,
+          shop_gid: frozen.shopGid,
+          location_gid: frozen.locationGid,
+        })
+        .returning(['verification_id']);
+
+      return {
+        kind: 'started' as const,
+        verificationId: String(verification.verification_id),
+      };
+    },
+    'verifying'
+  );
+}
+
+/**
+ * Failed final verification without lines. `terminalReason` set →
+ * deterministic drift (requires_regeneration); null → transient/protocol read
+ * failure (execution stays verifying under the same live lease).
+ */
+async function failFinalVerification(
+  lease: Lease,
+  verificationId: string,
+  terminalReason: string | null
+): Promise<void> {
+  await withLease(
+    lease,
+    async (trx) => {
+      await closeVerification(trx, lease, verificationId, {
+        status: 'failed',
+        verdict: null,
+      });
+
+      if (terminalReason) {
+        await requireRegenerationInTrx(trx, lease, terminalReason);
+      }
+    },
+    'verifying'
+  );
+}
+
+type FinalLineVerdict = 'match' | 'mismatch' | 'inactive' | 'untracked' | 'unknown_item';
+
+interface FinalLine {
+  shopify_inventory_item_gid: string;
+  observed_on_hand: number | null;
+  level_present: boolean;
+  active: boolean | null;
+  tracked: boolean | null;
+  expected_target: number | null;
+  frozen_change_from: number | null;
+  line_verdict: FinalLineVerdict;
+}
+
+type FinalEvaluation =
+  | { ok: true; lines: FinalLine[] }
+  | { ok: false; reason: string };
+
+function sameVariantGid(left: string, right: string): boolean {
+  return left.trim() === right.trim();
+}
+
+/**
+ * Final comparison universe = V2 physical target ∪ ALL frozen entries ∪
+ * PRESENT provider items. Any deterministic structural problem returns a
+ * reason and no lines: nothing partial is ever persisted.
+ */
+function evaluateFinalLines(
+  frozen: FrozenConvergenceAuthority,
+  v2: CapturedAuthority,
+  collected: OpeningInventoryLocationEvidence
+): FinalEvaluation {
+  let identities: Map<string, ShopifyItemIdentity>;
+
+  try {
+    identities = buildShopifyItemIdentities(v2.identityRows);
+  } catch (error) {
+    const code = collectorFailureCode(error);
+    if (code) return { ok: false, reason: code };
+    throw error;
+  }
+
+  const itemByVariant = new Map<string, string>();
+  for (const [itemGid, identity] of identities) {
+    itemByVariant.set(identity.lasyncroVariantId, itemGid);
+  }
+
+  const entryByItem = new Map(frozen.entries.map((entry) => [entry.itemGid, entry]));
+
+  // Current-only target item: frozen/local authority drift, never a
+  // provider mismatch.
+  const targetItems = new Set<string>();
+
+  for (const row of v2.targetRows) {
+    const itemGid = itemByVariant.get(row.lasyncroVariantId);
+    const entry = itemGid ? entryByItem.get(itemGid) : undefined;
+
+    if (
+      !itemGid ||
+      !entry ||
+      entry.disposition === 'provider_only_zero' ||
+      entry.lasyncroVariantId !== row.lasyncroVariantId ||
+      entry.targetQuantity !== row.targetQuantity
+    ) {
+      return { ok: false, reason: 'CURRENT_TARGET_NOT_FROZEN' };
+    }
+
+    targetItems.add(itemGid);
+  }
+
+  // Frozen write/no_op item outside current target: drift. Frozen
+  // provider_only_zero legitimately sits outside the physical target.
+  for (const entry of frozen.entries) {
+    if (entry.disposition !== 'provider_only_zero' && !targetItems.has(entry.itemGid)) {
+      return { ok: false, reason: 'FROZEN_TARGET_NOT_CURRENT' };
+    }
+  }
+
+  const observedByItem = new Map<string, SnapshotLine>();
+
+  for (const line of collected.lines) {
+    if (line.inventory_level_present !== true) continue;
+
+    // Provider ProductVariant must agree with the canonical mapped identity,
+    // even when the quantity matches. A null provider variant is absence.
+    const identity = identities.get(line.shopify_inventory_item_id);
+    const mappedVariant =
+      identity?.externalVariantId ??
+      entryByItem.get(line.shopify_inventory_item_id)?.variantGid ??
+      null;
+
+    if (
+      mappedVariant &&
+      line.shopify_variant_id !== null &&
+      !sameVariantGid(String(line.shopify_variant_id), mappedVariant)
+    ) {
+      return { ok: false, reason: 'PROVIDER_VARIANT_MISMATCH' };
+    }
+
+    observedByItem.set(line.shopify_inventory_item_id, line);
+  }
+
+  const lines: FinalLine[] = [];
+
+  for (const entry of frozen.entries) {
+    const observed = observedByItem.get(entry.itemGid);
+    const zeroExpected = entry.disposition === 'provider_only_zero';
+
+    const base = {
+      shopify_inventory_item_gid: entry.itemGid,
+      expected_target: zeroExpected ? 0 : Number(entry.targetQuantity),
+      frozen_change_from: entry.observedOnHand,
+    };
+
+    if (!observed) {
+      lines.push({
+        ...base,
+        observed_on_hand: null,
+        level_present: false,
+        active: null,
+        tracked: null,
+        // A known zero item without a Location level holds zero.
+        line_verdict: zeroExpected ? 'match' : 'mismatch',
+      });
+      continue;
+    }
+
+    const evidence = {
+      ...base,
+      observed_on_hand: observed.on_hand_quantity,
+      level_present: true,
+      active: observed.inventory_level_active,
+      tracked: observed.tracked,
+    };
+
+    if (zeroExpected) {
+      if (
+        observed.inventory_level_active !== true ||
+        observed.tracked !== true ||
+        !Number.isSafeInteger(observed.on_hand_quantity)
+      ) {
+        return { ok: false, reason: 'PROVIDER_ONLY_ZERO_INELIGIBLE' };
+      }
+
+      lines.push({
+        ...evidence,
+        line_verdict: observed.on_hand_quantity === 0 ? 'match' : 'mismatch',
+      });
+      continue;
+    }
+
+    if (observed.inventory_level_active === false) {
+      lines.push({ ...evidence, line_verdict: 'inactive' });
+      continue;
+    }
+
+    if (observed.tracked === false) {
+      lines.push({ ...evidence, line_verdict: 'untracked' });
+      continue;
+    }
+
+    if (
+      observed.inventory_level_active !== true ||
+      observed.tracked !== true ||
+      !Number.isSafeInteger(observed.on_hand_quantity)
+    ) {
+      return { ok: false, reason: 'MALFORMED_ELIGIBILITY_EVIDENCE' };
+    }
+
+    // Never old_state: anything but the frozen target is a mismatch.
+    lines.push({
+      ...evidence,
+      line_verdict:
+        observed.on_hand_quantity === base.expected_target ? 'match' : 'mismatch',
+    });
+  }
+
+  // PRESENT provider items outside frozen ∪ current never disappear; zero
+  // does not establish trusted identity.
+  for (const [itemGid, observed] of observedByItem) {
+    if (entryByItem.has(itemGid) || targetItems.has(itemGid)) continue;
+
+    lines.push({
+      shopify_inventory_item_gid: itemGid,
+      observed_on_hand: observed.on_hand_quantity,
+      level_present: true,
+      active: observed.inventory_level_active,
+      tracked: observed.tracked,
+      expected_target: null,
+      frozen_change_from: null,
+      line_verdict: 'unknown_item',
+    });
+  }
+
+  lines.sort((left, right) =>
+    left.shopify_inventory_item_gid < right.shopify_inventory_item_gid
+      ? -1
+      : left.shopify_inventory_item_gid > right.shopify_inventory_item_gid
+        ? 1
+        : 0
+  );
+
+  return { ok: true, lines };
+}
+
+/**
+ * THE final transaction: ONE REPEATABLE READ transaction whose snapshot is
+ * taken by withTenant's set_config BEFORE the verifying-lease CAS row-locks
+ * the execution; V2 is captured under that lock, compared to the frozen
+ * authority and V1, and the verdict (lines, header, execution, completion
+ * marker) commits atomically. All timestamps are this transaction's now().
+ */
+async function finalizeConvergence(
+  lease: Lease,
+  frozen: FrozenConvergenceAuthority,
+  verificationId: string,
+  v1: CapturedAuthority,
+  collected: OpeningInventoryLocationEvidence
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  const ids = { generationId: lease.generationId, executionId: lease.executionId };
+
+  return withTenant(
+    lease.shopId,
+    async (trx) => {
+      await casLease(trx, lease, 'verifying');
+
+      const header = await trx(VERIFICATIONS)
+        .where({
+          verification_id: verificationId,
+          shop_id: lease.shopId,
+          purpose: 'final_convergence',
+          status: 'collecting',
+          started_by_lease_token: lease.leaseToken,
+        })
+        .first('verification_id');
+
+      if (!header) {
+        throw new Error(
+          '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] Final verification is no longer collecting'
+        );
+      }
+
+      const fail = async (code: string, reason: string) => {
+        await closeVerification(trx, lease, verificationId, {
+          status: 'failed',
+          verdict: null,
+        });
+        await requireRegenerationInTrx(trx, lease, `${code}:${reason}`);
+
+        return result('requires_regeneration', { ...ids, code });
+      };
+
+      const v2 = await captureCurrentAuthorityInTrx(
+        trx,
+        lease.shopId,
+        lease.generationId
+      );
+
+      if (v2.ok === false) {
+        return fail(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, `V2:${v2.reason}`);
+      }
+
+      const frozenViolation = frozenAuthorityViolation(v2.authority, frozen);
+
+      if (frozenViolation) {
+        return fail(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, `V2_FROZEN:${frozenViolation}`);
+      }
+
+      const difference = authorityDifference(v1, v2.authority);
+
+      if (difference) {
+        return fail(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, `V1_V2:${difference}`);
+      }
+
+      // A completion marker that appeared during the read: never converge.
+      if (await legacyMarkerPresent(trx, lease.shopId)) {
+        await closeVerification(trx, lease, verificationId, {
+          status: 'failed',
+          verdict: null,
+        });
+        await blockForLegacyMarkerInTrx(trx, lease);
+
+        return result('blocked', {
+          ...ids,
+          code: OPENING_CUTOVER_LEGACY_COMPLETION_MARKER_PRESENT,
+        });
+      }
+
+      const evaluation = evaluateFinalLines(frozen, v2.authority, collected);
+
+      if (evaluation.ok === false) {
+        return fail(OPENING_CUTOVER_FINAL_STRUCTURAL_DRIFT, evaluation.reason);
+      }
+
+      const { lines } = evaluation;
+
+      if (lines.length > 0) {
+        await trx(VERIFICATION_LINES).insert(
+          lines.map((line) => ({
+            ...line,
+            verification_id: verificationId,
+            shop_id: lease.shopId,
+          }))
+        );
+      }
+
+      const converged = lines.every((line) => line.line_verdict === 'match');
+
+      await closeVerification(trx, lease, verificationId, {
+        status: 'complete',
+        verdict: converged ? 'converged' : 'not_converged',
+        readiness_passed: true,
+        target_fingerprint: v2.authority.targetFingerprint,
+        identity_fingerprint: v2.authority.identityFingerprint,
+        served_api_version: collected.servedApiVersion,
+        page_count: collected.pageCount,
+      });
+
+      if (!converged) {
+        const counts = lines.reduce<Record<string, number>>((acc, line) => {
+          acc[line.line_verdict] = (acc[line.line_verdict] ?? 0) + 1;
+          return acc;
+        }, {});
+
+        await requireRegenerationInTrx(
+          trx,
+          lease,
+          `${OPENING_CUTOVER_FINAL_NOT_CONVERGED}:${Object.keys(counts)
+            .sort()
+            .map((verdict) => `${verdict}=${counts[verdict]}`)
+            .join(',')}`
+        );
+
+        return result('requires_regeneration', {
+          ...ids,
+          code: OPENING_CUTOVER_FINAL_NOT_CONVERGED,
+        });
+      }
+
+      const completed = await trx(EXECUTIONS)
+        .where({
+          execution_id: lease.executionId,
+          shop_id: lease.shopId,
+          status: 'verifying',
+          lease_token: lease.leaseToken,
+        })
+        .update({
+          status: 'converged',
+          terminal_at: trx.fn.now(),
+          terminal_reason: OPENING_CUTOVER_CONVERGED,
+          blocked_at: null,
+          blocked_reason: null,
+          lease_token: null,
+          lease_expires_at: null,
+          lease_heartbeat_at: null,
+          updated_at: trx.fn.now(),
+        });
+
+      if (completed !== 1) {
+        throw new Error(
+          '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] Verifying execution could not converge'
+        );
+      }
+
+      // Guarded NULL → now(): the only Slice-E completion-marker write.
+      const marked = await trx('shop_wms_settings')
+        .where({ shop_id: lease.shopId })
+        .whereNull('opening_inventory_shopify_synced_at')
+        .update({ opening_inventory_shopify_synced_at: trx.fn.now() });
+
+      if (marked !== 1) {
+        throw new Error(
+          '[OPENING_CUTOVER_CONVERGENCE_INTERNAL] Completion marker could not be written'
+        );
+      }
+
+      return result('converged', { ...ids, code: OPENING_CUTOVER_CONVERGED });
+    },
+    { isolationLevel: 'repeatable read' }
+  );
+}
+
+function isSerializationFailure(error: unknown): boolean {
+  return (error as any)?.code === PG_SERIALIZATION_FAILURE;
+}
+
+async function runOwnedConvergence(
+  lease: Lease,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  const ids = { generationId: lease.generationId, executionId: lease.executionId };
+
+  const frozen = await readFrozenConvergenceAuthority(lease);
+
+  const started = await beginFinalConvergence(lease, frozen);
+
+  if (started.kind === 'blocked') {
+    return result('blocked', {
+      ...ids,
+      code: OPENING_CUTOVER_LEGACY_COMPLETION_MARKER_PRESENT,
+    });
+  }
+
+  const { verificationId } = started;
+
+  const structural = async (code: string, reason: string) => {
+    await failFinalVerification(lease, verificationId, `${code}:${reason}`);
+    return result('requires_regeneration', { ...ids, code });
+  };
+
+  const transient = async (reason: string) => {
+    await failFinalVerification(lease, verificationId, null);
+    return result('verifying', {
+      ...ids,
+      code: `${OPENING_CUTOVER_FINAL_READ_FAILED}:${reason}`,
+    });
+  };
+
+  // V1: committed header first, then a separate READ ONLY RR capture held in
+  // memory only.
+  const captured = await withTenant(
+    lease.shopId,
+    (trx) => captureCurrentAuthorityInTrx(trx, lease.shopId, lease.generationId),
+    { isolationLevel: 'repeatable read', readOnly: true }
+  );
+
+  if (captured.ok === false) {
+    return structural(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, `V1:${captured.reason}`);
+  }
+
+  const v1 = captured.authority;
+  const frozenViolation = frozenAuthorityViolation(v1, frozen);
+
+  if (frozenViolation) {
+    return structural(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, `V1_FROZEN:${frozenViolation}`);
+  }
+
+  // V1 identity is collector CONTEXT; frozen entries remain comparison
+  // authority.
+  let identities: Map<string, ShopifyItemIdentity>;
+
+  try {
+    identities = buildShopifyItemIdentities(v1.identityRows);
+  } catch (error) {
+    const code = collectorFailureCode(error);
+    if (code && STRUCTURAL_READ_FAILURES.has(code)) {
+      return structural(OPENING_CUTOVER_FINAL_STRUCTURAL_DRIFT, code);
+    }
+    throw error;
+  }
+
+  const factory = deps.createShopifyGraphQLClient ?? (await defaultClientFactory());
+
+  const client = factory({
+    shopId: lease.shopId,
+    platformShopName: v1.shopDomain,
+    accessToken: decrypt(v1.encryptedAccessToken, 'wms.openingInventoryCutover'),
+    // Frozen authority, never the process-global current version.
+    apiVersion: frozen.requestedApiVersion,
+  });
+
+  // No transaction is open while Shopify is awaited.
+  let collected: OpeningInventoryLocationEvidence;
+
+  try {
+    collected = await collectOpeningInventoryLocationEvidence({
+      shopId: lease.shopId,
+      locationGid: frozen.locationGid,
+      identities,
+      readLocationPage: ({ variables }) =>
+        client.request(OPENING_INVENTORY_SNAPSHOT_QUERY, {
+          variables,
+          retries: 0,
+        }),
+      requireServedApiVersion: true,
+      onPage: () => assertLeaseLive(lease, 'verifying'),
+    });
+  } catch (error) {
+    if (error instanceof OpeningInventoryCutoverStaleClaimError) throw error;
+
+    const code = collectorFailureCode(error);
+    if (!code) throw error;
+
+    return STRUCTURAL_READ_FAILURES.has(code)
+      ? structural(OPENING_CUTOVER_FINAL_STRUCTURAL_DRIFT, code)
+      : transient(code);
+  }
+
+  if (collected.servedApiVersion !== frozen.servedApiVersion) {
+    return transient('SHOPIFY_SERVED_API_VERSION_MISMATCH');
+  }
+
+  try {
+    return await finalizeConvergence(lease, frozen, verificationId, v1, collected);
+  } catch (error) {
+    // The aborted final transaction is already rolled back: nothing it wrote
+    // survives, and nothing more is written here. Fail closed, retryable.
+    if (isSerializationFailure(error)) {
+      console.warn(`[${OPENING_CUTOVER_FINAL_SERIALIZATION_CONFLICT}]`, {
+        shopId: lease.shopId,
+        generationId: lease.generationId,
+        executionId: lease.executionId,
+        sqlstate: PG_SERIALIZATION_FAILURE,
+      });
+
+      return result('stale_claim', {
+        ...ids,
+        code: OPENING_CUTOVER_FINAL_SERIALIZATION_CONFLICT,
+      });
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * E04: READ-ONLY final certification of a verifying execution. Never
+ * mutates Shopify, never mutates Slice-D rows, never generates N+1. The
+ * completion marker is written only together with a converged execution.
+ */
+export async function verifyOpeningInventoryCutoverConvergence(
+  params: ExecuteOpeningInventoryCutoverGenerationParams,
+  deps: ExecuteOpeningInventoryCutoverGenerationDeps = {}
+): Promise<OpeningInventoryCutoverExecutionResult> {
+  const { shopId, generationId } = params;
+
+  if (typeof generationId !== 'string' || !UUID_PATTERN.test(generationId)) {
+    throw new Error('[OPENING_CUTOVER_CONVERGENCE] generationId must be a UUID');
+  }
+
+  const leaseMs = resolveLeaseMs(deps.leaseDurationMs);
+
+  const claim = await claimExecution(shopId, generationId, leaseMs, 'converge');
+
+  if (claim.kind === 'done') {
+    return claim.result;
+  }
+
+  try {
+    return await runOwnedConvergence(claim.lease, deps);
   } catch (error) {
     if (error instanceof OpeningInventoryCutoverStaleClaimError) {
       return result('stale_claim', {
