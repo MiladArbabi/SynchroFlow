@@ -624,7 +624,7 @@ Then the registry:
 Screen	Route	Archetype	Spatial	Pulse	Ops Console	Scroll	Status
 Overview  /overview  Awareness  PRIMARY  Cross-domain  Global  PASS at 1440×720 + 1024×820  PROD CERTIFIED / reference
 Orders Overview	/orders	Context	CONTEXTUAL	Order health	Global	PASS at 1440×720 + 1024×820	PROD CERTIFIED
-Orders Outbound	/orders/outbound	Operational Context	NONE	NO	Global / canonical rail replacement	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
+Orders Outbound	/orders/outbound	Operational Context	NONE	NO	Global / canonical rail replacement	PASS at 1440×720 + 1024×820	PROD CERTIFIED
 Order Flow	/orders/flow	Execution/context	ON-DEMAND	No?	Global	Candidate	Needs audit
 Inventory Intelligence	/inventory	Operational Context	CONTEXTUAL	Inventory state	Global	PASS at 1440×720 + 1024×820	LOCAL CERTIFIED
 WMS	/wms	Execution	Conditional	likely no	Global	Audit	Needs audit
@@ -1116,7 +1116,7 @@ allowed uses floor planning, operational-floor eligibility and occupancy.
 
 These are local results, not production certification or deployment evidence.
 
-## 18A. Orders Outbound registry record — LOCAL CERTIFIED
+## 18A. Orders Outbound registry record — PROD CERTIFIED
 
 SCREEN
 Orders Outbound
@@ -1260,12 +1260,83 @@ Evidence supplied for this documentation gate:
 - backend typecheck: PASS;
 - frontend touched-source errors: 0; pre-existing global baseline unchanged.
 
-STATUS
-LOCAL CERTIFIED
+PRODUCTION CERTIFICATION
+Production evidence supplied for this documentation gate, for the exact
+deployed SHA:
+b931816015019afe6782f1ca2dc1898c80853c56
 
-This records local certification only. Deployment SHA, Fly release,
-production browser certification and production data certification do not
-exist yet.
+Commit: feat(orders): rebuild outbound around shipment truth
+CI — UI modules #477: PASS
+CI / RLS Security Boundary #288: PASS
+Fly Deploy #1577: PASS
+Fly deployment completed successfully.
+
+Production route: /orders/outbound
+Production UI: PASS
+Production runtime: PASS
+Production zero-state: PASS
+Production API: PASS
+Production export: PASS
+Production visual/browser smoke: PASS
+
+PRODUCTION UI / INTERACTION EVIDENCE
+Observed successfully in production:
+- Outbound route loads;
+- Shipped Orders primary present;
+- Shipping State rail present;
+- Ops Console open suppresses Shipping State rail;
+- no blank secondary gap remains when Ops Console is open;
+- dark mode and light mode;
+- collapsed sidenav and expanded sidenav;
+- Outbound ExportDrawer scope.
+
+The exact 1440×720 numerical DOM geometry measurement was explicitly waived
+during production certification. No numeric production geometry evidence is
+claimed. Local certification remains applicable for equal desktop primary/rail
+geometry, scroll containment, 1024×820 behavior, 1440×720 behavior and
+Ops Console primary stability.
+
+PRODUCTION API EVIDENCE
+GET /api/v1/orders/outbound
+Initial expired access-token request: 401 TOKEN_EXPIRED, refreshable=true.
+Normal refresh/retry path: 200 OK.
+No persistent 4xx/5xx and no request loop observed.
+Successful response contained orders, total, page, limit, state, period,
+and summary.
+
+Observed zero-state summary:
+- shipped_count = 0;
+- with_tracking_count = 0;
+- missing_tracking_count = 0;
+- tracking_coverage_pct = null;
+- avg_time_to_ship_hours = null.
+
+PRODUCTION EXPORT EVIDENCE
+POST /api/v1/exports/orders/outbound
+HTTP 200; Content-Type text/csv.
+Attachment filename: lasyncro-outbound-orders-2026-10-04.csv
+Observed CSV headers, in order:
+order_id, external_order_id, shipped_at, total_price, currency,
+tracking_number, carrier, live_status, channel, sku_count, shipping_country.
+
+The generic POST /api/v1/exports/orders was NOT used by the Outbound report.
+Production ExportDrawer description observed:
+"Physically shipped orders with ship date, tracking, carrier, and live status."
+
+PRODUCTION ROW-LEVEL LIMITATION — NON-BLOCKING
+The production certification shop had 0 physically shipped Outbound orders.
+REAL_SHIPPED_ROW_PROD_EVIDENCE=NOT AVAILABLE
+
+No populated shipped-order row, real production tracking_number, carrier or
+live_status values, per-row currency rendering, or populated Order Detail
+from an Outbound row was demonstrated in production. These behaviors are
+covered by automated/local certification; populated production Outbound-row
+evidence remains unavailable. This is a NON-BLOCKING certification limitation.
+
+STATUS
+PROD CERTIFIED
+
+PROD CERTIFIED does NOT mean every deferred product limitation is solved.
 
 DEFERRED / KNOWN LIMITATIONS
 Recorded without remediation in this documentation gate:
