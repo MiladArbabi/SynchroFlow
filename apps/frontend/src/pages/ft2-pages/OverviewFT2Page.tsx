@@ -54,7 +54,7 @@ export function overviewLocationPulseTitle(code: string, zoneType?: string | nul
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
-  const { firstEntry, externalLocationMapped } = useActivationChecklist();
+  const { firstEntry, firstEntryItems = [], externalLocationMapped } = useActivationChecklist();
   const needsShopifyLocation = firstEntry && externalLocationMapped !== true;
   const [mapInspection, setMapInspection] = useState<MapInspectionSelection | null>(null);
   // CROSS-SCREEN-UX-01: Overview's Export → opens the canonical ExportDrawer
@@ -665,23 +665,10 @@ export default function OverviewPageFT2() {
       </Box>
     );
   } else if (needsShopifyLocation || !hasPlacedFloor) {
-    // Teaching empty state — no zones configured yet (issue #1040)
-    // OV-03: expanded to match activation mockup — progress framing, feature
-    // chips, friction-reducer copy, milestone rail. Rail state is intentionally
-    // partial (Option A): connection, Shopify Location and zones reflect real
-    // data. "Print barcodes"/"Invite pickers" have no backing endpoint or role
-    // concept yet (see OV-05 follow-up) and render as static unchecked steps.
-    // OV-03 fidelity pass: chip dots use var(--accent) uniformly — no green/
-    // amber tokens exist for general decorative use (--confirm-ink is scoped
-    // to persisted-state only, per playbook §10); mockup's multi-color dots
-    // were non-semantic and would have required hardcoding, which is banned.
-    const activationSteps = [
-      { label: 'Connect Shopify', done: true },
-      { label: 'Choose Shopify location', done: externalLocationMapped === true, active: needsShopifyLocation },
-      { label: 'Map warehouse zones', done: hasPlacedFloor, active: !needsShopifyLocation && !hasPlacedFloor },
-      { label: 'Print location barcodes', done: false, active: false },
-      { label: 'Invite your pickers', done: false, active: false },
-    ];
+    // Keep the milestone rail on the canonical Location → Map → Count
+    // projection; completion comes from readiness, never local map state.
+    const activationSteps = firstEntryItems;
+    const activeStepIndex = activationSteps.findIndex(step => !step.complete);
     mapContent = (
       <Box sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -692,16 +679,16 @@ export default function OverviewPageFT2() {
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', textAlign: 'center', gap: '14px', p: '2.75rem 2rem',
         }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {activeStepIndex >= 0 && <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Box sx={{
               width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)',
               '@keyframes ov03Blink': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
               animation: 'ov03Blink 2.4s ease-in-out infinite',
             }} />
             <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Next step · {needsShopifyLocation ? 2 : 3} of {activationSteps.length}
+              Next step · {activeStepIndex + 1} of {activationSteps.length}
             </Typography>
-          </Box>
+          </Box>}
           <Typography sx={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
             {needsShopifyLocation ? 'Choose your Shopify location' : 'Build your floor.'}
           </Typography>
@@ -734,40 +721,40 @@ export default function OverviewPageFT2() {
             {needsShopifyLocation ? 'Choose the location this warehouse represents' : 'Takes about 10 minutes · You can start with one zone'}
           </Typography>
         </Box>
-        <Box sx={{
+        {activationSteps.length > 0 && <Box sx={{
           width: '100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)',
         }}>
           {activationSteps.map((step, i) => (
-            <Box key={step.label} sx={{
+            <Box key={step.key} sx={{
               display: 'flex', alignItems: 'center', gap: '9px', px: '14px', py: '12px',
               borderRight: i < activationSteps.length - 1 ? '0.5px solid var(--rule)' : 'none',
               minWidth: 0,
             }}>
-              {step.done ? (
+              {step.complete ? (
                 <Box sx={{ width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', bgcolor: 'var(--confirm-ink)' }}>
                   <Typography sx={{ fontSize: 10, color: 'var(--surface)', fontWeight: 700, lineHeight: 1 }}>✓</Typography>
                 </Box>
               ) : (
                 <Box sx={{
                   width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  borderRadius: '50%', border: `0.5px solid ${step.active ? 'var(--accent)' : 'var(--rule)'}`,
+                  borderRadius: '50%', border: `0.5px solid ${(i === activeStepIndex) ? 'var(--accent)' : 'var(--rule)'}`,
                 }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, color: step.active ? 'var(--accent)' : 'var(--ink-3)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, color: (i === activeStepIndex) ? 'var(--accent)' : 'var(--ink-3)' }}>
                     {i + 1}
                   </Typography>
                 </Box>
               )}
               <Typography sx={{
-                fontSize: 12, fontWeight: step.active ? 500 : 300,
-                color: step.done ? 'var(--ink-2)' : step.active ? 'var(--ink)' : 'var(--ink-3)',
+                fontSize: 12, fontWeight: (i === activeStepIndex) ? 500 : 300,
+                color: step.complete ? 'var(--ink-2)' : (i === activeStepIndex) ? 'var(--ink)' : 'var(--ink-3)',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 {step.label}
               </Typography>
             </Box>
           ))}
-        </Box>
+        </Box>}
       </Box>
     );
   } else {

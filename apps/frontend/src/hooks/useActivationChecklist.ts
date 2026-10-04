@@ -436,34 +436,10 @@ export function useActivationChecklist() {
 
   const items: ChecklistItem[] = [
     {
-      key:          'fix-costs',
-      label:        'Fix missing product costs',
-      complete:     findTask(modules, 'order-nexus', 'orderNexus.resolveMissingCosts'),
-      actionRoute:  '/inventory/catalog',
-    },
-    {
       key:          'map-zones',
       label:        'Map your warehouse zones',
       complete:     findTask(modules, 'wms', 'map-zones'),
       actionRoute:  MAP_WAREHOUSE_ROUTE,
-    },
-    {
-      key:          'print-barcodes',
-      label:        'Print your first location barcode',
-      complete:     findTask(modules, 'wms', 'print-barcodes'),
-      actionRoute:  '/floor-planning?tab=barcodes',
-    },
-    {
-      key:          'connect-carrier',
-      label:        'Connect your shipping carrier',
-      complete:     findTask(modules, 'wms', 'connect-carrier'),
-      actionRoute:  '/settings/carriers',
-    },
-    {
-      key:          'wave-released',
-      label:        'Release your first batch',
-      complete:     events.data?.wave_released ?? false,
-      actionRoute:  '/orders/flow',
     },
     ...(openingItem ? [openingItem] : []),
   ];

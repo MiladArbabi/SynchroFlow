@@ -1,11 +1,11 @@
 // tests/unit/ui/hooks/useActivationChecklist.setup-contract.test.tsx
 //
-// Architectural contract: Ops Console SETUP contains only the six
-// in-app setup tasks. Shopify connection (connect-store) and initial
-// sync (complete-sync) belong to PRE-APP onboarding and must never be
-// emitted by useActivationChecklist.
+// #1207 contract: mature Ops Console SETUP contains only mandatory
+// prerequisites: map-zones and canonically applicable opening-inventory.
+// Operational readiness/event facts remain valid without becoming SETUP tasks.
+// Shopify connection and initial sync belong to PRE-APP onboarding.
 //
-// GH-1156: the sixth task, "Establish opening inventory", is the WMS
+// GH-1156: "Establish opening inventory" is the WMS
 // reconcile-inventory readiness task. Its completion is readiness-owned;
 // GET /api/v1/wms/opening-inventory/progress supplies presentation states
 // only. The Start command is gated (advisory) on an owner/admin role.
@@ -212,22 +212,19 @@ describe('useActivationChecklist — SETUP contract', () => {
     jest.clearAllMocks();
   });
 
-  it('emits exactly the six in-app Ops Console SETUP tasks and excludes pre-app onboarding', async () => {
+  it('#1207 emits only mandatory mature SETUP prerequisites when opening inventory applies', async () => {
     mockReadiness();
     const result = await renderWithProgressApplied();
 
     const keys = result.current.items.map((item) => item.key);
 
-    expect(keys).toEqual([
-      'fix-costs',
-      'map-zones',
-      'print-barcodes',
-      'connect-carrier',
-      'wave-released',
-      'opening-inventory',
-    ]);
+    expect(keys).toEqual(['map-zones', 'opening-inventory']);
 
-    expect(result.current.items).toHaveLength(6);
+    expect(result.current.items).toHaveLength(2);
+    expect(keys).not.toContain('fix-costs');
+    expect(keys).not.toContain('print-barcodes');
+    expect(keys).not.toContain('connect-carrier');
+    expect(keys).not.toContain('wave-released');
     expect(keys).not.toContain('connect-store');
     expect(keys).not.toContain('complete-sync');
 
@@ -235,12 +232,8 @@ describe('useActivationChecklist — SETUP contract', () => {
       result.current.items.map((item) => [item.key, item.actionRoute])
     );
 
-    expect(routeByKey['fix-costs']).toBe('/inventory/catalog');
     // GH1176: supersedes the bare /floor-planning route.
     expect(routeByKey['map-zones']).toBe('/floor-planning?tab=setup&view=canvas');
-    expect(routeByKey['print-barcodes']).toBe('/floor-planning?tab=barcodes');
-    expect(routeByKey['connect-carrier']).toBe('/settings/carriers');
-    expect(routeByKey['wave-released']).toBe('/orders/flow');
   });
 
   it('surfaces the reconcile-inventory task as "Establish opening inventory", never the internal wording', async () => {
@@ -405,7 +398,7 @@ describe('useActivationChecklist — Opening Inventory canonical lifecycle (GH-1
     await new Promise((r) => setTimeout(r, 0));
 
     expect(openingItem(result.current.items)).toBeUndefined();
-    expect(result.current.items).toHaveLength(5);
+    expect(result.current.items.map(item => item.key)).toEqual(['map-zones']);
     expect(seen.every((i) => i === undefined)).toBe(true);
     expect(progressCalls()).toBe(0);
   });
@@ -505,14 +498,14 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
     });
   });
 
-  it('keeps the mature six-item checklist unchanged beside the first-entry projection', async () => {
+  it('#1207 keeps only mandatory mature prerequisites beside the unchanged first-entry projection', async () => {
     mockReadiness({ progress: progressView({ state: 'not_started' }) });
     const result = await renderFirstEntry('owner');
 
     expect(result.current.items.map((i) => i.key)).toEqual([
-      'fix-costs', 'map-zones', 'print-barcodes', 'connect-carrier', 'wave-released', 'opening-inventory',
+      'map-zones', 'opening-inventory',
     ]);
-    // GH-1156 six-item behaviour is not gated by zones.
+    // The mature opening-inventory action remains unchanged beside first-entry locking.
     expect(openingItem(result.current.items)?.action).toEqual({
       kind: 'command', label: 'Start opening count', command: 'opening_inventory_start',
     });
@@ -567,7 +560,7 @@ describe('useActivationChecklist — first-entry projection (GH-1165)', () => {
 
     expect(result.current.firstEntry).toBe(false);
     expect(result.current.firstEntryItems).toEqual([]);
-    expect(result.current.items).toHaveLength(6);
+    expect(result.current.items.map(item => item.key)).toEqual(['map-zones', 'opening-inventory']);
   });
 
   it('fails closed: loading, missing signal and legacy required=false are not first-entry', async () => {

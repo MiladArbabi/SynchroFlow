@@ -1,9 +1,8 @@
 // tests/unit/ui/hooks/useActivationChecklist.connect-carrier.test.tsx
 //
-// DB-free coverage for the "Connect your shipping carrier" activation
-// checklist item. Mirrors the renderHook + QueryClientProvider +
-// mocked axiosInstance pattern used in
-// tests/unit/ui/lifecycle/TopnavbarContent.alerts-ft2-gate.test.tsx.
+// #1207 — connect-carrier is excluded from mature Ops Console SETUP.
+// This protects SETUP membership only; backend carrier readiness remains
+// a separate optional capability regardless of its completion state.
 
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -39,55 +38,28 @@ function mockReadiness(wmsTasks: Array<{ id: string; complete: boolean }>) {
   });
 }
 
-describe('useActivationChecklist — connect-carrier item', () => {
+describe('useActivationChecklist — #1207 connect-carrier exclusion from mature Ops Console SETUP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('exposes "Connect your shipping carrier" routed to /settings/carriers, incomplete when connect-carrier is incomplete', async () => {
+  it('does not emit a mature SETUP row when connect-carrier readiness is false', async () => {
     mockReadiness([{ id: 'connect-carrier', complete: false }]);
 
     const { result } = renderHook(() => useActivationChecklist(), { wrapper: makeWrapper() });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    const item = result.current.items.find((i) => i.key === 'connect-carrier');
-    expect(item).toEqual({
-      key: 'connect-carrier',
-      label: 'Connect your shipping carrier',
-      complete: false,
-      actionRoute: '/settings/carriers',
-    });
+    expect(result.current.items.map((item) => item.key)).not.toContain('connect-carrier');
   });
 
-  it('reflects findTask(modules, "wms", "connect-carrier") === true as complete', async () => {
+  it('does not re-enter mature SETUP when connect-carrier readiness is true', async () => {
     mockReadiness([{ id: 'connect-carrier', complete: true }]);
 
     const { result } = renderHook(() => useActivationChecklist(), { wrapper: makeWrapper() });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    const item = result.current.items.find((i) => i.key === 'connect-carrier');
-    expect(item?.complete).toBe(true);
-  });
-
-  it('places connect-carrier after print-barcodes and before wave-released', async () => {
-    mockReadiness([
-      { id: 'print-barcodes', complete: false },
-      { id: 'connect-carrier', complete: false },
-    ]);
-
-    const { result } = renderHook(() => useActivationChecklist(), { wrapper: makeWrapper() });
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    const keys = result.current.items.map((i) => i.key);
-    const printIdx = keys.indexOf('print-barcodes');
-    const carrierIdx = keys.indexOf('connect-carrier');
-    const waveIdx = keys.indexOf('wave-released');
-
-    expect(printIdx).toBeGreaterThanOrEqual(0);
-    expect(carrierIdx).toBe(printIdx + 1);
-    expect(waveIdx).toBe(carrierIdx + 1);
+    expect(result.current.items.map((item) => item.key)).not.toContain('connect-carrier');
   });
 });
