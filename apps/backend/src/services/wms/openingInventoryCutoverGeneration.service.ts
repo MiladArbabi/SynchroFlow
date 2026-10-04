@@ -116,6 +116,15 @@ const GENERATION_ENTRIES =
 const GENERATION_BATCHES =
   'opening_inventory_cutover_generation_batches';
 
+// Read only here: Slice-E execution state decides replay versus N+1.
+const EXECUTIONS =
+  'opening_inventory_cutover_executions';
+
+const GENERATION_SEQUENCE_UNIQUE =
+  'opening_inventory_cutover_generations_shop_sequence_unique';
+
+const PG_UNIQUE_VIOLATION = '23505';
+
 const GENERATION_CANONICALIZATION_VERSION =
   'opening-inventory-generation-v1';
 
@@ -176,6 +185,14 @@ interface OpeningInventoryGenerationReservation {
   identityFingerprint: string;
   identities:
     Map<string, ShopifyItemIdentity>;
+  /**
+   * Latest frozen generation T1 decided on: null for an initial generation,
+   * N when N's execution requires regeneration. T2 creates only on this
+   * same basis.
+   */
+  basisGenerationId:
+    | string
+    | null;
 }
 
 interface OpeningInventoryGenerationEntryDraft {
@@ -308,6 +325,154 @@ async function readFrozenGeneration(
       'desc'
     )
     .first();
+}
+
+type LatestGenerationDecision =
+  | { kind: 'none' }
+  | { kind: 'replay'; generation: any }
+  | { kind: 'regenerate'; generation: any };
+
+/**
+ * GH-1179 E05: the LATEST frozen generation and its Slice-E execution decide
+ * (older generations never do). Called under the cutover advisory lock, in
+ * T1 and again in T2, before any generation work.
+ *
+ * - completion marker present: only a converged latest execution explains it
+ *   (replay); anything else is a legacy/unexplained completion and fails
+ *   closed before any provider read;
+ * - no execution / executing / verifying / blocked / converged → replay;
+ * - requires_regeneration → a fresh generation N+1 may be built.
+ */
+async function readLatestGenerationDecision(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<LatestGenerationDecision> {
+  const settings =
+    await trx('shop_wms_settings')
+      .where({ shop_id: shopId })
+      .first(
+        'opening_inventory_shopify_synced_at'
+      );
+
+  const latest =
+    await readFrozenGeneration(
+      trx,
+      shopId
+    );
+
+  const execution = latest
+    ? await trx(EXECUTIONS)
+        .where({
+          shop_id: shopId,
+          generation_id:
+            latest.generation_id,
+        })
+        .first('status')
+    : undefined;
+
+  const status: string | null =
+    execution ? String(execution.status) : null;
+
+  const markerPresent =
+    settings?.opening_inventory_shopify_synced_at !==
+      null &&
+    settings?.opening_inventory_shopify_synced_at !==
+      undefined;
+
+  if (markerPresent) {
+    if (latest && status === 'converged') {
+      return { kind: 'replay', generation: latest };
+    }
+
+    throw new Error(
+      '[OPENING_CUTOVER_PREFLIGHT] Opening inventory is already recorded as synced with Shopify without a converged opening cutover'
+    );
+  }
+
+  if (!latest) {
+    return { kind: 'none' };
+  }
+
+  if (status === 'requires_regeneration') {
+    return { kind: 'regenerate', generation: latest };
+  }
+
+  if (
+    status === null ||
+    status === 'executing' ||
+    status === 'verifying' ||
+    status === 'blocked' ||
+    status === 'converged'
+  ) {
+    return { kind: 'replay', generation: latest };
+  }
+
+  throw new Error(
+    `[OPENING_CUTOVER_INTERNAL] Unknown opening cutover execution status ${status}`
+  );
+}
+
+function isGenerationSequenceRace(
+  error: unknown
+): boolean {
+  return (
+    (error as any)?.code ===
+      PG_UNIQUE_VIOLATION &&
+    (error as any)?.constraint ===
+      GENERATION_SEQUENCE_UNIQUE
+  );
+}
+
+/**
+ * A T2 whose REPEATABLE READ snapshot predates a concurrent creator's commit
+ * loses the (shop_id, generation_sequence) race. After that transaction has
+ * rolled back, a NEW transaction (fresh snapshot, same advisory lock) must
+ * observe a legitimate winner newer than this caller's basis and replay it;
+ * otherwise the original failure stands.
+ */
+async function replayGenerationRaceWinner(
+  params: CreateOpeningInventoryCutoverGenerationParams,
+  basisGenerationId: string | null,
+  raceError: unknown
+): Promise<any> {
+  const winner = await withTenant(
+    params.shopId,
+    async (trx) => {
+      await acquireCutoverLock(
+        trx,
+        params.shopId
+      );
+
+      await requireActiveApprover(
+        trx,
+        params.shopId,
+        params.actingUserId
+      );
+
+      const decision =
+        await readLatestGenerationDecision(
+          trx,
+          params.shopId
+        );
+
+      if (
+        decision.kind === 'replay' &&
+        String(
+          decision.generation.generation_id
+        ) !== basisGenerationId
+      ) {
+        return decision.generation;
+      }
+
+      return null;
+    }
+  );
+
+  if (!winner) {
+    throw raceError;
+  }
+
+  return winner;
 }
 
 function assertGenerationProgress(
@@ -475,20 +640,34 @@ async function reserveOpeningInventoryCutoverGeneration(
           actingUserId
         );
 
-      const existing =
-        await readFrozenGeneration(
+      const decision =
+        await readLatestGenerationDecision(
           trx,
           shopId
         );
 
-      if (existing) {
+      if (
+        decision.kind ===
+        'replay'
+      ) {
         return {
           kind:
             'replay' as const,
           generation:
-            existing,
+            decision.generation,
         };
       }
+
+      // Initial generation, or N+1 after requires_regeneration: N's approval
+      // and acceptance never carry over; the CURRENT gates below decide.
+      const basisGenerationId =
+        decision.kind ===
+        'regenerate'
+          ? String(
+              decision.generation
+                .generation_id
+            )
+          : null;
 
       const progress =
         await getShopOpeningInventoryProgress(
@@ -605,6 +784,8 @@ async function reserveOpeningInventoryCutoverGeneration(
             ),
 
           identities,
+
+          basisGenerationId,
         },
       };
     }
@@ -770,6 +951,48 @@ export async function createOpeningInventoryCutoverGeneration(
     );
   }
 
+  try {
+    return await freezeOpeningInventoryCutoverGeneration(
+      params,
+      reservation,
+      collected
+    );
+  } catch (error) {
+    if (
+      isGenerationSequenceRace(
+        error
+      )
+    ) {
+      return replayGenerationRaceWinner(
+        params,
+        reservation.basisGenerationId,
+        error
+      );
+    }
+
+    throw error;
+  }
+}
+
+/** T2: re-decide under the lock, revalidate current authority, freeze. */
+async function freezeOpeningInventoryCutoverGeneration(
+  params:
+    CreateOpeningInventoryCutoverGenerationParams,
+  reservation:
+    OpeningInventoryGenerationReservation,
+  collected:
+    Awaited<
+      ReturnType<
+        typeof collectOpeningInventoryLocationEvidence
+      >
+    >
+): Promise<any> {
+  const {
+    shopId,
+    actingUserId,
+    acceptPhysicalTruth = false,
+  } = params;
+
   return withTenant(
     shopId,
     async (trx) => {
@@ -785,14 +1008,43 @@ export async function createOpeningInventoryCutoverGeneration(
           actingUserId
         );
 
-      const existing =
-        await readFrozenGeneration(
+      const decision =
+        await readLatestGenerationDecision(
           trx,
           shopId
         );
 
-      if (existing) {
-        return existing;
+      const latestId =
+        decision.kind === 'none'
+          ? null
+          : String(
+              decision.generation
+                .generation_id
+            );
+
+      if (
+        latestId !==
+        reservation.basisGenerationId
+      ) {
+        // A newer generation appeared while Shopify was being read: replay
+        // it and discard this read; never build on a superseded basis.
+        if (
+          decision.kind ===
+          'replay'
+        ) {
+          return decision.generation;
+        }
+
+        throw new Error(
+          '[OPENING_CUTOVER_PREFLIGHT] Opening inventory generation changed while Shopify inventory was being read'
+        );
+      }
+
+      if (
+        decision.kind ===
+        'replay'
+      ) {
+        return decision.generation;
       }
 
       if (
