@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { WarehouseZone } from '../../../../modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2';
 import { CanvasEditor } from '../../../../modules/floor-planning/src/ui/components/CanvasEditor';
 
@@ -76,18 +76,174 @@ describe('CanvasEditor floor settings', () => {
     expect(root.querySelector('rect[stroke="var(--accent)"]')).not.toBeInTheDocument();
   });
 
-  it('updates root width and depth through onUpdateZone', async () => {
+  it('GH1192: keeps Width and Depth changes as drafts without persistence', () => {
     const onUpdateZone = jest.fn().mockResolvedValue(undefined);
     render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={onUpdateZone} />);
     fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
 
     fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '14' } });
-    fireEvent.blur(screen.getByLabelText('Floor width'));
-    await waitFor(() => expect(onUpdateZone).toHaveBeenCalledWith('WAREHOUSE-01', { width: 14 }));
-
     fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10' } });
-    fireEvent.blur(screen.getByLabelText('Floor depth'));
-    await waitFor(() => expect(onUpdateZone).toHaveBeenCalledWith('WAREHOUSE-01', { depth: 10 }));
+
+    expect(screen.getByLabelText('Floor width')).toHaveValue('14');
+    expect(screen.getByLabelText('Floor depth')).toHaveValue('10');
+    expect(onUpdateZone).not.toHaveBeenCalled();
+  });
+
+  it('GH1192: blurring either dimension does not persist drafts', async () => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+
+    const width = screen.getByLabelText('Floor width');
+    const depth = screen.getByLabelText('Floor depth');
+    fireEvent.change(width, { target: { value: '14' } });
+    fireEvent.change(depth, { target: { value: '10' } });
+    await act(async () => {
+      fireEvent.blur(width);
+      fireEvent.blur(depth);
+    });
+
+    expect(onUpdateZone).not.toHaveBeenCalled();
+  });
+
+  it('GH1192: Enter in either dimension does not persist or advance onboarding', async () => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    const freshRoot = { ...warehouse, width: null, depth: null };
+    render(<CanvasEditor zones={[freshRoot]} minimumMappingReady={false} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+
+    const width = screen.getByLabelText('Floor width');
+    const depth = screen.getByLabelText('Floor depth');
+    fireEvent.change(width, { target: { value: '14' } });
+    fireEvent.change(depth, { target: { value: '10' } });
+    await act(async () => {
+      fireEvent.keyDown(width, { key: 'Enter', code: 'Enter' });
+      fireEvent.keyDown(depth, { key: 'Enter', code: 'Enter' });
+    });
+
+    expect(onUpdateZone).not.toHaveBeenCalled();
+    expect(screen.queryByText('Add where you keep your stock')).not.toBeInTheDocument();
+  });
+
+  it('GH1192: exposes one visible Save & continue CTA enabled for a valid draft pair', () => {
+    render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={jest.fn().mockResolvedValue(undefined)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '14' } });
+    fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10' } });
+
+    expect(screen.getAllByRole('button', { name: 'Save & continue' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Save & continue' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Save & continue' })).toBeEnabled();
+  });
+
+  it('GH1192: incomplete, non-finite, zero and negative draft dimensions cannot commit', () => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    render(<CanvasEditor zones={[{ ...warehouse, width: null, depth: null }]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    const save = screen.getByRole('button', { name: 'Save & continue' });
+    const width = screen.getByLabelText('Floor width');
+    const depth = screen.getByLabelText('Floor depth');
+
+    const cannotCommit = () => {
+      expect(save).toBeVisible();
+      expect(save).toBeDisabled();
+      fireEvent.click(save);
+      expect(onUpdateZone).not.toHaveBeenCalled();
+    };
+    cannotCommit();
+    fireEvent.change(width, { target: { value: '14' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: '' } });
+    fireEvent.change(depth, { target: { value: '10' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: '0' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: '-1' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: 'Infinity' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: 'NaN' } });
+    cannotCommit();
+    fireEvent.change(width, { target: { value: '14' } });
+    fireEvent.change(depth, { target: { value: '0' } });
+    cannotCommit();
+    fireEvent.change(depth, { target: { value: '-1' } });
+    cannotCommit();
+    fireEvent.change(depth, { target: { value: 'Infinity' } });
+    cannotCommit();
+    fireEvent.change(depth, { target: { value: 'NaN' } });
+    cannotCommit();
+  });
+
+  it('GH1192: saves snapped Width and Depth together in exactly one update', async () => {
+    const onUpdateZone = jest.fn().mockResolvedValue(undefined);
+    render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '14.04' } });
+    fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10.04' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save & continue' }));
+    });
+
+    expect(onUpdateZone).toHaveBeenCalledTimes(1);
+    expect(onUpdateZone).toHaveBeenCalledWith('WAREHOUSE-01', { width: 14, depth: 10 });
+  });
+
+  it('GH1192: disables confirmation during saving and prevents duplicate updates', async () => {
+    let finishSave!: () => void;
+    const onUpdateZone = jest.fn().mockImplementation(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+    render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '14' } });
+    fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10' } });
+    const save = screen.getByRole('button', { name: 'Save & continue' });
+    fireEvent.click(save);
+
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(onUpdateZone).toHaveBeenCalledTimes(1);
+    await act(async () => { finishSave(); });
+  });
+
+  it('GH1192: rejected persistence stays recoverable without local guidance completion', async () => {
+    const onUpdateZone = jest.fn()
+      .mockRejectedValueOnce(new Error('Dimension update failed'))
+      .mockResolvedValueOnce(undefined);
+    const freshRoot = { ...warehouse, width: null, depth: null };
+    render(<CanvasEditor zones={[freshRoot]} minimumMappingReady={false} onUpdateZone={onUpdateZone} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '14' } });
+    fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save & continue' }));
+    });
+
+    expect(onUpdateZone).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('floor-settings-panel')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save & continue' })).toBeEnabled();
+    expect(screen.queryByText('Add where you keep your stock')).not.toBeInTheDocument();
+    expect(screen.getByText('Set your warehouse boundary')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save & continue' }));
+    });
+    expect(onUpdateZone).toHaveBeenCalledTimes(2);
+    expect(onUpdateZone).toHaveBeenLastCalledWith('WAREHOUSE-01', { width: 14, depth: 10 });
+    // Successful callback alone is still not persisted root-prop authority.
+    expect(screen.queryByText('Add where you keep your stock')).not.toBeInTheDocument();
+  });
+
+  it('GH1192: centers dimension values and positions them slightly below the old symmetric 6px padding', () => {
+    render(<CanvasEditor zones={[warehouse]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+
+    for (const label of ['Floor width', 'Floor depth']) {
+      const style = getComputedStyle(screen.getByLabelText(label));
+      expect(style.textAlign).toBe('center');
+      expect(parseFloat(style.paddingTop)).toBeGreaterThan(6);
+      expect(parseFloat(style.paddingTop)).toBeGreaterThan(parseFloat(style.paddingBottom));
+    }
   });
 
   it('keeps warehouse canvas geometry non-interactive', () => {
@@ -137,6 +293,10 @@ describe('GH1176 — floor settings resize containment', () => {
     await waitFor(() => expect(width).toHaveAttribute('aria-invalid', 'true'));
     expect(width).toHaveAccessibleDescription();
     expect(onUpdateZone).not.toHaveBeenCalled();
+    const save = screen.getByRole('button', { name: 'Save & continue' });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(onUpdateZone).not.toHaveBeenCalled();
   });
 
   // GH1176 audit: a null persisted size still renders a visible Canvas
@@ -164,6 +324,11 @@ describe('GH1176 — floor settings resize containment', () => {
     fireEvent.blur(input);
 
     await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'));
+    expect(input).toHaveAccessibleDescription();
+    expect(onUpdateZone).not.toHaveBeenCalled();
+    const save = screen.getByRole('button', { name: 'Save & continue' });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
     expect(onUpdateZone).not.toHaveBeenCalled();
   });
 });

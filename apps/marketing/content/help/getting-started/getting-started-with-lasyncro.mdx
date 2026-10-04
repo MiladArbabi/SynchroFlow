@@ -62,9 +62,16 @@ You can close Ops Console and reopen it later to return to your next action.
 
 ## Define your warehouse floor
 
-The **Set your warehouse boundary** Spotlight introduces the physical floor that will contain your operational locations. In Floor Settings, use **Width** and **Depth** to define that boundary.
+The **Set your warehouse boundary** Spotlight introduces the physical floor that will contain your operational locations.
 
-**A warehouse boundary is not a Stock location.** It describes the extent of your floor, not a place where inventory is stored or counted. Defining the boundary alone does not complete Map warehouse basics.
+1. Open **Floor settings**.
+2. Enter **Width** and **Depth**.
+3. Click **Save & continue** to confirm the boundary.
+4. Continue to **Add where you keep your stock**.
+
+Both dimensions must be valid and positive, and the boundary must include any existing positioned floor components before **Save & continue** is available. Width and Depth remain drafts until you confirm them; opening Floor settings, typing, leaving a field, or pressing Enter does not save the boundary or advance onboarding.
+
+**A warehouse boundary is not a Stock location.** It describes the extent of your floor, not a place where inventory is stored or counted. Confirming the boundary does not complete **Map warehouse basics**. **Count opening stock** remains unavailable until one valid, active **Pick** or **Storage** Stock location exists.
 
 <HelpScreenshot
   src="/help/getting-started/02-set-warehouse-boundary.png"
@@ -72,7 +79,7 @@ The **Set your warehouse boundary** Spotlight introduces the physical floor that
   width="1932"
   height="902"
   label="Spotlight 2: Set your warehouse boundary"
-  caption="Define the floor boundary before adding places to keep stock."
+  caption="Confirm the floor boundary with Save & continue before adding places to keep stock."
 />
 
 ## Add your first Stock location

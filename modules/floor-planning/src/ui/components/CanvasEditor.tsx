@@ -454,41 +454,54 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
   onUpdateZone?: CanvasEditorProps['onUpdateZone'];
 }) {
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [width, setWidth] = useState(String(root.width ?? ''));
   const [depth, setDepth] = useState(String(root.depth ?? ''));
-  const [dimensionError, setDimensionError] = useState<{ field: 'width' | 'depth'; message: string } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setWidth(String(root.width ?? ''));
     setDepth(String(root.depth ?? ''));
-    setDimensionError(null);
+    setSaveError(null);
   }, [root.location_code, root.width, root.depth]);
 
-  async function commitDimension(field: 'width' | 'depth', raw: string) {
-    const value = parseFloat(raw);
-    if (isNaN(value) || !onUpdateZone) return;
-    const next = snapV(value);
+  const parsedWidth = Number(width);
+  const parsedDepth = Number(depth);
+  const candidate = Number.isFinite(parsedWidth) && parsedWidth > 0
+    && Number.isFinite(parsedDepth) && parsedDepth > 0
+    ? { width: snapV(parsedWidth), depth: snapV(parsedDepth) }
+    : null;
+  const validDimensions = candidate != null
+    && Number.isFinite(candidate.width) && candidate.width > 0
+    && Number.isFinite(candidate.depth) && candidate.depth > 0;
 
-    // GH-1176: a boundary never shrinks around mapped components, and they are
-    // never moved to make room. The entered value stays visible, marked invalid.
-    const excluded = componentsExcludedByResize(root, { [field]: next }, components);
-    if (excluded.length > 0) {
-      const origin = warehouseRootOrigin(root)[field === 'width' ? 'x' : 'y'];
-      const required = Math.max(...excluded.map((zone) => componentFootprintEdge(zone, field))) - origin;
-      const subject = excluded.length === 1
-        ? excluded[0].location_code
-        : `${excluded.length} mapped components`;
-      setDimensionError({
-        field,
-        message: `${subject} would fall outside the warehouse. Minimum ${field}: ${Number(required.toFixed(2))} m.`,
-      });
-      return;
-    }
+  // GH-1176: validate the complete draft boundary against the existing component
+  // footprints, including the rendered fallback for null-sized components.
+  const excluded = validDimensions
+    ? componentsExcludedByResize(root, candidate, components)
+    : [];
+  const origin = warehouseRootOrigin(root);
+  const dimensionError = excluded.length > 0
+    ? `${excluded.length === 1 ? excluded[0].location_code : `${excluded.length} mapped components`} would fall outside the warehouse. Minimum width: ${Number((Math.max(...excluded.map((zone) => componentFootprintEdge(zone, 'width'))) - origin.x).toFixed(2))} m. Minimum depth: ${Number((Math.max(...excluded.map((zone) => componentFootprintEdge(zone, 'depth'))) - origin.y).toFixed(2))} m.`
+    : null;
+  const canSave = validDimensions && !dimensionError && !!onUpdateZone && !saving;
 
-    setDimensionError(null);
+  async function saveDimensions() {
+    if (!canSave || !candidate || !onUpdateZone || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    try { await onUpdateZone(root.location_code, { [field]: next }); }
-    finally { setSaving(false); }
+    setSaveError(null);
+    try {
+      await onUpdateZone(root.location_code, {
+        width: candidate.width,
+        depth: candidate.depth,
+      });
+    } catch {
+      setSaveError('Could not save floor settings. Please try again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   return (
@@ -518,17 +531,16 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
               label={dimension.label}
               value={dimension.value}
               disabled={saving}
-              error={dimensionError?.field === dimension.field}
+              error={dimensionError != null}
               onChange={(event) => {
                 dimension.set(event.target.value);
-                if (dimensionError?.field === dimension.field) setDimensionError(null);
+                setSaveError(null);
               }}
-              onBlur={() => void commitDimension(dimension.field, dimension.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter') void commitDimension(dimension.field, dimension.value); }}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
               inputProps={{
                 'aria-label': `Floor ${dimension.label.toLowerCase()}`,
-                'aria-describedby': dimensionError?.field === dimension.field ? FLOOR_DIMENSION_ERROR_ID : undefined,
-                style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' },
+                'aria-describedby': dimensionError ? FLOOR_DIMENSION_ERROR_ID : undefined,
+                style: { fontFamily: 'monospace', fontSize: 11, padding: '8px 8px 4px', textAlign: 'center' },
               }}
               InputProps={{ endAdornment: <Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography> }}
             />
@@ -536,9 +548,24 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
         </Box>
         {dimensionError && (
           <Typography id={FLOOR_DIMENSION_ERROR_ID} role="alert" sx={{ fontSize: 10, lineHeight: 1.4, color: 'rgba(239,68,68,0.9)' }}>
-            {dimensionError.message}
+            {dimensionError}
           </Typography>
         )}
+        {saveError && (
+          <Typography role="alert" sx={{ fontSize: 10, lineHeight: 1.4, color: 'rgba(239,68,68,0.9)' }}>
+            {saveError}
+          </Typography>
+        )}
+        <Button
+          size="small"
+          variant="contained"
+          type="button"
+          disabled={!canSave}
+          onClick={() => void saveDimensions()}
+          sx={{ textTransform: 'none', fontSize: 10 }}
+        >
+          Save &amp; continue
+        </Button>
       </Box>
     </Box>
   );
@@ -1117,7 +1144,6 @@ export function CanvasEditor({
   const openFloorSettings = () => {
     setSelected(new Set());
     setFloorSettingsOpen(true);
-    setDismissedGuidancePhase('boundary');
   };
 
   const openStockLocationCreation = () => {

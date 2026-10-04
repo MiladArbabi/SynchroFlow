@@ -1,6 +1,6 @@
 # LaSyncro — Onboarding & Progressive Disclosure Playbook
 
-> **Status:** v1.3 — 2026-10-04 (#1207 SETUP contract)
+> **Status:** v1.4 — 2026-10-04 (#1207 SETUP contract; #1192 Floor settings commitment)
 > **Author:** Product + Engineering session (ISS-RQ series)
 > **Reading order:** Read `lifecycle_playbook.md` and `modules-ux-playbook.md` before this.
 > **Purpose:** Canonical reference for onboarding, Ops Console setup guidance, spotlight coaching,
@@ -131,6 +131,37 @@ progression and its completion states, rather than maintain a separate
 hard-coded onboarding progression. The same canonical projection owns Ops
 Console first-entry guidance. Existing location/map/count locks and canonical
 map/count handoff semantics remain intact.
+
+#### Floor settings commitment — 2026-10-04 / #1192
+
+Width and Depth are drafts while the merchant edits them. Opening Floor settings,
+typing, blurring either field, or pressing Enter does not commit the warehouse
+boundary or advance onboarding. **Save & continue** is the explicit merchant
+commitment, available only when both dimensions are valid and positive and the
+candidate boundary does not exclude existing positioned floor components.
+Width and Depth are saved together as one boundary commitment.
+
+```text
+DRAFT UI STATE
+→ explicit merchant commitment
+→ persisted authoritative state
+→ guidance progression
+```
+
+Only after successful persistence is reflected in authoritative root state may
+existing guidance progress from **Set your warehouse boundary** to **Add where
+you keep your stock**. There is no local "confirmed" onboarding truth; persisted
+root state remains authoritative.
+
+**Save & continue** confirms the physical warehouse boundary only. The boundary
+is not a Stock location and does not satisfy **Map warehouse basics**. The
+map→count milestone remains:
+
+**One valid active Pick/Storage Stock location → Map warehouse basics complete
+→ Count opening stock available.**
+
+This commitment does not change the #1207 mandatory-only SETUP contract or the
+existing Shopify Location/map/count locks.
 
 **#1207 verification recorded for this documentation slice:** targeted 213/213
 GREEN; neighbour frontend 27/27 GREEN; backend readiness 5/5 GREEN. Local browser

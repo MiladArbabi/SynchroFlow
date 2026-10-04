@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { WarehouseZone } from '../../../../modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2';
 import {
   CanvasEditor,
@@ -451,7 +451,7 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
     expect(within(guidance).queryByRole('button', { name: 'Got it' })).not.toBeInTheDocument();
   });
 
-  it('GH1176: "Open Floor settings" opens the panel and fulfils the guidance without moving the root', () => {
+  it('GH1192: "Open Floor settings" opens the panel without confirming the boundary or moving the root', () => {
     const onUpdateZone = jest.fn().mockResolvedValue(undefined);
     render(<CanvasEditor zones={[freshRoot]} onUpdateZone={onUpdateZone} />);
 
@@ -460,17 +460,17 @@ describe('GH1176 — floor-boundary contextual guidance', () => {
     expect(screen.getByTestId('floor-settings-panel')).toBeInTheDocument();
     expect(screen.getByLabelText('Floor width')).toBeInTheDocument();
     expect(screen.getByLabelText('Floor depth')).toBeInTheDocument();
-    expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
     expect(onUpdateZone).not.toHaveBeenCalled();
   });
 
-  it('GH1176: clicking the Floor settings control directly also fulfils the guidance', () => {
+  it('GH1192: opening Floor settings directly keeps boundary guidance until explicit persistence', () => {
     render(<CanvasEditor zones={[freshRoot]} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
 
     expect(screen.getByTestId('floor-settings-panel')).toBeInTheDocument();
-    expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
   });
 
   it('GH1176: X dismisses the guidance without opening Floor settings', () => {
@@ -564,6 +564,37 @@ describe('GH1177 — post-boundary stock-location onboarding', () => {
     expect(
       screen.queryByRole('button', { name: 'Add stock location' })
     ).not.toBeInTheDocument();
+  });
+
+  it('GH1192: drafts and explicit save cannot advance guidance until persisted bounds return in root props', async () => {
+    let finishSave!: () => void;
+    const onUpdateZone = jest.fn().mockImplementation(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+    const { rerender } = render(
+      <CanvasEditor zones={[freshRoot]} minimumMappingReady={false} onUpdateZone={onUpdateZone} />,
+    );
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
+    fireEvent.change(screen.getByLabelText('Floor width'), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('Floor depth'), { target: { value: '10' } });
+
+    expect(onUpdateZone).not.toHaveBeenCalled();
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
+    expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save & continue' }));
+    expect(onUpdateZone).toHaveBeenCalledTimes(1);
+    expect(onUpdateZone).toHaveBeenCalledWith('WH-1-ROOT', { width: 12, depth: 10 });
+    expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+    await act(async () => { finishSave(); });
+
+    // Even a successful save callback does not supply persisted boundary truth.
+    expect(screen.getByText(BOUNDARY_TITLE)).toBeInTheDocument();
+    expect(screen.queryByText(STOCK_TITLE)).not.toBeInTheDocument();
+    rerender(
+      <CanvasEditor zones={[boundedRoot]} minimumMappingReady={false} onUpdateZone={onUpdateZone} />,
+    );
+    expect(screen.queryByText(BOUNDARY_TITLE)).not.toBeInTheDocument();
+    expect(screen.getByText(STOCK_TITLE)).toBeInTheDocument();
+    expect(onUpdateZone).toHaveBeenCalledTimes(1);
   });
 
   it('guides a bounded root-only warehouse to add its first stock location', () => {
