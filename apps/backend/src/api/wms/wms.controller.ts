@@ -1595,10 +1595,14 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           return { error: 'not_picked', message: `Unit cannot be packed — current status: ${unit.status}` };
         }
 
-        // 2. Find confirmed pick record → lasyncro_line_item_id + pick_batch_id
-        const pickLog = await trx('pick_scan_log')
-          .where({ shop_id: shopId, lasyncro_unit_id: scanned_value, status: 'confirmed' })
-          .select('lasyncro_line_item_id', 'pick_batch_id')
+        // 2. Resolve exact unit ownership through the Pick action's child lineage.
+        const pickLog = await trx('pick_scan_unit_lineage as pul')
+          .join('pick_scan_log as psl', function () {
+            this.on('psl.scan_id', '=', 'pul.scan_id').andOn('psl.shop_id', '=', 'pul.shop_id');
+          })
+          .where({ 'pul.shop_id': shopId, 'pul.lasyncro_unit_id': scanned_value,
+            'psl.lasyncro_variant_id': unit.lasyncro_variant_id, 'psl.status': 'confirmed' })
+          .select('psl.lasyncro_line_item_id', 'psl.pick_batch_id')
           .first();
 
         if (!pickLog) {

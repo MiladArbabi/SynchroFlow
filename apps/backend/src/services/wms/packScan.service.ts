@@ -90,16 +90,19 @@ export async function confirmPackScan(
 
   // Exact-unit input must be backed by independently attributed Pick evidence.
   if (lasyncroUnitId) {
-    const pickEvidence = await trx('pick_scan_log')
-      .where({
-        shop_id: shopId,
-        pick_batch_id: pickBatchId,
-        lasyncro_line_item_id: lasyncroLineItemId,
-        lasyncro_variant_id: lasyncroVariantId,
-        lasyncro_unit_id: lasyncroUnitId,
-        status: 'confirmed',
+    const pickEvidence = await trx('pick_scan_unit_lineage as pul')
+      .join('pick_scan_log as psl', function () {
+        this.on('psl.scan_id', '=', 'pul.scan_id').andOn('psl.shop_id', '=', 'pul.shop_id');
       })
-      .first('scan_id');
+      .where({
+        'pul.shop_id': shopId,
+        'pul.lasyncro_unit_id': lasyncroUnitId,
+        'psl.pick_batch_id': pickBatchId,
+        'psl.lasyncro_line_item_id': lasyncroLineItemId,
+        'psl.lasyncro_variant_id': lasyncroVariantId,
+        'psl.status': 'confirmed',
+      })
+      .first('psl.scan_id');
     if (!pickEvidence) {
       throw new Error(`[PACK_SCAN] No confirmed Pick evidence for unit: ${lasyncroUnitId}`);
     }

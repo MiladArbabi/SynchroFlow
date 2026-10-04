@@ -611,13 +611,17 @@ export async function confirmPickScan(
     }
 
     if (scannedUnit?.receive_job_line_id) {
-      await trx('inventory_units')
+      const transitionedUnits = await trx('inventory_units')
         .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
         .update({
           status: 'picked',
           current_location_code: null,
           updated_at: scannedAt,
-        });
+        })
+        .returning('lasyncro_unit_id');
+      await trx('pick_scan_unit_lineage').insert(transitionedUnits.map(unit => ({
+        scan_id: scanId, shop_id: shopId, lasyncro_unit_id: unit.lasyncro_unit_id,
+      })));
 
       const remaining = quantityConfirmed - 1;
       if (remaining > 0) {
@@ -630,18 +634,24 @@ export async function confirmPickScan(
             status: 'stowed',
           })
           .whereNot({ lasyncro_unit_id: lasyncroUnitId })
+          .orderBy('lasyncro_unit_id')
+          .forUpdate()
           .limit(remaining)
           .pluck('lasyncro_unit_id');
 
         if (siblingIds.length > 0) {
-          await trx('inventory_units')
+          const transitionedSiblings = await trx('inventory_units')
             .whereIn('lasyncro_unit_id', siblingIds)
-            .andWhere({ shop_id: shopId })
+            .andWhere({ shop_id: shopId, status: 'stowed', current_location_code: locationCode })
             .update({
               status: 'picked',
               current_location_code: null,
               updated_at: scannedAt,
-            });
+            })
+            .returning('lasyncro_unit_id');
+          await trx('pick_scan_unit_lineage').insert(transitionedSiblings.map(unit => ({
+            scan_id: scanId, shop_id: shopId, lasyncro_unit_id: unit.lasyncro_unit_id,
+          })));
         }
       }
     }
