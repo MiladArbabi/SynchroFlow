@@ -14,6 +14,8 @@ import { httpGetAddressResolutionOrders }
   from './orders.address-resolution.controller.js';
 import { httpGetFulfilledOrders }
   from './orders.fulfilled.controller.js';
+import { httpGetOutboundOrders }
+  from './orders.outbound.controller.js';
 import { httpGetOrderDecision }
   from './orders.decision-by-order.controller.js';
 import { httpExecuteOrderDecision }
@@ -122,6 +124,23 @@ router.get(
   '/fulfilled',
   authenticateToken,
   httpGetFulfilledOrders
+);
+
+/**
+ * @route   GET /api/v1/orders/outbound
+ * @desc    Canonical Outbound read model: physically shipped orders
+ *          (order_warehouse_status), period-scoped summary, server-owned
+ *          state/search filtering, sorting and pagination.
+ * @access  Private
+ *
+ * MUST stay above the '/:id' routes at the bottom of this file, otherwise the
+ * generic order-id route consumes "outbound" as an order id. Deliberately not
+ * a variant of '/fulfilled' (commercial fulfillment). See the controller header.
+ */
+router.get(
+  '/outbound',
+  authenticateToken,
+  httpGetOutboundOrders
 );
 
 /**

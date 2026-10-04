@@ -38,11 +38,10 @@ export const QUICK_REPORTS: QuickReport[] = [
   {
     id: 'orders-outbound',
     title: 'Shipped Orders',
-    description: 'Fulfilled orders with carrier, tracking, and ship date.',
+    description: 'Physically shipped orders with ship date, tracking, carrier, and live status.',
     format: 'csv',
     capabilityId: 'exports.core',
-    endpoint: '/api/v1/exports/orders',
-    body: { filters: { status: ['fulfilled'] } },
+    endpoint: '/api/v1/exports/orders/outbound',
     filename: 'lasyncro-outbound-orders',
   },
   {

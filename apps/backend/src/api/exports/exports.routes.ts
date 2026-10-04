@@ -18,6 +18,7 @@ import { requireCapability } from '../../middleware/require-entitlement.middlewa
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   exportOrders,
+  exportOutboundOrders,
   exportReturns,
   exportProducts,
   exportColumns,
@@ -43,6 +44,16 @@ router.post(
   requireCapability('exports.core'),
   requireAction('exports:read'),
   exportOrders
+);
+
+// Canonical Outbound (physical shipment) export — same access model as
+// /orders; never a variant of its fulfillment-status filter.
+router.post(
+  '/orders/outbound',
+  authenticateToken,
+  requireCapability('exports.core'),
+  requireAction('exports:read'),
+  exportOutboundOrders
 );
 
 router.post(
