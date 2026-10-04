@@ -201,7 +201,7 @@ export type WmsModuleFT2Props = {
 
   onClaimPack: (batchId: string) => Promise<void>;
   onFetchPackOrders: (batchId: string) => Promise<PackOrder[]>;
-  onPackFreeScan: (scannedValue: string) => Promise<PackFreeScanApiResponse>;
+  onPackFreeScan: (scannedValue: string, expectedOrderId?: string) => Promise<PackFreeScanApiResponse>;
   onConfirmPackScan: (batchId: string, params: {
     lasyncro_order_id: string;
     lasyncro_line_item_id: string;

@@ -1370,10 +1370,15 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { scanned_value } = req.body;
+  const { scanned_value, expected_lasyncro_order_id } = req.body;
   if (!scanned_value || typeof scanned_value !== 'string') {
     return res.status(400).json({ error: 'scanned_value required' });
   }
+
+  const contextMismatch = {
+    error: 'pack_context_mismatch',
+    message: 'This barcode belongs to a different Pack order.',
+  };
 
   // ── LSO- path — invoice barcode → ship confirmation ───────────────────────
   if (scanned_value.startsWith('LSO-')) {
@@ -1389,6 +1394,12 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           .first();
 
         if (!order) return { error: 'invoice_not_found', message: 'Invoice barcode not recognised' };
+
+        // Expected context constrains the server-resolved order before any writes.
+        if (expected_lasyncro_order_id !== undefined &&
+            order.lasyncro_order_id !== expected_lasyncro_order_id) {
+          return contextMismatch;
+        }
 
         const batchOrder = await trx('pick_batch_orders as pbo')
           .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
@@ -1514,6 +1525,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
       if ('error' in result) {
         const statusMap: Record<string, number> = {
+          pack_context_mismatch: 409,
           invoice_not_found: 404,
           batch_not_packing: 409,
           siblings_incomplete: 409,
@@ -1560,6 +1572,10 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           if (!lineItemForReturn) {
             return { error: 'return_order_unresolved', message: 'Item is shipped but its order could not be resolved for return intake' };
           }
+          if (expected_lasyncro_order_id !== undefined &&
+              lineItemForReturn.lasyncro_order_id !== expected_lasyncro_order_id) {
+            return contextMismatch;
+          }
           const jobResult = await resolveOrCreateReturnJobForScan(shopId, lineItemForReturn.lasyncro_order_id, userId);
           return { type: 'return', lasyncro_order_id: lineItemForReturn.lasyncro_order_id, ...jobResult };
         }
@@ -1599,6 +1615,12 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
         if (!lineItemRow) return { error: 'line_item_not_found', message: 'Line item not found' };
         const lasyncroOrderId: string = lineItemRow.lasyncro_order_id;
+
+        // Reject cross-order scans before authorization, auto-claim or Pack writes.
+        if (expected_lasyncro_order_id !== undefined &&
+            lasyncroOrderId !== expected_lasyncro_order_id) {
+          return contextMismatch;
+        }
 
         /**
          * 4b. PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
@@ -1776,6 +1798,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
       if ('error' in result) {
         const statusMap: Record<string, number> = {
+          pack_context_mismatch: 409,
           unit_not_found: 404,
           not_picked: 409,
           already_packed: 409,

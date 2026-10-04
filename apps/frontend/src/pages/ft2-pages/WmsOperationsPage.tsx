@@ -299,8 +299,11 @@ export default function WmsOperationsPage() {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack/claim`);
   }, []);
 
-  const handlePackFreeScan = useCallback(async (scannedValue: string) => {
-    const { data } = await axiosInstance.post('/api/v1/wms/pack/free-scan', { scanned_value: scannedValue });
+  const handlePackFreeScan = useCallback(async (scannedValue: string, expectedOrderId?: string) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pack/free-scan', {
+      scanned_value: scannedValue,
+      ...(expectedOrderId ? { expected_lasyncro_order_id: expectedOrderId } : {}),
+    });
     return data;
   }, []);
 
