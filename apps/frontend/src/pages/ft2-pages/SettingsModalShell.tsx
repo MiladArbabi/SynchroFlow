@@ -387,11 +387,11 @@ function SettingsModalSurface({
               color: continuationReady ? 'var(--accent)' : 'var(--ink-3)',
               bgcolor: continuationReady ? 'var(--accent-ghost)' : 'var(--surface)',
               ...(continuationReady && {
-                // Existing teaching rhythm, applied to color only: no layout motion.
+                // Established teaching rhythm: perceptible emphasis without layout motion.
                 animation: 'settingsContinuationAccent 2.4s ease-in-out infinite',
                 '@keyframes settingsContinuationAccent': {
-                  '0%, 100%': { color: 'var(--accent)' },
-                  '50%': { color: 'var(--accent-hover)' },
+                  '0%, 100%': { opacity: 1 },
+                  '50%': { opacity: 0.35 },
                 },
                 '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
               }),
