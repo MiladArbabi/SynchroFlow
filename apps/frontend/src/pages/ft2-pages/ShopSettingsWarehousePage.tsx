@@ -6,8 +6,9 @@
 // Floor Display
 // Future: batch size, auto-release, idle threshold, problem bin (WM-35)
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useContext, useRef } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ShopifyLocationPersistenceContext } from '../../contexts/ShopifyLocationJourneyContext';
 import { SpotlightCoachMark } from '@lasyncro/shared/ui';
 import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip, Popper } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -720,6 +721,13 @@ function PrintersSection() {
 }
 
 function ShopifyLocationMappingSection() {
+  const visitMounted = useRef(false);
+  useEffect(() => {
+    visitMounted.current = true;
+    return () => { visitMounted.current = false; };
+  }, []);
+  const location = useLocation();
+  const reportPersistence = useContext(ShopifyLocationPersistenceContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const [guideAnchor, setGuideAnchor] = useState<HTMLDivElement | null>(null);
   const guided = searchParams.get('guide') === 'shopify-location';
@@ -727,7 +735,7 @@ function ShopifyLocationMappingSection() {
     if (!guided) return;
     const next = new URLSearchParams(searchParams);
     next.delete('guide');
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace: true, state: location.state });
   };
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -748,16 +756,20 @@ function ShopifyLocationMappingSection() {
     }) => updateWarehouseShopifyLocation(warehouseId, shopifyLocationId),
 
     onSuccess: async () => {
-      clearGuide();
+      if (visitMounted.current) clearGuide();
+      // Persisted truth refreshes even after this Settings visit has ended.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['warehouse-shopify-locations'] }),
         queryClient.invalidateQueries({ queryKey: ['onboarding', 'readiness'] }),
       ]);
+      // The visit may have ended while the canonical refresh was pending.
+      if (!visitMounted.current) return;
+      reportPersistence?.();
       show('Shopify location mapping saved', 'success');
     },
 
     onError: () => {
-      show('Failed to save Shopify location mapping', 'error');
+      if (visitMounted.current) show('Failed to save Shopify location mapping', 'error');
     },
   });
 

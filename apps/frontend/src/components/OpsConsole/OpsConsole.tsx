@@ -66,7 +66,12 @@ import {
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  SHOPIFY_LOCATION_JOURNEY,
+  SHOPIFY_LOCATION_CONTINUATION,
+  type ShopifyLocationJourneyState,
+} from '../../contexts/ShopifyLocationJourneyContext';
 import { EntityDetailModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
@@ -2148,6 +2153,7 @@ export function OpsConsoleButton({
 }: Pick<OpsConsoleProps, 'alerts' | 'deepLink'>) {
   const pal = useAppTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   // OVERVIEW-SCREEN-OPT-01 — open/closed is shared ConfigContext state so the
   // Overview page can withdraw Operations Pulse while the console is open.
   const { state, dispatch } = useConfig();
@@ -2182,6 +2188,25 @@ export function OpsConsoleButton({
   const [mapCountRequest, setMapCountRequest] = useState(0);
 
   const [searchIntent, setSearchIntent] = useState(false);
+
+  const continuationConsumed = useRef<string | null>(null);
+  useEffect(() => {
+    const routeState = location.state as ShopifyLocationJourneyState | null;
+    if (location.pathname !== '/overview' ||
+        routeState?.onboardingContinuation !== SHOPIFY_LOCATION_CONTINUATION ||
+        externalLocationMapped !== true || continuationConsumed.current === location.key) return;
+
+    continuationConsumed.current = location.key;
+    const remainingState = { ...routeState };
+    delete remainingState.onboardingContinuation;
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: Object.keys(remainingState).length ? remainingState : null,
+    });
+    setSearchFocusRequest(0);
+    setSearchIntent(false);
+    dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
+  }, [location, externalLocationMapped, navigate, dispatch]);
 
   // GH-1179: minimumMappingReady remains physical floor readiness only.
   // Count readiness is the conjunction of both independently canonical facts.
@@ -2365,7 +2390,9 @@ export function OpsConsoleButton({
   const chooseShopifyLocation = () => {
     setSpotlightActive(false);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
-    navigate('/settings/warehouse?guide=shopify-location');
+    navigate('/settings/warehouse?guide=shopify-location', {
+      state: { backgroundLocation: location, onboardingJourney: SHOPIFY_LOCATION_JOURNEY },
+    });
   };
 
   return (

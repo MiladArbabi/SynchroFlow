@@ -4,7 +4,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockNavigate = jest.fn();
-jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate, useSearchParams: () => [new URLSearchParams('tab=setup&view=canvas'), jest.fn()] }));
+const mockLocation = { pathname: '/overview', search: '', hash: '', state: null, key: 'overview' };
+jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate, useLocation: () => mockLocation, useSearchParams: () => [new URLSearchParams('tab=setup&view=canvas'), jest.fn()] }));
 jest.mock('api/axiosConfig', () => ({ axiosInstance: { get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn() } }));
 jest.mock('@lasyncro/shared/ui', () => ({
   EntityDetailModal: ({ entityId, title, children, footerActions }: any) => entityId ? <section role="dialog" aria-label={title}>{children}{footerActions}</section> : null,
@@ -179,7 +180,9 @@ describe('GH-1179 guided Shopify Location journey', () => {
     expect(within(coach).queryByRole('button', { name: 'Got it' })).toBeNull();
     fireEvent.click(within(coach).getByRole('button', { name: 'Choose Shopify location' }));
     expect(isOpen()).toBe(false);
-    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location', {
+      state: { backgroundLocation: mockLocation, onboardingJourney: 'first-entry-shopify-location' },
+    });
     await tick(OPS_CONSOLE_AUTO_OPEN_DELAY_MS);
     expect(screen.queryAllByText(LOCATION_TITLE)).toHaveLength(0);
   });
