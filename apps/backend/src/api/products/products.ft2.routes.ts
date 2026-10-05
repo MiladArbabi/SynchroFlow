@@ -50,6 +50,13 @@ router.get(
  * Final path: GET /api/v1/modules/products/catalog
  */
 router.get(
+  '/items',
+  authenticateToken,
+  requireCapability('inventory.core'),
+  getProductsCatalogHandler
+);
+
+router.get(
   '/catalog',
   authenticateToken,
   requireCapability('inventory.core'),

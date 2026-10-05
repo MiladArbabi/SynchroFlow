@@ -862,8 +862,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   dot="warning"
                   label={`${noSku} SKUs have no product code`}
                   meta="WMS-Lite can't pick or receive these — fix in Shopify"
-                  cta="Fix in Catalog"
-                  ctaHref="/inventory/catalog"
+                  cta="Edit Item cost"
+                  ctaHref="/inventory/items"
                 />
               )}
 

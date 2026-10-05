@@ -237,8 +237,8 @@ export default function FinancesIntelligencePage() {
                 icon={<AlertTriangle size={16} />}
                 title={`${missingCosts} SKUs missing cost data`}
                 detail={`Margin coverage at ${coveragePct}%. Enter costs to unlock full intelligence.`}
-                cta="Fix in Catalog"
-                onClick={() => navigate('/inventory/catalog')}
+                cta="Edit Item cost"
+                onClick={() => navigate('/inventory/items')}
               />
             )}
             {hasShipping && (

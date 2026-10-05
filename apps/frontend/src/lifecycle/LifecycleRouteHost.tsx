@@ -299,7 +299,7 @@ export function LifecycleRouteHost() {
       {/* WMS */}
       {/* /wms/analytics and /wms/readiness must precede /wms/* — wildcard would shadow them otherwise */}
       {/* ISS-070: redirect old top-level route to new nested location */}
-      <Route path="/wms/readiness" element={<Navigate to="/inventory/data-quality" replace />} />
+      <Route path="/wms/readiness" element={<Navigate to={{ pathname: "/inventory", search: location.search, hash: location.hash }} replace />} />
       <Route path="/wms/*" element={<WmsFT2Page />} />
 
       {/* SUPPLIERS PORTAL */}

@@ -12,7 +12,7 @@
 //   /products/costs     → Costs (cost entry + bulk CSV upload)
 //   /products/wms-readiness → WMS Readiness (pickability, variance, shrinkage)
 
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Typography } from '@mui/material';
@@ -31,8 +31,6 @@ import { ProductsModuleFT2 } from '@lasyncro/products';
 import type { InventoryStateFacts, InventoryStateStatus } from '@lasyncro/products';
 import { ExportDrawer } from 'components/ExportDrawer';
 import ProductsCatalogPage from './ProductsCatalogPage';
-import ProductsCostsPage from './ProductsCostsPage';
-import ProductsWmsReadinessPage from './ProductsWmsReadinessPage';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { WarehouseZone, LocationPulse, LocationStockDetail, LocationStockVariant } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
@@ -410,6 +408,19 @@ function InventoryIntelligenceView({
   );
 }
 
+function LegacyItemsRedirect({ defaultFilter }: { defaultFilter?: string }) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  if (defaultFilter && !params.has('filter')) params.set('filter', defaultFilter);
+  const query = params.toString();
+  return <Navigate to={{ pathname: '/inventory/items', search: query ? `?${query}` : '', hash: location.hash }} replace />;
+}
+
+function LegacyDataQualityRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: '/inventory', search, hash }} replace />;
+}
+
 export default function ProductsFT2Page() {
   const [range, setRange] = useState<FT2DateRange>({
     preset: 'past_30_days',
@@ -445,9 +456,10 @@ export default function ProductsFT2Page() {
           />
         } />
 
-        <Route path="/catalog"        element={<ProductsCatalogPage range={range} onChange={setRange} />} />
-        <Route path="/costs"          element={<ProductsCostsPage />} />
-        <Route path="/data-quality"   element={<ProductsWmsReadinessPage />} />
+        <Route path="/items"          element={<ProductsCatalogPage range={range} onChange={setRange} />} />
+        <Route path="/catalog"        element={<LegacyItemsRedirect />} />
+        <Route path="/costs"          element={<LegacyItemsRedirect defaultFilter="missing-cost" />} />
+        <Route path="/data-quality"   element={<LegacyDataQualityRedirect />} />
         <Route path="*"               element={<Navigate to="/inventory" replace />} />
       </Routes>
       {/* EXP-CTA-INVENTORY-99 — pre-filtered to this view per

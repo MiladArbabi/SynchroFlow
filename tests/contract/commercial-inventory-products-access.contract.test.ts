@@ -145,14 +145,12 @@ describe('IPA-C1B — inventory.live_map is Products + Growth+', () => {
 // would drift the moment the parent's capability changed.
 // ===========================================================================
 
-/** The four standard Inventory children/tabs that inherit the parent boundary. */
+/** Standard Inventory children/tabs inherit the parent boundary. */
 const INHERITING_NAV_CHILDREN = [
   'products-intelligence',
-  'products-catalog',
-  'products-costs',
-  'data-quality',
+  'products-items',
 ] as const;
-const INHERITING_TABS = ['intelligence', 'catalog', 'costs', 'data-quality'] as const;
+const INHERITING_TABS = ['intelligence', 'items'] as const;
 
 /** A nav child's single-line declaration. */
 function navChildLine(id: string): string {
@@ -265,6 +263,7 @@ const INVENTORY_ROUTES: Array<[string, string]> = [
   ['get', '/ft2'],
   ['get', '/operator-summary'],
   ['get', '/catalog'],
+  ['get', '/items'],
   ['get', '/variants/costs'],
   ['patch', '/variants/:variantId/cost'],
   ['post', '/variants/costs/bulk'],
@@ -356,9 +355,9 @@ describe('IPA-C8 — active links target /inventory, never the retired /products
       .split('\n')
       .find((l) => l.includes('missing_cogs'));
     expect(line).toBeDefined();
-    // missing COGS is entered on the Costs surface.
+    // Missing COGS is captured as an Item attribute.
     expect(/route:\s*'\/products'/.test(line as string)).toBe(false);
-    expect(/route:\s*'\/inventory(\/[a-z-]+)?'/.test(line as string)).toBe(true);
+    expect(/route:\s*'\/inventory\/items\?filter=missing-cost'/.test(line as string)).toBe(true);
   });
 });
 

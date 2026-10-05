@@ -80,13 +80,11 @@ export function bootstrapNavGroups() {
     capabilityId: 'inventory.core',
     children: [
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
-      { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
+      { id: 'products-items',         title: 'Items',          path: '/inventory/items'          },
       // parentId set explicitly: path (/demand) is not URL-nested under /inventory — see ISS-095/DEC-04
       // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: migrated to capabilityId — decision comes
       // from the shared commercial adapter, not a hand-rolled requiredTier.
       { id: 'demand',                 title: 'Demand',         path: '/demand',  capabilityId: 'demand.forecasting', parentId: 'inventory' },
-      { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
-      { id: 'data-quality',           title: 'Data Quality',   path: '/inventory/data-quality'  },    
     ],
   });
 

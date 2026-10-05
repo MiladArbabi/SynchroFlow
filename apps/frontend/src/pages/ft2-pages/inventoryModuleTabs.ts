@@ -3,8 +3,6 @@ import type { ModuleTab } from '../../components/ModuleTabBar';
 // the shared commercial adapter is authoritative.
 export const INVENTORY_MODULE_TABS: ModuleTab[] = [
   { id: 'intelligence',  label: 'Intelligence', path: '/inventory'          },
-  { id: 'catalog',       label: 'Catalog',      path: '/inventory/catalog'  },
+  { id: 'items',         label: 'Items',        path: '/inventory/items'    },
   { id: 'demand',        label: 'Demand',       path: '/demand', capabilityId: 'demand.forecasting' },
-  { id: 'costs',         label: 'Costs',        path: '/inventory/costs'    },
-  { id: 'data-quality',  label: 'Data Quality', path: '/inventory/data-quality' },
 ];

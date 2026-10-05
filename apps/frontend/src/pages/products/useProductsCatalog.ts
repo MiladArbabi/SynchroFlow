@@ -16,9 +16,15 @@ export interface CatalogVariant {
   lasyncro_product_id: string;
   /** physical only — non-physical excluded at backend (INV-006) */
   product_type: string;
-  on_hand_quantity: number;
-  available_quantity: number;
-  sellable_quantity: number;
+  on_hand_quantity: number | null;
+  available_quantity: number | null;
+  sellable_quantity: number | null;
+  reserved_quantity?: number | null;
+  barcode?: string | null;
+  lasyncro_barcode?: string | null;
+  unit_cost?: number | null;
+  cost_state?: 'present' | 'missing' | 'unavailable';
+  scan_identity_issue?: boolean;
   /** false = no inventory_truth row exists — never received, not genuinely empty */
   has_inventory_record: boolean;
 }
@@ -27,7 +33,7 @@ export function useProductsCatalog() {
   return useQuery<{ variants: CatalogVariant[] }>({
     queryKey: ['products', 'catalog'],
     queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/modules/products/catalog');
+      const { data } = await axiosInstance.get('/api/v1/modules/products/items');
       return data;
     },
     staleTime: 60_000,

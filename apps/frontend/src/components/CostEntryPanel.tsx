@@ -54,6 +54,7 @@ function usePatchVariantCost() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['variant-costs'] });
+      void queryClient.invalidateQueries({ queryKey: ['products', 'catalog'] });
       void queryClient.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
@@ -71,6 +72,7 @@ function useBulkUpload() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['variant-costs'] });
+      void queryClient.invalidateQueries({ queryKey: ['products', 'catalog'] });
       void queryClient.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
@@ -78,7 +80,7 @@ function useBulkUpload() {
 
 // ─── CSV UPLOAD ───────────────────────────────────────────────
 
-function CsvUploadRow() {
+export function CsvUploadRow() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { mutate: bulkUpload, isPending, data: result, reset } = useBulkUpload();
   const [parseError, setParseError] = useState<string | null>(null);

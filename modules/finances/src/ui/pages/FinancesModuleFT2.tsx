@@ -311,7 +311,7 @@ function ProfitTrustPanel({
             : 'No SKU cost data available'}
           value={costCoveragePct != null ? `${costCoveragePct}%` : null}
           cta={!costCoverageOk && (costCoverageMissing ?? 0) > 0
-            ? { label: 'Fix in Catalog →', onClick: () => window.location.assign('/inventory/catalog') }
+            ? { label: 'Edit Item cost →', onClick: () => window.location.assign('/inventory/items') }
             : undefined}
         />
         <Divider sx={{ borderColor: 'var(--rule)' }} />
