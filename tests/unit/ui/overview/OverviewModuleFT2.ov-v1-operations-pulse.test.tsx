@@ -142,7 +142,7 @@ const HOSTILE_SIGNALS = [
     title: '6 SKUs below reorder point',
     detail: 'Reorder.',
     module: 'demand',
-    deepLink: '/demand?filter=critical',
+    deepLink: '/inventory/replenishment?filter=critical',
     revenueImpact: 666,
   },
 ];

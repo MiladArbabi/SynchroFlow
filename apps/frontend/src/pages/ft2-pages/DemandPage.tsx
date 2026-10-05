@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/ft2-pages/DemandPage.tsx
 import { DemandModuleFT2 } from '@lasyncro/demand';
 import { useSearchParams } from 'react-router-dom';
+import useConfig from '../../hooks/useConfig';
 import { useDemand } from '../products/useDemand';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
@@ -9,6 +10,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 
 export default function DemandPage() {
+  const { state: { isOpsConsoleOpen } } = useConfig();
   const { data, isLoading, isError } = useDemand();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
@@ -31,6 +33,7 @@ export default function DemandPage() {
         isError={isError}
         currency={{ displayCurrency, locale, rates}}
         reorderUrgencyFilter={reorderUrgencyFilter}
+        suppressReplenishmentState={isOpsConsoleOpen}
       />
     </CommercialGate>
   );

@@ -97,7 +97,7 @@ describe('alertDeepLink — stock_protection backend-action precedence', () => {
     });
 
     expect(alertDeepLink(a)).toEqual({
-      route: '/demand?filter=critical',
+      route: '/inventory/replenishment?filter=critical',
       label: 'Reorder now',
     });
   });

@@ -25,6 +25,7 @@ import {
 } from 'components/OpsConsole/OpsConsole';
 
 const mockNavigate = jest.fn();
+const mockLocation = { pathname: '/overview', search: '', hash: '', state: null, key: 'overview' };
 const mockUseActivationChecklist = jest.fn();
 const mockUseWaiting = jest.fn();
 // OPS-CONSOLE-HISTORY-01 — HISTORY is now backend-classified, not
@@ -34,7 +35,7 @@ const mockUseWaiting = jest.fn();
 // wiring), so no useAlerts mock is registered here any more.
 const mockUseHistory = jest.fn();
 
-jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
+jest.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate, useLocation: () => mockLocation }));
 
 // #1164: the real pure selection/route helpers stay live; only the hook is mocked.
 jest.mock('hooks/useActivationChecklist', () => ({
@@ -982,7 +983,7 @@ describe('alert deep-link mapping', () => {
       revenue_at_risk:         { route: '/overview',       label: 'Overview' },
       operational:             { route: '/orders',         label: 'Orders' },
       sla_breach:              { route: '/orders/flow?urgency=sla_breach', label: 'Orders' },
-      missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
+      missing_cogs:            { route: '/inventory/items?filter=missing-cost', label: 'Items' },
     };
 
     // Subset, not toEqual: the map may legitimately GAIN entries (OPS-CONSOLE-02
@@ -1254,7 +1255,7 @@ describe('the three fixed dead-end alert families', () => {
   const CASES = [
     { alert_type: 'inventory',         label: 'Resolve stockouts', route: '/orders/flow?constraint=inventory' },
     { alert_type: 'customer',          label: 'Fix addresses', route: '/overview?resolution=address' },
-    { alert_type: 'low_stock_reorder', label: 'Reorder now',   route: '/demand?filter=critical' },
+    { alert_type: 'low_stock_reorder', label: 'Reorder now',   route: '/inventory/replenishment?filter=critical' },
   ];
 
   it.each(CASES)('$alert_type -> $label -> $route', ({ alert_type, label, route }) => {
@@ -2978,7 +2979,9 @@ describe('first-entry Ops Console onboarding (GH-1165)', () => {
     expect(anySpotlight()).toBeNull();
     expect(dimmer()).toBeNull();
     expect(trigger()).toHaveAttribute('aria-expanded', 'false');
-    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/warehouse?guide=shopify-location', {
+      state: { backgroundLocation: mockLocation, onboardingJourney: 'first-entry-shopify-location' },
+    });
   });
 
   it('xs first auto-open: the same coach renders inside the rail above location/map/count SETUP; dismissal removes the coach only', () => {

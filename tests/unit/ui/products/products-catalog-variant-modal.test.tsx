@@ -39,6 +39,7 @@ jest.mock('pages/floor-planning/useVariantWarehouseBins', () => ({
 }));
 
 jest.mock('@lasyncro/shared/ui', () => ({
+  OperationalContextShell: jest.requireActual('../../../../modules/shared/src/ui/OperationalContextShell').OperationalContextShell,
   EntityDetailModal: ({ entityId, title, subtitle, onClose, children }: any) =>
     entityId ? (
       <section data-testid="entity-detail-modal" aria-label={String(title)}>
@@ -173,7 +174,7 @@ beforeEach(() => {
 
 describe('ProductsCatalogPage variant modal', () => {
   it('resolves ?variant from canonical catalog data and closes by removing only variant', async () => {
-    renderCatalog('/inventory/catalog?variant=variant-1&tab=stock');
+    renderCatalog('/inventory/catalog?variant=variant-1&tab=stock&search=merino&filter=missing-cost&page=2');
 
     const modal = screen.getByTestId('entity-detail-modal');
 
@@ -190,7 +191,7 @@ describe('ProductsCatalogPage variant modal', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent(
-        '/inventory/catalog?tab=stock',
+        '/inventory/catalog?tab=stock&search=merino&filter=missing-cost&page=2',
       );
     });
   });
@@ -228,8 +229,53 @@ describe('ProductsCatalogPage variant modal', () => {
   });
 });
 
-describe('VariantDetailModalBody spatial context', () => {
-  it('does not acquire spatial sources when inventory live map is denied', () => {
+describe('GH-1208 canonical Item detail contract', () => {
+  it('opens with Identity / Inventory / Cost / Placement facts', () => {
+    renderVariantBody();
+
+    // Section concepts are ratified; no wrapper structure or pixel assertions.
+    const concepts = [/^Identity$/i, /^Inventory(?: truth)?$/i, /^Cost$/i, /^Placement$/i];
+    expect(concepts.filter((name) => screen.queryAllByText(name).length === 0).map(String))
+      .toEqual([]);
+  });
+
+  it('leaves the isometric warehouse map to Intelligence even when spatial access is allowed', () => {
+    renderVariantBody();
+
+    expect(mockIsometricCanvas).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('isometric-canvas')).not.toBeInTheDocument();
+  });
+
+  it('does not present absent inventory records as numeric zero, while confirmed zero remains visible', () => {
+    const { rerender } = renderVariantBody({
+      has_inventory_record: true,
+      on_hand_quantity: 0,
+      available_quantity: 0,
+      sellable_quantity: 0,
+    });
+    // Control: an actual inventory row with zero quantities is known zero.
+    expect(screen.queryAllByText('0', { exact: true }).length).toBeGreaterThan(0);
+
+    rerender(
+      <VariantDetailModalBody variant={{
+        ...variant, has_inventory_record: false,
+        on_hand_quantity: 0, available_quantity: 0, sellable_quantity: 0,
+      }} />,
+    );
+    expect(screen.queryAllByText('0', { exact: true }).map((node) => node.textContent)).toEqual([]);
+  });
+
+  it('makes per-item unit-cost editing reachable through canonical inspection', () => {
+    renderCatalog('/inventory/catalog?variant=variant-1');
+
+    const modal = screen.getByTestId('entity-detail-modal');
+    expect(within(modal).queryByRole('button', { name: /edit.*cost|cost.*edit/i }))
+      .toBeInTheDocument();
+  });
+});
+
+describe('VariantDetailModalBody compact placement', () => {
+  it('keeps placement independent of Inventory live-map access', () => {
     mockUseCommercialAccess.mockReturnValue({
       isResolved: true,
       decide: (capabilityId: string) => ({
@@ -240,13 +286,13 @@ describe('VariantDetailModalBody spatial context', () => {
 
     renderVariantBody();
 
-    expect(mockUseFloorPlanning).toHaveBeenCalledWith(false);
-    expect(mockUseVariantWarehouseBins).toHaveBeenCalledWith('variant-1', false);
-    expect(screen.getByText('Warehouse map is not available on this plan.')).toBeInTheDocument();
+    expect(mockUseFloorPlanning).not.toHaveBeenCalled();
+    expect(mockUseVariantWarehouseBins).toHaveBeenCalledWith('variant-1', true);
+    expect(screen.getByText('2 available')).toBeInTheDocument();
     expect(screen.getByText('MC-CHAR-M')).toBeInTheDocument();
   });
 
-  it('does not acquire spatial sources when floor planning is denied or unresolved', () => {
+  it('does not acquire placement when floor planning is denied or unresolved', () => {
     mockUseCommercialAccess.mockReturnValue({
       isResolved: true,
       decide: (capabilityId: string) => ({
@@ -257,7 +303,7 @@ describe('VariantDetailModalBody spatial context', () => {
 
     renderVariantBody();
 
-    expect(mockUseFloorPlanning).toHaveBeenCalledWith(false);
+    expect(mockUseFloorPlanning).not.toHaveBeenCalled();
     expect(mockUseVariantWarehouseBins).toHaveBeenCalledWith('variant-1', false);
 
     jest.clearAllMocks();
@@ -268,12 +314,12 @@ describe('VariantDetailModalBody spatial context', () => {
 
     renderVariantBody();
 
-    expect(mockUseFloorPlanning).toHaveBeenCalledWith(false);
+    expect(mockUseFloorPlanning).not.toHaveBeenCalled();
     expect(mockUseVariantWarehouseBins).toHaveBeenCalledWith('variant-1', false);
-    expect(screen.getByText('Warehouse map availability is still resolving.')).toBeInTheDocument();
+    expect(screen.getByText('Placement availability is still resolving.')).toBeInTheDocument();
   });
 
-  it('feeds distinct authoritative bin codes into focusedBins', () => {
+  it('shows distinct authoritative placement codes and sums their quantities', () => {
     mockUseVariantWarehouseBins.mockReturnValue({
       data: {
         variant_id: 'variant-1',
@@ -290,20 +336,15 @@ describe('VariantDetailModalBody spatial context', () => {
 
     renderVariantBody();
 
-    expect(mockUseFloorPlanning).toHaveBeenCalledWith(true);
+    expect(mockUseFloorPlanning).not.toHaveBeenCalled();
     expect(mockUseVariantWarehouseBins).toHaveBeenCalledWith('variant-1', true);
-    expect(mockIsometricCanvas).toHaveBeenCalledWith(
-      expect.objectContaining({
-        focusedBins: ['A-1', 'B-2'],
-        showLegend: false,
-        showControls: false,
-        disablePan: true,
-      }),
-    );
+    expect(mockIsometricCanvas).not.toHaveBeenCalled();
+    expect(screen.getByText('A-1')).toBeInTheDocument();
+    expect(screen.getByText('B-2')).toBeInTheDocument();
     expect(screen.getByText('5 available')).toBeInTheDocument();
   });
 
-  it('renders truthful fallbacks for empty, unpositioned, partial and failed spatial states', () => {
+  it('renders truthful empty, root, mixed, absent and failed placement states', () => {
     mockUseVariantWarehouseBins.mockReturnValueOnce({
       data: { variant_id: 'variant-1', bins: [] },
       isLoading: false,
@@ -320,8 +361,8 @@ describe('VariantDetailModalBody spatial context', () => {
       isError: false,
     });
     rerender(<VariantDetailModalBody variant={variant} />);
-    expect(screen.getByText('Stocked locations are not positioned on the mapped floor.')).toBeInTheDocument();
-    expect(screen.getByText('4 available · not mapped')).toBeInTheDocument();
+    expect(screen.getByText('ROOT')).toBeInTheDocument();
+    expect(screen.getByText('4 available')).toBeInTheDocument();
 
     mockUseVariantWarehouseBins.mockReturnValueOnce({
       data: {
@@ -335,10 +376,16 @@ describe('VariantDetailModalBody spatial context', () => {
       isError: false,
     });
     rerender(<VariantDetailModalBody variant={variant} />);
-    expect(mockIsometricCanvas).toHaveBeenLastCalledWith(
-      expect.objectContaining({ focusedBins: ['A-1'] }),
-    );
-    expect(screen.getByText('4 available · not mapped')).toBeInTheDocument();
+    expect(mockIsometricCanvas).not.toHaveBeenCalled();
+    expect(screen.getByText('A-1')).toBeInTheDocument();
+    expect(screen.getByText('ROOT')).toBeInTheDocument();
+    expect(screen.getByText('4 available')).toBeInTheDocument();
+
+    mockUseVariantWarehouseBins.mockReturnValueOnce({ data: null, isLoading: false, isError: false });
+    rerender(<VariantDetailModalBody variant={variant} />);
+    expect(screen.getByText('Placement is unavailable.')).toBeInTheDocument();
+    expect(screen.queryByText('A-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('ROOT')).not.toBeInTheDocument();
 
     mockUseVariantWarehouseBins.mockReturnValueOnce({
       data: null,

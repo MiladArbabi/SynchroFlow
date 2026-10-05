@@ -136,8 +136,8 @@ export default function ProductsWmsReadinessPage() {
                     {notPickable ?? '—'}
                   </Typography>
                   {(notPickable ?? 0) > 0 && (
-                    <Box onClick={() => navigate('/inventory/catalog')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-                      Fix in Catalog →
+                    <Box onClick={() => navigate('/inventory/items')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                      Edit Item cost →
                     </Box>
                   )}
                 </Box>

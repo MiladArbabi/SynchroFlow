@@ -41,7 +41,7 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   revenue_at_risk:         { route: '/overview',      label: 'Overview' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders/flow?urgency=sla_breach', label: 'Orders' },
-  missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
+  missing_cogs:            { route: '/inventory/items?filter=missing-cost', label: 'Items' },
   billing_usage_threshold: { route: '/settings/billing', label: 'Billing' },
 
   // ── OPS-CONSOLE-02: three previously unmapped families ────────────────────
@@ -68,7 +68,7 @@ export const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> =
   // stockout_risk (per-variant, order-triggered) and from `inventory`
   // (order-blocking): three different operational states that happen to share a
   // landing page with stockout_risk. Not merged.
-  low_stock_reorder:       { route: '/demand?filter=critical',            label: 'Reorder now' },
+  low_stock_reorder:       { route: '/inventory/replenishment?filter=critical',            label: 'Reorder now' },
 };
 
 /**

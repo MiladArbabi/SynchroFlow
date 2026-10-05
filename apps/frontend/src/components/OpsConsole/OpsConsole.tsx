@@ -66,7 +66,12 @@ import {
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  SHOPIFY_LOCATION_JOURNEY,
+  SHOPIFY_LOCATION_CONTINUATION,
+  type ShopifyLocationJourneyState,
+} from '../../contexts/ShopifyLocationJourneyContext';
 import { EntityDetailModal, SpotlightCoachMark } from '@lasyncro/shared/ui';
 
 import { axiosInstance } from '../../api/axiosConfig';
@@ -118,6 +123,11 @@ const OPS_CONSOLE_INTRO_SEEN_URL = '/api/v1/user-state/ops-console/intro-seen';
 
 const MAP_COUNT_SEEN_KEY = 'ops-console:map-count-handoff-seen';
 const MAP_COUNT_SEEN_URL = '/api/v1/user-state/ops-console/map-count-handoff-seen';
+const MAP_CONTINUATION_SPOTLIGHT = {
+  title: 'Map warehouse basics',
+  body: 'Next, map the warehouse basics LaSyncro needs before opening stock can be counted.',
+} as const;
+
 const MAP_COUNT_SPOTLIGHT = {
   title: 'Ready to count opening stock',
   body: 'Your first stock location is mapped. You can start counting now, or keep mapping your warehouse first.',
@@ -796,6 +806,10 @@ export interface OpsConsoleProps {
   firstContactSpotlight?: boolean;
   onDismissFirstContactSpotlight?: () => void;
   onChooseShopifyLocation?: () => void;
+  mapContinuationSpotlight?: boolean;
+  onDismissMapContinuationSpotlight?: () => void;
+  mapAnchorRef?: Ref<HTMLDivElement>;
+  mapContinuationRequest?: number;
   mapCountSpotlight?: boolean;
   onDismissMapCountSpotlight?: () => void;
   countAnchorRef?: Ref<HTMLDivElement>;
@@ -841,6 +855,10 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   firstContactSpotlight = false,
   onDismissFirstContactSpotlight,
   onChooseShopifyLocation,
+  mapContinuationSpotlight = false,
+  onDismissMapContinuationSpotlight,
+  mapAnchorRef,
+  mapContinuationRequest = 0,
   mapCountSpotlight = false,
   onDismissMapCountSpotlight,
   countAnchorRef,
@@ -858,10 +876,10 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
   // GH-1165 — first-entry SETUP is expanded by default.
   const [firstEntrySetupExpanded, setFirstEntrySetupExpanded] = useState(true);
   useEffect(() => {
-    if (mapCountRequest === 0) return;
+    if (mapContinuationRequest === 0 && mapCountRequest === 0) return;
     setTab('OPEN');
     setFirstEntrySetupExpanded(true);
-  }, [mapCountRequest]);
+  }, [mapContinuationRequest, mapCountRequest]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1382,15 +1400,38 @@ const OpsConsolePanelSurface = forwardRef<HTMLDivElement, OpsConsoleProps & { st
                 </DisclosureLine>
                 {firstEntrySetupExpanded && firstEntryRows.map((row) => {
                   const content = <OpsConsoleRow key={row.id} row={row} onNavigate={goto} onCommand={runCommand} pendingCommand={pendingCommand} />;
+                  const isMapRow = row.id === 'setup:first-entry-map';
+                  const isCountRow = row.id === 'setup:first-entry-count';
 
-                  if (row.id !== 'setup:first-entry-count') return content;
+                  if (!isMapRow && !isCountRow) return content;
+
+                  const anchorRef = isMapRow ? mapAnchorRef : countAnchorRef;
+                  const spotlight = isMapRow ? mapContinuationSpotlight : mapCountSpotlight;
+                  const onDismissSpotlight = isMapRow
+                    ? onDismissMapContinuationSpotlight
+                    : onDismissMapCountSpotlight;
+                  const spotlightCopy = isMapRow
+                    ? MAP_CONTINUATION_SPOTLIGHT
+                    : MAP_COUNT_SPOTLIGHT;
+                  const spotlightLabel = isMapRow
+                    ? 'Warehouse mapping guidance'
+                    : 'Opening stock count guidance';
 
                   return (
-                    <Box key={row.id} ref={countAnchorRef}>
-                      {mapCountSpotlight && onDismissMapCountSpotlight && (
-                        <Box role="region" aria-label="Opening stock count guidance" sx={{ display: OPS_SPOTLIGHT_MOBILE_DISPLAY, px: 1.5, pt: 1 }}>
-                          <SpotlightCoachMark title={MAP_COUNT_SPOTLIGHT.title} body={MAP_COUNT_SPOTLIGHT.body}
-                            isDismissed={false} onDismiss={onDismissMapCountSpotlight} direction="down" />
+                    <Box key={row.id} ref={anchorRef}>
+                      {spotlight && onDismissSpotlight && (
+                        <Box
+                          role="region"
+                          aria-label={spotlightLabel}
+                          sx={{ display: OPS_SPOTLIGHT_MOBILE_DISPLAY, px: 1.5, pt: 1 }}
+                        >
+                          <SpotlightCoachMark
+                            title={spotlightCopy.title}
+                            body={spotlightCopy.body}
+                            isDismissed={false}
+                            onDismiss={onDismissSpotlight}
+                            direction="down"
+                          />
                         </Box>
                       )}
                       {content}
@@ -2070,14 +2111,26 @@ function OpsFirstContactSpotlight({
   anchor,
   onDismiss,
   onAction,
+  mapContinuation = false,
   mapCount = false,
 }: {
   anchor: HTMLElement | null;
   onDismiss: () => void;
   onAction?: () => void;
+  mapContinuation?: boolean;
   mapCount?: boolean;
 }) {
   const [anchorY, setAnchorY] = useState(SPOTLIGHT_FALLBACK_Y);
+  const spotlightCopy = mapContinuation
+    ? MAP_CONTINUATION_SPOTLIGHT
+    : mapCount
+      ? MAP_COUNT_SPOTLIGHT
+      : OPS_FIRST_CONTACT_SPOTLIGHT;
+  const spotlightLabel = mapContinuation
+    ? 'Warehouse mapping guidance'
+    : mapCount
+      ? 'Opening stock count guidance'
+      : 'Ops Console introduction';
 
   useLayoutEffect(() => {
     if (!anchor) return undefined;
@@ -2105,7 +2158,13 @@ function OpsFirstContactSpotlight({
           the coach's own X / Got it do. */}
       <Box
         aria-hidden
-        data-testid={mapCount ? 'ops-map-count-dimmer' : 'ops-first-contact-dimmer'}
+        data-testid={
+          mapContinuation
+            ? 'ops-map-continuation-dimmer'
+            : mapCount
+              ? 'ops-map-count-dimmer'
+              : 'ops-first-contact-dimmer'
+        }
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 1149,
@@ -2114,8 +2173,14 @@ function OpsFirstContactSpotlight({
       />
       <Box
         role="region"
-        aria-label={mapCount ? 'Opening stock count guidance' : 'Ops Console introduction'}
-        data-testid={mapCount ? 'ops-map-count-spotlight' : 'ops-first-contact-spotlight'}
+        aria-label={spotlightLabel}
+        data-testid={
+          mapContinuation
+            ? 'ops-map-continuation-spotlight'
+            : mapCount
+              ? 'ops-map-count-spotlight'
+              : 'ops-first-contact-spotlight'
+        }
         sx={{
           display: OPS_SPOTLIGHT_DESKTOP_DISPLAY,
           position: 'fixed', zIndex: 1151,
@@ -2126,11 +2191,11 @@ function OpsFirstContactSpotlight({
         }}
       >
         <SpotlightCoachMark
-          title={mapCount ? MAP_COUNT_SPOTLIGHT.title : OPS_FIRST_CONTACT_SPOTLIGHT.title}
-          body={mapCount ? MAP_COUNT_SPOTLIGHT.body : OPS_FIRST_CONTACT_SPOTLIGHT.body}
+          title={spotlightCopy.title}
+          body={spotlightCopy.body}
           isDismissed={false}
           onDismiss={onDismiss}
-          actionLabel={mapCount ? undefined : "Choose Shopify location"}
+          actionLabel={mapContinuation || mapCount ? undefined : "Choose Shopify location"}
           onAction={onAction}
           direction="right"
           floating
@@ -2148,6 +2213,7 @@ export function OpsConsoleButton({
 }: Pick<OpsConsoleProps, 'alerts' | 'deepLink'>) {
   const pal = useAppTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   // OVERVIEW-SCREEN-OPT-01 — open/closed is shared ConfigContext state so the
   // Overview page can withdraw Operations Pulse while the console is open.
   const { state, dispatch } = useConfig();
@@ -2176,12 +2242,38 @@ export function OpsConsoleButton({
   const [spotlightActive, setSpotlightActive] = useState(false);
   const [setupAnchor, setSetupAnchor] = useState<HTMLDivElement | null>(null);
 
+  const [mapAnchor, setMapAnchor] = useState<HTMLDivElement | null>(null);
+  const [mapContinuationActive, setMapContinuationActive] = useState(false);
+  const [mapContinuationPending, setMapContinuationPending] = useState(false);
+  const [mapContinuationRequest, setMapContinuationRequest] = useState(0);
+
   const [countAnchor, setCountAnchor] = useState<HTMLDivElement | null>(null);
   const [mapCountActive, setMapCountActive] = useState(false);
   const [mapCountPending, setMapCountPending] = useState(false);
   const [mapCountRequest, setMapCountRequest] = useState(0);
 
   const [searchIntent, setSearchIntent] = useState(false);
+
+  const continuationConsumed = useRef<string | null>(null);
+  useEffect(() => {
+    const routeState = location.state as ShopifyLocationJourneyState | null;
+    if (location.pathname !== '/overview' ||
+        routeState?.onboardingContinuation !== SHOPIFY_LOCATION_CONTINUATION ||
+        externalLocationMapped !== true || continuationConsumed.current === location.key) return;
+
+    continuationConsumed.current = location.key;
+    const remainingState = { ...routeState };
+    delete remainingState.onboardingContinuation;
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: Object.keys(remainingState).length ? remainingState : null,
+    });
+    setSearchFocusRequest(0);
+    setSearchIntent(false);
+    setMapContinuationActive(false);
+    setMapContinuationPending(firstEntry);
+    dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
+  }, [location, externalLocationMapped, firstEntry, navigate, dispatch]);
 
   // GH-1179: minimumMappingReady remains physical floor readiness only.
   // Count readiness is the conjunction of both independently canonical facts.
@@ -2268,6 +2360,62 @@ export function OpsConsoleButton({
     return () => clearTimeout(timer);
   }, [autoOpenEligible, claimIntro, dispatch]);
 
+  const mapActionable = Boolean(firstEntryItems?.find(item => item.key === 'first-entry-map')?.action);
+  useEffect(() => {
+    if (!mapContinuationPending && !mapContinuationActive) return;
+
+    if (
+      !open ||
+      location.pathname !== '/overview' ||
+      !firstEntry ||
+      externalLocationMapped !== true
+    ) {
+      setMapContinuationPending(false);
+      setMapContinuationActive(false);
+      return;
+    }
+
+    // Unknown physical readiness never means Map is next.
+    if (minimumMappingReady === null) return;
+
+    // Canonical readiness wins. If mapping is already complete, Count owns next.
+    if (minimumMappingReady === true) {
+      setMapContinuationPending(false);
+      setMapContinuationActive(false);
+      return;
+    }
+
+    // The canonical first-entry projection must expose the Map navigation action.
+    if (!mapActionable) {
+      setMapContinuationActive(false);
+      return;
+    }
+
+    // An already-present Map cue remains stable until dismissed, searched away,
+    // navigation leaves the context, or canonical readiness advances.
+    if (mapContinuationActive) return;
+
+    // First-contact coaching and explicit search each get their own moment.
+    if (autoOpenEligible || spotlightActive || searchIntent) return;
+
+    setMapContinuationPending(false);
+    setSearchFocusRequest(0);
+    setMapContinuationRequest((n) => n + 1);
+    setMapContinuationActive(true);
+  }, [
+    mapContinuationPending,
+    mapContinuationActive,
+    open,
+    location.pathname,
+    firstEntry,
+    externalLocationMapped,
+    minimumMappingReady,
+    mapActionable,
+    autoOpenEligible,
+    spotlightActive,
+    searchIntent,
+  ]);
+
   const countActionable = Boolean(firstEntryItems?.find(item => item.key === 'first-entry-count')?.action);
   useEffect(() => {
     if (!flagsLoaded) return;
@@ -2281,6 +2429,8 @@ export function OpsConsoleButton({
     if (
       (!introSeen && !introClaimed.current) ||
       spotlightActive ||
+      mapContinuationActive ||
+      mapContinuationPending ||
       searchIntent
     ) return;
     handoffConsumed.current = true;
@@ -2296,7 +2446,8 @@ export function OpsConsoleButton({
       ))
       .catch(() => undefined); // Local consumption is not a claim of durable success.
   }, [mapCountPending, flagsLoaded, flags, firstEntry, minimumMappingReady, countActionable,
-    introSeen, spotlightActive, searchIntent, dispatch, queryClient]);
+    introSeen, spotlightActive, mapContinuationActive, mapContinuationPending,
+    searchIntent, dispatch, queryClient]);
 
   // Opening the console by any explicit means while the intro is pending
   // consumes it, so it can never pop open again behind the merchant.
@@ -2310,6 +2461,8 @@ export function OpsConsoleButton({
     setSearchFocusRequest(0);
     setSpotlightActive(firstContact && !open);
 
+    setMapContinuationPending(false);
+    setMapContinuationActive(false);
     setMapCountActive(false);
     setSearchIntent(false);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: !open });
@@ -2320,6 +2473,7 @@ export function OpsConsoleButton({
   useEffect(() => {
     if (!open) {
       setSpotlightActive(false);
+      setMapContinuationActive(false);
       setMapCountActive(false);
       setSearchIntent(false);
     }
@@ -2339,6 +2493,8 @@ export function OpsConsoleButton({
       if (autoOpenEligibleRef.current) claimIntro();
       // Search intent wins: no coaching layer in front of Global Search.
       setSpotlightActive(false);
+      setMapContinuationPending(false);
+      setMapContinuationActive(false);
       setMapCountActive(false);
       setSearchIntent(true);
       dispatch({ type: 'SET_OPS_CONSOLE', payload: true });
@@ -2354,6 +2510,17 @@ export function OpsConsoleButton({
   // remain the visible, authoritative counts.
   // GH-1165: in first-entry mode SETUP is the first-entry projection the rail
   // actually presents.
+  const handleSearchIntentChange = (active: boolean) => {
+    setSearchIntent(active);
+    if (!active) return;
+
+    // Search intent wins over transient coaching presentation.
+    setSpotlightActive(false);
+    setMapContinuationPending(false);
+    setMapContinuationActive(false);
+    setMapCountActive(false);
+  };
+
   const badge = openAttentionCount([
     ...buildNowRows(alerts, deepLink),
     ...(firstEntry
@@ -2362,10 +2529,16 @@ export function OpsConsoleButton({
   ]);
   const hasAttention = badge > 0;
   const showSpotlight = spotlightActive && open && firstEntry;
+  const showMapContinuationSpotlight =
+    mapContinuationActive && open && firstEntry && minimumMappingReady === false;
   const chooseShopifyLocation = () => {
     setSpotlightActive(false);
+    setMapContinuationPending(false);
+    setMapContinuationActive(false);
     dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
-    navigate('/settings/warehouse?guide=shopify-location');
+    navigate('/settings/warehouse?guide=shopify-location', {
+      state: { backgroundLocation: location, onboardingJourney: SHOPIFY_LOCATION_JOURNEY },
+    });
   };
 
   return (
@@ -2431,6 +2604,14 @@ export function OpsConsoleButton({
         <OpsFirstContactSpotlight anchor={setupAnchor} onDismiss={() => setSpotlightActive(false)} onAction={chooseShopifyLocation} />
       )}
 
+      {showMapContinuationSpotlight && (
+        <OpsFirstContactSpotlight
+          mapContinuation
+          anchor={mapAnchor}
+          onDismiss={() => setMapContinuationActive(false)}
+        />
+      )}
+
       {mapCountActive && open && firstEntry && (
         <OpsFirstContactSpotlight mapCount anchor={countAnchor} onDismiss={() => setMapCountActive(false)} />
       )}
@@ -2441,14 +2622,20 @@ export function OpsConsoleButton({
         onClose={() => {
           setSearchFocusRequest(0);
           setSpotlightActive(false);
+          setMapContinuationPending(false);
+          setMapContinuationActive(false);
           dispatch({ type: 'SET_OPS_CONSOLE', payload: false });
         }}
         searchFocusRequest={searchFocusRequest}
+        mapContinuationSpotlight={showMapContinuationSpotlight}
+        onDismissMapContinuationSpotlight={() => setMapContinuationActive(false)}
+        mapAnchorRef={setMapAnchor}
+        mapContinuationRequest={mapContinuationRequest}
         mapCountSpotlight={mapCountActive && open && firstEntry}
         onDismissMapCountSpotlight={() => setMapCountActive(false)}
         countAnchorRef={setCountAnchor}
         mapCountRequest={mapCountRequest}
-        onSearchIntentChange={setSearchIntent}
+        onSearchIntentChange={handleSearchIntentChange}
         firstEntrySetupRef={setSetupAnchor}
         firstContactSpotlight={showSpotlight}
         onDismissFirstContactSpotlight={() => setSpotlightActive(false)}
