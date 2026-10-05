@@ -807,10 +807,10 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                     </Typography>
                   )}
                   <Box
-                    onClick={() => navigate('/demand')}
+                    onClick={() => navigate('/inventory/replenishment')}
                     sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
-                    See all in Demand →
+                    See all in Replenishment →
                   </Box>
                 </Box>
               </Box>
@@ -873,8 +873,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   dot="warning"
                   label={`${os.demand.critical_reorder_count - os.demand.stockout_count} SKUs under 7 days stock`}
                   meta="Order before they run out"
-                  cta="See Demand"
-                  ctaHref="/demand"
+                  cta="See Replenishment"
+                  ctaHref="/inventory/replenishment"
                 />
               )}
 
@@ -885,7 +885,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   label={`${fmt$(os.demand.dead_capital_value)} in non-moving stock`}
                   meta="Active SKUs with stock but zero velocity"
                   cta="Review"
-                  ctaHref="/demand"
+                  ctaHref="/inventory/replenishment"
                 />
               )}
 

@@ -293,8 +293,9 @@ export function LifecycleRouteHost() {
       {/* CASH FLOW */}
       {/* <Route path="/cashflow/*" element={<CashFlowPage />} /> */}
 
-      {/* DEMAND */}
-      <Route path="/demand/*" element={<DemandPage />} />
+      {/* REPLENISHMENT — retain legacy Demand URLs as compatibility redirects. */}
+      <Route path="/inventory/replenishment" element={<DemandPage />} />
+      <Route path="/demand/*" element={<Navigate to={{ pathname: "/inventory/replenishment", search: location.search, hash: location.hash }} replace />} />
 
       {/* WMS */}
       {/* /wms/analytics and /wms/readiness must precede /wms/* — wildcard would shadow them otherwise */}

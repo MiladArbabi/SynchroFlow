@@ -4,5 +4,5 @@ import type { ModuleTab } from '../../components/ModuleTabBar';
 export const INVENTORY_MODULE_TABS: ModuleTab[] = [
   { id: 'intelligence',  label: 'Intelligence', path: '/inventory'          },
   { id: 'items',         label: 'Items',        path: '/inventory/items'    },
-  { id: 'demand',        label: 'Demand',       path: '/demand', capabilityId: 'demand.forecasting' },
+  { id: 'demand',        label: 'Replenishment', path: '/inventory/replenishment', capabilityId: 'demand.forecasting' },
 ];

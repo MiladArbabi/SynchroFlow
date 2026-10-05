@@ -1255,7 +1255,7 @@ describe('the three fixed dead-end alert families', () => {
   const CASES = [
     { alert_type: 'inventory',         label: 'Resolve stockouts', route: '/orders/flow?constraint=inventory' },
     { alert_type: 'customer',          label: 'Fix addresses', route: '/overview?resolution=address' },
-    { alert_type: 'low_stock_reorder', label: 'Reorder now',   route: '/demand?filter=critical' },
+    { alert_type: 'low_stock_reorder', label: 'Reorder now',   route: '/inventory/replenishment?filter=critical' },
   ];
 
   it.each(CASES)('$alert_type -> $label -> $route', ({ alert_type, label, route }) => {

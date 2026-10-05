@@ -1,23 +1,9 @@
-// modules/demand/src/ui/pages/DemandModuleFT2.tsx
-import { useState } from 'react';
-import {
-  Box, Typography, Collapse,
-  useTheme,
-} from '@mui/material';
-import {
-  TrendingDown, TrendingUp, Package,
-  CheckCircle, ChevronDown, Minus,
-} from 'lucide-react';
-import {
-  formatCurrencyCompact,
-  ModuleLoadingSkeleton,
-} from '@lasyncro/shared/ui';
+// Existing Demand computation remains the authority for Replenishment planning.
+import { useEffect, useState } from 'react';
+import { Box, Typography } from '@mui/material';
+import { OperationalContextShell, ModuleLoadingSkeleton, ModuleErrorBoundary } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
-import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
-// ─────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────
 export type DemandVelocity = {
   lasyncro_variant_id: string;
   title: string | null;
@@ -60,369 +46,181 @@ export type DemandModuleFT2Props = {
   isError: boolean;
   currency?: CurrencyContext;
   reorderUrgencyFilter?: 'critical';
+  suppressReplenishmentState?: boolean;
   /**
    * Demand owns reorder risk and replenishment decisions.
    * Warehouse occupancy belongs to Floor Planning/WMS.
    */
 };
 
-// ─────────────────────────────────────────────
-// STYLE TOKENS
-// ─────────────────────────────────────────────
-// Demand inherits FT2 app tokens. Do not reintroduce local hex palettes here.
-const demandPalette = {
-  cardBg: 'var(--surface)',
-  border: 'var(--rule)',
-  rowHover: 'var(--bg-2)',
-  textPrimary: 'var(--ink)',
-  textSecond: 'var(--ink-3)',
-  tileBg: 'var(--bg-2)',
-} as const;
+type PlanningState = DemandVelocity['reorder_urgency'];
+type PlanningFilter = PlanningState | 'at-risk' | 'planning-gaps' | 'all';
 
-type DemandPalette = typeof demandPalette;
+const stateLabels: Record<PlanningState, string> = {
+  critical: 'Critical',
+  warning: 'Reorder soon',
+  planning_data_required: 'Data needed',
+  no_velocity: 'No recent demand',
+  healthy: 'Healthy',
+};
+const panel = { border: '0.5px solid var(--rule)', borderRadius: '10px', bgcolor: 'var(--surface)', minWidth: 0 };
+const focus = { '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' } };
 
-// ─────────────────────────────────────────────
-// VELOCITY TREND BADGE
-// ─────────────────────────────────────────────
-function TrendBadge({ trend, prev, current }: { trend: 'up' | 'down' | 'stable'; prev: number; current: number }) {
-  const theme = useTheme();
-  if (trend === 'stable' || prev === 0) return <Minus size={12} color={theme.palette.text.secondary as string} />;
-
-  const pct = prev > 0 ? Math.round(Math.abs((current - prev) / prev) * 100) : 0;
-  const isUp = trend === 'up';
-
-  return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-      {isUp
-        ? <TrendingUp size={12} color={theme.palette.success.main} />
-        : <TrendingDown size={12} color={theme.palette.error.main} />
-      }
-      <Typography sx={{ fontSize: 10, fontWeight: 600, color: isUp ? 'success.main' : 'error.main' }}>
-        {pct}%
-      </Typography>
-    </Box>
-  );
+function formatDemand(variant: DemandVelocity): string {
+  if (variant.velocity_per_day >= 0.1) {
+    return `${Number(variant.velocity_per_day.toFixed(2))} / day`;
+  }
+  // Display-only reconstruction of observed units in the canonical window.
+  // This value never participates in planning or changes the API data.
+  const observedUnits = Math.round(variant.velocity_per_day * variant.velocity_window_days);
+  return `${observedUnits} ${observedUnits === 1 ? 'unit' : 'units'} / ${variant.velocity_window_days}d`;
 }
 
-function SourceCTA({ variant }: { variant: DemandVelocity }) {
-  const params = new URLSearchParams();
-  params.set('variantId', variant.lasyncro_variant_id);
-
-  const href = `/suppliers-portal/sourcing?${params.toString()}`;
-
-  return (
-    <Box
-      component="a"
-      href={href}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        px: '10px',
-        py: '5px',
-        borderRadius: '999px',
-        bgcolor: 'var(--accent)',
-        color: 'var(--surface)',
-        fontSize: 11,
-        fontWeight: 600,
-        lineHeight: 1,
-        textDecoration: 'none',
-        whiteSpace: 'nowrap',
-        '&:hover': { opacity: 0.88 },
-      }}
-    >
-      Source →
-    </Box>
-  );
+function formatCover(days: number | null): string {
+  return days == null ? '—' : days > 365 ? '>365d' : `${days}d`;
 }
 
-// ─────────────────────────────────────────────
-// VARIANT ROW
-// ─────────────────────────────────────────────
-function VariantRow({ variant, currency, pal }: {
-  variant: DemandVelocity;
-  currency?: CurrencyContext;
-  pal: DemandPalette;
-}) {
-  const theme = useTheme();
-  const isCritical = variant.reorder_urgency === 'critical';
-  const isWarning = variant.reorder_urgency === 'warning';
-
-  const accentColor = isCritical
-    ? theme.palette.error.main
-    : isWarning
-    ? theme.palette.warning.main
-    : theme.palette.text.secondary;
-
-  const stockoutLabel = variant.estimated_stockout_date
-    ? new Date(variant.estimated_stockout_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    : null;
-
+function VariantRow({ variant }: { variant: DemandVelocity }) {
+  const risk = variant.reorder_urgency === 'critical' || variant.reorder_urgency === 'warning';
+  const missingPlanning = variant.reorder_urgency === 'planning_data_required';
+  const params = new URLSearchParams({ variantId: variant.lasyncro_variant_id });
+  const title = variant.title && variant.title !== 'Default Title'
+    ? variant.title : variant.product_title ?? 'Unknown item';
   return (
-    <Box sx={{
-      display: 'grid',
-      gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
-      px: 2, py: 1.25,
-      borderBottom: `1px solid ${pal.border}`,
-      alignItems: 'center',
-      gap: 1,
-      borderLeft: `3px solid ${isCritical ? theme.palette.error.main : isWarning ? theme.palette.warning.main : 'transparent'}`,
-      '&:hover': { background: pal.rowHover },
-    }}>
-      {/* Product */}
-      <Box>
-        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, lineHeight: 1.3 }}>
-          {/* ISS-229: prefer product_title; fall back to title only if meaningfully different */}
-          {variant.product_title ?? variant.title ?? 'Unknown product'}
+    <tr>
+      <td>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{title}</Typography>
+        <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+          {[variant.product_title !== title ? variant.product_title : null, variant.sku].filter(Boolean).join(' · ')}
         </Typography>
-        <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
-          {variant.sku
-            ? variant.sku
-            : <span style={{ color: 'var(--ink-4)' }}>No SKU</span>}
+      </td>
+      <td>{variant.available_quantity}</td>
+      <td>
+        {formatDemand(variant)}
+        <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+          {variant.velocity_per_day < 0.1
+            ? `${variant.demand_confidence.charAt(0).toUpperCase()}${variant.demand_confidence.slice(1)} confidence`
+            : `${variant.velocity_window_days}d · ${variant.demand_confidence} confidence`}
         </Typography>
-      </Box>
-
-      {/* In stock */}
-      <Typography sx={{ fontSize: 13, color: variant.available_quantity <= 0 ? 'error.main' : pal.textPrimary }}>
-        {variant.available_quantity}
-      </Typography>
-
-      {/* Sold 30d + adaptive demand trust context */}
-      <Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Typography sx={{ fontSize: 13, color: pal.textPrimary }}>
-            {variant.units_sold_30d}
-          </Typography>
-          <TrendBadge
-            trend={variant.velocity_trend}
-            prev={variant.units_sold_prev_30d}
-            current={variant.units_sold_30d}
-          />
-        </Box>
-        <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
-          {variant.velocity_window_days}d · {variant.demand_confidence} confidence
-        </Typography>
-      </Box>
-
-      {/* Days left */}
-      <Typography sx={{ fontSize: 13, fontWeight: isCritical || isWarning ? 600 : 400, color: accentColor }}>
-        {variant.days_of_stock_remaining != null ? `${variant.days_of_stock_remaining}d` : '—'}
-        {stockoutLabel && isCritical && (
-          <Typography component="span" sx={{ fontSize: 10, color: 'error.main', display: 'block' }}>
-            ~{stockoutLabel}
-          </Typography>
+      </td>
+      <td>
+        {formatCover(variant.days_of_stock_remaining)}
+        {variant.supplier_lead_time_days != null && (
+          <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>Lead time {variant.supplier_lead_time_days}d</Typography>
         )}
-      </Typography>
-
-            {/* Plain status badge keeps dense demand rows aligned with FT2 row styling. */}
-      <Box
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          width: 'fit-content',
-          px: '7px',
-          py: '4px',
-          borderRadius: '999px',
-          bgcolor: 'var(--bg-2)',
-          border: '1px solid var(--rule)',
-        }}
-      >
-        <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: accentColor }} />
-        <Typography sx={{ fontSize: 10, fontWeight: 600, color: accentColor, lineHeight: 1 }}>
-          {isCritical
-            ? 'Critical'
-            : isWarning
-            ? 'Reorder soon'
-            : variant.reorder_urgency === 'planning_data_required'
-            ? 'Planning data needed'
-            : variant.reorder_urgency === 'no_velocity'
-            ? 'No recent sales'
-            : 'Healthy'}
+      </td>
+      <td>{missingPlanning ? '—' : variant.suggested_reorder_qty ?? '—'}</td>
+      <td>
+        <Typography sx={{ fontSize: 12, color: risk ? 'var(--warning-ink)' : 'var(--ink-3)' }}>
+          {stateLabels[variant.reorder_urgency]}
         </Typography>
-      </Box>
-
-      {/* CTA */}
-      {(isCritical || isWarning) ? (
-        <SourceCTA variant={variant} />
-      ) : (
-        <Box />
-      )}
-    </Box>
+      </td>
+      <td>{risk && (
+        <Box component="a" href={`/suppliers-portal/sourcing?${params.toString()}`} sx={{
+          display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 11, fontWeight: 500,
+          color: 'var(--accent)', textDecoration: 'none', border: '0.5px solid var(--accent-border)',
+          borderRadius: '6px', px: 1, py: 0.5, '&:hover': { opacity: 0.75 }, ...focus,
+        }}>Review sourcing<span aria-hidden="true">→</span></Box>
+      )}</td>
+    </tr>
   );
 }
 
-// ─────────────────────────────────────────────
-// MAIN EXPORT
-// ─────────────────────────────────────────────
 function DemandModuleFT2Inner({
-  data,
-  isLoading,
-  isError,
-  currency,
-  reorderUrgencyFilter,
+  data, isLoading, isError, reorderUrgencyFilter, suppressReplenishmentState = false,
 }: DemandModuleFT2Props) {
-  const theme = useTheme();
-  const pal = demandPalette;
-  const [showRest, setShowRest] = useState(false);
-
-  const summary = data?.summary;
-  const allVariants = data?.variants ?? [];
-  const actionVariants = allVariants.filter(v =>
-    reorderUrgencyFilter === 'critical'
-      ? v.reorder_urgency === 'critical'
-      : v.reorder_urgency === 'critical' || v.reorder_urgency === 'warning'
-  );
-  const restVariants = allVariants.filter(v => v.reorder_urgency !== 'critical' && v.reorder_urgency !== 'warning');
-
-  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
-
-  // Reorder-risk header framing.
-  // Keep copy operator-friendly: Demand is about what to buy, when, and why.
-  const criticalCount = summary?.critical_reorder_count ?? 0;
-  const warningCount = summary?.warning_reorder_count ?? 0;
-  const headerStatus = criticalCount > 0 ? 'critical' : warningCount > 0 ? 'warning' : 'healthy';
-
+  const [selection, setFilter] = useState<PlanningFilter | null>(null);
+  useEffect(() => { setFilter(null); }, [reorderUrgencyFilter]);
+  const variants = data?.variants ?? [];
+  const count = (state: PlanningState) => variants.filter(v => v.reorder_urgency === state).length;
+  const defaultFilter: PlanningFilter = count('critical') + count('warning') > 0
+    ? 'at-risk' : count('planning_data_required') > 0 ? 'planning-gaps' : 'all';
+  // Explicit URL intent wins. Until the merchant chooses a filter, the normal
+  // default stays derived from current canonical planning truth. A manual
+  // selection then persists across ordinary data refetches.
+  const filter = reorderUrgencyFilter ?? selection ?? defaultFilter;
+  const visible = variants.filter(v => filter === 'all'
+    || (filter === 'at-risk' && (v.reorder_urgency === 'critical' || v.reorder_urgency === 'warning'))
+    || (filter === 'planning-gaps' && v.reorder_urgency === 'planning_data_required')
+    || v.reorder_urgency === filter);
+  const groups: { label: string; rows: { label: string; value: number; selection: PlanningFilter }[] }[] = [
+    { label: 'Items', rows: [{ label: 'Tracked', value: data?.summary.total_variants_tracked ?? variants.length, selection: 'all' }] },
+    { label: 'Risk', rows: [
+      { label: 'Critical', value: count('critical'), selection: 'critical' },
+      { label: 'Reorder soon', value: count('warning'), selection: 'warning' },
+    ] },
+    { label: 'Planning', rows: [
+      { label: 'Data needed', value: count('planning_data_required'), selection: 'planning-gaps' },
+      { label: 'No recent demand', value: count('no_velocity'), selection: 'no_velocity' },
+    ] },
+    { label: 'Stable', rows: [{ label: 'Healthy', value: count('healthy'), selection: 'healthy' }] },
+  ];
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
-
-      {/* ── SUMMARY HEADER ── */}
-      <Box sx={{
-        background: pal.cardBg,
-        border: `1px solid ${pal.border}`,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        mb: 2,
-      }}>
-        <Box sx={{
-          p: '1rem 1.25rem',
-          borderBottom: `1px solid ${pal.border}`,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 2,
+      <Typography component="h1" sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', mb: 2 }}>Replenishment</Typography>
+      <OperationalContextShell suppressRail={suppressReplenishmentState} primary={
+        <Box role="region" aria-label="Replenishment ledger" sx={{
+          ...panel, height: { md: 'min(680px, calc(100dvh - 220px))' }, minHeight: 360,
+          display: 'flex', flexDirection: 'column',
         }}>
-          <Box>
-            <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-              Demand
-            </Typography>
-            {isLoading ? (
-              <Typography sx={{ fontSize: 16, color: pal.textPrimary }}>Checking reorder risk...</Typography>
-            ) : summary ? (
-              <Typography sx={{ fontSize: 16, fontWeight: 500, color: headerStatus === 'critical' ? theme.palette.error.main : headerStatus === 'warning' ? theme.palette.warning.main : theme.palette.success.main }}>
-                {criticalCount > 0
-                  ? `${criticalCount} product${criticalCount > 1 ? 's' : ''} at stockout risk`
-                  : warningCount > 0
-                  ? `${warningCount} product${warningCount > 1 ? 's' : ''} should be reordered soon`
-                  : 'No products need reordering right now'}
-              </Typography>
-            ) : null}
+          <Box role="group" aria-label="Replenishment filters" sx={{ p: 1.5, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+            {([['at-risk', 'At risk'], ['planning-gaps', 'Planning gaps'], ['all', 'All']] as const).map(([key, label]) => (
+              <Box component="button" type="button" key={key} aria-pressed={filter === key || (key === 'at-risk' && (filter === 'critical' || filter === 'warning'))}
+                onClick={() => setFilter(key)} sx={{
+                  px: 1.5, py: 0.625, borderRadius: '6px', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                  bgcolor: filter === key ? 'var(--accent)' : 'var(--surface)',
+                  color: filter === key ? 'var(--accent-ink)' : 'var(--ink-3)',
+                  border: '1px solid', borderColor: filter === key ? 'var(--accent)' : 'var(--rule)',
+                  transition: 'background-color 0.12s', '&:hover': { bgcolor: filter === key ? 'var(--accent-hover)' : 'var(--bg-3)' }, ...focus,
+                }}>{label}</Box>
+            ))}
           </Box>
-
-          {/* Current-contract metrics only. Incoming coverage lands in the backend enrichment pass. */}
-          {summary && (
-            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-              {[
-                { label: 'Critical', value: summary.critical_reorder_count, color: theme.palette.error.main },
-                { label: 'Reorder soon', value: summary.warning_reorder_count, color: theme.palette.warning.main },
-                { label: 'Avg cover', value: summary.avg_days_of_stock != null ? `${summary.avg_days_of_stock}d` : '—', color: pal.textPrimary },
-                { label: 'Stock value', value: fmt(summary.total_inventory_value), color: pal.textPrimary },
-              ].map(({ label, value, color }) => (
-                <Box key={label} sx={{ background: pal.tileBg, borderRadius: '6px', px: 1.5, py: 0.75, minWidth: 80 }}>
-                  <Typography sx={{ fontSize: 16, fontWeight: 600, color, lineHeight: 1.2 }}>{value}</Typography>
-                  <Typography sx={{ fontSize: 10, color: pal.textSecond }}>{label}</Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </Box>
-      </Box>
-
-      {isLoading && <ModuleLoadingSkeleton />}
-
-      {isError && (
-        <Typography color="error" sx={{ p: 2 }}>Failed to load demand data.</Typography>
-      )}
-
-      {/* Warehouse occupancy intentionally excluded: Floor Planning/WMS own storage utilization. */}
-
-      {/* ── REORDER LIST ── */}
-        {!isLoading && allVariants.length > 0 && (
-          <Box sx={{
-            background: pal.cardBg,
-            border: `1px solid ${pal.border}`,
-            borderRadius: '12px',
-            overflow: 'hidden',
-            mb: 2,
-          }}>
-            {/* Table header */}
-            <Box sx={{
-              display: 'grid',
-              gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
-              px: 2,
-              py: 1,
-              borderBottom: `1px solid ${pal.border}`,
-              gap: 1,
-            }}>
-              {['Product', 'In stock', 'Sold 30d', 'Cover', 'Status', 'Action'].map(h => (
-                <Typography key={h} sx={{ fontSize: 10, fontWeight: 600, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {h}
-                </Typography>
-              ))}
-            </Box>
-
-            {/* Action items: critical + warning only. Full decision grouping comes next pass. */}
-            {actionVariants.length === 0 ? (
-              <Box sx={{ py: 4, textAlign: 'center' }}>
-                <CheckCircle size={24} color={theme.palette.success.main} />
-                <Typography sx={{ fontSize: 13, color: pal.textSecond, mt: 1 }}>
-                  No products need reordering right now.
-                </Typography>
-              </Box>
+          <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            {isLoading ? <ModuleLoadingSkeleton /> : isError ? (
+              <Typography role="alert" sx={{ p: 2, color: 'var(--warning-ink)' }}>Replenishment is temporarily unavailable.</Typography>
             ) : (
-              actionVariants.map(v => (
-                <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
-              ))
-            )}
-
-            {/* Non-action rows stay collapsed until Demand gets full FT2 decision groups. */}
-            {restVariants.length > 0 && (
               <>
-                <Box
-                  onClick={() => setShowRest(v => !v)}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    px: 2,
-                    py: 1,
-                    cursor: 'pointer',
-                    borderTop: `1px solid ${pal.border}`,
-                    '&:hover': { background: pal.rowHover },
-                  }}
-                >
-                  <ChevronDown size={14} color={pal.textSecond} style={{ transform: showRest ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
-                  <Typography sx={{ fontSize: 12, color: pal.textSecond }}>
-                    {restVariants.length} healthy / excess / no-sales product{restVariants.length > 1 ? 's' : ''}
-                  </Typography>
+                <Box component="table" sx={{
+                  width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12, color: 'var(--ink)',
+                  '& th, & td': { p: '10px 8px', textAlign: 'left', overflowWrap: 'anywhere', borderBottom: '0.5px solid var(--rule)' },
+                  '& th': { fontSize: 10, fontWeight: 500, color: 'var(--ink-3)', bgcolor: 'var(--surface)', position: 'sticky', top: 0 },
+                  '& tbody tr:hover': { bgcolor: 'var(--bg-3)' },
+                }}>
+                  <colgroup>{['23%', '9%', '15%', '13%', '10%', '15%', '15%'].map((width, index) => <col key={index} style={{ width }} />)}</colgroup>
+                  <thead><tr>{['Item', 'Available', 'Demand', 'Cover', 'Suggested', 'State', 'Action'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+                  <tbody>{visible.map(variant => <VariantRow key={variant.lasyncro_variant_id} variant={variant} />)}</tbody>
                 </Box>
-                <Collapse in={showRest}>
-                  {restVariants.map(v => (
-                    <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
-                  ))}
-                </Collapse>
+                {!visible.length && <Typography sx={{ p: 2, fontSize: 13, color: 'var(--ink-3)' }}>
+                  {variants.length ? 'No items match this planning filter.' : 'No replenishment data yet.'}
+                </Typography>}
               </>
             )}
           </Box>
-        )}
-
-      {!isLoading && !isError && allVariants.length === 0 && (
-        <Box sx={{ textAlign: 'center', py: 8, color: pal.textSecond }}>
-          <Package size={36} style={{ opacity: 0.3 }} />
-          <Typography sx={{ mt: 2, fontSize: 14 }}>No demand data yet.</Typography>
         </Box>
-      )}
+      } rail={
+        <Box component="aside" aria-label="Replenishment state" sx={{
+          minWidth: 0, boxSizing: 'border-box', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)',
+          borderRadius: '14px', px: '18px', py: '14px', display: 'flex', flexDirection: 'column', height: { lg: '100%' },
+        }}>
+          <Typography component="h2" sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1, mb: '12px', textTransform: 'uppercase' }}>Replenishment state</Typography>
+          {groups.map(group => <Box key={group.label} role="group" aria-label={group.label} sx={{
+            display: 'flex', flexDirection: 'column', gap: '6px', py: '10px', borderTop: '0.5px solid var(--rule)',
+            '&:first-of-type': { borderTop: 'none', pt: 0 },
+          }}>
+            <Typography component="span" sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '2px' }}>{group.label}</Typography>
+            {group.rows.map(row => <Box component="button" type="button" key={row.label} onClick={() => setFilter(row.selection)} aria-pressed={filter === row.selection} sx={{
+              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, p: 0, border: 'none', bgcolor: 'transparent',
+              fontFamily: 'inherit', textAlign: 'left', py: 0.5, px: 1, mx: -1, borderRadius: '6px', cursor: 'pointer',
+              transition: 'background-color 0.12s', '&:hover': { bgcolor: 'var(--bg-3)' }, ...focus,
+            }}>
+              <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, color: 'var(--ink-3)' }}>{row.label}</Typography>
+              <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 500, lineHeight: 1.45, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                {!isLoading && !isError && data ? row.value : '—'}
+              </Typography>
+            </Box>)}
+          </Box>)}
+        </Box>
+      } />
     </Box>
   );
 }

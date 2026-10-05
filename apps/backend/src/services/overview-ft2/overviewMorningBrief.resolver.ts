@@ -164,12 +164,12 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   // ── Supplier signals
   wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
   // ── Demand signals
-  stockout_risk:            { module: 'demand',           deepLink: '/demand?filter=critical' },
+  stockout_risk:            { module: 'demand',           deepLink: '/inventory/replenishment?filter=critical' },
   // FP-OV-10b: shop-level low-stock summary (AL-01 aggregator, scheduled),
   // distinct alert_type from stockout_risk (per-variant, order-triggered) —
   // same landing page and operator action, kept as a separate map entry so
   // the two can diverge independently without a breaking change to either.
-  low_stock_reorder:        { module: 'demand',           deepLink: '/demand?filter=critical' },
+  low_stock_reorder:        { module: 'demand',           deepLink: '/inventory/replenishment?filter=critical' },
 };
 
 const SEVERITY_PRIORITY: Record<string, number> = {

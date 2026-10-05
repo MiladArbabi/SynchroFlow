@@ -31,7 +31,7 @@ import OverviewModuleFT2, {
 const FORBIDDEN_ROUTES = [
   '/overview?resolution=address',
   '/orders/flow?urgency=sla_breach',
-  '/demand?filter=critical',
+  '/inventory/replenishment?filter=critical',
 ];
 
 const APPROVED_CONTEXT_ROUTES = ['/orders/flow', '/wms', '/orders/flow?constraint=inventory'];

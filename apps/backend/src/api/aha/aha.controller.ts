@@ -183,7 +183,7 @@ export async function getAhaSignal(req: Request, res: Response) {
             sublabel: 'across catalogue',
           },
         ],
-        deepLink: '/demand?filter=critical',
+        deepLink: '/inventory/replenishment?filter=critical',
         ctaLabel: 'Review critical SKUs',
       };
 
