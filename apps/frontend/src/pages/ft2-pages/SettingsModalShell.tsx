@@ -7,7 +7,10 @@
 // close, Escape, and backdrop-click restore that exact application context.
 
 import {
+  useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
@@ -29,6 +32,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { SETTINGS_TABS } from './settingsTabs';
+import { useActivationChecklist } from '../../hooks/useActivationChecklist';
+import {
+  SHOPIFY_LOCATION_JOURNEY,
+  SHOPIFY_LOCATION_CONTINUATION,
+  ShopifyLocationPersistenceContext,
+  type ShopifyLocationJourneyState,
+} from '../../contexts/ShopifyLocationJourneyContext';
 
 interface SettingsReturnLocation {
   pathname: string;
@@ -54,10 +64,43 @@ const SETTINGS_ICONS: Record<string, LucideIcon> = {
   team: Users,
 };
 
-export default function SettingsModalShell({
+export default function SettingsModalShell(props: SettingsModalShellProps) {
+  const { pathname, state } = useLocation();
+  const journey = (state as ShopifyLocationJourneyState | null)?.onboardingJourney;
+  return pathname === '/settings/warehouse' && journey === SHOPIFY_LOCATION_JOURNEY
+    ? <OnboardingSettingsModalShell {...props} />
+    : <SettingsModalSurface {...props} />;
+}
+
+function OnboardingSettingsModalShell(props: SettingsModalShellProps) {
+  const { firstEntry, externalLocationMapped } = useActivationChecklist();
+  const entryBaseline = useRef<'unknown' | 'eligible' | 'ineligible'>('unknown');
+  const [persistenceSucceeded, setPersistenceSucceeded] = useState(false);
+  const reportPersistence = useCallback(() => setPersistenceSucceeded(true), []);
+
+  useEffect(() => {
+    // Unknown is never false. An already-complete or mature entry stays ineligible.
+    if (entryBaseline.current === 'unknown' && externalLocationMapped !== null) {
+      entryBaseline.current = firstEntry && externalLocationMapped === false
+        ? 'eligible' : 'ineligible';
+    }
+  }, [firstEntry, externalLocationMapped]);
+
+  const continuationReady = entryBaseline.current === 'eligible' &&
+    persistenceSucceeded && firstEntry && externalLocationMapped === true;
+
+  return (
+    <ShopifyLocationPersistenceContext.Provider value={reportPersistence}>
+      <SettingsModalSurface {...props} continuationReady={continuationReady} />
+    </ShopifyLocationPersistenceContext.Provider>
+  );
+}
+
+function SettingsModalSurface({
   children,
   returnLocation,
-}: SettingsModalShellProps) {
+  continuationReady = false,
+}: SettingsModalShellProps & { continuationReady?: boolean }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [query, setQuery] = useState('');
@@ -85,6 +128,17 @@ export default function SettingsModalShell({
     }
 
     navigate('/overview', { replace: true });
+  };
+
+  const handleCloseX = () => {
+    if (!continuationReady) {
+      handleClose();
+      return;
+    }
+    navigate('/overview', {
+      replace: true,
+      state: { onboardingContinuation: SHOPIFY_LOCATION_CONTINUATION },
+    });
   };
 
   const handleNavigate = (path: string) => {
@@ -323,15 +377,24 @@ export default function SettingsModalShell({
         >
           <IconButton
             aria-label="Close settings"
-            onClick={handleClose}
+            onClick={handleCloseX}
             size="small"
             sx={{
               position: 'absolute',
               top: 16,
               right: 16,
               zIndex: 2,
-              color: 'var(--ink-3)',
-              bgcolor: 'var(--surface)',
+              color: continuationReady ? 'var(--accent)' : 'var(--ink-3)',
+              bgcolor: continuationReady ? 'var(--accent-ghost)' : 'var(--surface)',
+              ...(continuationReady && {
+                // Existing teaching rhythm, applied to color only: no layout motion.
+                animation: 'settingsContinuationAccent 2.4s ease-in-out infinite',
+                '@keyframes settingsContinuationAccent': {
+                  '0%, 100%': { color: 'var(--accent)' },
+                  '50%': { color: 'var(--accent-hover)' },
+                },
+                '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+              }),
               '&:hover': {
                 bgcolor: 'var(--bg-2)',
                 color: 'var(--ink)',
