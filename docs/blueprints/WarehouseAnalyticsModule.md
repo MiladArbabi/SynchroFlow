@@ -235,8 +235,10 @@ Example: *"This week you shipped 312 orders at £1.42 cost-per-order, down from 
 
 **Endpoint contract for display:**
 
-- `GET /api/v1/wms/analytics/display?token=…` — read-only, public (no JWT), token-validated, returns same payload as `/api/v1/wms/analytics` minus owner-only fields (Zone 2 detail, Zone 5 cost detail)
-- `POST /api/v1/wms/analytics/display/heartbeat?token=…` — updates `last_seen_at`
+- `GET /api/v1/wms/analytics/display?token=…` — read-only and public (no JWT). The token is validated first, then the verified shop's current `warehouse.analytics` commercial capability is evaluated before any paid analytics payload is returned.
+- `POST /api/v1/wms/analytics/display/heartbeat?token=…` — uses the same current commercial boundary before updating `last_seen_at`; commercially denied displays do not remain artificially active through heartbeat writes.
+- Token validity and commercial authority are independent: a valid display token is not rotated or revoked by a tier change. The same token may be allowed, denied, and allowed again as current commercial truth changes.
+- Invalid token → `401 INVALID_TOKEN`; valid token with commercial denial → `403 COMMERCIAL_ACCESS_DENIED`; unavailable commercial truth → `503 COMMERCIAL_STATE_UNAVAILABLE`.
 
 ### 6.2 Token management surface (Team Settings, new section)
 

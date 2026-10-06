@@ -3262,10 +3262,14 @@ direct URL can no longer bypass commercial policy:
 | `/problem-center/*` | `warehouse.problem_center` |
 | `/demand/*` | `demand.forecasting` (replaces the legacy `PlanGate feature="demand.forecasting"` — same Growth+ behaviour, canonical mechanism) |
 
-**Public, token-based `/wms/analytics/display` is unaffected** — it is a
-separate top-level route (`App.tsx`) rendering `WmsDisplayPage`, which never
-passes through `WmsAnalyticsPage`/`CommercialGate`. It stays outside
-authenticated commercial gating, as designed.
+**Public, token-based `/wms/analytics/display` remains no-JWT, but it is
+not outside commercial authorization.** The display token proves display
+identity only. After token validation, the backend resolves the shop's current
+commercial state and evaluates the canonical `warehouse.analytics` capability.
+A valid token therefore returns display data only while that capability is
+allowed; commercial denial returns `403 COMMERCIAL_ACCESS_DENIED`, and
+unavailable commercial truth returns `503 COMMERCIAL_STATE_UNAVAILABLE`.
+Tier changes do not rotate or revoke the display token itself.
 
 `CommercialGate` (new: `apps/frontend/src/components/CommercialGate.tsx`) is
 the reusable mechanism: ALLOW renders children; DENY renders a

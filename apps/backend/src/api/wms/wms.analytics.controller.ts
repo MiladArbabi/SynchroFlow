@@ -15,6 +15,7 @@ import {
   validateDisplayToken,
   generateDisplayToken,
 } from '../../services/wms/wmsAnalytics.service.js';
+import { resolveShopCapabilityDecision } from '../../services/shop-capability-decision.service.js';
 
 export const httpGetPickAnalytics = async (req: Request, res: Response) => {
   try {
@@ -128,6 +129,44 @@ export const httpGetActivityStream = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * GH-1219 — a display token proves display identity only, never commercial
+ * access. After token validation, evaluate warehouse.analytics against the
+ * shop's CURRENT authoritative tier. Sends 503 (commercial state unavailable)
+ * or 403 (canonical COMMERCIAL_ACCESS_DENIED body) and returns false; returns
+ * true when access is allowed. Only the commercial lookup maps to 503 —
+ * downstream data/heartbeat failures keep their existing 500 handling.
+ */
+async function enforceDisplayCommercialAccess(shopId: number, res: Response): Promise<boolean> {
+  const capabilityId = 'warehouse.analytics' as const;
+  let resolved: Awaited<ReturnType<typeof resolveShopCapabilityDecision>>;
+  try {
+    resolved = await resolveShopCapabilityDecision(shopId, capabilityId);
+  } catch (error) {
+    console.error('[WMS_DISPLAY_COMMERCIAL_STATE_UNAVAILABLE]', {
+      shopId,
+      error: error instanceof Error ? error.message : error,
+    });
+    res.status(503).json({ error: 'COMMERCIAL_STATE_UNAVAILABLE', retryable: true });
+    return false;
+  }
+
+  const { decision, currentTier } = resolved;
+  if (decision.allowed) return true;
+
+  const body: Record<string, string> = {
+    error: 'COMMERCIAL_ACCESS_DENIED',
+    reason: decision.reason,
+    capabilityId,
+    currentTier,
+  };
+  if (decision.requiredTier) body.requiredTier = decision.requiredTier;
+  if (decision.requiredModule) body.requiredModule = decision.requiredModule;
+  if (decision.requiredFeature) body.requiredFeature = decision.requiredFeature;
+  res.status(403).json(body);
+  return false;
+}
+
 export const httpGetDisplayData = async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
@@ -135,6 +174,7 @@ export const httpGetDisplayData = async (req: Request, res: Response) => {
     const validated = await validateDisplayToken(token);
     if (!validated) return res.status(401).json({ error: 'INVALID_TOKEN' });
     const { shopId } = validated;
+    if (!(await enforceDisplayCommercialAccess(shopId, res))) return;
     const [live, pipeline, exceptions, zones] = await withTenant(shopId, (trx) => Promise.all([
      getLiveCapacity(shopId, trx),
      getPipelineVelocity(shopId, 30, trx),
@@ -155,6 +195,7 @@ export const httpDisplayHeartbeat = async (req: Request, res: Response) => {
     if (!token) return res.status(401).json({ error: 'MISSING_TOKEN' });
     const validated = await validateDisplayToken(token);
     if (!validated) return res.status(401).json({ error: 'INVALID_TOKEN' });
+    if (!(await enforceDisplayCommercialAccess(validated.shopId, res))) return;
     await withTenant(validated.shopId, (trx) => trx('shop_display_tokens')
      .where('id', validated.tokenId)
      .update({ last_seen_at: new Date() }));
