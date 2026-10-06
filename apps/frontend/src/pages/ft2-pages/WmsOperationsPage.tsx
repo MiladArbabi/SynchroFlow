@@ -26,78 +26,11 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Typography, TextField } from '@mui/material';
-import { AlertTriangle } from 'lucide-react';
+import { Alert } from '@mui/material';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
 import { hasQzPromptBeenDismissed, dismissQzPrompt } from 'utils/qzPrompt';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
-
-/**
- * ProblemBinPrompt
- * ----------------
- * Inline banner shown when problem_bin_location is not configured.
- * Exceptions cannot be meaningfully routed without a physical bin location.
- * Owner must set this before any exception workflows are used.
- */
-function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }: {
-  binInput: string;
-  setBinInput: (v: string) => void;
-  binSaving: boolean;
-  binError: string | null;
-  onSave: () => void;
-}) {
-  return (
-    <Box sx={{
-      mx: 3, mt: 2, mb: 0,
-      border: '1px solid var(--accent-border)',
-      borderRadius: '12px', bgcolor: 'var(--accent-ghost)',
-      p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
-    }}>
-      <AlertTriangle size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-      <Box sx={{ flex: 1, minWidth: 200 }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-          Problem bin not configured
-        </Typography>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
-          Set a physical bin code so operators know where to route exception items.
-        </Typography>
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}>
-        <TextField
-          size="small"
-          value={binInput}
-          onChange={(e) => setBinInput(e.target.value.toUpperCase())}
-          placeholder="e.g. PROB-BIN-A"
-          sx={{ width: 160, '& input': { fontSize: 13 } }}
-          onKeyDown={(e) => e.key === 'Enter' && onSave()}
-        />
-        <Box
-          component="button"
-          disabled={!binInput.trim() || binSaving}
-          onClick={onSave}
-          sx={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            px: 1.5, py: 0.75, borderRadius: '8px',
-            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
-            border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 600,
-            '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
-            '&:hover:not(:disabled)': { opacity: 0.88 },
-            transition: 'opacity 0.1s',
-          }}
-        >
-          {binSaving ? 'Saving…' : 'Save'}
-        </Box>
-      </Box>
-      {binError && (
-        <Box sx={{ width: '100%', px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: 'rgba(229,72,77,0.08)', border: '1px solid rgba(229,72,77,0.3)' }}>
-          <Typography sx={{ fontSize: 12, color: '#E5484D' }}>{binError}</Typography>
-        </Box>
-      )}
-    </Box>
-  );
-}
 
 /**
  * WMS GATE PAGE
@@ -113,7 +46,7 @@ export default function WmsOperationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
-    data, isLoading, isError, refetch, stowTasks, settings,
+    data, isLoading, isError, refetch, stowTasks,
     openReceiveJobs, recountTasks, recountLocked, recountTasksSettled,
     openingInventory = null, refetchOpeningInventory,
   } = useWms();
@@ -757,29 +690,6 @@ export default function WmsOperationsPage() {
   // confirmation screen. Unit-placement failures remain scanner failures and
   // do not create an exception through the retired bulk-stow callback.
 
-  const problemBinMissing =
-    settings !== null && !settings?.problem_bin_location;
-  const [binInput, setBinInput]     = useState('');
-  const [binSaving, setBinSaving]   = useState(false);
-  const [binError,  setBinError]    = useState<string | null>(null);
-
-  const handleSaveProblemBin = async () => {
-    if (!binInput.trim()) return;
-    setBinSaving(true);
-    setBinError(null);
-    try {
-      await axiosInstance.patch('/api/v1/wms/settings', {
-        problem_bin_location: binInput.trim().toUpperCase(),
-      });
-      refetch();
-      setBinInput('');
-    } catch {
-      setBinError('Failed to save. Try again.');
-    } finally {
-      setBinSaving(false);
-    }
-  };
-
   const handleFetchReturnJob = async (returnJobId: string) => {
     const { data } = await axiosInstance.get(`/api/v1/modules/returns/jobs/${returnJobId}`);
     return data.data;
@@ -816,13 +726,6 @@ export default function WmsOperationsPage() {
         {finishedCountLabel} counted and submitted for review.
       </Alert>
     )}
-    {problemBinMissing && <ProblemBinPrompt
-      binInput={binInput}
-      setBinInput={setBinInput}
-      binSaving={binSaving}
-      binError={binError}
-      onSave={() => void handleSaveProblemBin()}
-    />}
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}
