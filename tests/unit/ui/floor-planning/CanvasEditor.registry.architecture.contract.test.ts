@@ -51,13 +51,30 @@ describe('CanvasEditor canonical component registry boundary', () => {
 
 describe('GH1177 approved visual hierarchy contracts', () => {
   it('anchors boundary guidance to Floor settings and stock guidance to the Stock location component', () => {
-    expect(canvasSource.match(/<Popper\b/g) ?? []).toHaveLength(1);
+    const guidancePopper = (canvasSource.match(/<Popper\b[\s\S]*?<\/Popper>/g) ?? [])
+      .find((popper) => popper.includes('<SpotlightCoachMark'));
+    expect(guidancePopper).toBeDefined();
+    expect(guidancePopper).toContain('anchorEl={guidanceAnchorEl}');
+    expect(guidancePopper).toContain('open={guidancePhase != null && guidanceAnchorEl != null}');
     expect(canvasSource).toContain('anchorEl={guidanceAnchorEl}');
     expect(canvasSource).toContain('ref={setFloorSettingsAnchorEl}');
-    expect(canvasSource).toContain(
-      "ref={item.id === 'pick' ? onStockLocationAnchor : undefined}",
+    expect(canvasSource).toMatch(
+      /<Button\b[^>]*ref=\{setFloorSettingsAnchorEl\}[^>]*aria-label="Floor settings"/s,
     );
-    expect(canvasSource).toContain(
+    const paletteRow = canvasSource.match(/<Box key=\{item\.id\}[\s\S]*?role="button"/)?.[0];
+    expect(paletteRow).toMatch(
+      /ref=\{\(node:[^)]*\)\s*=>\s*\{[\s\S]*?if\s*\(item\.id === 'pick'\)\s*onStockLocationAnchor\(node\);[\s\S]*?\}\}/,
+    );
+    const registrySource = fs.readFileSync(
+      path.join(REPO, 'modules/floor-planning/src/ui/components/floorPlanningComponents.ts'),
+      'utf8',
+    );
+    expect(registrySource).toMatch(/id: 'pick',\s*label: 'Stock location'/);
+    expect(canvasSource).toContain('onStockLocationAnchor={setStockLocationAnchorEl}');
+    expect(canvasSource).toMatch(
+      /const guidanceAnchorEl\s*=\s*guidancePhase === 'boundary'\s*\?\s*floorSettingsAnchorEl\s*:\s*guidancePhase === 'stock'\s*\?\s*stockLocationAnchorEl\s*:\s*null/s,
+    );
+    expect(guidancePopper).toContain(
       "placement={guidancePhase === 'stock' ? 'right-start' : 'bottom'}",
     );
     expect(canvasSource).toMatch(

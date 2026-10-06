@@ -26,18 +26,28 @@ function zone(overrides: Partial<WarehouseZone> = {}): WarehouseZone {
 function openPaletteItem(label: string) {
   const tile = screen.getByRole('button', { name: `Add ${label}` });
   fireEvent.click(tile);
-  return { tile, codeInput: within(tile).getByLabelText('Location code') };
+  const placement = screen.getByRole('region', { name: 'Component placement' });
+  return { tile, placement, codeInput: within(placement).getByLabelText('Location code') };
 }
 
-describe('CanvasEditor corrected inline creation flow', () => {
-  it('expands a required Location code field with the next generated code without creating', () => {
+describe('CanvasEditor anchored creation flow', () => {
+  it('opens placement associated with the clicked component outside the palette with an autofocus suggested code', () => {
     const onCreateZone = jest.fn();
     render(<CanvasEditor zones={[zone({ location_code: 'PACK-01' })]} onCreateZone={onCreateZone} />);
+    const palette = screen.getByRole('region', { name: 'Component palette' });
+    expect(screen.queryByRole('region', { name: 'Component placement' })).not.toBeInTheDocument();
 
-    const { codeInput } = openPaletteItem('Pack');
+    const { tile, placement, codeInput } = openPaletteItem('Pack');
 
     expect(codeInput).toBeRequired();
     expect(codeInput).toHaveValue('PACK-02');
+    expect(tile).toHaveAttribute('aria-pressed', 'true');
+    expect(tile).toHaveAttribute('aria-controls', placement.id);
+    expect(within(placement).getByText('Pack')).toBeInTheDocument();
+    expect(palette).not.toContainElement(placement);
+    expect(codeInput).toHaveFocus();
+    expect(within(tile).queryByLabelText('Location code')).not.toBeInTheDocument();
+    expect(placement).toContainElement(codeInput);
     expect(onCreateZone).not.toHaveBeenCalled();
     expect(screen.queryByTestId('pending-placement-ghost')).not.toBeInTheDocument();
   });
@@ -63,16 +73,18 @@ describe('CanvasEditor corrected inline creation flow', () => {
     expect(await screen.findByText('Role')).toBeInTheDocument();
     expect(screen.getAllByText('PACK-01').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Pack').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('region', { name: 'Component placement' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add Pack' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('Add creates with a deliberately replaced uppercase code while role stays Problem Area', async () => {
     const onCreateZone = jest.fn().mockResolvedValue(undefined);
     render(<CanvasEditor zones={[]} onCreateZone={onCreateZone} />);
-    const { tile, codeInput } = openPaletteItem('Problem Area');
+    const { placement, codeInput } = openPaletteItem('Problem Area');
 
     fireEvent.change(codeInput, { target: { value: 'quarantine-work' } });
     expect(codeInput).toHaveValue('QUARANTINE-WORK');
-    fireEvent.click(within(tile).getByRole('button', { name: 'Add', exact: true }));
+    fireEvent.click(within(placement).getByRole('button', { name: 'Add', exact: true }));
 
     await waitFor(() => expect(onCreateZone).toHaveBeenCalledTimes(1));
     expect(onCreateZone).toHaveBeenCalledWith(expect.objectContaining({
@@ -100,7 +112,7 @@ describe('CanvasEditor corrected inline creation flow', () => {
     })));
   });
 
-  it('switching palette items replaces the inline form and generated suggestion', () => {
+  it('switching palette items replaces the placement form and generated suggestion', () => {
     const onCreateZone = jest.fn();
     render(<CanvasEditor zones={[]} onCreateZone={onCreateZone} />);
     openPaletteItem('Problem Area');
@@ -108,6 +120,22 @@ describe('CanvasEditor corrected inline creation flow', () => {
 
     expect(screen.getAllByLabelText('Location code')).toHaveLength(1);
     expect(codeInput).toHaveValue('PICK-01');
+    expect(onCreateZone).not.toHaveBeenCalled();
+  });
+
+  it('Escape and explicit Cancel dismiss placement and restore the normal palette without creating', () => {
+    const onCreateZone = jest.fn();
+    render(<CanvasEditor zones={[]} onCreateZone={onCreateZone} />);
+    const first = openPaletteItem('Pack');
+    fireEvent.keyDown(first.codeInput, { key: 'Escape' });
+    expect(screen.queryByRole('region', { name: 'Component placement' })).not.toBeInTheDocument();
+    expect(first.tile).toHaveAttribute('aria-pressed', 'false');
+    expect(first.tile).toHaveFocus();
+
+    const second = openPaletteItem('Receive');
+    fireEvent.click(within(second.placement).getByRole('button', { name: 'Cancel', exact: true }));
+    expect(screen.queryByRole('region', { name: 'Component placement' })).not.toBeInTheDocument();
+    expect(second.tile).toHaveAttribute('aria-pressed', 'false');
     expect(onCreateZone).not.toHaveBeenCalled();
   });
 
@@ -142,10 +170,10 @@ describe('CanvasEditor corrected inline creation flow', () => {
       .mockRejectedValueOnce({ response: { data: { error: 'Code already exists' } } })
       .mockResolvedValueOnce(undefined);
     render(<CanvasEditor zones={[]} onCreateZone={onCreateZone} />);
-    const { tile, codeInput } = openPaletteItem('Pack');
+    const { placement, codeInput } = openPaletteItem('Pack');
     fireEvent.change(codeInput, { target: { value: 'PACK-NORTH' } });
 
-    fireEvent.click(within(tile).getByRole('button', { name: 'Add', exact: true }));
+    fireEvent.click(within(placement).getByRole('button', { name: 'Add', exact: true }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Code already exists');
     expect(codeInput).toHaveValue('PACK-NORTH');
     fireEvent.keyDown(codeInput, { key: 'Enter' });

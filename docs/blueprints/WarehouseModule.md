@@ -10,7 +10,7 @@
 **Routes:**
 
 - `/wms` → Operations (WmsPage.tsx → WmsModuleFT2)
-- `/floor-planning` → Floor Planning (FloorPlanningPage.tsx → FloorPlanningModuleFT2)
+- `/floor-planning` → Floor Planning (FloorPlanningPage.tsx → FloorPlanningModuleFT2): one spatial workspace, default Inspect, explicit Edit layout
 - `/wms/analytics` → Analytics (WmsAnalyticsPage.tsx)
 
 **Sidenav:** Warehouse accordion, 3 children *(was 4 before June 2026)*. Module gated on capability `warehouse.operations` (canonical module `wms`) — corrected from the legacy `requiredModuleId: 'wms-lite'` by P0-A2B (implemented + verified 2026-09-04, see monetization_billing_playbook.md §32). Floor Planning requires capability `warehouse.floor_planning` (Growth+; backend enforced since P0-A2A, frontend nav/route since P0-A2B — see monetization_billing_playbook.md §32). Analytics requires capability `warehouse.analytics` (Growth+; canonical feature `wms.analytics`, not the legacy `wms.pick_batches`).
@@ -18,6 +18,10 @@
 > **Departed, June 2026 nav restructure:** `WMS Readiness` (`/wms/readiness`) moved to **Inventory → Data Quality**. This document's own §5 never listed Readiness in its route table to begin with — independent confirmation it was never really this module's content; it covers SKU/catalog data completeness (no product code, no bin assignment, count mismatches), not warehouse-floor operations. The route itself is unchanged; only its sidenav parent and page H1 changed (was "WMS Readiness," now "Data Quality"). §6/§8's discussion of the `PROBLEM` vs `quarantine` vs `returns` zone-type conflation is unaffected by this move — that's floor-physical zoning, correctly still owned here.
 
 **Route registration:** `LifecycleRouteHost.tsx` — `/wms/analytics` registered before `/wms/*` (correct — wildcard would shadow it).
+
+**Current Floor Planning contract:** Inspect uses shared `IsometricCanvas`, physical-location facts/contents in a selected-location rail, layout/occupancy/stock-out/empty-bin overlays, and contextual/batch location-label printing. Ops Console owns attention and suppresses/replaces that rail without replacing the spatial map. Edit layout enters the existing 2D `CanvasEditor`; Done editing returns to Inspect. Location Active/Inactive mutation belongs to the Edit Inspector, the warehouse root is passive, and Floor settings retain explicit persistence semantics. Batch location labels exclude warehouse roots.
+
+Floor Planning owns the physical/spatial model and location labels; Items owns product/variant identity and product barcodes, Settings owns administrative warehouse facts, and WMS workflows own execution. Permanent Map / Setup / Barcodes tabs, Setup List, location/product barcode sub-tabs, and product-barcode management UI are retired. `?tab=setup&view=canvas` remains a legacy compatibility deep link into Edit mode only.
 
 ---
 
@@ -27,7 +31,7 @@ All routes require `Authorization: Bearer $TOKEN`.
 
 | Method | Path | Status | Notes |
 |---|---|---|---|
-| GET | `/api/v1/floor-planning/layout` | ✅ Live | Returns `{zones: [], product_barcodes: []}` |
+| GET | `/api/v1/floor-planning/layout` | ✅ Live | Returns `{zones: [], product_barcodes: []}`; product payload retained for compatibility, not current UI ownership |
 | GET | `/api/v1/floor-planning/grid` | ✅ Live | Returns 23 active locations, including 19 bin locations |
 | GET | `/api/v1/floor-planning/grid/occupancy` | ✅ Live | Returns occupancy grouped by location code; verified with stock in 12 pick bins |
 
@@ -37,8 +41,8 @@ All routes require `Authorization: Bearer $TOKEN`.
 | POST | `/api/v1/floor-planning/zones` | ✅ Wired | Zone creation |
 | PATCH | `/api/v1/floor-planning/zones/:code` | ✅ Wired | Zone update |
 | DELETE | `/api/v1/floor-planning/zones/:code` | ✅ Wired | Zone delete |
-| PATCH | `/api/v1/floor-planning/products/:id/barcode` | ✅ Wired | Product barcode update |
-| POST | `/api/v1/floor-planning/zones/:code/print` | ✅ Wired | Barcode print |
+| PATCH | `/api/v1/floor-planning/products/:id/barcode` | ✅ Wired | Backend compatibility product-barcode update; not an active Floor Planning UI capability |
+| POST | `/api/v1/floor-planning/zones/:code/print` | ✅ Wired | Physical-location label print |
 | GET | `/api/v1/wms/batches` | ✅ Live | `{batches: []}` |
 | GET | `/api/v1/wms/stow-tasks` | ✅ Live | `{stow_tasks: []}` |
 | GET | `/api/v1/wms/analytics` | ✅ Live | summary, operators, batches, exceptions, days (30 buckets) |
@@ -84,27 +88,29 @@ The generated root code remains an internal compatibility key. Users will manage
 | File | Role |
 |---|---|
 | `apps/frontend/src/pages/ft2-pages/WmsPage.tsx` | Gate page — all pick/pack/ship/stow/receive HTTP callbacks wired |
-| `apps/frontend/src/pages/ft2-pages/FloorPlanningPage.tsx` | Gate page — layout, grid, occupancy hooks + zone CRUD + barcode callbacks |
+| `apps/frontend/src/pages/ft2-pages/FloorPlanningPage.tsx` | Gate page — Inspect/Edit mode, layout/grid/occupancy hooks, zone CRUD, and location-label callbacks |
 | `apps/frontend/src/pages/ft2-pages/WmsAnalyticsPage.tsx` | Analytics page — MetricTile, exception table, operator velocity |
 | `apps/frontend/src/pages/floor-planning/useFloorPlanning.ts` | Fetches `/floor-planning/layout` |
 | `apps/frontend/src/pages/floor-planning/useWarehouseGrid.ts` | Fetches `/floor-planning/grid` + `/grid/occupancy` |
 | `apps/frontend/src/pages/floor-planning/useBinLog.ts` | Fetches `/floor-planning/bin/:code/log` |
 | `apps/frontend/src/pages/floor-planning/useBinStats.ts` | Fetches `/floor-planning/bin/:code/stats` |
-| `apps/frontend/src/pages/floor-planning/useZoneManagement.ts` | Zone CRUD + barcode mutations |
+| `apps/frontend/src/pages/floor-planning/useZoneManagement.ts` | Zone CRUD + location-label printing; product-barcode hook retained for compatibility |
 | `apps/frontend/src/pages/wms/useWms.ts` | Fetches batches + stow tasks |
 | `apps/frontend/src/pages/wms/usePickAnalytics.ts` | Fetches `/wms/analytics` |
 | `apps/frontend/src/pages/wms/useWmsOperators.ts` | Fetches operators — likely broken (404) |
-| `modules/wms/src/ui/pages/WmsModuleFT2.tsx` | Main WMS module — 613 lines |
-| `modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx` | Floor planning module — 1,254 lines |
-| `modules/shared/src/ui/IsometricCanvas.tsx` | Shared SVG isometric renderer for Floor Planning Map, Setup 3D, and compact zone embeds |
-| `modules/floor-planning/src/ui/components/CanvasEditor.tsx` | 2D canvas drag-drop editor |
+| `modules/wms/src/ui/pages/WmsModuleFT2.tsx` | Main WMS execution module |
+| `modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx` | Canonical Floor Planning Inspect/Edit workspace + location labels |
+| `modules/shared/src/ui/IsometricCanvas.tsx` | Shared SVG isometric renderer for Floor Planning Inspect and compact zone embeds |
+| `modules/floor-planning/src/ui/components/CanvasEditor.tsx` | Edit layout: 2D authoring canvas, palette, and contextual Inspector |
 | `modules/floor-planning/src/ui/components/BinLogDrawer.tsx` | Per-bin activity drawer |
-| `modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx` | Barcode print preview |
+| `modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx` | Batch physical-location label preview |
 | `modules/shared/src/ui/WarehouseGrid/` | Shared grid primitives (AisleColumn, BinCell) |
 
 ---
 
 ## 5. Visual Audit — Route by Route
+
+> **Historical audit evidence:** the table below preserves the original route checks, including the retired Floor Planning tab/List/3D surfaces. Current runtime contract is in §1: default Inspect, explicit Edit layout, and location labels. The setup/canvas URL is retained only as compatibility into Edit. These historical checks do not certify the current responsive workspace.
 
 | Route | State | Notes |
 |---|---|---|
@@ -121,6 +127,8 @@ The generated root code remains an internal compatibility key. Users will manage
 
 ## 6. Known Issues
 
+> Historical audit register: original priorities and observations are preserved. WH-08 concerns a retired surface; current Floor Planning has no permanent barcode-management tab. This note does not close or reclassify the historical issues.
+
 | ID | Priority | Description |
 |---|---|---|
 | WH-01 | P2 | Serif headers on Floor Planning ("Floor planning today. *Here's how the racks are running.*" and "Build your warehouse. *One zone at a time.*") — violates no-serif rule for operational modules |
@@ -135,6 +143,8 @@ The generated root code remains an internal compatibility key. Users will manage
 ---
 
 ## 7. Workshop Verdict
+
+> Historical Sprint 4 verdict, preserved below. Its generic barcode-management description predates the current ownership boundary: Floor Planning now owns Inspect/Edit spatial work and location labels; product identity belongs to Items. See §1 for the current contract.
 
 **Keep everything. No cuts.**
 

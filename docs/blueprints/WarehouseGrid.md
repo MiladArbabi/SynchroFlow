@@ -1,7 +1,24 @@
 # WarehouseGrid — Blueprint & Integration Spec
 
-**Last updated: July 13, 2026**  
+**Last updated: October 6, 2026**
+
 **Status: 2D grid and SVG isometric renderers implemented — overlays, Growth+ Overview map, and Core teaser verified**
+
+---
+
+## Floor Planning — Current Workspace Contract
+
+`/floor-planning` is one canonical spatial workspace. **Inspect** is the default mode; **Edit layout** explicitly enters authoring, and **Done editing** returns to Inspect.
+
+- **Inspect:** shared `IsometricCanvas`, occupancy / stock-out risk / empty-bin / layout overlays, and a selected-location contextual rail with physical-location facts and contents. Location labels can be printed contextually or in a batch.
+- **Edit layout:** existing 2D `CanvasEditor`, component palette, spatial canvas, and contextual Inspector. Active/Inactive location mutation belongs in the Edit Inspector. Floor settings retain explicit persistence semantics.
+- **Attention:** Ops Console replaces/suppresses the contextual rail while keeping the spatial map mounted. WMS workflows own execution.
+- **Identity:** Floor Planning owns physical locations and their codes/labels. Items owns product/variant identity, including product barcodes; Settings owns administrative warehouse facts.
+- **Warehouse root:** passive and excluded from normal location mutation/label semantics. Batch location labels exclude `type === 'warehouse'`.
+
+Permanent Map / Setup / Barcodes tabs, Setup List, location/product barcode sub-tabs, and product-barcode management UI are retired. The legacy `?tab=setup&view=canvas` deep link remains accepted into Edit mode; it is compatibility only, not the current information architecture or a tab-persistence contract.
+
+Renderer ownership remains `IsometricCanvas` for inspection and `CanvasEditor` for 2D authoring; this change adds no third renderer. The dated phase records below preserve the earlier implementation history, not current navigation or UI ownership.
 
 ---
 
@@ -18,7 +35,7 @@ modules/shared/src/ui/WarehouseGrid/
 modules/floor-planning/src/ui/components/
   CanvasEditor.tsx          ← 2D SVG floor plan editor (Phase 2 — COMPLETE)
   BinLogDrawer.tsx          ← slide-in activity timeline for selected bin
-  PrintPreviewPanel.tsx     ← barcode label sheet preview + print isolation
+  PrintPreviewPanel.tsx     ← location-label sheet preview + print isolation
 ```
 
 ---
@@ -74,7 +91,7 @@ interface WarehouseLocation {
 ## Grid Derivation
 - Grid renders **bin-type locations only** — warehouse/lane/shelf are structural, not rendered as cells
 - Aisle = the segment of `location_code` before the first hyphen (`aisleOf()` in `index.tsx`). Functional-zone bins (`PACK-1`, `SHIP-1`, `RETURNS-1`, `RECEIVE-1`, `QUARANTINE-1`, `KITTING-1`, `PROBLEM`) are single bins, so each derives its own one-cell column beside the storage aisles.
-- Consumers that only want storage aisles pass `zoneTypes={['pick']}` — the WMS pick map does (WMS-OPS1). Floor Planning and Overview deliberately omit it and render the whole floor.
+- Consumers that only want storage aisles pass `zoneTypes={['pick']}` — the WMS pick map does (WMS-OPS1). Compact full-floor grid consumers omit this filter; canonical Floor Planning inspection uses `IsometricCanvas`.
 - Bins sorted `ASC` within each aisle — matches `wms.controller.ts` pick route sort
 - Aisles sorted alphabetically left→right
 
@@ -95,7 +112,7 @@ interface WarehouseLocation {
 modules/floor-planning/src/ui/components/CanvasEditor.tsx
 ```
 
-SVG floor-plan editor rendered in the Setup tab. It reads `position_x/y`, `width`, `depth`, and `rack_levels` from `WarehouseZone`.
+SVG floor-plan editor entered through **Edit layout** in the canonical workspace. **Done editing** returns to Inspect. It reads `position_x/y`, `width`, `depth`, and `rack_levels` from `WarehouseZone`.
 
 | Feature | Detail |
 |---|---|
@@ -107,13 +124,13 @@ SVG floor-plan editor rendered in the Setup tab. It reads `position_x/y`, `width
 | Resize handles | East, south, and SE handles write `width/depth` on resize-end |
 | Collision clamping | Bins clamp to the nearest non-overlapping edge during drag and resize |
 | Frame zones | Warehouse, lane, and shelf frames do not participate in bin collision clamping |
-| Selection | Opens the `RackInspector` panel |
+| Selection | Opens the contextual Inspector; location Active/Inactive mutation lives here, while the warehouse root remains passive |
 | Unpositioned zones | Zones with null coordinates can be placed from the palette |
-| 2D/3D toggle | Switches between the editable 2D canvas and the live SVG isometric view |
+| Mode transition | Edit layout enters 2D authoring; Done editing returns to shared isometric Inspect |
 | Saved state | Toolbar timestamp updates after successful position or dimension writes |
 | Zone colours | Operational bins use shared `--zone-*` tokens; warehouse/lane/shelf frames use gold territory styling |
 | Supported semantic zones | Pick, pack, receive, ship, returns, problem, quarantine, kitting, and storage |
-| Creation palette | Eight creation tiles: Aisle, Pick, Pack, Receive, Ship, Returns, Quarantine, and Materials |
+| Creation palette | Compact rows for Stock location, Aisle, Pack, Receive, Ship, Problem Area, Returns, Quarantine, and Materials; naming/placement opens beside the selected row |
 | Pan/Select modes | Pan moves the canvas; Select supports zone selection and marquee interaction |
 | Scroll behavior | Vertical scroll pans Y; Shift+scroll pans X; zoom remains toolbar-controlled |
 | Render order | Warehouse frames render behind lanes, with operational bins in front |
@@ -134,7 +151,7 @@ SVG floor-plan editor rendered in the Setup tab. It reads `position_x/y`, `width
 
 ## Renderer and Overlay Behaviour
 
-`WarehouseGrid` remains the shared 2D renderer for compact WMS, Demand, product, and receiving contexts. The main Floor Planning Map uses the shared SVG `IsometricCanvas`.
+`WarehouseGrid` remains the shared 2D renderer for compact WMS, Demand, product, and receiving contexts. The canonical Floor Planning Inspect workspace uses the shared SVG `IsometricCanvas`.
 
 ### Shared WarehouseGrid modes
 
@@ -162,7 +179,7 @@ Only the Occupancy overlay receives occupancy heatmap data. Stock-out and Empty 
 
 | Endpoint | Controller | Purpose |
 |---|---|---|
-| `GET /api/v1/floor-planning/layout` | `httpGetLayout` | Zones + product barcodes. `children_count` is a live subquery (integer). |
+| `GET /api/v1/floor-planning/layout` | `httpGetLayout` | Zones + retained compatibility `product_barcodes` payload; product-barcode UI is not owned by Floor Planning. `children_count` is a live subquery (integer). |
 | `GET /api/v1/floor-planning/grid` | `httpGetGrid` | All warehouse_locations with floor coordinates |
 | `GET /api/v1/floor-planning/grid/occupancy` | `httpGetBinOccupancy` | inventory_truth per bin, grouped by location_code |
 | `GET /api/v1/floor-planning/bin/:locationCode/log` | `httpGetBinLog` | Merged inventory_movements + pick_scan_log, 50 events DESC |
@@ -171,7 +188,7 @@ Only the Occupancy overlay receives occupancy heatmap data. Stock-out and Empty 
 | `POST /api/v1/floor-planning/zones` | `httpCreateZone` | Create zone with optional floor coordinates |
 | `PATCH /api/v1/floor-planning/zones/:locationCode` | `httpUpdateZone` | Update active, barcode, position, dimensions, zone_type |
 | `DELETE /api/v1/floor-planning/zones/:locationCode` | `httpDeleteZone` | Delete zone — blocked if has stock |
-| `PATCH /api/v1/floor-planning/products/:lasyncroVariantId/barcode` | `httpUpdateProductBarcode` | Correct barcode on external_product_identity_map |
+| `PATCH /api/v1/floor-planning/products/:lasyncroVariantId/barcode` | `httpUpdateProductBarcode` | Retained backend compatibility endpoint: correct barcode on external_product_identity_map; not a current Floor Planning UI capability |
 
 All require: `authenticateToken` + `requireFt2` + `requireAction('floor-planning:read|write')`
 
@@ -191,7 +208,7 @@ apps/frontend/src/pages/floor-planning/useZoneManagement.ts
   useCreateZone()                  — POST /zones
   useUpdateZone()                  — PATCH /zones/:locationCode (active, barcode, position, dimensions)
   useDeleteZone()                  — DELETE /zones/:locationCode
-  useUpdateProductBarcode()        — PATCH /products/:lasyncroVariantId/barcode
+  useUpdateProductBarcode()        — retained compatibility hook; PATCH /products/:lasyncroVariantId/barcode
 
 apps/frontend/src/pages/floor-planning/useFloorPlanning.ts
   useFloorPlanning()               — GET /layout (zones + product_barcodes)
@@ -205,15 +222,17 @@ apps/frontend/src/pages/floor-planning/useBinStats.ts
 
 ---
 
-## FloorPlanningPageProps — Key Props
+## Floor Planning — Key Callbacks
 
 ```typescript
 onCreateZone        — POST /zones
 onDeleteZone        — DELETE /zones/:locationCode
-onToggleZoneActive  — PATCH /zones/:locationCode { active }
-onUpdateZone        — PATCH /zones/:locationCode { position_x, position_y, width, depth, orientation, rack_levels, zone_type }
-onUpdateProductBarcode — PATCH /products/:lasyncroVariantId/barcode
+onUpdateZone        — PATCH /zones/:locationCode { active, position_x, position_y, width, depth, orientation, rack_levels, zone_type }
+onPrintBarcode     — contextual physical-location label printing
+onBatchPrintBarcodes — batch physical-location labels; excludes warehouse roots
 ```
+
+The retained product-barcode endpoint/hook and `product_barcodes` response field are compatibility/backend contracts, not active UI ownership. Product/variant barcode identity belongs to Items. Existing print callback names do not change the user-facing **Print location label** action.
 
 ---
 
@@ -249,7 +268,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 
 | Surface | Renderer | Contract |
 |---|---|---|
-| Floor Planning `/floor-planning` | Full editing surface | Map/Setup/Barcodes workspace; owns placement and geometry edits. |
+| Floor Planning `/floor-planning` | `IsometricCanvas` (Inspect) / `CanvasEditor` (Edit layout) | One spatial workspace; physical-location inspection, explicit authoring, and contextual/batch location labels. Ops Console owns attention without replacing the map. |
 | Overview `/overview` — Growth/Scale | `IsometricCanvas` | Live full-map surface with occupancy, apron stations, and live activity where available. |
 | Overview `/overview` — Core owner/admin teaser | `IsometricCanvas` | Static miniature preview; no customer map or live operational data. |
 | Order Detail | `IsometricZoneView` | Workflow-stage visualization only; not physical spatial truth. |
@@ -261,6 +280,8 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 ---
 
 ## Phase 1 — Complete (May 2026)
+
+> **Historical implementation records:** this section and the Phase 2 completion/backlog sections below retain their original facts. Tab navigation, product-barcode UI, 2D/3D toggles, and `?tab=&view=&subTab=` persistence described there are superseded by the current workspace contract above. Historical issue/backlog entries are not new completion or certification claims.
 
 - ✅ `WarehouseGrid` component — `full/mini/inline` variants, `map/heatmap/focus/pick` modes
 - ✅ `GET /api/v1/floor-planning/grid` — bin layout endpoint
@@ -342,13 +363,9 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 
 ### Status
 
-The pure SVG isometric renderer is implemented and verified in:
+The shared pure SVG `IsometricCanvas` powers default **Inspect** at `/floor-planning`; `IsometricZoneView` remains available for compact embeds. **Edit layout** uses the existing 2D `CanvasEditor`, and **Done editing** returns to Inspect.
 
-- Floor Planning → Map
-- Floor Planning → Setup → Canvas → 3D
-- `IsometricZoneView` embeds
-
-Editing remains in the 2D Canvas view. The isometric view is the read-only spatial and operational surface.
+The isometric renderer owns read-only spatial inspection. Geometry and location lifecycle mutations belong to the 2D authoring surface; no third renderer is introduced.
 
 ### Component Structure
 
@@ -423,7 +440,7 @@ interface IsometricZoneViewProps {
 
 ### Overlay Integration
 
-The Floor Planning Map passes exactly one overlay contract at a time:
+Floor Planning Inspect passes exactly one overlay contract at a time:
 
 - Occupancy passes `occupancy`.
 - Stock-out risk passes `focusedBins` with `focusTone='risk'`.
@@ -435,8 +452,8 @@ Zone filters are supplied through `filteredCodes`. All supported operational typ
 ### Completed
 
 - Shared SVG isometric renderer
-- Map integration
-- Setup 2D/3D toggle
+- Canonical Inspect workspace integration
+- Explicit Edit layout / Done editing transitions
 - Standard and mirrored painter ordering
 - Rack-level height and side-face bands
 - Semantic zone colours from shared theme tokens

@@ -71,7 +71,7 @@ describe('CanvasEditor floor settings', () => {
     expect(screen.getByLabelText('Floor code')).toHaveValue('WAREHOUSE-01');
     expect(screen.getByLabelText('Floor code')).toHaveAttribute('readonly');
     expect(screen.queryByTitle('Duplicate zone')).not.toBeInTheDocument();
-    expect(screen.queryByText('Print barcode')).not.toBeInTheDocument();
+    expect(screen.queryByText('Print location label')).not.toBeInTheDocument();
     expect(screen.queryByText('Delete')).not.toBeInTheDocument();
     const root = container.querySelector('[data-zone-code="WAREHOUSE-01"]') as SVGGElement;
     expect(root).toHaveStyle({ pointerEvents: 'none' });
@@ -418,7 +418,7 @@ describe('CanvasEditor compact zone inspector', () => {
     expect(screen.getByText('Parent: LANE-01')).toBeInTheDocument();
     expect(screen.queryByLabelText('Dock opening')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Print barcode'));
+    fireEvent.click(screen.getByText('Print location label'));
     expect(onPrintBarcode).toHaveBeenCalledWith('ZONE-01');
 
     fireEvent.click(screen.getByTitle('Duplicate zone'));

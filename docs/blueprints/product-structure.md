@@ -111,6 +111,8 @@ $    Finances       /finances          · Margin | Cash Flow
 
 ### Routing convention (hard rules)
 
+The warehouse UUID route nesting below is a target migration, not the currently implemented Floor Planning route. Current canonical Floor Planning remains `/floor-planning`, with default Inspect and explicit Edit layout. `?tab=setup&view=canvas` is a legacy compatibility deep link into Edit only.
+
 - Every sub-surface nests under its module: `/warehouse/:warehouseId/floor-plan`, `/finances/cashflow`, `/inventory/demand`. **No sub-tab escapes its parent route.**
 - `warehouseId` is the stable warehouse UUID. Editable names and compatibility location codes are display values, never route identities.
 - `/warehouse` is the module entry route. It resolves to the user's last valid warehouse selection, then the shop's active default warehouse.
@@ -183,7 +185,7 @@ The Warehouse shell always operates within one explicit `warehouse_id` context.
 
 - **Warehouse selector** — displays the editable warehouse `name`, stores the last valid selection, and changes every child tab and query together. UUIDs and root location codes are never shown as the primary label.
 - **Operations** `/warehouse/:warehouseId/operations` — active batches and station status for the selected warehouse. Reads Orders' batch object rather than creating a second batch state.
-- **Floor Plan** `/warehouse/:warehouseId/floor-plan` — Map | Setup | Barcodes for the selected warehouse. Owns physical zones, lanes, shelves, bins, coordinates, location barcodes, and capacity. Badge semantics remain unified: badges represent open problems; counts live in-page.
+- **Floor Planning** — one canonical spatial workspace at `/floor-planning`; `/warehouse/:warehouseId/floor-plan` remains the target route-nesting migration. Default **Inspect** uses shared `IsometricCanvas`, layout/occupancy/stock-out/empty-bin overlays, physical-location facts and contents in a selected-location rail, and contextual/batch location-label printing. **Edit layout** uses the existing 2D `CanvasEditor`; **Done editing** returns to Inspect. Location Active/Inactive mutation lives in the Edit Inspector; Floor settings retain explicit persistence semantics. The warehouse root is passive and excluded from normal location mutation/label semantics and batch labels. Permanent Map / Setup / Barcodes tabs, Setup List, and product-barcode management UI are retired. Badge semantics remain unified: badges represent open problems; counts live in-page.
 - **Problem Center** `/warehouse/:warehouseId/problem-center` — supervisor spine view scoped to the selected warehouse: short pick, damage, wrong item, stow failure, receive rejection. True-zero empty state ("No open exceptions"), not "no match for filters."
 - **Analytics** `/warehouse/:warehouseId/analytics` — operator performance, stage velocity, and stuck-on-floor signals for the selected warehouse. Small-sample states remain n=1-aware and use the canonical pipeline vocabulary (§7).
 - Every request must validate that the warehouse belongs to the authenticated shop. Once warehouse membership is introduced, the same resolution layer must also validate user access.
@@ -193,7 +195,10 @@ The Warehouse shell always operates within one explicit `warehouse_id` context.
 Warehouse management and floor topology are separate responsibilities:
 
 - Warehouse identity, name, default status, activation, external-channel mapping, stations, printers, and warehouse-level defaults belong in **Settings › Warehouse**.
-- Physical location hierarchy and floor layout belong in **Warehouse › Floor Plan**.
+- Physical location hierarchy, spatial layout, and location codes/labels belong in **Floor Planning**.
+- Item/product/variant identity, including product barcodes, belongs in **Items**. Retained backend product-barcode endpoints/hooks are compatibility, not Floor Planning UI ownership.
+- **Ops Console** owns attention and replaces/suppresses Floor Planning's contextual rail without replacing its spatial map.
+- **WMS workflows** own execution. `IsometricCanvas` owns read/inspection; `CanvasEditor` owns 2D authoring/mutation; no third renderer is introduced.
 
 ### ↩ Returns `/returns`
 
@@ -601,6 +606,8 @@ capabilities, not to the existence of stable warehouse identity.
 
 ### 12.1 Register
 
+> **Floor Planning supersession note (October 6, 2026):** ISS-235/236/237/240/241/243/268 retain their original dates, statuses, and observations. Tab-era UI references are historical: the current contract is the single Inspect/Edit workspace in §5. The root is now passive and excluded from batch location labels; product-barcode management belongs to Items. The July counts and multi-tab heading findings are not current UI contracts or new verification claims.
+
 | ID | WS | Screen(s) | Finding |
 |---|---|---|---|
 | ISS-201 | ✅ | Overview vs Orders | Intentional scope difference: Overview signal = is_shipping_sla_breached=true only (alerts.aggregator); Orders Critical = all aging orders past 48h watch floor (OrdersOperatorFacts, cap 20). Different views, not a contradiction. No code change needed (2026-07-13) |
@@ -676,6 +683,8 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-268 | ✅ | Floor Planning Map | Root box changed to height:100% flex column; map container flex:1 minHeight:0 — canvas fills viewport on load without scrolling (2026-07-13) |
 
 ### 12.2 Verified working (selected)
+
+> These are the historical July audit observations. The Floor Planning/product-barcode count comparison records the former UI; it does not assign current product identity ownership to Floor Planning.
 
 - RET-S4-04 **CLOSED by observation:** owner-decision queue renders on Items for a completed
   damaged-line job — condition badge, operator note, decision CTAs live.

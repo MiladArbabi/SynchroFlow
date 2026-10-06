@@ -2,10 +2,10 @@
 /**
  * CanvasEditor — 2D SVG floor plan editor (Phase 2)
  * ---------------------------------------------------
- * Three-column layout:
- *   LEFT  — ComponentPalette: draggable zone type tiles + layout templates
+ * Canvas-first workspace with responsive editing context:
+ *   LEFT  — ComponentPalette: compact component rows + anchored placement popover
  *   CENTER — SVG canvas: positioned racks, pan/zoom, drag-to-reposition, metre rulers
- *   RIGHT  — RackInspector: fixed panel showing editable dimensions, stats, actions
+ *   RIGHT  — selected editing context; canvas-local overlay below lg
  *
  * Coordinate system: metres from top-left origin, rendered at SCALE px/m.
  * Snap grid: 0.5m.
@@ -15,8 +15,8 @@
  * Phase 3: same WarehouseLocation data feeds Three.js renderer unchanged.
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button, Popper, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { X, Layers, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
+import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, InputAdornment, Dialog, DialogTitle, DialogActions, Button, Popper, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { X, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Hand } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import {
   DecisionConfirmationModal,
@@ -47,6 +47,9 @@ const CANVAS_H   = 15;
 const RULER_SIZE = 24;
 const DEFAULT_VIEWPORT = { zoom: 1, offset: { x: 40, y: 40 } };
 const VIEWPORT_PADDING_RATIO_PER_SIDE = 0.05;
+// Field pairs wrap according to the actual panel width, including overlay width.
+const FIELD_GRID_SX = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 112px), 1fr))', gap: 1 } as const;
+const FIELD_SX = { minWidth: 0, width: '100%', '& .MuiInputBase-root': { minWidth: 0 }, '& .MuiInputBase-input': { minWidth: 0, width: '100%' } } as const;
 
 export type FloorPlanningViewport = {
   zoom: number;
@@ -197,6 +200,8 @@ interface CanvasEditorProps {
     rack_levels?: number | null;
     zone_type?: string | null;
     dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
+    // Location lifecycle — already accepted by useUpdateZone's UpdateZonePayload.
+    active?: boolean;
   }) => Promise<void>;
   onUpdateZonePositions?: (positions: Array<{
     location_code: string;
@@ -249,7 +254,7 @@ function selectableCodes(codes: Iterable<string>, zones: readonly WarehouseZone[
   return new Set([...codes].filter((code) => isSelectableZone(zoneByCode.get(code))));
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent, openItemRequest, onStockLocationAnchor }: {
+function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, onCreateComponent, openItemRequest, onStockLocationAnchor, workspaceRef }: {
   zones: WarehouseZone[];
   codeSourceZones: readonly Pick<WarehouseZone, 'location_code'>[];
   unpositionedZones: WarehouseZone[];
@@ -257,6 +262,7 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
   onCreateComponent: (item: FloorPlanningComponentDefinition, locationCode: string) => Promise<void>;
   openItemRequest: { id: string; nonce: number } | null;
   onStockLocationAnchor: (node: HTMLDivElement | null) => void;
+  workspaceRef: { current: HTMLDivElement | null };
 }) {
   // Layout health — real checks computed from live zone state (WMS-FP-06).
   const healthIssues: string[] = [];
@@ -266,7 +272,17 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
   const [locationCode, setLocationCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeComponent = FLOOR_PLANNING_COMPONENTS.find(item => item.id === activeItem);
   const handledOpenRequestNonceRef = useRef(0);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const placementAnchor = activeItem ? rowRefs.current.get(activeItem) : null;
+
+  function cancelCreate() {
+    if (creating) return;
+    placementAnchor?.focus();
+    setActiveItem(null);
+    setError(null);
+  }
 
   function openCreate(item: FloorPlanningComponentDefinition) {
     if (creating) return;
@@ -297,6 +313,7 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
     setError(null);
     try {
       await onCreateComponent(item, normalizedCode);
+      placementAnchor?.focus();
       setActiveItem(null);
       setLocationCode('');
     } catch (createError: any) {
@@ -307,22 +324,22 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
   }
 
   return (
-    <Box sx={{
-      width: 160, flexShrink: 0, borderRight: '1px solid var(--rule)',
-      bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    <Box role="region" aria-label="Component palette" sx={{
+      width: { xs: 112, sm: 176 }, minHeight: 0, flexShrink: 0, borderRight: '1px solid var(--rule)',
+      bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column',
     }}>
-      <Box sx={{ p: 1.5, borderBottom: '1px solid var(--rule)' }}>
+      <Box sx={{ px: 1.25, py: 1, flexShrink: 0, borderBottom: '1px solid var(--rule)' }}>
         <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
           Click to add
         </Typography>
       </Box>
-      <Box sx={{ p: 1, overflowY: 'auto' }}>
+      <Box sx={{ p: 1, flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {FLOOR_PLANNING_COMPONENT_GROUPS.map((group) => (
-          <Box key={group} sx={{ mb: 1.25 }}>
-            <Typography sx={{ px: 0.25, mb: 0.5, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--ink-4)' }}>
+          <Box key={group} sx={{ mb: 0.5 }}>
+            <Typography sx={{ px: 0.25, mb: 0.25, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--ink-4)' }}>
               {group}
             </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
               {FLOOR_PLANNING_COMPONENTS.filter((item) => item.group === group).map((item) => {
                 // Frame types (lane) use type-based colour — matches canvas render.
                 const colorKey = item.type === 'lane' ? 'lane' : item.zone_type;
@@ -331,114 +348,129 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
                 const isActive = activeItem === item.id;
                 return (
                   <Box key={item.id}
-                    ref={item.id === 'pick' ? onStockLocationAnchor : undefined}
+                    ref={(node: HTMLDivElement | null) => {
+                      if (node) rowRefs.current.set(item.id, node);
+                      else rowRefs.current.delete(item.id);
+                      if (item.id === 'pick') onStockLocationAnchor(node);
+                    }}
                     role="button"
                     tabIndex={0}
                     aria-label={`Add ${item.label}`}
                     aria-disabled={creating}
+                    aria-pressed={isActive}
+                    aria-controls={isActive ? `component-placement-${item.id}` : undefined}
                     onClick={() => openCreate(item)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') openCreate(item);
                     }}
-                    sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${isActive ? 'var(--accent)' : stroke}`,
+                    sx={{ px: 0.75, height: 40, boxSizing: 'border-box', flexShrink: 0, minWidth: 0, borderRadius: 1, border: `1px solid ${isActive ? 'var(--accent)' : stroke}`,
                       bgcolor: isActive ? 'var(--accent-ghost)' : fill, cursor: creating ? 'wait' : 'pointer',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, userSelect: 'none',
+                      display: 'flex', alignItems: 'center', gap: 0.75, userSelect: 'none',
                       '&:hover': { opacity: creating ? 1 : 0.8 }, transition: 'all 0.12s' }}>
-                    <Box sx={{ width: '100%', height: 20, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill }} />
-                    <Typography sx={{ fontSize: 9, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
-                      {item.label}
-                    </Typography>
-                    {item.description && (
-                      <Typography sx={{ fontSize: 8, color: 'var(--ink-4)', textAlign: 'center', lineHeight: 1.2 }}>
-                        {item.description}
+                    <Box sx={{ width: 12, height: 16, flexShrink: 0, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill }} />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 600, color: isActive ? 'var(--accent)' : 'var(--ink-2)', lineHeight: 1.2 }}>
+                        {item.label}
                       </Typography>
-                    )}
-                    {isActive && (
-                      <Box sx={{ width: '100%', mt: 0.5 }} onClick={(event) => event.stopPropagation()}>
-                        <Typography component="label" htmlFor={`location-code-${item.id}`} sx={{ display: 'block', fontSize: 8, color: 'var(--ink-4)', mb: 0.25 }}>
-                          Location code
+                      {item.description && (
+                        <Typography sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 8, color: 'var(--ink-4)', lineHeight: 1.2, mt: 0.25 }}>
+                          {item.description}
                         </Typography>
-                        <input
-                          id={`location-code-${item.id}`}
-                          autoFocus
-                          required
-                          value={locationCode}
-                          placeholder={`${item.codePrefix}-02`}
-                          onChange={(event) => setLocationCode(event.target.value.toUpperCase())}
-                          onKeyDown={(event) => {
-                            event.stopPropagation();
-                            if (event.key === 'Enter') void handleCreate(item);
-                          }}
-                          style={{ width: '100%', fontSize: 9, fontFamily: 'monospace', padding: '3px 4px', borderRadius: 3, border: '1px solid var(--rule)', background: 'var(--bg)', color: 'var(--ink)', boxSizing: 'border-box' }}
-                        />
-                        {error && (
-                          <Typography role="alert" sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', mt: 0.25, textAlign: 'center' }}>{error}</Typography>
-                        )}
-                        <Button
-                          size="small"
-                          variant="contained"
-                          disabled={creating || !locationCode.trim()}
-                          onClick={() => void handleCreate(item)}
-                          sx={{ width: '100%', minWidth: 0, mt: 0.5, py: 0.25, fontSize: 8 }}
-                        >
-                          {creating ? 'Adding…' : 'Add'}
-                        </Button>
-                      </Box>
-                    )}
+                      )}
+                    </Box>
                   </Box>
                 );
               })}
             </Box>
           </Box>
         ))}
+
+        {/* Unpositioned zones — click to place at canvas centre */}
+        {unpositionedZones.length > 0 && (
+          <>
+            <Divider />
+            <Box sx={{ p: 1.5, borderBottom: '1px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                Unpositioned · {unpositionedZones.length}
+              </Typography>
+              {unpositionedZones.map((zone) => {
+                const colorKey = (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? zone.type : (zone.zone_type ?? 'storage');
+                const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
+                const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+                return (
+                  <Box key={zone.location_code} onClick={() => onPlace(zone)} title="Click to place on canvas"
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.6, px: 1, mb: 0.5, borderRadius: 1,
+                      border: `1px solid ${stroke}`, bgcolor: fill, cursor: 'pointer', userSelect: 'none',
+                      '&:hover': { opacity: 0.8 }, transition: 'opacity 0.12s' }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill, flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {zone.location_code}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          </>
+        )}
+
+        <Divider />
+        <Box sx={{ p: 1, mt: 'auto', bgcolor: 'var(--bg-2)' }}>
+          <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
+            Layout health
+          </Typography>
+          {healthIssues.length === 0 ? (
+            <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic', lineHeight: 1.4 }}>
+              All good — no issues detected.
+            </Typography>
+          ) : (
+            healthIssues.map((issue, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.5 }}>
+                <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0, mt: 0.5 }} />
+                <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', lineHeight: 1.4 }}>{issue}</Typography>
+              </Box>
+            ))
+          )}
+        </Box>
       </Box>
 
-      {/* Unpositioned zones — click to place at canvas centre */}
-      {unpositionedZones.length > 0 && (
-        <>
-          <Divider />
-          <Box sx={{ p: 1.5, borderBottom: '1px solid var(--rule)' }}>
-            <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-              Unpositioned · {unpositionedZones.length}
-            </Typography>
-            {unpositionedZones.map((zone) => {
-              const colorKey = (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? zone.type : (zone.zone_type ?? 'storage');
-              const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-              const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
-              return (
-                <Box key={zone.location_code} onClick={() => onPlace(zone)} title="Click to place on canvas"
-                  sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.6, px: 1, mb: 0.5, borderRadius: 1,
-                    border: `1px solid ${stroke}`, bgcolor: fill, cursor: 'pointer', userSelect: 'none',
-                    '&:hover': { opacity: 0.8 }, transition: 'opacity 0.12s' }}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill, flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {zone.location_code}
-                  </Typography>
-                </Box>
-              );
-            })}
+      {activeComponent && placementAnchor && (
+        <Popper
+          open anchorEl={placementAnchor} placement="right-start"
+          container={() => workspaceRef.current}
+          modifiers={[
+            { name: 'offset', options: { offset: [0, 8] } },
+            { name: 'flip', options: { boundary: workspaceRef.current, padding: 8, fallbackPlacements: ['left-start', 'bottom-start', 'top-start'] } },
+            { name: 'preventOverflow', options: { boundary: workspaceRef.current, padding: 8, altAxis: true } },
+          ]}
+          sx={{ zIndex: 20, maxWidth: 'calc(100% - 16px)' }}
+        >
+        <Box
+          id={`component-placement-${activeComponent.id}`}
+          role="region" aria-label="Component placement"
+          onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); cancelCreate(); } }}
+          sx={{ width: 224, maxWidth: '100%', boxSizing: 'border-box', p: '10px 12px', border: '1px solid var(--accent-border)', borderRadius: '8px', background: 'linear-gradient(var(--accent-ghost), var(--accent-ghost)), var(--surface)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}
+        >
+          <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.35, mb: 1 }}>{activeComponent.label}</Typography>
+          <Typography component="label" htmlFor={`location-code-${activeComponent.id}`} sx={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', mb: 0.5 }}>Location code</Typography>
+            <input
+              key={activeComponent.id}
+              id={`location-code-${activeComponent.id}`}
+              autoFocus required disabled={creating}
+              value={locationCode}
+              placeholder={`${activeComponent.codePrefix}-02`}
+              onChange={(event) => setLocationCode(event.target.value.toUpperCase())}
+              onKeyDown={(event) => { if (event.key === 'Enter') void handleCreate(activeComponent); }}
+              style={{ minWidth: 0, width: '100%', fontSize: 11, fontFamily: 'monospace', padding: '7px 8px', borderRadius: 6, border: '1px solid var(--rule)', background: 'var(--bg)', color: 'var(--ink)', boxSizing: 'border-box' }}
+            />
+          {error && <Typography role="alert" sx={{ fontSize: 10, color: 'var(--critical-ink)', mt: 0.5 }}>{error}</Typography>}
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75, mt: 1 }}>
+            <Button size="small" variant="outlined" disabled={creating} onClick={cancelCreate} sx={{ minWidth: 0, px: 1, py: 0.25, fontSize: 10, textTransform: 'none', color: 'var(--accent)', borderColor: 'var(--accent-border)', borderRadius: '6px' }}>Cancel</Button>
+            <Button size="small" variant="contained" disabled={creating || !locationCode.trim()} onClick={() => void handleCreate(activeComponent)} sx={{ flexShrink: 0, minWidth: 0, px: 1, py: 0.25, fontSize: 10, whiteSpace: 'nowrap' }}>{creating ? 'Adding…' : 'Add'}</Button>
           </Box>
-        </>
+        </Box>
+        </Popper>
       )}
 
-      <Divider />
-      <Box sx={{ p: 1.5, mt: 'auto', borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
-        <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
-          Layout health
-        </Typography>
-        {healthIssues.length === 0 ? (
-          <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic', lineHeight: 1.4 }}>
-            All good — no issues detected.
-          </Typography>
-        ) : (
-          healthIssues.map((issue, i) => (
-            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.5 }}>
-              <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0, mt: 0.5 }} />
-              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', lineHeight: 1.4 }}>{issue}</Typography>
-            </Box>
-          ))
-        )}
-      </Box>
     </Box>
   );
 }
@@ -505,8 +537,8 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
   }
 
   return (
-    <Box data-testid="floor-settings-panel" sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ px: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Box data-testid="floor-settings-panel" sx={{ width: '100%', minWidth: 0, bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'var(--bg)', px: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
           <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Floor settings</Typography>
           <Typography sx={{ mt: 0.25, fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>{root.location_code}</Typography>
@@ -520,7 +552,7 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
           value={root.location_code}
           inputProps={{ readOnly: true, 'aria-label': 'Floor code', style: { fontFamily: 'monospace', fontSize: 11 } }}
         />
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+        <Box sx={FIELD_GRID_SX}>
           {([
             { label: 'Width', field: 'width' as const, value: width, set: setWidth },
             { label: 'Depth', field: 'depth' as const, value: depth, set: setDepth },
@@ -532,6 +564,8 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
               value={dimension.value}
               disabled={saving}
               error={dimensionError != null}
+              sx={FIELD_SX}
+              InputLabelProps={{ shrink: true }}
               onChange={(event) => {
                 dimension.set(event.target.value);
                 setSaveError(null);
@@ -543,7 +577,7 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
                 'aria-describedby': dimensionError ? FLOOR_DIMENSION_ERROR_ID : undefined,
                 style: { fontFamily: 'monospace', fontSize: 11, padding: '8px 8px 4px', textAlign: 'center' },
               }}
-              InputProps={{ endAdornment: <Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography> }}
+              InputProps={{ endAdornment: <InputAdornment position="end"><Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography></InputAdornment> }}
             />
           ))}
         </Box>
@@ -606,8 +640,8 @@ function BulkSelectionPanel({
     .sort(([left], [right]) => left.localeCompare(right));
 
   return (
-    <Box data-testid="bulk-selection-panel" sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ px: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Box data-testid="bulk-selection-panel" sx={{ width: '100%', minWidth: 0, bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'var(--bg)', px: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
           <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Selection</Typography>
           <Typography sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{zones.length} selected</Typography>
@@ -692,6 +726,16 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
     finally { setSaving(false); }
   }
 
+  // Location lifecycle — owned by the Edit layout Inspector (the retired
+  // Setup list toggled directly, without confirmation). Same patch contract.
+  const isActive = zone.active !== false;
+  async function toggleActive() {
+    if (!onUpdateZone) return;
+    setSaving(true);
+    try { await onUpdateZone(zone.location_code, { active: !isActive }); }
+    finally { setSaving(false); }
+  }
+
   async function handleDelete() {
     if (!onDeleteZone) return;
     setDeleteOpen(true);
@@ -741,8 +785,8 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
   }
 
   return (
-    <Box sx={{ width: 240, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Box sx={{ width: '100%', minWidth: 0, bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'var(--bg)', px: 1.5, py: 1, flexShrink: 0, borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
             {zone.type} · {roleLabel}
@@ -755,12 +799,31 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
           <X size={13} />
         </IconButton>
       </Box>
-      <Box data-testid="zone-inspector-content" sx={{ p: 1.25, display: 'flex', flexDirection: 'column', gap: 0.9 }}>
+      <Box data-testid="zone-inspector-content" sx={{ p: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
             <Typography sx={{ mr: 0.25, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Role</Typography>
             <Chip label={roleLabel} size="small" sx={{ fontSize: 10, height: 20, bgcolor: zone.zone_type ? ZONE_COLORS[zone.zone_type] : 'transparent', color: zoneColor, border: `1px solid ${zoneColor}` }} />
             <Chip label={zone.type} size="small" sx={{ fontSize: 10, height: 20 }} />
         </Box>
+        {/* The warehouse root is passive — never a lifecycle target. */}
+        {zone.type !== 'warehouse' && (
+          <Box data-testid="zone-lifecycle-row" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography sx={{ mr: 0.25, fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Status</Typography>
+            <Box sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, bgcolor: isActive ? 'var(--accent)' : 'transparent', border: isActive ? 'none' : '1px solid var(--ink-4)' }} />
+            <Typography sx={{ fontSize: 11, fontWeight: isActive ? 600 : 500, color: isActive ? 'var(--ink)' : 'var(--ink-4)' }}>
+              {isActive ? 'Active' : 'Inactive'}
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={saving || !onUpdateZone}
+              onClick={() => void toggleActive()}
+              sx={{ ml: 'auto', height: 22, minWidth: 0, px: 1, fontSize: 10, textTransform: 'none', color: 'var(--ink-3)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}
+            >
+              {isActive ? 'Deactivate' : 'Activate'}
+            </Button>
+          </Box>
+        )}
         <Box>
           <Typography sx={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>Geometry</Typography>
           {([
@@ -773,22 +836,26 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               { label: 'Position Y', field: 'position_y' as const, value: editY, set: setEditY },
             ] },
           ]).map((row) => (
-            <Box key={row.testId} data-testid={row.testId} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1 }}>
+            <Box key={row.testId} data-testid={row.testId} sx={{ ...FIELD_GRID_SX, gap: 0.75, mb: 0.75 }}>
               {row.fields.map(({ label, field, value, set }) => (
                 <TextField key={field} size="small" label={label} value={value} onChange={(e) => set(e.target.value)}
                   onBlur={() => void commitField(field, value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void commitField(field, value); }}
                   disabled={saving}
+                  sx={FIELD_SX}
+                  InputLabelProps={{ shrink: true }}
                   inputProps={{ 'aria-label': label, style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' } }}
-                  InputProps={{ endAdornment: <Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography> }} />
+                  InputProps={{ endAdornment: <InputAdornment position="end"><Typography sx={{ fontSize: 9, color: 'var(--ink-4)' }}>m</Typography></InputAdornment> }} />
               ))}
             </Box>
           ))}
-          <Box data-testid="geometry-levels-row" sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+          <Box data-testid="geometry-levels-row" sx={FIELD_GRID_SX}>
             <TextField size="small" type="number" label="Levels"
               key={`${zone.location_code}:${zone.rack_levels ?? 'none'}`}
               defaultValue={zone.rack_levels ?? ''}
               placeholder="—"
+              sx={FIELD_SX}
+              InputLabelProps={{ shrink: true }}
               onBlur={(e) => {
                 const val = parseInt(e.target.value);
                 if (!isNaN(val) && val >= 1 && val <= 20) onUpdateZone?.(zone.location_code, { rack_levels: val });
@@ -900,7 +967,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
                 transition: 'opacity 0.15s',
               }}
             >
-              <Tag size={11} /> Print barcode
+              <Tag size={11} /> Print location label
             </Box>
           )}
 
@@ -1015,6 +1082,7 @@ export function CanvasEditor({
   onViewIn3D,
 }: CanvasEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom]         = useState(1);
   const [offset, setOffset]     = useState({ x: 40, y: 40 });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -2143,7 +2211,9 @@ export function CanvasEditor({
   const canvasH = toSvg(floorExtentH);
 
   return (
-    <Box sx={{ display: 'flex', width: '100%', height: 560, border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden', bgcolor: 'var(--bg)' }}>
+    // Fills the Edit layout workspace (no document scroll); accent border
+    // marks the authoring state. Selected editing context uses natural height.
+    <Box ref={workspaceRef} sx={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minHeight: 0, boxSizing: 'border-box', border: '1px solid var(--accent-border)', borderRadius: '10px', overflow: 'hidden', bgcolor: 'var(--bg)' }}>
 
       {/* LEFT — palette */}
       <ComponentPalette
@@ -2159,23 +2229,24 @@ export function CanvasEditor({
         onCreateComponent={createPaletteComponent}
         openItemRequest={paletteOpenRequest}
         onStockLocationAnchor={setStockLocationAnchorEl}
+        workspaceRef={workspaceRef}
       />
 
       {/* CENTER — canvas */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
+      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
 
         {/* Toolbar */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, px: 1.5, py: 1, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0 }}>
+          <Typography sx={{ display: { xs: 'none', xl: 'block' }, whiteSpace: 'nowrap', flexShrink: 0, fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
             Floor 1 · {floorArea}m² · Top-down
           </Typography>
-          <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>·</Typography>
+          <Typography sx={{ display: { xs: 'none', xl: 'block' }, fontSize: 10, color: 'var(--ink-4)' }}>·</Typography>
           {lastSaved && (
-            <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic' }}>
+            <Typography sx={{ display: { xs: 'none', xl: 'block' }, whiteSpace: 'nowrap', fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic' }}>
               Saved {Math.floor((Date.now() - lastSaved.getTime()) / 60000) < 1 ? 'just now' : `${Math.floor((Date.now() - lastSaved.getTime()) / 60000)}m ago`}
             </Typography>
           )}
-          <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+          <Typography sx={{ display: { xs: 'none', xl: 'block' }, whiteSpace: 'nowrap', fontSize: 10, color: 'var(--ink-3)' }}>
             {positionedZones.length} components
             {unpositionedCount > 0 && <span style={{ color: 'var(--ink-4)' }}> · {unpositionedCount} unpositioned</span>}
           </Typography>
@@ -2184,14 +2255,14 @@ export function CanvasEditor({
               parent wires a handler; degrades gracefully if not. */}
           {onViewIn3D && (
             <Box onClick={onViewIn3D} title="View this layout in 3D on the Map tab"
-              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.4, mr: 1,
+              sx={{ display: 'flex', whiteSpace: 'nowrap', flexShrink: 0, alignItems: 'center', gap: 0.5, px: 1.25, py: 0.4, mr: 1,
                 border: '1px solid var(--rule)', borderRadius: 1.5, cursor: 'pointer',
                 fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-3)',
                 '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
               View in 3D
             </Box>
           )}
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ ml: 'auto', minWidth: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, '& > *': { flexShrink: 0, whiteSpace: 'nowrap' } }}>
             <ToggleButtonGroup
               exclusive
               size="small"
@@ -2207,23 +2278,25 @@ export function CanvasEditor({
                 setAlignGuides({ x: null, y: null });
                 setMode(nextMode);
               }}
-              sx={{ height: 24, mr: 0.5, '& .MuiToggleButton-root': { px: 0.75, py: 0, gap: 0.4, fontSize: 9, lineHeight: 1, textTransform: 'none' } }}
+              sx={{ height: 24, mr: 0.5, flexShrink: 0, '& .MuiToggleButton-root': { flexShrink: 0, whiteSpace: 'nowrap', px: 0.75, py: 0, gap: 0.4, fontSize: 9, lineHeight: 1, textTransform: 'none' } }}
             >
-              <ToggleButton value="pointer" aria-label="Pointer mode"><MousePointer2 size={11} />Pointer</ToggleButton>
-              <ToggleButton value="marquee" aria-label="Marquee mode"><BoxSelect size={11} />Marquee</ToggleButton>
-              <ToggleButton value="pan" aria-label="Pan mode"><Hand size={11} />Pan</ToggleButton>
+              <ToggleButton value="pointer" aria-label="Pointer mode" title="Pointer mode"><MousePointer2 size={11} /><Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>Pointer</Box></ToggleButton>
+              <ToggleButton value="marquee" aria-label="Marquee mode" title="Marquee mode"><BoxSelect size={11} /><Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>Marquee</Box></ToggleButton>
+              <ToggleButton value="pan" aria-label="Pan mode" title="Pan mode"><Hand size={11} /><Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>Pan</Box></ToggleButton>
             </ToggleButtonGroup>
             <Box sx={{ position: 'relative', display: 'inline-flex' }}>
               <Button
                 ref={setFloorSettingsAnchorEl}
+                aria-label="Floor settings"
+                title="Floor settings"
                 size="small"
                 variant={floorSettingsOpen ? 'contained' : 'outlined'}
-                startIcon={<Settings2 size={12} />}
                 disabled={!warehouseRoot}
                 onClick={openFloorSettings}
-                sx={{ height: 22, minWidth: 0, px: 1, fontSize: 9, textTransform: 'none', '& .MuiButton-startIcon': { mr: 0.5 } }}
+                sx={{ height: 24, minWidth: 24, flexShrink: 0, whiteSpace: 'nowrap', gap: 0.5, px: 0.75, fontSize: 9, textTransform: 'none' }}
               >
-                Floor settings
+                <Settings2 size={12} />
+                <Box component="span" sx={{ display: { xs: 'none', lg: 'inline' } }}>Floor settings</Box>
               </Button>
               <Popper
                 open={guidancePhase != null && guidanceAnchorEl != null}
@@ -2484,31 +2557,36 @@ export function CanvasEditor({
         </Box>
       </Box>
 
-      {/* RIGHT — inspector */}
-      {floorSettingsOpen && warehouseRoot ? (
-        <FloorSettingsPanel root={warehouseRoot} components={positionedZones} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
-      ) : selectedZones.length > 1 ? (
-        <BulkSelectionPanel
-          zones={selectedZones}
-          onClear={() => setSelected(new Set())}
-          onDuplicate={openBulkDuplicate}
-          onDelete={openBulkDelete}
-          pending={bulkActionPending}
-        />
-      ) : selectedZone ? (
-        <RackInspector zone={selectedZone} onClose={() => setSelected(new Set())}
-          onUpdateZone={onUpdateZone}
-          onDeleteZone={onDeleteZone}
-          onPrintBarcode={onPrintBarcode}
-          onCreateZone={onCreateZone} />
-      ) : (
-        <Box sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, p: 2 }}>
-          <Box sx={{ width: 32, height: 32, borderRadius: 1, border: '1.5px dashed var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Layers size={14} color="var(--ink-4)" />
-          </Box>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', textAlign: 'center', lineHeight: 1.4 }}>
-            Click a zone to inspect and edit
-          </Typography>
+      {/* Context reserves width only on wide screens and only while in use.
+          Below lg, reuse the canvas-local absolute panel composition. */}
+      {(floorSettingsOpen && warehouseRoot || selectedZones.length > 0) && (
+        <Box role="region" aria-label="Edit context" sx={{
+          position: { xs: 'absolute', lg: 'static' },
+          right: 1.5, top: 1.5,
+          width: 288, maxWidth: 'calc(100% - 24px)',
+          height: 'auto',
+          minWidth: 0, minHeight: 0, flexShrink: 0, alignSelf: 'flex-start',
+          zIndex: 10,
+          border: '1px solid var(--rule)', borderRadius: { xs: '8px', lg: 0 },
+          bgcolor: 'var(--bg)',
+        }}>
+          {floorSettingsOpen && warehouseRoot ? (
+            <FloorSettingsPanel root={warehouseRoot} components={positionedZones} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
+          ) : selectedZones.length > 1 ? (
+            <BulkSelectionPanel
+              zones={selectedZones}
+              onClear={() => setSelected(new Set())}
+              onDuplicate={openBulkDuplicate}
+              onDelete={openBulkDelete}
+              pending={bulkActionPending}
+            />
+          ) : selectedZone ? (
+            <RackInspector zone={selectedZone} onClose={() => setSelected(new Set())}
+              onUpdateZone={onUpdateZone}
+              onDeleteZone={onDeleteZone}
+              onPrintBarcode={onPrintBarcode}
+              onCreateZone={onCreateZone} />
+          ) : null}
         </Box>
       )}
 

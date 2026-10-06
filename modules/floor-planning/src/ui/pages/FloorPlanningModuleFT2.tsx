@@ -1,40 +1,28 @@
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import {
   Box,
-  Paper,
   Typography,
   Alert,
-  Chip,
-  Divider,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Collapse,
-  IconButton,
-  Tab,
-  Tabs,
-  Checkbox,
   Button,
-  FormControl,
-  InputLabel,
+  Divider,
+  IconButton,
+  Menu,
   MenuItem,
-  Select,
+  Checkbox,
+  ListItemText,
 } from '@mui/material';
-import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2 } from 'lucide-react';
-import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
-import type { 
-  WarehouseLocation, 
-  BinOccupancy, 
-  BinLogResponse, 
-  BinStats, 
-  WarehouseLocationType, 
-  WarehouseZone, 
-  LocationType 
+import { ArrowLeft, Check, ChevronDown, ListFilter, Pencil, Printer, ScrollText, X } from 'lucide-react';
+import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
+import type {
+  WarehouseLocation,
+  BinOccupancy,
+  BinLogResponse,
+  BinStats,
+  WarehouseLocationType,
+  WarehouseZone,
+  LocationType
 } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import type { LabelFormat, PrintableLabel, PrintSubmitResult } from '../components/PrintPreviewPanel.js';
@@ -47,18 +35,24 @@ import { IsometricCanvas } from '../components/IsometricCanvas.js';
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
  * -------------------------------------
- * Manages warehouse floor zones and barcode assignments
- * for floors (locations) and products (variants).
+ * One canonical spatial workspace for the warehouse floor.
+ *
+ *   inspect (default) — shared IsometricCanvas + selected-location rail with
+ *                       contextual location-label actions.
+ *   edit              — the existing CanvasEditor authoring surface, entered
+ *                       through an explicit "Edit layout" action.
+ *
+ * Product-barcode management is not owned here. Location labels (the
+ * location_code symbol, or the merchant barcode override) remain printable
+ * from the rail.
  *
  * All API data injected via props — module stays decoupled
- * from apps/frontend HTTP layer.
+ * from apps/frontend HTTP layer. Ops Console state is decided by the caller
+ * and passed in as suppressLocationRail; this module reads no app state.
  *
  * Data model:
  *   warehouse_locations — location_code (the printed symbol), type,
  *   barcode (nullable merchant override — never system-generated)
- *   variants + external_product_identity_map — lasyncro_variant_id, sku, supplier barcode
- *
- * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
  */
 
 // WarehouseZone and LocationType moved to @lasyncro/shared/ui — re-exported for backwards compat.
@@ -79,8 +73,11 @@ export type ProductBarcode = {
 
 export type FloorPlanningData = {
   zones: WarehouseZone[];
+  // Payload field retained; product-barcode UI is no longer owned by Floor Planning.
   product_barcodes: ProductBarcode[];
 } | null;
+
+export type FloorPlanningMode = 'inspect' | 'edit';
 
 export type FloorPlanningPageProps = {
   minimumMappingReady?: boolean | null;
@@ -122,24 +119,16 @@ export type FloorPlanningPageProps = {
   // what mutateAsync actually resolves to.
   onPrintBarcode?: (locationCode: string) => Promise<Blob>;
   // SHOP-REVIEW-BARCODE-PRINT-05: the caller runs the HTTP call + optional QZ
-  // dispatch and returns a discriminated PrintSubmitResult. The Barcodes UI
+  // dispatch and returns a discriminated PrintSubmitResult. The label preview
   // renders the outcome (QZ dispatched / durable browser PDF / empty / error);
   // it never opens a browser tab itself.
   onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
-  onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
-  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
-  // SHOP-REV-01i: mints the LSP- identity on demand. SHOP-REVIEW-BARCODE-PRINT-05:
-  // same PrintSubmitResult contract as the batch callbacks so the per-row button
-  // has the durable browser fallback too.
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
-  /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
-  activeTab?: 'map' | 'setup' | 'barcodes';
-  onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;
-  activeView?: 'list' | 'canvas';
-  onViewChange?: (view: 'list' | 'canvas') => void;
-  activeSubTab?: 'locations' | 'products';
-  onSubTabChange?: (subTab: 'locations' | 'products') => void;
+  /** Controlled workspace mode — the gate page syncs it to the URL. */
+  mode?: FloorPlanningMode;
+  onModeChange?: (mode: FloorPlanningMode) => void;
+  /** Caller-decided (shared Ops Console): withdraws the location rail content
+   *  while the spatial workspace stays mounted and stable. */
+  suppressLocationRail?: boolean;
   onUpdateZone?: (locationCode: string, payload: {
     position_x?: number | null;
     position_y?: number | null;
@@ -149,6 +138,8 @@ export type FloorPlanningPageProps = {
     rack_levels?: number | null;
     zone_type?: string | null;
     dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
+    // Location lifecycle — already accepted by useUpdateZone's UpdateZonePayload.
+    active?: boolean;
   }) => Promise<void>;
   onUpdateZonePositions?: (positions: Array<{
     location_code: string;
@@ -157,469 +148,14 @@ export type FloorPlanningPageProps = {
   }>) => Promise<void>;
 };
 
-const TYPE_LABELS: Record<LocationType, {
-  label: string;
-  color: 'default' | 'primary' | 'secondary' | 'warning' | 'info';
-}> = {
-  warehouse: { label: 'Warehouse', color: 'primary'   },
-  lane:      { label: 'Lane',      color: 'secondary' },
-  shelf:     { label: 'Shelf',     color: 'info'      },
-  bin:       { label: 'Bin',       color: 'warning'   },
+const TYPE_LABELS: Record<LocationType, string> = {
+  warehouse: 'Warehouse',
+  lane:      'Aisle',
+  shelf:     'Shelf',
+  bin:       'Bin',
 };
 
-function ZoneCard({ zone, onDelete, onToggleActive }: {
-  zone: WarehouseZone;
-  onDelete?: (code: string) => void;
-  onToggleActive?: (code: string, active: boolean) => void;
-}) {
-  const type = TYPE_LABELS[zone.type] ?? { label: zone.type, color: 'default' as const };
-  const metaParts: string[] = [];
-  if (zone.parent_location_code) metaParts.push(`Parent: ${zone.parent_location_code}`);
-  metaParts.push(zone.barcode ?? 'No barcode assigned');
-  if (zone.children_count > 0) {
-    metaParts.push(`${zone.children_count} child location${zone.children_count > 1 ? 's' : ''}`);
-  }
-  return (
-    <Paper variant="outlined" sx={{ p: 1.5, mb: 1, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }}>
-      {/* FP-03: two-column layout, each column hugs its own content
-          (no fixed widths) via alignItems flex-start / flex-end inside
-          a space-between row, instead of one wide row with a trailing
-          meta line. Left = identity (code + type chips), right =
-          actions (eye/trash) + reference meta (parent/barcode/children). */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.75 }}>
-          <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-            {zone.location_code}
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            {!zone.active && <Chip label="Inactive" size="small" color="default" />}
-            <Chip label={type.label} size="small" color={type.color} />
-            {zone.zone_type && (
-              <Chip
-                label={zone.zone_type}
-                size="small"
-                sx={{
-                fontSize: 10,
-                height: 20,
-                textTransform: 'capitalize',
-                bgcolor: ZONE_COLORS[zone.zone_type] ?? 'transparent',
-                color: ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)',
-                border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
-              }}
-            />
-            )}
-          </Box>
-        </Box>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.75 }}>
-          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-            <IconButton
-            size="small"
-            title={zone.active ? 'Deactivate' : 'Activate'}
-            onClick={() => onToggleActive?.(zone.location_code, !zone.active)}
-            sx={{ color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }}
-          >
-              {zone.active ? <EyeOff size={14} /> : <Eye size={14} />}
-            </IconButton>
-            {zone.parent_location_code !== null && (
-              <IconButton
-              size="small"
-              title="Delete zone"
-              onClick={() => onDelete?.(zone.location_code)}
-              sx={{ color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }}
-            >
-              <Trash2 size={14} />
-              </IconButton>
-            )}
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontFamily: 'monospace', textAlign: 'right' }}
-          >
-            {metaParts.map((part, i) => (
-              <span key={i}>
-                {i > 0 && <span style={{ opacity: 0.5 }}> · </span>}
-                {part}
-              </span>
-            ))}
-          </Typography>
-        </Box>
-      </Box>
-    </Paper>
-  );
-}
-
-/**
- * ProductBarcodesTable — assigned (supplier EAN present) + unassigned sections.
- *
- * SHOP-REV-01m: selection spans BOTH sections. LSP- is a parallel namespace to
- * the supplier EAN, not a substitute — a barcoded product can still need a
- * laSyncro label (shelf-edge identifier, damaged original). Scoping selection
- * to unassigned-only would make batch print decay to useless as a merchant's
- * catalog fills in with supplier data.
- *
- * Selecting inside the collapsed unassigned section forces it open
- * (toggleUnassigned / toggleAllUnassigned) — a select-all that silently
- * includes invisible rows is worse than no select-all.
- *
- * Select-all is per-table, not per-tab. A master control across two
- * semantically different groups has no analogue in the Locations tab and
- * would obscure which rows it affects.
- */
-
-function ProductBarcodesTable({ 
-  items, 
-  onUpdateProductBarcode, 
-  onPrintProductBarcode,
-  onBatchPrintProductBarcodes,
-  selectedIds, 
-  onToggleOne, 
-  onToggleAll,
-} : { items: ProductBarcode[]; onUpdateProductBarcode?: (
-  lasyncroVariantId: string,
-  barcode: string) => Promise<void>;
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
-  selectedIds?: Set<string>;
-  onToggleOne?: (id: string) => void;
-  onToggleAll?: (ids: string[]) => void;
-}) {
-  const [filter, setFilter]                 = useState('');
-  const [showUnassigned, setShowUnassigned] = useState(false);
-  // Inline edit state: tracks which variant is being edited and the draft value
-  const [editingId, setEditingId]           = useState<string | null>(null);
-  const [editValue, setEditValue]           = useState('');
-  const [saving, setSaving]                 = useState(false);
-  const [saveError, setSaveError]           = useState<string | null>(null);
-  // SHOP-REV-01i / SHOP-REVIEW-BARCODE-PRINT-05: per-row print state. Only one
-  // row prints at a time, so a single "active outcome" record is enough. The
-  // browser-fallback blob URL lives here so the reviewer keeps a durable
-  // Open/Download control even when a popup is blocked.
-  const [printingId, setPrintingId]         = useState<string | null>(null);
-  type RowPrint = { id: string; kind: 'dispatched' | 'browser' | 'error'; msg: string; url?: string };
-  const [rowPrint, setRowPrint]             = useState<RowPrint | null>(null);
-  const rowUrlRef = useRef<string | null>(null);
-  function setRowUrl(blob: Blob | null): string | undefined {
-    if (rowUrlRef.current) { URL.revokeObjectURL(rowUrlRef.current); rowUrlRef.current = null; }
-    if (!blob) return undefined;
-    const u = URL.createObjectURL(blob);
-    rowUrlRef.current = u;
-    return u;
-  }
-  useEffect(() => () => { if (rowUrlRef.current) URL.revokeObjectURL(rowUrlRef.current); }, []);
-
-  async function handlePrint(lasyncroVariantId: string) {
-    if (!onPrintProductBarcode) return;
-    setPrintingId(lasyncroVariantId);
-    setRowPrint(null);
-    setRowUrl(null);
-    try {
-      const result = await onPrintProductBarcode(lasyncroVariantId);
-      if (result.outcome === 'dispatched') {
-        setRowPrint({ id: lasyncroVariantId, kind: 'dispatched', msg: `Sent to ${result.printerName}` });
-      } else if (result.outcome === 'browser') {
-        const url = setRowUrl(result.blob);
-        setRowPrint({ id: lasyncroVariantId, kind: 'browser', msg: 'Ready to print in your browser', url });
-        try { if (url) window.open(url, '_blank'); } catch { /* controls remain */ }
-      } else if (result.outcome === 'empty') {
-        setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'This product is no longer available. Refresh and try again.' });
-      } else {
-        setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: result.message ?? 'Could not prepare the label. Please try again.' });
-      }
-    } catch {
-      setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'Could not prepare the label. Please try again.' });
-    } finally {
-      setPrintingId(null);
-    }
-  }
-
-  async function handleSave(lasyncroVariantId: string) {
-    if (!editValue.trim() || !onUpdateProductBarcode) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await onUpdateProductBarcode(lasyncroVariantId, editValue.trim());
-      setEditingId(null);
-    } catch {
-      setSaveError('Failed to save barcode');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const assigned = items.filter((i) => i.barcode !== null);
-  const unassigned = items.filter((i) => i.barcode === null);
-
-  const filtered = assigned.filter((i) => {
-    const q = filter.toLowerCase();
-    return (
-      !q ||
-      i.sku?.toLowerCase().includes(q) ||
-      i.lasyncro_variant_id.toLowerCase().includes(q) ||
-      i.barcode?.toLowerCase().includes(q)
-    );
-  });
-
-  // SHOP-REV-01m: selecting inside the collapsed section forces it open — a
-  // select-all that silently includes rows the user cannot see is a worse
-  // affordance than no select-all. Selection spans BOTH tables because LSP-
-  // is a parallel namespace to the supplier EAN, not a substitute for it: a
-  // barcoded product can still need a laSyncro label (shelf-edge identifier,
-  // damaged original). Scoping to unassigned-only would make batch print
-  // decay to useless as a merchant's catalog fills in.
-  const sel = selectedIds ?? new Set<string>();
-  const selectable = !!onToggleOne;
-
-  function toggleUnassigned(id: string) { setShowUnassigned(true); onToggleOne?.(id); }
-  function toggleAllUnassigned(ids: string[]) { setShowUnassigned(true); onToggleAll?.(ids); }
-
-  const assignedAllOn   = filtered.length > 0 && filtered.every((i) => sel.has(i.lasyncro_variant_id));
-  const unassignedAllOn = unassigned.length > 0 && unassigned.every((i) => sel.has(i.lasyncro_variant_id));
-
-  return (
-    <Box>
-      <TextField
-        placeholder="Filter by SKU or barcode..."
-        size="small"
-        fullWidth
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        sx={{ mb: 2 }}
-        InputProps={{ sx: { fontFamily: 'monospace', fontSize: 13 } }}
-      />
-
-      {/* ASSIGNED BARCODES — compact table */}
-      {assigned.length === 0 && unassigned.length === 0 ? (
-        <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
-          <PackageSearch size={36} style={{ opacity: 0.3 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            No product barcodes found.
-          </Typography>
-        </Paper>
-      ) : (
-        <>
-          {assigned.length > 0 && (
-            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    {selectable && (
-                      <TableCell padding="checkbox" sx={{ width: 40 }}>
-                        <Checkbox
-                          size="small"
-                          checked={assignedAllOn}
-                          indeterminate={filtered.some((i) => sel.has(i.lasyncro_variant_id)) && !assignedAllOn}
-                          onChange={() => onToggleAll?.(filtered.map((i) => i.lasyncro_variant_id))}
-                          sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncroID</TableCell>
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SupplierBarcode</TableCell>
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 80 }} />
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filtered.map((item) => (
-                    <TableRow key={item.lasyncro_variant_id} hover selected={sel.has(item.lasyncro_variant_id)}>
-                      {selectable && (
-                        <TableCell padding="checkbox">
-                          <Checkbox
-                            size="small"
-                            checked={sel.has(item.lasyncro_variant_id)}
-                            onChange={() => onToggleOne?.(item.lasyncro_variant_id)}
-                            sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } }}
-                          />
-                        </TableCell>
-                      )}
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                        {item.lasyncro_variant_id.slice(0, 8)}…
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 12 }}>
-                        {item.sku ?? <Typography variant="caption" color="text.disabled">—</Typography>}
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>
-                        {editingId === item.lasyncro_variant_id ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                            <TextField
-                              size="small"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') void handleSave(item.lasyncro_variant_id); if (e.key === 'Escape') setEditingId(null); }}
-                              autoFocus
-                              inputProps={{ style: { fontFamily: 'monospace', fontSize: 12, padding: '2px 6px' } }}
-                              sx={{ width: 140 }}
-                              error={!!saveError}
-                              helperText={saveError ?? undefined}
-                            />
-                            <Box
-                              onClick={() => void handleSave(item.lasyncro_variant_id)}
-                              sx={{ px: 1, py: 0.25, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
-                            >
-                              {saving ? '…' : 'Save'}
-                            </Box>
-                            <Box onClick={() => setEditingId(null)} sx={{ fontSize: 11, color: 'var(--ink-4)', cursor: 'pointer' }}>✕</Box>
-                          </Box>
-                        ) : (
-                          item.barcode
-                        )}
-                      </TableCell>
-                      {/* Edit action — only rendered when onUpdateProductBarcode is wired */}
-                      <TableCell>
-                        {onUpdateProductBarcode && editingId !== item.lasyncro_variant_id && (
-                          <Box
-                            onClick={() => { setEditingId(item.lasyncro_variant_id); setEditValue(item.barcode ?? ''); setSaveError(null); }}
-                            sx={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', letterSpacing: '0.04em', '&:hover': { textDecoration: 'underline' } }}
-                          >
-                            Edit
-                          </Box>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filtered.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={selectable ? 5 : 4} sx={{ textAlign: 'center', color: 'text.secondary', py: 3 }}>
-                        No results match your filter.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-
-          {/* UNASSIGNED — collapsed by default */}
-          {unassigned.length > 0 && (
-            <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-              <Box
-                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5, cursor: 'pointer' }}
-                onClick={() => setShowUnassigned((v) => !v)}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    {unassigned.length} product{unassigned.length > 1 ? 's' : ''} without barcode
-                  </Typography>
-                  <Chip label="No barcode" size="small" color="default" />
-                </Box>
-                <IconButton size="small">
-                  {showUnassigned ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </IconButton>
-              </Box>
-              <Collapse in={showUnassigned}>
-                <Divider />
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      {selectable && (
-                        <TableCell padding="checkbox" sx={{ width: 40 }}>
-                          <Checkbox
-                            size="small"
-                            checked={unassignedAllOn}
-                            indeterminate={unassigned.some((i) => sel.has(i.lasyncro_variant_id)) && !unassignedAllOn}
-                            onChange={() => toggleAllUnassigned(unassigned.map((i) => i.lasyncro_variant_id))}
-                            sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
-                          />
-                        </TableCell>
-                      )}
-                      <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncro ID</TableCell>
-                      <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
-                      <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 160 }} />
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {unassigned.map((item) => (
-                      <TableRow key={item.lasyncro_variant_id} hover selected={sel.has(item.lasyncro_variant_id)}>
-                        {selectable && (
-                          <TableCell padding="checkbox">
-                            <Checkbox
-                              size="small"
-                              checked={sel.has(item.lasyncro_variant_id)}
-                              onChange={() => toggleUnassigned(item.lasyncro_variant_id)}
-                              sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } }}
-                            />
-                          </TableCell>
-                        )}
-                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 11}}>
-                          {item.lasyncro_variant_id.slice(0, 8)}…
-                        </TableCell>
-                        <TableCell sx={{ fontSize: 12 }}>
-                          {item.sku ?? <Typography variant="caption" color="text.disabled">—</Typography>}
-                        </TableCell>
-                        <TableCell>
-                          {/* Tier 1 filled accent per playbook §2/§12 — printing
-                              commits a write (mints the LSP- identity and
-                              dispatches to the printer), unlike the Edit action
-                              above which only opens an inline editor. Error uses
-                              --critical-ink per §18; never hardcode severity hex.
-                              SHOP-REVIEW-BARCODE-PRINT-05: durable browser
-                              Open/Download recovery when QZ did not dispatch. */}
-                          {onPrintProductBarcode && (() => {
-                            const rp = rowPrint?.id === item.lasyncro_variant_id ? rowPrint : null;
-                            const isError = rp?.kind === 'error';
-                            return (
-                              <Box sx={{ display: 'inline-flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-start' }}>
-                                <Box
-                                  onClick={() => { if (printingId !== item.lasyncro_variant_id) void handlePrint(item.lasyncro_variant_id); }}
-                                  sx={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                    px: 1.25, py: 0.5,
-                                    fontSize: 11, fontWeight: 600,
-                                    whiteSpace: 'nowrap',
-                                    bgcolor: isError ? 'var(--critical-ink)' : 'var(--accent)',
-                                    color: 'var(--accent-ink)',
-                                    borderRadius: '6px',
-                                    cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
-                                    opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
-                                    '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
-                                  }}
-                                >
-                                  <Tag size={11} />
-                                  {printingId === item.lasyncro_variant_id ? 'Printing…' : isError ? 'Retry' : 'Print label'}
-                                </Box>
-                                {rp?.kind === 'dispatched' && (
-                                  <Typography sx={{ fontSize: 10.5, color: 'var(--ink-4)' }}>{rp.msg}</Typography>
-                                )}
-                                {rp?.kind === 'browser' && rp.url && (
-                                  <Box sx={{ display: 'inline-flex', gap: 1, alignItems: 'center' }}>
-                                    <Box component="a" href={rp.url} target="_blank" rel="noopener noreferrer"
-                                      sx={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-                                      Open PDF
-                                    </Box>
-                                    <Box component="a" href={rp.url} download="product-label.pdf"
-                                      sx={{ fontSize: 10.5, color: 'var(--ink-3)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-                                      Download
-                                    </Box>
-                                  </Box>
-                                )}
-                                {rp?.kind === 'error' && (
-                                  <Typography sx={{ fontSize: 10.5, color: 'var(--critical-ink)' }}>{rp.msg}</Typography>
-                                )}
-                              </Box>
-                            );
-                          })()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Collapse>
-            </Paper>
-          )}
-        </>
-      )}
-    </Box>
-  );
-}
-
-/**
- * BarcodesTab — Locations + Products sub-tabs.
- * Locations data sourced from warehouse_locations (zones prop).
- * Products data sourced from variants + external_product_identity_map.
- */
-type LocationFilter = 'all' | 'bin' | 'lane' | 'shelf' | 'warehouse' | 'tote' | 'dock' | 'ship' | 'pack' | 'ret' | 'kit';
-// SHOP-REV-01m cycle 2: moved out of PrintPreviewPanel so products can supply
+// SHOP-REV-01m cycle 2: moved out of PrintPreviewPanel so callers supply
 // their own list. Must match SHEET_FORMATS in warehouseLabelPdf.service.ts.
 const LOCATION_LABEL_FORMATS: LabelFormat[] = [
   { id: 'avery-5160', label: 'Avery 5160 · 24/sheet',  labelsPerSheet: 24, columns: 3, labelWidthMm: 66,  labelHeightMm: 25,  paperSize: 'A4'  },
@@ -628,357 +164,309 @@ const LOCATION_LABEL_FORMATS: LabelFormat[] = [
   { id: 'dymo-1x2',   label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25,  labelHeightMm: 54,  paperSize: '1x2' },
 ];
 
-// SHOP-REV-01m cycle 3: must match PRODUCT_FORMATS in productLabelPdf.service.ts
-// (PRINT-02 — synced by comment only). Deliberately not the location list:
-// Zebra 4x6 has no product use, and product labels are 30-60mm by convention.
-const PRODUCT_LABEL_FORMATS: LabelFormat[] = [
-  { id: 'thermal-50x25', label: 'Thermal 50×25mm',        labelsPerSheet: 1,  columns: 1, labelWidthMm: 50, labelHeightMm: 25, paperSize: 'thermal' },
-  { id: 'dymo-1x2',      label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25, labelHeightMm: 54, paperSize: '1x2'     },
-  { id: 'avery-5160',    label: 'Avery 5160 · 24/sheet',  labelsPerSheet: 24, columns: 3, labelWidthMm: 66, labelHeightMm: 25, paperSize: 'A4'      },
+type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
+const OVERLAYS: { id: OverlayId; label: string; hint: string }[] = [
+  { id: 'occupancy', label: 'Occupancy',      hint: 'How full each bin is.' },
+  { id: 'stockout',  label: 'Stock-out risk', hint: 'Bins low on stock (≤3 units).' },
+  { id: 'empty',     label: 'Empty bins',     hint: 'Available capacity.' },
+  { id: 'none',      label: 'Layout',         hint: 'Just the layout.' },
 ];
 
-const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
-  { label: 'ALL',       value: 'all'       },
-  { label: 'BIN',       value: 'bin'       },
-  { label: 'LANE',      value: 'lane'      },
-  { label: 'SHELF',     value: 'shelf'     },
-  { label: 'WAREHOUSE', value: 'warehouse' },
-  { label: 'TOTE',      value: 'tote'      },
-  { label: 'DOCK',      value: 'dock'      },
-  { label: 'SHIP',      value: 'ship'      },
-  { label: 'PACK',      value: 'pack'      },
-  { label: 'RET',       value: 'ret'       },
-  { label: 'KIT',       value: 'kit'       },
-];
+const ZONE_FILTERS = [
+  { type: 'pick',       label: 'Pick zone'    },
+  { type: 'pack',       label: 'Pack zone'    },
+  { type: 'receive',    label: 'Receiving'    },
+  { type: 'ship',       label: 'Shipping'     },
+  { type: 'returns',    label: 'Returns'      },
+  { type: 'problem',    label: 'Problem area' },
+  { type: 'quarantine', label: 'Quarantine'   },
+  { type: 'kitting',    label: 'Kitting'      },
+  { type: 'storage',    label: 'Storage'      },
+] as const;
+const ALL_ZONE_TYPES: string[] = ZONE_FILTERS.map((z) => z.type);
 
-function BarcodesTab({ 
-  zones, 
-  productBarcodes, 
-  onUpdateProductBarcode,
-  activeSubTab,
-  onSubTabChange,
-  onBatchPrintBarcodes,
-  onBatchPrintProductBarcodes,
-  onPrintProductBarcode
-}: { 
-  zones: WarehouseZone[]; 
-  productBarcodes: ProductBarcode[]; 
-  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) =>Promise<void>;
-  activeSubTab?: 'locations' | 'products';
-  onSubTabChange?: (subTab: 'locations' | 'products') => void;
-  // SHOP-REVIEW-BARCODE-PRINT-05: PrintSubmitResult contract — see outer props.
-  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
+// Restrained surface treatment shared by the spatial frame and the rail.
+const FRAME_SX = {
+  bgcolor: 'var(--surface)',
+  border: '0.5px solid var(--rule-2)',
+  borderRadius: '10px',
+  minWidth: 0,
+  minHeight: 0,
+  overflow: 'hidden',
+} as const;
+
+const EYEBROW_SX = { fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' } as const;
+
+function relativeAge(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  return h < 24 ? `${h}h ago` : `${d}d ago`;
+}
+
+function FactGrid({ facts }: { facts: { k: string; v: string }[] }) {
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5px', bgcolor: 'var(--rule)', border: '0.5px solid var(--rule)', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
+      {facts.map(({ k, v }) => (
+        <Box key={k} sx={{ bgcolor: 'var(--surface)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 0.375 }}>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{k}</Typography>
+          <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{v}</Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+/**
+ * Selected-location inspection rail. Facts are the ones current data supports:
+ * structure from warehouse_locations, on-hand + contents from the occupancy
+ * projection, pick stats from pick_scan_log. No capacity estimate is shown —
+ * there is no capacity field to derive one from.
+ */
+function LocationRail({
+  zone,
+  code,
+  rootCode,
+  occupancy,
+  binStats,
+  onClear,
+  onPrintBarcode,
+  onOpenLog,
+}: {
+  zone: WarehouseZone | undefined;
+  code: string;
+  rootCode: string | undefined;
+  occupancy: BinOccupancy | undefined;
+  binStats: BinStats | undefined;
+  onClear: () => void;
+  onPrintBarcode?: (locationCode: string) => Promise<Blob>;
+  onOpenLog: () => void;
 }) {
-  const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
-  const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
-  const [locSearch, setLocSearch]     = useState('');
-  const [selected, setSelected]       = useState<Set<string>>(new Set());
-  // SHOP-REV-01m: products get their own Set. A shared one would leak
-  // selections across sub-tabs — a variant id and a location code are both
-  // bare strings with nothing distinguishing them — and the preview panel's
-  // visibility keys on size > 0, so the wrong panel would appear.
-  const [prodSelected, setProdSelected] = useState<Set<string>>(new Set());
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
+  const stats = binStats?.location_code === code ? binStats : undefined;
+  const units = occupancy?.on_hand_quantity ?? 0;
 
-  const toggleOne  = (code: string) => setSelected((prev) => { const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s; });
-  const toggleAll  = (codes: string[]) => setSelected((prev) => prev.size === codes.length ? new Set() : new Set(codes));
+  // Single-location print — same path as the editor inspector
+  // (usePrintBarcode owns QZ dispatch / browser fallback).
+  async function handlePrint() {
+    if (!onPrintBarcode || printing) return;
+    setPrinting(true);
+    setPrintError(null);
+    try {
+      await onPrintBarcode(code);
+    } catch {
+      setPrintError('Could not prepare the label. Please try again.');
+    } finally {
+      setPrinting(false);
+    }
+  }
 
-  const prodToggleOne = (id: string) => setProdSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  const prodToggleAll = (ids: string[]) => setProdSelected((prev) => {
-    const allOn = ids.length > 0 && ids.every((i) => prev.has(i));
-    const s = new Set(prev);
-    ids.forEach((i) => allOn ? s.delete(i) : s.add(i));
-    return s;
-  });
-
-  // REV-HARD-01: every active location is printable — location_code is the
-  // symbol. `barcode` is an override, not a precondition.
-  const barcoded      = zones.filter((z) => z.active);
-  const missing       = zones.filter((z) => !z.active);
-  const aisles        = zones.filter((z) => z.type === 'lane');
-  const aislesLabelled = aisles.filter((z) => z.active);
-  const fullLabelled = aisles.length;
-
-  const filteredZones = zones.filter((z) => {
-    const matchesType   = locFilter === 'all' || z.type === locFilter;
-    const matchesSearch = !locSearch || z.location_code.toLowerCase().includes(locSearch.toLowerCase()) || z.barcode?.toLowerCase().includes(locSearch.toLowerCase());
-    return matchesType && matchesSearch;
-  });
-  // SHOP-REV-01m: the barcoded + active filter moved here from inside
-  // PrintPreviewPanel — it is a location concept with no product equivalent.
-  // SHOP-REVIEW-BARCODE-PRINT-05 §10: order the preview by the same key the
-  // print endpoint sorts on (httpBatchPrintBarcodes → ORDER BY location_code)
-  // so the first-sheet preview is truthful about what prints first.
-  const selectedZoneLabels: PrintableLabel[] = zones
-    .filter((z) => selected.has(z.location_code) && z.active)
-    .slice()
-    .sort((a, b) => (a.location_code < b.location_code ? -1 : a.location_code > b.location_code ? 1 : 0))
-    .map((z) => ({ id: z.location_code, code: z.barcode ?? z.location_code, caption: z.location_code }));
-  const allFilteredCodes    = filteredZones.map((z) => z.location_code);
-  const allSelected         = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
-
-  // SHOP-REV-01m: three honest metrics. Locations has a fourth (aisles fully
-  // labelled) with no product equivalent — inventing one would be parity
-  // theatre.
-  const prodWithSupplier = productBarcodes.filter((p) => p.barcode !== null);
-  const prodWithLasyncro = productBarcodes.filter((p) => p.lasyncro_barcode !== null);
-
-  // SHOP-REVIEW-BARCODE-PRINT-05 §10: match httpBatchPrintProductBarcodes
-  // (ORDER BY v.sku). Postgres sorts NULLs last on ASC, so null SKUs trail.
-  const selectedProductLabels: PrintableLabel[] = productBarcodes
-    .filter((p) => prodSelected.has(p.lasyncro_variant_id))
-    .slice()
-    .sort((a, b) => {
-      if (a.sku === b.sku) return 0;
-      if (a.sku == null) return 1;
-      if (b.sku == null) return -1;
-      return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0;
-    })
-    .map((p) => ({
-      id: p.lasyncro_variant_id,
-      // Preview shows the LSP- code where one exists; a variant with none yet
-      // shows its SKU as a placeholder — the mint happens server-side on print.
-      code: p.lasyncro_barcode ?? p.sku ?? p.lasyncro_variant_id.slice(0, 8),
-      caption: [p.sku, p.product_title].filter(Boolean).join(' · ').slice(0, 36),
-    }));
+  const facts = [
+    { k: 'On hand', v: `${units} unit${units === 1 ? '' : 's'}` },
+    { k: 'Picks · 7d', v: stats ? String(stats.picks_7d) : '—' },
+    { k: 'Last pick', v: stats?.last_pick_at ? relativeAge(stats.last_pick_at) : '—' },
+    { k: 'Reorder in', v: stats && stats.reorder_in_days !== null ? `${stats.reorder_in_days}d` : '—' },
+  ];
+  const zoneType = zone?.zone_type ?? null;
 
   return (
-    <Box>
-      {/* Sub-tab toggle */}
-      <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', mb: 1.5 }}>
-        Unit labels (LSU) are generated at receiving and tracked in{' '}
-        <Box component="a" href="/settings/warehouse" sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-          Settings → Warehouse
-        </Box>
-        . Codes below locate stock (location codes) and identify products (Shopify EAN/UPC, a camera-scan fallback).
-      </Typography>
-      <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-        {(['locations', 'products'] as const).map((st) => (
-          <Box
-            key={st}
-            onClick={() => { setSubTab(st); onSubTabChange?.(st); }}
-            sx={{
-              px: 2, py: 0.75, borderRadius: 1.5, cursor: 'pointer', fontSize: 13, fontWeight: 500,
-              border: '1px solid',
-              borderColor: subTab === st ? 'var(--accent)' : 'var(--rule)',
-              color: subTab === st ? 'var(--accent)' : 'var(--ink-3)',
-              bgcolor: subTab === st ? 'var(--accent-ghost)' : 'transparent',
-              transition: 'all 0.15s',
-            }}
-          >
-            {st === 'locations' ? `Location codes  ${zones.length}` : `Product barcodes  ${productBarcodes.length}`}
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Box sx={{ p: '18px 18px 0', display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography sx={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {[rootCode, zone?.parent_location_code !== rootCode ? zone?.parent_location_code : null].filter(Boolean).join(' / ') || 'Warehouse'}
+            </Typography>
+            <IconButton size="small" aria-label="Clear selection" onClick={onClear} sx={{ width: 24, height: 24, color: 'var(--ink-3)' }}>
+              <X size={14} />
+            </IconButton>
           </Box>
-        ))}
+          <Typography sx={{ fontSize: 21, fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.15, color: 'var(--ink)', wordBreak: 'break-all' }}>
+            {code}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+            {zone && (
+              <Box component="span" sx={{ height: 22, display: 'inline-flex', alignItems: 'center', px: 1, borderRadius: '6px', border: '0.5px solid var(--rule-2)', fontSize: 11.5, color: 'var(--ink-2)' }}>
+                {TYPE_LABELS[zone.type] ?? zone.type}
+              </Box>
+            )}
+            {zoneType && (
+              <Box component="span" sx={{ height: 22, display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1, borderRadius: '6px', bgcolor: 'var(--bg-2)', fontSize: 11.5, fontWeight: 500, color: 'var(--ink)', textTransform: 'capitalize' }}>
+                <Box component="span" sx={{ width: 7, height: 7, borderRadius: '2px', bgcolor: ZONE_COLORS[zoneType] ?? 'var(--ink-4)', border: `1px solid ${ZONE_STROKE[zoneType] ?? 'var(--ink-4)'}` }} />
+                {zoneType}
+              </Box>
+            )}
+            {zone && !zone.active && (
+              <Box component="span" sx={{ height: 22, display: 'inline-flex', alignItems: 'center', px: 1, borderRadius: '6px', border: '0.5px solid var(--rule-2)', fontSize: 11.5, color: 'var(--ink-4)' }}>
+                Inactive
+              </Box>
+            )}
+          </Box>
+        </Box>
+
+        <FactGrid facts={facts} />
+
+        <Box sx={{ flexShrink: 0 }}>
+          <Typography sx={{ ...EYEBROW_SX, mb: 1 }}>Contents</Typography>
+          {occupancy?.variants.length ? (
+            occupancy.variants.map((v) => (
+              <Box key={v.lasyncro_variant_id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, borderBottom: '0.5px solid var(--rule)' }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {v.product_title ?? v.sku ?? v.lasyncro_variant_id.slice(0, 8)}
+                  </Typography>
+                  {v.sku && (
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{v.sku}</Typography>
+                  )}
+                </Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{v.on_hand_quantity}</Typography>
+              </Box>
+            ))
+          ) : (
+            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Nothing stored here right now.</Typography>
+          )}
+        </Box>
+
+        <Typography sx={{ fontSize: 11.5, color: 'var(--ink-3)', flexShrink: 0, pb: 0.5 }}>
+          Label last printed: {zone?.last_printed_at
+            ? new Date(zone.last_printed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+            : 'never'}
+        </Typography>
       </Box>
 
-      {subTab === 'locations' && (
-        <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-          {/* Search + filter pills */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
-            <TextField
-              placeholder="Filter by code or zone..."
-              size="small"
-              value={locSearch}
-              onChange={(e) => setLocSearch(e.target.value)}
-              sx={{ width: 220 }}
-              InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12 } }}
-            />
-            <Box sx={{ display: 'flex', gap: 0.75 }}>
-              {FILTER_PILLS.map(({ label, value }) => (
-                <Box
-                  key={value}
-                  onClick={() => setLocFilter(value)}
-                  sx={{
-                    px: 1.25, py: 0.4, borderRadius: 1, cursor: 'pointer', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
-                    border: '1px solid',
-                    borderColor: locFilter === value ? 'var(--accent)' : 'var(--rule)',
-                    color: locFilter === value ? 'var(--accent)' : 'var(--ink-4)',
-                    bgcolor: locFilter === value ? 'var(--accent-ghost)' : 'transparent',
-                    transition: 'all 0.12s',
-                  }}
-                >
-                  {label}
-                </Box>
-              ))}
-            </Box>
-          </Box>
-          {/* Section label + print action — matches target design */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-              Location codes · Bin, shelf & zone labels · This Floor
-            </Typography>
-          </Box>
-          {/* Stat row */}
-          <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-            {[
-              { label: 'Total locations',     value: zones.length,          color: 'var(--ink)'    },
-              { label: 'Barcoded',            value: barcoded.length,       color: 'var(--accent)' },
-              { label: 'Missing barcode',     value: missing.length,        color: missing.length > 0 ? 'var(--accent)' : 'var(--ink-3)' },
-              // Shows barcoded/total aisles fraction — matches target design "6/7" format
-              { label: 'Aisles fully labelled', value: `${aislesLabelled.length}/${aisles.length}`, color: 'var(--ink)' },
-            ].map(({ label, value, color }) => (
-              <Box key={label} sx={{ flex: 1, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-                  {label}
-                </Typography>
-                <Typography sx={{ fontSize: 28, fontWeight: 500, color, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
-                  {value}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-
-          {/* Locations table */}
-          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox" sx={{ width: 40 }}>
-                    <Checkbox
-                      size="small"
-                      checked={allSelected}
-                      indeterminate={selected.size > 0 && !allSelected}
-                      onChange={() => toggleAll(allFilteredCodes)}
-                      sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
-                    />
-                  </TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Code</TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Type</TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Zone</TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Barcode</TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Last Printed</TableCell>
-                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredZones.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} sx={{ textAlign: 'center', color: 'var(--ink-4)', py: 4 }}>
-                      No locations configured. Add zones in Setup.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredZones.map((z) => (
-                      <TableRow key={z.location_code} hover selected={selected.has(z.location_code)} onClick={() => toggleOne(z.location_code)} sx={{ cursor: 'pointer' }}>
-                        <TableCell padding="checkbox">
-                          <Checkbox
-                            size="small"
-                            checked={selected.has(z.location_code)}
-                            onChange={() => toggleOne(z.location_code)}
-                            onClick={(e) => e.stopPropagation()}
-                            sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } }}
-                          />
-                        </TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{z.location_code}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={TYPE_LABELS[z.type]?.label ?? z.type}
-                          size="small"
-                          color={TYPE_LABELS[z.type]?.color ?? 'default'}
-                        />
-                      </TableCell>
-                      {/* Zone — zone_type from migration 0108, falls back to parent for structural types */}
-                      <TableCell sx={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'capitalize' }}>
-                        {z.zone_type ?? z.parent_location_code ?? <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>—</Typography>}
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                        {z.barcode ?? <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>No barcode</Typography>}
-                      </TableCell>
-                      {/* Last Printed — no data model yet, stub shows Never. Phase 3: add last_printed_at to warehouse_locations */}
-                      <TableCell sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                        {z.last_printed_at
-                          ? new Date(z.last_printed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11, fontStyle: 'italic' }}>Never</Typography>}
-                      </TableCell>
-                      <TableCell>
-                        {z.active
-                          ? <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>✓ ACTIVE</Typography>
-                          : <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>INACTIVE</Typography>}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-               </TableBody>
-             </Table>
-            </TableContainer>
-           </Box>
-          <Box sx={{
-            width: selected.size > 0 ? 260 : 0,
-            opacity: selected.size > 0 ? 1 : 0,
-            overflow: 'hidden',
-            transition: 'width 0.25s ease, opacity 0.2s ease',
-            flexShrink: 0,
-          }}>
-            <PrintPreviewPanel
-              items={selectedZoneLabels}
-              formats={LOCATION_LABEL_FORMATS}
-              defaultFormatId="avery-5160"
-              emptyMessage="No barcoded locations"
-              onBatchPrint={onBatchPrintBarcodes}
-            />
-          </Box>
+      <Box sx={{ p: '14px 18px 18px', display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+        {printError && (
+          <Typography sx={{ fontSize: 11.5, color: 'var(--critical-ink)' }}>{printError}</Typography>
+        )}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, '& > button': { flex: '1 0 auto' } }}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<Printer size={14} />}
+            disabled={!onPrintBarcode || printing}
+            onClick={() => void handlePrint()}
+            sx={{ height: 34, textTransform: 'none', fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', borderColor: 'var(--rule-2)', borderRadius: '7px', whiteSpace: 'nowrap' }}
+          >
+            {printing ? 'Printing…' : 'Print location label'}
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            disableElevation
+            startIcon={<ScrollText size={14} />}
+            onClick={onOpenLog}
+            sx={{ height: 34, textTransform: 'none', fontSize: 12.5, fontWeight: 600, bgcolor: 'var(--ink)', color: 'var(--bg)', borderRadius: '7px', whiteSpace: 'nowrap', '&:hover': { bgcolor: 'var(--ink)', opacity: 0.88 } }}
+          >
+            See logs
+          </Button>
         </Box>
-      )}
+      </Box>
+    </Box>
+  );
+}
 
-      {subTab === 'products' && (
-        <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <PackageSearch size={18} />
-              <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
-              <Chip label={productBarcodes.length} size="small" />
-            </Box>
+/** No selection: floor orientation + batch location-label printing. */
+function FloorRail({
+  rootCode,
+  facts,
+  labels,
+  onBatchPrintBarcodes,
+}: {
+  rootCode: string | undefined;
+  facts: { k: string; v: string }[];
+  labels: PrintableLabel[];
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
+}) {
+  const [labelsOpen, setLabelsOpen] = useState(false);
 
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1.5 }}>
-              Product barcodes · Supplier EAN &amp; laSyncro labels · This shop
-            </Typography>
-
-            {/* Stat row — mirrors the Locations layout exactly */}
-            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-              {[
-                { label: 'Total variants',      value: productBarcodes.length,   color: 'var(--ink)'    },
-                { label: 'Supplier barcode',    value: prodWithSupplier.length,  color: 'var(--accent)' },
-                { label: 'laSyncro label',      value: prodWithLasyncro.length,  color: prodWithLasyncro.length > 0 ? 'var(--accent)' : 'var(--ink-3)' },
-              ].map(({ label, value, color }) => (
-                <Box key={label} sx={{ flex: 1, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-                    {label}
-                  </Typography>
-                  <Typography sx={{ fontSize: 28, fontWeight: 500, color, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
-                    {value}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-
-            <ProductBarcodesTable 
-              items={productBarcodes} 
-              onUpdateProductBarcode={onUpdateProductBarcode} 
-              onPrintProductBarcode={onPrintProductBarcode}
-              selectedIds={prodSelected}
-              onToggleOne={prodToggleOne}
-              onToggleAll={prodToggleAll}
-            />
-          </Box>
-          <Box sx={{
-            width: prodSelected.size > 0 ? 260 : 0,
-            opacity: prodSelected.size > 0 ? 1 : 0,
-            overflow: 'hidden',
-            transition: 'width 0.25s ease, opacity 0.2s ease',
-            flexShrink: 0,
-          }}>
-            <PrintPreviewPanel
-              items={selectedProductLabels}
-              formats={PRODUCT_LABEL_FORMATS}
-              defaultFormatId="thermal-50x25"
-              emptyMessage="No products selected"
-              onBatchPrint={onBatchPrintProductBarcodes}
-            />
-          </Box>
+  if (labelsOpen) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <Box sx={{ p: '14px 18px 12px', display: 'flex', flexDirection: 'column', gap: 1, borderBottom: '0.5px solid var(--rule)' }}>
+          <Button
+            size="small"
+            startIcon={<ArrowLeft size={14} />}
+            onClick={() => setLabelsOpen(false)}
+            sx={{ alignSelf: 'flex-start', textTransform: 'none', fontSize: 12, color: 'var(--ink-3)', px: 0.75, minWidth: 0 }}
+          >
+            Floor
+          </Button>
+          <Typography sx={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Location labels</Typography>
         </Box>
-      )}
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: '14px 18px 18px' }}>
+          <PrintPreviewPanel
+            items={labels}
+            formats={LOCATION_LABEL_FORMATS}
+            defaultFormatId="avery-5160"
+            emptyMessage="No active locations"
+            onBatchPrint={onBatchPrintBarcodes}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Box sx={{ p: 2.25, display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+          <Typography sx={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Warehouse</Typography>
+          <Typography sx={{ fontSize: 17, fontWeight: 600, color: 'var(--ink-2)' }}>{rootCode ?? 'Floor 1'}</Typography>
+          <Typography sx={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--ink-3)' }}>
+            Select a location on the map to inspect it.
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', borderTop: '0.5px solid var(--rule)' }}>
+          {facts.map(({ k, v }) => (
+            <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{k}</Typography>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>{v}</Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+      <Box sx={{ p: '14px 18px 18px', flexShrink: 0 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          size="small"
+          startIcon={<Printer size={14} />}
+          disabled={labels.length === 0}
+          onClick={() => setLabelsOpen(true)}
+          sx={{ minHeight: 34, height: 'auto', py: 0.75, textTransform: 'none', fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', borderColor: 'var(--rule-2)', borderRadius: '7px', whiteSpace: 'normal', overflowWrap: 'anywhere', flexShrink: 0 }}
+        >
+          Labels for {labels.length} location{labels.length === 1 ? '' : 's'}
+        </Button>
+      </Box>
+    </Box>
+  );
+}
+
+function WorkspaceHeader({ title, badge, subline, actions }: {
+  title: string;
+  badge?: string;
+  subline: string;
+  actions: ReactNode;
+}) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, minHeight: 62, flexShrink: 0, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.375, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <Typography component="h1" sx={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.2, color: 'var(--ink)' }}>
+            {title}
+          </Typography>
+          {badge && (
+            <Box component="span" sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', px: 0.875, py: 0.25, borderRadius: '100px' }}>
+              {badge}
+            </Box>
+          )}
+        </Box>
+        <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {subline}
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>{actions}</Box>
     </Box>
   );
 }
@@ -996,44 +484,36 @@ function FloorPlanningModuleFT2Inner({
   onBinLogOpen,
   binStats,
   onBinSelect,
-  variantFocusBins,
   onCreateZone,
   onDeleteZone,
   onDeleteZones,
   onDuplicateZones,
   onPrintBarcode,
-  onToggleZoneActive,
   minimumMappingReady,
   onUpdateZone,
   onUpdateZonePositions,
-  onUpdateProductBarcode,
-  onPrintProductBarcode,
-  onBatchPrintProductBarcodes,
-  onTabChange,
-  activeTab,
-  activeView,
-  onViewChange,
-  activeSubTab,
-  onSubTabChange,
   onBatchPrintBarcodes,
+  mode,
+  onModeChange,
+  suppressLocationRail = false,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
-  const productBarcodes = data?.product_barcodes ?? [];
-  const [tab, setTab] = useState<'map' | 'setup' | 'barcodes'>(activeTab ?? 'map');
-  const [selectedBin, setSelectedBin] = useState<string | undefined>();
-  type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
-  const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
+  const [localMode, setLocalMode] = useState<FloorPlanningMode>(mode ?? 'inspect');
+  const currentMode = mode ?? localMode;
+  const changeMode = useCallback((next: FloorPlanningMode) => {
+    setLocalMode(next);
+    onModeChange?.(next);
+  }, [onModeChange]);
 
+  const [selectedBin, setSelectedBin] = useState<string | undefined>();
+  const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
   // Default to every supported operational zone so active locations never disappear silently.
-  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'problem', 'quarantine', 'kitting', 'storage']));
-  const [canvasView, setCanvasView] = useState(activeView === 'canvas');
-  const [setupFilter, setSetupFilter] = useState<LocationFilter>('all');
-  // Layer visibility — wired to Layers rail in Map tab.
+  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(ALL_ZONE_TYPES));
+  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+  // Layer visibility — wired to IsometricCanvas layers.
   const [showFloor, setShowFloor] = useState(true);
   const [showBins,  setShowBins]  = useState(true);
-
-  // Derive grid props from overlay selection
-  const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
+  const [logOpen, setLogOpen]     = useState(false);
 
   // FP-SUMMARY1: always-on counts for the headline strip, independent of
   // which overlay is currently selected — a merchant looking at Occupancy
@@ -1060,7 +540,7 @@ function FloorPlanningModuleFT2Inner({
     if (overlay === 'stockout') {
       // Bins with stock but critically low — on_hand_quantity > 0 but <= 3 units
       return (gridLocations ?? [])
-        .filter(l => l.type === 'bin') 
+        .filter(l => l.type === 'bin')
         .filter(l => {
           const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
           return qty > 0 && qty <= 3;
@@ -1070,12 +550,14 @@ function FloorPlanningModuleFT2Inner({
     return undefined;
   }, [overlay, gridLocations, gridOccupancy]);
 
-  const filteredGridLocations = useMemo(() =>
-    // Filter by zone_type — matches filter rail zone checkboxes (pick/pack/receive etc.)
+  const filteredCodes = useMemo(() => new Set(
+    // Filter by zone_type — matches the zone filter menu (pick/pack/receive etc.)
     // Falls back to showing location if zone_type is null (unclassified locations)
-    (gridLocations ?? []).filter(l => l.zone_type == null || zoneFilters.has(l.zone_type)),
-    [gridLocations, zoneFilters]
-  );
+    (gridLocations ?? [])
+      .filter(l => l.zone_type == null || zoneFilters.has(l.zone_type))
+      .map(l => l.location_code),
+  ), [gridLocations, zoneFilters]);
+
   const handleBinSelect = useCallback((lc: string) => {
     setSelectedBin((p) => {
       const next = p === lc ? undefined : lc;
@@ -1083,515 +565,259 @@ function FloorPlanningModuleFT2Inner({
       return next;
     });
   }, [onBinSelect]);
-  const [logOpen, setLogOpen]           = useState(false);
+  const clearSelection = useCallback(() => {
+    setSelectedBin(undefined);
+    setLogOpen(false);
+    onBinSelect?.('');
+  }, [onBinSelect]);
 
-  const binCount      = (gridLocations ?? []).filter((l) => l.type === 'bin').length;
-  const setupCount    = zones.length;
-  // Badge = location codes still MISSING a barcode (the to-do signal).
-  // Never sum across barcode systems — location codes (WM-28) and product
-  // codes (EAN/UPC coupling) are distinct namespaces; LSU unit labels live in Settings → Warehouse.
-  // REV-HARD-01: to-do signal is inactive locations, not missing barcodes.
-  const barcodesCount = zones.filter((z) => !z.active).length;
+  const rootCode = zones.find((z) => z.type === 'warehouse')?.location_code;
+  const bins     = (gridLocations ?? []).filter((l) => l.type === 'bin');
+  const aisles   = new Set(
+    bins
+      .filter((l) => l.zone_type !== 'quarantine' && l.parent_location_code != null)
+      .map((l) => l.parent_location_code)
+  ).size;
+  const stocked  = Object.values(gridOccupancy ?? {}).filter((o) => o.on_hand_quantity > 0).length;
+  const subLine  = bins.length > 0
+    ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${stocked} bin${stocked !== 1 ? 's' : ''} with stock`
+    : 'No bins configured yet — use Edit layout to map your warehouse.';
 
-  
-  return (
-    <Box sx={{ p: '32px 40px', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'var(--bg)' }}>
+  // Every active physical location is printable; the warehouse root is passive.
+  // location_code is the symbol, `barcode` is an override. Scoped to shown zones.
+  // SHOP-REVIEW-BARCODE-PRINT-05 §10: order the preview by the same key the
+  // print endpoint sorts on (httpBatchPrintBarcodes → ORDER BY location_code).
+  const locationLabels: PrintableLabel[] = zones
+    .filter((z) => z.type !== 'warehouse' && z.active && (z.zone_type == null || zoneFilters.has(z.zone_type)))
+    .slice()
+    .sort((a, b) => (a.location_code < b.location_code ? -1 : a.location_code > b.location_code ? 1 : 0))
+    .map((z) => ({ id: z.location_code, code: z.barcode ?? z.location_code, caption: z.location_code }));
 
-      {/* Per-tab header — serif pattern matches Overview/Orders modules */}
-      {(() => {
-        const now      = new Date();
-        const dayLabel = now.toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
-        return (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-              {dayLabel} · Warehouse · Floor 1
-            </Typography>
-          </Box>
-        );
-      })()}
-      {tab === 'map' && (() => {
-        const bins   = (gridLocations ?? []).filter((l) => l.type === 'bin');
-        const aisles = new Set(
-        bins
-          .filter((l) => l.zone_type !== 'quarantine' && l.parent_location_code != null)
-          .map((l) => l.parent_location_code)
-      ).size;
-        const hot    = Object.values(gridOccupancy ?? {}).filter((o) => o.on_hand_quantity > 0).length;
-        const subLine = bins.length > 0
-          ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${hot} bin${hot !== 1 ? 's' : ''} with stock`
-          : 'No bins configured yet — add aisles and bins in Setup.';
-        return <>
-          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
-            Floor planning today
-          </Typography>
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>{subLine}</Typography>
-        </>;
-      })()}
-      {tab === 'setup' && <>
-        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
-          Build your warehouse.
-        </Typography>
-        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Map where you keep stock and the work areas your warehouse uses.</Typography>
-      </>}
-      {/* FP-13 — type filter parity with Barcodes tab; List view only, Canvas is spatial and doesn't need it */}
-      {tab === 'setup' && !canvasView && (
-        <Box sx={{ display: 'flex', gap: 0.75, mb: 2, flexWrap: 'wrap' }}>
-          {FILTER_PILLS.map(({ label, value }) => (
-            <Box
-              key={value}
-              onClick={() => setSetupFilter(value)}
-              sx={{
-                px: 1.25, py: 0.4, borderRadius: 1, cursor: 'pointer', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
-                border: '1px solid',
-                borderColor: setupFilter === value ? 'var(--accent)' : 'var(--rule)',
-                color: setupFilter === value ? 'var(--accent)' : 'var(--ink-4)',
-                bgcolor: setupFilter === value ? 'var(--accent-ghost)' : 'transparent',
-                transition: 'all 0.12s',
-              }}
+  const floorFacts = [
+    { k: 'Locations',       v: String(zones.filter((z) => z.type !== 'warehouse').length) },
+    { k: 'Bins',            v: String(bins.length) },
+    { k: 'Bins with stock', v: String(stocked) },
+    { k: 'Low on stock',    v: String(summaryCounts.atRisk) },
+  ];
+
+  const filtersAll = zoneFilters.size === ALL_ZONE_TYPES.length;
+  const filterLabel = filtersAll ? 'All zones' : `${zoneFilters.size} of ${ALL_ZONE_TYPES.length} zones`;
+
+  if (currentMode === 'edit') {
+    return (
+      <Box sx={{ p: { xs: 2, md: '16px 24px 20px' }, height: '100%', boxSizing: 'border-box', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1.5, bgcolor: 'var(--bg)' }}>
+        <WorkspaceHeader
+          title="Edit layout"
+          badge="2D plan"
+          subline="Map where you keep stock and the work areas your warehouse uses."
+          actions={
+            <Button
+              variant="contained"
+              disableElevation
+              startIcon={<Check size={14} />}
+              onClick={() => changeMode('inspect')}
+              sx={{ height: 32, textTransform: 'none', fontSize: 13, fontWeight: 600, borderRadius: '7px', bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
             >
-              {label}
+              Done editing
+            </Button>
+          }
+        />
+        {isLoading && <ModuleLoadingSkeleton />}
+        {isError && (
+          <Alert severity="error">Failed to load floor planning data. Please refresh.</Alert>
+        )}
+        {!isLoading && !isError && (
+          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+            <CanvasEditor
+              zones={zones}
+              minimumMappingReady={minimumMappingReady}
+              onUpdateZone={onUpdateZone}
+              onUpdateZonePositions={onUpdateZonePositions}
+              onDeleteZone={onDeleteZone}
+              onDeleteZones={onDeleteZones}
+              onDuplicateZones={onDuplicateZones}
+              onCreateZone={onCreateZone}
+              onPrintBarcode={onPrintBarcode}
+            />
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ p: { xs: 2, md: '16px 24px 20px' }, height: '100%', boxSizing: 'border-box', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1.5, bgcolor: 'var(--bg)' }}>
+      <WorkspaceHeader
+        title="Floor planning"
+        subline={subLine}
+        actions={
+          <Button
+            variant="outlined"
+            startIcon={<Pencil size={14} />}
+            onClick={() => changeMode('edit')}
+            sx={{ height: 32, textTransform: 'none', fontSize: 13, fontWeight: 600, borderRadius: '7px', color: 'var(--ink)', borderColor: 'var(--rule-2)', bgcolor: 'var(--surface)', '&:hover': { bgcolor: 'var(--bg-2)', borderColor: 'var(--rule-2)' } }}
+          >
+            Edit layout
+          </Button>
+        }
+      />
+
+      {/* Primary spatial workspace + location rail. The primary track keeps
+          its position whether or not the rail is withdrawn, so opening the
+          Ops Console never resizes or remounts the canvas. Suppression
+          withdraws rail content only; the tracks stay allocated at every
+          breakpoint, including the constrained stack below lg. */}
+      <Box sx={{
+        flex: 1, minHeight: 0, overflow: 'hidden',
+        display: 'grid',
+        gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 264px', xl: 'minmax(0, 1fr) 312px' },
+        gridTemplateRows: { xs: 'minmax(0, 3fr) minmax(0, 2fr)', lg: 'minmax(0, 1fr)' },
+        gap: 1.5,
+      }}>
+        <Box component="section" aria-label="Floor map" sx={{ ...FRAME_SX, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {/* Compact overlay + filter bar — kept off the canvas corners the
+              shared IsometricCanvas already uses for its own furniture. */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', px: 1.5, py: 1, borderBottom: '0.5px solid var(--rule)', flexShrink: 0 }}>
+            <Box role="group" aria-label="Map overlay" sx={{ display: 'flex', p: '3px', gap: '2px', bgcolor: 'var(--bg-2)', borderRadius: '8px' }}>
+              {OVERLAYS.map((o) => (
+                <Box
+                  key={o.id}
+                  component="button"
+                  type="button"
+                  title={o.hint}
+                  aria-pressed={overlay === o.id}
+                  onClick={() => setOverlay(o.id)}
+                  sx={{
+                    height: 26, px: 1.25, border: 0, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap',
+                    fontFamily: 'inherit', fontSize: 12,
+                    fontWeight: overlay === o.id ? 600 : 500,
+                    bgcolor: overlay === o.id ? 'var(--surface)' : 'transparent',
+                    color: overlay === o.id ? 'var(--ink)' : 'var(--ink-3)',
+                    boxShadow: overlay === o.id ? '0 0 0 0.5px var(--rule-2)' : 'none',
+                    '&:hover': { color: 'var(--ink)' },
+                  }}
+                >
+                  {o.label}
+                </Box>
+              ))}
             </Box>
-          ))}
-        </Box>
-      )}
-      {tab === 'barcodes' && (() => {
-        const barcodedLocs     = zones.filter((z) => z.active).length;
-        const missingLocs      = zones.filter((z) => !z.active).length;
-        const barcodedProducts = productBarcodes.filter((p) => p.barcode !== null).length;
-        const missingProducts  = productBarcodes.filter((p) => p.barcode === null).length;
-        // Two systems kept separate — never co-mingled into one "missing" count (WMS-FP-04).
-        const subLine = zones.length > 0 || productBarcodes.length > 0
-          // SHOP-REV-01h: previously ended "Generate or import to clear."
-          // Products are not cleared by bulk generation — unit identity comes
-          // from receive (LSU-). A product without a supplier barcode gets a
-          // printable laSyncro label (LSP-) on demand instead.
-          ? `Location codes: ${barcodedLocs}/${zones.length} labelled${missingLocs > 0 ? ` · ${missingLocs} missing` : ''}  —  Product barcodes: ${barcodedProducts}/${productBarcodes.length}${missingProducts > 0 ? ` · ${missingProducts} without a supplier barcode — print a laSyncro label for these` : ''}.`
-          : 'No locations or products found. Add zones in Setup and sync products.';
-        return <>
-        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>            Every location, every product.
-          </Typography>
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>{subLine}</Typography>
-        </>;
-      })()}
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ListFilter size={14} />}
+              endIcon={<ChevronDown size={14} />}
+              onClick={(e) => setFilterAnchor(e.currentTarget)}
+              aria-haspopup="menu"
+              sx={{ height: 32, textTransform: 'none', fontSize: 12, fontWeight: 500, color: 'var(--ink)', borderColor: 'var(--rule-2)', borderRadius: '8px', whiteSpace: 'nowrap' }}
+            >
+              {filterLabel}
+            </Button>
+            <Menu
+              anchorEl={filterAnchor}
+              open={filterAnchor != null}
+              onClose={() => setFilterAnchor(null)}
+              slotProps={{ paper: { sx: { width: 232, borderRadius: '10px', border: '0.5px solid var(--rule-2)' } } }}
+            >
+              {ZONE_FILTERS.map(({ type, label }) => {
+                const count = (gridLocations ?? []).filter(l => l.zone_type === type).length;
+                return (
+                  <MenuItem
+                    key={type}
+                    dense
+                    onClick={() => setZoneFilters(prev => {
+                      const next = new Set(prev);
+                      next.has(type) ? next.delete(type) : next.add(type);
+                      return next;
+                    })}
+                  >
+                    <Checkbox size="small" checked={zoneFilters.has(type)} sx={{ p: 0.25, mr: 1 }} />
+                    <Box sx={{ width: 8, height: 8, borderRadius: '2px', mr: 1, bgcolor: ZONE_COLORS[type] ?? 'var(--ink-4)', border: `1px solid ${ZONE_STROKE[type] ?? 'var(--ink-4)'}` }} />
+                    <ListItemText slotProps={{ primary: { sx: { fontSize: 12.5 } } }}>{label}</ListItemText>
+                    <Typography sx={{ fontSize: 11.5, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{count}</Typography>
+                  </MenuItem>
+                );
+              })}
+              <Divider />
+              <Typography sx={{ ...EYEBROW_SX, px: 2, pt: 0.5, pb: 0.5 }}>Layers</Typography>
+              <MenuItem dense onClick={() => setShowFloor(p => !p)}>
+                <Checkbox size="small" checked={showFloor} sx={{ p: 0.25, mr: 1 }} />
+                <ListItemText slotProps={{ primary: { sx: { fontSize: 12.5 } } }}>Floor &amp; grid</ListItemText>
+              </MenuItem>
+              <MenuItem dense onClick={() => setShowBins(p => !p)}>
+                <Checkbox size="small" checked={showBins} sx={{ p: 0.25, mr: 1 }} />
+                <ListItemText slotProps={{ primary: { sx: { fontSize: 12.5 } } }}>Bins</ListItemText>
+              </MenuItem>
+              <Divider />
+              <MenuItem dense disabled={filtersAll} onClick={() => setZoneFilters(new Set(ALL_ZONE_TYPES))}>
+                <ListItemText slotProps={{ primary: { sx: { fontSize: 12, fontWeight: 500 } } }}>Show all zones</ListItemText>
+              </MenuItem>
+            </Menu>
+          </Box>
 
-    {/* Primary tab navigation */}
-    <Box sx={{ mx: '-40px', px: '40px', bgcolor: 'var(--bg-2)', borderBottom: '1px solid var(--rule)', mb: 3 }}>
-      <Tabs
-        value={tab}
-        onChange={(_, v) => { setTab(v); onTabChange?.(v); }}
-        sx={{ borderBottom: 'none' }}
-      >
-        <Tab icon={<Map size={15} />} iconPosition="start" value="map" sx={{ minHeight: 40, fontSize: 13 }}
-          label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>Map{binCount > 0 && <Box component="span" sx={{ px: 0.75, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>{binCount}</Box>}</Box>} />
-        <Tab icon={<LayoutDashboard size={15} />} iconPosition="start" value="setup" sx={{ minHeight: 40, fontSize: 13 }}
-          label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>Setup{setupCount > 0 && <Box component="span" sx={{ px: 0.75, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>{setupCount}</Box>}</Box>} />
-        <Tab icon={<Tag size={15} />} iconPosition="start" value="barcodes" sx={{ minHeight: 40, fontSize: 13 }}
-          label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>Barcodes{barcodesCount > 0 && <Box component="span" sx={{ px: 0.75, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>{barcodesCount}</Box>}</Box>} />
-      </Tabs>
-    </Box>
-
-      {/* MAP TAB — 2D warehouse grid */}
-      {tab === 'map' && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          {isGridLoading && <ModuleLoadingSkeleton />}
-          {!isGridLoading && (
-            <Box sx={{ display: 'flex', gap: 2, flex: 1, position: 'relative', overflow: 'hidden' }}>
-              {/* ── LEFT FILTER RAIL ─────────────────────────────── */}
-              <Box sx={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%', overflowY: 'auto', pr: 0.5 }}>
-                {/* VIEW OVERLAY */}
-                <Box>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                    View Overlay
-                  </Typography>
-                  {([
-                    { id: 'occupancy',    label: 'Occupancy',     sub: 'How full each bin is.' },
-                    { id: 'stockout',     label: 'Stock-out risk', sub: 'Bins low on stock (≤3 units).' },
-                    { id: 'empty',        label: 'Empty bins',     sub: 'Available capacity.' },
-                    { id: 'none',         label: 'No overlay',     sub: 'Just the layout.' },
-                  ] as const).map((o) => (
-                    <Box
-                      key={o.id}
-                      onClick={() => setOverlay(o.id)}
-                      sx={{
-                        px: 1.5, py: 1, mb: 0.5, borderRadius: 1.5, cursor: 'pointer',
-                        bgcolor: overlay === o.id ? 'var(--accent-ghost)' : 'transparent',
-                        border: '1px solid',
-                        borderColor: overlay === o.id ? 'var(--accent-border)' : 'transparent',
-                        transition: 'all 0.12s',
-                        '&:hover': { bgcolor: 'var(--bg-2)' },
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12, fontWeight: overlay === o.id ? 700 : 500, color: overlay === o.id ? 'var(--accent)' : 'var(--ink)' }}>
-                        {o.label}
-                      </Typography>
-                      <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', lineHeight: 1.3 }}>
-                        {o.sub}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-
-                <Divider />
-
-                {/* ZONE FILTERS — by zone_type matching target design */}
-                <Box>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                    Filter
-                  </Typography>
-                  {([
-                    { type: 'pick',       label: 'Pick zone'    },
-                    { type: 'pack',       label: 'Pack zone'    },
-                    { type: 'receive',    label: 'Receiving'    },
-                    { type: 'ship',       label: 'Shipping'     },
-                    { type: 'returns',    label: 'Returns'      },
-                    { type: 'problem',    label: 'Problem area' },
-                    { type: 'quarantine', label: 'Quarantine'   },
-                    { type: 'kitting',    label: 'Kitting'      },
-                    { type: 'storage',    label: 'Storage'      },
-                  ] as const).map(({ type, label }) => {
-                    const count  = (gridLocations ?? []).filter(l => l.zone_type === type).length;
-                    const active = zoneFilters.has(type);
-                    return (
-                      <Box
-                        key={type}
-                        onClick={() => setZoneFilters(prev => {
-                          const next = new Set(prev);
-                          next.has(type) ? next.delete(type) : next.add(type);
-                          return next;
-                        })}
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: 'pointer' }}
-                      >
-                        <Box sx={{
-                          width: 12, height: 12, borderRadius: 0.5, flexShrink: 0,
-                          border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
-                          bgcolor: active ? 'var(--accent)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          {active && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
-                        </Box>
-                        <Typography sx={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                          {label}
-                        </Typography>
-                        {count > 0 && (
-                          <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', ml: 'auto' }}>
-                            {count}
-                          </Typography>
-                        )}
-                      </Box>
-                    );
-                  })}
-                </Box>
-                <Divider />
-                {/* LAYERS — toggle canvas layers (Phase 2 stubs, Phase 3 wires to Three.js layers) */}
-                <Box>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                    Layers
-                  </Typography>
-                  {([
-                    { label: 'Floor & grid', active: showFloor, onToggle: () => setShowFloor(p => !p) },
-                    { label: 'Bins',         active: showBins,  onToggle: () => setShowBins(p => !p)  },
-                    { label: 'Tote markers', active: false,     onToggle: undefined }, // Phase 3
-                    { label: 'Pick path',    active: false,     onToggle: undefined }, // Phase 3
-                  ]).map(({ label, active, onToggle }) => (
-                    <Box key={label} onClick={onToggle ?? undefined} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: onToggle ? 'pointer' : 'not-allowed', opacity: onToggle ? 1 : 0.4 }}>
-                      <Box sx={{
-                        width: 12, height: 12, borderRadius: 0.5, flexShrink: 0,
-                        border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
-                        bgcolor: active ? 'var(--accent)' : 'transparent',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {active && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
-                      </Box>
-                      <Typography sx={{ fontSize: 11, color: 'var(--ink-2)' }}>{label}</Typography>
-                    </Box>
-                  ))}
-                </Box>
-                <Divider />
-
-                {/* SURFACED TODAY — Phase 2c */}
-                <Box>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                    Surfaced Today
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontStyle: 'italic' }}>
-                    Live signals in Phase 2c
-                  </Typography>
-                </Box>
-              </Box>
-              {/* ── END FILTER RAIL ──────────────────────────────── */}
-
-              <Box sx={{ flex: 1, overflowX: 'auto' }}>
-              
-              {/* MAP TAB — isometric 2.5D view (read-only). 2D editing stays in Setup → Canvas. */}
-               <IsometricCanvas
+          <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            {isGridLoading ? <ModuleLoadingSkeleton /> : (
+              /* Isometric 2.5D view (read-only). 2D editing lives in Edit layout. */
+              <IsometricCanvas
                 zones={zones}
                 onSelect={(code) => code && handleBinSelect(code)}
-                filteredCodes={new Set(filteredGridLocations.map(l => l.location_code))}
+                filteredCodes={filteredCodes}
                 /* Each overlay owns one visual language: heatmap or semantic focus. */
                 occupancy={overlay === 'occupancy' ? gridOccupancy : undefined}
                 focusedBins={overlayFocusedBins}
                 focusTone={overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined}
                 showFloor={showFloor}
                 showBins={showBins}
-                onUnplacedZonesClick={() => setTab('setup')}
+                onUnplacedZonesClick={() => changeMode('edit')}
                 overlay={overlay}
                 summaryCounts={summaryCounts}
                 onRefresh={onRefresh}
               />
-              </Box>
-              {/* Bin detail panel — enriched with occupancy data */}
-              {selectedBin && (() => {
-                const occ        = gridOccupancy?.[selectedBin];
-                const totalUnits = occ?.on_hand_quantity ?? 0;
-                // Capacity derived from rack_levels × estimated units per level (10).
-                // Falls back to 48 if rack_levels not set. Phase 3: use real capacity field.
-                const selectedLocation = (gridLocations ?? []).find(l => l.location_code === selectedBin);
-                const CAPACITY   = selectedLocation?.rack_levels != null
-                  ? parseFloat(String(selectedLocation.rack_levels)) * 10
-                  : 48;
-                const pct        = Math.min(100, Math.round((totalUnits / CAPACITY) * 100));
-                const pctColor   = pct >= 85
-                  ? 'var(--accent)'
-                  : pct >= 55
-                  ? 'rgba(245,158,11,0.9)'
-                  : pct > 0
-                  ? 'rgba(34,197,94,0.9)'
-                  : 'var(--ink-4)';
-                // Aisle from parent_location_code, not string-split (consistent with WMS-FP-01/02).
-                const aisleLabel = selectedLocation?.parent_location_code ?? '—';
-                return (
-                  <Paper variant="outlined" sx={{ width: 240, p: 2.5, borderRadius: 2, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {/* Header */}
-                    <Box>
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>BIN</Typography>
-                      <Typography sx={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: 'var(--ink)', lineHeight: 1.1 }}>{selectedBin}</Typography>
-                      <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: 0.25 }}>Aisle {aisleLabel}</Typography>
-                    </Box>
-
-                    <Divider />
-
-                    {/* Occupancy */}
-                    <Box>
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>OCCUPANCY</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
-                        <Typography sx={{ fontSize: 28, fontWeight: 500, color: pctColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</Typography>
-                        <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{totalUnits} of {CAPACITY}</Typography>
-                      </Box>
-                      {/* Progress bar */}
-                      <Box sx={{ height: 4, borderRadius: 2, bgcolor: 'var(--bg-3)', overflow: 'hidden' }}>
-                        <Box sx={{ height: '100%', width: `${pct}%`, bgcolor: pctColor, borderRadius: 2, transition: 'width 0.3s ease' }} />
-                      </Box>
-                    </Box>
-
-                    {/* Contents */}
-                    <Box>
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>CONTENTS</Typography>
-                      {occ?.variants.length ? (
-                        occ.variants.map((v) => (
-                          <Box key={v.lasyncro_variant_id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'var(--bg-2)', borderRadius: 1, mb: 0.75 }}>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {v.sku ?? v.lasyncro_variant_id.slice(0, 8)}
-                              </Typography>
-                              {v.product_title && (
-                                <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {v.product_title}
-                                </Typography>
-                              )}
-                            </Box>
-                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', flexShrink: 0 }}>{v.on_hand_quantity} units</Typography>
-                          </Box>
-                        ))
-                      ) : (
-                        <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>Empty bin</Typography>
-                      )}
-                    </Box>
-
-                    {/* See logs CTA */}
-                    <Box
-                      onClick={() => { onBinLogOpen?.(selectedBin); setLogOpen(true); }}
-                      sx={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        gap: 0.75, px: 2, py: 1, borderRadius: 1.5, cursor: 'pointer',
-                        border: '1px solid var(--accent)', color: 'var(--accent)',
-                        fontSize: 12, fontWeight: 600,
-                        transition: 'all 0.15s',
-                        '&:hover': { bgcolor: 'var(--accent)', color: '#fff' },
-                      }}
-                    >
-                      <ScrollText size={13} />
-                      See logs
-                    </Box>
-
-                    <Divider />
-
-                    {/* Pick stats — live from pick_scan_log */}
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
-                      {[
-                        {
-                          label: 'PICKS · 7D',
-                          value: binStats?.location_code === selectedBin
-                            ? String(binStats.picks_7d)
-                            : '—',
-                        },
-                        {
-                          label: 'LAST PICK',
-                          value: binStats?.location_code === selectedBin && binStats.last_pick_at
-                            ? (() => {
-                                const diff = Date.now() - new Date(binStats.last_pick_at).getTime();
-                                const h = Math.floor(diff / 3600000);
-                                const d = Math.floor(diff / 86400000);
-                                return h < 24 ? `${h}h ago` : `${d}d ago`;
-                              })()
-                            : '—',
-                        },
-                        {
-                          label: 'REORDER IN',
-                          value: binStats?.location_code === selectedBin && binStats.reorder_in_days !== null
-                            ? `${binStats.reorder_in_days}d`
-                            : '—',
-                        },
-                        { label: 'TOTE', value: '—' }, // Phase 3 — requires tote container data model
-                      ].map(({ label, value }) => (
-                        <Box key={label} sx={{ p: 1, bgcolor: 'var(--bg-2)', borderRadius: 1 }}>
-                          <Typography sx={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.25 }}>{label}</Typography>
-                          <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
-                        </Box>
-                      ))}
-                    </Box>
-
-                    <Divider />
-
-                    {/* Bin actions — Print is live (barcode exists), Replenish + Move are Phase 3 stubs */}
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                      <Box sx={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75,
-                        py: 1, borderRadius: 1.5, bgcolor: 'var(--accent)', color: '#fff',
-                        fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                        '&:hover': { opacity: 0.9 }, transition: 'opacity 0.15s',
-                      }}>
-                        <ScrollText size={12} />
-                        Print bin label
-                      </Box>
-                      <Box sx={{ display: 'flex', gap: 0.75 }}>
-                        <Box sx={{
-                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)',
-                          fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer',
-                          '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s',
-                        }}>
-                          Replenish
-                        </Box>
-                        <Box sx={{
-                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)',
-                          fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer',
-                          '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s',
-                        }}>
-                          Move
-                        </Box>
-                      </Box>
-                    </Box>
-                  </Paper>
-                );
-              })()}
-            </Box>
             )}
-
-          {/* Bin log drawer — slides in from right when "See logs" clicked */}
-           <BinLogDrawer
-            locationCode={selectedBin ?? ''}
-            events={binLog?.events ?? []}
-            isLoading={isBinLogLoading ?? false}
-            open={logOpen}
-            onClose={() => setLogOpen(false)}
-          />
-        </Box>
-      )}
-
-      {isLoading && tab !== 'map' && <ModuleLoadingSkeleton />}
-
-      {isError && tab !== 'map' && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          Failed to load floor planning data. Please refresh.
-        </Alert>
-      )}
-
-      {!isLoading && !isError && tab === 'setup' && (
-        <>
-          <Box sx={{ mb: 4 }}>
-            {/* Header + Canvas/List toggle */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <LayoutDashboard size={18} />
-              <Typography variant="subtitle1" fontWeight={700}>Warehouse Zones</Typography>
-              <Chip label={zones.length} size="small" />
-              <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
-                {/* View toggle — List shows zone cards, Canvas shows SVG floor plan editor */}
-                <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden' }}>
-                  {([{ label: 'List', val: false }, { label: 'Canvas', val: true }] as const).map(({ label, val }) => (
-                    <Box
-                      key={label}
-                      onClick={() => { setCanvasView(val); onViewChange?.(val ? 'canvas' : 'list'); }}
-                      sx={{
-                        px: 1.5, py: 0.6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                        bgcolor: canvasView === val ? 'var(--accent)' : 'transparent',
-                        color:   canvasView === val ? '#fff' : 'var(--ink-3)',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {label}
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
-            </Box>
-
-
-            {canvasView ? (
-              <CanvasEditor
-                zones={zones}
-                minimumMappingReady={minimumMappingReady}
-                onUpdateZone={onUpdateZone}
-                onUpdateZonePositions={onUpdateZonePositions}
-                onDeleteZone={onDeleteZone}
-                onDeleteZones={onDeleteZones}
-                onDuplicateZones={onDuplicateZones}
-                onCreateZone={onCreateZone}
-                onPrintBarcode={onPrintBarcode}
-              />
-            ) : zones.length === 0 ? (
-              <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
-                <LayoutDashboard size={36} style={{ opacity: 0.3 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  No warehouse zones configured. Add your first zone above.
-                </Typography>
-              </Paper>
-            ) : (
-              (setupFilter === 'all' ? zones : zones.filter((z) => z.type === setupFilter)).map((zone) => (
-                <ZoneCard
-                  key={zone.location_code}
-                  zone={zone}
-                  onDelete={onDeleteZone}
-                  onToggleActive={onToggleZoneActive}
-                />
-              ))
-            )}
+            {/* Bin log drawer — slides in from right when "See logs" clicked.
+                Withdrawn with the rail while the Ops Console owns attention. */}
+            <BinLogDrawer
+              locationCode={selectedBin ?? ''}
+              events={binLog?.events ?? []}
+              isLoading={isBinLogLoading ?? false}
+              open={logOpen && !suppressLocationRail}
+              onClose={() => setLogOpen(false)}
+            />
           </Box>
-        </>
-      )}
+        </Box>
 
-      {!isLoading && !isError && tab === 'barcodes' && (
-        <BarcodesTab
-          zones={zones}
-          productBarcodes={productBarcodes}
-          onUpdateProductBarcode={onUpdateProductBarcode}
-          onPrintProductBarcode={onPrintProductBarcode}
-          onBatchPrintProductBarcodes={onBatchPrintProductBarcodes}
-          activeSubTab={activeSubTab}
-          onSubTabChange={onSubTabChange}
-          onBatchPrintBarcodes={onBatchPrintBarcodes}
-        />
+        <Box
+          data-location-rail-suppressed={suppressLocationRail ? 'true' : 'false'}
+          sx={{ minWidth: 0, minHeight: 0, display: suppressLocationRail ? { xs: 'none', lg: 'block' } : 'block' }}
+        >
+          {!suppressLocationRail && (
+            <Box component="aside" aria-label={selectedBin ? `Location ${selectedBin}` : 'Floor summary'} sx={{ ...FRAME_SX, height: '100%' }}>
+              {selectedBin ? (
+                <LocationRail
+                  key={selectedBin}
+                  code={selectedBin}
+                  zone={zones.find((z) => z.location_code === selectedBin)}
+                  rootCode={rootCode}
+                  occupancy={gridOccupancy?.[selectedBin]}
+                  binStats={binStats}
+                  onClear={clearSelection}
+                  onPrintBarcode={onPrintBarcode}
+                  onOpenLog={() => { onBinLogOpen?.(selectedBin); setLogOpen(true); }}
+                />
+              ) : (
+                <FloorRail
+                  rootCode={rootCode}
+                  facts={floorFacts}
+                  labels={locationLabels}
+                  onBatchPrintBarcodes={onBatchPrintBarcodes}
+                />
+              )}
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {isError && (
+        <Alert severity="error">Failed to load floor planning data. Please refresh.</Alert>
       )}
     </Box>
   );

@@ -1,6 +1,6 @@
 // modules/floor-planning/src/ui/index.ts
 export { default as FloorPlanningModuleFT2 } from './pages/FloorPlanningModuleFT2.js';
-export type { FloorPlanningPageProps, FloorPlanningData, WarehouseZone, ProductBarcode, LocationType } from './pages/FloorPlanningModuleFT2.js';
+export type { FloorPlanningPageProps, FloorPlanningData, FloorPlanningMode, WarehouseZone, ProductBarcode, LocationType } from './pages/FloorPlanningModuleFT2.js';
 // SHOP-REVIEW-BARCODE-PRINT-05: the host app's Floor Planning gate page builds
 // PrintSubmitResult values for the barcode print callbacks.
 export type { PrintSubmitResult, PrintFallbackReason } from './components/PrintPreviewPanel.js';
