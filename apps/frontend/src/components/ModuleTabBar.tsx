@@ -66,7 +66,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   // source Sidenav (useResolvedNavigation) and CommercialGate
   // (useCommercialAccess) consume — tier floor UNION the shop's live
   // entitlement snapshot (modules + flags), never a hand-rolled/empty one.
-  const { decide } = useCommercialAccess();
+  const { decide, isResolved } = useCommercialAccess();
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
@@ -88,6 +88,10 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
     tab.capabilityId ? decide(tab.capabilityId) : null;
 
   const isLocked = (tab: ModuleTab) => {
+    // GH-1209: unresolved commercial truth is "not yet allowed", never a lock.
+    // Mirrors CommercialGate: a source that does not report resolution state
+    // (e.g. a test double) is treated as already resolved.
+    if (isResolved === false) return false;
     const decision = decisionFor(tab);
     if (decision) return !decision.allowed;
     if (tab.requiredTier && !tierAtLeast(legacyTier, tab.requiredTier)) return true;

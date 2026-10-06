@@ -3629,9 +3629,18 @@ it and nothing else.
 | --- | --- | --- |
 | Commercial authority | private expression `entitlementsResolved && (tier === 'scale' \|\| tier === 'growth')` | `useCommercialAccess()` → `liveMapDecision = decide('overview.live_map')` |
 | Access boolean | `hasMapTier` (legacy name) | `hasMapAccess = isResolved && liveMapDecision.allowed` |
-| Resolution signal | `hasResolved` read separately from `EntitlementsContext` | `isResolved` from the adapter — the canonical signal, itself backed by `EntitlementsContext.hasResolved` internally |
+| Resolution signal | `hasResolved` read separately from `EntitlementsContext` | `isResolved` from the adapter — canonical commercial-truth readiness: `EntitlementsContext.hasResolved && !EntitlementsContext.error`. Pending or failed first fetch remains neutral; successful or last-good-restored truth is resolved. |
 | Teaser required tier | hardcoded `requiredTier: 'growth'` | derived from `liveMapDecision.requiredTier`, neutral wording when absent |
 | Floor geometry | `useFloorPlanning()` fetched **regardless of entitlement** | `useFloorPlanning(hasMapAccess)` |
+
+**GH-1209 readiness guardrail (2026-10-06):** unresolved or unavailable
+commercial truth is **not DENY**. Sidenav, `ModuleTabBar`, and commercial
+route/UI gates must not turn bootstrap defaults into tier badges, plan-lock
+presentation, or upgrade prompts before canonical `isResolved` becomes true.
+Once resolved, the existing canonical ALLOW/DENY policy applies unchanged.
+Retry UX, snapshot freshness, and stale-snapshot lifecycle remain separate
+concerns.
+
 
 The **same** canonical boolean now gates every live-map consumer:
 `useFloorPlanning`, `useWarehouseGridOccupancy`, `useIdleAlerts`,

@@ -280,7 +280,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         <Typography sx={{ fontSize: 12, fontWeight: isActive ? 500 : 400, color: 'inherit', lineHeight: 1.4 }}>
           {child.title}
         </Typography>
-        {(child.requiredTier ?? child.decision?.requiredTier) && (
+        {isLocked && (child.requiredTier ?? child.decision?.requiredTier) && (
           <Box sx={{
             ml: 'auto', display: 'flex', alignItems: 'center', gap: '2px',
             bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)',

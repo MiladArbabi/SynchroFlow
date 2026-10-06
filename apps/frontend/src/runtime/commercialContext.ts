@@ -62,18 +62,24 @@ export function decideCapability(capabilityId: string, context: AccessContext): 
 
 export interface UseCommercialAccessResult {
   context: AccessContext;
-  /** False while the live entitlement snapshot has not resolved yet — callers must not treat this as a denial. */
+  /**
+   * True only when usable authoritative commercial truth exists. False while
+   * the live entitlement snapshot is pending OR the fetch failed with no
+   * last-good snapshot to restore — callers must not treat this as a denial.
+   */
   isResolved: boolean;
   decide: (capabilityId: CapabilityId | string) => AccessDecision;
 }
 
 /** React entry point — wraps the live entitlement snapshot in the adapter above. */
 export function useCommercialAccess(): UseCommercialAccessResult {
-  const { tier, snapshot, hasResolved } = useEntitlements();
+  const { tier, snapshot, hasResolved, error } = useEntitlements();
   const context = buildCommercialContext({ tier, snapshot });
   return {
     context,
-    isResolved: hasResolved,
+    // GH-1209: an errored fetch leaves Starter-shaped defaults in place; that
+    // is unavailable truth, not a confirmed Starter tier.
+    isResolved: hasResolved && !error,
     decide: (capabilityId) => decideCapability(capabilityId, context),
   };
 }

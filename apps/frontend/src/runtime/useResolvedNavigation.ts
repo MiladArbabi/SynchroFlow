@@ -4,6 +4,7 @@ import { useEntitlements } from '../contexts/EntitlementsContext';
 import { useShopLifecycle } from '../lifecycle/ShopLifecycleContext';
 import { useAuth } from '../contexts/AuthContext';
 import { resolveNavigation } from './resolveNavigation';
+import { useCommercialAccess } from './commercialContext';
 import { getRegisteredModules } from './registerModule';
 import { useRegisteredModules } from './useRegisteredModules';
 export function useResolvedNavigation() {
@@ -16,6 +17,8 @@ export function useResolvedNavigation() {
   // item directly (page-level PlanGate checks were unaffected — this
   // only broke the sidebar's own pre-navigation gate).
   const { snapshot, tier } = useEntitlements();
+  // GH-1209: readiness comes from the same canonical adapter CommercialGate uses.
+  const { isResolved: commercialResolved } = useCommercialAccess();
   const { phase } = useShopLifecycle();
   const { user } = useAuth();
   const registeredModules = useRegisteredModules();
@@ -24,8 +27,9 @@ export function useResolvedNavigation() {
     return resolveNavigation({
       entitlements: snapshot,
       currentTier: tier,
+      commercialResolved,
       lifecyclePhase: phase,
       userRole: user?.role,
     });
-  }, [snapshot, tier, phase, registeredModules, user?.role]);
+  }, [snapshot, tier, commercialResolved, phase, registeredModules, user?.role]);
 }

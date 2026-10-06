@@ -52,6 +52,13 @@ interface ResolveNavigationInput {
    * Defaults to 'starter' if not provided.
    */
   currentTier?: string;
+  /**
+   * GH-1209: whether authoritative commercial truth is available
+   * (useCommercialAccess().isResolved). When false, items stay structurally
+   * visible (lifecycle/role gates still apply) but carry no commercial lock
+   * or AccessDecision — unknown is never presented as DENY. Defaults to true.
+   */
+  commercialResolved?: boolean;
 }
 
 export function resolveNavigation({
@@ -59,6 +66,7 @@ export function resolveNavigation({
   lifecyclePhase,
   userRole,
   currentTier = 'starter',
+  commercialResolved = true,
 }: ResolveNavigationInput): ResolvedNavigation {
 
   // Debug: re-enable locally if nav resolution needs tracing. Never log in production.
@@ -112,10 +120,10 @@ export function resolveNavigation({
         if (userRole === 'operator' && item.id !== 'wms') continue;
 
             // 🔐 Entitlement + Tier Visibility Gate (MON-06)
-            const itemDecision = item.capabilityId
+            const itemDecision = commercialResolved && item.capabilityId
               ? decideCapability(item.capabilityId, commercialContext)
               : undefined;
-            const visibility = resolveNavVisibility({
+            const visibility = !commercialResolved ? 'enabled' : resolveNavVisibility({
               requiredModuleId: item.requiredModuleId,
               modules: entitlements ? Array.from(entitlements.modules) : [],
               requiredTier: item.requiredTier,
@@ -133,10 +141,10 @@ export function resolveNavigation({
             // the same way the parent is resolved above.
             const resolvedChildren = (item.children ?? [])
               .map((child) => {
-                const childDecision = child.capabilityId
+                const childDecision = commercialResolved && child.capabilityId
                   ? decideCapability(child.capabilityId, commercialContext)
                   : undefined;
-                const childVisibility = resolveNavVisibility({
+                const childVisibility = !commercialResolved ? 'enabled' : resolveNavVisibility({
                   requiredModuleId: item.requiredModuleId,
                   modules: entitlements ? Array.from(entitlements.modules) : [],
                   requiredTier: child.requiredTier,
