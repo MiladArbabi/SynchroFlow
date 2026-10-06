@@ -464,7 +464,7 @@ router.patch(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.operations'),
-  requireAction('wms:read'),
+  requireAction('wms:settings:write'),
   httpPatchWmsSettings
 );
 
