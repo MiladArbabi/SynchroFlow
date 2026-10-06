@@ -46,6 +46,8 @@ interface EntitlementsResponse {
   tier: Tier;
 
   trialEndsAt: string | null; // ISO timestamp, null if not on trial
+  /** Canonical shop_subscriptions.status; null until/no subscription truth. */
+  subscriptionStatus: string | null;
 
   /** CURRENCY LAYER 2 — user display preference from shop_memberships */
   displayCurrency: string;
@@ -70,6 +72,7 @@ interface EntitlementsContextValue {
    */
   tier: Tier;
   trialEndsAt: string | null;
+  subscriptionStatus: string | null;
 
   displayCurrency: string;
   locale: string;
@@ -109,6 +112,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [billingCurrency, setBillingCurrency] = useState<string>('USD');
   const [billingProvider, setBillingProvider] = useState<'stripe' | 'shopify' | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
   const lastGoodSnapshotRef = React.useRef<{
@@ -116,6 +120,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     modules: string[];
     flags: string[];
     tier: Tier;
+    subscriptionStatus: string | null;
     displayCurrency: string;
     locale: string;
     billingCurrency: string;
@@ -140,6 +145,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       setShopId(null);
       setModules([]);
       setFlags([]);
+      setTrialEndsAt(null);
+      setSubscriptionStatus(null);
       setError(null);
       setIsLoading(false);
       setHasResolved(true); // ✅ CRITICAL: resolve entitlement state for logged-out users
@@ -216,6 +223,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setFlags(nextFlags);
         setTier(nextTier);
         setTrialEndsAt(payload.trialEndsAt ?? null);
+        setSubscriptionStatus(payload.subscriptionStatus ?? null);
         setDisplayCurrency(payload.displayCurrency ?? 'USD');
         setLocale(payload.locale ?? 'en-US');
         setBillingCurrency(payload.billingCurrency ?? 'USD');
@@ -228,6 +236,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           modules: nextModules,
           flags: nextFlags,
           tier: nextTier,
+          subscriptionStatus: payload.subscriptionStatus ?? null,
           displayCurrency: payload.displayCurrency ?? 'USD',
           locale: payload.locale ?? 'en-US',
           billingCurrency: payload.billingCurrency ?? 'USD',
@@ -261,6 +270,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setModules(snap.modules);
         setFlags(snap.flags);
         setTier(snap.tier);
+        setSubscriptionStatus(snap.subscriptionStatus);
         setDisplayCurrency(snap.displayCurrency ?? 'USD');
         setLocale(snap.locale ?? 'en-US');
         setBillingCurrency(snap.billingCurrency ?? 'USD');
@@ -310,6 +320,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
 
     tier,
     trialEndsAt,
+    subscriptionStatus,
 
     displayCurrency,
     locale,

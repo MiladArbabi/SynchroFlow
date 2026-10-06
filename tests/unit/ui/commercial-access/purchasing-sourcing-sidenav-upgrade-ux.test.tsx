@@ -46,6 +46,16 @@ jest.mock('runtime/useResolvedNavigation', () => ({
 jest.mock('runtime/useModuleHealth', () => ({ useModuleHealth: () => new Map() }));
 jest.mock('pages/alerts/useAlerts', () => ({ useAlerts: () => ({}) }));
 jest.mock('contexts/AuthContext', () => ({ useAuth: () => ({ user: null, logout: jest.fn() }) }));
+// SidenavContent reads billing-setup truth from EntitlementsContext. Neutral
+// resolved paid-billing state keeps the Billing setup card out of this suite.
+jest.mock('contexts/EntitlementsContext', () => ({
+  useEntitlements: () => ({
+    subscriptionStatus: 'active',
+    billingProvider: 'shopify',
+    hasResolved: true,
+    error: null,
+  }),
+}));
 jest.mock('api/axiosConfig', () => ({ axiosInstance: { post: jest.fn() } }));
 jest.mock('ui-component/third-party/SimpleBar', () => ({
   __esModule: true,

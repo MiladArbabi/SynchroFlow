@@ -13,7 +13,7 @@ import {
   ButtonBase,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Bell } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronRight, Settings, LogOut, CircleArrowUp, CircleHelp, Bell } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { getCapabilityPresentation } from '../../commercial/capabilityPresentation';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
@@ -28,6 +28,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCommercialAccess } from '../../runtime/commercialContext';
 import { axiosInstance } from '../../api/axiosConfig';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
 
 type SidenavState = 'EXPANDED' | 'COMPACT';
 
@@ -48,18 +49,45 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const moduleHealth = useModuleHealth();
   const theme = useTheme();
   const { user, logout } = useAuth();
+  const isExpanded = sidenavState === 'EXPANDED';
+  const isCompact = sidenavState === 'COMPACT';
+  const iconSize = isCompact ? 20 : 18;
+
   const {
     context: commercialContext,
     isResolved: isCommercialResolved,
   } = useCommercialAccess();
+  const {
+    subscriptionStatus,
+    billingProvider,
+    hasResolved: hasEntitlementsResolved,
+    error: entitlementsError,
+  } = useEntitlements();
+
+  // Billing setup is complete only for an active paid subscription with a
+  // resolved provider. Trialing, Starter, past-due, unpaid and canceled states
+  // remain actionable. While truth is unresolved/erroring, render nothing.
+  const isPaidTier =
+    commercialContext.tier === 'core' ||
+    commercialContext.tier === 'growth' ||
+    commercialContext.tier === 'scale';
+  const isBillingComplete =
+    isCommercialResolved &&
+    hasEntitlementsResolved &&
+    !entitlementsError &&
+    isPaidTier &&
+    subscriptionStatus === 'active' &&
+    (billingProvider === 'stripe' || billingProvider === 'shopify');
+  const showBillingSetup =
+    isExpanded &&
+    isCommercialResolved &&
+    hasEntitlementsResolved &&
+    !entitlementsError &&
+    !isBillingComplete;
 
   // Unread alert count for badge
   const { data: alertsData } = useAlerts();
   const unreadAlerts = alertsData?.data?.length ?? 0;
-
-  const isExpanded = sidenavState === 'EXPANDED';
-  const isCompact = sidenavState === 'COMPACT';
-  const iconSize = isCompact ? 20 : 18;
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
@@ -405,6 +433,92 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
       <SimpleBar sx={{ flexGrow: 1, '& .simplebar-content': { display: 'flex', flexDirection: 'column' }, px: isExpanded ? 1 : 0.5, py: 1 }}>
         {groups.map(g => renderGroup(g))}
       </SimpleBar>
+
+      {/* BILLING SETUP — ratified 3b inline treatment.
+          Expanded sidenav only. Persistent while canonical billing remains
+          incomplete; no dismiss state, motion, warning styling, or compact
+          rail invention. */}
+      {showBillingSetup && (
+        <Box sx={{ px: 1, pb: 1.75, flexShrink: 0 }}>
+          <ButtonBase
+            disableRipple
+            onClick={() =>
+              navigate('/settings/billing', {
+                state: { backgroundLocation: location },
+              })
+            }
+            sx={{
+              width: '100%',
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              px: 1.5,
+              py: 1.25,
+              borderRadius: '8px',
+              border: '1px solid var(--rule)',
+              bgcolor: 'var(--bg-2)',
+              textAlign: 'left',
+              color: 'var(--ink)',
+              transition: 'border-color 150ms ease, background 150ms ease',
+              '&:hover': {
+                bgcolor: 'var(--bg-2)',
+                borderColor: 'var(--accent-border)',
+              },
+            }}
+          >
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.375,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  color: 'var(--ink)',
+                }}
+              >
+                Billing setup
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontWeight: 300,
+                  lineHeight: 1.35,
+                  color: 'var(--ink-3)',
+                }}
+              >
+                Complete your plan setup
+              </Typography>
+            </Box>
+
+            <Box
+              component="span"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.25,
+                flexShrink: 0,
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--ink-3)',
+                '.MuiButtonBase-root:hover &': {
+                  color: 'var(--accent)',
+                },
+              }}
+            >
+              Set up
+              <ChevronRight size={12} strokeWidth={1.8} />
+            </Box>
+          </ButtonBase>
+        </Box>
+      )}
 
       {/* FOOTER — theme control directly above the profile trigger (GH-1158) */}
       {isFt2Ready && (

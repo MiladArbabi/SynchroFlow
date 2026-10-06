@@ -42,6 +42,16 @@ jest.mock('runtime/commercialContext', () => ({
   }),
 }));
 
+// SidenavContent reads billing-setup truth from EntitlementsContext. Neutral
+// resolved paid-billing state keeps the Billing setup card out of this suite.
+jest.mock('contexts/EntitlementsContext', () => ({
+  useEntitlements: () => ({
+    subscriptionStatus: 'active',
+    billingProvider: 'shopify',
+    hasResolved: true,
+    error: null,
+  }),
+}));
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: { post: jest.fn() },
 }));

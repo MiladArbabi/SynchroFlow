@@ -65,11 +65,15 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
       flags: Array.isArray(entitlements.flags) ? entitlements.flags : [],
       tier,
       trialEndsAt,
+      // Billing setup truth: raw canonical shop_subscriptions lifecycle state.
+      // Do not derive this from trialEndsAt or tier on the frontend.
+      subscriptionStatus: subscription?.status ?? null,
       displayCurrency: shopContext?.displayCurrency ?? 'USD',
       locale: shopContext?.locale ?? 'en-US',
       billingCurrency: subscription?.billing_currency ?? 'USD',
-      // SHB-03/04: 'stripe' | 'shopify' — global billing-surface branch signal
-      billingProvider: subscription?.billing_provider ?? 'stripe',
+      // SHB-03/04: 'stripe' | 'shopify' — global billing-surface branch signal.
+      // Unresolved provider stays null; never fabricate 'stripe'.
+      billingProvider: subscription?.billing_provider ?? null,
     });
   } catch (error) {
     console.error('Error fetching entitlements:', error);

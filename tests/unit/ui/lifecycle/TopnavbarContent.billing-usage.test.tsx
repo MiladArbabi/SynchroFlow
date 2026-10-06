@@ -112,6 +112,12 @@ describe('TopnavbarContent billing usage indicator', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/settings/billing');
   });
 
+  it('does not render the retired trial countdown chip', () => {
+    renderTopnav();
+
+    expect(screen.queryByTestId('trial-chip')).not.toBeInTheDocument();
+  });
+
   it('shows approaching allowance from 90 through below 100', async () => {
     mockUsage = {
       ...mockUsage,

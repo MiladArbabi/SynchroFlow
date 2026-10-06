@@ -8,7 +8,6 @@ import {
   Link, Tooltip, Popover,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
-import { TrialCountdownChip } from 'components/TrialCountdownChip';
 import { Home } from 'lucide-react';
 import { OpsConsoleButton } from '../../components/OpsConsole';
 import { useAlerts } from '../../pages/alerts/useAlerts';
@@ -174,8 +173,6 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
                 Receives the canonical inbox alerts this component already owns,
                 so NOW is backed by live truth without a second poll. */}
             <OpsConsoleButton alerts={allInbox} />
-
-            <TrialCountdownChip />
 
             {showBillingUsage && billingUsage && (
               <>

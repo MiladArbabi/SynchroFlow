@@ -12,7 +12,6 @@ import { ToastProvider } from "contexts/ToastContext";
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
-import { TrialCountdownBanner } from "../../components/TrialCountdownBanner";
 import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
 import { getWarehouseFocusSession } from '../../utils/warehouseFocus';
 import { useAuth } from 'contexts/AuthContext';
@@ -51,9 +50,9 @@ const AppLayout = (props: AppLayoutProps) => {
     return getWarehouseFocusSession(new URLSearchParams(location.search));
   }, [location.pathname, location.search]);
   const isExecutionFocused = focusedSession !== null;
-  // WAREHOUSE-SESSION-FOCUS-02A — a focused Pick also hides commercial
-  // chrome (trial banner, post-trial interstitial). Scoped to Pick in this
-  // slice: stow/receive/count focus keeps its existing shell unchanged.
+  // WAREHOUSE-SESSION-FOCUS-02A — a focused Pick hides post-trial
+  // commercial chrome. Scoped to Pick in this slice:
+  // stow/receive/count focus keeps its existing shell unchanged.
   // The system-health surface is never hidden by focus.
   const hideCommercialChrome = focusedSession === 'pick';
   const [isConnected, setIsConnected] = useState(false);
@@ -256,11 +255,6 @@ const AppLayout = (props: AppLayoutProps) => {
                 lagSeconds={systemHealth.snapshot?.lag_seconds}
               />
             )}
-
-            {/* Trial banner — FT2 only. Commercial/billing chrome is owner/admin
-                only: operators cannot act on billing (ACCESS-01). The system
-                health banner above stays visible to operators. */}
-            {isSidenavAllowed && !isOperator && !hideCommercialChrome && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
 
             {/* POST-TRIAL INTERSTITIAL (UX-07) — owner/admin only, as above */}
             <PostTrialInterstitial show={isPostTrial && !isOperator && !hideCommercialChrome} />

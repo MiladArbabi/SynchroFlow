@@ -232,13 +232,13 @@ describe('WAREHOUSE-SESSION-FOCUS-02A — AppLayout focused Pick session', () =>
     expect(screen.getByTestId('sidenav-stub')).toBeInTheDocument();
   });
 
-  it('control: ordinary /wms in post-trial state renders both commercial surfaces and system health', () => {
+  it('control: ordinary /wms keeps post-trial and system-health surfaces without the retired global trial banner', () => {
     mockEntitlements = POST_TRIAL_ENTITLEMENTS;
     mockSystemHealth = { status: 'degraded', snapshot: { lag_seconds: 120 } };
 
     renderAt('/wms');
 
-    expect(screen.getByTestId('trial-banner-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('trial-banner-stub')).not.toBeInTheDocument();
     expect(screen.getByTestId('post-trial-stub')).toBeInTheDocument();
     expect(screen.getByTestId('system-health-banner-stub')).toBeInTheDocument();
   });
@@ -254,12 +254,12 @@ describe('WAREHOUSE-SESSION-FOCUS-02A — AppLayout focused Pick session', () =>
     expect(screen.queryByTestId('post-trial-stub')).not.toBeInTheDocument();
   });
 
-  it('stale warehouseFocus=pick with NO batchId keeps commercial chrome', () => {
+  it('stale warehouseFocus=pick keeps post-trial chrome but never resurrects the retired global trial banner', () => {
     mockEntitlements = POST_TRIAL_ENTITLEMENTS;
 
     renderAt('/wms?warehouseFocus=pick');
 
-    expect(screen.getByTestId('trial-banner-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('trial-banner-stub')).not.toBeInTheDocument();
     expect(screen.getByTestId('post-trial-stub')).toBeInTheDocument();
   });
 });
