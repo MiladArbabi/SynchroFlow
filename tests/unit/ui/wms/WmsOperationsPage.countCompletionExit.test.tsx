@@ -28,6 +28,19 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import WmsModuleFT2 from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 import { axiosInstance } from 'api/axiosConfig';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 const TASK_ID = 'd898681e-3f4f-48e1-b30c-f1452d5071c1';
 const LABEL = 'CNT-47-0001';
@@ -161,8 +174,7 @@ describe('GH-1191 — completed Opening Inventory bin exits to the ordinary WMS 
       <MemoryRouter initialEntries={[`/wms?countTaskId=${TASK_ID}&warehouseFocus=count`]}>
         <WmsOperationsPage />
         <LocationProbe />
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
 
     // A. Valid active Opening Inventory count restored from the focused URL.
     const binInput = await screen.findByPlaceholderText('Scan bin barcode');

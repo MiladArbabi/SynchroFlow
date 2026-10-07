@@ -4,6 +4,19 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import { axiosInstance } from 'api/axiosConfig';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: {
@@ -84,8 +97,7 @@ describe('WmsOperationsPage return-job deep link', () => {
         <Routes>
           <Route path="/wms" element={<WmsOperationsPage />} />
         </Routes>
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
 
     expect(screen.getByTestId('wms-return-job')).toHaveTextContent('return-job-1');
   });
@@ -112,8 +124,7 @@ describe('WmsOperationsPage receive-job deep link', () => {
         <Routes>
           <Route path="/wms" element={<WmsOperationsPage />} />
         </Routes>
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
 
     await waitFor(() => {
       expect(screen.getByTestId('wms-receive-session')).toHaveTextContent(

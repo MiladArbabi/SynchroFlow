@@ -5,6 +5,19 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import WmsModuleFT2 from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 // Page-level entry tests (UI-12) render WmsOperationsPage with the same stubs
 // as WmsOperationsPage.openingInventoryCutover.test.tsx: @lasyncro/wms is
@@ -84,8 +97,7 @@ describe('CONTRACT-1164-UI-12 — count session entry route is purpose-aware', (
       <MemoryRouter initialEntries={['/wms']}>
         <WmsOperationsPage />
         <LocationProbe />
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
     act(() => { mockModuleProps.current!.onCountSessionEnter(id); });
     return new URLSearchParams(search);
   }
@@ -120,8 +132,7 @@ describe('CONTRACT-1164-UI-12 — count session entry route is purpose-aware', (
     render(
       <MemoryRouter initialEntries={[url]}>
         <WmsOperationsPage />
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
     expect(mockModuleProps.current!.countFocusRequested).toBe(expected);
   });
 });

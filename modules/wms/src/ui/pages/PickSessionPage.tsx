@@ -137,6 +137,8 @@ export interface PickSessionPageProps {
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
   onReportException: (params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
   onPickComplete: () => Promise<void>;
+  /** Navigation-only handoff; physical Pack work belongs to its session. */
+  onStartPacking?: (batchId: string) => void;
   /**
    * BATCH-DETAIL-HANDOFF-01 — the Brief's Start Picking is the explicit work
    * boundary. Awaited before entering location_scan; a rejection keeps the
@@ -228,6 +230,7 @@ export default function PickSessionPage({
   onConfirmScan,
   onReportException,
   onPickComplete,
+  onStartPacking,
   onStartPicking,
   resumePicking = false,
   floorZones,
@@ -522,14 +525,13 @@ try {
     onPickComplete()
       .then(() => {
         setPhase('done');
-        setTimeout(onComplete, 1200);
       })
       .catch((err: unknown) => {
         const msg = (err as any)?.response?.data?.error ?? 'Pick complete failed. Retry when connection is restored.';
         setCompletionError(msg);
         setCompletingPick(false);
       });
-  }, [onPickComplete, onComplete]);
+  }, [onPickComplete]);
 
   const openExceptionDialog = useCallback(() => {
     setExceptionEventId(newEventId());
@@ -694,9 +696,33 @@ try {
       }}>
         <CheckCircle size={56} color={theme.palette.success.main} />
         <Typography variant="h6" fontWeight={600} sx={{ mt: 2 }}>Pick Complete</Typography>
+        <Typography sx={{ mt: 1, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
+          Batch {batchShort}
+        </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
           {lineItems.length} items processed. Batch ready for pack.
         </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', mt: 3 }}>
+          <Button
+            variant="contained"
+            disabled={!onStartPacking}
+            onClick={() => onStartPacking?.(pickBatchId)}
+            sx={{ ...WMS_TIER1_ACTION_SX, borderRadius: '6px', fontWeight: 600 }}
+          >
+            Start packing →
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => onComplete()}
+            sx={{
+              color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+              borderRadius: '6px', fontWeight: 500,
+              '&:hover': { borderColor: 'var(--accent)', bgcolor: 'var(--accent-ghost)' },
+            }}
+          >
+            Return to Operations
+          </Button>
+        </Box>
       </Box>
     );
   }

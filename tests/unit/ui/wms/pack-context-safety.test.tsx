@@ -6,6 +6,19 @@ import PackSessionPage from '../../../../modules/wms/src/ui/pages/PackSessionPag
 import type { PackFreeScanResult } from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import { axiosInstance } from 'api/axiosConfig';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 // Same adapter isolation as WmsOperationsPage.receive-reassign-1143.test.tsx.
 // Neither PackSessionPage nor the page's Pack request adapter is mocked.
@@ -68,7 +81,7 @@ it('active Pack session supplies A as expected context for subsequent LSU and LS
 });
 
 function renderAdapter() {
-  render(<MemoryRouter initialEntries={['/wms']}><WmsOperationsPage /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={['/wms']}><WmsOperationsPage /></MemoryRouter>, { wrapper: alertsQueryWrapper() });
   expect(typeof mockModuleProps.current?.onPackFreeScan).toBe('function');
 }
 

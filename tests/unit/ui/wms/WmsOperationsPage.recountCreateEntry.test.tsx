@@ -19,6 +19,19 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import WmsModuleFT2 from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 import { axiosInstance } from 'api/axiosConfig';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 const ME = 3;
 const OTHER_USER_ID = 11;
@@ -99,8 +112,7 @@ async function createFromOperations(assignedTo: number | null) {
     <MemoryRouter initialEntries={['/wms']}>
       <WmsOperationsPage />
       <LocationProbe />
-    </MemoryRouter>
-  );
+    </MemoryRouter>, { wrapper: alertsQueryWrapper() });
   await act(async () => {
     await mockModuleProps.current!.onCreateCountingTask({
       scope: 'locations',

@@ -21,6 +21,19 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useSearchParams } from 'react-router-dom';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import { axiosInstance } from 'api/axiosConfig';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: {
@@ -149,8 +162,7 @@ function renderAtWms() {
         <Route path="/wms" element={<WmsOperationsPage />} />
         <Route path="/floor-planning" element={<FloorPlanningSentinel />} />
       </Routes>
-    </MemoryRouter>
-  );
+    </MemoryRouter>, { wrapper: alertsQueryWrapper() });
 }
 
 describe('WmsOperationsPage — RECOUNT-FRESH-NOBINS-40 Set up bins navigation', () => {
