@@ -62,6 +62,30 @@ export function isExecutableDecisionAction(
 }
 
 /**
+ * USER-EXECUTABLE ACTIONS — GENERIC USER EXECUTION ALLOW-LIST (GH-1223)
+ * --------------------------------------------------------------------
+ * The ONLY action types a user may enqueue through generic
+ * POST /orders/:orderId/execute. Deliberately distinct from system
+ * executability above: execution-registry membership means a machine CAN
+ * perform an action, not that a user is AUTHORIZED to trigger it.
+ * proceed_fulfillment, resolve_inventory_block and resolve_customer_block stay
+ * registered for system/background execution and are still refused here.
+ *
+ * Fail closed: unknown and missing action types are never user-executable.
+ */
+export const USER_EXECUTABLE_DECISION_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'resolve_operational_block',
+]);
+
+/** True only for allow-listed user-executable actions; false for everything else. */
+export function isUserExecutableDecisionAction(
+  actionType: string | undefined
+): boolean {
+  if (!actionType) return false;
+  return USER_EXECUTABLE_DECISION_ACTION_TYPES.has(actionType);
+}
+
+/**
  * True when the action's required constraint type is still active for
  * the order, or when the action has no constraint prerequisite at all.
  *

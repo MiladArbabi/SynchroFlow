@@ -105,6 +105,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
 
   // ── ORDER NEXUS ────────────────────────────────────────────────────────────
   'orders:prioritise':        ['owner', 'admin'],
+  // GH-1223: user-triggered Orders writes — owner/admin only, LOCKED.
+  'orders:execute':                ['owner', 'admin'],
+  'orders:shipping-address:write': ['owner', 'admin'],
 
   // ── CUSTOMERS ──────────────────────────────────────────────────────────────
   'customers:read':           ['owner', 'admin'],

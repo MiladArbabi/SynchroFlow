@@ -6,6 +6,8 @@ import { httpGetPriorityStack } from './orders.priority.controller.js';
 import { httpGetOperationalControl }
   from './orders.operational-control.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import { httpGetOperationalPressure }
   from './orders.operational-pressure.controller.js';
 import { httpGetConstrainedOrders }
@@ -146,11 +148,15 @@ router.get(
 /**
  * @route   POST /api/v1/orders/:orderId/execute
  * @desc    Queue execution of recommended decision action for an order.
- * @access  Private
+ * @access  Private — orders.core (Core+), then orders:execute (owner/admin).
+ *          GH-1223: commercial gate runs BEFORE the role gate; the controller
+ *          additionally admits only user-executable action types.
  */
 router.post(
   '/:orderId/execute',
   authenticateToken,
+  requireCapability('orders.core'),
+  requireAction('orders:execute'),
   httpExecuteOrderDecision
 );
 
@@ -160,11 +166,14 @@ router.post(
  *          resolution path for customer/incomplete_address blocks
  *          (OF-08, 2026-07-02). See controller header for why this is
  *          a direct write, not a domain event.
- * @access  Private
+ * @access  Private — orders.core (Core+), then orders:shipping-address:write
+ *          (owner/admin). GH-1223: commercial gate runs BEFORE the role gate.
  */
 router.patch(
   '/:orderId/shipping-address',
   authenticateToken,
+  requireCapability('orders.core'),
+  requireAction('orders:shipping-address:write'),
   httpUpdateShippingAddress
 );
 

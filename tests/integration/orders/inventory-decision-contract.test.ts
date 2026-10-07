@@ -20,6 +20,7 @@ import {
   withTenant,
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
+import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 const app = createApp();
@@ -69,6 +70,32 @@ async function createShop() {
     userId,
     token: issueTestToken({ userId, shopId }),
   };
+}
+
+/**
+ * GH-1223: POST /orders/:orderId/execute is gated by orders.core (Core+).
+ * Authoritative tier via the canonical transition path (GH-1222 precedent).
+ * Test-local on purpose — createShop() stays tier-neutral for the rest of
+ * this suite.
+ */
+async function setCurrentTier(shopId: number, tier: 'core'): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    transitionShopSubscription(
+      {
+        shopId,
+        to: {
+          tier,
+          status: 'active',
+          billingProvider: 'shopify',
+        },
+        source: 'inventory_decision_contract_test',
+        reason: 'test_tier_fixture',
+        actorType: 'shopify',
+        actingProvider: 'shopify',
+      },
+      trx,
+    ),
+  );
 }
 
 type InventoryFixtureOptions = {
@@ -601,6 +628,7 @@ describe('inventory decision contract — ORD-DECISION-01 Slice 2', () => {
 
   it('INV-ACTION-02 refuses to execute an open_sourcing decision and queues nothing', async () => {
     const { shopId, token } = await createShop();
+    await setCurrentTier(shopId, 'core');
     // Genuinely blocked: demand 2, zero pickable stock — the inventory
     // constraint is ACTIVE, so this is NOT the stale case INV-RED-03 covers.
     const { orderId } = await seedInventoryFixture(shopId, {

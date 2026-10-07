@@ -36,6 +36,9 @@ export const LOCKED_ACTIONS = new Set([
   'wms:analytics:read',
   'wms:analytics:display:write',
   'wms:problem:resolve',
+  // GH-1223: ratified owner/admin Orders write boundaries — never configurable.
+  'orders:execute',
+  'orders:shipping-address:write',
 ]);
 
 export interface PermissionRow {
@@ -89,6 +92,8 @@ const ACTION_LABELS: Record<string, { label: string; domain: string }> = {
   'wms:recount:count':      { label: 'Record inventory counts',   domain: 'Warehouse' },
   'wms:recount:review':     { label: 'Review count variances',    domain: 'Warehouse' },
   'wms:recount:commit':     { label: 'Commit count corrections',  domain: 'Warehouse' },
+  'orders:execute':         { label: 'Execute order decisions',   domain: 'Orders' },
+  'orders:shipping-address:write': { label: 'Correct shipping addresses', domain: 'Orders' },
   'floor-planning:read':    { label: 'View floor plan',           domain: 'Floor Planning' },
   'floor-planning:write':   { label: 'Edit floor plan',           domain: 'Floor Planning' },
   'overview:read':          { label: 'View overview',             domain: 'Overview' },

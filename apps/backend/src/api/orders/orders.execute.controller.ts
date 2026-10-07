@@ -5,6 +5,7 @@ import { dispatchCommand } from '../../domain/command/command.bus.js';
 import {
   isDecisionActionStillValid,
   isExecutableDecisionAction,
+  isUserExecutableDecisionAction,
 } from '../../domain/decision/decisionConstraintRequirements.js';
 
 class DecisionNotFoundError extends Error {}
@@ -17,7 +18,7 @@ class DecisionInProgressError extends Error {}
  * Triggers execution of the recommended decision action for an order.
  *
  * SECURITY INVARIANTS:
- * - Operator never specifies the action — it is read from the decisions table
+ * - The caller never specifies the action — it is read from the decisions table
  * - shop_id scoping prevents cross-tenant execution
  * - RLS enforced via app.current_tenant SET LOCAL
  *
@@ -90,9 +91,9 @@ export const httpExecuteOrderDecision = async (
         .orderBy('priority', 'desc');
 
       /**
-       * CANDIDATE ELECTION — TWO INDEPENDENT REJECTION REASONS
-       * ------------------------------------------------------
-       * A candidate must clear both checks, and they answer different
+       * CANDIDATE ELECTION — THREE INDEPENDENT REJECTION REASONS
+       * --------------------------------------------------------
+       * A candidate must clear all three checks, and they answer different
        * questions:
        *
        * 1. EXECUTABILITY (INV-ACTION-ARCH-01). Workflow-only actions such as
@@ -101,19 +102,25 @@ export const httpExecuteOrderDecision = async (
        *    execution registry, so isExecutableDecisionAction() excludes them
        *    from executable candidate selection entirely.
        *
-       * 2. STALENESS. Independently of the above, isDecisionActionStillValid()
+       * 2. USER EXECUTABILITY (GH-1223). This route is user-triggered, and
+       *    system executability is not user authorization. Only the
+       *    fail-closed USER_EXECUTABLE_DECISION_ACTION_TYPES allow-list may be
+       *    enqueued here; unknown and missing action types are refused.
+       *
+       * 3. STALENESS. Independently of the above, isDecisionActionStillValid()
        *    rejects a decision whose required constraint type has no active
        *    rows for this order — the block it exists to resolve is already
        *    gone.
        *
-       * If every candidate is either non-executable or stale, no decision is
-       * elected and the route falls through to its existing
+       * If every candidate is non-executable, not user-executable or stale, no
+       * decision is elected and the route falls through to its existing
        * "No actionable decision found for this order" 400 path. No
        * decision_execution_queue row is created in that case.
        */
       const decision = candidateDecisions.find(
         (d) =>
           isExecutableDecisionAction(d.recommended_action?.type) &&
+          isUserExecutableDecisionAction(d.recommended_action?.type) &&
           isDecisionActionStillValid(
             d.recommended_action?.type,
             activeConstraintTypes

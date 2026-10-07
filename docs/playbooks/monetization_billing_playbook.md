@@ -127,6 +127,29 @@ base Problem Center surface binds to, not the canonical policy.
   user's role can never access (for example, operators do not see Floor
   Planning or Analytics, or their Growth/Core upsells).
 
+### GH-1223 — Orders write boundaries enforce `orders.core` (2026-10-07)
+
+Canonical policy is unchanged: **`orders.core` = Core+** (`order-nexus`,
+`minimumTier: 'core'`); `@lasyncro/commercial-policy` was not modified.
+
+Consequential Orders write boundaries now enforce it, each composed with a
+separate role/action check (commercial first, then role):
+
+| Route | Commercial | Action | owner | admin | operator |
+|---|---|---|---|---|---|
+| `POST /api/v1/orders/:orderId/execute` | `orders.core` | `orders:execute` | allow | allow | deny |
+| `PATCH /api/v1/orders/:orderId/shipping-address` | `orders.core` | `orders:shipping-address:write` | allow | allow | deny |
+
+Both actions are **LOCKED** (not merchant-configurable).
+
+- Commercial capability and RBAC/action authority are **independent** checks.
+  A commercial allow does not imply role authority, and a role allow does not
+  bypass commercial entitlement (Starter → `COMMERCIAL_ACCESS_DENIED` on
+  `orders.core`, regardless of role).
+- This does **not** mean all Orders reads are Core-gated. Foundational /
+  read-only Orders endpoints keep their existing contract; there is no blanket
+  "all Orders routes require `orders.core`" rule.
+
 ### Explicit non-goals
 
 MON-REM-01A did not change quota enforcement, overage behavior, billing-provider
@@ -1337,6 +1360,12 @@ its own merits independent of the module's current frozen status.
   and `GET /orders/:id` — there is no distinct dataset for a route
   gate to protect, unlike `customers`. Assessed as correct by design,
   not a gap.
+
+  > **Superseded 2026-10-07 (GH-1223):** this was the 2026-07-16 audit
+  > finding. Current truth: the consequential Orders write routes
+  > `POST /orders/:orderId/execute` and `PATCH /orders/:orderId/shipping-address`
+  > enforce `orders.core` (Core+) plus owner/admin action authority — see §1.1
+  > "GH-1223". Read-only Orders routes are still not blanket-gated.
 
 ### WMS analytics/carrier-infra gating confirmed correct
 

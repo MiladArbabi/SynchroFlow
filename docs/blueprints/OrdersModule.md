@@ -7,7 +7,9 @@
 
 ## 1. Vision
 
-The Orders module is LaSyncro's primary execution surface. It is where an SMB operator — owner, admin, or warehouse operator — arrives under pressure, sees exactly what needs to happen today, takes action, and confirms the result. Every design decision in this module is evaluated against one question: does this help an operator with 1-20 people, fulfilling from their own warehouse, making $100k–$50M/year, resolve their daily firefighting faster?
+The Orders module is LaSyncro's primary execution surface. It is where an SMB operator — the shop owner or admin — arrives under pressure, sees exactly what needs to happen today, takes action, and confirms the result. Every design decision in this module is evaluated against one question: does this help an operator with 1-20 people, fulfilling from their own warehouse, making $100k–$50M/year, resolve their daily firefighting faster?
+
+*Role model (GH-1222 / GH-1223, 2026-10-07): Orders management is owner/admin. RBAC `operator` members work the `/wms` and `/problem-center` execution surfaces and are not admitted to the Orders management UI; consequential Orders mutations are owner/admin authority — see §11.*
 
 The module must eliminate three operator pain points:
 
@@ -144,7 +146,7 @@ Order created
 | ORD-OUT-02 | 🟡 P2 | Outbound | click on each order and pop up the orders details page |
 | ORD-OVERVIEW-INVENTORY-01 | ✅ Implemented | Overview | "Needs a decision" omitted in-SLA canonical blocks — fixed, see below |
 | ORD-FIXTURE-INVMULTI-01 | 🟡 P2 | Verification | No deterministic multi-variant inventory-block browser fixture |
-| INV-ACTION-ARCH-01 | 🟡 P2 | Backend | Decouple Sourcing navigation from legacy `resolve_inventory_block` execution |
+| INV-ACTION-ARCH-01 | ✅ Completed / Verified | Backend | Decouple Sourcing navigation from legacy `resolve_inventory_block` execution — completed 2026-09-06, see `docs/playbooks/decision-engine-playbook.md` §11.6 |
 | ORDER-NEXUS-DIST-STALE-01 | 🔴 P1 | Build | Committed order-nexus `dist` drifted from source — no gate prevents it |
 | TEST-ORDER-NEXUS-MODULEENTRY-01 | 🟡 P2 | Tests | `OrdersModuleFT2.test.tsx` cannot resolve `./ModuleEntry.js` |
 | ORD-RANK-CONSISTENCY-01 | 🟡 P2 | Backend | Three competing constraint-ranking definitions |
@@ -621,6 +623,31 @@ When accepted units satisfy a blocked order's inventory constraint, surface: "N 
 11. 🔲 Full precision value display (ORD-VAL-01)
 12. 🔲 Release Queue serif fix (ORD-SERIF-01)
 13. 🔲 Fulfillment projection bug fix (PROJ-01)
+
+---
+
+## 11. Order mutation authority — GH-1223 / TIER-08 (2026-10-07)
+
+Consequential Orders mutations compose **commercial** capability and **role/action** authority as independent checks (commercial runs first, then role).
+
+| Route | Commercial | Action | owner | admin | operator |
+|---|---|---|---|---|---|
+| `POST /api/v1/orders/:orderId/execute` | `orders.core` (Core+) | `orders:execute` | ✓ | ✓ | — |
+| `PATCH /api/v1/orders/:orderId/shipping-address` | `orders.core` (Core+) | `orders:shipping-address:write` | ✓ | ✓ | — |
+
+Both actions are **LOCKED** (not merchant-configurable); existing shops are seeded by migration `0205`.
+
+**Generic user-triggered execution is fail-closed.** `POST /execute` admits only `resolve_operational_block`. These are **not** admitted through generic Orders execute (existing `400 "No actionable decision found for this order"`, no queue row, no `EXECUTE_DECISION` command):
+
+- `proceed_fulfillment` — fulfillment remains **Release → Pick → Pack → Ship**;
+- `resolve_inventory_block`, `open_sourcing` — inventory remediation routes to **Sourcing**;
+- `resolve_customer_block` — customer address remediation uses the dedicated **shipping-address** flow;
+- `open_return_job` — returned packages route to **Returns / WMS**;
+- unknown or missing action types.
+
+Execution-registry membership is **not** user authorization: a registered machine handler means the system *can* run an action, not that a user may trigger it from Order Detail. Order Detail mirrors the same allow-list and offers the generic "Mark as resolved" CTA only for `resolve_operational_block`.
+
+**No blanket Orders gate.** Read-only Orders routes (e.g. `GET /api/v1/orders/:orderId/decision`) are not gated by these write actions and keep their existing contract.
 
 ---
 

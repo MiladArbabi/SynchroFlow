@@ -338,7 +338,7 @@ its handler remains registered temporarily so persisted legacy work can
 drain. Its mapping is retained so previously persisted decisions stay
 stale-checked exactly as before.
 
-#### Required-constraint vs executability — two separate questions
+#### Required-constraint vs executability vs user triggerability — three separate questions
 
 `CONSTRAINT_TYPE_BY_ACTION` answers only **whether an action requires an
 active constraint to still be meaningful**. It does not say whether the
@@ -352,25 +352,49 @@ active inventory truth (so it is stale-checked like any other inventory
 action) but is **intentionally non-executable** — it has no execution
 handler and is never registered in the execution registry.
 
-`POST /api/v1/orders/:orderId/execute` must never queue a workflow-only
-action. It skips them exactly as it skips stale decisions, so they can never
-reach `decision_execution_queue`, and the route answers through its existing
-no-actionable-decision error path rather than inventing a new one.
+An action that is in neither structure has no constraint prerequisite and
+may still be **system-executable** (for example by background/system
+execution). That says nothing about whether a user may trigger it through
+generic `POST /execute`.
 
-An action that is in neither structure has no constraint prerequisite and is
-executable — that default is deliberate, and it is what keeps
-`proceed_fulfillment` and every other existing action unchanged.
+**User-triggered generic executability (GH-1223, 2026-10-07)** is a third,
+separate question, answered by `USER_EXECUTABLE_DECISION_ACTION_TYPES` /
+`isUserExecutableDecisionAction()` in the same module. It is a fail-closed
+allow-list — currently **`resolve_operational_block` only**.
+
+> **System-executable does NOT imply user-triggerable.** Execution-registry
+> membership means a machine can perform the action, not that a user is
+> authorized to enqueue it.
+
+`POST /api/v1/orders/:orderId/execute` (behind `orders.core` +
+`orders:execute`, owner/admin) elects a candidate only when it is **system
+executable AND user executable AND still valid (non-stale)**. It must not
+admit, and each has its own owner instead:
+
+- `proceed_fulfillment` — fulfillment stays Release → Pick → Pack → Ship;
+- `resolve_inventory_block`, `open_sourcing` — inventory goes to Sourcing;
+- `resolve_customer_block` — the dedicated shipping-address correction
+  (`PATCH /api/v1/orders/:orderId/shipping-address`);
+- `open_return_job` — returned packages go to Returns / WMS;
+- an unknown or missing action type.
+
+A denied candidate inserts no `decision_execution_queue` row, dispatches no
+`EXECUTE_DECISION` command, and the route answers through its existing
+`400 "No actionable decision found for this order"` path rather than
+inventing a new one.
 
 Consumers:
 
-- `GET /api/v1/orders/:orderId/decision` — elects the first non-stale
-  candidate in priority order (behaviour unchanged; the map moved out of
-  the controller);
-- `POST /api/v1/orders/:orderId/execute` — same election, so a stale
-  decision can no longer be queued. Previously this route took the
-  top-priority pending decision unconditionally, so an order whose block
-  had already cleared naturally could still be executed with `202` while
-  the read model correctly refused to surface it.
+- `GET /api/v1/orders/:orderId/decision` — **validity only**: elects the
+  first non-stale candidate in priority order (behaviour unchanged; the map
+  moved out of the controller). It is a read model, not a user-authorization
+  surface;
+- `POST /api/v1/orders/:orderId/execute` — **validity + system
+  executability + user-triggered allow-list**. The shared staleness map means
+  a stale decision can never be queued. (Previously this route took the
+  top-priority pending decision unconditionally, so an order whose block had
+  already cleared naturally could still be executed with `202` while the
+  read model correctly refused to surface it.)
 
 **Invariant:**
 

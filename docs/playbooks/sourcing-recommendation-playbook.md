@@ -1434,7 +1434,8 @@ closed or redefined by Slice 1B, Slice 2, or Slice 2B:
   explicit workspace builds (`build:deps` or the owning workspace build), and
   CI/repository guards prevent generated `dist` from being committed again;
 - `TEST-ORDER-NEXUS-MODULEENTRY-01` | P2 | OPEN;
-- `INV-ACTION-ARCH-01` | P2 | OPEN;
+- `INV-ACTION-ARCH-01` | **COMPLETED / VERIFIED 2026-09-06** — see
+  `docs/playbooks/decision-engine-playbook.md` §11.6;
 - `ORD-FIXTURE-INVMULTI-01` | P2 | OPEN;
 - `SRC-INBOUND-CONTEXT-01` | P2 | OPEN — targeted **View inbound** still does
   not preserve variant context or identify/highlight the contributing open

@@ -26,9 +26,10 @@ const ADDRESS_SOURCE_SURFACE = 'order_detail_shipping_address_dialog';
 /**
  * PATCH /api/v1/orders/:orderId/shipping-address
  * -------------------------------------------------
- * Lets an operator correct an order's shipping address directly in-app
- * — the primary resolution path for `customer`/`incomplete_address`
- * blocks (OF-08, 2026-07-02), instead of sending operators to Shopify.
+ * Lets an authorised owner/admin (GH-1223: orders.core +
+ * orders:shipping-address:write) correct an order's shipping address directly
+ * in-app — the primary resolution path for `customer`/`incomplete_address`
+ * blocks (OF-08, 2026-07-02), instead of sending users to Shopify.
  *
  * CORRECTED (GH-1036, 2026-07-02): originally built as a direct API
  * write only (bump aggregate_version, insert a reconciliation intent),
@@ -104,10 +105,10 @@ export const httpUpdateShippingAddress = async (
     /**
      * CORRECTION PROVENANCE (OUTCOME-ATTR-01)
      * ---------------------------------------
-     * HOW the operator arrived at the value they saved. 'manual' means they
+     * HOW the user arrived at the value they saved. 'manual' means they
      * typed it; 'historical_address_assist' means they explicitly applied a
      * previously used address the UI offered as evidence and then saved it
-     * themselves. Both are operator actions — this field claims nothing about
+     * themselves. Both are user actions — this field claims nothing about
      * automation, AI resolution, or resolution itself.
      *
      * Omitted == 'manual', so every caller predating this field (and the
@@ -139,7 +140,7 @@ export const httpUpdateShippingAddress = async (
        * ------------------------------------
        * Read BEFORE the correction changes any canonical state, so the
        * intervention names the exact constraint that was live at the moment
-       * the operator acted — not whatever happens to be active after
+       * the user acted — not whatever happens to be active after
        * reevaluation. Attribution is by exact constraint_id: an order can
        * carry a coexisting inventory blocker, and clearing the customer one
        * must never claim credit for it.
@@ -210,7 +211,7 @@ export const httpUpdateShippingAddress = async (
        * DURABLE INTERVENTION (OUTCOME-ATTR-01)
        * --------------------------------------
        * Written ONLY when an active customer/incomplete_address constraint
-       * actually existed when the operator acted. Editing an address on an
+       * actually existed when the user acted. Editing an address on an
        * order that had no blocker is a legitimate data edit, not a treatment —
        * manufacturing an intervention for it would inflate attribution with
        * work that solved nothing.

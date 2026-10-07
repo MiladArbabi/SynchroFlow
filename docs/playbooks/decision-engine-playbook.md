@@ -2317,3 +2317,70 @@ does not become part of this attribution slice:
 
 Priority item 5 remains **IN PROGRESS**. This pilot creates no prevention,
 revenue, or ROI metric.
+
+## 12. GH-1223 / TIER-08 — User Execution Authorization Boundary (2026-10-07)
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED — current contract.** Earlier
+sessions above are historical records and are not rewritten.
+
+### 12.1 System executability ≠ user authorization
+
+The execution registry answers one question: *can the system resolve this
+action type to a machine handler?* That is **not** user authorization.
+Registered handlers include `proceed_fulfillment`,
+`resolve_operational_block`, `resolve_inventory_block` and
+`resolve_customer_block`; they stay registered for system/background
+compatibility. `isExecutableDecisionAction()` (workflow actions such as
+`open_sourcing` are non-executable) keeps its meaning unchanged.
+
+### 12.2 User-triggered generic execution
+
+`POST /api/v1/orders/:orderId/execute` is separately constrained:
+
+    authenticateToken
+    → requireCapability('orders.core')
+    → requireAction('orders:execute')          (owner/admin; operator denied; LOCKED)
+    → fail-closed user-executable action admission
+    → queue / dispatch
+
+User-executable allow-list (`USER_EXECUTABLE_DECISION_ACTION_TYPES` in
+`decisionConstraintRequirements.ts`): **`resolve_operational_block` only.**
+`isUserExecutableDecisionAction()` returns false for everything else, including
+`proceed_fulfillment`, `resolve_inventory_block`, `resolve_customer_block`,
+`open_return_job`, `open_sourcing`, unknown types and a missing type.
+
+Candidate election requires all three: system-executable **and**
+user-executable **and** still valid (non-stale). A denied candidate:
+
+- inserts **no** `decision_execution_queue` row;
+- dispatches **no** `EXECUTE_DECISION` command;
+- reuses the existing `400 "No actionable decision found for this order"`.
+
+Order Detail mirrors the allow-list: the generic execute CTA ("Mark as
+resolved") renders only for `resolve_operational_block`; there is no
+"Take action" fallback for unknown actions.
+
+### 12.3 Dedicated customer address path
+
+`PATCH /api/v1/orders/:orderId/shipping-address` is **not** generic Decision
+execution. It requires `orders.core` + `orders:shipping-address:write`
+(owner/admin; operator denied; LOCKED). Address-correction semantics are
+unchanged (validation, provenance, direct order write, history, intervention,
+reconciliation intent, domain event).
+
+### 12.4 Fulfillment ownership
+
+`proceed_fulfillment` must not be user-triggerable from generic Order Detail
+execution. Fulfillment remains owned by **Release → Pick → Pack → Ship**.
+
+### 12.5 Evidence
+
+- `order-execution-authorization-gh1223` integration: **18/18** (commercial,
+  role, admission matrix with matching active constraints, zero queue/command
+  mutation on every denial, shipping zero-mutation, read-route control).
+- Action catalog unit: **3/3**. Order Detail generic-execution UI: **6/6**.
+- Migration `0205` populated-shop proof: precondition / up / idempotent /
+  down (scoped) / reapply PASS.
+- `INV-ACTION-02` (inventory decision contract) now runs its shop at Core via
+  `transitionShopSubscription`; its `open_sourcing` 400 / zero-queue
+  assertions are unchanged.

@@ -76,6 +76,14 @@ const ACTION_LABELS: Record<string, string> = {
   resolve_customer_block: 'Flag for customer review',
 };
 
+/**
+ * GH-1223: mirrors the backend USER_EXECUTABLE_DECISION_ACTION_TYPES
+ * allow-list for generic POST /orders/:orderId/execute.
+ */
+const USER_EXECUTABLE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'resolve_operational_block',
+]);
+
 function getActionLabel(actionType: string): string {
   return ACTION_LABELS[actionType] ?? 'Take action';
 }
@@ -558,12 +566,16 @@ export function OrderDetailModalBody({
    * never reach the generic execute(orderId) CTA, even when no usable
    * inventory sourcing target exists (constraint with a null target_id).
    * Inventory routing comes from active constraints, never from this action.
+   *
+   * GH-1223: generic execute(orderId) is offered ONLY for the explicit
+   * user-executable allow-list the backend admits (fail closed). Everything
+   * else — open_return_job, open_sourcing, resolve_customer_block, unknown
+   * types — never reaches the generic CTA.
    */
   const executableRecommendedAction =
-    recommendedAction?.type === 'open_return_job' ||
-    recommendedAction?.type === 'open_sourcing'
-      ? undefined
-      : recommendedAction;
+    recommendedAction && USER_EXECUTABLE_ACTION_TYPES.has(recommendedAction.type)
+      ? recommendedAction
+      : undefined;
 
   const alternateActions = (decision?.actions ?? []).filter(
     (a) =>
