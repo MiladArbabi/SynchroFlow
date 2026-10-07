@@ -79,3 +79,53 @@ describe('ProtectedRoute — OWNER and ADMIN are admitted to /inventory', () => 
     expect(screen.getByTestId('protected-child')).toHaveTextContent('/inventory');
   });
 });
+
+// ---------------------------------------------------------------------------
+// GH-1222 / TIER-07 — ratified operator route-admission matrix.
+//
+// Problem Center is an operational surface: operators enter /problem-center.
+// Floor Planning and Warehouse Analytics are owner/admin management surfaces:
+// operators are redirected to /wms (no Not Authorized screen). Backend
+// requireAction remains the authority; this is UX admission only.
+// ---------------------------------------------------------------------------
+
+describe('GH-1222 C — OPERATOR Warehouse admission matrix', () => {
+  beforeEach(() => {
+    mockRole = 'operator';
+  });
+
+  it.each([
+    ['C1 GREEN CONTROL', '/wms'],
+    ['C2 GREEN CONTROL', '/wms/pick'],
+    ['C3 EXPECTED RED', '/problem-center'],
+  ])('%s: operator %s is admitted and the protected child renders for it', (_id, path) => {
+    renderAt(path);
+
+    expect(screen.getByTestId('protected-child')).toHaveTextContent(path);
+  });
+
+  it.each([
+    ['C4 GREEN CONTROL', '/floor-planning'],
+    ['C5 EXPECTED RED', '/wms/analytics'],
+  ])('%s: operator %s is redirected to /wms', (_id, path) => {
+    renderAt(path);
+
+    const child = screen.getByTestId('protected-child');
+    expect(child.textContent).toBe('/wms');
+    expect(screen.getAllByTestId('protected-child')).toHaveLength(1);
+  });
+});
+
+describe('GH-1222 C — OWNER / ADMIN Warehouse admission unchanged', () => {
+  it.each(['owner', 'admin'] as const)(
+    'GREEN CONTROL: %s is admitted to every Warehouse surface',
+    (role) => {
+      mockRole = role;
+      for (const path of ['/wms', '/floor-planning', '/wms/analytics', '/problem-center']) {
+        const { unmount } = renderAt(path);
+        expect(screen.getByTestId('protected-child')).toHaveTextContent(path);
+        unmount();
+      }
+    }
+  );
+});

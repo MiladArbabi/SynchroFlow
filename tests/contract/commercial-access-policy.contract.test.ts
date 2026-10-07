@@ -391,7 +391,9 @@ describe('B2 — Sidenav capability ids', () => {
       'wms-operations': 'warehouse.operations',
       'floor-planning': 'warehouse.floor_planning',
       'wms-analytics': 'warehouse.analytics',
-      'product-issues': 'warehouse.problem_center',
+      // GH-1222: Problem Center BASE access is operational (warehouse.operations);
+      // warehouse.problem_center gates Growth-only functions inside the page.
+      'product-issues': 'warehouse.operations',
       purchasing: 'purchasing.core',
       'open-pos': 'purchasing.core',
       suppliers: 'purchasing.core',
@@ -476,7 +478,9 @@ describe('B4 — commercial children are explicit, never inherited from a parent
       'wms-operations': 'warehouse.operations',
       'floor-planning': 'warehouse.floor_planning',
       'wms-analytics': 'warehouse.analytics',
-      'product-issues': 'warehouse.problem_center',
+      // GH-1222: Problem Center BASE access is operational (warehouse.operations);
+      // warehouse.problem_center gates Growth-only functions inside the page.
+      'product-issues': 'warehouse.operations',
     };
     const missing = Object.entries(want).filter(
       ([id, cap]) =>
@@ -551,7 +555,8 @@ describe('B7 — ModuleTabBar capability support', () => {
       [WAREHOUSE_TABS, 'wms-operations', 'warehouse.operations'],
       [WAREHOUSE_TABS, 'floor-planning', 'warehouse.floor_planning'],
       [WAREHOUSE_TABS, 'wms-analytics', 'warehouse.analytics'],
-      [WAREHOUSE_TABS, 'product-issues', 'warehouse.problem_center'],
+      // GH-1222: Problem Center BASE tab is operational (warehouse.operations).
+      [WAREHOUSE_TABS, 'product-issues', 'warehouse.operations'],
       [PURCHASING_TABS_F, 'purchasing-pos', 'purchasing.core'],
       [PURCHASING_TABS_F, 'purchasing-suppliers', 'purchasing.core'],
       // P0-A3-5: the Sourcing tab is Growth+ ADVANCED SOURCING.

@@ -105,7 +105,8 @@ export function bootstrapNavGroups() {
       { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',   capabilityId: 'warehouse.floor_planning', parentId: 'warehouse' },
       { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics',    capabilityId: 'warehouse.analytics' },
       // DEC-01/DEC-03: relocated from returns-resolution — Problem Center is a warehouse-floor exception queue (pick/pack/stow/receive), not a customer-returns screen. parentId set explicitly since path (/problem-center) is not URL-nested under /wms.
-      { id: 'product-issues', title: 'Problem Center', path: '/problem-center',    capabilityId: 'warehouse.problem_center', parentId: 'warehouse' },
+      // GH-1222: BASE navigation is operational (warehouse.operations); warehouse.problem_center gates Growth-only functions inside the page, not entry.
+      { id: 'product-issues', title: 'Problem Center', path: '/problem-center',    capabilityId: 'warehouse.operations', parentId: 'warehouse' },
     ],
   });
 

@@ -67,6 +67,12 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:ship:confirm':         ['owner', 'admin', 'operator'],
   'wms:settings:write':       ['owner', 'admin'],
 
+  // GH-1222: management boundaries — owner/admin only, LOCKED in
+  // permissionSettings so a shop cannot re-grant them to operator.
+  'wms:analytics:read':          ['owner', 'admin'],
+  'wms:analytics:display:write': ['owner', 'admin'],
+  'wms:problem:resolve':         ['owner', 'admin'], // resolve/discard/write_off decisions
+
   // Inventory recount: operators count; owner/admin control task + corrections.
   'wms:recount:create':       ['owner', 'admin'],
   'wms:recount:read':         ['owner', 'admin', 'operator'],

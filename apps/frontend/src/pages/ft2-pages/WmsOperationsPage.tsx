@@ -68,6 +68,10 @@ export default function WmsOperationsPage() {
   // RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only — backend
   // requireAction('wms:recount:reassign') is the real authority.
   const canReassignRecount = userRole === 'owner' || userRole === 'admin';
+  // GH-1222: advisory UI gate only — recount management entry ("Reconcile
+  // inventory", "Set up bins"). Backend wms:recount:create/review/commit remain
+  // the authority; operator claim/count execution is not gated by this.
+  const canManageRecount = userRole === 'owner' || userRole === 'admin';
   // STOW-LIFECYCLE-02: advisory UI gate only — backend
   // requireAction('wms:stow:assign') is the real authority (see J).
   const canAssignStow = userRole === 'owner' || userRole === 'admin';
@@ -771,6 +775,7 @@ export default function WmsOperationsPage() {
       onCountFinished={handleCountFinished}
       currentUserId={currentUserId}
       canReassignCount={canReassignRecount}
+      canManageRecount={canManageRecount}
       pendingCountTaskId={searchParams.get('countTaskId')}
       // GH-1188 — URL count-focus intent; the module holds its ordinary body
       // only while this task is still resolving.

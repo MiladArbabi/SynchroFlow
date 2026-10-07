@@ -313,6 +313,12 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
   // never paint the ordinary Warehouse body while the task is resolving. The
   // URL hint only covers the unresolved transition; settlement still decides.
   describe('GH-1188 — focused count URL never paints the ordinary Warehouse body', () => {
+    // GH-1222: "Reconcile inventory" is this block's ordinary-body marker and is
+    // an owner/admin management CTA (canManageRecount, fail-closed by default).
+    // The file's persona is owner (useAuth mock above), so the module receives
+    // canManageRecount explicitly — otherwise the marker's absence would be
+    // vacuous evidence of a hold.
+    const mgmtProps = (over: Record<string, unknown>) => props({ canManageRecount: true, ...over });
     const hold = () => screen.queryByRole('status', { name: 'Loading count session' });
     const ordinaryControl = (root: HTMLElement) =>
       within(root).queryByRole('button', { name: 'Reconcile inventory', hidden: true });
@@ -334,7 +340,7 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
     }
 
     it('pending resolution: protected hold, no ordinary body, no Brief, no fail-open', async () => {
-      const p = props({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
+      const p = mgmtProps({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
       const { inserted } = renderRecordingCommits(p);
 
       expect(inserted.some((node) => ordinaryControl(node))).toBe(false);
@@ -346,7 +352,7 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
     });
 
     it('settled usable task on first render: the first committed frame is protected', async () => {
-      const p = props({ countFocusRequested: true, recountTasks: [openingTask()], recountTasksSettled: true });
+      const p = mgmtProps({ countFocusRequested: true, recountTasks: [openingTask()], recountTasksSettled: true });
       const { inserted } = renderRecordingCommits(p);
 
       expect(inserted.length).toBeGreaterThan(0);
@@ -368,7 +374,7 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
     });
 
     it('pending then resolved: the hold hands off to the Brief without the ordinary body', async () => {
-      const p = props({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
+      const p = mgmtProps({ countFocusRequested: true, recountTasks: [], recountTasksSettled: false });
       const { rerender } = render(<WmsModuleFT2 {...p} />);
       expect(hold()).toBeInTheDocument();
 
@@ -388,7 +394,7 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
       // covers the read-error state at the module boundary.
       ['recount locked', { recountLocked: true, recountTasks: [openingTask()] }],
     ])('settled unusable (%s): no hold, fail-open preserved, ordinary body available', async (_label, over) => {
-      const p = props({ countFocusRequested: true, recountTasksSettled: true, ...over });
+      const p = mgmtProps({ countFocusRequested: true, recountTasksSettled: true, ...over });
       render(<WmsModuleFT2 {...p} />);
 
       await waitFor(() => expect(p.onCountSessionFocusChange).toHaveBeenCalledWith(TASK_ID, false));
@@ -398,7 +404,7 @@ describe('CONTRACT-1164-UI-11 — invalid focused count URL fails open', () => {
     });
 
     it('ordinary cycle recount entry (countTaskId only): no hold while resolving', () => {
-      const p = props({ countFocusRequested: false, recountTasks: [], recountTasksSettled: false });
+      const p = mgmtProps({ countFocusRequested: false, recountTasks: [], recountTasksSettled: false });
       render(<WmsModuleFT2 {...p} />);
 
       expect(hold()).not.toBeInTheDocument();

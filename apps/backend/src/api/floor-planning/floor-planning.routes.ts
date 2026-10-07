@@ -125,12 +125,17 @@ router.delete(
   httpDeleteZone
 );
 
+// GH-1222: read-only warehouse geometry is OPERATIONAL infrastructure (WMS
+// pick map, recount bin classification) — warehouse.operations + wms:read, so
+// operators keep it at Core+. This is NOT Floor Planning management access:
+// /layout, /grid/occupancy, bin logs/stats, zone writes and labels below stay
+// warehouse.floor_planning + floor-planning:read/write.
 router.get(
   '/grid',
   authenticateToken,
   requireFt2,
-  requireCapability('warehouse.floor_planning'),
-  requireAction('floor-planning:read'),
+  requireCapability('warehouse.operations'),
+  requireAction('wms:read'),
   httpGetGrid
 );
 

@@ -32,6 +32,10 @@ export const LOCKED_ACTIONS = new Set([
   'billing:write',
   'shopify-billing:write',
   'wms:settings:write',
+  // GH-1222: ratified owner/admin management boundaries — never configurable.
+  'wms:analytics:read',
+  'wms:analytics:display:write',
+  'wms:problem:resolve',
 ]);
 
 export interface PermissionRow {
@@ -76,6 +80,9 @@ const ACTION_LABELS: Record<string, { label: string; domain: string }> = {
   'wms:exception:report':   { label: 'Report WMS exception',      domain: 'Warehouse' },
   'wms:ship:confirm':       { label: 'Confirm shipment',          domain: 'Warehouse' },
   'wms:settings:write':     { label: 'WMS settings',              domain: 'Warehouse' },
+  'wms:analytics:read':     { label: 'View warehouse analytics',  domain: 'Warehouse' },
+  'wms:analytics:display:write': { label: 'Manage warehouse analytics displays', domain: 'Warehouse' },
+  'wms:problem:resolve':    { label: 'Resolve warehouse problems', domain: 'Warehouse' },
   'wms:recount:create':     { label: 'Create inventory counts',   domain: 'Warehouse' },
   'wms:recount:read':       { label: 'View inventory counts',     domain: 'Warehouse' },
   'wms:recount:claim':      { label: 'Claim inventory counts',    domain: 'Warehouse' },

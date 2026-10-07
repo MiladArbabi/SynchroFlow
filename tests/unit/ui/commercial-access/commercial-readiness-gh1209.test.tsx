@@ -187,9 +187,12 @@ describe('GH-1209 B — Sidenav RESOLVED DENY control', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/wms');
   });
 
+  // GH-1222: Problem Center was removed from this list. Its BASE navigation is
+  // operational (warehouse.operations, Core+) under the ratified compositional
+  // Problem Center contract — see the GH-1222 case below. Floor Planning keeps
+  // its Growth lock unchanged.
   it.each([
     ['Floor Planning', 'Growth', 'growth'],
-    ['Problem Center', 'Growth', 'growth'],
   ])('GREEN CONTROL: resolved Core keeps %s locked with its %s badge and upgrade prompt', async (title, badge, requiredTier) => {
     await renderSidenav({ tier: 'core' });
     const row = navRow(title);
@@ -199,6 +202,19 @@ describe('GH-1209 B — Sidenav RESOLVED DENY control', () => {
     fireEvent.click(row);
     expect(screen.getByTestId('upgrade-prompt')).toHaveAttribute('data-required-tier', requiredTier);
     expect(screen.getByTestId('location')).toHaveTextContent('/wms');
+  });
+});
+
+describe('GH-1222 — Problem Center base navigation is operational (supersedes the GH-1209 B Growth lock)', () => {
+  it('EXPECTED RED: resolved Core shows Problem Center without a Growth paygate and navigates to /problem-center', async () => {
+    await renderSidenav({ tier: 'core' });
+    const row = navRow('Problem Center');
+    expect(tierBadge(row)).toBeNull();
+    expect(row).not.toHaveStyle({ opacity: LOCKED_OPACITY });
+
+    fireEvent.click(row);
+    expect(screen.queryByTestId('upgrade-prompt')).toBeNull();
+    expect(screen.getByTestId('location')).toHaveTextContent('/problem-center');
   });
 });
 

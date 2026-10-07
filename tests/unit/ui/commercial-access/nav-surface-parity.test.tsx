@@ -40,6 +40,11 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('hooks/useAppTheme', () => ({ useAppTheme: () => ({}) }));
+// ModuleTabBar reads the role via useAuth() (GH-1222). Neutral owner identity:
+// this suite is about commercial parity, not role visibility.
+jest.mock('contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1, shop_id: 1, role: 'owner' } }),
+}));
 
 // ModuleTabBar always renders <UpgradePrompt mode="modal">, whose modal branch
 // calls useEntitlements() and throws outside a provider. Not under test here.
@@ -358,6 +363,8 @@ import {
   standardContextForTier,
 } from '@lasyncro/commercial-policy';
 import { buildCommercialContext } from 'runtime/commercialContext';
+import { bootstrapNavGroups } from '../../../../apps/frontend/src/runtime/navBootstrap';
+import { _resetNav, getNavigation } from '../../../../apps/frontend/src/runtime/registerNav';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const readSrc = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -398,38 +405,80 @@ const RATIFIED: Record<typeof TIERS[number], Record<string, boolean>> = {
 const canonicalAllows = (cap: string, tier: typeof TIERS[number]): boolean => RATIFIED[tier][cap];
 
 // Which nav id / tab id each capability maps to on each surface.
+// GH-1222: Problem Center BASE navigation (product-issues) is operational and
+// declares warehouse.operations. warehouse.problem_center gates Growth-only
+// functions INSIDE the page, so it has NO base nav/tab surface: it is excluded
+// from the B12 surface-expression maps and proven absent explicitly below
+// (GH-1222 B12-PC), rather than mapped to an empty — vacuously true — list.
 const NAV_ID_FOR: Record<string, string[]> = {
-  'warehouse.operations': ['warehouse', 'wms-operations'],
+  'warehouse.operations': ['warehouse', 'wms-operations', 'product-issues'],
   'warehouse.analytics': ['wms-analytics'],
   'warehouse.floor_planning': ['floor-planning'],
-  'warehouse.problem_center': ['product-issues'],
   'purchasing.core': ['purchasing', 'open-pos', 'suppliers'],
   'purchasing.sourcing': ['sourcing'],
   'demand.forecasting': ['demand'],
 };
 const TAB_SRC_FOR: Record<string, { src: string; ids: string[] }> = {
-  'warehouse.operations': { src: WAREHOUSE_TABS_SRC, ids: ['wms-operations'] },
+  'warehouse.operations': { src: WAREHOUSE_TABS_SRC, ids: ['wms-operations', 'product-issues'] },
   'warehouse.analytics': { src: WAREHOUSE_TABS_SRC, ids: ['wms-analytics'] },
   'warehouse.floor_planning': { src: WAREHOUSE_TABS_SRC, ids: ['floor-planning'] },
-  'warehouse.problem_center': { src: WAREHOUSE_TABS_SRC, ids: ['product-issues'] },
   'purchasing.core': { src: PURCHASING_TABS_SRC, ids: ['purchasing-pos', 'purchasing-suppliers'] },
   'purchasing.sourcing': { src: PURCHASING_TABS_SRC, ids: ['purchasing-sourcing'] },
   'demand.forecasting': { src: INVENTORY_TABS_SRC, ids: ['demand'] },
 };
 
+/** Proof capabilities that own a base nav/tab surface (see NAV_ID_FOR note). */
+const BASE_SURFACE_CAPS = PROOF_CAPS.filter((c) => c !== 'warehouse.problem_center');
+
 const capRefRe = (cap: string, id: string) =>
   new RegExp(`id:\\s*'${id}'[\\s\\S]{0,400}?capabilityId:\\s*'${cap.replace(/\./g, '\\.')}'`);
 
 describe('B12 — every proof capability is expressed as a CapabilityId on all three surfaces', () => {
-  it.each(PROOF_CAPS)('EXPECTED RED: Sidenav (navBootstrap) declares capabilityId for %s', (cap) => {
+  it.each(BASE_SURFACE_CAPS)('EXPECTED RED: Sidenav (navBootstrap) declares capabilityId for %s', (cap) => {
     const ok = NAV_ID_FOR[cap].every((id) => capRefRe(cap, id).test(NAV_BOOTSTRAP_SRC));
     expect(ok).toBe(true);
   });
 
-  it.each(PROOF_CAPS)('EXPECTED RED: ModuleTabBar tab config declares capabilityId for %s', (cap) => {
+  it.each(BASE_SURFACE_CAPS)('EXPECTED RED: ModuleTabBar tab config declares capabilityId for %s', (cap) => {
     const { src, ids } = TAB_SRC_FOR[cap];
     const ok = ids.every((id) => capRefRe(cap, id).test(src));
     expect(ok).toBe(true);
+  });
+});
+
+describe('GH-1222 B12-PC — Problem Center base surfaces are operational; warehouse.problem_center has none', () => {
+  type NavNode = { id: string; capabilityId?: string; children?: NavNode[] };
+  /** The registered Warehouse nav item and every child, from the real registry. */
+  function warehouseNavNodes(): NavNode[] {
+    _resetNav();
+    bootstrapNavGroups();
+    const items = getNavigation().flatMap((g) => (g.items ?? []) as NavNode[]);
+    const warehouse = items.find((i) => i.id === 'warehouse');
+    expect(warehouse).toBeDefined();
+    return [warehouse as NavNode, ...((warehouse as NavNode).children ?? [])];
+  }
+
+  it('GREEN: no Warehouse base nav registration declares warehouse.problem_center', () => {
+    const nodes = warehouseNavNodes();
+    expect(nodes.length).toBeGreaterThan(1);
+    expect(nodes.filter((n) => n.capabilityId === 'warehouse.problem_center').map((n) => n.id)).toHaveLength(0);
+  });
+
+  it('GREEN: no Warehouse base tab declares warehouse.problem_center', () => {
+    expect(WAREHOUSE_MODULE_TABS.length).toBeGreaterThan(0);
+    expect(WAREHOUSE_MODULE_TABS.filter((t) => t.capabilityId === 'warehouse.problem_center').map((t) => t.id)).toHaveLength(0);
+  });
+
+  it('GREEN: Problem Center base nav (product-issues) and tab declare warehouse.operations', () => {
+    expect(warehouseNavNodes().find((n) => n.id === 'product-issues')?.capabilityId).toBe('warehouse.operations');
+    expect(WAREHOUSE_MODULE_TABS.find((t) => t.id === 'product-issues')?.capabilityId).toBe('warehouse.operations');
+  });
+
+  it('GREEN CONTROL: warehouse.problem_center remains a canonical Growth capability', () => {
+    expect(CAPABILITY_REQUIREMENTS['warehouse.problem_center']).toMatchObject({
+      moduleId: 'problem-center',
+      minimumTier: 'growth',
+    });
   });
 });
 

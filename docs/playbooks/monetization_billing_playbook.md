@@ -104,6 +104,29 @@ explicit grants or required internal plumbing, not an alternate standard matrix.
 `requireCapability()` and `evaluateAccess()` are the preferred enforcement path,
 with commercial entitlement evaluated independently from RBAC/permission checks.
 
+### GH-1222 — Role/navigation/management-boundary parity (2026-10-07)
+
+The capability matrix above is unchanged. GH-1222 changes which capability the
+base Problem Center surface binds to, not the canonical policy.
+
+- **Problem Center base surface.** The base Warehouse Problem Center
+  navigation item, tab and page entry use `warehouse.operations`, so they
+  follow Warehouse Operations availability (Core+). The base operational queue
+  is not blanket-gated by `warehouse.problem_center`.
+- **`warehouse.problem_center` remains a canonical Growth capability.** Any
+  feature specifically bound to `warehouse.problem_center` retains its
+  canonical Growth commercial semantics; the base operational Problem Center
+  surface is no longer one of those bindings.
+- **Commercial and RBAC/action authority stay independent checks.** An
+  operator may enter the base operational Problem Center queue when
+  `warehouse.operations` permits it, but does not receive management or
+  destructive resolution authority. Owner/admin resolution is enforced
+  separately by backend action authorization (`wms:problem:resolve`).
+- **Navigation order.** Role-ineligible surfaces are hidden before commercial
+  presentation, so the UI never shows upgrade messaging for a destination the
+  user's role can never access (for example, operators do not see Floor
+  Planning or Analytics, or their Growth/Core upsells).
+
 ### Explicit non-goals
 
 MON-REM-01A did not change quota enforcement, overage behavior, billing-provider

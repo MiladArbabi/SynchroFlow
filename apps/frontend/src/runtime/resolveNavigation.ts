@@ -43,8 +43,10 @@ interface ResolveNavigationInput {
   lifecyclePhase: UILifecyclePhase;
   /**
    * Current user role — used to restrict nav to role-permitted items.
-   * operator: WMS only. owner/admin: full nav.
-   * Will be superseded by action-level entitlements in WM-19.
+   * operator: the Warehouse item with its operator-eligible children only
+   * (OPERATOR_WAREHOUSE_CHILD_IDS). owner/admin: full nav.
+   * Latent correctness only — AppLayout never renders the sidenav for
+   * operators (GH-1222). Backend requireAction remains the authority.
    */
   userRole?: string;
   /**
@@ -60,6 +62,12 @@ interface ResolveNavigationInput {
    */
   commercialResolved?: boolean;
 }
+
+// GH-1222: the canonical top-level Warehouse nav id (navBootstrap), and the
+// Warehouse children an operator is role-eligible for. Floor Planning and
+// Analytics are owner/admin management surfaces.
+const WAREHOUSE_NAV_ID = 'warehouse';
+const OPERATOR_WAREHOUSE_CHILD_IDS: ReadonlySet<string> = new Set(['wms-operations', 'product-issues']);
 
 export function resolveNavigation({
   entitlements,
@@ -116,8 +124,11 @@ export function resolveNavigation({
 
         if (!lifecycleAllowed) continue;
 
-        // 🔒 Role gate: operators only see WMS
-        if (userRole === 'operator' && item.id !== 'wms') continue;
+        // 🔒 Role gate (before any commercial evaluation): operators only see
+        // the Warehouse item. Its role-ineligible children are removed below,
+        // before their commercial decision is computed.
+        const isOperator = userRole === 'operator';
+        if (isOperator && item.id !== WAREHOUSE_NAV_ID) continue;
 
             // 🔐 Entitlement + Tier Visibility Gate (MON-06)
             const itemDecision = commercialResolved && item.capabilityId
@@ -140,6 +151,7 @@ export function resolveNavigation({
             // ModuleTabBar correctly blocks. Resolve each child's visibility
             // the same way the parent is resolved above.
             const resolvedChildren = (item.children ?? [])
+              .filter((child) => !isOperator || OPERATOR_WAREHOUSE_CHILD_IDS.has(child.id))
               .map((child) => {
                 const childDecision = commercialResolved && child.capabilityId
                   ? decideCapability(child.capabilityId, commercialContext)

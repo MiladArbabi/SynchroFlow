@@ -427,6 +427,15 @@ export type WmsModuleFT2Props = {
    * real authority regardless of this prop's value.
    */
   canReassignCount?: boolean;
+  /**
+   * GH-1222: advisory role gate for recount MANAGEMENT entry ("Reconcile
+   * inventory" create flow, and with it "Set up bins"). Omitted means hidden
+   * (fail closed). Evaluated BEFORE the commercial recountLocked upsell, so a
+   * role-ineligible user never sees the Core badge or prompt. Does NOT gate
+   * recount execution (claim/count). Backend recount create/review/commit
+   * actions remain authoritative.
+   */
+  canManageRecount?: boolean;
   /** Count task ID from URL param — restores an active counting session. */
   pendingCountTaskId?: string | null;
   /**
@@ -1346,6 +1355,7 @@ function WmsModuleFT2Inner({
   onCompleteOpening,
   currentUserId,
   canReassignCount,
+  canManageRecount = false,
   pendingCountTaskId,
   countFocusRequested,
   onCountSessionEnter,
@@ -2316,6 +2326,9 @@ function WmsModuleFT2Inner({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
+          {/* GH-1222: role eligibility before commercial eligibility — no
+              management CTA, Core badge or upsell without canManageRecount. */}
+          {canManageRecount && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Button
               variant="contained"
@@ -2351,6 +2364,7 @@ function WmsModuleFT2Inner({
               </Box>
             )}
           </Box>
+          )}
           {/*<WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} /> */}
           {/* {isOnline && (
             <Box sx={{

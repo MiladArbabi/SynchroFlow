@@ -14,6 +14,7 @@ import { axiosInstance } from 'api/axiosConfig';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { CommercialGate } from '../../components/CommercialGate';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
+import { useAuth } from 'contexts/AuthContext';
 
 function relativeAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -194,6 +195,12 @@ function PendingDecisionsStrip() {
 
 export default function ProblemCenterPage() {
   const { data, isLoading, isError, refetch } = useProblemCenter();
+  // GH-1222: pack approve/hold decisions (wms:batch:release) and problem
+  // resolution (wms:problem:resolve) are owner/admin management. The strip is
+  // not mounted for operators, so its pending-decisions query never runs for
+  // them, and the module hides resolution controls. Advisory UI gate only.
+  const { user } = useAuth();
+  const canManage = user?.role === 'owner' || user?.role === 'admin';
 
   const handleResolve = useCallback(async (exceptionId: string, action: string, note: string) => {
     await axiosInstance.post(`/api/v1/wms/problem-center/${exceptionId}/resolve`, {
@@ -203,21 +210,27 @@ export default function ProblemCenterPage() {
   }, []);
 
   return (
-    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.problem_center (Core+) gate
-    // — a direct URL into /problem-center/* must not bypass this.
-    <CommercialGate capabilityId="warehouse.problem_center">
+    // GH-1222: the BASE page is the operational exception queue and follows
+    // warehouse.operations (its list/resolve APIs are warehouse.operations).
+    // warehouse.problem_center still gates Growth-only functions inside the
+    // surface, never entry to it. A direct URL into /problem-center/* must not
+    // bypass this gate.
+    <CommercialGate capabilityId="warehouse.operations">
       {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts. */}
       <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
       {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
-      <Box sx={{ px: '40px', pt: '24px' }}>
-        <PendingDecisionsStrip />
-      </Box>
+      {canManage && (
+        <Box sx={{ px: '40px', pt: '24px' }}>
+          <PendingDecisionsStrip />
+        </Box>
+      )}
       <ProblemCenterModuleFT2
         data={data ?? null}
         isLoading={isLoading}
         isError={isError}
         onResolve={handleResolve}
         onRefresh={refetch}
+        canResolve={canManage}
       />
     </CommercialGate>
   );

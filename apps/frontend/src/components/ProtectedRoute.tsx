@@ -19,6 +19,16 @@ import { useAuth } from 'contexts/AuthContext';
  * - Depend on app providers
  */
 
+/** True when `pathname` is `base` itself or a path-segment descendant of it. */
+function isWithin(pathname: string, base: string): boolean {
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+function isOperatorAdmitted(pathname: string): boolean {
+  if (isWithin(pathname, '/wms/analytics')) return false;
+  return isWithin(pathname, '/wms') || isWithin(pathname, '/problem-center');
+}
+
 // apps/frontend/src/components/ProtectedRoute.tsx
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoggedIn, isLoading, accessToken, user } = useAuth();
@@ -54,13 +64,15 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   /**
-   * OPERATOR ROUTE GUARD (WM-31)
-   * ----------------------------
-   * Operators are restricted to /wms only.
-   * Any other route redirects to /wms.
-   * Will be superseded by action-level entitlements in WM-19.
+   * OPERATOR ROUTE GUARD (WM-31, GH-1222)
+   * -------------------------------------
+   * Operators are admitted to warehouse execution surfaces only:
+   *   /wms and its descendants, EXCEPT /wms/analytics (owner/admin management)
+   *   /problem-center (operational exception queue)
+   * Everything else redirects to /wms. Role-route UX admission only — backend
+   * requireAction remains the authority; no commercial inspection here.
    */
-  if (user?.role === 'operator' && !location.pathname.startsWith('/wms')) {
+  if (user?.role === 'operator' && !isOperatorAdmitted(location.pathname)) {
     return <Navigate to="/wms" replace />;
   }
 

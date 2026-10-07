@@ -43,6 +43,13 @@ export type ProblemCenterModuleFT2Props = {
   isError: boolean;
   onResolve: (taskId: string, action: string, note: string) => Promise<void>;
   onRefresh: () => void;
+  /**
+   * GH-1222: advisory presentation gate for management resolution (Resolve
+   * CTA, resolution dialog, Discard / Write Off / … choices). Omitted means
+   * hidden (fail closed). Not a security boundary — the backend's
+   * requireAction('wms:problem:resolve') remains authoritative.
+   */
+  canResolve?: boolean;
 };
 
 const EXCEPTION_TYPE_LABELS: Record<string, { label: string; color: 'error' | 'warning' | 'default' }> = {
@@ -128,7 +135,7 @@ const fmtAge = (iso: string): string => {
 };
 
 function ProblemCenterModuleFT2Inner({
-  data, isLoading, isError, onResolve, onRefresh,
+  data, isLoading, isError, onResolve, onRefresh, canResolve = false,
 }: ProblemCenterModuleFT2Props) {
   const theme = useTheme();
   const [stageFilter, setStageFilter] = useState<'all' | 'pick' | 'pack' | 'stow' | 'receive'>('all');
@@ -175,7 +182,7 @@ function ProblemCenterModuleFT2Inner({
   const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
   const handleResolve = async () => {
-    if (!resolveDialog) return;
+    if (!canResolve || !resolveDialog) return;
     setResolving(true);
     setResolveError(null);
     try {
@@ -335,7 +342,7 @@ function ProblemCenterModuleFT2Inner({
                     {/* Action */}
                     {isResolved ? (
                       <Typography sx={{ fontSize: 11, color: theme.palette.success.main, fontWeight: 500 }}>Resolved</Typography>
-                    ) : (
+                    ) : !canResolve ? null : (
                       <Box
                         onClick={() => { setResolveDialog({ id: t.problem_task_id, exceptionType: t.exception_type }); setResolutionNote(''); setResolutionAction(DEFAULT_ACTION[t.exception_type] ?? 'write_off'); setResolveError(null); }}
                         sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
@@ -381,6 +388,8 @@ function ProblemCenterModuleFT2Inner({
       )}
 
       {/* ── RESOLVE DIALOG ───────────────────────────────────── */}
+      {/* GH-1222: never mounted without canResolve, even if stale dialog state exists. */}
+      {canResolve && (
       <Dialog open={!!resolveDialog} onClose={() => setResolveDialog(null)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 500 }}>Resolve Exception</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '12px !important' }}>
@@ -434,6 +443,7 @@ function ProblemCenterModuleFT2Inner({
           </Button>
         </DialogActions>
       </Dialog>
+      )}
 
     </Box>
   );

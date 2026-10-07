@@ -303,12 +303,16 @@ router.post(
 // is already released and no stow task can ever be created to recover it.
 // The recovery path this hands off to (/stow-tasks/:taskId/claim|confirm) is
 // starter, so this is the only gate on the chain.
+//
+// GH-1222: the commercial gate stays operational, but the DECISION to
+// resolve/discard/write_off is management authority (wms:problem:resolve,
+// owner/admin). Operators keep exception reporting via wms:exception:report.
 router.post(
   '/problem-center/:taskId/resolve',
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.operations'),
-  requireAction('wms:exception:report'),
+  requireAction('wms:problem:resolve'),
   httpResolveProblemTask
 );
 
@@ -480,14 +484,14 @@ router.get(
 /**
  * @route   GET /api/v1/wms/analytics
  * @desc    Pick analytics — accuracy, velocity, error rate by SKU, batch times
- * @access  Private — FT2, Growth tier, wms:read action
+ * @access  Private — FT2, warehouse.analytics, wms:analytics:read (owner/admin, GH-1222)
  */
 router.get(
   '/analytics',
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetPickAnalytics
 );
 
@@ -496,7 +500,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetLiveCapacity
 );
 
@@ -505,7 +509,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetOperatorPerformance
 );
 
@@ -514,7 +518,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetPipelineVelocity
 );
 
@@ -523,7 +527,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetExceptionIntelligence
 );
 
@@ -532,7 +536,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetCostStory
 );
 
@@ -541,7 +545,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpGetActivityStream
 );
 
@@ -553,7 +557,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:display:write'),
   httpCreateDisplayToken
 );
 router.get(
@@ -561,7 +565,7 @@ router.get(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:read'),
   httpListDisplayTokens
 );
 router.patch(
@@ -569,7 +573,7 @@ router.patch(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:display:write'),
   httpPatchDisplayToken
 );
 router.post(
@@ -577,7 +581,7 @@ router.post(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:display:write'),
   httpRotateDisplayToken
 );
 router.delete(
@@ -585,7 +589,7 @@ router.delete(
   authenticateToken,
   requireFt2,
   requireCapability('warehouse.analytics'),
-  requireAction('wms:read'),
+  requireAction('wms:analytics:display:write'),
   httpRevokeDisplayToken
 );
 

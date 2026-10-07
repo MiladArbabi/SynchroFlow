@@ -204,7 +204,8 @@ independent, permanently expanded workflow sections.
 
 Current home-page hierarchy:
 
-1. Warehouse header with the global `Reconcile inventory` action.
+1. Warehouse header with the `Reconcile inventory` management action
+   (owner/admin only — see GH-1222 below).
 2. WorkTally with `PICKING`, `PACKING`, `PUTTING AWAY`, `RECEIVING`, and
    `COUNTING` as informational metrics only.
 3. Compact `Quick scan` surface.
@@ -267,6 +268,40 @@ Verification completed in the live browser:
 - `modules/wms` build passed;
 - frontend TypeScript remained at the existing 19-error baseline with zero
   errors in `WmsModuleFT2.tsx`.
+
+### Recount management entry vs recount execution — GH-1222 (2026-10-07)
+
+Recount has two distinct role contracts on Warehouse → Operations.
+
+**Management entry — owner/admin only.** Owner/admin see the header
+`Reconcile inventory` action, its commercial lock / `Core` upgrade treatment
+when recount is not entitled, and the `Set up bins` path inside the
+reconcile (count-creation) flow. Operators see none of these: no
+`Reconcile inventory` CTA, no `Set up bins` path, and no `Core` upsell for
+these role-forbidden controls.
+
+**Execution — operators keep it.** When the merchant is commercially
+entitled, operators still see applicable count tasks in Inventory checks and
+run them under the existing execution contract: `Claim & Start Count`,
+count/scan, skip, findings, and submit/close. GH-1222 does not exclude
+operators from recount.
+
+**Evaluation order.** Role eligibility is evaluated before commercial
+eligibility:
+
+```
+ROLE ELIGIBILITY
+    ↓
+COMMERCIAL ELIGIBILITY
+```
+
+A user who is role-ineligible for a management action never receives an
+upgrade prompt for that action. Commercial treatment of the execution surface
+(`recountLocked` on Inventory checks) is unchanged.
+
+**Security boundary.** Hiding these controls in the frontend is advisory
+presentation only. Backend `requireAction` recount authorization remains
+authoritative.
 
 ---
 

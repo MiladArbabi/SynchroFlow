@@ -25,6 +25,7 @@ import { ArrowUp } from 'lucide-react';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { usePlanEntitlement } from '../hooks/usePlanEntitlement';
 import { useCommercialAccess } from '../runtime/commercialContext';
+import { useAuth } from '../contexts/AuthContext';
 import { UpgradePrompt } from './UpgradePrompt';
 import { getCapabilityPresentation } from '../commercial/capabilityPresentation';
 import type { PlanFeature } from '../hooks/usePlanEntitlement';
@@ -50,7 +51,16 @@ export interface ModuleTab {
   capabilityId?: CapabilityId;
   /** Optional benefit lines for this tab's upgrade modal. */
   upgradeBenefits?: string[];
+  /**
+   * GH-1222: advisory role visibility. When set, a user whose role is not
+   * listed never sees the tab — it is filtered out BEFORE any commercial
+   * decision, so it can never render a tier badge or open an UpgradePrompt.
+   * Presentation only: backend requireAction remains the authority.
+   */
+  allowedRoles?: readonly ModuleTabRole[];
 }
+
+export type ModuleTabRole = 'owner' | 'admin' | 'operator';
 
 interface ModuleTabBarProps {
   tabs: ModuleTab[];
@@ -67,6 +77,15 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   // (useCommercialAccess) consume — tier floor UNION the shop's live
   // entitlement snapshot (modules + flags), never a hand-rolled/empty one.
   const { decide, isResolved } = useCommercialAccess();
+  const { user } = useAuth();
+  const role = user?.role;
+
+  // GH-1222: role eligibility first. A tab is removed only when the user's
+  // role is KNOWN and not listed (unknown role is not a role denial). Removed
+  // tabs never reach the commercial lock/upsell logic below.
+  const visibleTabs = tabs.filter(
+    (tab) => !tab.allowedRoles || role === undefined || tab.allowedRoles.includes(role as ModuleTabRole),
+  );
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
@@ -125,7 +144,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
         pt: '8px',
         gap: '2px',
       }}>
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const active = isActive(tab);
           const locked = isLocked(tab);
 

@@ -17,6 +17,11 @@ jest.mock('hooks/useAppTheme', () => ({
   useAppTheme: () => ({}),
 }));
 
+// ModuleTabBar reads the role via useAuth() (GH-1222). Neutral owner identity:
+// this suite is about commercial parity, not role visibility.
+jest.mock('contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1, shop_id: 1, role: 'owner' } }),
+}));
 jest.mock('hooks/usePlanEntitlement', () => ({
   usePlanEntitlement: () => ({
     tier: mockTier,

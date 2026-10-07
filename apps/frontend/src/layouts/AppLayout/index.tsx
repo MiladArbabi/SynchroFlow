@@ -1,8 +1,8 @@
 // apps/frontend/src/layouts/AppLayout/index.tsx
 import React, { ReactNode, useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { axiosInstance } from "api/axiosConfig";
-import { Box } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
@@ -16,7 +16,7 @@ import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
 import { getWarehouseFocusSession } from '../../utils/warehouseFocus';
 import { useAuth } from 'contexts/AuthContext';
 import { useIdleTimeout } from 'hooks/useIdleTimeout';
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, LogOut } from "lucide-react";
 
 interface AppLayoutProps {
   children?: ReactNode;
@@ -74,6 +74,24 @@ const AppLayout = (props: AppLayoutProps) => {
   // admission stays owned by ProtectedRoute. These visibility booleans are
   // the single source for both rendering chrome and reserving its space.
   const isOperator = user?.role === 'operator';
+  const navigate = useNavigate();
+
+  // GH-1222: operators have no topnav/sidenav, so the shell owns their only
+  // session control. Same contract as ProfileSection: the logout request is
+  // non-fatal; the local session is always cleared and the user lands on /login.
+  const operatorIdentity = user?.first_name
+    ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
+    : user?.email ?? 'Signed in';
+  const handleOperatorLogout = async () => {
+    try {
+      await axiosInstance.post('/api/v1/auth/logout');
+    } catch {
+      // non-fatal
+    } finally {
+      logout();
+      navigate('/login');
+    }
+  };
   // Idle timeout — log out after 15min of inactivity, save route for return-to on re-login.
   useIdleTimeout(() => {
     const currentPath = window.location.pathname + window.location.search;
@@ -254,6 +272,38 @@ const AppLayout = (props: AppLayoutProps) => {
                 status={systemHealth.status}
                 lagSeconds={systemHealth.snapshot?.lag_seconds}
               />
+            )}
+
+            {/* OPERATOR SESSION CONTROL (GH-1222) — identity + Log out only.
+                Role-driven and independent of execution focus, so it stays
+                available during focused warehouse sessions. Deliberately not
+                a topnav: no navigation, settings, billing or theme. */}
+            {isOperator && (
+              <Box
+                data-testid="operator-session-control"
+                sx={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 2,
+                  py: 0.75,
+                  flexShrink: 0,
+                }}
+              >
+                <Typography sx={{ fontSize: 12, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+                  {operatorIdentity}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => void handleOperatorLogout()}
+                  startIcon={<LogOut size={14} strokeWidth={1.75} />}
+                  sx={{ fontSize: 12, color: "var(--ink-3)", textTransform: "none", minWidth: 0, px: 1 }}
+                >
+                  Log out
+                </Button>
+              </Box>
             )}
 
             {/* POST-TRIAL INTERSTITIAL (UX-07) — owner/admin only, as above */}

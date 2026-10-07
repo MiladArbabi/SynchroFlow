@@ -74,7 +74,9 @@ describe('C6 — direct-route commercial parity', () => {
       'wms-operations': 'warehouse.operations',
       'floor-planning': 'warehouse.floor_planning',
       'wms-analytics': 'warehouse.analytics',
-      'product-issues': 'warehouse.problem_center',
+      // GH-1222: Problem Center BASE access is operational (warehouse.operations);
+      // warehouse.problem_center gates Growth-only functions inside the page.
+      'product-issues': 'warehouse.operations',
       purchasing: 'purchasing.core',
       'open-pos': 'purchasing.core',
       suppliers: 'purchasing.core',
@@ -207,7 +209,8 @@ describe('B10 — direct route subtrees carry the canonical commercial gate', ()
     { name: '/wms/analytics',      page: FE('pages/ft2-pages/WmsAnalyticsPage.tsx'),   capabilityId: 'warehouse.analytics' },
     { name: '/suppliers-portal/*', page: FE('pages/ft2-pages/SuppliersPortalPage.tsx'), capabilityId: 'purchasing.core' },
     { name: '/floor-planning/*',   page: FE('pages/ft2-pages/FloorPlanningPage.tsx'),  capabilityId: 'warehouse.floor_planning' },
-    { name: '/problem-center/*',   page: FE('pages/ft2-pages/ProblemCenterPage.tsx'),  capabilityId: 'warehouse.problem_center' },
+    // GH-1222: the base Problem Center page is operational (warehouse.operations).
+    { name: '/problem-center/*',   page: FE('pages/ft2-pages/ProblemCenterPage.tsx'),  capabilityId: 'warehouse.operations' },
     { name: '/demand/*',           page: FE('pages/ft2-pages/DemandPage.tsx'),         capabilityId: 'demand.forecasting' },
   ];
 
