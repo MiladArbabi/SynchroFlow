@@ -177,7 +177,7 @@ export class WebhookRouter {
       await db.transaction(async (trx) => {
         await trx.raw(`SET LOCAL app.current_tenant = '${resolvedShopId}'`);
 
-        const isFirstSeen = await WebhookLedgerService.recordReceived({
+        const claimedForProcessing = await WebhookLedgerService.recordReceived({
           shopId: resolvedShopId,
           integration: envelope.integration,
           externalEventId: envelope.eventId,
@@ -194,9 +194,10 @@ export class WebhookRouter {
          * - duplicate domain events
          * - projection inconsistencies
          *
-         * Ledger is source of truth.
+         * Ledger is source of truth: only a delivery that claimed the
+         * event (new insert or reclaimed failed retry) may run the handler.
          */
-        if (!isFirstSeen) {
+        if (!claimedForProcessing) {
           console.warn('[WEBHOOK_DUPLICATE_STOPPED_AT_ROUTER]', {
             eventId: envelope.eventId,
             integration: envelope.integration,

@@ -36,6 +36,71 @@ export class WebhookLedgerService {
       throw new Error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]');
     }
 
+    /**
+     * FAILED-EVENT RETRY CLAIM (GH-1224)
+     * ----------------------------------
+     * A failed delivery is retryable: the provider redelivers the same
+     * event id after our 500. Reclaim failed → received so this delivery
+     * owns the retry, clearing the stale error for the new attempt.
+     *
+     * SKIP LOCKED (CRITICAL): a delivery arriving while another retry owns
+     * the row must NOT wait on its lock — waiting would let it reclaim the
+     * row after that owner commits failed, creating a second owner in the
+     * same delivery wave. It skips instead and falls through to the
+     * existence check below. received_at / payload are left untouched.
+     */
+    const reclaimed = await trx.raw(
+      `
+        WITH retry_candidate AS (
+          SELECT id
+          FROM integration_webhook_events
+          WHERE shop_id = ?
+            AND integration = ?
+            AND external_event_id = ?
+            AND processing_status = 'failed'
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE integration_webhook_events AS event
+        SET processing_status = 'received',
+            processing_error = NULL
+        FROM retry_candidate
+        WHERE event.id = retry_candidate.id
+        RETURNING event.id
+      `,
+      [params.shopId, params.integration, params.externalEventId]
+    );
+
+    if (reclaimed.rows.length > 0) {
+      console.warn('[WEBHOOK_FAILED_EVENT_RECLAIMED]', {
+        integration: params.integration,
+        externalEventId: params.externalEventId,
+      });
+      return true;
+    }
+
+    /**
+     * EXISTENCE CHECK (CRITICAL)
+     * --------------------------
+     * Plain MVCC read, no locking. A visible row is received / processed /
+     * ignored, or a failed row SKIP LOCKED skipped because another retry
+     * owns it — never a row this delivery may process.
+     */
+    const existing = await trx('integration_webhook_events')
+      .where({
+        shop_id: params.shopId,
+        integration: params.integration,
+        external_event_id: params.externalEventId,
+      })
+      .first('id');
+
+    if (existing) {
+      console.warn('[WEBHOOK_DUPLICATE_IGNORED]', {
+        integration: params.integration,
+        externalEventId: params.externalEventId,
+      });
+      return false;
+    }
+
     const result = await trx('integration_webhook_events')
       .insert({
         shop_id: params.shopId,
@@ -56,7 +121,11 @@ export class WebhookLedgerService {
      * -----------------------------------
      * Postgres returns:
      * - [row] → insert happened
-     * - []    → conflict (duplicate)
+     * - []    → conflict (lost a concurrent first-insert race)
+     *
+     * A conflict is NEVER followed by a failed-row reclaim: the concurrent
+     * winner may still fail and commit failed, and this in-flight delivery
+     * must not become a second owner. A later redelivery may retry.
      */
     const isDuplicate = !result || result.length === 0;
 
@@ -68,10 +137,11 @@ export class WebhookLedgerService {
       }
 
       /**
-       * EXPLICIT IDEMPOTENCY SIGNAL (CRITICAL)
+       * PROCESSING OWNERSHIP SIGNAL (CRITICAL)
        * --------------------------------------
-       * TRUE  → event inserted (first-seen)
-       * FALSE → duplicate (must STOP execution upstream)
+       * TRUE  → this delivery claimed the event for processing
+       *         (new insert, or reclaimed failed event)
+       * FALSE → not claimed (must STOP execution upstream)
        */
       return !isDuplicate;
     }

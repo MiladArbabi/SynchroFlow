@@ -2989,3 +2989,79 @@ This proof covers:
 It does **not** substitute for a separate genuine signed App-Store fresh-install test of the `/shopify/install` HMAC/timestamp entry point.
 
 <!-- END SHOP-REVIEW-SYNC-ANIMATION-THEME-07 -->
+
+<!-- BEGIN TIER-09-GH-1224 -->
+
+## TIER-09 / GH-1224 — failed webhook redelivery recovery
+
+**Date:** 2026-10-07
+
+**Status:** IMPLEMENTED + LOCALLY VERIFIED. Not deployed, not
+production-certified, not closed.
+
+### Defect
+
+A handler failure persisted `processing_status = failed` and returned HTTP
+`500`, so Shopify redelivered the same webhook id. The ledger's
+`ON CONFLICT … IGNORE` insert treated that redelivery as a terminal duplicate:
+the handler never reran and the router answered `200`. A transient failure
+became permanent event loss.
+
+### Current contract
+
+1. The transport ledger (`integration_webhook_events`) remains authoritative.
+   `WebhookLedgerService.recordReceived()` owns processing admission; its
+   boolean now means "this delivery claimed the event for processing", not
+   "first seen".
+2. **First delivery:** no row → insert `received` → handler executes.
+3. **Handler failure:** handler effects roll back to the router `SAVEPOINT`;
+   the ledger persists `processing_status = failed` plus `processing_error`;
+   the HTTP layer returns `500` so Shopify may redeliver.
+4. **Same-ID failed redelivery:** a previously `failed` row is retryable.
+5. **Retry ownership:** the reclaim is atomic and non-blocking — a
+   `FOR UPDATE SKIP LOCKED` claim scoped by `shop_id`, `integration`,
+   `external_event_id` and `processing_status = 'failed'`.
+6. **On reclaim:** `failed → received` and `processing_error → NULL`.
+   `received_at`, payload, event type and idempotency key are unchanged.
+7. **Non-owner / terminal states:** an existing `received`, `processed` or
+   `ignored` row does not execute the handler.
+8. **Concurrent retry rule:** if retry A owns the failed row and is still in
+   flight, a concurrent redelivery B skips the locked row, sees the existing
+   row, and stops as non-owner. B never waits, so it cannot become a second
+   owner when A later fails.
+9. **Later retry:** a new delivery C arriving after A has settled `failed` may
+   reclaim and retry.
+10. **Successful retry:** `received → processed`; later redeliveries remain
+    deduplicated.
+11. **New-delivery race:** an INSERT conflict returns non-owner and never
+    triggers a failed-row reclaim in the same request/wave.
+12. **Scope:** no queue redesign, no migration, no provider ordering redesign.
+
+Source: `packages/backend-core/src/services/webhook-ledger.service.ts`
+(`recordReceived`) and `apps/backend/src/api/webhooks/webhookRouter.ts`
+(`claimedForProcessing` guard). Source is authoritative; generated
+`packages/backend-core/dist` is build output only (BUILD-02).
+
+### Regression evidence
+
+Permanent suite: `tests/integration/webhooks/webhook-redelivery-gh1224.test.ts`
+— real disposable PostgreSQL, real `WebhookRouter`, real
+`WebhookLedgerService`, real `integration_webhook_events` with forced RLS; only
+the route handler is a bounded test handler.
+
+- Exact suite: 9/9 PASS.
+- R6 failed-event retry PASS.
+- R7 repeated failure remains retryable PASS.
+- R8 concurrent one-owner contract PASS.
+- R9 real Shopify HTTP (`POST /api/v1/shopify/webhooks`, signed): failure →
+  `500`; same webhook id retry → handler reruns → `200`; later replay → no
+  extra execution.
+- Neighbour regression: 4 suites / 32 tests PASS.
+
+### Adjacent issue (not fixed here)
+
+**GH-1225** owns the separate finding that `markProcessed`, `markFailed` and
+`markIgnored` currently scope by `external_event_id` rather than the canonical
+`(integration, external_event_id)`. Open; unchanged by GH-1224.
+
+<!-- END TIER-09-GH-1224 -->
