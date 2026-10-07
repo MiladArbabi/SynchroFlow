@@ -21,7 +21,7 @@
 // - borderRadius '14px' (FT2 card shell standard), not Dialog's MUI default
 // - fontWeight max 500 for body/title text per playbook convention
 
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -89,12 +89,14 @@ export function EntityDetailModal({
   maxWidth = 'lg',
   parentNavigation,
 }: EntityDetailModalProps) {
+  const titleId = useId();
   const open = entityId !== null;
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
+      aria-labelledby={titleId}
       fullWidth
       maxWidth={maxWidth}
       PaperProps={{
@@ -159,7 +161,10 @@ export function EntityDetailModal({
               {parentNavigation.label}
             </Box>
           )}
-          <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+          <Typography
+            id={titleId}
+            sx={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}
+          >
             {title}
           </Typography>
           {subtitle && (

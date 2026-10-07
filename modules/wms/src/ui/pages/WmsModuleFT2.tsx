@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useState, memo, useCallback, useEffect, useId, useMemo, useRef, type ReactNode } from 'react';
 import {
   Box,
   Typography,
@@ -41,7 +41,7 @@ import CountingSessionPage, {
   type CountingSessionPageProps,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
-import { IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark, WarehouseGrid } from '@lasyncro/shared/ui';
+import { IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark } from '@lasyncro/shared/ui';
 import {
   classifyRecountBinAvailability,
   mapRecountPreviewBinsToCanvas,
@@ -61,7 +61,7 @@ export type {
 } from './recountSelection.js';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
-import { WorkTally, isAllClear, type WorkTallyCounts } from '../components/WorkTally.js';
+import { isAllClear, type WorkTallyCounts } from '../components/WorkTally.js';
 import {
   OpeningInventoryCutoverCard,
   type OpeningInventoryCutoverView,
@@ -94,6 +94,9 @@ export type WmsBatch = {
   picked_by: number | null;
   packed_by: number | null;
   released_at: string;
+  picker_name?: string | null;
+  packer_name?: string | null;
+  pick_completed_at?: string | null;
 };
 
 export type WmsData = {
@@ -136,6 +139,23 @@ export type WmsStowConfirmResult = {
   placed_now: number;
 };
 
+
+/** WMS-OPS-NEEDS-ATTENTION-01 — presentation-only row; no alert authority. */
+export type WmsNeedsAttentionRow = {
+  id: string;
+  title: string;
+  actionLabel: string;
+  tone: 'critical' | 'warning' | 'info';
+  a11yLabel?: string;
+};
+
+/** `total` is the full canonical actionable count; `rows` are already bounded and ordered. */
+export type WmsNeedsAttention = {
+  total: number;
+  rows: WmsNeedsAttentionRow[];
+  /** PARITY-05 — app-derived (canonical NOW count − visible rows); >0 renders "{n} more". */
+  overflowCount?: number;
+};
 
 export type WmsModuleFT2Props = {
   data: WmsData;
@@ -201,7 +221,24 @@ export type WmsModuleFT2Props = {
 
   onClaimPack: (batchId: string) => Promise<void>;
   onFetchPackOrders: (batchId: string) => Promise<PackOrder[]>;
-  onPackFreeScan: (scannedValue: string) => Promise<PackFreeScanApiResponse>;
+  /**
+   * WEB-PACK-02 — consequential Pack execution scanner (may auto-claim and
+   * record Pack evidence). Used only inside Pack execution, never by the
+   * Operations overview Quick Scan.
+   */
+  onPackFreeScan: (scannedValue: string, expectedOrderId?: string) => Promise<PackFreeScanApiResponse>;
+  /**
+   * WMS-OPS-LIFECYCLE-IA-02 — read-only Operations overview Quick Scan
+   * (POST /api/v1/wms/scan/resolve). Identifies, never mutates. Kept separate
+   * from onPackFreeScan so the two authorities cannot be confused.
+   */
+  onOperationsScanResolve?: (scannedValue: string) => Promise<OperationsScanResolution>;
+  /**
+   * Role-derived Operations shell. 'management' (owner/admin, the default) is
+   * the five-stage pipeline overview; 'operator' is the task-focused shell.
+   * Presentation only — backend action checks remain authoritative.
+   */
+  operationsShell?: 'management' | 'operator';
   onConfirmPackScan: (batchId: string, params: {
     lasyncro_order_id: string;
     lasyncro_line_item_id: string;
@@ -212,7 +249,6 @@ export type WmsModuleFT2Props = {
   onPrintLabel: (orderId: string) => Promise<void>;
   onPrintInvoice: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
-  /** WEB-PACK-02 — item-centric free-scan. Accepts LSU- or LSO- barcode. */
 
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRaisePackDecision: (batchId: string, params: {
@@ -258,6 +294,32 @@ export type WmsModuleFT2Props = {
   onAssignStowTask?: (taskId: string, assignedOperatorId: number | null) => Promise<void>;
   isOnline: boolean;
   queuedCount: number;
+  /** App-owned Ops Console state. Presentation only; this module does not own Console state. */
+  isOpsConsoleOpen?: boolean;
+  /**
+   * WMS-OPS-NEEDS-ATTENTION-01 — app-derived, read-only projection of canonical
+   * Ops Console NOW. The app owns eligibility, order, count and routes; this
+   * module only renders what it is given (management shell only). null/absent
+   * = no strip.
+   */
+  needsAttention?: WmsNeedsAttention | null;
+  /** Row action — the app resolves the row id to its canonical destination. */
+  onNeedsAttentionAction?: (rowId: string) => void;
+  /**
+   * PARITY-03 — Needs attention trailing action: opens the app-owned,
+   * read-only canonical History (never the Ops Console).
+   */
+  onOpenHistory?: () => void;
+  /**
+   * PARITY-05 — "{n} more": opens the app-owned, read-only full Needs
+   * attention list (never the Ops Console, never History).
+   */
+  onOpenAllAttention?: () => void;
+  /**
+   * PARITY-02 — page-owned navigation to carrier setup (/settings/carriers).
+   * Ship renders its "Configure carriers" setup action only when provided.
+   */
+  onConnectCarrier?: () => void;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
   pendingReceiveSession?: {
     receiveJobId: string;
@@ -496,173 +558,235 @@ const STATUS_LABELS: Record<string, {
 };
 
 
+/**
+ * WMS-OPS-OWNER-1A-VISUAL-PARITY-02 — one overview work-card family for the
+ * management pipeline board: flex column (content → status → action), same
+ * padding/gap/min-height, CTA pinned to the bottom, nothing absolutely placed.
+ * minHeight is a shared floor, never a clip: longer content grows.
+ */
+const OVERVIEW_WORK_CARD_SX = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 1,
+  minWidth: 0,
+  minHeight: 112,
+  boxSizing: 'border-box',
+  p: '12px 14px',
+  m: 0,
+  borderRadius: '10px',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+} as const;
+const OVERVIEW_WORK_DATA = { 'data-layout': 'compact-work', 'data-size': 'overview-work' } as const;
+/** Title wraps safely to at most two lines and never collides with the action row. */
+const OVERVIEW_WORK_TITLE_SX = {
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+  overflowWrap: 'anywhere',
+} as const;
+/** Bottom action row: own row, available card width, wraps rather than squeezes. */
+const OVERVIEW_WORK_ACTION_SX = {
+  mt: 'auto',
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 0.5,
+  minWidth: 0,
+} as const;
+
+/** Shared sizing only for clickable board work-task actions. */
+const OVERVIEW_WORK_CTA_SX = {
+  minHeight: '36px',
+  maxWidth: '100%',
+  minWidth: 0,
+  px: 1.5,
+  py: 0.75,
+  fontSize: 11,
+  lineHeight: 1.5,
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+  boxSizing: 'border-box',
+  position: 'static',
+  flexShrink: 0,
+} as const;
+
+/**
+ * PARITY-04 — task-CTA hierarchy by lifecycle state: ongoing/resumable work is
+ * the filled primary action; fresh (not started) work is the orange ghost.
+ * Same 1px border on both so the shared sizing family is unchanged.
+ */
+type OverviewWorkCtaEmphasis = 'primary' | 'secondary';
+const OVERVIEW_WORK_CTA_EMPHASIS_SX = {
+  primary: { ...WMS_TIER1_ACTION_SX, border: '1px solid var(--accent)' },
+  secondary: { bgcolor: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-border)' },
+} as const;
+
+/**
+ * PARITY-02 addendum — persisted completion for ONGOING Put away / Pick / Pack
+ * only. One anatomy for all three grains: thin neutral track, accent fill,
+ * compact label, inside the content region. Fresh/ready work renders none —
+ * the absence of a rail is part of the fresh-work state (no empty 0% bar).
+ */
+function OverviewWorkProgress({ completed, total, verb }: { completed: number; total: number; verb: string }) {
+  const label = `${completed} of ${total} ${verb}`;
+  const percent = total > 0 ? Math.min(100, Math.max(0, (completed / total) * 100)) : 0;
+  return (
+    <Box
+      role="progressbar"
+      data-progress="active"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={completed}
+      aria-valuetext={label}
+      sx={{ mt: 0.75, display: 'grid', gap: 0.5, minWidth: 0 }}
+    >
+      <Box aria-hidden="true" sx={{ height: 4, borderRadius: '100px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
+        <Box sx={{ height: '100%', width: `${percent}%`, borderRadius: '100px', bgcolor: 'var(--accent)' }} />
+      </Box>
+      <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+        {label}
+      </Typography>
+    </Box>
+  );
+}
+
 const BatchCard = memo(function BatchCard({
-  batch,
-  onOpenPick,
-  gridLocations,
-  onFetchLineItems,
+  batch, onOpenPick, onOpenPack, currentUserId, orderCount, board = false,
 }: {
   batch: WmsBatch;
   /** Opens the Pick Brief; the Brief's Start Picking owns any claim. */
   onOpenPick: (batchId: string) => void;
-  gridLocations?: WarehouseLocation[];
-  onFetchLineItems?: (batchId: string) => Promise<{ location_code: string }[]>;
+  /** Navigation only; Pack execution owns claim and evidence. */
+  onOpenPack: (batchId: string) => void;
+  currentUserId?: number | null;
+  orderCount?: number;
+  /** PARITY-02: rendered inside the management pipeline board. */
+  board?: boolean;
 }) {
-  const releasedAt = new Date(batch.released_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const [mapOpen, setMapOpen] = useState(false);
-  const [pickLocations, setPickLocations] = useState<string[]>([]);
-  const [mapLoading, setMapLoading] = useState(false);
-
-  const handleToggleMap = async () => {
-    if (mapOpen) { setMapOpen(false); return; }
-    if (!onFetchLineItems || !gridLocations?.length) { setMapOpen(true); return; }
-    setMapLoading(true);
-    try {
-      const items = await onFetchLineItems(batch.pick_batch_id);
-      const codes = [...new Set(
-        items.map((i) => i.location_code).filter(Boolean)
-      )].sort() as string[];
-      setPickLocations(codes);
-    } catch { /* silent — grid renders with empty highlight */ }
-    finally { setMapLoading(false); setMapOpen(true); }
-  };
-
-  const pickProgress = batch.total_units > 0
-    ? Math.round((batch.units_picked / batch.total_units) * 100)
-    : 0;
-
-  const packProgress = batch.total_units > 0
-    ? Math.round((batch.units_packed / batch.total_units) * 100)
-    : 0;
-
-  const isPending      = batch.status === 'pending';
-  const isPicking      = batch.status === 'picking';
+  const isPending = batch.status === 'pending';
+  const isPicking = batch.status === 'picking';
   const isPickComplete = batch.status === 'pick_complete';
-  const isPacking      = batch.status === 'packing';
-
-  const ctaLabel = isPending ? 'Open pick →'
-    : isPicking      ? 'Continue picking →'
-    : isPickComplete ? 'Ready to pack →'
-    : isPacking      ? 'Continue packing →'
+  const isPacking = batch.status === 'packing';
+  const ownsPack = isPacking && currentUserId != null && batch.packed_by === currentUserId;
+  const ctaLabel = isPending ? 'Start picking →'
+    : isPicking ? 'Continue picking →'
+    : isPickComplete ? 'Start packing →'
+    : ownsPack ? 'Resume packing →'
     : null;
-
-  const handleCta = () => {
+  const ctaEmphasis: OverviewWorkCtaEmphasis = isPicking || ownsPack ? 'primary' : 'secondary';
+  const workload = orderCount != null
+    ? `${orderCount} ${orderCount === 1 ? 'order' : 'orders'}`
+    : `${batch.total_line_items} ${batch.total_line_items === 1 ? 'line' : 'lines'}`;
+  const progress = isPacking ? `${batch.units_packed}/${batch.total_units} packed`
+    : isPickComplete ? (batch.pick_completed_at
+      ? `Picked ${new Date(batch.pick_completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : 'Picked')
+    : `${batch.units_picked}/${batch.total_units} picked`;
+  const owner = isPacking ? batch.packer_name : isPicking ? batch.picker_name : null;
+  // PARITY-02 — current-user active work: own Pick custody (picking +
+  // picked_by) or own Pack custody (packing + packed_by). Nothing else.
+  const isCurrent = board && currentUserId != null && (
+    (isPicking && batch.picked_by === currentUserId) || ownsPack
+  );
+  const openFromCta = () => {
     if (isPending || isPicking) onOpenPick(batch.pick_batch_id);
+    else if (isPickComplete || ownsPack) onOpenPack(batch.pick_batch_id);
   };
 
-  return (
-    <Box sx={{
-      bgcolor: 'var(--surface)',
-      border: '1px solid var(--rule)',
-      borderRadius: '14px',
-      p: '18px 20px',
-      mb: 1.5,
-    }}>
-
-      {/* HEADER */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-        <Typography sx={{
-          fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
-          fontSize: 14.5, fontWeight: 500, color: 'var(--ink)',
-          letterSpacing: '0.03em',
-        }}>
-          {batch.pick_batch_id.slice(0, 8).toUpperCase()}
-        </Typography>
-        <Box sx={{ flex: 1 }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-          {batch.total_line_items} lines · {batch.total_units} units · {releasedAt}
-        </Typography>
-      </Box>
-
-      {/* PICK MAP */}
-      {gridLocations && gridLocations.length > 0 && (
-        <Box
-          onClick={handleToggleMap}
-          sx={{
-            display: 'inline-flex', alignItems: 'center', gap: 0.75,
-            px: 1.25, py: 0.5, mb: 1.75,
-            fontSize: 11, fontWeight: 500, color: 'var(--accent)',
-            border: '0.5px solid var(--accent)', borderRadius: '6px',
-            cursor: 'pointer',
-            '&:hover': { opacity: 0.75 },
-          }}
-        >
-          {mapLoading ? <CircularProgress size={11} sx={{ mr: 0.5 }} /> : null}
-          {mapOpen ? 'Hide map' : 'Show pick map'}
-        </Box>
-      )}
-      {mapOpen && gridLocations && (
-        <Box sx={{ mb: 2, border: '1px solid var(--rule)', borderRadius: '8px', p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }}>
-          {/* WMS-OPS1: pick maps show storage aisles only — functional zones
-              (PACK/SHIP/RETURNS/…) add a column each and never appear in a route. */}
-          <WarehouseGrid
-            locations={gridLocations}
-            highlightedBins={pickLocations}
-            pickPath={pickLocations}
-            zoneTypes={['pick']}
-            mode="pick"
-            variant="mini"
-          />
-          {pickLocations.length > 0 && (
-            <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', mt: 0.5, letterSpacing: '0.06em' }}>
-              Pick route: {pickLocations.join(' → ')}
+  if (board) {
+    return (
+      <Box component="article" aria-label={`Batch ${batch.pick_batch_id.slice(0, 8).toUpperCase()}`}
+        data-surface="raised"
+        data-emphasis={isCurrent ? 'current' : undefined}
+        data-work-state={isPicking || isPacking ? 'ongoing' : 'fresh'}
+        {...OVERVIEW_WORK_DATA}
+        sx={{
+          ...OVERVIEW_WORK_CARD_SX,
+          bgcolor: isCurrent ? 'var(--accent-ghost)' : 'var(--surface)',
+          borderColor: isCurrent ? 'var(--accent-border)' : 'var(--rule)',
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+            Batch <Box component="span">{batch.pick_batch_id.slice(0, 8).toUpperCase()}</Box>
+          </Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+            {workload} · {batch.total_units} {batch.total_units === 1 ? 'unit' : 'units'}
+            {isPickComplete && ` · ${progress}`}
+          </Typography>
+          {owner && (
+            <Typography sx={{ mt: 0.25, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+              {isPacking ? 'Packer' : 'Picker'}: {owner}
             </Typography>
           )}
+          {isPicking && <OverviewWorkProgress completed={batch.units_picked} total={batch.total_units} verb="picked" />}
+          {isPacking && <OverviewWorkProgress completed={batch.units_packed} total={batch.total_units} verb="packed" />}
         </Box>
-      )}
-
-      {/* DUAL PROGRESS BARS */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2.75, mb: 2 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Picking</Typography>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-              {batch.units_picked}/{batch.total_units}
+        {ctaLabel ? (
+          <Box sx={OVERVIEW_WORK_ACTION_SX}>
+            <Box component="button" type="button" onClick={openFromCta}
+              data-size="overview-work-action"
+              data-emphasis={ctaEmphasis}
+              sx={{
+                ...OVERVIEW_WORK_CTA_EMPHASIS_SX[ctaEmphasis], fontFamily: 'inherit',
+                fontWeight: 600, borderRadius: '6px',
+                cursor: 'pointer',
+                ...OVERVIEW_WORK_CTA_SX,
+                '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+                '&:hover': { opacity: 0.88 },
+              }}
+            >{ctaLabel}</Box>
+          </Box>
+        ) : isPacking ? (
+          <Box sx={OVERVIEW_WORK_ACTION_SX}>
+            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+              Packing in progress
             </Typography>
           </Box>
-          <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
-            <Box sx={{ width: `${pickProgress}%`, height: '100%', bgcolor: 'var(--ok, #4CAF7A)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
-          </Box>
-        </Box>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Packing</Typography>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-              {batch.units_packed}/{batch.total_units}
-            </Typography>
-          </Box>
-          <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
-            <Box sx={{ width: `${packProgress}%`, height: '100%', bgcolor: 'var(--accent)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
-          </Box>
-        </Box>
+        ) : null}
       </Box>
+    );
+  }
 
-      {/* FOOTER */}
-      <Box sx={{ display: 'flex', alignItems: 'center', pt: 1.75, borderTop: '1px solid var(--rule)' }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-          {isPicking ? 'Picking in progress' : isPickComplete ? 'Picking done · awaiting pack scan' : isPacking ? 'Packing in progress' : 'Available'}
+  return (
+    <Box component="article" aria-label={`Batch ${batch.pick_batch_id.slice(0, 8).toUpperCase()}`}
+      data-surface="raised"
+      sx={{
+      bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '10px',
+      px: 2, py: 1.5, mb: 1,
+      display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5,
+    }}>
+      <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+          Batch <Box component="span">{batch.pick_batch_id.slice(0, 8).toUpperCase()}</Box>
         </Typography>
-        <Box sx={{ flex: 1 }} />
-        {ctaLabel && (
-          <Box
-            component="button"
-            onClick={handleCta}
-            disabled={isPickComplete}
-            sx={{
-              fontSize: 12, fontWeight: 600,
-              color: isPickComplete ? 'var(--ink-3)' : 'var(--accent-ink)',
-              bgcolor: isPickComplete ? 'var(--rule)' : 'var(--accent)',
-              border: 'none', borderRadius: '8px',
-              px: 2.25, py: 1,
-              cursor: isPickComplete ? 'default' : 'pointer',
-              '&:hover:not(:disabled)': { opacity: 0.88 },
-              transition: 'opacity 0.15s ease',
-            }}
-          >
-            {ctaLabel}
-          </Box>
+        <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+          {workload} · {batch.total_units} {batch.total_units === 1 ? 'unit' : 'units'} · {progress}
+        </Typography>
+        {owner && (
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+            {isPacking ? 'Packer' : 'Picker'}: {owner}
+          </Typography>
         )}
       </Box>
+      {ctaLabel ? (
+        <Box component="button" type="button"
+          onClick={openFromCta}
+          sx={{
+            ...WMS_TIER1_ACTION_SX, fontFamily: 'inherit',
+            fontSize: 11, fontWeight: 600, border: 'none', borderRadius: '6px',
+            px: 1.25, py: 0.5, cursor: 'pointer',
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+            '&:hover': { opacity: 0.88 },
+          }}
+        >{ctaLabel}</Box>
+      ) : isPacking ? (
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+          Packing in progress
+        </Typography>
+      ) : null}
     </Box>
   );
 });
@@ -692,6 +816,7 @@ const StowTaskCard = memo(function StowTaskCard({
   onOpen,
   onAssignRequest,
   onMakeFirstToClaim,
+  board = false,
 }: {
   task: WmsStowTask;
   currentUserId?: number | null;
@@ -700,6 +825,8 @@ const StowTaskCard = memo(function StowTaskCard({
   onOpen: (taskId: string) => void;
   onAssignRequest?: (task: WmsStowTask) => void;
   onMakeFirstToClaim?: (task: WmsStowTask) => void;
+  /** PARITY-02: rendered inside the management pipeline board. */
+  board?: boolean;
 }) {
   const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
 
@@ -730,11 +857,122 @@ const StowTaskCard = memo(function StowTaskCard({
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const showMenu = Boolean(canAssignStow) && task.status === 'pending';
+  // PARITY-02 — current-user active work: own claimed in-progress stow. On the
+  // board, accent marks only that; elsewhere the card keeps its prior styling.
+  const isCurrent = board && currentUserId != null && isClaimed && task.claimed_by === currentUserId;
+  const accentOn = !board || isCurrent;
+  const menuNode = showMenu ? (
+      <>
+        <IconButton
+          size="small"
+          aria-label="Stow task options"
+          data-testid={`stow-task-menu-${task.stow_task_id}`}
+          onClick={(e) => setMenuAnchor(e.currentTarget)}
+          sx={{ flexShrink: 0, ml: 0.5 }}
+        >
+          <MoreVertical size={16} />
+        </IconButton>
+        <Menu
+          anchorEl={menuAnchor}
+          open={Boolean(menuAnchor)}
+          onClose={() => setMenuAnchor(null)}
+        >
+          {task.assigned_operator_id === null ? (
+            <MenuItem
+              onClick={() => {
+                setMenuAnchor(null);
+                onAssignRequest?.(task);
+              }}
+            >
+              Assign to…
+            </MenuItem>
+          ) : [
+            <MenuItem
+              key="reassign"
+              onClick={() => {
+                setMenuAnchor(null);
+                onAssignRequest?.(task);
+              }}
+            >
+              Reassign…
+            </MenuItem>,
+            <MenuItem
+              key="unassign"
+              onClick={() => {
+                setMenuAnchor(null);
+                onMakeFirstToClaim?.(task);
+              }}
+            >
+              Make first one to claim
+            </MenuItem>,
+          ]}
+        </Menu>
+      </>
+  ) : null;
+
+  if (board) {
+    return (
+      <Box
+        data-surface="raised"
+        data-emphasis={isCurrent ? 'current' : undefined}
+        data-work-state={isClaimed ? 'ongoing' : 'fresh'}
+        {...OVERVIEW_WORK_DATA}
+        sx={{
+          ...OVERVIEW_WORK_CARD_SX,
+          bgcolor: isCurrent ? 'var(--accent-ghost)' : 'var(--surface)',
+          borderColor: isCurrent ? 'var(--accent-border)' : 'var(--rule)',
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, minWidth: 0 }}>
+            <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+              {task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase()}
+            </Typography>
+            {menuNode}
+          </Box>
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+            {[task.sku, `Qty ${task.quantity}`, task.location_code ?? 'No location', triggerLabel].filter(Boolean).join(' · ')}
+          </Typography>
+          {isClaimed && <OverviewWorkProgress completed={task.quantity_placed} total={task.quantity} verb="put away" />}
+          <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            <Box sx={{ px: 1, py: 0.25, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule)', borderRadius: '100px' }}>
+              <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-3)', letterSpacing: '0.04em' }}>
+                {describeStowAssignment(task, currentUserId)}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+        {!assignedToOther && (
+          <Box sx={OVERVIEW_WORK_ACTION_SX}>
+            <Box
+              component="button"
+              onClick={() => onOpen(task.stow_task_id)}
+              data-size="overview-work-action"
+              data-emphasis={isClaimed ? 'primary' : 'secondary'}
+              sx={{
+                ...OVERVIEW_WORK_CTA_EMPHASIS_SX[isClaimed ? 'primary' : 'secondary'], fontFamily: 'inherit',
+                fontWeight: 600, borderRadius: '6px',
+                cursor: 'pointer',
+                ...OVERVIEW_WORK_CTA_SX,
+                '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+                '&:hover': { opacity: 0.88 },
+              }}
+            >
+              {isClaimed ? 'Resume stow →' : 'Start stow →'}
+            </Box>
+          </Box>
+        )}
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{
+    <Box
+      data-surface="raised"
+      sx={{
       bgcolor: 'var(--surface)',
-      border: '1px solid var(--accent-border)',
+      border: '1px solid',
+      borderColor: 'var(--accent-border)',
       borderRadius: '14px',
       p: '18px 20px',
       mb: 1.5,
@@ -744,8 +982,8 @@ const StowTaskCard = memo(function StowTaskCard({
         {task.image_url ? (
           <Box component="img" src={task.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
         ) : (
-          <Box sx={{ width: 40, height: 40, borderRadius: '8px', bgcolor: 'var(--accent-ghost)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Package size={18} color="var(--accent)" />
+          <Box sx={{ width: 40, height: 40, borderRadius: '8px', bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Package size={18} color={accentOn ? 'var(--accent)' : 'var(--ink-3)'} />
           </Box>
         )}
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -756,60 +994,13 @@ const StowTaskCard = memo(function StowTaskCard({
             <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>{task.sku}</Typography>
           )}
         </Box>
-        <Box sx={{ px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>
+        <Box sx={{ px: 1, py: 0.375, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule)', borderRadius: '100px', flexShrink: 0 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-3)', letterSpacing: '0.04em' }}>
             {describeStowAssignment(task, currentUserId)}
           </Typography>
         </Box>
 
-        {showMenu && (
-          <>
-            <IconButton
-              size="small"
-              aria-label="Stow task options"
-              data-testid={`stow-task-menu-${task.stow_task_id}`}
-              onClick={(e) => setMenuAnchor(e.currentTarget)}
-              sx={{ flexShrink: 0, ml: 0.5 }}
-            >
-              <MoreVertical size={16} />
-            </IconButton>
-            <Menu
-              anchorEl={menuAnchor}
-              open={Boolean(menuAnchor)}
-              onClose={() => setMenuAnchor(null)}
-            >
-              {task.assigned_operator_id === null ? (
-                <MenuItem
-                  onClick={() => {
-                    setMenuAnchor(null);
-                    onAssignRequest?.(task);
-                  }}
-                >
-                  Assign to…
-                </MenuItem>
-              ) : [
-                <MenuItem
-                  key="reassign"
-                  onClick={() => {
-                    setMenuAnchor(null);
-                    onAssignRequest?.(task);
-                  }}
-                >
-                  Reassign…
-                </MenuItem>,
-                <MenuItem
-                  key="unassign"
-                  onClick={() => {
-                    setMenuAnchor(null);
-                    onMakeFirstToClaim?.(task);
-                  }}
-                >
-                  Make first one to claim
-                </MenuItem>,
-              ]}
-            </Menu>
-          </>
-        )}
+        {menuNode}
       </Box>
 
       {/* METADATA */}
@@ -871,24 +1062,133 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
   canManageAssignment,
   onOpen,
   onReassignRequest,
+  board = false,
 }: {
   job: WmsOpenReceiveJob;
   isOwnJob: boolean;
   canManageAssignment: boolean;
   onOpen: (jobId: string) => void;
   onReassignRequest?: (job: WmsOpenReceiveJob) => void;
+  /** PARITY-02: rendered inside the management pipeline board. */
+  board?: boolean;
 }) {
   const started = job.status === 'in_progress' || Boolean(job.started_at);
+  // PARITY-02 — current-user active work: started_at != null on a job assigned
+  // to the current user (isOwnJob; an unassigned job is never "own").
+  const isCurrent = board && isOwnJob && job.assigned_operator_id !== null && job.started_at != null;
   const showAssignmentMenu =
     canManageAssignment &&
     job.status === 'pending' &&
     !job.started_at &&
     !job.closed_at;
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const menuNode = showAssignmentMenu ? (
+      <>
+        <IconButton
+          size="small"
+          aria-label="Receive job options"
+          data-testid={`receive-job-menu-${job.receive_job_id}`}
+          onClick={(e) => setMenuAnchor(e.currentTarget)}
+          sx={{ flexShrink: 0 }}
+        >
+          <MoreVertical size={16} />
+        </IconButton>
+        <Menu
+          anchorEl={menuAnchor}
+          open={Boolean(menuAnchor)}
+          onClose={() => setMenuAnchor(null)}
+        >
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              onReassignRequest?.(job);
+            }}
+          >
+            Reassign…
+          </MenuItem>
+        </Menu>
+      </>
+  ) : null;
+  if (board) {
+    const ownership = isOwnJob ? 'Assigned to you' : `Assigned to ${job.assigned_operator_name ?? 'another operator'}`;
+    const lifecycle = isOwnJob && started ? 'In progress' : 'Not started';
+    // PARITY-02 compact card: identity → one metadata line → ownership/state →
+    // one action. "Continue receiving shipment" is dropped: it restated the
+    // Resume receive CTA. The not-started guidance is kept (claim is a
+    // distinct step from assignment, GH-1109).
+    return (
+      <Box
+        data-testid={`receive-work-card-${job.receive_job_id}`}
+        data-surface="raised"
+        data-emphasis={isCurrent ? 'current' : undefined}
+        {...OVERVIEW_WORK_DATA}
+        sx={{
+          ...OVERVIEW_WORK_CARD_SX,
+          bgcolor: isCurrent ? 'var(--accent-ghost)' : 'var(--surface)',
+          borderColor: isCurrent ? 'var(--accent-border)' : 'var(--rule)',
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+            {job.supplier_name}
+          </Typography>
+          <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+            {job.po_number == null ? 'PO reference unavailable' : `PO-${job.po_number}`}
+            {' · '}
+            {job.total_variants} {job.total_variants === 1 ? 'product' : 'products'}
+            {' · '}
+            {job.total_units} {job.total_units === 1 ? 'unit' : 'units'}
+          </Typography>
+          <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, minWidth: 0 }}>
+            {[ownership, lifecycle].map((label) => (
+              <Box component="span" key={label} sx={{
+                px: 0.75, py: 0.25, borderRadius: '6px',
+                border: '1px solid var(--rule)', bgcolor: 'var(--bg)',
+                fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', overflowWrap: 'anywhere',
+              }}>
+                {label}
+              </Box>
+            ))}
+          </Box>
+          {!(isOwnJob && started) && (
+            <Typography sx={{ mt: 0.25, fontSize: 11.5, color: 'var(--ink-4)', overflowWrap: 'anywhere' }}>
+              {isOwnJob ? 'Review shipment and claim Receive' : 'Pending — manage assignment'}
+            </Typography>
+          )}
+        </Box>
+        {(isOwnJob || menuNode) && (
+          <Box sx={OVERVIEW_WORK_ACTION_SX}>
+            {isOwnJob && (
+              <Button
+                variant={started ? 'contained' : 'outlined'}
+                disableElevation
+                size="small"
+                onClick={() => onOpen(job.receive_job_id)}
+                data-size="overview-work-action"
+                data-emphasis={started ? 'primary' : 'secondary'}
+                sx={{
+                  ...OVERVIEW_WORK_CTA_SX,
+                  ...(started
+                    ? OVERVIEW_WORK_CTA_EMPHASIS_SX.primary
+                    : { borderColor: 'var(--rule)', color: 'var(--accent)' }),
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                }}
+              >
+                {started ? 'Resume receive →' : 'Open receive →'}
+              </Button>
+            )}
+            {menuNode}
+          </Box>
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box
       data-testid={`receive-work-card-${job.receive_job_id}`}
+      data-surface="raised"
       sx={{
         border: '1px solid var(--rule)',
         borderRadius: '10px',
@@ -958,33 +1258,7 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
             </Button>
           )}
 
-          {showAssignmentMenu && (
-            <>
-              <IconButton
-                size="small"
-                aria-label="Receive job options"
-                data-testid={`receive-job-menu-${job.receive_job_id}`}
-                onClick={(e) => setMenuAnchor(e.currentTarget)}
-                sx={{ flexShrink: 0 }}
-              >
-                <MoreVertical size={16} />
-              </IconButton>
-              <Menu
-                anchorEl={menuAnchor}
-                open={Boolean(menuAnchor)}
-                onClose={() => setMenuAnchor(null)}
-              >
-                <MenuItem
-                  onClick={() => {
-                    setMenuAnchor(null);
-                    onReassignRequest?.(job);
-                  }}
-                >
-                  Reassign…
-                </MenuItem>
-              </Menu>
-            </>
-          )}
+          {menuNode}
         </Box>
       </Box>
     </Box>
@@ -998,6 +1272,8 @@ export interface PackFreeScanLineItem {
   quantity: number;
   image_url: string | null;
   sku: string | null;
+  packed_quantity: number;
+  packable_quantity: number;
   pack_scanned: boolean;
   has_tracked_unit: boolean;
 }
@@ -1031,6 +1307,8 @@ export interface PackFreeScanResult {
     quantity: number;
     image_url: string | null;
     sku: string | null;
+    packed_quantity: number;
+    packable_quantity: number;
     pack_scanned: boolean;
     has_tracked_unit: boolean;
   }[];
@@ -1158,15 +1436,24 @@ function WorkQueueFamily({
   expanded,
   onToggle,
   children,
+  regionLabel,
+  sectionId,
 }: {
   title: string;
   summary: string;
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
+  regionLabel?: string;
+  sectionId?: string;
 }) {
   return (
-    <Box sx={{ border: '1px solid var(--rule)', borderRadius: '8px', overflow: 'hidden' }}>
+    <Box
+      id={sectionId}
+      component={regionLabel ? 'section' : 'div'}
+      aria-label={regionLabel}
+      sx={{ border: '1px solid var(--rule)', borderRadius: '8px', overflow: 'hidden' }}
+    >
       <Box
         component="button"
         type="button"
@@ -1185,7 +1472,8 @@ function WorkQueueFamily({
           font: 'inherit',
           textAlign: 'left',
           cursor: 'pointer',
-          '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' },
+          '&:hover': { bgcolor: 'var(--bg-2)' },
+          '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: -2 },
         }}
       >
         <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
@@ -1211,6 +1499,420 @@ function WorkQueueFamily({
       </Collapse>
     </Box>
   );
+}
+
+export type OperationsLifecycleStage =
+  | 'receive'
+  | 'put-away'
+  | 'pick'
+  | 'pack'
+  | 'ship';
+
+/**
+ * WMS-OPS-LIFECYCLE-IA-02 — the lifecycle stage IS the queue. One physical
+ * lifecycle representation: no separate flow navigation, no separate Work
+ * Queue, no scroll-derived active stage. Order is physical order.
+ */
+const OPERATIONS_LIFECYCLE_STAGES: ReadonlyArray<{
+  stage: OperationsLifecycleStage;
+  label: string;
+}> = [
+  { stage: 'receive', label: 'Receive' },
+  { stage: 'put-away', label: 'Put away' },
+  { stage: 'pick', label: 'Pick' },
+  { stage: 'pack', label: 'Pack' },
+  { stage: 'ship', label: 'Ship' },
+];
+
+/** Overview stages show a bounded preview; View all N focuses the stage. */
+const STAGE_PREVIEW_LIMIT = 3;
+/** Operator Up next is a short list of the next actionable work, not a queue. */
+const OPERATOR_UP_NEXT_LIMIT = 5;
+
+/**
+ * Stage count grain (the region's accessible description is the count seam):
+ * Receive counts jobs, Put away stow tasks, Pick batches, and Pack batch/group
+ * contexts — never contained orders. This is overview grouping only; Pack
+ * execution remains order/parcel authority. Ship is structural: no count.
+ */
+function describeStageCount(stage: OperationsLifecycleStage, count: number): string {
+  switch (stage) {
+    case 'receive': return `${count} receive ${count === 1 ? 'job' : 'jobs'}`;
+    case 'put-away': return `${count} put-away ${count === 1 ? 'task' : 'tasks'}`;
+    case 'pick': return `${count} pick ${count === 1 ? 'batch' : 'batches'}`;
+    case 'pack': return `${count} pack ${count === 1 ? 'batch' : 'batches'}`;
+    case 'ship': return 'Not tracked in Operations yet';
+  }
+}
+
+/** WMS-OPS-OWNER-1A-VISUAL-PARITY-02 — canonical SR-only text (px strings: MUI reads numeric 1 as 100%). */
+const SR_ONLY_SX = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  p: 0,
+  m: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  clipPath: 'inset(50%)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
+
+const VISUALLY_HIDDEN_SX = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  p: 0,
+  m: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
+
+const STAGE_TEXT_ACTION_SX = {
+  border: 0,
+  bgcolor: 'transparent',
+  color: 'var(--accent)',
+  font: 'inherit',
+  fontSize: 12,
+  fontWeight: 600,
+  p: 0,
+  cursor: 'pointer',
+  '&:hover': { opacity: 0.75 },
+  '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+} as const;
+
+/**
+ * One lifecycle stage. Module-level so its DOM node survives parent renders
+ * (Ops Console open/close, focus changes) — never remounted to change state.
+ * Stages never own a scroll container; the page owns ordinary scrolling.
+ */
+function LifecycleStageRegion({
+  label,
+  count,
+  description,
+  mode,
+  lead,
+  items,
+  empty,
+  onViewAll,
+  onAllStages,
+}: {
+  label: string;
+  /** null = structural stage (Ship): visible "—", no numeric work count. */
+  count: number | null;
+  description: string;
+  mode: 'overview' | 'focused' | 'compact';
+  /** Stage-scoped guidance shown above the work (not counted as work). */
+  lead?: ReactNode;
+  items: ReactNode[];
+  empty?: ReactNode;
+  onViewAll?: () => void;
+  onAllStages?: () => void;
+}) {
+  const descriptionId = useId();
+  const visibleItems =
+    mode === 'focused' ? items : mode === 'overview' ? items.slice(0, STAGE_PREVIEW_LIMIT) : [];
+  const canViewAll = mode === 'overview' && items.length > STAGE_PREVIEW_LIMIT && onViewAll;
+
+  return (
+    <Box
+      component="section"
+      role="region"
+      aria-label={label}
+      aria-describedby={descriptionId}
+      data-surface="canvas"
+      sx={{
+        // WMS-OPS-OWNER-1A-ALIGNMENT — a column of the shared pipeline board,
+        // not a floating card: the board owns surface/border/radius; stages
+        // are divided by internal rules only.
+        position: 'relative',
+        minWidth: 0,
+        // PARITY-04: flex column so the stage body (Ship empty state) can fill it.
+        display: 'flex',
+        flexDirection: 'column',
+        p: mode === 'compact' ? '10px 12px' : '14px',
+        ...(mode === 'focused'
+          ? { gridColumn: '1 / -1', order: -1, borderBottom: '1px solid var(--rule)', boxShadow: 'inset 0 2px 0 var(--accent)' }
+          : { '&:not(:last-of-type)': { borderRight: '1px solid var(--rule)' } }),
+      }}
+    >
+      <Box component="span" id={descriptionId} sx={VISUALLY_HIDDEN_SX}>
+        {description}
+      </Box>
+
+      {/* PARITY-02 — [STAGE NAME] … [COUNT]: compact uppercase name, dominant
+          32px count opposite it; 0 and Ship's "—" keep the size but recede. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: mode === 'compact' ? 0 : 1.25 }}>
+        <Typography
+          component="h2"
+          sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}
+        >
+          {label}
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        {mode === 'focused' && onAllStages && (
+          <Box component="button" type="button" onClick={onAllStages} sx={STAGE_TEXT_ACTION_SX}>
+            All stages
+          </Box>
+        )}
+        <Typography
+          component="span"
+          aria-hidden="true"
+          sx={{
+            fontSize: 32,
+            fontWeight: 500,
+            lineHeight: 1,
+            letterSpacing: '-0.02em',
+            color: count === null || count === 0 ? 'var(--ink-4)' : 'var(--ink)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {count === null ? '—' : count}
+        </Typography>
+      </Box>
+
+      {mode !== 'compact' && lead}
+
+      {mode !== 'compact' && (
+        visibleItems.length > 0 ? (
+          <Box
+            sx={mode === 'focused'
+              ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gridAutoRows: '1fr', gap: 1.25 }
+              : { display: 'grid', rowGap: 1, minWidth: 0 }}
+          >
+            {visibleItems}
+          </Box>
+        ) : empty
+      )}
+
+      {canViewAll && (
+        <Box component="button" type="button" onClick={onViewAll} sx={{ ...STAGE_TEXT_ACTION_SX, mt: 0.5, alignSelf: 'flex-start' }}>
+          {`View all ${items.length}`}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+const NEEDS_ATTENTION_TONE_INK: Record<WmsNeedsAttentionRow['tone'], string> = {
+  critical: 'var(--critical-ink)',
+  warning: 'var(--warning-ink)',
+  info: 'var(--accent)',
+};
+
+/** Visually hidden but announced (px strings: MUI reads numeric 1 as 100%). */
+const NEEDS_ATTENTION_SR_ONLY_SX = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+} as const;
+
+/** Rail cell: 18px gutter, separators are CSS borders (never DOM nodes). */
+const NEEDS_ATTENTION_CELL_SX = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1.25,
+  minWidth: 0,
+  px: '18px',
+  py: { xs: 1.25, md: 0 },
+} as const;
+
+/**
+ * WMS-OPS-NEEDS-ATTENTION-01 — bounded overview rail (Owner/Admin 1a). Renders
+ * the app-supplied canonical NOW projection verbatim: no allowlist, ranking,
+ * grouping, routes, alert lifecycle controls or local alert state live here.
+ * Each alert cell has one explicit action control; no cell is clickable.
+ *
+ * md+: one 48px row — [label + count] [alert]×≤3 [History].
+ * <md: two-column grid — [label + count | History], then one full-width
+ * row per alert. Never horizontally overflows; no cell is hidden for layout.
+ */
+function NeedsAttentionStrip({
+  attention,
+  onAction,
+  onOpenHistory,
+  onOpenAll,
+}: {
+  attention: WmsNeedsAttention;
+  onAction?: (rowId: string) => void;
+  onOpenHistory?: () => void;
+  onOpenAll?: () => void;
+}) {
+  const headingId = useId();
+  const separator = '1px solid var(--rule)';
+  const overflowCount = attention.overflowCount ?? 0;
+  const showMore = overflowCount > 0 && !!onOpenAll;
+  return (
+    <Box
+      component="section"
+      role="region"
+      aria-labelledby={headingId}
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: 'minmax(0, 1fr) auto',
+          md: `auto repeat(${attention.rows.length}, minmax(0, 1fr))${showMore ? ' auto' : ''} auto`,
+        },
+        alignItems: 'stretch',
+        minHeight: { md: 48 },
+        border: separator,
+        borderRadius: '12px',
+        bgcolor: 'var(--surface)',
+        overflow: 'hidden',
+      }}
+    >
+      <Box sx={{ ...NEEDS_ATTENTION_CELL_SX, gap: 1, gridRow: { xs: 1, md: 'auto' }, gridColumn: { xs: 1, md: 'auto' }, borderRight: { md: separator } }}>
+        <Typography
+          id={headingId}
+          component="h2"
+          sx={{ fontSize: 11, fontWeight: 500, lineHeight: 1, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', whiteSpace: 'nowrap' }}
+        >
+          Needs attention
+        </Typography>
+        <Typography component="span" sx={{ fontSize: 11, fontWeight: 500, lineHeight: 1, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+          {attention.total}
+        </Typography>
+      </Box>
+
+      <Box component="ul" role="list" sx={{ display: 'contents', listStyle: 'none', m: 0, p: 0 }}>
+        {attention.rows.map((row, index) => (
+          <Box
+            component="li"
+            key={row.id}
+            sx={{
+              ...NEEDS_ATTENTION_CELL_SX,
+              justifyContent: 'space-between',
+              gridColumn: { xs: '1 / -1', md: 'auto' },
+              borderTop: { xs: separator, md: 0 },
+              borderRight: { md: index < attention.rows.length - 1 || showMore || onOpenHistory ? separator : 0 },
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.125, minWidth: 0 }}>
+              <Box
+                component="span"
+                aria-hidden="true"
+                sx={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, bgcolor: NEEDS_ATTENTION_TONE_INK[row.tone] }}
+              />
+              <Typography sx={{ minWidth: 0, fontSize: 13, lineHeight: 1.2, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {row.title}
+              </Typography>
+              {row.a11yLabel && <Box component="span" sx={NEEDS_ATTENTION_SR_ONLY_SX}>{row.a11yLabel}</Box>}
+            </Box>
+            <Box
+              component="button"
+              type="button"
+              onClick={() => onAction?.(row.id)}
+              sx={{ ...STAGE_TEXT_ACTION_SX, fontWeight: 500, lineHeight: 1, flexShrink: 0, whiteSpace: 'nowrap' }}
+            >
+              {row.actionLabel} <span aria-hidden="true">→</span>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+
+      {/* PARITY-05 — ghost "{n} more" between the last visible row and History. */}
+      {showMore && (
+        <Box
+          sx={{
+            ...NEEDS_ATTENTION_CELL_SX,
+            gridColumn: { xs: '1 / -1', md: 'auto' },
+            borderTop: { xs: separator, md: 0 },
+            borderRight: { md: onOpenHistory ? separator : 0 },
+          }}
+        >
+          <Box
+            component="button"
+            type="button"
+            data-emphasis="secondary"
+            onClick={onOpenAll}
+            sx={{
+              ...STAGE_TEXT_ACTION_SX,
+              fontWeight: 500,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+              px: 1,
+              py: 0.5,
+              border: '1px solid var(--accent-border)',
+              borderRadius: '6px',
+              '&:hover': { bgcolor: 'var(--accent-ghost)' },
+            }}
+          >
+            {`${overflowCount} more`}
+          </Box>
+        </Box>
+      )}
+
+      {onOpenHistory && (
+        <Box sx={{ ...NEEDS_ATTENTION_CELL_SX, gridRow: { xs: 1, md: 'auto' }, gridColumn: { xs: 2, md: 'auto' } }}>
+          <Box
+            component="button"
+            type="button"
+            onClick={onOpenHistory}
+            sx={{ ...STAGE_TEXT_ACTION_SX, fontWeight: 500, lineHeight: 1, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}
+          >
+            History
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** Small empty-state line inside a stage; never a teaching panel. */
+function StageEmpty({ children }: { children: ReactNode }) {
+  return (
+    <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+      {children}
+    </Typography>
+  );
+}
+
+/**
+ * Operations overview Quick Scan resolution — POST /api/v1/wms/scan/resolve.
+ * Read-only: it identifies what was scanned and never creates warehouse
+ * evidence. Shapes mirror the resolver's response branches.
+ */
+export type OperationsScanResolution =
+  | { type: 'location'; location_code: string; total_variants: number; total_units: number; pending_stow_tasks: number }
+  | { type: 'product'; variant_title: string | null; sku: string | null; stage: string; total_on_hand: number; total_available: number }
+  | { type: 'invoice_scan' | 'order'; external_order_id: string; active_batch: { pick_batch_id: string; status: string } | null }
+  | { type?: undefined };
+
+const SCAN_STAGE_LABELS: Record<string, string> = {
+  receiving: 'Receive',
+  received: 'Received',
+  stow_pending: 'Waiting to put away',
+  stowing: 'Putting away',
+  picking: 'Pick',
+  pick_complete: 'Ready to pack',
+  packing: 'Pack',
+  stowed: 'In stock',
+};
+
+function describeScanResolution(result: OperationsScanResolution): string {
+  switch (result.type) {
+    case 'location':
+      return `Bin ${result.location_code} · ${result.total_units} ${result.total_units === 1 ? 'unit' : 'units'} · ${result.total_variants} ${result.total_variants === 1 ? 'product' : 'products'}`;
+    case 'product': {
+      const name = result.variant_title ?? result.sku ?? 'Product';
+      const stage = SCAN_STAGE_LABELS[result.stage];
+      return `${name}${result.sku && result.variant_title ? ` · ${result.sku}` : ''} · ${result.total_on_hand} on hand${stage ? ` · ${stage}` : ''}`;
+    }
+    case 'invoice_scan':
+    case 'order': {
+      const batch = result.active_batch;
+      const batchStatus = batch ? STATUS_LABELS[batch.status]?.label ?? batch.status : null;
+      return `Order #${result.external_order_id}${batch ? ` · Batch ${batch.pick_batch_id.slice(0, 8).toUpperCase()} · ${batchStatus}` : ''}`;
+    }
+    default:
+      return 'Scanned — no warehouse details available.';
+  }
 }
 
 /**
@@ -1266,6 +1968,12 @@ function WmsModuleFT2Inner({
   data,
   isLoading,
   isError,
+  isOpsConsoleOpen = false,
+  needsAttention = null,
+  onNeedsAttentionAction,
+  onOpenHistory,
+  onOpenAllAttention,
+  onConnectCarrier,
 
   onCreateReceiveJob,
   onFetchReceiveJob,
@@ -1289,6 +1997,8 @@ function WmsModuleFT2Inner({
   onClaimPack,
   onFetchPackOrders,
   onPackFreeScan,
+  onOperationsScanResolve,
+  operationsShell = 'management',
   onConfirmPackScan,
   onReportPackException,
   onPrintLabel,
@@ -1329,7 +2039,6 @@ function WmsModuleFT2Inner({
   onProcessReturnLine,
   onCompleteReturnJob,
   readyToPackOrders,
-  readyToPackCount,
   openReceiveJobCount,
   openReceiveJobs,
   onReceiveSessionEnter,
@@ -1803,6 +2512,9 @@ function WmsModuleFT2Inner({
   const [sessionError, setSessionError] = useState<string | null>(null);
 
   const batches = data?.batches ?? [];
+  const pickingBatches = batches.filter((batch) => batch.status === 'pending' || batch.status === 'picking');
+  const readyPackBatches = batches.filter((batch) => batch.status === 'pick_complete');
+  const packingBatches = batches.filter((batch) => batch.status === 'packing');
 
   // PICK-EXECUTION-SPATIAL-01B — canonical warehouse geometry for the Pick
   // execution map, via the shared WMS adapter. undefined (grid not resolved)
@@ -1943,21 +2655,85 @@ function WmsModuleFT2Inner({
     await onClaimBatch(batchId);
   };
 
+  // Pack execution entry scanner (consequential, onPackFreeScan).
   const [packScanLoading, setPackScanLoading] = useState(false);
   const [packScanError, setPackScanError] = useState<string | null>(null);
-  const [readyToPackOpen, setReadyToPackOpen] = useState(false);
-  const [pickPackExpanded, setPickPackExpanded] = useState(true);
-  const [receivingExpanded, setReceivingExpanded] = useState(true);
-  const [puttingAwayExpanded, setPuttingAwayExpanded] = useState(false);
+  // Operations overview Quick Scan (read-only, onOperationsScanResolve).
+  const [quickScanLoading, setQuickScanLoading] = useState(false);
+  const [quickScanError, setQuickScanError] = useState<string | null>(null);
+  const [quickScanResult, setQuickScanResult] = useState<string | null>(null);
   const [inventoryChecksExpanded, setInventoryChecksExpanded] = useState(false);
   const [showAllInventoryChecks, setShowAllInventoryChecks] = useState(false);
-  const packInputRef = useRef<HTMLInputElement>(null);
+  // Focused stage: an expansion of the same lifecycle stage model, never a
+  // second queue. null = five-stage overview.
+  const [focusedStage, setFocusedStage] = useState<OperationsLifecycleStage | null>(null);
+  // WMS-OPS-OWNER-1A-ALIGNMENT — management header / Reconcile description seams.
+  const managementHeadingId = useId();
+  const managementSummaryId = useId();
+  const reconcileDueId = useId();
+  const quickScanLabelId = useId();
+  const quickScanInputRef = useRef<HTMLInputElement>(null);
+  const packEntryInputRef = useRef<HTMLInputElement>(null);
+  const scannerFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scannerOwnedFocusBeforeConsoleRef = useRef(false);
+  const previousOpsConsoleOpenRef = useRef(Boolean(isOpsConsoleOpen));
   const packErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Re-focus pack input whenever operations page becomes active
+  // Quick Scan focus belongs to the Operations surface, but an open Ops
+  // Console temporarily owns interaction. Preserve scanner focus ownership
+  // across that transition without unmounting the scanner or stealing focus
+  // from another control.
   useEffect(() => {
-    if (!activeSession) setTimeout(() => packInputRef.current?.focus(), 100);
-  }, [activeSession]);
+    if (scannerFocusTimerRef.current) {
+      clearTimeout(scannerFocusTimerRef.current);
+      scannerFocusTimerRef.current = null;
+    }
+
+    const consoleOpen = Boolean(isOpsConsoleOpen);
+    const wasConsoleOpen = previousOpsConsoleOpenRef.current;
+    const scanner = quickScanInputRef.current;
+
+    previousOpsConsoleOpenRef.current = consoleOpen;
+
+    if (consoleOpen) {
+      // Capture ownership only on the closed -> open transition. Subsequent
+      // renders while open must not erase the fact that the scanner owned focus.
+      if (!wasConsoleOpen) {
+        const scannerOwnedFocus =
+          scanner !== null && document.activeElement === scanner;
+
+        scannerOwnedFocusBeforeConsoleRef.current = scannerOwnedFocus;
+
+        if (scannerOwnedFocus) scanner.blur();
+      }
+      return;
+    }
+
+    if (activeSession) return;
+
+    // Initial Operations entry keeps the existing scanner autofocus.
+    // Console close restores focus only when the scanner owned it before open.
+    const shouldFocus =
+      !wasConsoleOpen || scannerOwnedFocusBeforeConsoleRef.current;
+
+    if (!shouldFocus) return;
+
+    scannerFocusTimerRef.current = setTimeout(() => {
+      if (!activeSession && !isOpsConsoleOpen) {
+        quickScanInputRef.current?.focus();
+      }
+
+      scannerOwnedFocusBeforeConsoleRef.current = false;
+      scannerFocusTimerRef.current = null;
+    }, 100);
+
+    return () => {
+      if (scannerFocusTimerRef.current) {
+        clearTimeout(scannerFocusTimerRef.current);
+        scannerFocusTimerRef.current = null;
+      }
+    };
+  }, [activeSession, isOpsConsoleOpen]);
 
   const handlePackFreeScan = async (scannedValue: string) => {
     if (packScanLoading) return;
@@ -1988,7 +2764,30 @@ function WmsModuleFT2Inner({
       packErrorTimerRef.current = setTimeout(() => setPackScanError(null), 3500);
     } finally {
       setPackScanLoading(false);
-      if (packInputRef.current) packInputRef.current.value = '';
+      if (packEntryInputRef.current) packEntryInputRef.current.value = '';
+    }
+  };
+
+  // WMS-OPS-LIFECYCLE-IA-02 — the Operations overview Quick Scan only
+  // resolves (POST /wms/scan/resolve). It never enters Pack, claims, scans or
+  // completes anything; consequential scanning lives inside Pack execution.
+  const handleQuickScanResolve = async (scannedValue: string) => {
+    if (quickScanLoading || !onOperationsScanResolve) return;
+    setQuickScanLoading(true);
+    setQuickScanError(null);
+    setQuickScanResult(null);
+    try {
+      const result = await onOperationsScanResolve(scannedValue);
+      setQuickScanResult(describeScanResolution(result ?? {}));
+    } catch (err: any) {
+      setQuickScanError(
+        err?.response?.status === 404
+          ? `Nothing in the warehouse matches ${scannedValue}.`
+          : err?.response?.data?.error ?? err?.message ?? 'Scan failed — try again'
+      );
+    } finally {
+      setQuickScanLoading(false);
+      if (quickScanInputRef.current) quickScanInputRef.current.value = '';
     }
   };
 
@@ -2015,6 +2814,13 @@ function WmsModuleFT2Inner({
     }
   };
 
+  // Navigation-only seam. Do not use exitSession: it would clear the Pack
+  // target. Pack orientation/restoration belongs to the next slice.
+  const enterPackHandoff = (batchId: string) => {
+    setActiveSession(null);
+    onPackSessionEnter?.(batchId);
+  };
+
   // Active pick session
   if (activeSession?.type === 'pick') {
     return (
@@ -2022,6 +2828,7 @@ function WmsModuleFT2Inner({
         pickBatchId={activeSession.batchId}
         lineItems={activeSession.lineItems}
         onComplete={exitSession}
+        onStartPacking={enterPackHandoff}
         onResolveBarcode={onResolveBarcode}
         onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
         onReportException={(params) => onReportException(activeSession.batchId, params)}
@@ -2198,6 +3005,76 @@ function WmsModuleFT2Inner({
     );
   }
 
+  // WMS-OPS-LIFECYCLE-IA-02 — Pack execution entry. Operations hands off only
+  // the batch identity (packBatchId); nothing is claimed or recorded until the
+  // operator scans here. This is the consequential Pack scanner
+  // (onPackFreeScan) that previously sat on the Operations overview; the
+  // overview Quick Scan is now read-only resolution. Pack execution stays
+  // order/parcel authority: the first scan resolves the order to pack.
+  if (pendingPackBatchId) {
+    const packBatch = batches.find((batch) => batch.pick_batch_id === pendingPackBatchId);
+    const packOrderCount = new Set(
+      (readyToPackOrders ?? [])
+        .filter((order) => order.pick_batch_id === pendingPackBatchId)
+        .map((order) => order.lasyncro_order_id)
+    ).size;
+
+    return (
+      <Box sx={{ p: { xs: '20px 16px', md: '24px' }, maxWidth: 640, mx: 'auto', width: '100%', boxSizing: 'border-box' }}>
+        <Button
+          variant="text"
+          size="small"
+          onClick={() => exitSession()}
+          sx={{ minWidth: 'auto', px: 0, mb: 1.5, fontSize: 12, textTransform: 'none', color: 'var(--accent)' }}
+        >
+          Return to Operations
+        </Button>
+        <Typography component="h1" sx={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+          Pack batch {pendingPackBatchId.slice(0, 8).toUpperCase()}
+        </Typography>
+        {packBatch && (
+          <Typography sx={{ mt: 0.5, fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+            {packOrderCount > 0 ? `${packOrderCount} ${packOrderCount === 1 ? 'order' : 'orders'} · ` : ''}
+            {packBatch.total_units} {packBatch.total_units === 1 ? 'unit' : 'units'}
+          </Typography>
+        )}
+
+        <Box sx={{
+          mt: 2.5, display: 'flex', alignItems: 'center', gap: 1.25,
+          bgcolor: 'var(--surface)', border: '1.5px solid',
+          borderColor: packScanError ? 'var(--critical-border)' : 'var(--accent-border)',
+          borderRadius: '10px', px: 1.5, py: 1,
+        }}>
+          {packScanLoading
+            ? <CircularProgress size={16} sx={{ color: 'var(--accent)' }} />
+            : <ScanBarcode size={18} color={packScanError ? 'var(--critical-ink)' : 'var(--accent)'} />}
+          <TextField
+            inputRef={packEntryInputRef}
+            autoFocus
+            fullWidth
+            variant="standard"
+            placeholder="Scan an item or invoice barcode to begin packing"
+            disabled={packScanLoading}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const val = packEntryInputRef.current?.value.trim();
+                if (val) void handlePackFreeScan(val);
+              }
+            }}
+            autoComplete="off"
+            InputProps={{ disableUnderline: true }}
+            sx={{ '& .MuiInputBase-input': { fontFamily: 'inherit', fontSize: 15, color: 'var(--ink-3)' } }}
+          />
+        </Box>
+        {packScanError && (
+          <Alert severity="error" sx={{ mt: 1, py: 0.5, fontSize: 13, borderRadius: '8px' }}>
+            {packScanError}
+          </Alert>
+        )}
+      </Box>
+    );
+  }
+
   // BATCH-DETAIL-HANDOFF-01 — protected Pick URL first paint.
   //
   // A targeted ?batchId= URL already declares which workflow the merchant
@@ -2293,28 +3170,272 @@ function WmsModuleFT2Inner({
     );
   }
 
-    /**
-   * Counts are TASKS, not units. A batch mid-pack counts under both Picking
-   * and Packing on purpose — it needs a picker's attention and a packer's,
-   * and on a real floor those are different operators.
-   *
-   * NOTE: /batches returns { batches: [...] }, not a bare array.
-   */
+  // Lifecycle tallies count batches, not order rows or physical quantities.
   const workCounts: WorkTallyCounts = {
-    picking: (data?.batches ?? []).filter(
-      (b) => Number(b.units_picked) < Number(b.total_units)
-    ).length,
-    packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
+    picking: pickingBatches.length,
+    readyToPack: readyPackBatches.length,
+    packing: packingBatches.length,
     puttingAway: visibleStowTasks.length,
     receiving: receiveWorkJobs.length,
     counting: recountLocked ? 0 : countingTasks.length,
   };
 
-  return (
-    <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
+  const isOperatorShell = operationsShell === 'operator';
 
-      {/* PAGE HEADER */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }}>
+  const readyOrderCount = (batchId: string) => {
+    const orderIds = (readyToPackOrders ?? [])
+      .filter((order) => order.pick_batch_id === batchId)
+      .map((order) => order.lasyncro_order_id);
+    return orderIds.length > 0 ? new Set(orderIds).size : undefined;
+  };
+
+  const renderBatchCard = (batch: WmsBatch) => (
+    <BatchCard
+      key={batch.pick_batch_id}
+      batch={batch}
+      currentUserId={currentUserId}
+      onOpenPick={(id) => void enterPickSession(id)}
+      onOpenPack={enterPackHandoff}
+      orderCount={readyOrderCount(batch.pick_batch_id)}
+      board={!isOperatorShell}
+    />
+  );
+
+  const renderReceiveCard = (job: WmsOpenReceiveJob) => (
+    <ReceiveWorkCard
+      key={job.receive_job_id}
+      job={job}
+      isOwnJob={job.assigned_operator_id === currentUserId}
+      canManageAssignment={!isOperatorShell && Boolean(canReassignReceive)}
+      onOpen={(jobId) => void enterReceiveSession(jobId)}
+      onReassignRequest={(j) => void openReceiveReassignDialog(j)}
+      board={!isOperatorShell}
+    />
+  );
+
+  const renderStowCard = (task: WmsStowTask) => (
+    <StowTaskCard
+      key={task.stow_task_id}
+      task={task}
+      currentUserId={currentUserId}
+      canAssignStow={!isOperatorShell && canAssignStow}
+      onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
+      onAssignRequest={(t) => void openStowAssignDialog(t)}
+      onMakeFirstToClaim={(t) => void makeStowFirstToClaim(t)}
+      board={!isOperatorShell}
+    />
+  );
+
+  const renderCountCard = (task: CountingTask) => (
+    <CountingTaskCard
+      key={task.recount_task_id}
+      task={task}
+      currentUserId={currentUserId}
+      onOpen={(selectedTask) => {
+        onCountSessionEnter?.(selectedTask.recount_task_id);
+        setActiveSession({ type: 'count', task: selectedTask });
+      }}
+    />
+  );
+
+  // Owner/Admin pipeline: each lifecycle stage directly owns its work.
+  // Every batch has exactly one lifecycle home; pack_complete has none here.
+  const stageWork: Record<OperationsLifecycleStage, {
+    count: number | null;
+    lead?: ReactNode;
+    items: ReactNode[];
+    empty?: ReactNode;
+  }> = {
+    receive: {
+      count: receiveWorkJobs.length,
+      lead: receiveWorkJobs.length > 0 &&
+        receiveAssignedWorkSpotlight &&
+        !receiveAssignedWorkSpotlight.isDismissed ? (
+          <SpotlightCoachMark
+            title="Receive work assigned to you"
+            body="Open a shipment to review the Receive Brief, then Claim & Start Receive. Assignment reserves the work for you; it does not start the job."
+            isDismissed={receiveAssignedWorkSpotlight.isDismissed}
+            onDismiss={receiveAssignedWorkSpotlight.dismiss}
+          />
+        ) : undefined,
+      items: receiveWorkJobs.map(renderReceiveCard),
+      empty: <StageEmpty>No shipments to receive.</StageEmpty>,
+    },
+    'put-away': {
+      count: visibleStowTasks.length,
+      items: visibleStowTasks.map(renderStowCard),
+      empty: <StageEmpty>Received stock appears here when it needs a warehouse location.</StageEmpty>,
+    },
+    pick: {
+      count: pickingBatches.length,
+      items: pickingBatches.map(renderBatchCard),
+      empty: <StageEmpty>No batches to pick.</StageEmpty>,
+    },
+    pack: {
+      // Batch/group grain: a ready batch of N orders is one Pack context.
+      count: readyPackBatches.length + packingBatches.length,
+      items: [...readyPackBatches, ...packingBatches].map(renderBatchCard),
+      empty: <StageEmpty>Picked batches appear here ready to pack.</StageEmpty>,
+    },
+    ship: {
+      count: null,
+      items: [],
+      empty: (
+        <Box
+          data-layout="ship-empty-state"
+          sx={{
+            // PARITY-04: one centered empty-state group filling the stage body.
+            flexGrow: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: 0.5,
+          }}
+        >
+          {/* Status-neutral: Operations has no canonical carrier status. */}
+          <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink-2)' }}>Carrier setup</Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+            Packed orders queue here for label and handoff.
+          </Typography>
+          {onConnectCarrier && (
+            <Box component="button" type="button" onClick={onConnectCarrier} sx={{ ...STAGE_TEXT_ACTION_SX, mt: 0.5 }}>
+              Configure carriers <span aria-hidden="true">→</span>
+            </Box>
+          )}
+        </Box>
+      ),
+    },
+  };
+
+  // WMS-OPS-OWNER-1A-ALIGNMENT — header summary reads the same stage grain the
+  // board reports (jobs, stow tasks, pick batches, Pack contexts). Ship is
+  // structural (null) and Count work is not lifecycle work: neither contributes.
+  const lifecycleStageCounts = OPERATIONS_LIFECYCLE_STAGES
+    .map(({ stage }) => stageWork[stage].count)
+    .filter((count): count is number => count !== null);
+  const openLifecycleWork = lifecycleStageCounts.reduce((sum, count) => sum + count, 0);
+  const activeLifecycleStages = lifecycleStageCounts.filter((count) => count > 0).length;
+  const lifecycleSummary =
+    `${openLifecycleWork} open ${openLifecycleWork === 1 ? 'task' : 'tasks'} across ` +
+    `${activeLifecycleStages} ${activeLifecycleStages === 1 ? 'stage' : 'stages'}`;
+
+  // Reconcile inventory — the single management inventory-maintenance entry.
+  // Due = canonical open Count tasks, shown even while recount is locked.
+  const reconcileDueCount = countingTasks.length;
+  const reconcileOpensCountReveal = !recountLocked && reconcileDueCount > 0;
+  const handleReconcile = () => {
+    if (recountLocked) {
+      onRecountUpgrade?.();
+      return;
+    }
+    if (reconcileDueCount > 0) {
+      if (inventoryChecksExpanded) setShowAllInventoryChecks(false);
+      setInventoryChecksExpanded((value) => !value);
+      return;
+    }
+    void openCountDialog();
+  };
+
+  // Operator shell — Current work (claimed / in progress, resumable by this
+  // operator) and Up next (assigned, then available). Ordering is a total
+  // order over current data, never input-array order: tier, then oldest,
+  // then lifecycle position, then identity.
+  type OperatorWorkItem = { key: string; tier: number; at: number; stageOrder: number; node: ReactNode };
+  const timeOf = (value?: string | null) => {
+    const parsed = value ? Date.parse(value) : Number.NaN;
+    return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+  };
+  const compareOperatorWork = (a: OperatorWorkItem, b: OperatorWorkItem) =>
+    a.tier - b.tier || a.at - b.at || a.stageOrder - b.stageOrder || a.key.localeCompare(b.key);
+
+  const operatorCurrentWork: OperatorWorkItem[] = [];
+  const operatorUpNext: OperatorWorkItem[] = [];
+  if (isOperatorShell) {
+    for (const job of ownReceiveWorkJobs) {
+      const started = job.status === 'in_progress' || Boolean(job.started_at);
+      (started ? operatorCurrentWork : operatorUpNext).push({
+        key: `receive:${job.receive_job_id}`, tier: started ? 0 : 1,
+        at: timeOf(job.started_at), stageOrder: 0, node: renderReceiveCard(job),
+      });
+    }
+    for (const task of visibleStowTasks) {
+      const claimed = task.status === 'in_progress';
+      (claimed ? operatorCurrentWork : operatorUpNext).push({
+        key: `stow:${task.stow_task_id}`,
+        tier: claimed ? 0 : task.assigned_operator_id === currentUserId ? 1 : 2,
+        at: timeOf(claimed ? task.claimed_at ?? task.created_at : task.created_at),
+        stageOrder: 1, node: renderStowCard(task),
+      });
+    }
+    for (const batch of pickingBatches) {
+      if (batch.status === 'picking' && batch.picked_by !== currentUserId) continue;
+      const resuming = batch.status === 'picking';
+      (resuming ? operatorCurrentWork : operatorUpNext).push({
+        key: `pick:${batch.pick_batch_id}`, tier: resuming ? 0 : 2,
+        at: timeOf(batch.released_at), stageOrder: 2, node: renderBatchCard(batch),
+      });
+    }
+    for (const batch of readyPackBatches) {
+      operatorUpNext.push({
+        key: `pack:${batch.pick_batch_id}`, tier: 2,
+        at: timeOf(batch.pick_completed_at ?? batch.released_at), stageOrder: 3, node: renderBatchCard(batch),
+      });
+    }
+    for (const batch of packingBatches) {
+      if (batch.packed_by !== currentUserId) continue;
+      operatorCurrentWork.push({
+        key: `pack:${batch.pick_batch_id}`, tier: 0,
+        at: timeOf(batch.pick_completed_at ?? batch.released_at), stageOrder: 3, node: renderBatchCard(batch),
+      });
+    }
+    if (!recountLocked) {
+      for (const task of countingTasks) {
+        const continuing = task.status === 'claimed' || task.status === 'counting';
+        if (continuing ? task.claimed_by !== currentUserId
+          : task.assigned_to !== null && task.assigned_to !== currentUserId) continue;
+        (continuing ? operatorCurrentWork : operatorUpNext).push({
+          key: `count:${task.recount_task_id}`,
+          tier: continuing ? 0 : task.assigned_to === currentUserId ? 1 : 2,
+          at: timeOf(continuing ? task.claimed_at ?? task.created_at : task.created_at),
+          stageOrder: 4, node: renderCountCard(task),
+        });
+      }
+    }
+    operatorCurrentWork.sort(compareOperatorWork);
+    operatorUpNext.sort(compareOperatorWork);
+  }
+
+  return (
+    <Box
+      sx={{
+        p: { xs: '20px 16px', md: '24px' },
+        width: '100%',
+        maxWidth: 'none',
+        height: '100%',
+        minHeight: 0,
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        overflowY: 'auto',
+        bgcolor: 'var(--bg)',
+      }}
+    >
+
+      {/* PAGE HEADER — operator shell (frozen). Management uses the 1a
+          Warehouse header region inside the always-mounted composition. */}
+      {isOperatorShell && (
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: { xs: 2, lg: 2.5 },
+          flexShrink: 0,
+        }}
+      >
         <Box>
           <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Warehouse
@@ -2326,45 +3447,6 @@ function WmsModuleFT2Inner({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
-          {/* GH-1222: role eligibility before commercial eligibility — no
-              management CTA, Core badge or upsell without canManageRecount. */}
-          {canManageRecount && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Button
-              variant="contained"
-              onClick={() => {
-                if (recountLocked) {
-                  onRecountUpgrade?.();
-                  return;
-                }
-                void openCountDialog();
-              }}
-              sx={{
-                bgcolor: 'var(--accent)',
-                color: 'var(--accent-ink)',
-                borderRadius: '6px',
-                fontWeight: 600,
-                '&:hover': { bgcolor: 'var(--accent-hover)' },
-              }}
-            >
-              Reconcile inventory
-            </Button>
-            {recountLocked && (
-              <Box sx={{
-                display: 'flex', alignItems: 'center', gap: '2px',
-                bgcolor: 'var(--accent-ghost)',
-                border: '1px solid var(--accent-border)',
-                borderRadius: '4px',
-                px: '4px', py: '1px',
-              }}>
-                <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
-                <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
-                  Core
-                </Typography>
-              </Box>
-            )}
-          </Box>
-          )}
           {/*<WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} /> */}
           {/* {isOnline && (
             <Box sx={{
@@ -2382,11 +3464,11 @@ function WmsModuleFT2Inner({
           )} */}
         </Box>
       </Box>
+      )}
 
       {/* WORK TALLY — everything waiting on the floor, above the fold */}
-      <WorkTally counts={workCounts} countingLocked={recountLocked} />
 
-      {onApproveOpeningInventoryCutover && (
+      {!isOperatorShell && onApproveOpeningInventoryCutover && (
         <OpeningInventoryCutoverCard
           view={openingInventory ?? null}
           canApprove={Boolean(canApproveOpeningInventoryCutover)}
@@ -2892,50 +3974,157 @@ function WmsModuleFT2Inner({
         </Alert>
       )}
 
-      {/* QUICK SCAN PANEL — always-on free-scan surface (WEB-PACK-02) */}
-      <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }}>
+      {/* WMS-OPS-LIFECYCLE-IA-02 — one composition, always mounted. An open
+          Ops Console makes it inert in place — still visible underneath the
+          overlay (no unmount, no remount, no reflow); the page owns ordinary
+          vertical scrolling. */}
+      <Box
+        aria-hidden={isOpsConsoleOpen ? true : undefined}
+        inert={isOpsConsoleOpen ? true : undefined}
+        sx={{
+          // 1a: management is a flex column so the pipeline board can take the
+          // remaining height; the operator shell keeps its grid.
+          ...(isOperatorShell
+            ? { display: 'grid', alignContent: 'start' }
+            : { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }),
+          gap: 2,
+          // VISUAL-PARITY-02: Operations stays visibly present (same nodes,
+          // same geometry) under the Console overlay; inert + aria-hidden +
+          // no pointer events withdraw interaction and focus only.
+          pointerEvents: isOpsConsoleOpen ? 'none' : 'auto',
+        }}
+      >
+        {/* Operator: Quick Scan card (unchanged). Management (WMS-OPS-OWNER-1A):
+            one Warehouse header region — heading, summary, compact Quick Scan
+            and Reconcile. Same scanner node/authority in both shells. */}
+        <Box
+          component={isOperatorShell ? 'div' : 'section'}
+          role={isOperatorShell ? undefined : 'region'}
+          aria-labelledby={isOperatorShell ? undefined : managementHeadingId}
+          aria-describedby={!isOperatorShell && !isLoading && !loadingSession ? managementSummaryId : undefined}
+          sx={isOperatorShell
+            ? {
+              display: 'grid',
+              gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr)' },
+              gap: 1.5,
+              alignItems: 'start',
+            }
+            : {
+              display: 'grid',
+              gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'auto minmax(0, 1fr) auto' },
+              columnGap: 2.5,
+              rowGap: 1.25,
+              alignItems: 'center',
+              flexShrink: 0,
+            }}
+        >
+      {!isOperatorShell && (
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            id={managementHeadingId}
+            component="h1"
+            sx={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em' }}
+          >
+            Warehouse
+          </Typography>
+          {!isLoading && !loadingSession && (
+            <Typography
+              id={managementSummaryId}
+              sx={{ mt: 0.5, fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}
+            >
+              {lifecycleSummary}
+            </Typography>
+          )}
+        </Box>
+      )}
 
-        {/* Compact always-on scan row */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
+      {/* QUICK SCAN — read-only identifier resolution (POST /wms/scan/resolve).
+          Stage-neutral: Operations spans the whole lifecycle. Consequential
+          Pack scanning lives inside Pack execution, never here. */}
+      {/* Operator: the Quick Scan card (unchanged). Management (1a): one 44px
+          group — [icon] [textbox] [Listening] — named by a real, SR-only
+          "Quick scan" label; no visible title, helper or card anatomy. */}
+      <Box
+        sx={isOperatorShell
+          ? {
+            bgcolor: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '14px',
+            p: '12px 14px',
+            minWidth: 0,
+          }
+          : { minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: { xs: 'stretch', md: 'flex-end' } }}
+      >
+        <Box
+          role={isOperatorShell ? undefined : 'group'}
+          aria-labelledby={isOperatorShell ? undefined : quickScanLabelId}
+          sx={isOperatorShell
+            ? { display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }
+            : {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              height: 44,
+              width: '100%',
+              maxWidth: 460,
+              boxSizing: 'border-box',
+              pl: 1.25,
+              pr: 0.75,
+              bgcolor: 'var(--surface)',
+              border: '1px solid',
+              borderColor: quickScanError ? 'var(--critical-border)' : 'var(--rule)',
+              borderRadius: '10px',
+              minWidth: 0,
+            }}
+        >
           <Box sx={{
-            width: 32, height: 32, borderRadius: '8px',
-            bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
+            width: isOperatorShell ? 32 : 28, height: isOperatorShell ? 32 : 28, borderRadius: '8px',
+            bgcolor: quickScanError ? 'var(--critical-ghost)' : 'var(--accent-ghost)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            {packScanLoading
+            {quickScanLoading
               ? <CircularProgress size={16} sx={{ color: 'var(--accent)' }} />
-              : <ScanBarcode size={18} color={packScanError ? '#E5484D' : 'var(--accent)'} />}
+              : <ScanBarcode size={18} color={quickScanError ? 'var(--critical-ink)' : 'var(--accent)'} />}
           </Box>
-          <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', flexShrink: 0 }}>Quick scan</Typography>
+          <Typography
+            id={quickScanLabelId}
+            sx={isOperatorShell ? { fontSize: 14, fontWeight: 500, color: 'var(--ink)', flexShrink: 0 } : SR_ONLY_SX}
+          >
+            Quick scan
+          </Typography>
 
-          {/* Scan input */}
-          <Box sx={{
-            flex: '1 1 280px',
-            minWidth: 0,
-            bgcolor: 'var(--bg)',
-            border: '1.5px solid',
-            borderColor: packScanError ? 'error.main' : 'rgba(255,107,43,0.45)',
-            borderRadius: '8px',
-            px: 1.5, py: 0.75,
-          }}>
+          <Box sx={isOperatorShell
+            ? {
+              flex: '1 1 280px',
+              minWidth: 0,
+              bgcolor: 'var(--bg)',
+              border: '1.5px solid',
+              borderColor: quickScanError ? 'var(--critical-border)' : 'var(--accent-border)',
+              borderRadius: '8px',
+              px: 1.5, py: 0.75,
+            }
+            : { flex: '1 1 auto', minWidth: 0 }}>
             <TextField
-              inputRef={packInputRef}
+              inputRef={quickScanInputRef}
               fullWidth
               variant="standard"
-              placeholder="Scan an item or invoice barcode to begin packing"
-              disabled={packScanLoading}
+              placeholder={isOperatorShell
+                ? 'Scan an item or invoice barcode, bin or order number'
+                : 'Scan an item or invoice barcode'}
+              inputProps={isOperatorShell ? undefined : { 'aria-labelledby': quickScanLabelId }}
+              disabled={quickScanLoading}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  const val = packInputRef.current?.value.trim();
-                  if (val) void handlePackFreeScan(val);
+                  const val = quickScanInputRef.current?.value.trim();
+                  if (val) void handleQuickScanResolve(val);
                 }
               }}
               autoComplete="off"
               InputProps={{ disableUnderline: true }}
               sx={{
                 '& .MuiInputBase-input': {
-                  fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                  fontFamily: 'inherit',
                   fontSize: 15, color: 'var(--ink-3)',
                   '&::placeholder': { color: 'var(--ink-4)' },
                 },
@@ -2943,243 +4132,131 @@ function WmsModuleFT2Inner({
             />
           </Box>
 
-          {/* Status pill */}
           <Box sx={{
-            display: 'flex', alignItems: 'center', gap: 0.75,
-            border: `1px solid ${packScanError ? 'rgba(229,72,77,0.35)' : 'rgba(76,175,122,0.3)'}`,
+            display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0, flexGrow: 0,
+            border: `1px solid ${quickScanError ? 'var(--critical-border)' : 'var(--accent-border)'}`,
             borderRadius: '100px', px: 1.375, py: 0.5,
           }}>
             <Box sx={{
               width: 5, height: 5, borderRadius: '50%',
-              bgcolor: packScanError ? '#E5484D' : '#4CAF7A',
-              ...(!packScanError && !packScanLoading && {
+              bgcolor: quickScanError ? 'var(--critical-ink)' : 'var(--accent)',
+              ...(!quickScanError && !quickScanLoading && {
                 '@keyframes wmsListenPulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
                 animation: 'wmsListenPulse 1.6s ease-in-out infinite',
               }),
             }} />
-            <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: packScanError ? '#E5484D' : '#4CAF7A' }}>
-              {packScanLoading ? 'Resolving…' : packScanError ? 'Hold' : 'Listening'}
+            <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: quickScanError ? 'var(--critical-ink)' : 'var(--accent)' }}>
+              {quickScanLoading ? 'Resolving…' : quickScanError ? 'Hold' : 'Listening'}
             </Typography>
           </Box>
         </Box>
 
-        {/* Error alert */}
-        {packScanError && (
+        {quickScanError && (
           <Alert severity="error" sx={{ mt: 1, py: 0.5, fontSize: 13, borderRadius: '8px' }}>
-            {packScanError}
+            {quickScanError}
           </Alert>
         )}
 
-        <Typography sx={{ mt: 0.75, fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-          Scanner auto-submits · manual entry: press Enter
-        </Typography>
+        {quickScanResult && (
+          <Typography role="status" sx={{ mt: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+            {quickScanResult}
+          </Typography>
+        )}
+
+        {isOperatorShell && (
+          <Typography sx={{ mt: 0.75, fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+            Look up anything in the warehouse · scanner auto-submits · manual entry: press Enter
+          </Typography>
+        )}
       </Box>
 
-      {!isLoading && !loadingSession && (
-        <Box sx={{ mt: 3 }}>
-          <Typography sx={{
-            fontSize: 10.5,
-            fontWeight: 500,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: 'var(--ink-4)',
-            mb: 1.5,
-          }}>
-            Work queue
-          </Typography>
-
-          <Box sx={{ display: 'grid', gap: 1.25 }}>
-            <WorkQueueFamily
-              title="Pick & pack"
-              summary={`${batches.length} active ${batches.length === 1 ? 'batch' : 'batches'} · ${readyToPackCount ?? 0} ready to pack`}
-              expanded={pickPackExpanded}
-              onToggle={() => setPickPackExpanded((value) => !value)}
-            >
-      {/* READY TO PACK — orders picked, no pack claim yet. Click to see LSU-/LSO- codes to scan. */}
-      {!!readyToPackCount && readyToPackCount > 0 && (
-        <Box sx={{
-          bgcolor: 'var(--surface)',
-          border: '1px solid var(--rule)',
-          borderRadius: '14px',
-          mb: 2.5,
-          overflow: 'hidden',
-        }}>
-          <Box
-            onClick={() => setReadyToPackOpen(v => !v)}
+      {!isOperatorShell && canManageRecount && !isLoading && !loadingSession && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, justifySelf: { xs: 'start', md: 'end' } }}>
+          <Button
+            variant={reconcileDueCount > 0 ? 'contained' : 'outlined'}
+            data-emphasis={reconcileDueCount > 0 ? 'primary' : 'secondary'}
+            aria-describedby={reconcileDueId}
+            aria-expanded={reconcileOpensCountReveal ? inventoryChecksExpanded : undefined}
+            onClick={handleReconcile}
+            sx={reconcileDueCount > 0
+              ? {
+                height: 44,
+                bgcolor: 'var(--accent)',
+                color: 'var(--accent-ink)',
+                borderRadius: '6px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                '&:hover': { bgcolor: 'var(--accent-hover)' },
+              }
+              : {
+                height: 44,
+                bgcolor: 'transparent',
+                color: 'var(--ink-2)',
+                borderColor: 'var(--rule)',
+                borderRadius: '6px',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                '&:hover': { bgcolor: 'var(--surface)', borderColor: 'var(--ink-4)' },
+              }}
+          >
+            Reconcile inventory
+          </Button>
+          <Typography
+            id={reconcileDueId}
+            component="span"
             sx={{
-              display: 'flex', alignItems: 'center', gap: 1,
-              px: '20px', py: '16px', cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+              color: reconcileDueCount > 0 ? 'var(--ink-2)' : 'var(--ink-4)',
             }}
           >
-            <Package size={16} color="var(--accent)" />
-            <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
-              {readyToPackCount} {readyToPackCount === 1 ? 'order' : 'orders'} ready to be packed
-            </Typography>
-            <Box sx={{ flex: 1 }} />
-            <Typography sx={{
-              fontSize: 12, color: 'var(--ink-4)',
-              transform: readyToPackOpen ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.15s',
-            }}>
-              ▾
-            </Typography>
-          </Box>
-          {readyToPackOpen && (
-            <Box sx={{ px: '20px', pb: '16px' }}>
-              {(readyToPackOrders ?? []).map(order => (
-                <Box key={order.lasyncro_order_id} sx={{
-                  border: '1px solid var(--rule)', borderRadius: '10px',
-                  p: '14px 16px', mb: 1.25,
-                  '&:last-child': { mb: 0 },
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                      #{order.external_order_id}
-                    </Typography>
-                    {order.wms_barcode && (
-                      <Typography sx={{
-                        fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
-                        color: 'var(--ink-3)', ml: 'auto',
-                      }}>
-                        {order.wms_barcode}
-                      </Typography>
-                    )}
-                  </Box>
-                  {order.line_items.map(item => (
-                    <Box key={item.lasyncro_line_item_id} sx={{
-                      display: 'flex', alignItems: 'center', gap: 1,
-                      py: 0.5,
-                    }}>
-                      <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', flex: 1 }} noWrap>
-                        {item.product_title}{item.variant_title ? ` · ${item.variant_title}` : ''}
-                      </Typography>
-                      <Typography sx={{
-                        fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
-                        color: item.unit_barcode ? 'var(--accent)' : 'var(--ink-4)',
-                      }}>
-                        {item.unit_barcode ?? 'no tracked unit'}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              ))}
+            {`${reconcileDueCount} due`}
+          </Typography>
+
+          {recountLocked && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+                bgcolor: 'var(--accent-ghost)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: '4px',
+                px: '4px',
+                py: '1px',
+              }}
+            >
+              <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
+              <Typography
+                sx={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: 'var(--accent)',
+                  lineHeight: 1.6,
+                }}
+              >
+                Core
+              </Typography>
             </Box>
           )}
         </Box>
       )}
 
-      {/* ACTIVE BATCHES SECTION */}
-      {!isLoading && !loadingSession && batches.length > 0 && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-            Active batches
-          </Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-            {batches.length} in progress
-          </Typography>
-        </Box>
-      )}
-
-      {/* EMPTY STATE */}
-      {!isLoading && !loadingSession && !isError && batches.length === 0 && (
-        <Box sx={{
-          textAlign: 'center', py: 8,
-          bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
-          borderRadius: '14px',
-        }}>
-          <ScanBarcode size={36} color="var(--ink-4)" />
-          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }}>
-            No active batches — waiting for release.
-          </Typography>
-        </Box>
-      )}
-
-      {/* BATCH LIST */}
-      {!isLoading && !loadingSession && batches.map((batch) => (
-        <BatchCard
-          key={batch.pick_batch_id}
-          batch={batch}
-          onOpenPick={(id) => void enterPickSession(id)}
-          gridLocations={gridLocations}
-          onFetchLineItems={onFetchLineItems}
-        />
-      ))}
-
-            </WorkQueueFamily>
-
-            {/* GH-1109 — assigned Receive work only. Assignment is dispatch;
-                pending work opens Brief and claims from inside the session. */}
-            <WorkQueueFamily
-              title="Receiving"
-              summary={`${receiveWorkJobs.length} ${
-                receiveWorkJobs.length === 1 ? 'shipment' : 'shipments'
-              }`}
-              expanded={receivingExpanded}
-              onToggle={() =>
-                setReceivingExpanded((value) => !value)
-              }
-            >
-              {receiveWorkJobs.length > 0 &&
-                receiveAssignedWorkSpotlight &&
-                !receiveAssignedWorkSpotlight.isDismissed && (
-                  <SpotlightCoachMark
-                    title="Receive work assigned to you"
-                    body="Open a shipment to review the Receive Brief, then Claim & Start Receive. Assignment reserves the work for you; it does not start the job."
-                    isDismissed={receiveAssignedWorkSpotlight.isDismissed}
-                    onDismiss={receiveAssignedWorkSpotlight.dismiss}
-                  />
-                )}
-              {receiveWorkJobs.map((job) => (
-                <ReceiveWorkCard
-                  key={job.receive_job_id}
-                  job={job}
-                  isOwnJob={job.assigned_operator_id === currentUserId}
-                  canManageAssignment={Boolean(canReassignReceive)}
-                  onOpen={(jobId) => void enterReceiveSession(jobId)}
-                  onReassignRequest={(j) => void openReceiveReassignDialog(j)}
-                />
-              ))}
-            </WorkQueueFamily>
-
-      {/* STOW TASKS */}
-            <WorkQueueFamily
-              title="Putting away"
-              summary={`${visibleStowTasks.length} ${visibleStowTasks.length === 1 ? 'task' : 'tasks'}`}
-              expanded={puttingAwayExpanded}
-              onToggle={() => setPuttingAwayExpanded((value) => !value)}
-            >
-          {visibleStowTasks.map((task) => (
-            <StowTaskCard
-              key={task.stow_task_id}
-              task={task}
-              currentUserId={currentUserId}
-              canAssignStow={canAssignStow}
-              onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
-              onAssignRequest={(t) => void openStowAssignDialog(t)}
-              onMakeFirstToClaim={(t) => void makeStowFirstToClaim(t)}
-            />
-          ))}
-            </WorkQueueFamily>
-
-      {/* COUNTS */}
-            <WorkQueueFamily
-              title="Inventory checks"
-              summary={recountLocked ? 'Core · Upgrade to view' : `${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`}
-              expanded={inventoryChecksExpanded}
-              onToggle={() => {
-                if (recountLocked) {
-                  onRecountUpgrade?.();
-                  return;
-                }
-                if (inventoryChecksExpanded) setShowAllInventoryChecks(false);
-                setInventoryChecksExpanded((value) => !value);
-              }}
-            >
-          {!recountLocked && countingTasks.length > 0 && (
-            showAllInventoryChecks
-              ? countingTasks
-              : countingTasks.slice(0, 4)
-          ).map((task) => (
+      {/* Existing bounded Count-task reveal, now entered only through
+          Reconcile inventory while Count work is due. */}
+      {!isOperatorShell && !isLoading && !loadingSession && reconcileOpensCountReveal && inventoryChecksExpanded && (
+        <Box
+          sx={{
+            gridColumn: '1 / -1',
+            border: '1px solid var(--rule)',
+            borderRadius: '10px',
+            bgcolor: 'var(--surface)',
+            overflow: 'hidden',
+          }}
+        >
+          {(showAllInventoryChecks ? countingTasks : countingTasks.slice(0, 4)).map((task) => (
             <CountingTaskCard
               key={task.recount_task_id}
               task={task}
@@ -3195,7 +4272,8 @@ function WmsModuleFT2Inner({
               }}
             />
           ))}
-          {!recountLocked && countingTasks.length > 4 && (
+
+          {countingTasks.length > 4 && (
             <Box
               onClick={() => setShowAllInventoryChecks((value) => !value)}
               sx={{
@@ -3216,13 +4294,133 @@ function WmsModuleFT2Inner({
                   ? 'Show less'
                   : `See ${countingTasks.length - 4} more`}
               </Typography>
-              {showAllInventoryChecks ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {showAllInventoryChecks
+                ? <ChevronUp size={13} />
+                : <ChevronDown size={13} />}
             </Box>
           )}
-            </WorkQueueFamily>
-          </Box>
         </Box>
       )}
+        </Box>
+
+      {/* WMS-OPS-NEEDS-ATTENTION-01 — overview level, outside every lifecycle stage. */}
+      {!isLoading && !loadingSession && !isOperatorShell && needsAttention && needsAttention.rows.length > 0 && (
+        <NeedsAttentionStrip
+          attention={needsAttention}
+          onAction={onNeedsAttentionAction}
+          onOpenHistory={onOpenHistory}
+          onOpenAll={onOpenAllAttention}
+        />
+      )}
+
+      {/* WMS-OPS-OWNER-1A-ALIGNMENT — one pipeline board. The five stages are
+          its direct children on one continuous surface; one stable track
+          definition (no 1/2/5 wrapping). PARITY-04: at desktop the board
+          neither scrolls nor forces page scroll (shrinkable, minHeight 0);
+          only below lg, where tracks get a minimum width, does the BOARD
+          scroll horizontally — a stage never scrolls. */}
+      {!isLoading && !loadingSession && !isOperatorShell && (
+        <Box
+          component="section"
+          role="region"
+          aria-label="Warehouse pipeline"
+          sx={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            display: 'grid',
+            alignItems: 'stretch',
+            gridTemplateColumns: focusedStage
+              ? 'repeat(4, minmax(0, 1fr))'
+              : `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(0, 1fr))`,
+            // Below lg five usable tracks no longer fit: tracks get a minimum
+            // width and the BOARD alone scrolls horizontally (never a stage).
+            '@media (max-width: 1199.95px)': {
+              gridTemplateColumns: focusedStage
+                ? 'repeat(4, minmax(160px, 1fr))'
+                : `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(180px, 1fr))`,
+              overflowX: 'auto',
+              overflowY: 'hidden',
+            },
+            // Desktop: no scroll container on either axis (visible on both, so
+            // the browser never promotes one axis to auto).
+            overflowX: 'visible',
+            overflowY: 'visible',
+            // Finite board edge: one outer boundary and radius, longhand so
+            // every side/corner (incl. the bottom) is explicit.
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            borderColor: 'var(--rule)',
+            borderTopLeftRadius: '12px',
+            borderTopRightRadius: '12px',
+            borderBottomLeftRadius: '12px',
+            borderBottomRightRadius: '12px',
+            // PARITY-02: the board is page canvas; only work cards are raised.
+            bgcolor: 'var(--bg)',
+          }}
+        >
+          {OPERATIONS_LIFECYCLE_STAGES.map(({ stage, label }) => {
+            const work = stageWork[stage];
+            return (
+              <LifecycleStageRegion
+                key={stage}
+                label={label}
+                count={work.count}
+                description={describeStageCount(stage, work.count ?? 0)}
+                mode={focusedStage === null ? 'overview' : focusedStage === stage ? 'focused' : 'compact'}
+                lead={work.lead}
+                items={work.items}
+                empty={work.empty}
+                onViewAll={() => setFocusedStage(stage)}
+                onAllStages={() => setFocusedStage(null)}
+              />
+            );
+          })}
+        </Box>
+      )}
+
+      {!isLoading && !loadingSession && isOperatorShell && (
+        <Box sx={{ display: 'grid', gap: 1.5, maxWidth: 760 }}>
+          {/* Lifecycle orientation only — not five management work regions. */}
+          <Box
+            component="ol"
+            aria-label="Warehouse lifecycle"
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, listStyle: 'none', m: 0, p: 0 }}
+          >
+            {OPERATIONS_LIFECYCLE_STAGES.map(({ stage, label }, index) => (
+              <Box component="li" key={stage} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                {index > 0 && <Box component="span" aria-hidden="true" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>→</Box>}
+                <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)' }}>
+                  {label}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {[
+            { title: 'Current work', work: operatorCurrentWork, empty: 'Nothing in progress.', more: 0 },
+            { title: 'Up next', work: operatorUpNext.slice(0, OPERATOR_UP_NEXT_LIMIT), empty: 'No work waiting.', more: Math.max(0, operatorUpNext.length - OPERATOR_UP_NEXT_LIMIT) },
+          ].map(({ title, work, empty, more }) => (
+            <Box
+              key={title}
+              component="section"
+              role="region"
+              aria-label={title}
+              sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '10px', p: '12px' }}
+            >
+              <Typography component="h2" sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', mb: 1.25 }}>
+                {title}
+              </Typography>
+              {work.length > 0 ? work.map((item) => item.node) : <StageEmpty>{empty}</StageEmpty>}
+              {more > 0 && (
+                <Typography sx={{ mt: 0.5, fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  {`+${more} more waiting`}
+                </Typography>
+              )}
+            </Box>
+          ))}
+        </Box>
+      )}
+      </Box>
     </Box>
   );
 }

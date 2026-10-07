@@ -616,3 +616,189 @@ describe('PICK-RESUME-SEMANTICS-01 — canonical picking status resumes executio
     expect(props.onPickSessionEnter).toHaveBeenCalledTimes(1);
   });
 });
+
+
+/**
+ * HANDOFF-QUEUE-01 — card-scoped Pick→Pack claim/custody contracts and
+ * explicit Pick completion handoff. Exercises the real module/card/Pick UI.
+ * Pack entry is observed at the existing onPackSessionEnter boundary.
+ * Lifecycle placement (which stage owns each batch) is owned by the ratified
+ * Operations IA suite (WmsModuleFT2.operations-lifecycle-ia.test.tsx); the
+ * retired L1.1 Picking/Ready to pack/Packing queue and family-control
+ * assertions were removed from this suite.
+ */
+describe('HANDOFF-QUEUE-01 — exclusive lifecycle queues and Pick Done', () => {
+  const READY_ID = 'readybat-0000-4000-8000-000000000001';
+  const OWN_PACK_ID = 'ownpack1-0000-4000-8000-000000000002';
+  const OTHER_PACK_ID = 'otherpak-0000-4000-8000-000000000003';
+  const DONE_ID = 'donepack-0000-4000-8000-000000000004';
+
+  const readyOrders = ['order-ready-1', 'order-ready-2', 'order-ready-3'].map((id, index) => ({
+    pick_batch_id: READY_ID,
+    lasyncro_order_id: id,
+    external_order_id: `READY-${index + 1}`,
+    wms_barcode: `LSO-READY${index + 1}`,
+    line_items: [{
+      lasyncro_line_item_id: `line-ready-${index + 1}`,
+      product_title: 'Ready inspection widget',
+      variant_title: null,
+      sku: 'READY-SKU',
+      quantity: 1,
+      unit_barcode: `LSU-READY${index + 1}`,
+    }],
+  }));
+
+  function queueProps() {
+    return baseProps({
+      data: { batches: [
+        wmsBatch(PENDING_ID, 'pending'),
+        wmsBatch(PICKING_ID, 'picking'),
+        { ...wmsBatch(READY_ID, 'picking'), status: 'pick_complete', units_picked: 1, pick_completed_at: '2026-10-05T10:07:00Z' },
+        { ...wmsBatch(OWN_PACK_ID, 'picking'), status: 'packing', units_picked: 1, packed_by: 3, packer_name: 'Mabu' },
+        { ...wmsBatch(OTHER_PACK_ID, 'picking'), status: 'packing', units_picked: 1, packed_by: 9, packer_name: 'Alex' },
+        { ...wmsBatch(DONE_ID, 'picking'), status: 'pack_complete' },
+      ] },
+      readyToPackOrders: readyOrders,
+      readyToPackCount: readyOrders.length,
+      onClaimPack: jest.fn().mockResolvedValue(undefined),
+      onFetchPackOrders: jest.fn().mockResolvedValue([]),
+      onPackSessionEnter: jest.fn(),
+      onSessionExit: jest.fn(),
+    });
+  }
+
+  function card(batchId: string) {
+    return screen.getByRole('article', { name: `Batch ${batchId.slice(0, 8).toUpperCase()}` });
+  }
+
+  function expectNoPhysicalPack(props: ReturnType<typeof baseProps>) {
+    expect(props.onPackFreeScan).not.toHaveBeenCalled();
+    expect(props.onConfirmPackScan).not.toHaveBeenCalled();
+    expect(props.onConfirmShipment).not.toHaveBeenCalled();
+    expect(props.onPackComplete).not.toHaveBeenCalled();
+  }
+
+  async function completePick() {
+    const props = baseProps({
+      data: { batches: [wmsBatch(PICKING_ID, 'picking')] },
+      pendingPickBatchId: PICKING_ID,
+      onResolveBarcode: jest.fn().mockResolvedValue({ lasyncro_variant_id: lineItems[0].lasyncro_variant_id }),
+      onConfirmScan: jest.fn().mockResolvedValue(undefined),
+      onPickComplete: jest.fn().mockResolvedValue(undefined),
+      onPackSessionEnter: jest.fn(),
+      onClaimPack: jest.fn().mockResolvedValue(undefined),
+      onFetchPackOrders: jest.fn().mockResolvedValue([]),
+      onSessionExit: jest.fn(),
+    });
+    render(<WmsModuleFT2 {...props} />);
+    const binInput = await screen.findByPlaceholderText(/scan bin barcode/i);
+    jest.useFakeTimers();
+    fireEvent.change(binInput, { target: { value: lineItems[0].location_code } });
+    fireEvent.keyDown(binInput, { key: 'Enter' });
+    const productInput = screen.getByPlaceholderText(/scan product barcode/i);
+    await act(async () => {
+      fireEvent.change(productInput, { target: { value: 'PBC-SKU-1' } });
+      fireEvent.keyDown(productInput, { key: 'Enter' });
+    });
+    act(() => { jest.advanceTimersByTime(400); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /confirm pick complete/i }));
+    });
+    expect(props.onConfirmScan).toHaveBeenCalledTimes(1);
+    expect(props.onPickComplete).toHaveBeenCalledWith(PICKING_ID);
+    expect(screen.getByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
+    return props;
+  }
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('B — ready batch Start packing is enabled and hands off its exact identity without Pack evidence', async () => {
+    const props = queueProps();
+    render(<WmsModuleFT2 {...props} />);
+    const start = within(card(READY_ID)).getByRole('button', { name: /^start packing\s*→?$/i });
+    expect(start).toBeEnabled();
+    expect(start.tagName).toBe('BUTTON');
+    expect(start).toHaveStyle({ borderRadius: '6px' });
+    expect(Array.from(card(READY_ID).querySelectorAll('*')).map((node) =>
+      getComputedStyle(node).fontFamily).join(' ')).not.toMatch(/DM Mono/i);
+    await act(async () => { fireEvent.click(start); });
+    expect(props.onPackSessionEnter).toHaveBeenCalledTimes(1);
+    expect(props.onPackSessionEnter).toHaveBeenCalledWith(READY_ID);
+    expectNoPhysicalPack(props);
+  });
+
+  it('C — owned packing batch Resume packing hands off without physical Pack mutation', async () => {
+    const props = queueProps();
+    render(<WmsModuleFT2 {...props} />);
+    const action = within(card(OWN_PACK_ID)).getByRole('button', { name: /^resume packing\s*→?$/i });
+    expect(action).toBeEnabled();
+    await act(async () => { fireEvent.click(action); });
+    expect(props.onPackSessionEnter).toHaveBeenCalledWith(OWN_PACK_ID);
+    expect(props.onClaimPack).not.toHaveBeenCalled();
+    expectNoPhysicalPack(props);
+  });
+
+  it('C — another operator packing batch offers no executable Pack action', () => {
+    const props = queueProps();
+    render(<WmsModuleFT2 {...props} />);
+    expect(within(card(OTHER_PACK_ID)).getByText('Packing in progress')).toBeInTheDocument();
+    expect(within(card(OTHER_PACK_ID)).getByText('Packer: Alex')).toBeInTheDocument();
+    expect(within(card(OTHER_PACK_ID)).queryAllByRole('button')).toHaveLength(0);
+    expect(props.onPackSessionEnter).not.toHaveBeenCalled();
+    expectNoPhysicalPack(props);
+  });
+
+  it('D — successful Pick Done never exits automatically when the old exit timer elapses', async () => {
+    const props = await completePick();
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
+    expectNoPhysicalPack(props);
+  });
+
+  it('D — Pick Done preserves batch identity and offers Start packing plus Return to Operations', async () => {
+    await completePick();
+    expect(screen.getByText(new RegExp(PICKING_ID.slice(0, 8), 'i'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^start packing\s*→?$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^return to operations$/i })).toBeEnabled();
+    expect(screen.queryByPlaceholderText(/scan bin barcode|scan product barcode/i)).not.toBeInTheDocument();
+  });
+
+  it('D — Return to Operations exits explicitly and exactly once', async () => {
+    const props = await completePick();
+    fireEvent.click(screen.getByRole('button', { name: /^return to operations$/i }));
+    expect(props.onSessionExit).toHaveBeenCalledTimes(1);
+    expect(props.onPackSessionEnter).not.toHaveBeenCalled();
+    expectNoPhysicalPack(props);
+  });
+
+  it('D — Start packing from Pick Done hands off the exact batch without confirming Pack evidence', async () => {
+    const props = await completePick();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^start packing\s*→?$/i }));
+    });
+    expect(props.onPackSessionEnter).toHaveBeenCalledTimes(1);
+    expect(props.onPackSessionEnter).toHaveBeenCalledWith(PICKING_ID);
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+    expectNoPhysicalPack(props);
+  });
+
+  it('E — Ready batch keeps batch context: no duplicate order queue or disabled fake Pack CTA', () => {
+    const props = queueProps();
+    render(<WmsModuleFT2 {...props} />);
+    expect(screen.queryAllByText(/orders ready to be packed/i)).toHaveLength(0);
+    for (const order of readyOrders) {
+      expect(screen.queryByText(`#${order.external_order_id}`)).not.toBeInTheDocument();
+    }
+    expect(within(card(READY_ID)).getByText(/3 orders · 1 unit · Picked/)).toBeInTheDocument();
+    const packActions = screen.queryAllByRole('button', { name: /^(?:start|resume|continue|ready to) pack/i });
+    expect(packActions).toHaveLength(2);
+    for (const action of packActions) expect(action).toBeEnabled();
+    expect(within(card(OWN_PACK_ID)).getByText('Packer: Mabu')).toBeInTheDocument();
+    expect(props.onPackSessionEnter).not.toHaveBeenCalled();
+    expectNoPhysicalPack(props);
+  });
+});

@@ -3,6 +3,19 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 const receiveJobs = [
   {
@@ -90,8 +103,7 @@ describe('GH-1109 — WmsOperationsPage Receive queue handoff', () => {
         <Routes>
           <Route path="/wms" element={<WmsOperationsPage />} />
         </Routes>
-      </MemoryRouter>
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
 
     expect(screen.getByTestId('receive-array')).toHaveTextContent('receive-self');
     expect(screen.getByTestId('receive-array')).toHaveTextContent('North Dock Supply');

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsOperationsPage.tsx
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { 
   WmsModuleFT2, 
   useOfflineScanQueue, 
@@ -9,6 +9,7 @@ import {
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
 import { useSpotlight } from '../../hooks/useSpotlight';
+import useConfig from 'hooks/useConfig';
 import { useReadyToPack } from '../wms/useReadyToPack';
 import { axiosInstance } from 'api/axiosConfig';
 import type {
@@ -26,11 +27,19 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert } from '@mui/material';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
 import { hasQzPromptBeenDismissed, dismissQzPrompt } from 'utils/qzPrompt';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
+import { useAlerts } from '../alerts/useAlerts';
+import { alertDeepLink } from '../alerts/alertDeepLink';
+import { buildHistoryRows, buildNowRows } from '../../components/OpsConsole/opsConsoleModel';
+import { useHistory } from '../operations/useHistory';
+import { EntityDetailModal } from '@lasyncro/shared/ui';
+
+/** WMS-OPS-NEEDS-ATTENTION-01 — Operations shows a bounded slice of Ops Console NOW. */
+const NEEDS_ATTENTION_VISIBLE_LIMIT = 3;
 
 /**
  * WMS GATE PAGE
@@ -44,6 +53,11 @@ import { UpgradePrompt } from '../../components/UpgradePrompt';
 export default function WmsOperationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // WMS-OPS-LIFECYCLE-IA-01 / WMS-OPS-NEEDS-ATTENTION-01 / PARITY-03 — app-shell
+  // authority. The topnav is the sole alert polling owner and the persistent
+  // Ops Console icon its only entry point; ConfigContext owns open state and
+  // this page only reads it. Needs attention's trailing action is History.
+  const { state: { isOpsConsoleOpen } } = useConfig();
   const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
     data, isLoading, isError, refetch, stowTasks,
@@ -59,6 +73,61 @@ export default function WmsOperationsPage() {
   // #1164: AuthContext canonicalizes user.id to the access token's user_id.
   const currentUserId = user?.id ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
+  // WMS-OPS-LIFECYCLE-IA-02 — AuthContext user.role is the only role input:
+  // owner/admin get the pipeline overview, everyone else the operator shell.
+  const operationsShell = canReleaseBatch ? 'management' : 'operator';
+
+  // WMS-OPS-NEEDS-ATTENTION-01 — passive reader of the canonical inbox cache
+  // entry (no poll: the topnav owns the cadence). Operators never query it.
+  const alertsInbox = useAlerts({ status: 'inbox' }, { enabled: canReleaseBatch });
+  const attentionNowRows = useMemo(
+    () => (canReleaseBatch && alertsInbox.isSuccess && alertsInbox.data
+      ? buildNowRows(alertsInbox.data.data ?? [], alertDeepLink)
+      : []),
+    [canReleaseBatch, alertsInbox.isSuccess, alertsInbox.data],
+  );
+  // Count is the full canonical NOW row count — never alerts meta.total.
+  const needsAttention = useMemo(
+    () => (attentionNowRows.length === 0 ? null : {
+      total: attentionNowRows.length,
+      rows: attentionNowRows.slice(0, NEEDS_ATTENTION_VISIBLE_LIMIT).map((row) => ({
+        id: row.id,
+        title: row.label,
+        actionLabel: row.action?.label ?? '',
+        tone: row.tone ?? 'warning',
+        a11yLabel: row.a11yLabel,
+      })),
+      overflowCount: Math.max(0, attentionNowRows.length - NEEDS_ATTENTION_VISIBLE_LIMIT),
+    }),
+    [attentionNowRows],
+  );
+  // PARITY-05 — "{n} more" opens a page-owned, read-only list of ALL canonical
+  // NOW rows: the same attentionNowRows (no second reader, no re-sort) and the
+  // same row action handler. Never opens the Ops Console or History.
+  const [attentionModalOpen, setAttentionModalOpen] = useState(false);
+  const handleOpenAllAttention = useCallback(() => setAttentionModalOpen(true), []);
+  // Row navigation is page-owned: no alert lifecycle write, no Console open.
+  const handleNeedsAttentionAction = useCallback((rowId: string) => {
+    const action = attentionNowRows.find((row) => row.id === rowId)?.action;
+    if (action?.kind === 'navigate') navigate(action.route);
+  }, [attentionNowRows, navigate]);
+  // PARITY-03 — Needs attention "History": the canonical HISTORY V1 feed
+  // (useHistory → GET /api/v1/operations/history), read-only, in a page-owned
+  // dialog. Fetched only while the dialog is open (no polling); rows come from
+  // the canonical buildHistoryRows mapping in backend order. Never opens or
+  // touches the Ops Console.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyQuery = useHistory({ enabled: historyOpen && canReleaseBatch });
+  const historyRows = useMemo(
+    () => buildHistoryRows(historyQuery.data?.items ?? []),
+    [historyQuery.data],
+  );
+  const handleOpenHistory = useCallback(() => setHistoryOpen(true), []);
+  // WMS-OPS-OWNER-1A-VISUAL-PARITY-02 — Ship's carrier-setup action; Settings
+  // owns carrier configuration. Page-owned so the module stays router-free.
+  const handleConnectCarrier = useCallback(() => {
+    navigate('/settings/carriers');
+  }, [navigate]);
   // GH-1109 residual: teaches an assigned operator that assignment reserves
   // Receive work but does not start it — claim/start is a distinct step.
   const receiveAssignedWorkSpotlight = useSpotlight('receive_assigned_work');
@@ -236,8 +305,21 @@ export default function WmsOperationsPage() {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack/claim`);
   }, []);
 
-  const handlePackFreeScan = useCallback(async (scannedValue: string) => {
-    const { data } = await axiosInstance.post('/api/v1/wms/pack/free-scan', { scanned_value: scannedValue });
+  const handlePackFreeScan = useCallback(async (scannedValue: string, expectedOrderId?: string) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pack/free-scan', {
+      scanned_value: scannedValue,
+      ...(expectedOrderId ? { expected_lasyncro_order_id: expectedOrderId } : {}),
+    });
+    return data;
+  }, []);
+
+  // WMS-OPS-LIFECYCLE-IA-02 — Operations overview Quick Scan. The canonical
+  // read-only resolver: identifies a product, bin or order and creates no
+  // warehouse evidence. Never /pack/free-scan, which stays inside Pack.
+  const handleOperationsScanResolve = useCallback(async (scannedValue: string) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/scan/resolve', {
+      scanned_value: scannedValue,
+    });
     return data;
   }, []);
 
@@ -734,6 +816,12 @@ export default function WmsOperationsPage() {
       data={data ?? null}
       isLoading={isLoading}
       isError={isError}
+      isOpsConsoleOpen={isOpsConsoleOpen}
+      needsAttention={needsAttention}
+      onNeedsAttentionAction={handleNeedsAttentionAction}
+      onOpenHistory={handleOpenHistory}
+      onOpenAllAttention={handleOpenAllAttention}
+      onConnectCarrier={handleConnectCarrier}
       readyToPackOrders={readyToPackQuery.data?.orders}
       readyToPackCount={readyToPackQuery.data?.orderCount}
       openReceiveJobCount={openReceiveJobs.length}
@@ -849,6 +937,8 @@ export default function WmsOperationsPage() {
       onPrintLabel={handlePrintLabel}
       onPrintInvoice={handlePrintInvoice}
       onPackFreeScan={handlePackFreeScan}
+      onOperationsScanResolve={handleOperationsScanResolve}
+      operationsShell={operationsShell}
       onPrintUnitLabels={handlePrintUnitLabels}
       onConfirmUnitLabelsPrinted={handleConfirmUnitLabelsPrinted}
       onPackComplete={handlePackComplete}
@@ -928,6 +1018,74 @@ export default function WmsOperationsPage() {
       }}
     />
    )}
+    <Dialog
+      open={historyOpen}
+      onClose={() => setHistoryOpen(false)}
+      aria-labelledby="wms-operations-history-title"
+      fullWidth
+      maxWidth="sm"
+    >
+      <DialogTitle id="wms-operations-history-title">History</DialogTitle>
+      <DialogContent dividers>
+        {historyQuery.isError && !historyQuery.data ? (
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>History unavailable.</Typography>
+        ) : !historyQuery.data ? (
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading history…</Typography>
+        ) : historyRows.length === 0 ? (
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Nothing verified resolved yet.</Typography>
+        ) : (
+          <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.25 }}>
+            {historyRows.map((row) => (
+              <Box component="li" key={row.id} sx={{ minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
+                  <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                    {row.label}
+                  </Typography>
+                  {row.meta && (
+                    <Typography sx={{ flexShrink: 0, fontSize: 11.5, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                      {row.meta}
+                    </Typography>
+                  )}
+                </Box>
+                {row.subtitle && (
+                  <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+                    {row.subtitle}
+                  </Typography>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setHistoryOpen(false)}>Close</Button>
+      </DialogActions>
+    </Dialog>
+    <EntityDetailModal
+      entityId={attentionModalOpen ? 'wms-needs-attention' : null}
+      title="Needs attention"
+      onClose={() => setAttentionModalOpen(false)}
+      maxWidth="md"
+    >
+      <Box component="ul" role="list" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.25 }}>
+        {attentionNowRows.map((row) => (
+          <Box component="li" role="listitem" key={row.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+            <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+              {row.label}
+            </Typography>
+            {row.action && (
+              <Button
+                size="small"
+                onClick={() => handleNeedsAttentionAction(row.id)}
+                sx={{ flexShrink: 0, color: 'var(--accent)', fontWeight: 500, textTransform: 'none' }}
+              >
+                {row.action.label} <span aria-hidden="true">→</span>
+              </Button>
+            )}
+          </Box>
+        ))}
+      </Box>
+    </EntityDetailModal>
    </>
   );
 }

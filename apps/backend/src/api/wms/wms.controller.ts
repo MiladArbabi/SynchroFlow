@@ -1130,20 +1130,11 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
           'ows.status as warehouse_status',
         );
 
-      // Get line items per order
+      // Base logical lines never join directly to many-row scan evidence.
       const orderIds = batchOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
+      const eligibility = await getBatchPackEligibility(trx, { shopId, pickBatchId: String(batchId) });
       const lineItems = await trx('order_line_items as oli')
         .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
-        .leftJoin('pack_scan_log as psl', (join) => {
-          join
-            .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
-            .andOnVal('psl.status', 'confirmed');
-        })
-        .leftJoin('pick_scan_log as pskl', (join) => {
-          join
-            .on('pskl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
-            .andOnVal('pskl.status', 'confirmed');
-        })
         .whereIn('oli.lasyncro_order_id', orderIds)
         .select(
           'oli.lasyncro_line_item_id',
@@ -1153,15 +1144,33 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
           trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
           trx.raw(`oli.title as variant_title`),
           'oli.quantity',
-          trx.raw('CASE WHEN psl.scan_id IS NOT NULL THEN true ELSE false END as pack_scanned'),
-          trx.raw('CASE WHEN pskl.lasyncro_unit_id IS NOT NULL THEN true ELSE false END as has_tracked_unit')
+          trx.raw(`EXISTS (
+            SELECT 1 FROM pick_scan_log pskl
+            WHERE pskl.shop_id = ? AND pskl.pick_batch_id = ?
+              AND pskl.lasyncro_line_item_id = oli.lasyncro_line_item_id
+              AND pskl.lasyncro_variant_id = oli.lasyncro_variant_id
+              AND pskl.status = 'confirmed' AND pskl.lasyncro_unit_id IS NOT NULL
+          ) as has_tracked_unit`, [shopId, batchId])
         );
 
-      // Group line items by order
-      return batchOrders.map((order: { lasyncro_order_id: string }) => ({
-        ...order,
-        line_items: lineItems.filter((li: { lasyncro_order_id: string }) => li.lasyncro_order_id === order.lasyncro_order_id),
-      }));
+      return batchOrders.map((order: { lasyncro_order_id: string }) => {
+        const progress = eligibility.get(order.lasyncro_order_id);
+        return {
+          ...order,
+          line_items: lineItems
+            .filter((li: { lasyncro_order_id: string }) => li.lasyncro_order_id === order.lasyncro_order_id)
+            .map((li: { lasyncro_line_item_id: string }) => {
+              const line = progress?.lines.find((l) => l.lasyncroLineItemId === li.lasyncro_line_item_id);
+              return {
+                ...li,
+                packed_quantity: line?.packedQuantity ?? 0,
+                packable_quantity: line?.packableQuantity ?? 0,
+                pack_scanned: progress?.packable === true && !!line &&
+                  line.packedQuantity >= line.packableQuantity,
+              };
+            }),
+        };
+      });
     });
 
     return res.status(200).json({ orders });
@@ -1370,10 +1379,15 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { scanned_value } = req.body;
+  const { scanned_value, expected_lasyncro_order_id } = req.body;
   if (!scanned_value || typeof scanned_value !== 'string') {
     return res.status(400).json({ error: 'scanned_value required' });
   }
+
+  const contextMismatch = {
+    error: 'pack_context_mismatch',
+    message: 'This barcode belongs to a different Pack order.',
+  };
 
   // ── LSO- path — invoice barcode → ship confirmation ───────────────────────
   if (scanned_value.startsWith('LSO-')) {
@@ -1389,6 +1403,12 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           .first();
 
         if (!order) return { error: 'invoice_not_found', message: 'Invoice barcode not recognised' };
+
+        // Expected context constrains the server-resolved order before any writes.
+        if (expected_lasyncro_order_id !== undefined &&
+            order.lasyncro_order_id !== expected_lasyncro_order_id) {
+          return contextMismatch;
+        }
 
         const batchOrder = await trx('pick_batch_orders as pbo')
           .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
@@ -1514,6 +1534,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
       if ('error' in result) {
         const statusMap: Record<string, number> = {
+          pack_context_mismatch: 409,
           invoice_not_found: 404,
           batch_not_packing: 409,
           siblings_incomplete: 409,
@@ -1560,6 +1581,10 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           if (!lineItemForReturn) {
             return { error: 'return_order_unresolved', message: 'Item is shipped but its order could not be resolved for return intake' };
           }
+          if (expected_lasyncro_order_id !== undefined &&
+              lineItemForReturn.lasyncro_order_id !== expected_lasyncro_order_id) {
+            return contextMismatch;
+          }
           const jobResult = await resolveOrCreateReturnJobForScan(shopId, lineItemForReturn.lasyncro_order_id, userId);
           return { type: 'return', lasyncro_order_id: lineItemForReturn.lasyncro_order_id, ...jobResult };
         }
@@ -1570,10 +1595,14 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           return { error: 'not_picked', message: `Unit cannot be packed — current status: ${unit.status}` };
         }
 
-        // 2. Find confirmed pick record → lasyncro_line_item_id + pick_batch_id
-        const pickLog = await trx('pick_scan_log')
-          .where({ shop_id: shopId, lasyncro_unit_id: scanned_value, status: 'confirmed' })
-          .select('lasyncro_line_item_id', 'pick_batch_id')
+        // 2. Resolve exact unit ownership through the Pick action's child lineage.
+        const pickLog = await trx('pick_scan_unit_lineage as pul')
+          .join('pick_scan_log as psl', function () {
+            this.on('psl.scan_id', '=', 'pul.scan_id').andOn('psl.shop_id', '=', 'pul.shop_id');
+          })
+          .where({ 'pul.shop_id': shopId, 'pul.lasyncro_unit_id': scanned_value,
+            'psl.lasyncro_variant_id': unit.lasyncro_variant_id, 'psl.status': 'confirmed' })
+          .select('psl.lasyncro_line_item_id', 'psl.pick_batch_id')
           .first();
 
         if (!pickLog) {
@@ -1599,6 +1628,12 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
         if (!lineItemRow) return { error: 'line_item_not_found', message: 'Line item not found' };
         const lasyncroOrderId: string = lineItemRow.lasyncro_order_id;
+
+        // Reject cross-order scans before authorization, auto-claim or Pack writes.
+        if (expected_lasyncro_order_id !== undefined &&
+            lasyncroOrderId !== expected_lasyncro_order_id) {
+          return contextMismatch;
+        }
 
         /**
          * 4b. PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
@@ -1697,6 +1732,10 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           shopId,
         });
 
+        const progress = await getOrderPackEligibility(trx, {
+          shopId, pickBatchId: pickLog.pick_batch_id, lasyncroOrderId,
+        });
+
         // 7. Fetch variant + order + all line items with pack scan status
         const [variant, order, lineItems, trackingRow] = await Promise.all([
           trx('variants')
@@ -1723,16 +1762,6 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
 
           trx('order_line_items as oli')
             .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-            .leftJoin('pack_scan_log as psl', function () {
-              this.on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
-                .andOn('psl.pick_batch_id', trx.raw('?', [pickLog.pick_batch_id]))
-                .andOnVal('psl.status', 'confirmed');
-            })
-            .leftJoin('pick_scan_log as pskl', function () {
-              this.on('pskl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
-                .andOn('pskl.pick_batch_id', trx.raw('?', [pickLog.pick_batch_id]))
-                .andOnVal('pskl.status', 'confirmed');
-            })
             .where({ 'oli.lasyncro_order_id': lasyncroOrderId })
             .select(
               'oli.lasyncro_line_item_id',
@@ -1741,8 +1770,13 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
               'oli.quantity',
               'v.image_url',
               'v.sku',
-              trx.raw(`(psl.scan_id IS NOT NULL) as pack_scanned`),
-              trx.raw(`(pskl.lasyncro_unit_id IS NOT NULL) as has_tracked_unit`),
+              trx.raw(`EXISTS (
+                SELECT 1 FROM pick_scan_log pskl
+                WHERE pskl.shop_id = ? AND pskl.pick_batch_id = ?
+                  AND pskl.lasyncro_line_item_id = oli.lasyncro_line_item_id
+                  AND pskl.lasyncro_variant_id = oli.lasyncro_variant_id
+                  AND pskl.status = 'confirmed' AND pskl.lasyncro_unit_id IS NOT NULL
+              ) as has_tracked_unit`, [shopId, pickLog.pick_batch_id]),
             ),
 
           trx('order_shipment_tracking')
@@ -1770,12 +1804,22 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           has_carrier_label: !!trackingRow,
           variant,
           order,
-          line_items: lineItems,
+          line_items: lineItems.map((li: { lasyncro_line_item_id: string }) => {
+            const line = progress?.lines.find((l) => l.lasyncroLineItemId === li.lasyncro_line_item_id);
+            return {
+              ...li,
+              packed_quantity: line?.packedQuantity ?? 0,
+              packable_quantity: line?.packableQuantity ?? 0,
+              pack_scanned: progress?.packable === true && !!line &&
+                line.packedQuantity >= line.packableQuantity,
+            };
+          }),
         };
       });
 
       if ('error' in result) {
         const statusMap: Record<string, number> = {
+          pack_context_mismatch: 409,
           unit_not_found: 404,
           not_picked: 409,
           already_packed: 409,

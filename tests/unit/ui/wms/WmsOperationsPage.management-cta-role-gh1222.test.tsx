@@ -17,9 +17,10 @@
 // warehouse grid (one root, zero bins → 'no_bins_configured'), spotlight,
 // the HTTP boundary and UpgradePrompt rendering.
 
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
 import { axiosInstance } from 'api/axiosConfig';
@@ -82,6 +83,23 @@ jest.mock('@lasyncro/wms', () => ({
 
 const get = axiosInstance.get as jest.Mock;
 
+// WMS-OPS-NEEDS-ATTENTION-01 — runtime owns QueryClientProvider.
+// Seed the passive canonical alerts inbox so this GH-1222 role test remains
+// about management-role composition rather than transport/query setup.
+function alertsQueryWrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  client.setQueryData(
+    ['alerts', { status: 'inbox' }],
+    { data: [], meta: { total: 0, status: 'inbox' } },
+  );
+
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
+
 beforeEach(() => {
   mockRecountLocked = false;
   mockRecountTasks = [];
@@ -107,6 +125,7 @@ async function renderOperations(role: Role, path = '/wms') {
     <MemoryRouter initialEntries={[path]}>
       <WmsOperationsPage />
     </MemoryRouter>,
+    { wrapper: alertsQueryWrapper() },
   );
   await settle();
 }

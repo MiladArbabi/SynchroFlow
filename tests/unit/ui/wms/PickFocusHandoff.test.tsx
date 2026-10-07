@@ -20,6 +20,19 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { BatchDetailModalBody } from 'pages/ft2-pages/BatchDetailModalBody';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+// WMS-OPS-NEEDS-ATTENTION-01 — WmsOperationsPage passively reads the canonical
+// alerts inbox (useAlerts); runtime owns QueryClientProvider. Each render gets a
+// fresh, isolated client with the inbox seeded fresh, so no alerts request fires.
+function alertsQueryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['alerts', { status: 'inbox' }], { data: [], meta: { total: 0, status: 'inbox' } });
+  return function AlertsQueryWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 const mockAxios = {
   get: jest.fn().mockResolvedValue({ data: {} }),
@@ -51,6 +64,7 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
 }));
 jest.mock('@lasyncro/shared/ui', () => ({
   IsometricCanvas: () => <div data-testid="isometric-canvas" />,
+  EntityDetailModal: () => null,
 }));
 
 // ── WmsOperationsPage dependencies ─────────────────────────────────────────
@@ -195,8 +209,7 @@ describe('WAREHOUSE-SESSION-FOCUS-02A — WmsOperationsPage Pick URL adapter', (
       <MemoryRouter initialEntries={[url]}>
         <WmsOperationsPage />
         <LocationProbe />
-      </MemoryRouter>,
-    );
+      </MemoryRouter>, { wrapper: alertsQueryWrapper() });
     expect(mockModuleProps.current).not.toBeNull();
     return mockModuleProps.current!;
   }

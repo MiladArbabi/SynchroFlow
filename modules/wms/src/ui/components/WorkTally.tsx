@@ -8,7 +8,7 @@ import { Box, Typography } from '@mui/material';
  * landing on this page could not see what was waiting without scrolling
  * through sections that render empty most of the time.
  *
- * The five rows are FIXED and never reorder. Position becomes memory: an
+ * Workflow rows keep their canonical order. Position becomes memory: an
  * operator learns where Counting sits and stops reading labels. Rows at zero
  * stay visible and go quiet rather than disappearing — a row that vanishes
  * teaches nothing, and discoverability is the whole point for work types a
@@ -23,6 +23,7 @@ import { Box, Typography } from '@mui/material';
 
 export interface WorkTallyCounts {
   picking: number;
+  readyToPack?: number;
   packing: number;
   puttingAway: number;
   receiving: number;
@@ -42,6 +43,7 @@ export interface WorkTallyProps {
 
 const ROWS: { key: keyof WorkTallyCounts; label: string }[] = [
   { key: 'picking', label: 'Picking' },
+  { key: 'readyToPack', label: 'Ready to pack' },
   { key: 'packing', label: 'Packing' },
   { key: 'puttingAway', label: 'Putting away' },
   { key: 'receiving', label: 'Receiving' },
@@ -50,7 +52,7 @@ const ROWS: { key: keyof WorkTallyCounts; label: string }[] = [
 
 export function WorkTally({ counts, countingLocked, onSelect }: WorkTallyProps) {
   return (
-    <Box
+    <Box component="section" aria-label="Work counts"
       sx={{
         display: 'flex',
         alignItems: 'stretch',
@@ -62,9 +64,9 @@ export function WorkTally({ counts, countingLocked, onSelect }: WorkTallyProps) 
         mb: 2.75,
       }}
     >
-      {ROWS.map((row, i) => {
+      {ROWS.filter((row) => row.key !== 'readyToPack' || counts.readyToPack !== undefined).map((row, i) => {
         const locked = row.key === 'counting' && countingLocked;
-        const value = counts[row.key];
+        const value = counts[row.key] ?? 0;
         const active = !locked && value > 0;
 
         return (
@@ -74,7 +76,7 @@ export function WorkTally({ counts, countingLocked, onSelect }: WorkTallyProps) 
             onClick={active && onSelect ? () => onSelect(row.key) : undefined}
             sx={{
               flex: 1,
-              px: 2,
+              px: { xs: 1, sm: 2 },
               py: 1.75,
               border: 'none',
               borderLeft: i === 0 ? 'none' : '1px solid var(--rule)',
@@ -98,14 +100,13 @@ export function WorkTally({ counts, countingLocked, onSelect }: WorkTallyProps) 
                 textTransform: 'uppercase',
                 color: active ? 'var(--ink-3)' : 'var(--ink-4)',
                 mb: 0.5,
-                whiteSpace: 'nowrap',
+                whiteSpace: 'normal',
               }}
             >
               {row.label}
             </Typography>
             <Typography
               sx={{
-                fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
                 fontSize: 20,
                 fontWeight: 500,
                 lineHeight: 1,
@@ -126,6 +127,7 @@ export function WorkTally({ counts, countingLocked, onSelect }: WorkTallyProps) 
 export function isAllClear(counts: WorkTallyCounts): boolean {
   return (
     counts.picking === 0 &&
+    (counts.readyToPack ?? 0) === 0 &&
     counts.packing === 0 &&
     counts.puttingAway === 0 &&
     counts.receiving === 0 &&

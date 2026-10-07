@@ -41,6 +41,8 @@ export interface PackLineItem {
   product_title: string;
   variant_title: string | null;
   quantity: number;
+  packed_quantity: number;
+  packable_quantity: number;
   pack_scanned: boolean;
   has_tracked_unit: boolean;
 }
@@ -99,7 +101,7 @@ function ScanInput({
 // ── PackSessionPage ───────────────────────────────────────────────────────────
 export interface PackSessionPageProps {
   initialFreeScanResult: PackFreeScanResult;
-  onPackFreeScan: (scannedValue: string) => Promise<PackFreeScanApiResponse>;
+  onPackFreeScan: (scannedValue: string, expectedOrderId?: string) => Promise<PackFreeScanApiResponse>;
   onPackCountConfirm: (params: { lasyncro_line_item_id: string; lasyncro_variant_id: string; quantity_confirmed: number }) => Promise<void>;
   onPrintInvoice: (orderId: string) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
@@ -152,7 +154,7 @@ export default function PackSessionPage({
     setScanLoading(true);
     setScanError(null);
     try {
-      const result = await onPackFreeScan(scannedValue);
+      const result = await onPackFreeScan(scannedValue, currentResult.lasyncro_order_id);
 
       if ('error' in result) {
         setScanError(result.message);
