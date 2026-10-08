@@ -633,6 +633,7 @@ Stow	…	Execution	PRIMARY/CTX	No	Global	Audit	Needs audit
 Pick	…	Execution	CONTEXTUAL	No	Global	Audit	Needs audit
 Pack	…	Execution	NONE/OD	No	Global	Audit	Needs audit
 Floor Planning	/floor-planning	Spatial	PRIMARY	No	Global	Audit	Needs audit
+Warehouse Analytics	/wms/analytics	Operational Context?	NONE?	No?	Global	FAIL — internal workspace scroll; document overflow 0 at 1440×720 + 1024×820 is not workspace scroll-free	Needs audit — owner-screen UX pending GH-1231; GH-1230 data reliability LOCALLY VERIFIED (2026-10-08)
 Question marks mean decision not yet certified, not implementation uncertainty.
 
 ## 14. Registry screen detail

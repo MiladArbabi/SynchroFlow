@@ -15,6 +15,8 @@ import {
 } from '@mui/material';
 import { AlertTriangle, TrendingUp, Clock, ArrowRight, Cast, ExternalLink, Copy } from 'lucide-react';
 import { CommercialGate } from '../../components/CommercialGate';
+import { UpgradePrompt } from '../../components/UpgradePrompt';
+import { getCapabilityPresentation } from '../../commercial/capabilityPresentation';
 import {
   useWmsAnalytics,
   useLiveCapacity,
@@ -27,6 +29,12 @@ import {
   ExceptionTrend,
   ThroughputTrend,
 } from '../wms/useWmsAnalytics';
+import {
+  resolveHistoricalAvailability,
+  resolveLiveAvailability,
+  resolveAnalyticsDenial,
+  type AnalyticsAvailability,
+} from '../wms/analyticsAvailability';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
@@ -121,6 +129,35 @@ function EmptyZone({ label }: { label: string }) {
   );
 }
 
+// GH-1230: unknown is never zero — a neutral marker, never the healthy green dot.
+function UnavailableNotice() {
+  return (
+    <Box sx={{ py: 1.25, px: 2, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--ink-4)', flexShrink: 0 }} />
+      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Couldn't load this right now.</Typography>
+    </Box>
+  );
+}
+
+function UnavailableZone({ label }: { label: string }) {
+  return (
+    <ZoneCard sx={{ flexShrink: 0 }}>
+      <ZoneCardHeader><SectionLabel>{label}</SectionLabel></ZoneCardHeader>
+      <UnavailableNotice />
+    </ZoneCard>
+  );
+}
+
+// GH-1230 D4: freshness is the query's own successful-fetch time.
+function UpdatedAt({ at, locale }: { at: number; locale: string }) {
+  const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+  return (
+    <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      Updated at {time}
+    </Typography>
+  );
+}
+
 function CtaButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
     <Box
@@ -155,7 +192,7 @@ function PipelineDivider() {
   );
 }
 
-function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
+function Zone1CapacityStrip({ live, updatedAt }: { live: LiveCapacity; updatedAt: React.ReactNode }) {
   const trackKey  = live?.on_track as TrackKey | undefined;
   const trackCfg  = trackKey ? ON_TRACK_PALETTE[trackKey] : null;
   const trackColor = trackCfg?.color ?? 'var(--ink-4)';
@@ -171,7 +208,12 @@ function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
 
   return (
     <ZoneCard>
-      <ZoneCardHeader><SectionLabel>Live Capacity</SectionLabel></ZoneCardHeader>
+      <ZoneCardHeader>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+          <SectionLabel>Live Capacity</SectionLabel>
+          {updatedAt}
+        </Box>
+      </ZoneCardHeader>
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
 
         {/* PIPELINE STAGES — vertical rows */}
@@ -251,6 +293,21 @@ function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
           </Box>
         )}
       </Box>
+    </ZoneCard>
+  );
+}
+
+// GH-1230: the live zone renders values only from a verified live response.
+function LiveCapacityZone({ state, locale }: { state: AnalyticsAvailability<LiveCapacity>; locale: string }) {
+  if (state.status === 'ready') {
+    return <Zone1CapacityStrip live={state.data} updatedAt={<UpdatedAt at={state.updatedAt} locale={locale} />} />;
+  }
+  return (
+    <ZoneCard>
+      <ZoneCardHeader><SectionLabel>Live Capacity</SectionLabel></ZoneCardHeader>
+      {state.status === 'loading'
+        ? <Box sx={{ p: 2 }}><Skeleton height={80} /></Box>
+        : <UnavailableNotice />}
     </ZoneCard>
   );
 }
@@ -872,14 +929,38 @@ export default function WmsAnalyticsPage() {
 
   const fmt = (n: number | null) => formatCurrencyCompact(n, displayCurrency, locale, rates);
 
-  const operators  = analyticsQuery.data?.operators ?? [];
-  const pipeline   = analyticsQuery.data?.pipeline;
-  const exceptions = analyticsQuery.data?.exceptions;
-  const cost       = analyticsQuery.data?.cost;
-  const agingWip   = analyticsQuery.data?.aging_wip;
-  const throughput = analyticsQuery.data?.throughput_trend;
-  const excTrend   = analyticsQuery.data?.exception_trend;
-  const loading    = analyticsQuery.isLoading;
+  // GH-1230: each query resolves independently; values render only when
+  // verified for the selected window. Error / malformed / switching are never
+  // presented as zero or as a healthy empty state.
+  const historical = resolveHistoricalAvailability(analyticsQuery, days);
+  const live       = resolveLiveAvailability(liveQuery);
+  const denial     = resolveAnalyticsDenial(historical, live);
+
+  const data       = historical.status === 'ready' ? historical.data : undefined;
+  const loading    = historical.status === 'loading';
+  const histDown   = historical.status === 'unavailable' || historical.status === 'denied';
+  const operators  = data?.operators ?? [];
+  const pipeline   = data?.pipeline;
+  const exceptions = data?.exceptions;
+  const cost       = data?.cost;
+  const agingWip   = data?.aging_wip;
+  const throughput = data?.throughput_trend;
+  const excTrend   = data?.exception_trend;
+
+  if (denial?.kind === 'commercial') {
+    // Server-authoritative commercial decision → the canonical CommercialGate
+    // denial presentation; the decision is forwarded, never fabricated (D3).
+    const presentation = getCapabilityPresentation('warehouse.analytics');
+    return (
+      <UpgradePrompt
+        decision={denial.decision}
+        mode="locked"
+        featureName={presentation?.featureName}
+        benefits={presentation?.benefits}
+        open
+      />
+    );
+  }
 
   return (
     // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.analytics (Growth+) gate,
@@ -898,36 +979,52 @@ export default function WmsAnalyticsPage() {
               Pace, accuracy, and cost signals from your warehouse floor.
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <CastButton />
-            <ToggleButtonGroup
-              value={days} exclusive size="small"
-              onChange={(_e, val) => val && setDays(val)}
-            >
-              <ToggleButton value={7}>7d</ToggleButton>
-              <ToggleButton value={30}>30d</ToggleButton>
-              <ToggleButton value={90}>90d</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
+          {denial?.kind !== 'role' && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {historical.status === 'ready' && <UpdatedAt at={historical.updatedAt} locale={locale} />}
+              <CastButton />
+              <ToggleButtonGroup
+                value={days} exclusive size="small"
+                onChange={(_e, val) => val && setDays(val)}
+              >
+                <ToggleButton value={7}>7d</ToggleButton>
+                <ToggleButton value={30}>30d</ToggleButton>
+                <ToggleButton value={90}>90d</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+          )}
         </Box>
 
-        {/* MAIN GRID — dense main column + 300px pulse rail (Orders-sibling) */}
+        {denial?.kind === 'role' ? (
+          // Role/action denial: not buyable, so no upgrade prompt (D3).
+          <Box sx={{ px: 2.5, pb: 2 }}>
+            <ZoneCard>
+              <Box sx={{ px: 2, py: 2 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'var(--ink)' }}>You don't have access to Analytics.</Typography>
+              </Box>
+            </ZoneCard>
+          </Box>
+        ) : (
+        /* MAIN GRID — dense main column + 300px pulse rail (Orders-sibling) */
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, px: 2.5, pb: 2, alignItems: 'stretch' }}>
           {/* MAIN COLUMN — operator + pipeline first, then stacked detail */}
           <Box sx={{ flex: '1 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}><Zone2OperatorBoard operators={operators} loading={loading} /></Box>
-            <Zone3PipelineVelocity pipeline={pipeline} loading={loading} />
-            <AgingWipCard wip={agingWip} loading={loading} />
-            <ExceptionsCard trend={excTrend} exceptions={exceptions} loading={loading} />
-            <Zone5CostStory cost={cost} loading={loading} fmt={fmt} />
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+              {histDown ? <UnavailableZone label="Operator Performance" /> : <Zone2OperatorBoard operators={operators} loading={loading} />}
+            </Box>
+            {histDown ? <UnavailableZone label="Pipeline Stage Velocity" /> : <Zone3PipelineVelocity pipeline={pipeline} loading={loading} />}
+            {histDown ? <UnavailableZone label="Stuck on the floor" /> : <AgingWipCard wip={agingWip} loading={loading} />}
+            {histDown ? <UnavailableZone label="Problems" /> : <ExceptionsCard trend={excTrend} exceptions={exceptions} loading={loading} />}
+            {histDown ? <UnavailableZone label="Cost & Throughput" /> : <Zone5CostStory cost={cost} loading={loading} fmt={fmt} />}
           </Box>
 
           {/* PULSE RAIL — live capacity + throughput, fixed 300px */}
           <Box sx={{ flex: '1 1 300px', maxWidth: { xs: '100%', lg: 300 }, display: 'flex', flexDirection: 'column', gap: 1.5, alignSelf: 'stretch', minHeight: 0 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}><Zone1CapacityStrip live={liveQuery.data} /></Box>
-            <ThroughputTrendCard trend={throughput} loading={loading} />
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}><LiveCapacityZone state={live} locale={locale} /></Box>
+            {histDown ? <UnavailableZone label="Throughput trend" /> : <ThroughputTrendCard trend={throughput} loading={loading} />}
           </Box>
         </Box>
+        )}
       </Box>
     </CommercialGate>
   );

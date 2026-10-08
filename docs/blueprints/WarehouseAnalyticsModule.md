@@ -2,10 +2,12 @@
 
 **Module:** `@lasyncro/wms` (Analytics submodule)
 **Route:** `/wms/analytics`
-**Tier:** Growth
+**Tier:** Core — canonical `warehouse.analytics: { moduleId: 'wms', minimumTier: 'core' }` in `packages/commercial-policy/src/capabilities.ts`, enforced by `tests/contract/commercial-route-enforcement.contract.test.ts` (corrected 2026-10-08 from the stale "Growth")
 **Access:** Owner / admin (operators have no access on web; operators see only dispatch/jobs on mobile)
-**Status:** 🟢 Complete · All zones implemented · Floor Display live
-**Last updated:** 2026-05-29 (implementation complete)
+**Status:** Legacy owner layout implemented (2026-05) · Floor Display live · **GH-1230 data reliability LOCALLY VERIFIED** (2026-10-08, §12A) · **Owner-screen UX NOT CERTIFIED** — ratified Analytics V1 "1a Four Questions" target tracked in GH-1231
+**Last updated:** 2026-10-08 (GH-1230 availability & freshness contract)
+
+> **History vs target.** §§2–11 below are the original 2026-05 specification of the owner page and Floor Display, kept as history. The implemented legacy owner layout requires internal workspace scrolling and does not meet §2.1. The ratified Analytics V1 owner-screen target (four questions — Pace, Flow, Accuracy, Team — plus a conditional Cost strip, with a screen-level scroll-free contract at 1440×720 and 1024×820) is tracked in GH-1231 and is **not yet implemented**. The GH-1230 contract in §12A applies to the current page and to the future GH-1231 screen.
 
 ---
 
@@ -403,6 +405,8 @@ Critical path top-to-bottom. Steps 1–2 are blocking. Steps 3+ can parallelise.
 
 All gated by `authenticateToken + requireFt2 + requireTier('growth')` except the display endpoints which use token validation.
 
+> **Superseded (as implemented):** the analytics routes in `apps/backend/src/api/wms/wms.routes.ts` are gated by `authenticateToken → requireFt2 → requireCapability('warehouse.analytics')` (Core+, COMMERCIAL-ACCESS-ARCH-01 P0-A2A) `→ requireAction('wms:analytics:read' | 'wms:analytics:display:write')` (owner/admin, GH-1222). The display endpoints validate the token, then evaluate current commercial access (§6.1, GH-1219).
+
 ---
 
 ## 11. Data Model — Migrations Needed
@@ -430,6 +434,47 @@ All migrations include RLS policies matching existing per-tenant pattern.
 8. **All write endpoints require `requireRole(['owner', 'admin'])`** in addition to tier gating
 9. **Token rotation invalidates the previous token immediately** — old TV instances die on next 5-minute refresh
 10. **The 3D map on Display is read-only** — no interaction handlers, no zoom, no labels
+
+---
+
+## 12A. Data availability & freshness contract (GH-1230 — ratified 2026-10-08)
+
+Applies to the owner page `/wms/analytics` (current legacy layout and the future GH-1231 screen). The Floor Display (`/wms/analytics/display`) is not changed by GH-1230.
+
+**Independent requests.** The owner page makes two independent requests, and each carries its own loading, error, and freshness state:
+
+| Request | Feeds | Refresh |
+|---|---|---|
+| `GET /api/v1/wms/analytics?days=7\|30\|90` (historical composite) | Operator performance, stage velocity, stuck-on-the-floor, problems, cost, throughput trend | 5 min (stale after 60 s) |
+| `GET /api/v1/wms/analytics/live` | Live Capacity | 60 s |
+
+One request failing never hides or falsifies the other. Shared resolver: `apps/frontend/src/pages/wms/analyticsAvailability.ts`, a pure function that maps each query to `loading | ready | unavailable | denied`.
+
+**Rules (D1–D6):**
+
+1. **Unknown is never a confirmed zero; an error is never an empty state.** Zero values and the empty-state copy ("Floor is clear", "No exceptions this period", …) render only from a verified successful response. Unavailable areas keep their heading and show "Couldn't load this right now." with a neutral marker (new unavailable labels use "Problems", not "Exceptions").
+2. **A failed refresh hides the affected metrics (D1).** Cached values are never presented as current after their query errors; the other query's verified data stays visible.
+3. **Window attribution (D2).** Historical data renders only when the server-echoed `days` matches the selected 7d/30d/90d window. While a new window loads it shows loading, never the previous window's values (no placeholder data).
+4. **Access denial (D3).** `403 ACTION_FORBIDDEN` shows "You don't have access to Analytics." with no upgrade prompt, Cast or window controls. `403 COMMERCIAL_ACCESS_DENIED` renders the canonical locked `UpgradePrompt` with the server's `AccessDecision` forwarded verbatim (the same presentation as `CommercialGate`); no tier step is invented.
+5. **Freshness (D4).** Each request shows a subtle "Updated at HH:MM" (24 h) taken from its own last successful fetch. A failed refresh never advances it.
+6. **Response shape (D5).** A 200 response is validated before anything healthy renders, including the nested entries the cards read (operator rows, stage durations, all four aging stages, problem and heat-grid rows, unlocked cost values, trend points). Malformed responses resolve to unavailable and cannot crash the page. Legitimate zero, empty, null and unconfigured values (for example locked cost) remain valid.
+7. **Retry (D6).** Retry is hook-local in `useWmsAnalytics` / `useLiveCapacity`: no retry on 401/403; transient errors retry at most 3 times. The global QueryClient and auth interceptor are unchanged. `useLiveCapacity` is shared with `OrderFlowPage`, which inherits the same retry rule.
+
+**Evidence (reported, 2026-10-08, local):**
+
+- Frontend render: `tests/unit/ui/wms/WmsAnalyticsPage.availability.test.tsx` — 24/24 (frontend project; not CI-gated).
+- CI-gated contract: `tests/contract/wms-analytics-availability.contract.test.ts` — 37/37; full contract project 951/951 (74 suites).
+- Local browser (Playwright, local dev stack): 54/54 runs across 12 scenarios at 1440×720 and 1024×820 — normal load, historical/live/both 500, nested malformed 200, rapid 7d→30d→90d out-of-order, failed background refresh with timestamps, 403 role and commercial (genuine and stale-token), operator direct URL → `/wms`, legitimate zero/unconfigured, and OrderFlowPage shared-hook retry behaviour.
+
+**Limitations:**
+
+- Failures were injected at the browser network layer; these were not real server-generated 403/500 bodies.
+- Failed-refresh timing used fake timers.
+- Dark mode was covered for 7 of the 12 scenarios.
+- Not yet verified in production.
+- Document overflow was 0 at both viewports, but the legacy workspace still scrolls internally, so this is **not** a screen-level scroll-free or UX certification (GH-1231).
+
+**Status:** GH-1230 DATA RELIABILITY LOCALLY VERIFIED. Owner-screen UX is NOT CERTIFIED and is tracked in GH-1231.
 
 ---
 
@@ -482,6 +527,8 @@ All migrations include RLS policies matching existing per-tenant pattern.
 | 2026-05-29 | B-04 complete — Zone 2 baseline toggle | vs self (absolute thresholds) / vs team (relative to team avg UPH) |
 | 2026-05-29 | B-03 complete — Floor Display frontend route | /wms/analytics/display?token= · 4-slot rotation · TV-optimised · heartbeat · IsometricCanvas slot 4 |
 | 2026-05-29 | Implementation complete | All blueprint items delivered. GitHub issue #995 open for settings audit. |
+| 2026-10-08 | GH-1230 availability & freshness contract (§12A) | Independent live/historical availability, window attribution, response-shape validation, role vs commercial denial, freshness labels, hook-local retry. Evidence: 24/24 render, 37/37 CI contract, 951/951 full contract, 54/54 local browser runs. DATA RELIABILITY LOCALLY VERIFIED; production verification pending. |
+| 2026-10-08 | Documentation corrections | Tier corrected Growth → Core (canonical capability policy); implemented route gates recorded (§10); status no longer claims a complete or certified owner screen. Owner-screen UX (Analytics V1, 1a Four Questions, screen-level scroll-free) tracked in GH-1231. |
 
 ---
 
