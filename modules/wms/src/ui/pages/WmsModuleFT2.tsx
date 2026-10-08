@@ -41,7 +41,7 @@ import CountingSessionPage, {
   type CountingSessionPageProps,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
-import { IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark } from '@lasyncro/shared/ui';
+import { EntityDetailModal, IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark } from '@lasyncro/shared/ui';
 import {
   classifyRecountBinAvailability,
   mapRecountPreviewBinsToCanvas,
@@ -1129,9 +1129,14 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-            {job.supplier_name}
-          </Typography>
+          {/* WMS-OPS-MODAL-PARITY-01 — ⋮ sits top-right of the identity row,
+              matching the Put away card; the CTA stays in the action row. */}
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, minWidth: 0 }}>
+            <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+              {job.supplier_name}
+            </Typography>
+            {menuNode}
+          </Box>
           <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
             {job.po_number == null ? 'PO reference unavailable' : `PO-${job.po_number}`}
             {' · '}
@@ -1156,29 +1161,26 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
             </Typography>
           )}
         </Box>
-        {(isOwnJob || menuNode) && (
+        {isOwnJob && (
           <Box sx={OVERVIEW_WORK_ACTION_SX}>
-            {isOwnJob && (
-              <Button
-                variant={started ? 'contained' : 'outlined'}
-                disableElevation
-                size="small"
-                onClick={() => onOpen(job.receive_job_id)}
-                data-size="overview-work-action"
-                data-emphasis={started ? 'primary' : 'secondary'}
-                sx={{
-                  ...OVERVIEW_WORK_CTA_SX,
-                  ...(started
-                    ? OVERVIEW_WORK_CTA_EMPHASIS_SX.primary
-                    : { borderColor: 'var(--rule)', color: 'var(--accent)' }),
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                }}
-              >
-                {started ? 'Resume receive →' : 'Open receive →'}
-              </Button>
-            )}
-            {menuNode}
+            <Button
+              variant={started ? 'contained' : 'outlined'}
+              disableElevation
+              size="small"
+              onClick={() => onOpen(job.receive_job_id)}
+              data-size="overview-work-action"
+              data-emphasis={started ? 'primary' : 'secondary'}
+              sx={{
+                ...OVERVIEW_WORK_CTA_SX,
+                ...(started
+                  ? OVERVIEW_WORK_CTA_EMPHASIS_SX.primary
+                  : { borderColor: 'var(--rule)', color: 'var(--accent)' }),
+                borderRadius: '6px',
+                fontWeight: 600,
+              }}
+            >
+              {started ? 'Resume receive →' : 'Open receive →'}
+            </Button>
           </Box>
         )}
       </Box>
@@ -1524,8 +1526,34 @@ const OPERATIONS_LIFECYCLE_STAGES: ReadonlyArray<{
   { stage: 'ship', label: 'Ship' },
 ];
 
-/** Overview stages show a bounded preview; View all N focuses the stage. */
+/** Overview stages show a bounded preview; View all N opens the full stage list in a modal. */
 const STAGE_PREVIEW_LIMIT = 3;
+/** WMS-OPS-MODAL-PARITY-01 — full stage task-list modal titles (Ship has no work list). */
+const STAGE_LIST_COPY: Record<
+  Exclude<OperationsLifecycleStage, 'ship'>,
+  { title: string; singular: string; plural: string }
+> = {
+  receive: {
+    title: 'Receive',
+    singular: 'receive job',
+    plural: 'receive jobs',
+  },
+  'put-away': {
+    title: 'Put away',
+    singular: 'put-away task',
+    plural: 'put-away tasks',
+  },
+  pick: {
+    title: 'Pick',
+    singular: 'pick batch',
+    plural: 'pick batches',
+  },
+  pack: {
+    title: 'Pack',
+    singular: 'pack batch',
+    plural: 'pack batches',
+  },
+};
 /** Operator Up next is a short list of the next actionable work, not a queue. */
 const OPERATOR_UP_NEXT_LIMIT = 5;
 
@@ -1586,36 +1614,31 @@ const STAGE_TEXT_ACTION_SX = {
 
 /**
  * One lifecycle stage. Module-level so its DOM node survives parent renders
- * (Ops Console open/close, focus changes) — never remounted to change state.
+ * (Ops Console open/close, task-list modal) — never remounted to change state.
  * Stages never own a scroll container; the page owns ordinary scrolling.
  */
 function LifecycleStageRegion({
   label,
   count,
   description,
-  mode,
   lead,
   items,
   empty,
   onViewAll,
-  onAllStages,
 }: {
   label: string;
   /** null = structural stage (Ship): visible "—", no numeric work count. */
   count: number | null;
   description: string;
-  mode: 'overview' | 'focused' | 'compact';
   /** Stage-scoped guidance shown above the work (not counted as work). */
   lead?: ReactNode;
   items: ReactNode[];
   empty?: ReactNode;
   onViewAll?: () => void;
-  onAllStages?: () => void;
 }) {
   const descriptionId = useId();
-  const visibleItems =
-    mode === 'focused' ? items : mode === 'overview' ? items.slice(0, STAGE_PREVIEW_LIMIT) : [];
-  const canViewAll = mode === 'overview' && items.length > STAGE_PREVIEW_LIMIT && onViewAll;
+  const visibleItems = items.slice(0, STAGE_PREVIEW_LIMIT);
+  const canViewAll = items.length > STAGE_PREVIEW_LIMIT && onViewAll;
 
   return (
     <Box
@@ -1633,10 +1656,8 @@ function LifecycleStageRegion({
         // PARITY-04: flex column so the stage body (Ship empty state) can fill it.
         display: 'flex',
         flexDirection: 'column',
-        p: mode === 'compact' ? '10px 12px' : '14px',
-        ...(mode === 'focused'
-          ? { gridColumn: '1 / -1', order: -1, borderBottom: '1px solid var(--rule)', boxShadow: 'inset 0 2px 0 var(--accent)' }
-          : { '&:not(:last-of-type)': { borderRight: '1px solid var(--rule)' } }),
+        p: '14px',
+        '&:not(:last-of-type)': { borderRight: '1px solid var(--rule)' },
       }}
     >
       <Box component="span" id={descriptionId} sx={VISUALLY_HIDDEN_SX}>
@@ -1645,7 +1666,7 @@ function LifecycleStageRegion({
 
       {/* PARITY-02 — [STAGE NAME] … [COUNT]: compact uppercase name, dominant
           32px count opposite it; 0 and Ship's "—" keep the size but recede. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: mode === 'compact' ? 0 : 1.25 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.25 }}>
         <Typography
           component="h2"
           sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}
@@ -1653,11 +1674,6 @@ function LifecycleStageRegion({
           {label}
         </Typography>
         <Box sx={{ flex: 1 }} />
-        {mode === 'focused' && onAllStages && (
-          <Box component="button" type="button" onClick={onAllStages} sx={STAGE_TEXT_ACTION_SX}>
-            All stages
-          </Box>
-        )}
         <Typography
           component="span"
           aria-hidden="true"
@@ -1674,19 +1690,13 @@ function LifecycleStageRegion({
         </Typography>
       </Box>
 
-      {mode !== 'compact' && lead}
+      {lead}
 
-      {mode !== 'compact' && (
-        visibleItems.length > 0 ? (
-          <Box
-            sx={mode === 'focused'
-              ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gridAutoRows: '1fr', gap: 1.25 }
-              : { display: 'grid', rowGap: 1, minWidth: 0 }}
-          >
-            {visibleItems}
-          </Box>
-        ) : empty
-      )}
+      {visibleItems.length > 0 ? (
+        <Box sx={{ display: 'grid', rowGap: 1, minWidth: 0 }}>
+          {visibleItems}
+        </Box>
+      ) : empty}
 
       {canViewAll && (
         <Box component="button" type="button" onClick={onViewAll} sx={{ ...STAGE_TEXT_ACTION_SX, mt: 0.5, alignSelf: 'flex-start' }}>
@@ -2664,9 +2674,13 @@ function WmsModuleFT2Inner({
   const [quickScanResult, setQuickScanResult] = useState<string | null>(null);
   const [inventoryChecksExpanded, setInventoryChecksExpanded] = useState(false);
   const [showAllInventoryChecks, setShowAllInventoryChecks] = useState(false);
-  // Focused stage: an expansion of the same lifecycle stage model, never a
-  // second queue. null = five-stage overview.
-  const [focusedStage, setFocusedStage] = useState<OperationsLifecycleStage | null>(null);
+  // WMS-OPS-MODAL-PARITY-01 — View all N opens the stage's full task list in
+  // the shared EntityDetailModal; the five-stage board never recomposes.
+  // null = no task-list modal open.
+  const [stageListStage, setStageListStage] = useState<Exclude<OperationsLifecycleStage, 'ship'> | null>(null);
+  // Card CTAs inside the modal hand off to their existing workflow/dialog only
+  // after the list modal closes (never stacked). No-op when it is not open.
+  const closeStageList = () => setStageListStage(null);
   // WMS-OPS-OWNER-1A-ALIGNMENT — management header / Reconcile description seams.
   const managementHeadingId = useId();
   const managementSummaryId = useId();
@@ -3194,8 +3208,8 @@ function WmsModuleFT2Inner({
       key={batch.pick_batch_id}
       batch={batch}
       currentUserId={currentUserId}
-      onOpenPick={(id) => void enterPickSession(id)}
-      onOpenPack={enterPackHandoff}
+      onOpenPick={(id) => { closeStageList(); void enterPickSession(id); }}
+      onOpenPack={(id) => { closeStageList(); enterPackHandoff(id); }}
       orderCount={readyOrderCount(batch.pick_batch_id)}
       board={!isOperatorShell}
     />
@@ -3207,8 +3221,8 @@ function WmsModuleFT2Inner({
       job={job}
       isOwnJob={job.assigned_operator_id === currentUserId}
       canManageAssignment={!isOperatorShell && Boolean(canReassignReceive)}
-      onOpen={(jobId) => void enterReceiveSession(jobId)}
-      onReassignRequest={(j) => void openReceiveReassignDialog(j)}
+      onOpen={(jobId) => { closeStageList(); void enterReceiveSession(jobId); }}
+      onReassignRequest={(j) => { closeStageList(); void openReceiveReassignDialog(j); }}
       board={!isOperatorShell}
     />
   );
@@ -3219,8 +3233,8 @@ function WmsModuleFT2Inner({
       task={task}
       currentUserId={currentUserId}
       canAssignStow={!isOperatorShell && canAssignStow}
-      onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
-      onAssignRequest={(t) => void openStowAssignDialog(t)}
+      onOpen={(id) => { closeStageList(); onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
+      onAssignRequest={(t) => { closeStageList(); void openStowAssignDialog(t); }}
       onMakeFirstToClaim={(t) => void makeStowFirstToClaim(t)}
       board={!isOperatorShell}
     />
@@ -4329,15 +4343,11 @@ function WmsModuleFT2Inner({
             minHeight: 0,
             display: 'grid',
             alignItems: 'stretch',
-            gridTemplateColumns: focusedStage
-              ? 'repeat(4, minmax(0, 1fr))'
-              : `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(0, 1fr))`,
             // Below lg five usable tracks no longer fit: tracks get a minimum
             // width and the BOARD alone scrolls horizontally (never a stage).
             '@media (max-width: 1199.95px)': {
-              gridTemplateColumns: focusedStage
-                ? 'repeat(4, minmax(160px, 1fr))'
-                : `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(180px, 1fr))`,
+              gridTemplateColumns: `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(180px, 1fr))`,
               overflowX: 'auto',
               overflowY: 'hidden',
             },
@@ -4366,16 +4376,44 @@ function WmsModuleFT2Inner({
                 label={label}
                 count={work.count}
                 description={describeStageCount(stage, work.count ?? 0)}
-                mode={focusedStage === null ? 'overview' : focusedStage === stage ? 'focused' : 'compact'}
                 lead={work.lead}
                 items={work.items}
                 empty={work.empty}
-                onViewAll={() => setFocusedStage(stage)}
-                onAllStages={() => setFocusedStage(null)}
+                onViewAll={stage === 'ship' ? undefined : () => setStageListStage(stage)}
               />
             );
           })}
         </Box>
+      )}
+
+      {/* WMS-OPS-MODAL-PARITY-01 — full stage task list: the same work-card
+          nodes in the same canonical order, inspection framing only. */}
+      {!isLoading && !loadingSession && !isOperatorShell && (
+        <EntityDetailModal
+          entityId={stageListStage}
+          onClose={closeStageList}
+          title={stageListStage ? STAGE_LIST_COPY[stageListStage].title : ''}
+          subtitle={stageListStage
+            ? `${stageWork[stageListStage].items.length} ${
+                stageWork[stageListStage].items.length === 1
+                  ? STAGE_LIST_COPY[stageListStage].singular
+                  : STAGE_LIST_COPY[stageListStage].plural
+              }`
+            : undefined}
+        >
+          {stageListStage && (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
+                gap: 1.5,
+                minWidth: 0,
+              }}
+            >
+              {stageWork[stageListStage].items}
+            </Box>
+          )}
+        </EntityDetailModal>
       )}
 
       {!isLoading && !loadingSession && isOperatorShell && (

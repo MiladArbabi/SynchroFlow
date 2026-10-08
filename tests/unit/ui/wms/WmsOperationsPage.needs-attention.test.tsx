@@ -326,6 +326,18 @@ describe('PARITY-03 — Needs attention trailing action is canonical History', (
     expect(within(dialog).getByText('Order #1001')).toBeInTheDocument();
     expect(within(dialog).getByText('Order #1002')).toBeInTheDocument();
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // WMS-OPS-MODAL-PARITY-01 — History uses the canonical EntityDetailModal
+    // anatomy: separated read-only rows and the shell's top-right icon close,
+    // not a raw Dialog footer with a textual Close action.
+    const historyList = within(dialog).getByRole('list');
+    const historyItems = within(historyList).getAllByRole('listitem');
+    expect(historyItems).toHaveLength(HISTORY_ITEMS.length);
+    for (const item of historyItems) {
+      expect(item).toHaveAttribute('data-surface', 'raised');
+    }
+    expect(within(dialog).getByRole('button', { name: /^close$/i })).toHaveTextContent('');
+
     // Not SET_OPS_CONSOLE: the shared ConfigContext console state never opens.
     expect(consoleState()).toBe('closed');
     expect((axiosInstance.post as jest.Mock).mock.calls.filter(([url]) => /\/api\/v1\/alerts\//.test(url))).toHaveLength(0);
@@ -405,7 +417,15 @@ describe('PARITY-05 — full Needs attention modal', () => {
     const dialog = await openFullNeedsAttention();
     expect(titlesInDomOrder(dialog, [...NOW_TITLES, ...NON_NOW_TITLES])).toEqual(NOW_TITLES);
     const list = within(dialog).getByRole('list');
-    expect(within(list).getAllByRole('listitem')).toHaveLength(NOW_ROWS.length);
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(NOW_ROWS.length);
+
+    // WMS-OPS-MODAL-PARITY-01 — repeated tasks are visually independent
+    // surfaces, never an undifferentiated stack of text/action rows.
+    for (const item of items) {
+      expect(item).toHaveAttribute('data-surface', 'raised');
+    }
+
     expect(within(dialog).queryByText('Address correction verified')).toBeNull();
     expect(within(dialog).queryByText('Reorder intent verified')).toBeNull();
     const lifecycle = /acknowledge|\back\b|snooze|resolve|dismiss/i;

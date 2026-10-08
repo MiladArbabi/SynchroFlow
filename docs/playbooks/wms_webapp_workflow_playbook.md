@@ -1,7 +1,7 @@
 # LaSyncro WMS — Webapp Workflow Playbook
 
-**Version:** 1.1
-**Date:** August 12, 2026
+**Version:** 1.2
+**Date:** October 8, 2026
 **Status:** ✅ Live — includes verified STOW-SPLIT-01 location-first per-unit Stow contract
 **Scope:** All WMS workflows on the webapp (Stow, Pick, Pack/Ship)  
 **Authority:** This document is the engineering and UX contract for all webapp WMS workflow surfaces.  
@@ -196,78 +196,120 @@ Review-based inspect phases MUST show:
 linear progress bar. Its persistent work context is `Stow N of M`, the active
 bin, `N placed here · M remaining`, and one next-action instruction.
 
-### Warehouse Operations home — WMS-OPS-QUEUE-125
+### Warehouse Operations home — WMS-OPS-LIFECYCLE-IA-02 / WMS-OPS-OWNER-1A / WMS-OPS-MODAL-PARITY-01
 
-Warehouse → Operations is the operator's cross-workflow landing surface. It
-must expose what work exists without turning the page into a stack of
-independent, permanently expanded workflow sections.
+Warehouse → Operations has two role-specific compositions. Owner/Admin use the
+management overview described here. Operator remains task-focused and is not a
+compressed copy of the management board.
 
-Current home-page hierarchy:
+#### Owner/Admin management overview
 
-1. Warehouse header with the `Reconcile inventory` management action
-   (owner/admin only — see GH-1222 below).
-2. WorkTally with `PICKING`, `PACKING`, `PUTTING AWAY`, `RECEIVING`, and
-   `COUNTING` as informational metrics only.
-3. Compact `Quick scan` surface.
-4. `WORK QUEUE` containing workflow-family reveal groups.
+The default management surface is one continuous physical lifecycle:
 
-Work Queue families:
+Receive → Put away → Pick → Pack → Ship
 
-- **Pick & pack**
-  - contains the existing ready-to-pack orders and active batch cards;
-  - defaults open;
-  - its header reports active-batch and ready-to-pack totals.
-- **Putting away**
-  - contains the existing stow task cards;
-  - defaults closed;
-  - its header reports the total task count.
-- **Inventory checks**
-  - contains the existing counting task cards;
-  - defaults closed;
-  - its header reports the full task count.
-- **Receiving** remains represented in WorkTally only until Operations has an
-  actual receiving-task list to reveal. Do not create an empty family for
-  visual symmetry.
+There is no separate WorkTally, Work Queue, workflow-family accordion system,
+focused-stage replacement view, or `All stages` navigation on the management
+surface.
 
-Workflow-family headers are reveal controls only. They must not contain
-mutation CTAs. Existing workflow actions stay inside their task cards.
+The page hierarchy is:
 
-Multiple workflow families may remain open simultaneously. The single-open
-accordion rule in `modules-ux-playbook.md` is specific to the Order Flow
-Blocked Orders exception and does not apply to this Operations work queue.
+1. `Warehouse` header with the current open-work summary.
+2. Compact `Quick scan` using the existing free-scan authority.
+3. `Reconcile inventory` management action where role/commercial policy allows it.
+4. `Needs attention` as the canonical NOW projection, outside the lifecycle.
+5. One five-stage pipeline board in physical order.
 
-Expanded Inventory checks use bounded reveal:
+The pipeline is a management overview, not a second execution engine. Existing
+workflow/session mutation authority remains unchanged.
 
-- show the first 4 task cards by default;
-- when more exist, use the canonical centered `See N more` / `Show less`
-  control from `modules-ux-playbook.md`;
-- preserve the total family count in the accordion header;
-- collapsing the family resets it to the first 4 cards.
+#### Stage work grain
 
-`Quick scan` is the compact presentation of the existing webapp free-scan
-entry point. Its scanner contract is unchanged:
+Stage counts and list copy use the workflow's real unit of work:
 
-- the `TextField` remains continuously mounted;
-- scanner input refocus behavior remains intact;
-- Enter-to-submit remains primary;
-- loading/error/session transitions remain unchanged;
-- the existing `Listening` / `Resolving…` / `Hold` state remains visible.
+- **Receive** — receive jobs.
+- **Put away** — stow / put-away tasks.
+- **Pick** — pick batches.
+- **Pack** — pack batch/group contexts; Pack execution itself remains
+  order-scoped.
+- **Ship** — structural only until canonical shipping execution authority
+  exists.
 
-`WMS-OPS-QUEUE-125` is a composition and density change only. Existing
-`BatchCard`, `StowTaskCard`, `CountingTaskCard`, ready-to-pack row behavior,
-workflow handlers, and backend/API contracts were not changed.
+Do not substitute generic `tasks` where the underlying workflow grain is known.
 
-Verification completed in the live browser:
+#### Bounded preview and View all
 
-- accordion default states passed;
-- independent and multiple-open reveal behavior passed;
-- existing task cards rendered correctly;
-- Inventory checks bounded reveal and reset behavior passed;
-- reveal styling matched the canonical Orders Outbound pattern;
-- compact `Quick scan` rendered with scanner behavior intact;
-- `modules/wms` build passed;
-- frontend TypeScript remained at the existing 19-error baseline with zero
-  errors in `WmsModuleFT2.tsx`.
+Receive, Put away, Pick, and Pack render a bounded overview preview. When more
+work exists than the preview limit, `View all N` opens the shared
+`EntityDetailModal`.
+
+`View all N` MUST NOT replace or recompose the five-stage board.
+
+The stage modal contract is:
+
+- the management board remains mounted and unchanged underneath;
+- the title is the stage name (`Receive`, `Put away`, `Pick`, or `Pack`);
+- the subtitle uses the canonical grain, for example `4 receive jobs` or
+  `8 pick batches`;
+- the modal contains the same existing work-card nodes in the same canonical
+  order as the stage data;
+- repeated cards remain clearly separated inspection surfaces;
+- constrained or genuinely large modal content may own internal scrolling;
+- closing with the shell X / Escape returns to the same management overview;
+- entering an existing workflow CTA closes the list modal before entering that
+  workflow;
+- opening an existing assignment/reassignment dialog closes the list modal
+  first so modal surfaces do not stack.
+
+Ship has no `View all` work list while it remains structural-only.
+
+#### Assignment affordances
+
+Where lifecycle assignment authority already exists, the `⋮` assignment menu is
+placed consistently at the top-right of the work card.
+
+Current management precedents:
+
+- Receive — existing assignment/reassignment authority, top-right menu.
+- Put away — existing claim/assignment authority, top-right menu.
+
+Do not invent assignment menus for Pick or Pack without separate audited
+authority.
+
+#### Needs attention and History
+
+`Needs attention` is the canonical NOW projection, not a second inbox.
+
+Owner/Admin see at most three canonical NOW rows inline. When more exist, the
+small `{N} more` control opens the shared `EntityDetailModal` containing all
+canonical NOW rows in the same order and with their canonical navigation
+actions. The page does not issue a second alerts query for this modal and does
+not create local alert aggregation or lifecycle mutations.
+
+`History` also uses the shared `EntityDetailModal`. It preserves the canonical
+History query, ordering, loading/error/empty semantics and remains read-only.
+The shared shell X / Escape are the close mechanisms; do not add a redundant
+footer Close action.
+
+#### Ops Console coexistence
+
+Opening Ops Console must not unmount, remount, replace, or reflow the Operations
+page underneath it. The existing Operations composition remains visually in
+place and is withdrawn from interaction with the established inert /
+`aria-hidden` contract.
+
+#### Operator composition
+
+Operator remains task-focused:
+
+- lifecycle orientation is informational;
+- `Current work` and bounded `Up next` are the execution-oriented surfaces;
+- management-only controls remain absent according to role policy;
+- the Owner/Admin five-stage management board and its View-all inspection
+  modals do not redefine the operator shell.
+
+The operator redesign remains a separate target and must not be inferred from
+management-page changes.
 
 ### Recount management entry vs recount execution — GH-1222 (2026-10-07)
 

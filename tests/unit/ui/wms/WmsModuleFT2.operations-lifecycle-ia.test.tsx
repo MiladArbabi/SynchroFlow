@@ -6,7 +6,7 @@
  * mutation contracts remain in their owning Pick suite.
  */
 import React, { useContext } from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import WmsModuleFT2 from '../../../../modules/wms/src/ui/pages/WmsModuleFT2';
 import WmsOperationsPage from 'pages/ft2-pages/WmsOperationsPage';
@@ -328,28 +328,99 @@ describe('OWNER-PIPELINE-01 — Owner/Admin default five-stage pipeline overview
     expect(putAway).toHaveTextContent(/put away|putting away/i);
   });
 
-  it('high volume expands one focused stage with the full list, then returns to the overview', () => {
+  it('high volume View all opens the canonical Pick-batch EntityDetailModal while the five-stage overview stays unchanged', async () => {
     const many = Array.from({ length: 8 }, (_, i) => wmsBatch(`focus00${i}-0000-4000-8000-00000000000${i}`, 'pending'));
     renderOperationsAs('owner', lifecycleWms({ data: { batches: [...many, readyBatch()] } }), readyOrders);
 
-    const preview = articleNames(stageRegion('Pick'));
-    expect(preview.length).toBeGreaterThan(0);
-    expect(preview.length).toBeLessThan(many.length);
+    // Capture the actual overview DOM nodes BEFORE opening the modal.
+    // EntityDetailModal correctly makes the background application tree
+    // aria-hidden while open, so accessibility queries must not rediscover
+    // those background regions during the modal. The invariant is that the
+    // same nodes remain mounted and unchanged underneath it.
+    const stageRegionsBefore = STAGES.map((name) => stageRegion(name));
+    const pickRegionBefore = stageRegion('Pick');
+    const packRegionBefore = stageRegion('Pack');
 
-    fireEvent.click(within(stageRegion('Pick')).getByRole('button', { name: new RegExp(`^view all ${many.length}$`, 'i') }));
+    // These exact DOM nodes must remain mounted underneath the modal.
+    // Do not use role queries for the modal-open assertion because MUI
+    // correctly aria-hides the background application subtree.
+    const pickArticlesBefore = Array.from(
+      pickRegionBefore.querySelectorAll('article')
+    );
+    const packArticlesBefore = Array.from(
+      packRegionBefore.querySelectorAll('article')
+    );
+    const pickPreviewBefore = pickArticlesBefore.map(
+      (node) => node.getAttribute('aria-label')
+    );
+    const packPreviewBefore = packArticlesBefore.map(
+      (node) => node.getAttribute('aria-label')
+    );
 
-    expect(articleNames(stageRegion('Pick')).sort()).toEqual(many.map((b) => batchName(b.pick_batch_id)).sort());
-    // One focused stage: no other stage presents its work alongside it.
-    expect(screen.queryByRole('article', { name: batchName(READY_ID) })).not.toBeInTheDocument();
-    for (const name of STAGES.filter((stage) => stage !== 'Pick')) {
-      const other = queryStageRegion(name);
-      if (other) expect(articleNames(other)).toEqual([]);
+    expect(pickPreviewBefore.length).toBeGreaterThan(0);
+    expect(pickPreviewBefore.length).toBeLessThan(many.length);
+
+    fireEvent.click(
+      within(stageRegion('Pick')).getByRole('button', {
+        name: new RegExp(`^view all ${many.length}$`, 'i'),
+      }),
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: /^pick$/i });
+
+    expect(within(dialog).getByText(`${many.length} pick batches`)).toBeInTheDocument();
+    expect(articleNames(dialog))
+      .toEqual(many.map((batch) => batchName(batch.pick_batch_id)));
+
+    // Every full-list task remains a distinct raised work-card surface.
+    for (const article of within(dialog).getAllByRole('article')) {
+      expect(article).toHaveAttribute('data-surface', 'raised');
     }
 
-    fireEvent.click(screen.getByRole('button', { name: /^all stages$/i }));
-    for (const name of STAGES) expect(stageRegion(name)).toBeInTheDocument();
-    expect(articleNames(stageRegion('Pick')).length).toBeLessThan(many.length);
-    expect(within(stageRegion('Pack')).getByRole('article', { name: batchName(READY_ID) })).toBeInTheDocument();
+    // View all is inspection only: the exact underlying five-stage DOM
+    // remains mounted and unchanged. It is intentionally absent from the
+    // accessibility tree while the modal owns focus.
+    for (const region of stageRegionsBefore) {
+      expect(region).toBeInTheDocument();
+    }
+
+    expect(
+      Array.from(pickRegionBefore.querySelectorAll('article')).map(
+        (node) => node.getAttribute('aria-label')
+      )
+    ).toEqual(pickPreviewBefore);
+
+    expect(
+      Array.from(packRegionBefore.querySelectorAll('article')).map(
+        (node) => node.getAttribute('aria-label')
+      )
+    ).toEqual(packPreviewBefore);
+
+    // Stronger persistence proof: the exact preview article nodes captured
+    // before opening are still connected to the same stage regions.
+    for (const node of pickArticlesBefore) {
+      expect(node).toBeInTheDocument();
+      expect(pickRegionBefore).toContainElement(node);
+    }
+    for (const node of packArticlesBefore) {
+      expect(node).toBeInTheDocument();
+      expect(packRegionBefore).toContainElement(node);
+    }
+
+    expect(
+      screen.queryByRole('button', { name: /^all stages$/i })
+    ).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^close$/i }));
+
+    // EntityDetailModal uses MUI's exit transition. Its accessible title can
+    // disappear before the Dialog node is actually unmounted and before MUI
+    // restores the background application to the accessibility tree. Wait
+    // for the captured modal node itself to leave the DOM.
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+
+    expect(articleNames(stageRegion('Pick'))).toEqual(pickPreviewBefore);
+    expect(articleNames(stageRegion('Pack'))).toEqual(packPreviewBefore);
   });
 
   // VISUAL-PARITY-02 — superseded "zero buttons/links": Ship may expose exactly

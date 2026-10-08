@@ -156,13 +156,20 @@ describe('GH-1143 (2b) — owner/admin can reassign their own pending Receive', 
 
     const card = screen.getByTestId('receive-work-card-receive-self-pending');
 
-    expect(
-      within(card).getByRole('button', { name: /open receive/i })
-    ).toBeInTheDocument();
+    const openReceive = within(card).getByRole('button', { name: /open receive/i });
+    expect(openReceive).toBeInTheDocument();
 
     const menuTrigger = within(card).getByRole('button', {
       name: /receive.*options/i,
     });
+
+    // WMS-OPS-MODAL-PARITY-01 — management overflow belongs in the card
+    // identity/header row, matching Put away. Therefore it precedes the
+    // bottom execution CTA in document order.
+    expect(
+      menuTrigger.compareDocumentPosition(openReceive) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
 
     fireEvent.click(menuTrigger);
 
@@ -246,5 +253,48 @@ describe('GH-1143 (6) — Reassign interaction fetches eligible targets and subm
       expect(props.onReassignReceiveJob).toHaveBeenCalledWith('receive-other-pending', 9);
     });
     expect(props.onRefresh).toHaveBeenCalled();
+  });
+});
+
+describe('WMS-OPS-MODAL-PARITY-01 — full Receive list hands off without stacked dialogs', () => {
+  it('View all opens Receive jobs in EntityDetailModal and Reassign closes that list modal before opening the existing reassignment dialog', async () => {
+    const props = baseProps();
+    props.canReassignReceive = true;
+    props.currentUserId = 3;
+    props.openReceiveJobs = Array.from({ length: 4 }, (_, index) =>
+      pendingJobAssignedToOther({
+        receive_job_id: `receive-modal-${index + 1}`,
+        assigned_operator_id: 3,
+        assigned_operator_name: 'Admin User',
+        supplier_name: `Receive modal supplier ${index + 1}`,
+        po_number: 1200 + index,
+      }),
+    );
+
+    render(<WmsModuleFT2 {...props} />);
+
+    const receive = screen.getByRole('region', { name: /^receive$/i });
+    fireEvent.click(
+      within(receive).getByRole('button', { name: /^view all 4$/i }),
+    );
+
+    const listDialog = await screen.findByRole('dialog', { name: /^receive$/i });
+    expect(within(listDialog).getByText('4 receive jobs')).toBeInTheDocument();
+
+    const firstCard = within(listDialog).getByTestId('receive-work-card-receive-modal-1');
+    fireEvent.click(
+      within(firstCard).getByRole('button', { name: /receive.*options/i }),
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: /reassign/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /^receive$/i })).toBeNull()
+    );
+
+    expect(
+      await screen.findByRole('dialog', { name: /^reassign receive$/i })
+    ).toBeInTheDocument();
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
 });

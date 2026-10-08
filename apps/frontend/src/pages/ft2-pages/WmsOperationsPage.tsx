@@ -27,7 +27,7 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
+import { Alert, Box, Button, Typography } from '@mui/material';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
 import { hasQzPromptBeenDismissed, dismissQzPrompt } from 'utils/qzPrompt';
@@ -40,6 +40,15 @@ import { EntityDetailModal } from '@lasyncro/shared/ui';
 
 /** WMS-OPS-NEEDS-ATTENTION-01 — Operations shows a bounded slice of Ops Console NOW. */
 const NEEDS_ATTENTION_VISIBLE_LIMIT = 3;
+/** WMS-OPS-MODAL-PARITY-01 — each repeated modal row is its own bounded raised surface. */
+const MODAL_LIST_ITEM_SX = {
+  minWidth: 0,
+  bgcolor: 'var(--surface)',
+  border: '1px solid var(--rule)',
+  borderRadius: '10px',
+  px: 1.5,
+  py: 1.25,
+} as const;
 
 /**
  * WMS GATE PAGE
@@ -1018,49 +1027,44 @@ export default function WmsOperationsPage() {
       }}
     />
    )}
-    <Dialog
-      open={historyOpen}
+    {/* WMS-OPS-MODAL-PARITY-01 — canonical EntityDetailModal shell (top-right X,
+        no footer); body states, rows and backend order unchanged. */}
+    <EntityDetailModal
+      entityId={historyOpen ? 'wms-operations-history' : null}
+      title="History"
       onClose={() => setHistoryOpen(false)}
-      aria-labelledby="wms-operations-history-title"
-      fullWidth
-      maxWidth="sm"
+      maxWidth="md"
     >
-      <DialogTitle id="wms-operations-history-title">History</DialogTitle>
-      <DialogContent dividers>
-        {historyQuery.isError && !historyQuery.data ? (
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>History unavailable.</Typography>
-        ) : !historyQuery.data ? (
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading history…</Typography>
-        ) : historyRows.length === 0 ? (
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Nothing verified resolved yet.</Typography>
-        ) : (
-          <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.25 }}>
-            {historyRows.map((row) => (
-              <Box component="li" key={row.id} sx={{ minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
-                  <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
-                    {row.label}
-                  </Typography>
-                  {row.meta && (
-                    <Typography sx={{ flexShrink: 0, fontSize: 11.5, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
-                      {row.meta}
-                    </Typography>
-                  )}
-                </Box>
-                {row.subtitle && (
-                  <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
-                    {row.subtitle}
+      {historyQuery.isError && !historyQuery.data ? (
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>History unavailable.</Typography>
+      ) : !historyQuery.data ? (
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading history…</Typography>
+      ) : historyRows.length === 0 ? (
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Nothing verified resolved yet.</Typography>
+      ) : (
+        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.25 }}>
+          {historyRows.map((row) => (
+            <Box component="li" key={row.id} data-surface="raised" sx={MODAL_LIST_ITEM_SX}>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                  {row.label}
+                </Typography>
+                {row.meta && (
+                  <Typography sx={{ flexShrink: 0, fontSize: 11.5, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                    {row.meta}
                   </Typography>
                 )}
               </Box>
-            ))}
-          </Box>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setHistoryOpen(false)}>Close</Button>
-      </DialogActions>
-    </Dialog>
+              {row.subtitle && (
+                <Typography sx={{ mt: 0.25, fontSize: 12, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+                  {row.subtitle}
+                </Typography>
+              )}
+            </Box>
+          ))}
+        </Box>
+      )}
+    </EntityDetailModal>
     <EntityDetailModal
       entityId={attentionModalOpen ? 'wms-needs-attention' : null}
       title="Needs attention"
@@ -1069,7 +1073,7 @@ export default function WmsOperationsPage() {
     >
       <Box component="ul" role="list" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.25 }}>
         {attentionNowRows.map((row) => (
-          <Box component="li" role="listitem" key={row.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+          <Box component="li" role="listitem" key={row.id} data-surface="raised" sx={{ ...MODAL_LIST_ITEM_SX, display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
               {row.label}
             </Typography>
