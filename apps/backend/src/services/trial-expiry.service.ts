@@ -31,8 +31,13 @@ import { transitionShopSubscription } from './billing/subscriptionTransition.ser
 /**
  * Downgrade a single shop from Growth trial to Starter.
  * Called when trial_ends_at < NOW() and status = 'trialing'.
+ *
+ * GH-1226: `trialEndsAt` is the exact value discovered by
+ * list_trialing_tenants(). Discovery is advisory only — the candidate is
+ * re-validated by transitionShopSubscription() after its per-shop lock.
+ * Returns true only when this call actually applied the downgrade.
  */
-async function downgradeTrialShop(shopId: number): Promise<void> {
+async function downgradeTrialShop(shopId: number, trialEndsAt: Date): Promise<boolean> {
   const starterModules = [...modulesForTier('starter')];
   const growthModules = [...modulesForTier('growth')];
   const starterModuleSet = new Set(starterModules);
@@ -44,7 +49,7 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
     (f) => !starterFlagSet.has(f)
   );
 
-  await withTenant(shopId, async (trx) => {
+  const applied = await withTenant(shopId, async (trx) => {
     // 1. Downgrade subscription record — BILL-ENTITLEMENT-01
     //
     // tier + status are entitlement-authoritative and route through the
@@ -53,23 +58,24 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
     // paths, which record 'canceled'); trial_ends_at stays an accompanying
     // non-authoritative field.
     //
-    // The old statement carried its own `status: 'trialing'` guard in the
-    // WHERE clause and exited when it matched nothing. That guard is now an
-    // explicit read: only a shop still on 'trialing' is downgraded, which
-    // keeps the re-run no-op AND prevents the service from treating a missing
-    // subscription row as a creation.
-    const currentSubscription = await trx('shop_subscriptions')
-      .where({ shop_id: shopId })
-      .first('status');
-
-    // Already downgraded (or no subscription row) — idempotent exit
-    if (currentSubscription?.status !== 'trialing') return;
-
-    await transitionShopSubscription(
+    // GH-1226: eligibility is decided by the transition service AFTER its
+    // per-shop lock and authoritative reread, never by a read taken here. A
+    // stale read let a Shopify purchase that committed while expiry waited on
+    // the lock be downgraded anyway. expectedCurrent carries the discovered
+    // candidate; billingProvider is deliberately omitted (non-Shopify Growth
+    // trials expire through this worker too). A mismatch — already
+    // downgraded, purchased, extended, or no subscription row — is a no-op
+    // that writes nothing, which keeps the re-run idempotent.
+    const transition = await transitionShopSubscription(
       {
         shopId,
         to: { tier: 'starter', status: 'active' },
         fields: { trial_ends_at: null },
+        expectedCurrent: {
+          tier: 'growth',
+          status: 'trialing',
+          trialEndsAt,
+        },
         source: 'trial_expiry_worker',
         reason: 'trial_expired',
         actorType: 'worker',
@@ -77,6 +83,9 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
       },
       trx
     );
+
+    // Candidate lost ownership — no expiry side effect of any kind.
+    if (!transition.preconditionMatched || !transition.applied) return false;
 
     // 2. Revoke Growth-only entitlements
     if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
@@ -99,7 +108,10 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
     }));
 
     await EntitlementsService.applyFromCommercialGrant(trx, starterRows);
+    return true;
   });
+
+  if (!applied) return false;
 
 console.log('[trial-expiry] shop downgraded to starter', { shopId });
 
@@ -130,6 +142,8 @@ console.log('[trial-expiry] shop downgraded to starter', { shopId });
   } catch (err) {
     console.error('[trial-expiry] expiry email failed (non-fatal)', { shopId, err });
   }
+
+  return true;
 }
 
 /**
@@ -197,14 +211,14 @@ export async function runTrialExpiryCycle(): Promise<void> {
   const tenantResult = await systemQuery(
     db.raw('SELECT * FROM public.list_trialing_tenants()')
   );
-  const expiredShops: Array<{ shop_id: number }> = tenantResult.rows.filter(
+  const expiredShops: Array<{ shop_id: number; trial_ends_at: Date }> = tenantResult.rows.filter(
     (row: { trial_ends_at: Date }) => new Date(row.trial_ends_at) < new Date()
   );
 
   for (const row of expiredShops) {
     try {
       await runWithTenantContext(row.shop_id, () =>
-        downgradeTrialShop(row.shop_id)
+        downgradeTrialShop(row.shop_id, new Date(row.trial_ends_at))
       );
     } catch (err) {
       console.error('[trial-expiry] downgrade failed (isolated)', {

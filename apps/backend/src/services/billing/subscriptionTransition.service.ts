@@ -120,11 +120,38 @@ export interface SubscriptionTransitionInput {
    * be set by an ordinary recurring provider event.
    */
   allowProviderSwitch?: boolean;
+
+  /**
+   * GH-1226 — optional declarative precondition: the state the caller believed
+   * current when it decided to act (e.g. an advisory candidate discovered
+   * before any lock was held).
+   *
+   * Evaluated only AFTER the per-shop advisory lock and the authoritative
+   * reread, so it is checked against a value no competing transition can
+   * change until this transaction ends. An undefined key means "don't care";
+   * a defined key must equal the locked current value exactly (trialEndsAt by
+   * timestamp value; null means the current trial_ends_at must be null).
+   *
+   * A mismatch is a successful no-op: no subscription write, no accompanying
+   * field write, no ledger row, and `preconditionMatched: false`.
+   */
+  expectedCurrent?: {
+    tier?: string;
+    status?: string;
+    billingProvider?: string;
+    trialEndsAt?: Date | null;
+  };
 }
 
 export interface SubscriptionTransitionResult {
   /** True when authoritative state changed and a ledger row was written. */
   applied: boolean;
+  /**
+   * GH-1226 — false only when `expectedCurrent` was supplied and did not match
+   * the locked authoritative state; nothing was written. Always true when
+   * `expectedCurrent` is omitted.
+   */
+  preconditionMatched: boolean;
   /** True when this call created the shop_subscriptions row. */
   created: boolean;
   /** True when a non-null idempotency key had already been applied. */
@@ -165,6 +192,46 @@ interface SubscriptionRow {
   tier: string;
   status: string;
   billing_provider: string;
+  trial_ends_at: Date | string | null;
+}
+
+function sameTimestamp(current: Date | string | null, expected: Date | null): boolean {
+  if (expected === null || current === null) return expected === null && current === null;
+  return new Date(current).getTime() === expected.getTime();
+}
+
+/**
+ * GH-1226 — compares an expectedCurrent precondition against the locked
+ * authoritative row. With no row there is no current state, so any defined
+ * expectation fails.
+ */
+function preconditionMatches(
+  expected: NonNullable<SubscriptionTransitionInput['expectedCurrent']>,
+  current: SubscriptionRow | undefined
+): boolean {
+  const hasExpectation =
+    expected.tier !== undefined ||
+    expected.status !== undefined ||
+    expected.billingProvider !== undefined ||
+    expected.trialEndsAt !== undefined;
+
+  if (!current) return !hasExpectation;
+
+  if (expected.tier !== undefined && current.tier !== expected.tier) return false;
+  if (expected.status !== undefined && current.status !== expected.status) return false;
+  if (
+    expected.billingProvider !== undefined &&
+    current.billing_provider !== expected.billingProvider
+  ) {
+    return false;
+  }
+  if (
+    expected.trialEndsAt !== undefined &&
+    !sameTimestamp(current.trial_ends_at, expected.trialEndsAt)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -200,7 +267,7 @@ export async function transitionShopSubscription(
 
   const current = (await trx(SUBSCRIPTION_TABLE)
     .where({ shop_id: shopId })
-    .first('tier', 'status', 'billing_provider')) as SubscriptionRow | undefined;
+    .first('tier', 'status', 'billing_provider', 'trial_ends_at')) as SubscriptionRow | undefined;
 
   const from: AuthoritativeState | null = current
     ? {
@@ -248,6 +315,7 @@ export async function transitionShopSubscription(
     if (alreadyApplied) {
       return {
         applied: false,
+        preconditionMatched: true,
         created: false,
         duplicate: true,
         from:
@@ -266,6 +334,34 @@ export async function transitionShopSubscription(
         transitionId: String(alreadyApplied.id),
       };
     }
+  }
+
+  /**
+   * EXPECTED-CURRENT PRECONDITION — GH-1226.
+   *
+   * Decided after the lock, the authoritative reread, the ownership gate and
+   * the idempotency check (an already-applied key still reports duplicate),
+   * and BEFORE any write. A caller acting on a stale candidate — e.g. trial
+   * expiry racing a Shopify purchase that committed while it waited on the
+   * lock above — gets a clean no-op instead of overwriting newer state.
+   */
+  if (input.expectedCurrent !== undefined && !preconditionMatches(input.expectedCurrent, current)) {
+    return {
+      applied: false,
+      preconditionMatched: false,
+      created: false,
+      duplicate: false,
+      from,
+      // Nothing changed, so `to` is the unchanged current state. With no row
+      // (from === null) there is no state; `to` then echoes the column
+      // defaults only to keep the result shape non-null — created is false.
+      to: from ?? {
+        tier: CREATION_DEFAULTS.tier,
+        status: CREATION_DEFAULTS.status,
+        billingProvider: CREATION_DEFAULTS.billingProvider,
+      },
+      transitionId: null,
+    };
   }
 
   const to: AuthoritativeState = {
@@ -310,7 +406,15 @@ export async function transitionShopSubscription(
   }
 
   if (!authoritativeChanged) {
-    return { applied: false, created: false, duplicate: false, from, to, transitionId: null };
+    return {
+      applied: false,
+      preconditionMatched: true,
+      created: false,
+      duplicate: false,
+      from,
+      to,
+      transitionId: null,
+    };
   }
 
   /**
@@ -342,6 +446,7 @@ export async function transitionShopSubscription(
 
   return {
     applied: true,
+    preconditionMatched: true,
     created,
     duplicate: false,
     from,

@@ -3065,3 +3065,95 @@ the route handler is a bounded test handler.
 `(integration, external_event_id)`. Open; unchanged by GH-1224.
 
 <!-- END TIER-09-GH-1224 -->
+
+<!-- BEGIN TIER-11-GH-1226 -->
+
+## TIER-11 / GH-1226 — trial-expiry / Shopify purchase race
+
+**Date:** 2026-10-08
+
+**Status:** IMPLEMENTED + LOCALLY VERIFIED. Not deployed,
+not production-certified, not closed.
+
+### Defect
+
+The trial-expiry worker discovered an expired trial and then reread
+`shop_subscriptions.status` **before** the canonical commercial lock. When that
+stale read said `trialing` it admitted the downgrade and only later waited on
+`transitionShopSubscription()`'s per-shop advisory lock. If a Shopify paid-plan
+reconciliation committed first, expiry acquired the lock, reread the new paid
+state internally, but still unconditionally requested Starter. It then revoked
+Growth entitlements, seeded Starter, emitted `trial_expired` analytics and sent
+the expiry email.
+
+Certified RED purchase-first chain:
+
+```
+growth/trialing
+→ scale/active    [shopify_billing_reconciliation]
+→ starter/active  [trial_expiry_worker]
+```
+
+### Current contract
+
+1. `list_trialing_tenants()` is candidate discovery only.
+2. `transitionShopSubscription()` remains the one commercial serialization
+   owner.
+3. It acquires `pg_advisory_xact_lock(91002, shopId)` before rereading current
+   state.
+4. New optional `expectedCurrent` supports `tier`, `status`,
+   `billingProvider` and `trialEndsAt`.
+5. An undefined field means "don't care".
+6. `trialEndsAt` compares by timestamp value; `null` requires the current
+   `trial_ends_at` to be `null`.
+7. `expectedCurrent` is evaluated after the advisory lock, the authoritative
+   reread, the existing provider-ownership gate and the existing idempotency
+   duplicate check.
+8. A mismatch is a successful no-op: `applied=false`,
+   `preconditionMatched=false`, `created=false`, `duplicate=false`; no
+   subscription write, no non-authoritative field write, no ledger row.
+9. Trial expiry passes `expectedCurrent` = `tier: growth`, `status: trialing`,
+   the exact discovered `trial_ends_at`, and deliberately **no**
+   `billingProvider` expectation.
+10. Trial-expiry success side effects execute only if the conditional
+    transition actually applies.
+11. **Purchase-first:** the paid Shopify plan remains final authority and
+    expiry has zero side effects.
+12. **Expiry-first:** Starter may commit first; later Shopify reconciliation
+    converges to the purchased plan with a truthful serial ledger.
+13. No migration.
+14. No second caller-side advisory lock and no `FOR UPDATE` architecture.
+
+Source: `apps/backend/src/services/billing/subscriptionTransition.service.ts`
+(`expectedCurrent`, `preconditionMatched`) and
+`apps/backend/src/services/trial-expiry.service.ts` (`downgradeTrialShop`).
+
+### Verification evidence
+
+Permanent suites:
+
+- `tests/integration/billing/subscription-transition-precondition-gh1226.test.ts`
+- `tests/integration/billing/shopify-trial-expiry-purchase-race-gh1226.test.ts`
+
+- RED (pre-fix): P1 PASS, P2 EXPECTED RED, R1 EXPECTED RED, R2 PASS.
+- GREEN: exact GH-1226 tests 4 / 4 PASS.
+- Neighbour regression: 6 suites / 13 tests PASS.
+- Backend TypeScript PASS.
+- `git diff --check` PASS.
+- Deterministic real PostgreSQL overlap proven: a disposable-DB trigger parks
+  the first transaction on a test-only advisory barrier while it owns
+  `91002/shopId`; `pg_locks` / `pg_blocking_pids` prove the second path is
+  blocked by that backend before the barrier is released.
+- Read-only production compatibility: `sf_app` / `NOSUPERUSER` /
+  `NOBYPASSRLS`; `APP_DATABASE_URL` present; `DATABASE_URL` absent;
+  `trial_ends_at` is `timestamptz`; transition ledger present;
+  `list_trialing_tenants` contract present; production mutation NONE.
+
+### Adjacent issue (not fixed here)
+
+**GH-1227** — closed persisted flag rows are not re-granted because flagged
+entitlement rows use the non-temporal unique key plus
+`ON CONFLICT (...) DO NOTHING`. Effective tier-floor access currently masks it.
+GH-1227 is separate and was not fixed by GH-1226.
+
+<!-- END TIER-11-GH-1226 -->

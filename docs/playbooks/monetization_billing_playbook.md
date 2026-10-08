@@ -5399,6 +5399,67 @@ This slice also does not retroactively explain the June 2026 reviewer-shop
 Growth → Scale transition; it makes any future equivalent transition
 attributable.
 
+### 37.8 Conditional transition preconditions / GH-1226
+
+**State:** IMPLEMENTED + LOCALLY VERIFIED (2026-10-08). Not production-certified.
+
+`transitionShopSubscription()` accepts an optional declarative precondition:
+
+```ts
+expectedCurrent?: {
+  tier?: string;
+  status?: string;
+  billingProvider?: string;
+  trialEndsAt?: Date | null;
+}
+```
+
+and every result carries `preconditionMatched: boolean`.
+
+**Evaluation point.** `expectedCurrent` is evaluated only after the existing
+per-shop `pg_advisory_xact_lock(91002, shopId)` and the authoritative
+`shop_subscriptions` reread (which includes `trial_ends_at`), and after the
+provider-ownership gate (§38) and the idempotency duplicate check. Provider
+ownership and idempotency semantics are unchanged.
+
+**Comparison.** An undefined key means "don't care". `tier`, `status` and
+`billingProvider` use exact string equality. `trialEndsAt` compares by
+timestamp value; `null` requires the current `trial_ends_at` to be `null`.
+With no subscription row, any defined expectation is a mismatch.
+
+**Mismatch.** A mismatch is a non-error no-op: `applied=false`,
+`preconditionMatched=false`, `created=false`, `duplicate=false`,
+`transitionId=null`. It performs no subscription write, no accompanying
+non-authoritative field write and no ledger row.
+
+**Omitted.** Calls that omit `expectedCurrent` keep their previous semantics
+and report `preconditionMatched=true`.
+
+**First production caller — trial expiry.** `list_trialing_tenants()` is
+advisory candidate discovery only. The expiry candidate identity is
+`tier=growth` + `status=trialing` + the exact discovered `trial_ends_at`.
+`billingProvider` is intentionally not part of the expectation because the
+worker is not Shopify-only. Entitlement revocation, Starter seeding,
+`trial_expired` analytics and the expiry email are gated on the transition
+actually applying.
+
+**Legal concurrency outcomes.**
+
+| Lock order | Outcome |
+|---|---|
+| purchase first | expiry is a no-op; the paid plan remains final authority |
+| expiry first | Starter commits, then the later paid reconciliation wins with a serial ledger |
+
+No migration. No duplicate or caller-side lock.
+
+Permanent regression contracts:
+
+- `tests/integration/billing/subscription-transition-precondition-gh1226.test.ts`
+- `tests/integration/billing/shopify-trial-expiry-purchase-race-gh1226.test.ts`
+
+Adjacent, out of scope: GH-1227 (closed persisted flag rows are not re-granted
+on a later grant; masked by effective tier-floor access).
+
 ---
 
 ## 38. Provider Plan / Price Mapping Integrity — `BILL-ENTITLEMENT-01` / `P0-B3` (implemented + locally verified 2026-09-08)
