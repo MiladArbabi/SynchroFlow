@@ -633,7 +633,7 @@ Stow	…	Execution	PRIMARY/CTX	No	Global	Audit	Needs audit
 Pick	…	Execution	CONTEXTUAL	No	Global	Audit	Needs audit
 Pack	…	Execution	NONE/OD	No	Global	Audit	Needs audit
 Floor Planning	/floor-planning	Spatial	PRIMARY	No	Global	Audit	Needs audit
-Warehouse Analytics	/wms/analytics	Operational Context?	NONE?	No?	Global	FAIL — internal workspace scroll; document overflow 0 at 1440×720 + 1024×820 is not workspace scroll-free	Needs audit — owner-screen UX pending GH-1231; GH-1230 data reliability LOCALLY VERIFIED (2026-10-08)
+Warehouse Analytics	/wms/analytics	Operational Context	NONE	NO	Global; contextual nonmodal Details (no rail) withdraws while Console open; <1200 overlay exception	PASS: AppLayout + document overflow 0 at 1440×720 + 1024×820 (light + dark); natural AppLayout scroll at 390×844 (single column)	LOCAL CERTIFIED 2026-10-09 (GH-1231, §18B) — PRODUCTION CERTIFICATION PENDING; GH-1230 data reliability shipped and CLOSED (5d7b145f, production smoke accepted)
 Question marks mean decision not yet certified, not implementation uncertainty.
 
 ## 14. Registry screen detail
@@ -1348,6 +1348,173 @@ Recorded without remediation in this documentation gate:
 - truthful cross-currency aggregate "Value shipped";
 - broader Ops Console admission policy for carrier alerts;
 - pagination footer may need future condensation at very large page counts.
+
+## 18B. Warehouse Analytics registry record — LOCAL CERTIFIED (GH-1231)
+
+SCREEN
+Warehouse Analytics (owner screen)
+
+ROUTE
+/wms/analytics. The Floor Display at /wms/analytics/display is a separate
+surface and is not part of this record.
+
+PRIMARY ARCHETYPE
+Operational Context
+
+PURPOSE
+Help the warehouse owner or admin understand, at a glance, how the warehouse
+is keeping up, where work is waiting (by recorded order status), where
+problems happen, and what the team has handled.
+
+PRIMARY USER QUESTION
+Four questions, given equal weight:
+- Pace: are we keeping up?
+- Flow: where is work slowing down?
+- Problems: where are problems happening?
+- Team: how is the team doing?
+
+OWNS
+Warehouse performance state for the selected window, plus the live stage
+state shown for orientation.
+
+REFERENCES
+- Order Flow (/orders/flow): stage work.
+- Problem Center (/problem-center): problem resolution.
+- Team (/team): people and hourly rates (Costs setup link).
+- Warehouse Settings (/settings/warehouse): Floor Display management, via
+  Cast "Manage displays in Settings →".
+
+MUST NOT OWN
+- Actionable queues, remediation or alerts (owned by the Ops Console and the
+  owning modules).
+- Rankings or performance scores.
+- Cost accounting.
+
+OPS CONSOLE
+No rail. Details is contextual:
+- It is a nonmodal "Details" popover anchored to the selected item, at every
+  width.
+- No panel exists, and no track is reserved, until something is selected.
+- Details withdraws while the Console is open. It returns with the same
+  selection when the Console closes, with the window selection preserved.
+- Ratified exception: below 1200px the fixed 340px Console may overlay the
+  cards while it is open.
+- Details contains no historical stage-time averages (U8).
+
+GLOBAL SEARCH
+Normal shell behaviour.
+
+PULSE
+NO. Live stage state sits inside Flow, not in a separate pulse rail.
+
+SPATIAL MODE
+NONE. No truthful bin or physical-location story exists, so none is invented.
+
+PRIMARY WORKSPACE
+Pace, Flow, Problems and Team, plus a Costs setup strip.
+- 2×2 while the workspace's measured content width is ≥650px; otherwise one
+  column.
+- Live Flow is independent of the 7d/30d/90d selection.
+- Pace bars are proportional to the largest bucket. Zero buckets draw no bar
+  and are noninteractive.
+- Recorded-status ages are concise and floored. No lower-bound or invented
+  precision is shown.
+- Text links are canonical Tier 2 ghost-orange pills; static information
+  uses semantic ink colours.
+
+LOCAL EXCEPTIONS
+None. Problems are summarized; resolution is in Problem Center.
+
+ATTENTION HANDOFF
+Cross-workflow attention stays with the Ops Console. Analytics only links to
+the owning routes.
+
+INTERNAL SCROLL
+NONE in the primary workspace. This is a screen-specific contract, stricter
+than §9 (ratified in GH-1231):
+- 0 AppLayout primary overflow and 0 document overflow at 1440×720 and
+  1024×820, light and dark, with the Console closed (browser-measured).
+- Natural AppLayout scrolling when stacked at 390×844 (browser-measured).
+- Only the Details content may scroll. It is never needed to answer a primary
+  question.
+The page measures its workspace locally. AppLayout, WmsFT2Page and the WMS
+tabs are unchanged, and there is no inner workspace scroller.
+
+FIRST-VIEWPORT CONTRACT
+Visible and unclipped at rest at the certified viewports:
+- all four question headings with their primary values and charts;
+- the Costs strip;
+- ≥2 problem-product rows at 1440×720 when ≥2 exist;
+- ≥1 person row when anyone has activity.
+Browser-measured with populated data (light and dark) and with real shop data.
+The other data states (zero, partial, loading, unavailable, unconfigured,
+denied) are React-tested for content; their geometry at the certified
+viewports was not separately browser-measured.
+
+Readability (U5), measured:
+- informational labels and values ≥12px;
+- chart axes and secondary legends ≥11px;
+- text contrast ≥4.5:1 in both themes;
+- keyboard and screen-reader equivalents for every chart;
+- fonts are never shrunk to make content fit.
+
+PRE-REMEDIATION HISTORICAL SYMPTOMS (legacy page, before GH-1231; not current defects)
+- The workspace scrolled internally.
+- Misleading UPH, "vs self", accuracy and on-track claims.
+- "Default Title" product names.
+- A /wms/problem-center link to a route that does not exist.
+- Stage ages and counts mixed across different freshness sources.
+
+COMPOSITION
+Concept A — Visual Four Questions, ratified 2026-10-08, with the
+owner-ratified presentation cleanup of 2026-10-09. The canonical
+specification is docs/blueprints/WarehouseAnalyticsModule.md §12B: the
+implemented composition, Details, responsive layout, metric contracts,
+freshness, API plan and evidence. This record does not repeat it.
+
+DATA FRESHNESS
+Historical and live freshness stay independent (GH-1230 D1–D6, blueprint §12A
+and §12B.3):
+- the header "Updated at" is historical;
+- the Flow "Now · updated" is live.
+They are never merged, and a failed refresh never advances either.
+
+GEOMETRY TEST HOOKS (U6)
+Page-only data-* attributes (blueprint §12B.2). No hook was added to
+AppLayout. The harness finds the AppLayout scroll owner by walking up from
+the workspace to the first overflow-y auto/scroll ancestor.
+
+CERTIFICATION
+Method (U7):
+- CI-gated contract tests;
+- locally run real-DB integration and frontend regressions;
+- a reproducible local Playwright harness (tests/e2e/wms-analytics-gh1231.browser.spec.ts
+  with playwright.gh1231.config.ts; no CI Playwright project).
+
+■ source contract — Analytics contracts 285/285; commercial route enforcement 31/31
+■ targeted tests — React 84/84; backend integration 42/42 (prior verified run)
+■ Ops Console coexistence — Details withdraws and restores; no overlap with the Console open
+■ keyboard — Details Enter / Escape / Close with focus return
+■ 1440×720
+■ 1024×820
+■ dark
+■ light
+■ local runtime — authenticated Chromium Playwright 8/8
+□ production
+
+Not covered by the browser suite: compact side-nav; the geometry of the
+non-populated data states at the certified viewports; the WMS Operations,
+Order Flow and Floor Display neighbours.
+GH-1109 historical test failures are pre-existing (reproduced on 5d7b145f)
+and are tracked in GH-1232.
+
+STATUS
+LOCAL CERTIFIED: IMPLEMENTED + LOCALLY CERTIFIED 2026-10-09.
+PRODUCTION CERTIFICATION: PENDING. This record does not claim CI on the
+GH-1231 commit, deployment or production acceptance.
+The GH-1230 data reliability contract shipped (5d7b145f), passed CI, deploy
+and production smoke, is CLOSED, and applies unchanged.
+WORKFLOW_DOC_UPDATE_REQUIRED=NO.
 
 ## 19. Enforcement rule for engineers
 The registry should display this prominently:

@@ -1,598 +1,437 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-// apps/frontend/src/pages/ft2-pages/WmsAnalyticsPage.tsx
-//
-// WAREHOUSE ANALYTICS — FT2 Owner surface
-//
-// RULES: No alpha(). No useTheme(). No fontFamily overrides. No hardcoded hex except severity tokens.
-//        CSS variables only for adaptive colors (var(--surface), var(--rule), var(--ink-*), var(--bg-*)).
-//        Severity/status: #4CAF7A ok · #D9A23B watch · #E5484D critical · #F2555A critical-text.
-
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+// GH-1231 — Concept A owner screen. Independent historical and live truth.
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Box, Typography, ToggleButtonGroup, ToggleButton, Skeleton,
   Popper, Paper, ClickAwayListener, Tooltip,
 } from '@mui/material';
-import { AlertTriangle, TrendingUp, Clock, ArrowRight, Cast, ExternalLink, Copy } from 'lucide-react';
+import { Cast, ExternalLink, Copy, X } from 'lucide-react';
+import { visuallyHidden } from '@mui/utils';
 import { CommercialGate } from '../../components/CommercialGate';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { getCapabilityPresentation } from '../../commercial/capabilityPresentation';
+import { useWmsAnalytics, useLiveCapacity } from '../wms/useWmsAnalytics';
 import {
-  useWmsAnalytics,
-  useLiveCapacity,
-  type LiveCapacity,
-  type OperatorPerf,
-  type PipelineVelocity,
-  type ExceptionIntelligence,
-  type CostStory,
-  AgingWip,
-  ExceptionTrend,
-  ThroughputTrend,
-} from '../wms/useWmsAnalytics';
-import {
-  resolveHistoricalAvailability,
-  resolveLiveAvailability,
-  resolveAnalyticsDenial,
-  type AnalyticsAvailability,
+  resolveV1HistoricalBlocks, resolveV1LiveBlocks, resolveAnalyticsDenial,
+  type AnalyticsAvailability, type V1HistoricalBlocks, type V1LiveBlocks,
+  type V1PacePoint,
 } from '../wms/analyticsAvailability';
+import {
+  FLOW_STAGES, formatCount, formatStatusAge, partialPeriodLabel,
+  problemTypeLabel, sortTeamAlphabetically, teamOverflowLabel, costsStripCopy,
+  carrierCutoffCopy, activeBatchAssignmentCopy,
+} from '../wms/analyticsV1Model';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
-import { useExchangeRates } from '../../hooks/useExchangeRates';
-import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import useConfig from '../../hooks/useConfig';
 import { useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from '../../api/axiosConfig';
 import { useToast } from '../../contexts/ToastContext';
 
-// ─── HELPERS ──────────────────────────────────────────────────
-
-function fmtSeconds(s: number | null): string {
-  if (s == null) return '—';
-  if (s < 60) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-function fmtHours(h: number | null): string {
-  if (h == null) return '—';
-  if (h < 1) return `${Math.round(h * 60)}m`;
-  return `${h.toFixed(1)}h`;
-}
-
-function fmtName(first: string | null, last: string | null): string {
-  return [first, last].filter(Boolean).join(' ') || 'Unknown';
-}
-
-// Severity palette baked in to avoid alpha() calls
-const ON_TRACK_PALETTE = {
-  green: { color: '#4CAF7A', bg: 'rgba(76,175,122,0.1)',  bd: 'rgba(76,175,122,0.3)',  label: 'On track' },
-  amber: { color: '#D9A23B', bg: 'rgba(217,162,59,0.1)',  bd: 'rgba(217,162,59,0.3)',  label: 'At risk'  },
-  red:   { color: '#E5484D', bg: 'rgba(229,72,77,0.1)',   bd: 'rgba(229,72,77,0.3)',   label: 'Behind'   },
-} as const;
-type TrackKey = keyof typeof ON_TRACK_PALETTE;
-
-const TONE_COLORS: Record<string, string> = {
-  positive: '#4CAF7A',
-  negative: '#E5484D',
-  warning:  '#D9A23B',
+const text = { fontSize: 12, lineHeight: 1.4, color: 'var(--ink-3)' };
+const value = { fontSize: 22, lineHeight: 1.15, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
+const button = {
+  font: 'inherit', color: 'var(--ink)', bgcolor: 'transparent', border: 0,
+  textAlign: 'left', cursor: 'pointer', borderRadius: '6px', minWidth: 0,
+  '&:hover': { bgcolor: 'var(--bg-2)' },
+  '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
 };
+// Actions only (links and text buttons): accent mixed toward ink keeps ≥4.5:1
+// text contrast in both themes (raw --accent on white is ~2.8:1).
+const actionInk = 'color-mix(in srgb, var(--accent) 65%, var(--ink))';
+const action = { color: actionInk, fontWeight: 500 };
+// Tier 2 ghost pill (modules-ux-playbook §2) at the screen's 12px minimum.
+const link = {
+  ...text, ...action, display: 'inline-flex', alignItems: 'center', alignSelf: 'flex-start', px: 1, py: 0.25,
+  bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', textDecoration: 'none',
+  '&:hover': { opacity: 0.75 }, '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+};
+// Card footer link: stays inside the card, below its content.
+const footerLink = { ...link, mt: 'auto', flexShrink: 0 };
 
-// ─── SHARED SUB-COMPONENTS ────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 1 }}>
-      {children}
-    </Typography>
-  );
-}
-
-function ZoneCard({ children, sx = {} }: { children: React.ReactNode; sx?: object }) {
-  return (
-    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', overflow: 'hidden', ...sx }}>
-      {children}
-    </Box>
-  );
-}
-
-function ZoneCardHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <Box sx={{ px: 2, py: 1.25, borderBottom: '1px solid var(--rule)' }}>
-      {children}
-    </Box>
-  );
-}
-
-function StatTile({ label, value, sub, tone }: {
-  label: string; value: string; sub?: string;
-  tone?: 'positive' | 'negative' | 'warning' | 'neutral';
-}) {
-  const color = (tone && tone !== 'neutral') ? (TONE_COLORS[tone] ?? 'var(--ink)') : 'var(--ink)';
-  return (
-    <Box sx={{ flex: 1, minWidth: 0, p: '0.85rem 1rem', bgcolor: 'var(--bg-2)', borderRadius: '6px' }}>
-      <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 0.5 }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: 20, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
-        {value}
-      </Typography>
-      {sub && <Typography sx={{ fontSize: 11, fontWeight: 300, color, mt: '2px' }}>{sub}</Typography>}
-    </Box>
-  );
-}
-
-function EmptyZone({ label }: { label: string }) {
-  return (
-    <Box sx={{ py: 1.25, px: 2, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
-      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
-    </Box>
-  );
-}
-
-// GH-1230: unknown is never zero — a neutral marker, never the healthy green dot.
-function UnavailableNotice() {
-  return (
-    <Box sx={{ py: 1.25, px: 2, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--ink-4)', flexShrink: 0 }} />
-      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Couldn't load this right now.</Typography>
-    </Box>
-  );
-}
-
-function UnavailableZone({ label }: { label: string }) {
-  return (
-    <ZoneCard sx={{ flexShrink: 0 }}>
-      <ZoneCardHeader><SectionLabel>{label}</SectionLabel></ZoneCardHeader>
-      <UnavailableNotice />
-    </ZoneCard>
-  );
-}
-
-// GH-1230 D4: freshness is the query's own successful-fetch time.
-function UpdatedAt({ at, locale }: { at: number; locale: string }) {
+function UpdatedAt({ at, locale, live = false }: { at: number; locale: string; live?: boolean }) {
   const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
-  return (
-    <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-      Updated at {time}
-    </Typography>
-  );
+  return <Typography sx={{ ...text, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{live ? 'Now · updated' : 'Updated at'} {time}</Typography>;
 }
 
-function CtaButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function RequestState({ state, compact = false }: { state: AnalyticsAvailability<unknown>; compact?: boolean }) {
+  if (state.status === 'ready') return null;
+  return state.status === 'loading'
+    ? <Box role="status" aria-label="Loading analytics" sx={{ py: compact ? 0 : 1, minWidth: compact ? 64 : undefined }}><Skeleton height={compact ? 18 : 24} />{!compact && <Skeleton height={40} />}</Box>
+    : <Typography sx={text}>Couldn't load this right now.</Typography>;
+}
+
+function Region({ area, question, children, stamp }: { area: string; question: string; children: ReactNode; stamp?: ReactNode }) {
   return (
-    <Box
-      onClick={onClick}
-      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 }, transition: 'opacity 0.1s' }}
-    >
+    <Box component="section" role="region" aria-label={area} data-analytics-region={area.toLowerCase()}
+      sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+        <Typography sx={{ ...text, fontWeight: 600 }}>{area}</Typography>
+        {stamp}
+      </Box>
+      <Typography component="h2" sx={{ fontSize: 16, fontWeight: 600, lineHeight: 1.25, color: 'var(--ink)', m: 0 }}>{question}</Typography>
       {children}
     </Box>
   );
 }
 
-// ─── ZONE 1 — TODAY'S CAPACITY ────────────────────────────────
-
-function PipelinePip({ label, count, accent }: { label: string; count: number; accent?: boolean }) {
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 56 }}>
-      <Typography sx={{ fontSize: 18, fontWeight: 700, color: accent ? 'var(--accent)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-        {count}
-      </Typography>
-      <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)', mt: '2px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-}
-
-function PipelineDivider() {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', pb: 2 }}>
-      <ArrowRight size={12} color="var(--ink-4)" />
-    </Box>
-  );
-}
-
-function Zone1CapacityStrip({ live, updatedAt }: { live: LiveCapacity; updatedAt: React.ReactNode }) {
-  const trackKey  = live?.on_track as TrackKey | undefined;
-  const trackCfg  = trackKey ? ON_TRACK_PALETTE[trackKey] : null;
-  const trackColor = trackCfg?.color ?? 'var(--ink-4)';
-
-  const formatCpt = (hours: number | null, cptLocal: string | null): string => {
-    if (cptLocal == null) return '—';
-    const timeLabel = cptLocal.slice(0, 5);
-    if (hours == null || hours <= 0) return `${timeLabel} (passed)`;
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    return h > 0 ? `${h}h ${m}m to ${timeLabel}` : `${m}m to ${timeLabel}`;
-  };
-
-  return (
-    <ZoneCard>
-      <ZoneCardHeader>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
-          <SectionLabel>Live Capacity</SectionLabel>
-          {updatedAt}
-        </Box>
-      </ZoneCardHeader>
-      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-
-        {/* PIPELINE STAGES — vertical rows */}
-        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-          {[
-            { label: 'Awaiting pick', value: live?.pipeline.awaiting_pick ?? 0, accent: false },
-            { label: 'Picking',       value: live?.pipeline.picking ?? 0,       accent: false },
-            { label: 'Packing',       value: live?.pipeline.packing ?? 0,       accent: false },
-            { label: 'Ship-ready',    value: live?.pipeline.ship_ready ?? 0,    accent: false },
-            { label: 'Shipped today', value: live?.shipped_today ?? 0,          accent: true  },
-          ].map((row) => (
-            <Box key={row.label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.65, borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' } }}>
-              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)' }}>{row.label}</Typography>
-              <Typography sx={{ fontSize: 16, fontWeight: 600, color: row.accent ? 'var(--accent)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{row.value}</Typography>
-            </Box>
-          ))}
-        </Box>
-
-        {/* SHIPPED SPLIT — WMS scan vs legacy (WA-06) */}
-        {(live?.shipped_today ?? 0) > 0 && (
-          <Box sx={{ display: 'flex', gap: 0.75 }}>
-            <Box sx={{ flex: 1, p: '6px 8px', borderRadius: '6px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 9.5, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Scanned</Typography>
-              <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{live?.shipped_via_wms ?? 0}</Typography>
-            </Box>
-            <Box sx={{ flex: 1, p: '6px 8px', borderRadius: '6px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 9.5, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Legacy</Typography>
-              <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{live?.shipped_via_legacy ?? 0}</Typography>
-            </Box>
-          </Box>
-        )}
-
-        <Box sx={{ height: '1px', bgcolor: 'var(--rule)' }} />
-
-        {/* ON SHIFT + UPH */}
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>On shift</Typography>
-            <Typography sx={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
-              {live?.operators_on_shift ?? '—'}
-              <Typography component="span" sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', ml: 0.5 }}>ops</Typography>
-            </Typography>
-          </Box>
-          {live?.live_uph != null && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-              <Typography sx={{ fontSize: 10, fontWeight: 500, color: trackColor, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                Live UPH
-              </Typography>
-              <Typography sx={{ fontSize: 18, fontWeight: 700, color: trackColor, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
-                {live.live_uph}
-                {live?.required_uph != null && (
-                  <Typography component="span" sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', ml: 0.5 }}>/ {live.required_uph} req</Typography>
-                )}
-              </Typography>
-            </Box>
-          )}
-        </Box>
-
-        {/* CPT COUNTDOWN */}
-        {live?.cpt_local && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Cutoff</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Clock size={13} color={live?.hours_to_cpt != null && live.hours_to_cpt > 0 ? 'var(--ink-3)' : 'var(--ink-4)'} />
-              <Typography sx={{ fontSize: 13, fontWeight: 600, color: live?.hours_to_cpt != null && live.hours_to_cpt > 0 ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
-                {formatCpt(live?.hours_to_cpt ?? null, live?.cpt_local ?? null)}
-              </Typography>
-            </Box>
-          </Box>
-        )}
-
-        {/* ON-TRACK SIGNAL */}
-        {trackCfg && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.5, borderRadius: '20px', bgcolor: trackCfg.bg, border: `1px solid ${trackCfg.bd}`, alignSelf: 'flex-start' }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: trackCfg.color, flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: trackCfg.color, lineHeight: 1 }}>{trackCfg.label}</Typography>
-          </Box>
-        )}
-      </Box>
-    </ZoneCard>
-  );
-}
-
-// GH-1230: the live zone renders values only from a verified live response.
-function LiveCapacityZone({ state, locale }: { state: AnalyticsAvailability<LiveCapacity>; locale: string }) {
-  if (state.status === 'ready') {
-    return <Zone1CapacityStrip live={state.data} updatedAt={<UpdatedAt at={state.updatedAt} locale={locale} />} />;
-  }
-  return (
-    <ZoneCard>
-      <ZoneCardHeader><SectionLabel>Live Capacity</SectionLabel></ZoneCardHeader>
-      {state.status === 'loading'
-        ? <Box sx={{ p: 2 }}><Skeleton height={80} /></Box>
-        : <UnavailableNotice />}
-    </ZoneCard>
-  );
-}
-
-// ─── ZONE 2 — OPERATOR PERFORMANCE BOARD ─────────────────────
-
-type BaselineMode = 'personal' | 'team';
-
-function Zone2OperatorBoard({ operators, loading }: { operators: OperatorPerf[]; loading: boolean }) {
-  const navigate = useNavigate();
-  const [baseline, setBaseline] = useState<BaselineMode>('personal');
-  const COLS = '2fr 0.7fr 0.7fr 0.8fr 0.8fr 0.7fr 0.7fr';
-  const COL_HEADERS = ['Operator', 'Units pick', 'Units pack', 'UPH', 'Accuracy', 'Exceptions', 'Avg batch'];
-
-  const teamAvgUph = (() => {
-    const valid = operators.filter(op => op.uph != null).map(op => op.uph!);
-    return valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : null;
-  })();
-
-  const uphColor = (uph: number | null): string => {
-    if (uph == null) return 'var(--ink-3)';
-    if (baseline === 'personal') {
-      if (uph >= 40) return '#4CAF7A';
-      if (uph >= 25) return '#D9A23B';
-      return '#E5484D';
+// Local measurement keeps the existing AppLayout scroll owner and WMS tabs intact.
+// Observe siblings too: wrapped tabs / shell banners change the available height.
+// Width is the workspace content box, so the Ops Console and side nav count.
+function useWorkspaceSize(ref: { current: HTMLDivElement | null }) {
+  const [size, setSize] = useState<{ height: number | null; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let scrollport = root.parentElement;
+    while (scrollport && !['auto', 'scroll'].includes(getComputedStyle(scrollport).overflowY)) scrollport = scrollport.parentElement;
+    const measure = () => {
+      const style = getComputedStyle(root);
+      const width = Math.floor(root.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0));
+      let height: number | null = null;
+      if (scrollport) {
+        const top = root.getBoundingClientRect().top - scrollport.getBoundingClientRect().top - scrollport.clientTop + scrollport.scrollTop;
+        const padding = parseFloat(getComputedStyle(scrollport).paddingBottom) || 0;
+        height = Math.max(0, Math.floor(scrollport.clientHeight - top - padding)) || null;
+      }
+      if (width > 0) setSize((prev) => prev?.height === height && prev.width === width ? prev : { height, width });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(root);
+    if (scrollport) {
+      observer?.observe(scrollport);
+      for (const child of scrollport.children) if (child !== root) observer?.observe(child);
     }
-    if (teamAvgUph == null) return 'var(--ink-3)';
-    if (uph >= teamAvgUph) return '#4CAF7A';
-    if (uph >= teamAvgUph * 0.9) return '#D9A23B';
-    return '#E5484D';
-  };
-
-  const accColor = (pct: number | null): string => {
-    if (pct == null) return 'var(--ink-3)';
-    if (pct >= 95) return '#4CAF7A';
-    if (pct >= 85) return '#D9A23B';
-    return '#E5484D';
-  };
-
-  const visible = operators.slice(0, 7);
-  const hasMore = operators.length > 7;
-
-  return (
-    <ZoneCard sx={{ display: 'flex', flexDirection: 'column' }}>
-      <ZoneCardHeader>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent:'space-between' }}>
-          <SectionLabel>Operator Performance</SectionLabel>
-          <ToggleButtonGroup
-            value={baseline} exclusive size="small"
-            onChange={(_e, val) => val && setBaseline(val)}
-            sx={{ '& .MuiToggleButton-root': { fontSize: 10, py: 0.25, px: 1, lineHeight: 1.4, textTransform: 'none', fontWeight: 500 } }}
-          >
-            <ToggleButton value="personal">vs self</ToggleButton>
-            <ToggleButton value="team">
-              vs team{teamAvgUph != null ? ` (${teamAvgUph})` : ''}
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-      </ZoneCardHeader>
-
-      {loading && (
-        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {[1, 2, 3].map(i => <Skeleton key={i} height={28} sx={{ borderRadius: '4px' }} />)}
-        </Box>
-      )}
-
-      {!loading && operators.length === 0 && (
-        <EmptyZone label="No pick activity in this period." />
-      )}
-
-      {!loading && operators.length > 0 && (
-        <>
-          {/* HEADER ROW */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: COLS, px: 2, py: 0.75, borderBottom: '1px solid var(--rule)' }}>
-            {COL_HEADERS.map(h => (
-              <Typography key={h} sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                {h}
-              </Typography>
-            ))}
-          </Box>
-
-          {/* DATA ROWS */}
-          <Box sx={{ flex: 1, overflowY: 'hidden' }}>
-            {visible.map(op => (
-              <Box
-                key={op.user_id}
-                onClick={() => navigate(`/team/${op.user_id}`)}
-                sx={{ display: 'grid', gridTemplateColumns: COLS, px: 2, py: 0.75, borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' }, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' }, transition: 'background 0.1s' }}
-              >
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }}>
-                    {fmtName(op.first_name, op.last_name)}
-                  </Typography>
-                  <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>{op.role}</Typography>
-                </Box>
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {op.picks.toLocaleString()}
-                </Typography>
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {op.packs.toLocaleString()}
-                </Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: uphColor(op.uph), fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {op.uph != null ? op.uph : '—'}
-                </Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: accColor(op.accuracy_pct), fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {op.accuracy_pct != null ? `${op.accuracy_pct}%` : '—'}
-                </Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: op.exception_count > 0 ? '#D9A23B' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {op.exception_count}
-                </Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', alignSelf: 'center' }}>
-                  {fmtSeconds(op.avg_batch_seconds)}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-
-          {hasMore && (
-            <Box sx={{ px: 2, py: 0.75, borderTop: '1px solid var(--rule)' }}>
-              <Typography
-                onClick={() => navigate('/team')}
-                sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
-              >
-                View all {operators.length} operators →
-              </Typography>
-            </Box>
-          )}
-        </>
-      )}
-    </ZoneCard>
-  );
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [ref]);
+  return size;
 }
 
-// ─── ZONE 3 — PIPELINE STAGE VELOCITY ────────────────────────
+// Two cards side by side only while each keeps a readable width; otherwise one
+// column with natural AppLayout scrolling (GH-1231 R2).
+const MIN_CARD_WIDTH = 320;
+const CARD_GAP = 10;
+const fitsTwoColumns = (width: number | undefined) => width === undefined || width >= 2 * MIN_CARD_WIDTH + CARD_GAP;
 
-function Zone3PipelineVelocity({ pipeline, loading }: { pipeline: PipelineVelocity | undefined; loading: boolean }) {
-  const stages = pipeline?.stages;
-  const allStages = [
-    { label: 'Released → Picking', s: stages?.released_to_picking_s ?? null, color: '#3B82F6' },
-    { label: 'Picking',            s: stages?.picking_s ?? null,             color: '#4CAF7A' },
-    { label: 'Packing',            s: stages?.packing_s ?? null,             color: '#D9A23B' },
-    { label: 'Ship',               s: stages?.packed_to_shipped_s ?? null,   color: '#F2555A' },
-  ];
+type Selection =
+  | { kind: 'stage'; key: string }
+  | { kind: 'product'; key: string }
+  | { kind: 'person'; key: number }
+  | { kind: 'period'; key: string }
+  | { kind: 'products' }
+  | { kind: 'people' };
+type Select = (selection: Selection, anchor: HTMLElement) => void;
 
-  const totalS = allStages.reduce((acc, s) => acc + (s.s ?? 0), 0);
+function dateLabel(date: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+}
 
+function PaceChart({ points, bucket, timezone, locale, select, stacked }: { points: V1PacePoint[]; bucket: 'day' | 'week'; timezone: string; locale: string; select: Select; stacked: boolean }) {
+  // The scale is the largest real bucket. A zero bucket draws no bar at all:
+  // no minimum height and no partial-period stripe that could read as activity.
+  const max = Math.max(0, ...points.map((p) => p.items_picked));
+  const labels = points.length <= 7 ? points.map((_, i) => i) : [0, Math.floor((points.length - 1) / 2), points.length - 1];
   return (
-    <ZoneCard sx={{ flexShrink: 0 }}>
-      <ZoneCardHeader>
-        <SectionLabel>Pipeline Stage Velocity</SectionLabel>
-      </ZoneCardHeader>
-
-      <Box sx={{ px: 2, py: 1.5 }}>
-        {loading && <Skeleton height={20} sx={{ borderRadius: '4px' }} />}
-
-        {!loading && (
-          <>
-            {/* STACKED BAR */}
-            {totalS > 0 ? (
-              <Box sx={{ display: 'flex', height: 10, borderRadius: '4px', overflow: 'hidden', mb: 1.5 }}>
-                {allStages.map(st => st.s != null && st.s > 0 && (
-                  <Box key={st.label} sx={{ flex: st.s, bgcolor: st.color, minWidth: '4px' }} title={`${st.label}: ${fmtSeconds(st.s)}`} />
-                ))}
-              </Box>
-            ) : (
-              <Box sx={{ height: 10, borderRadius: '4px', bgcolor: 'var(--bg-3)', mb: 1.5 }} />
-            )}
-
-            {/* STAGE LEGEND */}
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1.5 }}>
-              {allStages.map(st => (
-                <Box key={st.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: st.color, flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>{st.label}</Typography>
-                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtSeconds(st.s)}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-
-            {/* LATENCY CALLOUTS */}
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Box sx={{ flex: 1, p: 1, borderRadius: '6px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                  Receive → pickable
-                </Typography>
-                <Typography sx={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtHours(pipeline?.latencies.receive_to_pickable_hours ?? null)}
-                </Typography>
-                {(pipeline?.latencies.receive_to_pickable_samples ?? 0) > 0 && (
-                  <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>
-                    avg · {pipeline?.latencies.receive_to_pickable_samples} POs
-                  </Typography>
-                )}
-              </Box>
-              <Box sx={{ flex: 1, p: 1, borderRadius: '6px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                  Return → restocked
-                </Typography>
-                <Typography sx={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtHours(pipeline?.latencies.return_to_restock_hours ?? null)}
-                </Typography>
-                <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>avg turnaround</Typography>
-              </Box>
-            </Box>
-          </>
-        )}
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: 0.75, flex: 1, minHeight: 72, ...(stacked ? { height: 140, flex: 'none' } : {}) }}>
+      {/* Baseline only: the largest bucket is not repeated above the headline total. */}
+      <Box aria-hidden="true" sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', pb: 2.5 }}>
+        <Typography sx={{ ...text, fontSize: 11 }}>0</Typography>
       </Box>
-    </ZoneCard>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box role="group" aria-label={`Confirmed items picked per ${bucket}, ${timezone}. Striped bars are partial periods.`}
+          sx={{ display: 'grid', gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))`, gap: '2px', flex: 1, minHeight: 0, borderBottom: '1px solid var(--rule)' }}>
+          {points.map((p) => {
+            const period = `${p.start_date} to ${p.end_date}`;
+            const partial = p.is_current || p.is_clipped;
+            // A zero bucket is inert: described, but nothing to open.
+            const inert = p.items_picked === 0;
+            return <Box component={inert ? 'div' : 'button'} type={inert ? undefined : 'button'} role={inert ? 'img' : undefined}
+              key={p.start_date} data-pace-point={p.start_date} data-items-picked={p.items_picked}
+              aria-label={`${period}: ${formatCount(p.items_picked)} confirmed items picked${p.is_current ? ', partial current period' : ''}${p.is_clipped ? ', partial first week' : ''}`}
+              title={`${period} · ${formatCount(p.items_picked)} items picked`}
+              onClick={inert ? undefined : (e: { currentTarget: HTMLElement }) => select({ kind: 'period', key: p.start_date }, e.currentTarget)}
+              sx={inert ? { p: 0, minWidth: 0, height: '100%' } : { ...button, p: 0, display: 'flex', alignItems: 'flex-end', height: '100%' }}>
+              {/* Inline style, not sx: MUI sizing turns numbers ≤1 into percentages. */}
+              {p.items_picked > 0 && <Box aria-hidden="true" data-pace-bar=""
+                style={{ height: `${p.items_picked / max * 100}%` }}
+                sx={{ width: '100%', bgcolor: 'var(--accent)', borderRadius: '3px 3px 0 0', ...(partial ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, var(--surface) 3px, var(--surface) 4px)' } : {}) }} />}
+            </Box>;
+          })}
+        </Box>
+        <Box aria-hidden="true" sx={{ display: 'flex', justifyContent: 'space-between', gap: 0.5, pt: 0.5 }}>
+          {labels.map((i) => <Typography key={i} sx={{ ...text, fontSize: 11, whiteSpace: 'nowrap' }}>{dateLabel(points[i].start_date, locale)}</Typography>)}
+        </Box>
+      </Box>
+    </Box>
   );
 }
 
-// ─── ZONE 5 — COST & THROUGHPUT STORY ────────────────────────
+function Pace({ historical, summary, flowUpdatedAt, days, locale, select, stacked }: { historical: V1HistoricalBlocks['pace']; summary: V1LiveBlocks['summary']; flowUpdatedAt: number | null; days: number; locale: string; select: Select; stacked: boolean }) {
+  const data = historical.status === 'ready' ? historical.data : null;
+  const current = data?.pace.points.find((p) => p.is_current);
+  const cutoff = summary.status === 'ready' ? carrierCutoffCopy(summary.data.cpt_local, summary.data.hours_to_cpt) : null;
+  return <Region area="Pace" question="Are we keeping up?">
+    {data ? <>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+        <Box><Typography sx={value}>{formatCount(data.pace.items_picked_total)}</Typography><Typography sx={text}>Items picked · last {days} days</Typography></Box>
+        <Box sx={{ textAlign: 'right' }}><Typography sx={{ ...value, fontSize: 18 }}>{formatCount(current?.items_picked)}</Typography><Typography sx={text}>{partialPeriodLabel(data.window.bucket)}</Typography></Box>
+      </Box>
+      <PaceChart points={data.pace.points} bucket={data.window.bucket} timezone={data.window.timezone} locale={locale} select={select} stacked={stacked} />
+    </> : <RequestState state={historical} />}
+    <Box sx={{ mt: 'auto', pt: 0.5, borderTop: '1px solid var(--rule)' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+        <Typography sx={text}>Orders fulfilled today (all sales channels)</Typography>
+        {summary.status === 'ready' ? <Typography sx={{ ...value, fontSize: 18 }}>{formatCount(summary.data.shipped_today)}</Typography> : <RequestState state={summary} compact />}
+      </Box>
+      {/* Same live response as Flow: its visible stamp already shows this time.
+          Shown here only when Flow has no stamp of its own (independent truth). */}
+      {summary.status === 'ready' && (flowUpdatedAt === summary.updatedAt
+        ? <Box sx={visuallyHidden}><UpdatedAt at={summary.updatedAt} locale={locale} live /></Box>
+        : <UpdatedAt at={summary.updatedAt} locale={locale} live />)}
+      {cutoff && <Typography sx={text}>{cutoff}</Typography>}
+    </Box>
+  </Region>;
+}
 
-function Zone5CostStory({ cost, loading, fmt }: {
-  cost: CostStory | undefined; loading: boolean;
-  fmt: (n: number | null) => string;
-}) {
-  const navigate = useNavigate();
+function Flow({ state, locale, select }: { state: V1LiveBlocks['flow']; locale: string; select: Select }) {
+  return <Region area="Flow" question="Where is work slowing down?" stamp={state.status === 'ready' ? <UpdatedAt at={state.updatedAt} locale={locale} live /> : undefined}>
+    {state.status === 'ready' ? <>
+      <Typography sx={text}>Orders waiting the longest in each step</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-evenly' }}>
+        {FLOW_STAGES.map((s, i) => {
+          const stage = state.data.stages[s.status];
+          // Rows 1/3/5 carry a faint accent tint; ages use --ink-2 so they keep
+          // ≥4.5:1 on the tint in dark mode. Horizontal inset only: no new height.
+          return <Box component="button" type="button" key={s.status} onClick={(e) => select({ kind: 'stage', key: s.status }, e.currentTarget)}
+            sx={{ ...button, display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr) auto auto', alignItems: 'center', gap: 0.75, p: '3px 4px', position: 'relative', ...(i % 2 === 0 ? { bgcolor: 'color-mix(in srgb, var(--accent-ghost) 60%, transparent)' } : {}) }}>
+            <Box aria-hidden="true" sx={{ alignSelf: 'start', textAlign: 'center', fontSize: 12, border: '1px solid var(--rule)', borderRadius: '50%', bgcolor: 'var(--bg-2)', position: 'relative', '&::after': i < 4 ? { content: '""', position: 'absolute', width: '1px', height: '10px', bgcolor: 'var(--rule)', top: '100%', left: '50%' } : {} }}>{i + 1}</Box>
+            <Typography sx={{ ...text, color: 'var(--ink)' }}>{s.label}</Typography>
+            {/* Exact elapsed time since the recorded status (the API reports no
+                lower-bound ages); provenance is spelled out in Details. */}
+            <Typography sx={{ ...text, color: 'var(--ink-2)', textAlign: 'right' }}>{formatStatusAge(stage.oldest_age_s)}</Typography>
+            <Typography sx={{ ...value, fontSize: 18 }}>{formatCount(stage.count)}</Typography>
+          </Box>;
+        })}
+      </Box>
+    </> : <RequestState state={state} />}
+    <Typography component={Link} to="/orders/flow" sx={footerLink}>Open Order Flow →</Typography>
+  </Region>;
+}
 
-  if (!loading && cost && !cost.unlocked) {
-    return (
-      <ZoneCard>
-        <ZoneCardHeader><SectionLabel>Cost & Throughput</SectionLabel></ZoneCardHeader>
-        <Box sx={{ px: 2, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-            Add hourly costs in Settings › Team to unlock cost-per-order, cost-per-unit, and exception cost.
-          </Typography>
-          <CtaButton onClick={() => navigate('/team')}>
-            Set hourly costs →
-          </CtaButton>
+const problemPattern = (index: number) => [
+  'repeating-linear-gradient(45deg, var(--ink-3), var(--ink-3) 1px, transparent 1px, transparent 5px)',
+  'repeating-linear-gradient(-45deg, var(--ink-3), var(--ink-3) 1px, transparent 1px, transparent 5px)',
+  'repeating-linear-gradient(0deg, var(--ink-3), var(--ink-3) 1px, transparent 1px, transparent 4px)',
+  'radial-gradient(var(--ink-3) 1px, transparent 1px)',
+  'repeating-linear-gradient(90deg, var(--ink-3), var(--ink-3) 1px, transparent 1px, transparent 4px)',
+][index % 5];
+
+function Problems({ state, days, select }: { state: V1HistoricalBlocks['problems']; days: number; select: Select }) {
+  const data = state.status === 'ready' ? state.data.problems : null;
+  const types = data ? Object.entries(data.by_type).filter(([, count]) => count > 0) : [];
+  return <Region area="Problems" question="Where are problems happening?">
+    {data ? data.total === 0 ? <Typography sx={text}>No problems recorded in the last {days} days</Typography> : <>
+      <Typography sx={text}><Box component="span" sx={{ ...value, fontSize: 18 }}>{formatCount(data.total)}</Box> problems recorded · {formatCount(data.open_total)} still open</Typography>
+      <Box aria-hidden="true" sx={{ display: 'flex', height: 12, flexShrink: 0, borderRadius: '3px', border: '1px solid var(--rule)' }}>
+        {types.map(([code, count], i) => <Box key={code} sx={{ width: `${count / data.total * 100}%`, bgcolor: 'var(--bg-2)', backgroundImage: problemPattern(i), backgroundSize: i % 5 === 3 ? '5px 5px' : undefined, borderRight: '1px solid var(--surface)' }} />)}
+      </Box>
+      <Box sx={{ display: 'flex', gap: '3px 10px', flexWrap: 'wrap' }}>
+        {types.map(([code, count], i) => <Box key={code} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box aria-hidden="true" sx={{ width: 10, height: 10, border: '1px solid var(--rule)', backgroundImage: problemPattern(i), backgroundSize: i % 5 === 3 ? '5px 5px' : undefined }} />
+          <Typography sx={text}>{problemTypeLabel(code)} · {formatCount(count)}</Typography>
+        </Box>)}
+      </Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+        {data.products.slice(0, 2).map((p) => <Box component="button" type="button" key={p.lasyncro_variant_id} data-analytics-product=""
+          onClick={(e) => select({ kind: 'product', key: p.lasyncro_variant_id }, e.currentTarget)}
+          sx={{ ...button, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, p: '5px 0', borderBottom: '1px solid var(--rule)' }}>
+          <Typography sx={{ ...text, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{p.display_label}</Typography><Typography sx={{ ...text, fontWeight: 600 }}>{formatCount(p.count)}</Typography>
+        </Box>)}
+      </Box>
+      {data.products_total > 2 && <Box component="button" type="button" onClick={(e) => select({ kind: 'products' }, e.currentTarget)} sx={{ ...button, ...action, p: 0, fontSize: 12, alignSelf: 'flex-start' }}>+{formatCount(data.products_total - 2)} more products</Box>}
+    </> : <RequestState state={state} />}
+    <Typography component={Link} to="/problem-center" sx={footerLink}>Open Problem Center →</Typography>
+  </Region>;
+}
+
+const teamColumns = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 0.75 };
+
+function Team({ state, summary, rowLimit, select }: { state: V1HistoricalBlocks['team']; summary: V1LiveBlocks['summary']; rowLimit: number; select: Select }) {
+  const rows = state.status === 'ready' ? sortTeamAlphabetically(state.data.team_activity) : [];
+  const max = Math.max(1, ...rows.flatMap((r) => [r.items_picked, r.items_packed]));
+  const overflow = teamOverflowLabel(Math.min(rowLimit, rows.length), rows.length);
+  const assignment = summary.status === 'ready' ? activeBatchAssignmentCopy(summary.data.active_operators) : null;
+  return <Region area="Team" question="How is the team doing?">
+    {state.status === 'ready' ? <>
+      {/* Static column headers on the rows' own grid, coloured like their bars
+          (solid accent / ink-3 outline); not links, so no arrows. */}
+      <Box sx={teamColumns}>
+        <Typography data-analytics-team-column="picked" sx={{ ...text, fontWeight: 600, color: actionInk, textAlign: 'right' }}>Items picked</Typography>
+        <Typography data-analytics-team-column="packed" sx={{ ...text, fontWeight: 600, color: 'var(--ink-3)', borderLeft: '1px solid transparent', pl: 0.75 }}>Items packed</Typography>
+      </Box>
+      {rows.length === 0 && <Typography sx={text}>No confirmed item activity in the last {state.data.window.days} days</Typography>}
+      {rows.slice(0, rowLimit).map((r) => <Box component="button" type="button" key={r.user_id} data-analytics-person=""
+        onClick={(e) => select({ kind: 'person', key: r.user_id }, e.currentTarget)} sx={{ ...button, p: '3px 0' }}>
+        <Typography sx={{ ...text, color: 'var(--ink)' }}>{r.display_name}{!r.is_current_member && <Box component="span" sx={{ ...text, ml: 0.75 }}>Former member</Box>}</Typography>
+        <Box sx={teamColumns}>
+          <Box data-analytics-team-column="picked" sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5 }}>
+            <Typography sx={text}>{formatCount(r.items_picked)}<Box component="span" sx={visuallyHidden}> items picked </Box></Typography><Box aria-hidden="true" sx={{ width: `${r.items_picked / max * 65}%`, height: 5, bgcolor: 'var(--accent)', borderRadius: '3px' }} />
+          </Box>
+          <Box data-analytics-team-column="packed" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, borderLeft: '1px solid var(--rule)', pl: 0.75 }}>
+            <Box aria-hidden="true" sx={{ width: `${r.items_packed / max * 65}%`, height: 5, border: '1px solid var(--ink-3)', borderRadius: '3px' }} /><Typography sx={text}>{formatCount(r.items_packed)}<Box component="span" sx={visuallyHidden}> items packed </Box></Typography>
+          </Box>
         </Box>
-      </ZoneCard>
-    );
+      </Box>)}
+      {overflow && <Box component="button" type="button" onClick={(e) => select({ kind: 'people' }, e.currentTarget)} sx={{ ...button, ...action, p: 0, fontSize: 12, alignSelf: 'flex-start' }}>{overflow} · Details</Box>}
+    </> : <RequestState state={state} />}
+    <Box sx={{ mt: 'auto', pt: 0.5, borderTop: '1px solid var(--rule)' }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+        <Typography sx={text}>Assigned to active batches</Typography>
+        {assignment ? <Typography sx={{ ...text, fontWeight: 600 }}>{assignment.value}</Typography> : <RequestState state={summary} compact />}
+      </Box>
+      {assignment && <Typography sx={text}>Includes unfinished batches; not live staffing</Typography>}
+    </Box>
+  </Region>;
+}
+
+function Costs({ state }: { state: V1HistoricalBlocks['costs'] }) {
+  const copy = state.status === 'ready' ? costsStripCopy(state.data.unlocked) : null;
+  return <Box component="section" role="region" aria-label="Costs" sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px 12px', p: '8px 12px', border: '1px solid var(--rule)', borderRadius: '8px', bgcolor: 'var(--surface)' }}>
+    <Typography component="h2" sx={{ ...text, fontWeight: 600, m: 0 }}>Costs</Typography>
+    {copy ? <Typography sx={text}>{copy.text}{copy.href && <> · <Box component={Link} to={copy.href} sx={link}>Open Team →</Box></>}</Typography> : <RequestState state={state} compact />}
+  </Box>;
+}
+
+function DetailsContent({ selection, historical, live, locale }: { selection: Selection | null; historical: V1HistoricalBlocks; live: V1LiveBlocks; locale: string }) {
+  if (!selection) return null;
+  if (selection.kind === 'stage') {
+    const stage = FLOW_STAGES.find((s) => s.status === selection.key)!;
+    return <><Typography component="h3" sx={{ ...text, color: 'var(--ink)', fontWeight: 600 }}>{stage.label}</Typography>
+      {live.flow.status === 'ready' ? <>
+        <Typography sx={value}>{formatCount(live.flow.data.stages[stage.status].count)} orders</Typography>
+        <Typography sx={text}>Longest time in recorded status: {formatStatusAge(live.flow.data.stages[stage.status].oldest_age_s)}</Typography>
+        <Typography sx={text}>Elapsed time since the order status was recorded; not continuous time spent by a person.</Typography>
+        <UpdatedAt at={live.flow.updatedAt} locale={locale} live />
+      </> : <RequestState state={live.flow} />}
+      <Typography component={Link} to="/orders/flow" sx={link}>Open Order Flow →</Typography>
+    </>;
+  }
+  if (selection.kind === 'period') {
+    const p = historical.pace.status === 'ready' ? historical.pace.data.pace.points.find((p) => p.start_date === selection.key) : null;
+    return p ? <>
+      <Typography component="h3" sx={{ ...text, color: 'var(--ink)', fontWeight: 600 }}>{dateLabel(p.start_date, locale)} – {dateLabel(p.end_date, locale)}</Typography>
+      <Typography sx={value}>{formatCount(p.items_picked)} items picked</Typography>
+      <Typography sx={text}>Confirmed quantities · {historical.pace.status === 'ready' && historical.pace.data.window.timezone}</Typography>
+      {p.is_current && <Typography sx={text}>{historical.pace.status === 'ready' && partialPeriodLabel(historical.pace.data.window.bucket)}</Typography>}
+      {p.is_clipped && <Typography sx={text}>Partial first week in the selected period</Typography>}
+    </> : historical.pace.status === 'ready' ? <Typography sx={text}>Select a period in this window.</Typography> : <RequestState state={historical.pace} />;
+  }
+  if (selection.kind === 'product' || selection.kind === 'products') {
+    if (historical.problems.status !== 'ready') return <RequestState state={historical.problems} />;
+    const { problems: all, window } = historical.problems.data;
+    const rows = selection.kind === 'product' ? all.products.filter((p) => p.lasyncro_variant_id === selection.key) : all.products;
+    return <>
+      {rows.map((p) => <Box key={p.lasyncro_variant_id} sx={{ pb: 1, borderBottom: '1px solid var(--rule)' }}>
+        <Typography component="h3" sx={{ ...text, color: 'var(--ink)', fontWeight: 600 }}>{p.display_label}</Typography>
+        {p.sku && <Typography sx={text}>SKU: {p.sku}</Typography>}
+        <Typography sx={text}>{formatCount(p.count)} problems recorded · last {window.days} days</Typography>
+      </Box>)}
+      {selection.kind === 'products' && all.products_total > rows.length && <Typography sx={text}>Showing {rows.length} of {formatCount(all.products_total)} products</Typography>}
+      <Typography component={Link} to="/problem-center" sx={link}>Open Problem Center →</Typography>
+    </>;
+  }
+  if (historical.team.status !== 'ready') return <RequestState state={historical.team} />;
+  const { team_activity, window } = historical.team.data;
+  const rows = sortTeamAlphabetically(team_activity).filter((r) => selection.kind === 'people' || r.user_id === selection.key);
+  return <>
+    {rows.map((r) => <Box key={r.user_id} sx={{ pb: 1, borderBottom: '1px solid var(--rule)' }}>
+      <Typography component="h3" sx={{ ...text, color: 'var(--ink)', fontWeight: 600 }}>{r.display_name}</Typography>
+      {!r.is_current_member && <Typography sx={text}>Former member · historical activity retained</Typography>}
+      <Typography sx={text}>{formatCount(r.items_picked)} items picked · {formatCount(r.items_packed)} items packed</Typography>
+      <Typography sx={text}>Confirmed quantities · last {window.days} days</Typography>
+    </Box>)}
+  </>;
+}
+
+export default function WmsAnalyticsPage() {
+  const [days, setDays] = useState(30);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
+  const size = useWorkspaceSize(root);
+  const twoColumns = fitsTwoColumns(size?.width);
+  const { state: { isOpsConsoleOpen } } = useConfig();
+  const { locale } = useEntitlements();
+  const historicalQuery = useWmsAnalytics(days);
+  const liveQuery = useLiveCapacity();
+  const historical = resolveV1HistoricalBlocks(historicalQuery, days);
+  const live = resolveV1LiveBlocks(liveQuery);
+  const denial = resolveAnalyticsDenial(...Object.values(historical), ...Object.values(live));
+  const select: Select = (next, element) => { setSelection(next); setAnchor(element); };
+  const closeDetails = () => { setSelection(null); anchor?.focus(); };
+  useEffect(() => {
+    if (!selection || isOpsConsoleOpen) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setSelection(null); anchor?.focus(); } };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [selection, anchor, isOpsConsoleOpen]);
+
+  if (denial?.kind === 'commercial') {
+    const presentation = getCapabilityPresentation('warehouse.analytics');
+    return <UpgradePrompt decision={denial.decision} mode="locked" featureName={presentation?.featureName} benefits={presentation?.benefits} open />;
   }
 
-  return (
-    <ZoneCard sx={{ flexShrink: 0 }}>
-      <ZoneCardHeader><SectionLabel>Cost & Throughput</SectionLabel></ZoneCardHeader>
-
-      {loading && (
-        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {[1, 2, 3].map(i => <Skeleton key={i} height={48} sx={{ borderRadius: '6px' }} />)}
+  // Two columns fill the measured workspace (no primary scroll at the certified
+  // viewports); rows never shrink below their content, so a short workspace
+  // scrolls naturally instead of overlapping cards. One column always scrolls.
+  const workspaceHeight = twoColumns && size?.height ? size.height : undefined;
+  return <CommercialGate capabilityId="warehouse.analytics">
+    <Box ref={root} data-analytics-workspace="" data-analytics-columns={twoColumns ? 2 : 1}
+      sx={{ minHeight: workspaceHeight, boxSizing: 'border-box', minWidth: 0, bgcolor: 'var(--bg)', px: { xs: 1.5, lg: 2 }, pt: 1, pb: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'auto minmax(min-content, 1fr) auto', alignContent: 'start', gap: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        <Typography component="h1" sx={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, color: 'var(--ink)', letterSpacing: '-0.02em', m: 0 }}>Warehouse Analytics</Typography>
+        {denial?.kind !== 'role' && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          {historical.costs.status === 'ready' && <UpdatedAt at={historical.costs.updatedAt} locale={locale} />}
+          <CastButton />
+          <ToggleButtonGroup value={days} exclusive size="small" aria-label="Reporting period" onChange={(_e, next) => { if (next) setDays(next); }} sx={{ '& button': { fontSize: 12, px: 1, py: 0.5, color: 'var(--ink)', borderColor: 'var(--rule)' } }}>
+            {[7, 30, 90].map((n) => <ToggleButton key={n} value={n}>{n}d</ToggleButton>)}
+          </ToggleButtonGroup>
+        </Box>}
+      </Box>
+      {denial?.kind === 'role' ? <Typography sx={{ ...text, color: 'var(--ink)' }}>You don't have access to Analytics.</Typography> : <>
+        <Box data-analytics-cards="" sx={{ display: 'grid', gap: `${CARD_GAP}px`, gridTemplateColumns: twoColumns ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gridTemplateRows: twoColumns ? 'repeat(2, auto)' : 'none', alignContent: 'stretch' }}>
+          <Pace historical={historical.pace} summary={live.summary} flowUpdatedAt={live.flow.status === 'ready' ? live.flow.updatedAt : null} days={days} locale={locale} select={select} stacked={!twoColumns} />
+          <Flow state={live.flow} locale={locale} select={select} />
+          <Problems state={historical.problems} days={days} select={select} />
+          <Team state={historical.team} summary={live.summary} rowLimit={workspaceHeight ? Math.max(1, Math.min(3, Math.floor(((workspaceHeight - 120) / 2 - 160) / 44))) : 3} select={select} />
         </Box>
-      )}
-
-      {!loading && cost?.unlocked && (
-        <Box sx={{ px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <StatTile label="Cost / order" value={fmt(cost.cost_per_order)} tone="neutral" />
-            <StatTile label="Cost / unit"  value={fmt(cost.cost_per_unit)}  tone="neutral" />
-          </Box>
-
-          {cost.exception_cost != null && (
-            <StatTile
-              label="Exception cost (period)"
-              value={fmt(cost.exception_cost)}
-              tone={cost.exception_cost > 100 ? 'warning' : 'neutral'}
-            />
-          )}
-
-          {cost.editorial && (
-            <Box sx={{ mt: 0.5, pt: 1, borderTop: '1px solid var(--rule)' }}>
-              <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'flex-start' }}>
-                <TrendingUp size={13} color="var(--ink-3)" style={{ marginTop: 1, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.5, fontStyle: 'italic' }}>
-                  {cost.editorial}
-                </Typography>
-              </Box>
+        <Costs state={historical.costs} />
+        {/* Contextual Details: nonmodal and anchored to its trigger, so the
+            answers and period controls stay accessible (no aria-hidden). It
+            withdraws while the Ops Console is open and returns with the same
+            selection when it closes. */}
+        <Popper open={!!selection && !isOpsConsoleOpen} anchorEl={anchor?.isConnected ? anchor : root.current}
+          placement="bottom-start" modifiers={[{ name: 'preventOverflow', options: { padding: 16, altAxis: true } }]}
+          sx={{ zIndex: 1200 }}>
+          <Paper role="dialog" aria-label="Details"
+            sx={{ width: 340, maxWidth: 'calc(100vw - 32px)', maxHeight: 'min(440px, calc(100dvh - 32px))', overflow: 'auto', boxSizing: 'border-box', p: 2, display: 'flex', flexDirection: 'column', gap: 1.25, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography component="h2" sx={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', m: 0 }}>Details</Typography>
+              <Box component="button" type="button" aria-label="Close Details" autoFocus onClick={closeDetails} sx={{ ...button, p: 0.5, display: 'flex' }}><X size={16} /></Box>
             </Box>
-          )}
-        </Box>
-      )}
-    </ZoneCard>
-  );
+            <DetailsContent selection={selection} historical={historical} live={live} locale={locale} />
+          </Paper>
+        </Popper>
+      </>}
+    </Box>
+  </CommercialGate>;
 }
-
-// ─── CAST BUTTON ──────────────────────────────────────────────
 
 function CastButton() {
-  const navigate     = useNavigate();
   const queryClient  = useQueryClient();
   const { show }     = useToast();
-  const anchorRef    = useRef<HTMLDivElement | null>(null);
+  const anchorRef    = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen]   = useState(false);
   const [busy, setBusy]   = useState(false);
 
@@ -645,6 +484,10 @@ function CastButton() {
     <>
       <Tooltip title="Cast to display">
         <Box
+          component="button"
+          type="button"
+          aria-expanded={open}
+          aria-label="Cast to display"
           ref={anchorRef}
           onClick={() => setOpen(prev => !prev)}
           sx={{
@@ -681,38 +524,40 @@ function CastButton() {
             minWidth: 240, overflow: 'hidden',
           }}>
             <Box sx={{ px: 2, py: 1.25, borderBottom: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
                 Cast to Floor Display
               </Typography>
             </Box>
 
             <Box sx={{ py: 0.5 }}>
               <Box
-                onClick={busy ? undefined : handleCopyLink}
-                sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' } }}
+                component="button" type="button" disabled={busy}
+                onClick={handleCopyLink}
+                sx={{ width: '100%', textAlign: 'left', border: 0, bgcolor: 'transparent', font: 'inherit', color: 'inherit', display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' } }}
               >
                 <Copy size={14} color="var(--ink-3)" strokeWidth={1.75} />
                 <Box>
                   <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }}>Copy display link</Typography>
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>Paste into any TV browser</Typography>
+                  <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Paste into any TV browser</Typography>
                 </Box>
               </Box>
 
               <Box
-                onClick={busy ? undefined : handleOpenDisplay}
-                sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' } }}
+                component="button" type="button" disabled={busy}
+                onClick={handleOpenDisplay}
+                sx={{ width: '100%', textAlign: 'left', border: 0, bgcolor: 'transparent', font: 'inherit', color: 'inherit', display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' } }}
               >
                 <ExternalLink size={14} color="var(--ink-3)" strokeWidth={1.75} />
                 <Box>
                   <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }}>Open display now</Typography>
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>Launch in a new tab</Typography>
+                  <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Launch in a new tab</Typography>
                 </Box>
               </Box>
 
               <Box sx={{ px: 2, py: 0.875, borderTop: '1px solid var(--rule)' }}>
                 <Typography
-                  onClick={() => { setOpen(false); navigate('/settings'); }}
-                  sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--accent)' } }}
+                  component={Link} to="/settings/warehouse" onClick={() => setOpen(false)}
+                  sx={link}
                 >
                   Manage displays in Settings →
                 </Typography>
@@ -722,310 +567,5 @@ function CastButton() {
         </ClickAwayListener>
       </Popper>
     </>
-  );
-}
-
-// ─── AGING WIP — what's stuck on the floor ───────────────────
-const WIP_STAGES: { key: string; label: string }[] = [
-  { key: 'picking', label: 'Picking' },
-  { key: 'picked',  label: 'Picked'  },
-  { key: 'packing', label: 'Packing' },
-  { key: 'packed',  label: 'Packed'  },
-];
-function ageColor(s: number): string {
-  return s >= 14400 ? '#E5484D' : s >= 7200 ? '#D9A23B' : 'var(--ink-3)';
-}
-function AgingWipCard({ wip, loading }: { wip: AgingWip | undefined; loading: boolean }) {
-  if (loading) return <ZoneCard sx={{ flexShrink: 0 }}><ZoneCardHeader><SectionLabel>Stuck on the floor</SectionLabel></ZoneCardHeader><Box sx={{ p: 2 }}><Skeleton height={80} /></Box></ZoneCard>;
-  const total = wip?.total ?? 0;
-  return (
-    <ZoneCard sx={{ flexShrink: 0 }}>
-      <ZoneCardHeader>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <SectionLabel>Stuck on the floor</SectionLabel>
-          {total > 0 && (
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: ageColor(wip?.oldest_overall_s ?? 0), fontVariantNumeric: 'tabular-nums' }}>
-              oldest {fmtSeconds(wip?.oldest_overall_s ?? 0)}
-            </Typography>
-          )}
-        </Box>
-      </ZoneCardHeader>
-      {total === 0 ? (
-        <EmptyZone label="Floor is clear — nothing mid-flight." />
-      ) : (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, p: 2 }}>
-          {WIP_STAGES.map(s => {
-            const cell = wip?.by_stage?.[s.key] ?? { count: 0, oldest_age_s: 0 };
-            return (
-              <Box key={s.key} sx={{ p: 1.25, borderRadius: '8px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{s.label}</Typography>
-                <Typography sx={{ fontSize: 22, fontWeight: 700, color: cell.count > 0 ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{cell.count}</Typography>
-                {cell.count > 0 && (
-                  <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: ageColor(cell.oldest_age_s), fontVariantNumeric: 'tabular-nums' }}>{fmtSeconds(cell.oldest_age_s)}</Typography>
-                )}
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-    </ZoneCard>
-  );
-}
-
-// ─── THROUGHPUT TREND — daily UPH sparkline ──────────────────
-function ThroughputTrendCard({ trend, loading }: { trend: ThroughputTrend | undefined; loading: boolean }) {
-  const fillSx = { flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' } as const;
-
-  if (loading) return <ZoneCard sx={fillSx}><ZoneCardHeader><SectionLabel>Throughput trend</SectionLabel></ZoneCardHeader><Box sx={{ p: 2 }}><Skeleton height={80} /></Box></ZoneCard>;
-  const pts = (trend?.points ?? []).filter(p => p.uph != null);
-  const max = pts.reduce((m, p) => Math.max(m, p.uph as number), 0) || 1;
-  return (
-    <ZoneCard sx={fillSx}>
-      <ZoneCardHeader>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <SectionLabel>Throughput trend</SectionLabel>
-          {trend?.avg_uph != null && (
-            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>avg <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{trend.avg_uph}</Typography> UPH</Typography>
-          )}
-        </Box>
-      </ZoneCardHeader>
-      {pts.length === 0 ? (
-        <EmptyZone label="No completed picks in this period yet." />
-      ) : pts.length === 1 ? (
-        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 100, gap: 0.5 }}>
-          <Typography sx={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{trend?.latest_uph ?? '—'}</Typography>
-          <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)' }}>units/hr · 1 active day</Typography>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)' }}>Trend builds as more days complete</Typography>
-        </Box>
-      ) : (
-        <Box sx={{ p: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.5, height: 80 }}>
-            {pts.map((p, i) => (
-              <Box key={i} title={`${p.day}: ${p.uph} UPH`} sx={{ flex: 1, minWidth: 3, maxWidth: 48, height: `${Math.max(6, ((p.uph as number) / max) * 100)}%`, bgcolor: i === pts.length - 1 ? 'var(--accent)' : 'var(--accent-ghost)', borderRadius: '3px 3px 0 0', transition: 'height 0.2s' }} />
-            ))}
-          </Box>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', mt: 1 }}>
-            Latest <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{trend?.latest_uph ?? '—'}</Typography> units/hr · last {pts.length} active days
-          </Typography>
-        </Box>
-      )}
-    </ZoneCard>
-  );
-}
-
-// ─── EXCEPTION TREND — by type ───────────────────────────────
-const EXC_LABELS: Record<string, string> = {
-  item_missing: 'Missing', short_pick: 'Short pick', product_defect: 'Product defect',
-  packaging_defect: 'Packaging', wrong_item: 'Wrong item',
-};
-
-function ExceptionsCard({ trend, exceptions, loading }: { trend: ExceptionTrend | undefined; exceptions: ExceptionIntelligence | undefined; loading: boolean }) {
-  const navigate = useNavigate();
-  const byType = trend?.by_type ?? {};
-  const rows = Object.entries(byType).sort((a, b) => b[1] - a[1]);
-  const max = rows.reduce((m, [, v]) => Math.max(m, v), 0) || 1;
-  const topSkus = exceptions?.top_skus ?? [];
-  const heatGrid = exceptions?.heat_grid ?? [];
-  const rateColor = (pct: number): string => pct >= 15 ? '#E5484D' : pct >= 8 ? '#D9A23B' : '#4CAF7A';
-  const hasAny = rows.length > 0 || topSkus.length > 0;
-
-  if (loading) return <ZoneCard sx={{ flex: '1 1 0' }}><ZoneCardHeader><SectionLabel>Exceptions</SectionLabel></ZoneCardHeader><Box sx={{ p: 2 }}><Skeleton height={80} /></Box></ZoneCard>;
-
-  return (
-    <ZoneCard sx={{ display: 'flex', flexDirection: 'column' }}>
-      <ZoneCardHeader>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <SectionLabel>Exceptions</SectionLabel>
-          {(trend?.total ?? 0) > 0 ? (
-            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
-              <Typography component="span" sx={{ fontWeight: 600, color: '#E5484D' }}>{trend?.open_total ?? 0}</Typography> open / {trend?.total} total
-            </Typography>
-          ) : topSkus.length > 0 ? (
-            <Typography onClick={() => navigate('/wms/problem-center')} sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>
-              Problem center →
-            </Typography>
-          ) : null}
-        </Box>
-      </ZoneCardHeader>
-
-      {!hasAny ? (
-        <EmptyZone label="No exceptions this period — picks are clean." />
-      ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-          {/* BY TYPE */}
-          {rows.length > 0 && (
-            <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-              {rows.map(([type, count]) => (
-                <Box key={type} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)', width: 96, flexShrink: 0 }}>{EXC_LABELS[type] ?? type}</Typography>
-                  <Box sx={{ flex: 1, height: 8, borderRadius: '4px', bgcolor: 'var(--bg-3)', overflow: 'hidden' }}>
-                    <Box sx={{ width: `${(count / max) * 100}%`, height: '100%', bgcolor: '#E5484D', borderRadius: '4px' }} />
-                  </Box>
-                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', width: 20, textAlign: 'right' }}>{count}</Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          {/* TOP SKUS */}
-          {topSkus.length > 0 && (
-            <>
-              <Box sx={{ height: '1px', bgcolor: 'var(--rule)', mx: 2 }} />
-              <Box sx={{ px: 2, pt: 1, pb: 0.5 }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 0.75 }}>Top problem SKUs</Typography>
-                {topSkus.slice(0, 5).map(sku => (
-                  <Box key={sku.lasyncro_variant_id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', py: 0.6, borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' } }}>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sku.title ?? '—'}</Typography>
-                      {sku.sku && <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>{sku.sku}</Typography>}
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 1, flexShrink: 0 }}>
-                      <Box sx={{ px: '5px', py: '1px', borderRadius: '4px', bgcolor: 'rgba(229,72,77,0.1)', border: '1px solid rgba(229,72,77,0.3)' }}>
-                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#E5484D' }}>{sku.exception_count}</Typography>
-                      </Box>
-                      <AlertTriangle size={11} color="#D9A23B" />
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-            </>
-          )}
-
-          {/* HEAT GRID */}
-          {heatGrid.length > 0 && (
-            <>
-              <Box sx={{ height: '1px', bgcolor: 'var(--rule)', mx: 2 }} />
-              <Box sx={{ px: 2, pt: 1, pb: 1.5 }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 0.75 }}>Exception rate by operator</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.6fr', mb: 0.5 }}>
-                  {['Operator', 'Pick %', 'Pack %'].map(h => (
-                    <Typography key={h} sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.10em' }}>{h}</Typography>
-                  ))}
-                </Box>
-                {heatGrid.slice(0, 5).map(row => (
-                  <Box key={row.user_id} sx={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.6fr', py: 0.4, borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' } }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</Typography>
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: rateColor(row.pick_exception_rate_pct), fontVariantNumeric: 'tabular-nums' }}>{row.pick_exception_rate_pct}%</Typography>
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: rateColor(row.pack_exception_rate_pct), fontVariantNumeric: 'tabular-nums' }}>{row.pack_exception_rate_pct}%</Typography>
-                  </Box>
-                ))}
-              </Box>
-            </>
-          )}
-        </Box>
-      )}
-    </ZoneCard>
-  );
-}
-
-// ─── MAIN PAGE ────────────────────────────────────────────────
-
-export default function WmsAnalyticsPage() {
-  const [days, setDays] = useState(30);
-  const liveQuery      = useLiveCapacity();
-  const analyticsQuery = useWmsAnalytics(days);
-  const { displayCurrency, locale } = useEntitlements();
-  const { rates } = useExchangeRates();
-
-  const fmt = (n: number | null) => formatCurrencyCompact(n, displayCurrency, locale, rates);
-
-  // GH-1230: each query resolves independently; values render only when
-  // verified for the selected window. Error / malformed / switching are never
-  // presented as zero or as a healthy empty state.
-  const historical = resolveHistoricalAvailability(analyticsQuery, days);
-  const live       = resolveLiveAvailability(liveQuery);
-  const denial     = resolveAnalyticsDenial(historical, live);
-
-  const data       = historical.status === 'ready' ? historical.data : undefined;
-  const loading    = historical.status === 'loading';
-  const histDown   = historical.status === 'unavailable' || historical.status === 'denied';
-  const operators  = data?.operators ?? [];
-  const pipeline   = data?.pipeline;
-  const exceptions = data?.exceptions;
-  const cost       = data?.cost;
-  const agingWip   = data?.aging_wip;
-  const throughput = data?.throughput_trend;
-  const excTrend   = data?.exception_trend;
-
-  if (denial?.kind === 'commercial') {
-    // Server-authoritative commercial decision → the canonical CommercialGate
-    // denial presentation; the decision is forwarded, never fabricated (D3).
-    const presentation = getCapabilityPresentation('warehouse.analytics');
-    return (
-      <UpgradePrompt
-        decision={denial.decision}
-        mode="locked"
-        featureName={presentation?.featureName}
-        benefits={presentation?.benefits}
-        open
-      />
-    );
-  }
-
-  return (
-    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.analytics (Growth+) gate,
-    // independent of the parent WmsFT2Page's Starter warehouse.operations
-    // gate — a direct nav to /wms/analytics must not bypass this.
-    <CommercialGate capabilityId="warehouse.analytics">
-      <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-
-        {/* HEADER */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', px: 2.5, pt: 2, pb: 1.25, flexShrink: 0, flexWrap: 'wrap', gap: 1 }}>
-          <Box>
-            <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
-              Warehouse Analytics
-            </Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-              Pace, accuracy, and cost signals from your warehouse floor.
-            </Typography>
-          </Box>
-          {denial?.kind !== 'role' && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {historical.status === 'ready' && <UpdatedAt at={historical.updatedAt} locale={locale} />}
-              <CastButton />
-              <ToggleButtonGroup
-                value={days} exclusive size="small"
-                onChange={(_e, val) => val && setDays(val)}
-              >
-                <ToggleButton value={7}>7d</ToggleButton>
-                <ToggleButton value={30}>30d</ToggleButton>
-                <ToggleButton value={90}>90d</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
-          )}
-        </Box>
-
-        {denial?.kind === 'role' ? (
-          // Role/action denial: not buyable, so no upgrade prompt (D3).
-          <Box sx={{ px: 2.5, pb: 2 }}>
-            <ZoneCard>
-              <Box sx={{ px: 2, py: 2 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'var(--ink)' }}>You don't have access to Analytics.</Typography>
-              </Box>
-            </ZoneCard>
-          </Box>
-        ) : (
-        /* MAIN GRID — dense main column + 300px pulse rail (Orders-sibling) */
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, px: 2.5, pb: 2, alignItems: 'stretch' }}>
-          {/* MAIN COLUMN — operator + pipeline first, then stacked detail */}
-          <Box sx={{ flex: '1 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-              {histDown ? <UnavailableZone label="Operator Performance" /> : <Zone2OperatorBoard operators={operators} loading={loading} />}
-            </Box>
-            {histDown ? <UnavailableZone label="Pipeline Stage Velocity" /> : <Zone3PipelineVelocity pipeline={pipeline} loading={loading} />}
-            {histDown ? <UnavailableZone label="Stuck on the floor" /> : <AgingWipCard wip={agingWip} loading={loading} />}
-            {histDown ? <UnavailableZone label="Problems" /> : <ExceptionsCard trend={excTrend} exceptions={exceptions} loading={loading} />}
-            {histDown ? <UnavailableZone label="Cost & Throughput" /> : <Zone5CostStory cost={cost} loading={loading} fmt={fmt} />}
-          </Box>
-
-          {/* PULSE RAIL — live capacity + throughput, fixed 300px */}
-          <Box sx={{ flex: '1 1 300px', maxWidth: { xs: '100%', lg: 300 }, display: 'flex', flexDirection: 'column', gap: 1.5, alignSelf: 'stretch', minHeight: 0 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}><LiveCapacityZone state={live} locale={locale} /></Box>
-            {histDown ? <UnavailableZone label="Throughput trend" /> : <ThroughputTrendCard trend={throughput} loading={loading} />}
-          </Box>
-        </Box>
-        )}
-      </Box>
-    </CommercialGate>
   );
 }
