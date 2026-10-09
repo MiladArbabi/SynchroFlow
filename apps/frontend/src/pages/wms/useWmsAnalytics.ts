@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/wms/useWmsAnalytics.ts
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import { shouldRetryAnalyticsQuery } from './analyticsAvailability';
 
 // ─── ZONE 1 — LIVE CAPACITY ───────────────────────────────────
 export type LiveCapacity = {
@@ -127,6 +128,10 @@ export type WmsAnalyticsResponse = {
  * Composite hook — all 5 zones in one request.
  * Date-range zones (2–5): 5-minute refetch.
  * Zone 1 (live) is polled separately via useLiveCapacity (60s).
+ *
+ * GH-1230: no placeholder data — another window's payload is not this
+ * window's truth (D2). Consumers resolve availability through
+ * analyticsAvailability.ts. Retry is hook-local: never on 401/403 (D6).
  */
 export function useWmsAnalytics(days = 30) {
   return useQuery<WmsAnalyticsResponse>({
@@ -136,8 +141,8 @@ export function useWmsAnalytics(days = 30) {
       return data;
     },
     refetchInterval: 300_000,
-    placeholderData: (prev) => prev,
     staleTime: 60_000,
+    retry: shouldRetryAnalyticsQuery,
   });
 }
 
@@ -157,5 +162,6 @@ export function useLiveCapacity() {
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
     staleTime: 0,
+    retry: shouldRetryAnalyticsQuery,
   });
 }

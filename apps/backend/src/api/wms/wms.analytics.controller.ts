@@ -16,23 +16,34 @@ import {
   generateDisplayToken,
 } from '../../services/wms/wmsAnalytics.service.js';
 import { resolveShopCapabilityDecision } from '../../services/shop-capability-decision.service.js';
+import {
+  getAnalyticsV1HistoricalBlocks,
+  getAnalyticsV1LiveFlow,
+} from '../../services/wms/wmsAnalyticsV1.service.js';
 
 export const httpGetPickAnalytics = async (req: Request, res: Response) => {
   try {
     const shopId = req.user?.shopId;
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
     const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 30));
-    const [live, operators, pipeline, exceptions, cost, agingWip, throughputTrend, exceptionTrend] = await withTenant(shopId, (trx) => Promise.all([
-     getLiveCapacity(shopId, trx),
-     getOperatorPerformance(shopId, days, trx),
-     getPipelineVelocity(shopId, days, trx),
-     getExceptionIntelligence(shopId, days, trx),
-     getCostStory(shopId, days, trx),
-     getAgingWip(shopId, trx),
-     getThroughputTrend(shopId, days, trx),
-     getExceptionTrend(shopId, days, trx),
-   ]));
-    return res.json({ live, operators, pipeline, exceptions, cost, aging_wip: agingWip, throughput_trend: throughputTrend, exception_trend: exceptionTrend, days });
+    // GH-1231: ONE request clock for the V1 window and its activity upper bound.
+    const now = new Date();
+    const [[live, operators, pipeline, exceptions, cost, agingWip, throughputTrend, exceptionTrend], v1] = await withTenant(shopId, async (trx) => {
+      const legacy = await Promise.all([
+        getLiveCapacity(shopId, trx),
+        getOperatorPerformance(shopId, days, trx),
+        getPipelineVelocity(shopId, days, trx),
+        getExceptionIntelligence(shopId, days, trx),
+        getCostStory(shopId, days, trx),
+        getAgingWip(shopId, trx),
+        getThroughputTrend(shopId, days, trx),
+        getExceptionTrend(shopId, days, trx),
+      ]);
+      // Additive V1 blocks (window, pace, problems, team_activity) for 7/30/90 only;
+      // legacy-only windows keep the legacy payload with no V1 blocks.
+      return [legacy, await getAnalyticsV1HistoricalBlocks(shopId, days, now, trx)] as const;
+    });
+    return res.json({ live, operators, pipeline, exceptions, cost, aging_wip: agingWip, throughput_trend: throughputTrend, exception_trend: exceptionTrend, days, ...v1 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_ANALYTICS_FAILED]', { error: message });
@@ -49,7 +60,13 @@ export const httpGetLiveCapacity = async (req: Request, res: Response) => {
     // connection (pool max 5) and leaked into the next request to borrow it.
     // trx must be threaded into every service call — passing `db` here would
     // run the query on a different connection with no tenant context.
-    const data = await withTenant(shopId, (trx) => getLiveCapacity(shopId, trx));
+    // GH-1231: additive `flow` (counts + recorded-status ages, one snapshot) beside the
+    // unchanged getLiveCapacity payload; omitted rather than fabricated if unverifiable.
+    const data = await withTenant(shopId, async (trx) => {
+      const live = await getLiveCapacity(shopId, trx);
+      const flow = await getAnalyticsV1LiveFlow(shopId, trx);
+      return flow ? { ...live, flow } : live;
+    });
     res.set('Cache-Control', 'private, max-age=60');
     return res.json(data);
   } catch (error) {
