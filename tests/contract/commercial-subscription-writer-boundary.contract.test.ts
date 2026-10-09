@@ -66,15 +66,9 @@ const CANONICAL_SERVICE = 'apps/backend/src/services/billing/subscriptionTransit
 /**
  * Paths deliberately outside THIS runtime boundary.
  *   - seed_reviewer.ts is a non-runtime operator script.
- *   - shopify.billing.controller.ts's handleShopifyCallback is
- *     LEGACY_UNMOUNTED: shopify.billing.routes.ts registers only
- *     GET /subscription and never imports the callback. Its retirement is
- *     already protected by shopify-billing-retired-callback.contract.test.ts,
- *     which is where a re-mount would be caught.
  */
 const EXCLUDED_PATHS = new Set([
   'apps/backend/src/scripts/seed_reviewer.ts',
-  'apps/backend/src/api/shopify/shopify.billing.controller.ts',
 ]);
 
 /**
