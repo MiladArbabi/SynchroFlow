@@ -1,13 +1,10 @@
+import type { Knex } from 'knex';
 import { withTenant } from '../db.js';
-import axios from 'axios';
-import crypto from 'crypto';
-import CryptoJS from 'crypto-js';
 
 export interface ShopifyAppInstallation {
   id?: number;
   shop_id: number;
   shop_domain: string;
-  access_token: string; // Encrypted
   scopes: string;
   installed_at: Date;
   uninstalled_at?: Date;
@@ -46,217 +43,50 @@ export class ShopifyAppService {
     return installation || null;
   }
 
-  /**
-   * Mark app as uninstalled
-   */
-  static async markAppUninstalled(shopDomain: string, shopId: number): Promise<void> {
-    await withTenant(shopId, (trx) =>
-      trx('shopify_app_installations')
-        .where({ shop_id: shopId, shop_domain: shopDomain })
-        .update({ uninstalled_at: new Date() })
-    );
-  }
-
-  /**
-   * Register app uninstall webhook
-   */
-  static async registerAppUninstallWebhook(
-    shopDomain: string,
+  /** Destroy credential authority atomically inside the caller's tenant transaction. */
+  static async hardFenceAppUninstalled(
     shopId: number,
+    trx: Knex.Transaction,
+    now: Date,
+    shopDomain?: string,
   ): Promise<void> {
-    try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), ?)',
+      ['shopify_admin_credential_rotation', shopId]);
 
-      if (!accessToken) {
-        console.warn('[ShopifyAppService] Missing access token; skipping uninstall webhook registration', {
-          shopDomain,
-        });
-        return;
-      }
+    const installationQuery = trx('shopify_app_installations').where({ shop_id: shopId });
+    if (shopDomain !== undefined) installationQuery.where({ shop_domain: shopDomain });
+    const installations = await installationQuery
+      .update({ uninstalled_at: now, updated_at: now })
+      .returning('id');
+    if (installations.length === 0) return;
 
-      const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
-
-      if (!baseUrl) {
-        console.warn('[ShopifyAppService] No SHOPIFY_WEBHOOK_BASE_URL or API_URL set; skipping uninstall webhook registration.');
-        return;
-      }
-
-      // In dev, localhost is NOT reachable by Shopify. Skip instead of throwing.
-      if (!baseUrl.startsWith('https://')) {
-        console.warn(
-          `[ShopifyAppService] Webhook base URL is not HTTPS (${baseUrl}). ` +
-          'Skipping uninstall webhook registration in this environment.'
-        );
-        return;
-      }
-
-      const response = await axios.post(
-        `https://${shopDomain}/admin/api/2024-01/graphql.json`,
-        {
-          query: `
-            mutation {
-              webhookSubscriptionCreate(
-                topic: APP_UNINSTALLED
-                webhookSubscription: {
-                  callbackUrl: "${baseUrl}/api/v1/shopify/webhooks"
-                  format: JSON
-                }
-              ) {
-                webhookSubscription { id }
-                userErrors { field message }
-              }
-            }
-          `,
-        },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      const userErrors = response.data?.data?.webhookSubscriptionCreate?.userErrors ?? [];
-      if (userErrors.length > 0) {
-        console.warn('[ShopifyAppService] app/uninstalled webhook userErrors', userErrors);
-      } else {
-        console.log('✅ Registered app/uninstalled webhook via GraphQL');
-      }
-    } catch (error: any) {
-      const details = error?.response?.data || error?.message || error;
-      console.error(
-        '[ShopifyAppService] Failed to register app uninstall webhook. Details:',
-        JSON.stringify(details, null, 2)
-      );
-
-      // IMPORTANT: Do NOT throw here – webhook failure should not break post-install.
-      // For prod, you can later add alerting instead of throwing.
-    }
-  }
-
-  /**
-   * Post-installation hooks.
-   */
-  static async completePostInstallation(
-    shopDomain: string,
-    shopId: number,
-  ): Promise<void> {
-    await this.registerAppUninstallWebhook(shopDomain, shopId);
-    await this.registerRefundsCreateWebhook(shopDomain, shopId);
-
-    const existing = await this.getAppInstallation(shopDomain, shopId);
-
-    if (!existing) {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
-      if (!accessToken) return;
-
-      await this.createAppInstallation({
-        shop_id: shopId,
-        shop_domain: shopDomain,
-        access_token: this.encryptToken(accessToken),
-        scopes:
-          'read_products,read_orders,read_customers,read_inventory,read_fulfillments,read_returns',
-        installed_at: new Date(),
+    // State equality does not imply epoch equality: even REAUTH_REQUIRED advances.
+    await trx('shopify_admin_credentials')
+      .where({ shop_id: shopId })
+      .whereIn('installation_id', installations.map(installation => installation.id))
+      .update({
+        credential_generation: trx.raw('?? + 1', ['credential_generation']),
+        credential_state: 'REAUTH_REQUIRED',
+        access_token_encrypted: null,
+        refresh_token_encrypted: null,
+        access_expires_at: null,
+        refresh_expires_at: null,
+        rotation_lease_token: null,
+        rotation_lease_expires_at: null,
+        rotation_started_at: null,
+        updated_at: now,
       });
-    }
+
+    await trx('integrations')
+      .where({ shop_id: shopId, platform: 'shopify' })
+      .update({ updated_at: now });
   }
 
-  /**
-   * Encrypt access token
-   */
-  static encryptToken(token: string): string {
-    const secret = process.env.ENCRYPTION_KEY;
-    if (!secret) {
-      throw new Error('ENCRYPTION_KEY is not set in environment.');
-    }
-    return CryptoJS.AES.encrypt(token, secret).toString();
+  /** Mark the exact installation uninstalled through the shared authority fence. */
+  static async markAppUninstalled(shopDomain: string, shopId: number): Promise<void> {
+    await withTenant(shopId, trx =>
+      this.hardFenceAppUninstalled(shopId, trx, new Date(), shopDomain));
   }
-
-  /**
-   * Decrypt access token
-   */
-  static decryptToken(encryptedToken: string): string {
-    const secret = process.env.ENCRYPTION_KEY;
-    if (!secret) {
-      throw new Error('ENCRYPTION_KEY is not set in environment.');
-    }
-
-    // STEP 1: Try new AES-256-GCM format (JSON payload)
-    try {
-      const parsed = JSON.parse(encryptedToken);
-      const { ciphertext, iv, auth_tag } = parsed;
-      if (ciphertext && iv && auth_tag) {
-        const key = crypto.createHash('sha256').update(secret).digest();
-        const decipher = crypto.createDecipheriv(
-          'aes-256-gcm',
-          key,
-          Buffer.from(iv, 'base64')
-        );
-        decipher.setAuthTag(Buffer.from(auth_tag, 'base64'));
-        const decrypted = Buffer.concat([
-          decipher.update(Buffer.from(ciphertext, 'base64')),
-          decipher.final(),
-        ]);
-        return decrypted.toString('utf8');
-      }
-    } catch {
-      // not GCM format — fall through to legacy
-    }
-
-    // STEP 2: Legacy CryptoJS fallback
-    const bytes = CryptoJS.AES.decrypt(encryptedToken, secret);
-    const result = bytes.toString(CryptoJS.enc.Utf8);
-    if (!result || result.trim().length === 0) {
-      throw new Error('Decryption failed (unknown format or wrong key)');
-    }
-    return result;
-  }
-
-  /**
- * Get decrypted access token by shop_id
- * ------------------------------------
- * Worker-safe credential access.
- *
- * Contract:
- * - Returns decrypted token or null
- * - Owns crypto boundary
- * - NEVER throws
- */
-  static async getDecryptedAccessTokenByShopId(
-    shopId: number
-  ): Promise<{ token: string; shopDomain: string } | null> {
-    const installation = await withTenant(shopId, (trx) =>
-      trx('shopify_app_installations')
-        .where({ shop_id: shopId, uninstalled_at: null })
-        .first()
-    );
-
-    if (!installation) return null;
-
-    try {
-      const token = this.decryptToken(installation.access_token);
-      return {
-        token,
-        shopDomain: installation.shop_domain,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get decrypted access token
-   */
-  static async getDecryptedAccessToken(
-    shopDomain: string,
-    shopId: number,
-  ): Promise<string | null> {
-    const installation = await this.getAppInstallation(shopDomain, shopId);
-    if (!installation) {
-      return null;
-    }
-    return this.decryptToken(installation.access_token);
-  };
   
   /**
    * @deprecated
@@ -269,62 +99,4 @@ export class ShopifyAppService {
     );
     return;
   }
-
-  /**
-   * Register Shopify refunds create webhook
-   *
-   * Topic:
-   * - refunds/create (authoritative financial regression signal)
-   */
-  static async registerRefundsCreateWebhook(
-    shopDomain: string,
-    shopId: number,
-  ): Promise<void> {
-    try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
-      if (!accessToken) return;
-
-      const baseUrl =
-        process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
-      if (!baseUrl || !baseUrl.startsWith('https://')) return;
-
-      const refundRes = await axios.post(
-        `https://${shopDomain}/admin/api/2024-01/graphql.json`,
-        {
-          query: `
-            mutation {
-              webhookSubscriptionCreate(
-                topic: REFUNDS_CREATE
-                webhookSubscription: {
-                  callbackUrl: "${baseUrl}/api/v1/shopify/webhooks"
-                  format: JSON
-                }
-              ) {
-                webhookSubscription { id }
-                userErrors { field message }
-              }
-            }
-          `,
-        },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-
-      const refundErrors = refundRes.data?.data?.webhookSubscriptionCreate?.userErrors ?? [];
-      if (refundErrors.length > 0) {
-        console.warn('[ShopifyAppService] refunds/create webhook userErrors', refundErrors);
-      } else {
-        console.log('✅ Registered refunds/create webhook via GraphQL');
-      }
-    } catch (error: any) {
-      console.error(
-        '[ShopifyAppService] Failed to register refunds webhook:',
-        error?.response?.data || error?.message || error,
-      );
-    }
-  };
 }

@@ -102,7 +102,6 @@ async function arrangeExpiredShopifyGrowthTrial(label: string): Promise<Fixture>
       shop_id: shopId,
       shop_domain: shopDomain,
       shop_gid: shopGid,
-      access_token: 'test-admin-token-not-used-for-partner-billing',
       scopes: 'read_products',
       installed_at: new Date(),
       uninstalled_at: null,

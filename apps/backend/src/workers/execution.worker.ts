@@ -400,9 +400,30 @@ async function processExecutionMessage(
       'INCOMPLETE_SHIPPING_ADDRESS',
       'SHOPIFY_ALREADY_FULFILLED',
       'EXTERNAL_ORDER_ID_NOT_FOUND',
+      'PROCEED_FULFILLMENT_RETIRED',
     ]);
 
     if (SOFT_BLOCK_ERRORS.has((err as Error).message)) {
+      if ((err as Error).message === 'PROCEED_FULFILLMENT_RETIRED') {
+        const job = JSON.parse(msg.content.toString()) as ExecutionJob;
+
+        // executeJob's failure writes rolled back; persist terminal failure before ACK.
+        await withTenant(job.shop_id, async (trx) => {
+          await DecisionRepository.markFailure(
+            trx,
+            job.decision_id,
+            'PROCEED_FULFILLMENT_RETIRED'
+          );
+          await trx('decision_execution_queue')
+            .where({ decision_id: job.decision_id })
+            .update({
+              status: 'failure',
+              executed_at: trx.fn.now(),
+              error: 'PROCEED_FULFILLMENT_RETIRED',
+            });
+        });
+      }
+
       console.warn('[EXECUTION_SOFT_BLOCK]', {
         decision_id: (() => {
           try { return JSON.parse(msg.content.toString())?.decision_id; }

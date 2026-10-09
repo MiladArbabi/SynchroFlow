@@ -187,12 +187,11 @@ async function requireShopifyInstallation(
 ): Promise<void> {
   const installation = await trx('shopify_app_installations')
     .where({ shop_id: shopId })
-    .select('shop_domain', 'access_token')
+    .select('shop_domain')
     .first();
 
   if (
-    !installation?.shop_domain ||
-    !installation?.access_token
+    !installation?.shop_domain
   ) {
     throw new Error(
       `[OPENING_CUTOVER_PREFLIGHT] Shopify installation missing for shop ${shopId}`

@@ -77,7 +77,6 @@ async function insertFailedIntegration(shopId: number, shopDomain: string) {
         shop_id: shopId,
         platform: 'shopify',
         platform_shop_name: shopDomain,
-        access_token_encrypted: 'offline-test-token-no-network-call',
         sync_status: 'FAILED',
         sync_last_error: "Cannot read properties of undefined (reading 'node')",
         updated_at: new Date(),

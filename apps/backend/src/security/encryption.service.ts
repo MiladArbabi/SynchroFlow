@@ -95,6 +95,7 @@ const ALLOWED_CONTEXTS = [
   'wms.openingInventoryCutover',
   'shopify.dev',
   'shopify.billing',
+  'shopify.adminCredential.lifecycle',
   'shopify-token-backfill',
   'shopify.webhook.registration',
   'wms.carrier.sendcloud',

@@ -20,8 +20,8 @@
 //
 // Called by: httpConfirmStow in wms.controller.ts
 
-import { Knex } from 'knex';
-import { decrypt } from '../../security/encryption.service.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { resolveShopifyAdminCredentialForConsumer } from './../shopify/shopifyAdminCredentialConsumer.service.js';
 import { createShopifyGraphQLClient } from './../shopify/shopifyClient.service.js';
 
 const INVENTORY_ADJUST_MUTATION = `
@@ -49,7 +49,6 @@ const INVENTORY_ADJUST_MUTATION = `
 `;
 
 export async function syncStowedQuantityToShopify(
-  trx: Knex.Transaction,
   params: {
     shopId: number;
     lasyncroVariantId: string;
@@ -71,62 +70,67 @@ export async function syncStowedQuantityToShopify(
     throw new Error('[SHOPIFY_INV_SYNC] idempotencyKey is required');
   }
 
-  // 1. Resolve Shopify inventory_item_id for this variant
-  const identity = await trx('external_product_identity_map')
-    .where({ lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
-    .select('external_inventory_item_id')
-    .first();
+  // Resolve prerequisites in one short tenant transaction before credential/provider I/O.
+  const { identity, location } = await withTenant(shopId, async (trx) => {
+    // 1. Resolve Shopify inventory_item_id for this variant
+    const identity = await trx('external_product_identity_map')
+      .where({ lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
+      .select('external_inventory_item_id')
+      .first();
 
-  if (!identity?.external_inventory_item_id) {
-    throw new Error(
-      `[SHOPIFY_INV_SYNC] No external_inventory_item_id for variant: ${lasyncroVariantId}`
-    );
+    if (!identity?.external_inventory_item_id) {
+      throw new Error(
+        `[SHOPIFY_INV_SYNC] No external_inventory_item_id for variant: ${lasyncroVariantId}`
+      );
+    }
+
+    // 2. Resolve Shopify location_id from the authoritative warehouse boundary.
+    // Internal bins/lanes belong to a warehouse via warehouse_id; Shopify Location
+    // identity is mapped once on that warehouse rather than duplicated per bin.
+    const location = await trx('warehouse_locations as wl')
+      .join('warehouses as w', function () {
+        this.on('w.warehouse_id', '=', 'wl.warehouse_id')
+          .andOn('w.shop_id', '=', 'wl.shop_id');
+      })
+      .where({
+        'wl.location_code': locationCode,
+        'wl.shop_id': shopId,
+      })
+      .select(
+        'wl.warehouse_id',
+        'w.external_location_id'
+      )
+      .first();
+
+    if (!location?.external_location_id) {
+      throw new Error(
+        `[SHOPIFY_INV_SYNC] No Shopify location mapping for warehouse owning location: ${locationCode}`
+      );
+    }
+
+    return { identity, location };
+  });
+
+  // The canonical resolver owns refresh and durable credential finalization.
+  const credential = await resolveShopifyAdminCredentialForConsumer({
+    shopId,
+    now: new Date(),
+  });
+
+  switch (credential.kind) {
+    case 'REFRESH_IN_PROGRESS':
+      throw new Error('SHOPIFY_CREDENTIAL_REFRESH_IN_PROGRESS');
+    case 'RETRYABLE':
+      throw new Error('SHOPIFY_CREDENTIAL_RETRYABLE');
+    case 'PROVIDER_REJECTED':
+      throw new Error('SHOPIFY_CREDENTIAL_PROVIDER_REJECTED');
+    case 'REAUTH_REQUIRED':
+      throw new Error('SHOPIFY_CREDENTIAL_REAUTH_REQUIRED');
   }
-
-  // 2. Resolve Shopify location_id from the authoritative warehouse boundary.
-  // Internal bins/lanes belong to a warehouse via warehouse_id; Shopify Location
-  // identity is mapped once on that warehouse rather than duplicated per bin.
-  const location = await trx('warehouse_locations as wl')
-    .join('warehouses as w', function () {
-      this.on('w.warehouse_id', '=', 'wl.warehouse_id')
-        .andOn('w.shop_id', '=', 'wl.shop_id');
-    })
-    .where({
-      'wl.location_code': locationCode,
-      'wl.shop_id': shopId,
-    })
-    .select(
-      'wl.warehouse_id',
-      'w.external_location_id'
-    )
-    .first();
-
-  if (!location?.external_location_id) {
-    throw new Error(
-      `[SHOPIFY_INV_SYNC] No Shopify location mapping for warehouse owning location: ${locationCode}`
-    );
-  }
-
-  // 3. Resolve + decrypt Shopify access token
-  const installation = await trx('shopify_app_installations')
-    .where({ shop_id: shopId })
-    .select('shop_domain', 'access_token')
-    .first();
-
-  if (!installation?.access_token || !installation?.shop_domain) {
-    throw new Error(
-      `[SHOPIFY_INV_SYNC] No Shopify installation for shop: ${shopId}`
-    );
-  }
-
-  const accessToken = decrypt(
-    installation.access_token,
-    'wms.stow.inventorySync'
-  );
 
   const client = createShopifyGraphQLClient({
-    accessToken,
-    platformShopName: installation.shop_domain,
+    accessToken: credential.accessToken,
+    platformShopName: credential.shopDomain,
     shopId,
   });
 

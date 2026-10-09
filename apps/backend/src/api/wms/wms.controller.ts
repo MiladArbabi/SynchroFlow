@@ -2993,7 +2993,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
       const stowShopifyIdempotencyKey =
         `lasyncro:stow:${shopId}:${taskId}:${confirmResult.quantityPlaced}`;
 
-      syncStowedQuantityToShopify(db as any, {
+      syncStowedQuantityToShopify({
         shopId,
         lasyncroVariantId: stowedTask.lasyncro_variant_id,
         locationCode: confirmResult.locationCode,

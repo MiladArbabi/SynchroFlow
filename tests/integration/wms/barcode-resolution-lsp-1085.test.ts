@@ -33,7 +33,6 @@ import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { resolveBarcode } from 'api-src/services/wms/barcodeResolution.service';
 import { issueTestToken } from '../../unit/helpers/auth';
-import { encrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 jest.setTimeout(120000);
@@ -98,7 +97,6 @@ async function provisionFt2Shop(label: string) {
   await withTenant(shopId, (trx) =>
     trx('integrations').insert({
       shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      access_token_encrypted: encrypt('offline-test-token-no-network-call'),
       sync_status: 'COMPLETED', updated_at: new Date(),
     }));
   let c = 0;

@@ -1,6 +1,6 @@
 // apps/backend/src/services/wms/shopifyFulfillmentWriteback.service.ts
 import { Knex } from 'knex';
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../shopify/shopifyAdminCredentialConsumer.service.js';
 import { createShopifyGraphQLClient } from '../shopify/shopifyClient.service.js';
 
 /**
@@ -54,26 +54,13 @@ export async function writeShopifyFulfillment(
     );
   }
 
-  // 2. Resolve + decrypt access token
-  const installation = await trx('shopify_app_installations')
-    .where({ shop_id: shopId })
-    .select('shop_domain', 'access_token')
-    .first();
-
-  if (!installation?.access_token || !installation?.shop_domain) {
-    throw new Error(
-      `[WMS_WRITEBACK] No Shopify installation for shop: ${shopId}`
-    );
+  const credential = await resolveShopifyAdminCredentialForConsumer({ shopId, now: new Date() });
+  if (credential.kind !== 'READY') {
+    throw new Error(`SHOPIFY_CREDENTIAL_${credential.kind}`);
   }
-
-  const accessToken = decrypt(
-    installation.access_token,
-    'wms.shipConfirmation.writeback'
-  );
-
   const client = createShopifyGraphQLClient({
-    accessToken,
-    platformShopName: installation.shop_domain,
+    accessToken: credential.accessToken,
+    platformShopName: credential.shopDomain,
     shopId,
   });
 

@@ -3,15 +3,9 @@
 import { Router, Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { performSmartSync } from '../../services/shopify-sync-orchestrator.service.js';
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../../services/shopify/shopifyAdminCredentialConsumer.service.js';
 
 const router = Router();
-
-// CENTRALIZED DECRYPTION
-// NOTE: Delegates to encryption.service (single source of truth)
-const decryptToken = (encryptedToken: string): string => {
-  return decrypt(encryptedToken, 'shopify.dev');
-};
 
 /**
  * DEV ONLY
@@ -19,6 +13,11 @@ const decryptToken = (encryptedToken: string): string => {
  */
 router.post('/dev/trigger-sync', async (_req: Request, res: Response) => {
   try {
+    // Guard before canonical resolution, which can decrypt or refresh credentials.
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[SECURITY] Token decryption via dev route is blocked in production');
+    }
+
     const integration = await db('integrations')
         .where({ platform: 'shopify' })
         .orderBy('created_at', 'desc')
@@ -29,40 +28,36 @@ router.post('/dev/trigger-sync', async (_req: Request, res: Response) => {
     }
 
     const {
-      access_token_encrypted,
       platform_shop_name,
       shop_id,
       id: integration_id,
     } = integration;
 
-    if (!access_token_encrypted || !platform_shop_name || !shop_id) {
+    if (!platform_shop_name || !shop_id) {
       return res.status(400).json({ error: 'Integration is missing required fields' });
     }
 
-    // SECURITY GUARD: Prevent token decryption outside safe environments
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('[SECURITY] Token decryption via dev route is blocked in production');
+    const credential = await resolveShopifyAdminCredentialForConsumer({ shopId: shop_id, now: new Date() });
+    if (credential.kind !== 'READY') {
+      return res.status(409).json({ error: credential.kind });
     }
 
-    const accessToken = decryptToken(access_token_encrypted);
-
     console.log('[DEV] Triggering Shopify smart sync', {
-      accessToken,
       shop_id,
       integration_id,
       platform_shop_name,
     });
 
     await performSmartSync(
-      accessToken,
-      platform_shop_name,
+      credential.accessToken,
+      credential.shopDomain,
       shop_id,
       integration_id
     );
 
     return res.status(200).json({ status: 'sync completed' });
   } catch (err: any) {
-    console.error('[DEV] trigger-sync failed:', err);
+    console.error('[DEV] trigger-sync failed');
     return res.status(500).json({
       error: err?.message ?? 'Unknown error',
     });

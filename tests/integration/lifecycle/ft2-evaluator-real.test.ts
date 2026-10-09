@@ -70,7 +70,6 @@ async function seedAuthoritativeIntegration(shopId: number, shopDomain: string) 
       shop_id: shopId,
       platform: 'shopify',
       platform_shop_name: shopDomain,
-      access_token_encrypted: 'offline-test-token-no-network-call',
       sync_status: 'COMPLETED',
       sync_last_error: null,
       updated_at: new Date(),
@@ -86,7 +85,6 @@ async function seedPcdFallbackIntegration(shopId: number, shopDomain: string) {
       shop_id: shopId,
       platform: 'shopify',
       platform_shop_name: shopDomain,
-      access_token_encrypted: 'offline-test-token-no-network-call',
       sync_status: 'COMPLETED',
       sync_last_error: 'PCD access required for orders and customers',
       updated_at: new Date(),
@@ -345,7 +343,6 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — real FT2 evaluator', () => {
         shop_id: shopId,
         platform: 'shopify',
         platform_shop_name: shopDomain,
-        access_token_encrypted: 'offline-test-token-no-network-call',
         sync_status: 'SYNCING_ORDERS',
         updated_at: new Date(),
       })

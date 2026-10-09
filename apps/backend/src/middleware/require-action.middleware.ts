@@ -128,6 +128,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'billing:read':             ['owner', 'admin'],
   'billing:write':            ['owner'],           // owner-only: plan changes
 
+  // ── INTEGRATIONS ───────────────────────────────────────────
+  'integrations:write':       ['owner', 'admin'],
+
   // ── SHOPIFY BILLING ────────────────────────────────────────
   'shopify-billing:read':     ['owner', 'admin'],
   'shopify-billing:write':    ['owner'],

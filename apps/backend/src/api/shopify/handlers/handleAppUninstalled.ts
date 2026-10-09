@@ -3,7 +3,7 @@
 // Handles: app/uninstalled (SHB-08)
 //
 // Responsibility:
-//   1. Mark shopify_app_installations.uninstalled_at.
+//   1. Atomically hard-fence credential authority and clear ACCESS shadows.
 //   2. DB-only safety-net downgrade check — does NOT call the live
 //      Shopify API, since the access token is typically already revoked
 //      by Shopify at/near uninstall time. Uses whatever current_period_end
@@ -26,6 +26,7 @@
 //   - shopId resolved upstream by WebhookRouter (SHB-16 fix) — trusted here
 
 import type { Knex } from 'knex';
+import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { forceDowngradeShopToStarter } from '../../../services/shopify/forceDowngradeToStarter.service.js';
 
 export async function handleAppUninstalled(
@@ -34,11 +35,8 @@ export async function handleAppUninstalled(
 ): Promise<void> {
   const now = new Date();
 
-  // 1. Mark uninstalled — SHB-09: this is the real, actively-consumed
-  // column (manualSync.controller.ts gates sync on uninstalled_at IS NULL)
-  await trx('shopify_app_installations')
-    .where({ shop_id: shopId })
-    .update({ uninstalled_at: now, updated_at: now });
+  // 1. Join the webhook transaction/savepoint; do not open an independent transaction.
+  await ShopifyAppService.hardFenceAppUninstalled(shopId, trx, now);
 
   // 2. DB-only safety-net downgrade check
   const subRow = await trx('shop_subscriptions')

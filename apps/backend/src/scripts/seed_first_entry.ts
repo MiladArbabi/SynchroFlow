@@ -18,7 +18,7 @@ import { withTenant } from '@lasyncro/backend-core/db.js';
 import { resolveFoundingOwner } from '../services/founding-owner.service.js';
 import { materializeFT0Completion } from '../services/ft0-completion-materializer.service.js';
 import { handleLifecycleFT2Confirmed } from '../projection/handlers/lifecycle.ft2_confirmed.js';
-import { encrypt } from '../security/encryption.service.js';
+import { persistShopifyAdminCredentials } from '../services/shopify/shopifyAdminCredential.repository.js';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from '../services/shopify/shopifyScopes.js';
 
 export async function seedFirstEntry(
@@ -95,7 +95,6 @@ export async function seedFirstEntry(
 
     const shop = await trx('shops').where({ id: shopId }).first('name');
     const eventTime = new Date();
-    const encryptedToken = encrypt('offline-first-entry-no-network');
     await trx('users').where({ id: ownerId, shop_id: shopId }).update({
       email: owner.email.trim().toLowerCase(),
       password_hash: passwordHash,
@@ -104,17 +103,23 @@ export async function seedFirstEntry(
       email_verified_at: eventTime,
       shopify_connected: true,
     });
-    await trx('shopify_app_installations').insert({
+    const [installation] = await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: shop.name,
-      access_token: encryptedToken,
       scopes: SHOPIFY_REQUIRED_SCOPE_STRING,
+    }).returning('id');
+    // Offline placeholders are expired: canonical consumers must never send them.
+    await persistShopifyAdminCredentials(trx, installation.id, shopId, {
+      accessToken: 'offline-first-entry-no-network',
+      refreshToken: 'offline-first-entry-no-network-refresh',
+      accessExpiresAt: new Date(0),
+      refreshExpiresAt: new Date(0),
+      grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
     });
     await trx('integrations').insert({
       shop_id: shopId,
       platform: 'shopify',
       platform_shop_name: shop.name,
-      access_token_encrypted: encryptedToken,
       sync_status: 'COMPLETED',
       sync_last_error: null,
       updated_at: eventTime,

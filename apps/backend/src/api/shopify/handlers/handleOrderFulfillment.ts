@@ -113,7 +113,6 @@ export async function handleOrderFulfillment(
 
   await ensureOrderIdentityExists(
     shopId,
-    shopDomain,
     externalOrderId,
     trx
   );

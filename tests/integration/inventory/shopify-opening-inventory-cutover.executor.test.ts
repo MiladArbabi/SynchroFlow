@@ -20,9 +20,6 @@ import {
 
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 
-import {
-  encrypt,
-} from 'api-src/security/encryption.service';
 
 import {
   executeOpeningInventoryCutoverBatch,
@@ -92,10 +89,6 @@ async function createFixture(): Promise<Fixture> {
         shop_id: shopId,
         shop_domain:
           shopDomain,
-        access_token:
-          encrypt(
-            'opening-executor-offline-token'
-          ),
         scopes:
           'write_inventory',
       })

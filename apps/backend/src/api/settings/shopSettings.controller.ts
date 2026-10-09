@@ -12,7 +12,7 @@
 import { Request, Response } from 'express';
 import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer, type ShopifyAdminCredentialConsumerResult } from '../../services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { createShopifyGraphQLClient } from '../../services/shopify/shopifyClient.service.js';
 
 function isValidIanaZone(zone: string): boolean {
@@ -191,31 +191,28 @@ function normalizeShopifyLocationId(value: unknown): string | null {
   return match?.[1] ?? null;
 }
 
+class ShopifyLocationCredentialError extends Error {
+  readonly status: number;
+
+  constructor(kind: Exclude<ShopifyAdminCredentialConsumerResult['kind'], 'READY'>) {
+    super(`SHOPIFY_CREDENTIAL_${kind}`);
+    this.status = kind === 'REAUTH_REQUIRED' ? 409
+      : kind === 'PROVIDER_REJECTED' ? 502 : 503;
+  }
+}
+
 async function loadShopifyLocationClient(shopId: number) {
-  const installation = await db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    return trx('shopify_app_installations')
-      .where({
-        shop_id: shopId,
-        uninstalled_at: null,
-      })
-      .select('shop_domain', 'access_token')
-      .first();
+  const credential = await resolveShopifyAdminCredentialForConsumer({
+    shopId,
+    now: new Date(),
   });
-
-  if (!installation?.shop_domain || !installation?.access_token) {
-    throw new Error(
-      `[SHOPIFY_LOCATION_MAPPING] Active Shopify installation missing for shop: ${shopId}`
-    );
+  if (credential.kind !== 'READY') {
+    throw new ShopifyLocationCredentialError(credential.kind);
   }
 
   return createShopifyGraphQLClient({
-    accessToken: decrypt(
-      installation.access_token,
-      'settings.shopifyLocationMapping'
-    ),
-    platformShopName: installation.shop_domain,
+    accessToken: credential.accessToken,
+    platformShopName: credential.shopDomain,
     shopId,
   });
 }
@@ -286,6 +283,10 @@ export async function httpGetWarehouseShopifyLocations(
       shopify_locations: shopifyLocations,
     });
   } catch (err) {
+    if (err instanceof ShopifyLocationCredentialError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+
     console.error(
       '[SHOPIFY_LOCATION_MAPPING] Failed to load warehouse mappings',
       err
@@ -463,6 +464,10 @@ export async function httpPatchWarehouseShopifyLocation(
       shopify_location_id: updatedWarehouse.external_location_id,
     });
   } catch (err) {
+    if (err instanceof ShopifyLocationCredentialError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+
     if ((err as { code?: string })?.code === '23505') {
       return res.status(409).json({
         error: 'Shopify location is already mapped to another warehouse',

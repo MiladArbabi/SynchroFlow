@@ -437,7 +437,6 @@ describe('GH-1224 — real Shopify HTTP redelivery (POST /api/v1/shopify/webhook
       trx('shopify_app_installations').insert({
         shop_id: shopId,
         shop_domain: shopDomain,
-        access_token: 'test-token',
         scopes: 'read_products',
       }),
     );

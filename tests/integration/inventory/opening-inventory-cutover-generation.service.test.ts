@@ -387,7 +387,6 @@ async function createFixture(): Promise<Fixture> {
       shop_domain:
         `gh1179d-${unique}.myshopify.com`,
       shop_gid: shopGid,
-      access_token: 'test-token-no-network',
       scopes:
         'read_products,write_inventory',
     });

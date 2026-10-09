@@ -10,6 +10,7 @@ import {
   requestSyncNotification 
 } from './integration.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireAction } from '../../middleware/require-action.middleware.js';
 import { triggerManualInitialSync } from './manualSync.controller.js';
 
 const router = Router();
@@ -18,7 +19,7 @@ const router = Router();
 router.get('/shopify/install', handleShopifyInstall);
 
 // Wires GET /api/v1/integrations/oauth/initiate
-router.get('/oauth/initiate', authenticateToken, initiateOAuth);
+router.get('/oauth/initiate', authenticateToken, requireAction('integrations:write'), initiateOAuth);
 
 // Wires GET /api/v1/integrations/oauth/callback/:platform
 router.get('/oauth/callback/:platform', handleOAuthCallback);

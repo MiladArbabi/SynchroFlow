@@ -57,8 +57,8 @@ import request from 'supertest';
 import axios from 'axios';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
-import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { SHOPIFY_REQUIRED_SCOPES } from 'api-src/services/shopify/shopifyScopes';
+import { decrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 
@@ -67,6 +67,16 @@ const axiosGet = (axios as unknown as { get: jest.Mock }).get;
 
 const TOKEN_URL_FRAGMENT = '/admin/oauth/access_token';
 const GRAPHQL_URL_FRAGMENT = '/graphql.json';
+
+// Partner billing uses fetch; keep the resolver and persistence real.
+const PARTNER_GRAPHQL_URL = 'https://partners.shopify.com/123/api/2026-07/graphql.json';
+const realFetch = global.fetch;
+let billingFetch: jest.Mock;
+const fixtureShops = new Map<string, number>();
+const adminUrl = (domain: string) => `https://${domain}/admin/api/2024-01/graphql.json`;
+let rejectAdminForShop: number | undefined;
+let adminObservations: { url: string; canonicalAccess: boolean }[];
+let savedAppBaseUrl: string | undefined;
 
 /** The effective normalized 10-scope grant the callback must persist. */
 const EFFECTIVE_SCOPES_SORTED = [...SHOPIFY_REQUIRED_SCOPES].sort().join(',');
@@ -124,8 +134,27 @@ function programAxios(plan: {
   });
 }
 
-function tokenOk(accessToken: string, scope: string) {
-  return { resolve: { data: { access_token: accessToken, scope } } };
+const ROTATING_TOKEN_DEFAULTS = {
+  refresh_token: 'fake-shopify-refresh-token-default',
+  expires_in: 86400,
+  refresh_token_expires_in: 2592000,
+};
+
+function tokenOk(
+  accessToken: string,
+  scope: string,
+  refreshToken = ROTATING_TOKEN_DEFAULTS.refresh_token,
+) {
+  return {
+    resolve: {
+      data: {
+        ...ROTATING_TOKEN_DEFAULTS,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        scope,
+      },
+    },
+  };
 }
 function graphqlOk(shopDomain: string) {
   return {
@@ -175,6 +204,7 @@ async function installFreshShop(shopDomain: string) {
   const ghostUser = ghostLookup.rows?.[0]?.value;
   expect(ghostUser).toBeTruthy();
 
+  fixtureShops.set(adminUrl(shopDomain), ghostUser.shop_id as number);
   return {
     shopId: ghostUser.shop_id as number,
     userId: ghostUser.id as number,
@@ -281,8 +311,6 @@ async function outboxRowsForEvent(shopId: number, domainEventId: number) {
 jest.setTimeout(120_000);
 
 describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, disposable DB)', () => {
-  let completePostInstallationSpy: jest.SpyInstance;
-
   beforeAll(() => {
     process.env.SHOPIFY_API_SECRET =
       process.env.SHOPIFY_API_SECRET || 'test_shopify_secret';
@@ -296,15 +324,54 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     process.env.ENCRYPTION_KEY =
       process.env.ENCRYPTION_KEY || 'test-encryption-key-0123456789abcdef';
 
-    // Only external Shopify side effect on the callback happy path — webhook
-    // registration. Neutralised; not under test here.
-    completePostInstallationSpy = jest
-      .spyOn(ShopifyAppService, 'completePostInstallation')
-      .mockResolvedValue(undefined);
+    process.env.SHOPIFY_PARTNER_ORG_ID = '123';
+    process.env.SHOPIFY_APP_GID = 'gid://shopify/App/320563019777';
+    process.env.SHOPIFY_PARTNER_API_ACCESS_TOKEN = 'test-partner-token-not-real';
+    billingFetch = jest.fn();
+    (global as unknown as { fetch: unknown }).fetch = billingFetch;
+
+    savedAppBaseUrl = process.env.APP_BASE_URL;
+    process.env.APP_BASE_URL = 'https://webhooks.provider-mocked.example';
+  });
+
+  beforeEach(() => {
+    billingFetch.mockReset();
+    fixtureShops.clear();
+    adminObservations = [];
+    rejectAdminForShop = undefined;
+    billingFetch.mockImplementation(async (url: unknown, init: RequestInit) => {
+      const href = String(url);
+      if (href === PARTNER_GRAPHQL_URL) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: { activeSubscription: null } }),
+        };
+      }
+      const shopId = fixtureShops.get(href);
+      if (shopId === undefined) throw new Error(`PROVIDER_NETWORK_ESCAPE_BLOCKED:${href}`);
+      // A separate DB transaction sees the committed canonical row at the
+      // actual provider boundary; no resolver internals are mocked or spied on.
+      const credential = await withTenant(shopId, trx =>
+        trx('shopify_admin_credentials').where({ shop_id: shopId }).first());
+      const access = new Headers(init.headers).get('X-Shopify-Access-Token');
+      adminObservations.push({ url: href,
+        canonicalAccess: !!credential && access === decrypt(credential.access_token_encrypted, 'shopify.dev') });
+      if (rejectAdminForShop === shopId) throw new Error('A13_SYNTHETIC_WEBHOOK_PROVIDER_FAILURE');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { webhookSubscriptionCreate: {
+          webhookSubscription: { id: 'gid://shopify/WebhookSubscription/999001' }, userErrors: [],
+        } } }),
+      };
+    });
   });
 
   afterAll(() => {
-    completePostInstallationSpy.mockRestore();
+    if (savedAppBaseUrl === undefined) delete process.env.APP_BASE_URL;
+    else process.env.APP_BASE_URL = savedAppBaseUrl;
+    (global as unknown as { fetch: unknown }).fetch = realFetch;
   });
 
   afterEach(() => {
@@ -317,6 +384,22 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       ).toBe(true);
     }
     expect(axiosGet).not.toHaveBeenCalled();
+    for (const call of billingFetch.mock.calls) {
+      const href = String(call[0]);
+      if (href === PARTNER_GRAPHQL_URL) {
+        expect(href).toBe(PARTNER_GRAPHQL_URL);
+      } else {
+        expect(fixtureShops.has(href)).toBe(true);
+        const init = call[1] as RequestInit;
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(String(init.body)).query).toContain('webhookSubscriptionCreate');
+      }
+    }
+    const adminCalls = billingFetch.mock.calls.filter(call => String(call[0]) !== PARTNER_GRAPHQL_URL);
+    expect(adminObservations).toHaveLength(adminCalls.length);
+    for (const observed of adminObservations) {
+      expect(observed.canonicalAccess).toBe(true);
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -363,11 +446,6 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     );
     expect(integration).toBeTruthy();
     expect(integration.platform_shop_name).toBe(shopDomain);
-    expect(typeof integration.access_token_encrypted).toBe('string');
-    expect(integration.access_token_encrypted.length).toBeGreaterThan(0);
-    expect(integration.access_token_encrypted).not.toBe(
-      'fake-shopify-access-token-happy',
-    );
 
     // --- shopify_app_installations ---
     const install = await withTenant(shopId, (trx) =>
@@ -376,8 +454,6 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(install).toBeTruthy();
     expect(install.shop_domain).toBe(shopDomain);
     expect(install.shop_gid).toBe(SHOP_GID);
-    expect(typeof install.access_token).toBe('string');
-    expect(install.access_token).not.toBe('fake-shopify-access-token-happy');
     expect(install.scopes).toBe(EFFECTIVE_SCOPES_SORTED);
     expect(install.scopes.split(',')).toContain('read_locations');
     expect(install.uninstalled_at).toBeNull();
@@ -407,7 +483,71 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(after.orders).toBe(0);
     expect(after.customers).toBe(0);
 
-    expect(completePostInstallationSpy).toHaveBeenCalledWith(shopDomain, shopId);
+    const adminCalls = billingFetch.mock.calls.filter(call => String(call[0]) === adminUrl(shopDomain));
+    expect(adminCalls.length).toBeGreaterThan(0);
+    expect(adminObservations.length).toBeGreaterThan(0);
+    for (const call of adminCalls) {
+      expect(new Headers(call[1].headers).get('X-Shopify-Access-Token') === 'fake-shopify-access-token-happy').toBe(true);
+    }
+    expect(axiosPost.mock.calls.filter(call => call[1]?.grant_type === 'refresh_token')).toHaveLength(0);
+  });
+
+  it('A13: failed post-OAuth Admin webhook registration preserves committed credentials, state burn, sync, JWT and redirect', async () => {
+    const shopDomain = `oauth-cb-a13-nonfatal-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    const accessToken = 'A13_NONFATAL_CANONICAL_ACCESS';
+    const refreshToken = 'A13_NONFATAL_CANONICAL_REFRESH';
+    programAxios({ token: tokenOk(accessToken, FULL_GRANT_STRING, refreshToken), graphql: graphqlOk(shopDomain) });
+    rejectAdminForShop = shopId;
+    const logs: unknown[][] = [];
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(method =>
+      jest.spyOn(console, method).mockImplementation((...args: unknown[]) => { logs.push(args); }));
+    try {
+      const res = await callback({ code: 'fake-oauth-code-a13', state, shop: shopDomain });
+      expect(res.status).toBe(302);
+      const location = String(res.headers.location);
+      expect(location.startsWith(process.env.FRONTEND_URL!)).toBe(true);
+      const params = new URL(location).searchParams;
+      expect(params.get('connect')).toBe('app_store');
+      expect((params.get('token') ?? '').length).toBeGreaterThan(0);
+      expect(res.headers['set-cookie'].some((cookie: string) => cookie.startsWith('refreshToken='))).toBe(true);
+      expect(await oauthStateRows(state)).toBe(0);
+      const integration = await withTenant(shopId, trx =>
+        trx('integrations').where({ shop_id: shopId, platform: 'shopify' }).first());
+      expect(integration).toBeTruthy();
+      const installation = await withTenant(shopId, trx =>
+        trx('shopify_app_installations').where({ shop_id: shopId }).first());
+      expect(installation).toBeTruthy();
+      expect(installation.uninstalled_at).toBeNull();
+      const credentials = await withTenant(shopId, trx =>
+        trx('shopify_admin_credentials').where({ shop_id: shopId }).select('*'));
+      expect(credentials).toHaveLength(1);
+      expect(credentials[0].installation_id).toBe(installation.id);
+      expect(decrypt(credentials[0].access_token_encrypted, 'shopify.dev') === accessToken).toBe(true);
+      expect(decrypt(credentials[0].refresh_token_encrypted, 'shopify.dev') === refreshToken).toBe(true);
+      const persisted = await counts(shopId);
+      expect(persisted.integrationsShopify).toBe(1);
+      expect(persisted.installations).toBe(1);
+      const events = await syncRequestedEvents(shopId);
+      expect(events).toHaveLength(1);
+      expect(Number(events[0].event_payload.integration_id)).toBe(Number(integration.id));
+      expect(await outboxRowsForEvent(shopId, Number(events[0].id))).toHaveLength(1);
+      expect(logs.some(args => args[0] === '[SYNC_JOB_ENQUEUED]' &&
+        (args[1] as { integrationId?: number })?.integrationId === integration.id)).toBe(true);
+      expect(billingFetch.mock.calls.some(call => String(call[0]) === PARTNER_GRAPHQL_URL)).toBe(true);
+      expect(billingFetch.mock.calls.filter(call => String(call[0]) === adminUrl(shopDomain))).toHaveLength(1);
+      expect(adminObservations).toHaveLength(1);
+      expect(logs.some(args => args[0] === '[SHOPIFY_WEBHOOK_REGISTRATION_FAILED_NON_FATAL]' &&
+        (args[1] as { error?: string })?.error === 'A13_SYNTHETIC_WEBHOOK_PROVIDER_FAILURE')).toBe(true);
+      expect(axiosPost.mock.calls.filter(call => call[1]?.grant_type === 'refresh_token')).toHaveLength(0);
+      const publicAndLogs = canonicaliseCalls(logs) + JSON.stringify({ body: res.body, headers: res.headers });
+      for (const secret of [accessToken, refreshToken, credentials[0].access_token_encrypted, credentials[0].refresh_token_encrypted]) {
+        expect(publicAndLogs.includes(secret)).toBe(false);
+      }
+    } finally {
+      spies.forEach(spy => spy.mockRestore());
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -442,7 +582,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
 
     // No `graphql` mock — after OBS-162B-1 the identity lookup must not fire when
     // Shopify returned no access token.
-    programAxios({ token: { resolve: { data: { scope: FULL_GRANT_STRING } } } });
+    programAxios({ token: { resolve: { data: { ...ROTATING_TOKEN_DEFAULTS, scope: FULL_GRANT_STRING } } } });
 
     const res = await callback({ code: 'fake-oauth-code', state, shop: shopDomain });
 
@@ -475,6 +615,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       token: {
         resolve: {
           data: {
+            ...ROTATING_TOKEN_DEFAULTS,
             access_token: 'fake-shopify-access-token-noloc',
             scope: GRANT_WITHOUT_READ_LOCATIONS,
           },
@@ -531,7 +672,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     programAxios({
       token: {
         resolve: {
-          data: { access_token: 'fake-shopify-access-token-noscope', scope: '' },
+          data: { ...ROTATING_TOKEN_DEFAULTS, access_token: 'fake-shopify-access-token-noscope', scope: '' },
         },
       },
     });
@@ -608,6 +749,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       token: {
         resolve: {
           data: {
+            ...ROTATING_TOKEN_DEFAULTS,
             access_token: 'fake-shopify-access-token-replay',
             scope: FULL_GRANT_STRING,
           },
@@ -636,7 +778,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
   // ─────────────────────────────────────────────────────────────────────────
   // S6 — reconnect / reinstall: a second valid callback MERGES, never duplicates
   // ─────────────────────────────────────────────────────────────────────────
-  it('S6: a second valid callback for the same shop merges the integration + installation (uninstalled_at cleared, scopes refreshed, token replaced) and emits a second sync_requested — no tenant/warehouse duplication', async () => {
+  it('S6: a second valid callback for the same shop merges the integration + installation metadata (uninstalled_at cleared, scopes refreshed) and emits a second sync_requested — no tenant/warehouse duplication', async () => {
     const shopDomain = `oauth-cb-reconnect-${Date.now()}.myshopify.com`;
     const { shopId, userId } = await installFreshShop(shopDomain);
     const state1 = await readOAuthState(userId);
@@ -645,6 +787,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       token: {
         resolve: {
           data: {
+            ...ROTATING_TOKEN_DEFAULTS,
             access_token: 'fake-shopify-access-token-first',
             scope: FULL_GRANT_STRING,
           },
@@ -659,8 +802,6 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       trx('shopify_app_installations').where({ shop_id: shopId }).first(),
     );
     expect(installAfterFirst.uninstalled_at).toBeNull();
-    const firstToken = installAfterFirst.access_token as string;
-
     // Simulate a prior uninstall so the merge's uninstalled_at clear is exercised.
     await withTenant(shopId, (trx) =>
       trx('shopify_app_installations')
@@ -677,6 +818,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       token: {
         resolve: {
           data: {
+            ...ROTATING_TOKEN_DEFAULTS,
             access_token: 'fake-shopify-access-token-second',
             scope: FULL_GRANT_STRING,
           },
@@ -701,11 +843,6 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     );
     expect(installAfterSecond.uninstalled_at).toBeNull();
     expect(installAfterSecond.scopes).toBe(EFFECTIVE_SCOPES_SORTED);
-    expect(installAfterSecond.access_token).not.toBe(firstToken);
-    expect(installAfterSecond.access_token).not.toBe(
-      'fake-shopify-access-token-second',
-    );
-
     // --- a second sync_requested event exists ---
     const events = await syncRequestedEvents(shopId);
     expect(events.length).toBe(2);
@@ -783,7 +920,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(c.installations).toBe(0);
   });
 
-  it('identity-lookup failure: the merchant admin access token never reaches console.warn, and the callback still completes via the optional-metadata fallback', async () => {
+  it('identity/GID lookup failure fails closed before provider-state persistence and never leaks the merchant Admin token', async () => {
     const shopDomain = `oauth-cb-redact-gql-${Date.now()}.myshopify.com`;
     const { shopId, userId } = await installFreshShop(shopDomain);
     const state = await readOAuthState(userId);
@@ -807,7 +944,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     programAxios({
       token: {
         resolve: {
-          data: { access_token: SENTINEL_ADMIN_TOKEN, scope: FULL_GRANT_STRING },
+          data: { ...ROTATING_TOKEN_DEFAULTS, access_token: SENTINEL_ADMIN_TOKEN, scope: FULL_GRANT_STRING },
         },
       },
       graphql: { reject: gqlError },
@@ -818,10 +955,9 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     const logged = canonicaliseCalls(warnSpy.mock.calls);
     warnSpy.mockRestore();
 
-    // Optional-metadata fallback: OAuth still completes.
-    expect(res.status).toBe(302);
-    const q = new URL(String(res.headers.location)).searchParams;
-    expect(q.get('connect')).toBe('app_store');
+    // ARCH-04: canonical Shop GID is required installation infrastructure.
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'Failed to verify Shopify shop identity' });
 
     for (const needle of [
       SENTINEL_ADMIN_TOKEN,
@@ -837,14 +973,224 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     );
     expect(logged).toContain('401');
 
-    // Persistence still happened; the admin token is stored encrypted, not raw.
+    // Failed identity verification must not persist provider state or finalize OAuth.
     const c = await counts(shopId);
-    expect(c.integrationsShopify).toBe(1);
-    expect(c.installations).toBe(1);
-    const install = await withTenant(shopId, (trx) =>
-      trx('shopify_app_installations').where({ shop_id: shopId }).first(),
+    expect(c.integrationsShopify).toBe(0);
+    expect(c.installations).toBe(0);
+    const credentials = await withTenant(shopId, (trx) =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'),
     );
-    expect(install.access_token).not.toBe(SENTINEL_ADMIN_TOKEN);
+    expect(credentials).toHaveLength(0);
+    expect(billingFetch).not.toHaveBeenCalled();
+    expect(await syncRequestedEvents(shopId)).toHaveLength(0);
     expect(await oauthStateRows(state)).toBe(0);
+  });
+
+  // SHOP-REVIEW-AUTH-01 — RED-2: expiring offline acquisition only.
+  it('requests an expiring offline Shopify credential during token exchange', async () => {
+    const shopDomain = `oauth-cb-red2a-${Date.now()}.myshopify.com`;
+    const { userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    programAxios({
+      token: tokenOk('fake-shopify-expiring-access-red2a', FULL_GRANT_STRING),
+      graphql: graphqlOk(shopDomain),
+    });
+
+    const res = await callback({ code: 'fake-oauth-code-red2a', state, shop: shopDomain });
+    expect(res.status).toBe(302);
+    const exchanges = axiosPost.mock.calls.filter(call =>
+      String(call[0]) === `https://${shopDomain}/admin/oauth/access_token`);
+    expect(exchanges).toHaveLength(1);
+    const body = exchanges[0][1];
+    // Check presence without exposing environment-supplied credentials.
+    expect(typeof body.client_id).toBe('string');
+    expect(body.client_id.length).toBeGreaterThan(0);
+    expect(typeof body.client_secret).toBe('string');
+    expect(body.client_secret.length).toBeGreaterThan(0);
+    expect(body.code).toBe('fake-oauth-code-red2a');
+    expect(body.expiring).toBe(1);
+  });
+
+  it('persists one complete canonical rotating credential pair for a successful OAuth grant', async () => {
+    const shopDomain = `oauth-cb-red2b-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    const accessToken = 'fake-shopify-expiring-access-red2';
+    const refreshToken = 'fake-shopify-expiring-refresh-red2';
+    const grant = tokenOk(accessToken, FULL_GRANT_STRING, refreshToken);
+    const beforeState = await counts(shopId);
+    expect(beforeState.integrationsShopify).toBe(0);
+    expect(beforeState.installations).toBe(0);
+    const beforeCredentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('*'));
+    expect(beforeCredentials).toHaveLength(0);
+    programAxios({ token: grant, graphql: graphqlOk(shopDomain) });
+
+    const before = Date.now();
+    const res = await callback({ code: 'fake-oauth-code-red2b', state, shop: shopDomain });
+    const after = Date.now();
+    expect(res.status).toBe(302);
+    const installation = await withTenant(shopId, trx =>
+      trx('shopify_app_installations').where({ shop_id: shopId }).first());
+    expect(installation).toBeTruthy();
+    const credentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('*'));
+    expect(credentials).toHaveLength(1);
+    const credential = credentials[0];
+    expect(credential.shop_id).toBe(shopId);
+    expect(credential.installation_id).toBe(installation.id);
+    for (const [encrypted, plaintext] of [
+      [credential.access_token_encrypted, accessToken],
+      [credential.refresh_token_encrypted, refreshToken],
+    ]) {
+      expect(typeof encrypted).toBe('string');
+      expect(encrypted.length).toBeGreaterThan(0);
+      expect(encrypted).not.toBe(plaintext);
+      expect(encrypted).not.toContain(plaintext);
+      const payload = JSON.parse(encrypted);
+      for (const field of ['ciphertext', 'iv', 'auth_tag']) {
+        expect(typeof payload[field]).toBe('string');
+        expect(payload[field].length).toBeGreaterThan(0);
+      }
+      expect(payload.key_version).toBe('v1');
+      expect(decrypt(encrypted, 'shopify.dev')).toBe(plaintext);
+    }
+    expect(credential.granted_scopes).toBe(EFFECTIVE_SCOPES_SORTED);
+    const toleranceMs = 2000;
+    for (const [expiry, seconds] of [
+      [credential.access_expires_at, grant.resolve.data.expires_in],
+      [credential.refresh_expires_at, grant.resolve.data.refresh_token_expires_in],
+    ] as const) {
+      const timestamp = new Date(expiry).getTime();
+      expect(Number.isFinite(timestamp)).toBe(true);
+      expect(timestamp).toBeGreaterThanOrEqual(before + seconds * 1000 - toleranceMs);
+      expect(timestamp).toBeLessThanOrEqual(after + seconds * 1000 + toleranceMs);
+    }
+  });
+
+  it('fails closed when refresh_token is missing from an otherwise complete token response', async () => {
+    const shopDomain = `oauth-cb-red2c-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    const complete = tokenOk('fake-shopify-expiring-access-red2c', FULL_GRANT_STRING);
+    const { refresh_token: omitted, ...data } = complete.resolve.data;
+    expect(omitted).toBeDefined();
+    const beforeState = await counts(shopId);
+    expect(beforeState.integrationsShopify).toBe(0);
+    expect(beforeState.installations).toBe(0);
+    const beforeCredentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    expect(beforeCredentials).toHaveLength(0);
+    programAxios({
+      token: { resolve: { data } },
+      graphql: graphqlOk(shopDomain),
+    });
+
+    const res = await callback({ code: 'fake-oauth-code-red2c', state, shop: shopDomain });
+    const afterState = await counts(shopId);
+    const credentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    // Collect every boundary before asserting, so RED evidence includes HTTP,
+    // identity lookup and all three fixture-scoped persistence surfaces.
+    expect({
+      status: res.status,
+      body: res.body,
+      adminGraphqlRequests: axiosPost.mock.calls.filter(call =>
+        String(call[0]).includes(GRAPHQL_URL_FRAGMENT)).length,
+      integrationsShopify: afterState.integrationsShopify,
+      installations: afterState.installations,
+      canonicalCredentials: credentials.length,
+    }).toEqual({
+      status: 502,
+      body: { error: 'Failed to exchange OAuth token' },
+      adminGraphqlRequests: 0,
+      integrationsShopify: 0,
+      installations: 0,
+      canonicalCredentials: 0,
+    });
+  });
+
+  it('fails closed when expires_in is missing from an otherwise complete rotating token response', async () => {
+    const shopDomain = `oauth-cb-red2d-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    const complete = tokenOk('fake-shopify-expiring-access-red2d', FULL_GRANT_STRING);
+    const { expires_in: omitted, ...data } = complete.resolve.data;
+    expect(omitted).toBeDefined();
+    const beforeState = await counts(shopId);
+    expect(beforeState.integrationsShopify).toBe(0);
+    expect(beforeState.installations).toBe(0);
+    const beforeCredentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    expect(beforeCredentials).toHaveLength(0);
+    programAxios({
+      token: { resolve: { data } },
+      graphql: graphqlOk(shopDomain),
+    });
+
+    const res = await callback({ code: 'fake-oauth-code-red2d', state, shop: shopDomain });
+    const afterState = await counts(shopId);
+    const credentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    // Collect every boundary before asserting, so RED evidence includes HTTP,
+    // identity lookup and all three fixture-scoped persistence surfaces.
+    expect({
+      status: res.status,
+      body: res.body,
+      adminGraphqlRequests: axiosPost.mock.calls.filter(call =>
+        String(call[0]).includes(GRAPHQL_URL_FRAGMENT)).length,
+      integrationsShopify: afterState.integrationsShopify,
+      installations: afterState.installations,
+      canonicalCredentials: credentials.length,
+    }).toEqual({
+      status: 502,
+      body: { error: 'Failed to exchange OAuth token' },
+      adminGraphqlRequests: 0,
+      integrationsShopify: 0,
+      installations: 0,
+      canonicalCredentials: 0,
+    });
+  });
+
+  it('fails closed when refresh_token_expires_in is missing from an otherwise complete rotating token response', async () => {
+    const shopDomain = `oauth-cb-red2e-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+    const complete = tokenOk('fake-shopify-expiring-access-red2e', FULL_GRANT_STRING);
+    const { refresh_token_expires_in: omitted, ...data } = complete.resolve.data;
+    expect(omitted).toBeDefined();
+    const beforeState = await counts(shopId);
+    expect(beforeState.integrationsShopify).toBe(0);
+    expect(beforeState.installations).toBe(0);
+    const beforeCredentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    expect(beforeCredentials).toHaveLength(0);
+    programAxios({
+      token: { resolve: { data } },
+      graphql: graphqlOk(shopDomain),
+    });
+
+    const res = await callback({ code: 'fake-oauth-code-red2e', state, shop: shopDomain });
+    const afterState = await counts(shopId);
+    const credentials = await withTenant(shopId, trx =>
+      trx('shopify_admin_credentials').where({ shop_id: shopId }).select('id'));
+    // Collect every boundary before asserting, so RED evidence includes HTTP,
+    // identity lookup and all three fixture-scoped persistence surfaces.
+    expect({
+      status: res.status,
+      body: res.body,
+      adminGraphqlRequests: axiosPost.mock.calls.filter(call =>
+        String(call[0]).includes(GRAPHQL_URL_FRAGMENT)).length,
+      integrationsShopify: afterState.integrationsShopify,
+      installations: afterState.installations,
+      canonicalCredentials: credentials.length,
+    }).toEqual({
+      status: 502,
+      body: { error: 'Failed to exchange OAuth token' },
+      adminGraphqlRequests: 0,
+      integrationsShopify: 0,
+      installations: 0,
+      canonicalCredentials: 0,
+    });
   });
 });

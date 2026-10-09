@@ -1,6 +1,5 @@
-import { withTenant } from '@lasyncro/backend-core/db.js';
 import { registerShopifyWebhooks } from './shopifyWebhooks.core.js';
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from './shopifyAdminCredentialConsumer.service.js';
 
 /**
  * SHOPIFY WEBHOOK REGISTRATION SERVICE
@@ -14,23 +13,18 @@ import { decrypt } from '../../security/encryption.service.js';
  */
 
 export const registerWebhooksForShop = async (shopId: number) => {
-  const installationRow = await withTenant(shopId, (trx) =>
-    trx('shopify_app_installations')
-      .where({ shop_id: shopId })
-      .select('shop_domain', 'access_token')
-      .first()
-  );
-
-  if (!installationRow?.shop_domain || !installationRow?.access_token) {
-    throw new Error('[WEBHOOK_REGISTRATION_FAILED] Missing shop domain or token');
+  const credential = await resolveShopifyAdminCredentialForConsumer({
+    shopId,
+    now: new Date(),
+  });
+  if (credential.kind !== 'READY') {
+    throw new Error(`SHOPIFY_CREDENTIAL_${credential.kind}`);
   }
-
-  const accessToken = decrypt(installationRow.access_token, 'shopify.webhook.registration');
 
   try {
     await registerShopifyWebhooks(
-      installationRow.shop_domain,
-      accessToken
+      credential.shopDomain,
+      credential.accessToken
     );
 
     console.info('[SHOPIFY_WEBHOOKS_REGISTERED]', { shopId });

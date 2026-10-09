@@ -3,19 +3,13 @@
  * -------------------------
  * Central validation layer before execution.
  *
- * Purpose:
- * - Prevent unsafe execution
- * - Provide single extension point for future rules
- *
  * Current checks:
  * - decision_execution_queue state validation
+ * - fail-closed retirement of the legacy proceed_fulfillment shortcut
  */
 
 import db from '@lasyncro/backend-core/db.js';
 import { ExecutionJob } from '../domain/decision/Decision.js';
-import { createShopifyGraphQLClient } from '../services/shopify/shopifyClient.service.js';
-import { resolveExternalOrderId } from '../services/identity/resolveExternalOrder.service.js';
-import { decrypt } from '../security/encryption.service.js';
 
 export async function validateExecution(
   job: ExecutionJob,
@@ -27,9 +21,6 @@ export async function validateExecution(
     .where({ decision_id: job.decision_id })
     .first();
 
-  /**
-   * HARD BLOCKS
-   */
   if (row) {
     if (row.status === 'success') {
       console.warn('[EXECUTION_GUARD_BLOCK_SUCCESS]', {
@@ -46,154 +37,7 @@ export async function validateExecution(
     }
   }
 
-  /**
- * EXTERNAL VALIDATION — SHOPIFY (CRITICAL)
- * ----------------------------------------
- * Prevent executing fulfillment if already fulfilled externally.
- */
-if (job.action_type === 'proceed_fulfillment') {
-
-  const installation = await q('shopify_app_installations')
-    .where({ shop_id: job.shop_id })
-    .first();
-
-if (!installation) {
-  console.warn('[EXECUTION_GUARD_BLOCK_NO_INSTALLATION]', {
-    shop_id: job.shop_id,
-    decision_id: job.decision_id
-  });
-  throw new Error('SHOPIFY_INSTALLATION_NOT_FOUND');
-}
-
-if (!installation.access_token || !installation.shop_domain) {
-  console.error('[EXECUTION_GUARD_INVALID_INSTALLATION]', {
-    shop_id: job.shop_id,
-    decision_id: job.decision_id
-  });
-  throw new Error('INVALID_SHOPIFY_INSTALLATION');
-}
-
-/**
- * TOKEN DECRYPTION (CRITICAL)
- * --------------------------
- * - Must use central encryption service
- * - Context tag ensures audit traceability
- */
-const accessToken = decrypt(installation.access_token, 'execution.guard');
-
-const client = createShopifyGraphQLClient({
-  accessToken,
-  platformShopName: installation.shop_domain,
-  shopId: job.shop_id
-});
-
-  /**
-   * SIGNATURE: resolveExternalOrderId(shopId, platform, lasyncroOrderId, trx?)
-   * - job.entity_id is the lasyncro_order_id (internal order UUID)
-   * - job.shop_id is number (integer) — matches DB + RLS
-   */
-  const externalOrderId = await resolveExternalOrderId(job.shop_id, 'shopify', job.entity_id, trx);
-    if (!externalOrderId) {
-    console.warn('[EXECUTION_GUARD_BLOCK_NO_EXTERNAL_ID]', {
-        decision_id: job.decision_id
-    });
-    throw new Error('EXTERNAL_ORDER_ID_NOT_FOUND');
-    }
-
-    const orderGid = `gid://shopify/Order/${externalOrderId}`;
-
-  const response: any = await client.query({
-    data: {
-      query: `
-        query ($id: ID!) {
-          order(id: $id) {
-            fulfillmentOrders(first: 10) {
-              edges {
-                node {
-                  lineItems(first: 10) {
-                    edges {
-                      node {
-                        remainingQuantity
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `,
-      variables: { id: orderGid }
-    }
-  });
-
-  const edges =
-    response?.body?.data?.order?.fulfillmentOrders?.edges ?? [];
-
-  const totalRemaining = edges.reduce((sum: number, edge: any) => {
-    const quantities =
-      edge.node?.lineItems?.edges?.map((e: any) => e.node.remainingQuantity) ?? [];
-
-    return sum + quantities.reduce((s: number, q: number) => s + q, 0);
-  }, 0);
-
-  if (totalRemaining === 0) {
-    console.warn('[EXECUTION_GUARD_BLOCK_SHOPIFY_ALREADY_FULFILLED]', {
-      decision_id: job.decision_id
-    });
-
-    throw new Error('SHOPIFY_ALREADY_FULFILLED');
+  if (job.action_type === 'proceed_fulfillment') {
+    throw new Error('PROCEED_FULFILLMENT_RETIRED');
   }
-
-  /**
-   * ADDRESS VALIDATION (PP1-01)
-   * ---------------------------
-   * Prevents fulfillment against incomplete shipping addresses.
-   * Typos and missing fields cause returned packages — catch here
-   * before any external side-effect fires.
-   *
-   * Required fields: address1, city, zip, country.
-   * province is optional (not all countries use it).
-   *
-   * FAIL POLICY: hard block — operator must resolve via customer constraint.
-   */
-  const addressResponse: any = await client.query({
-    data: {
-      query: `
-        query ($id: ID!) {
-          order(id: $id) {
-            shippingAddress {
-              address1
-              city
-              zip
-              country
-            }
-          }
-        }
-      `,
-      variables: { id: orderGid }
-    }
-  });
-
-  const shippingAddress = addressResponse?.body?.data?.order?.shippingAddress;
-
-  const missingFields = ['address1', 'city', 'zip', 'country'].filter(
-    (field) => !shippingAddress?.[field]?.trim()
-  );
-
-  if (!shippingAddress || missingFields.length > 0) {
-    console.warn('[EXECUTION_GUARD_BLOCK_INCOMPLETE_ADDRESS]', {
-      decision_id: job.decision_id,
-      missing_fields: missingFields,
-    });
-    throw new Error('INCOMPLETE_SHIPPING_ADDRESS');
-  }
-}
-
-  /**
-   * FUTURE EXTENSIONS:
-   * - external state validation (Shopify)
-   * - decision freshness
-   * - circuit breaker
-   */
 }
