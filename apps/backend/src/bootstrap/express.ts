@@ -15,6 +15,7 @@ import userStateRoutes from '../api/user-state/user-state.routes.js';
 import shopifyRoutes from '../api/shopify/shopify.routes.js';
 import onboardingReadinessRouter from '../onboarding/readiness.router.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
+import { requireAction } from '../middleware/require-action.middleware.js';
 import { registerActivationRoutes } from '../api/activation/activation.routes.js';
 import { handleShopifyInstall } from '../api/integrations/integration.controller.js';
 import customersFt2Routes from '../api/customers/customers.ft2.routes.js';
@@ -132,7 +133,7 @@ export function createApp(): Express {
   app.use('/api/v1/operators', operatorsRoutes);
   app.use('/api/v1/search', searchRoutes);
   // Historical refund ingestion — idempotent, one-shot per shop
-  app.post('/api/v1/integrations/refund-backfill', authenticateToken, httpRefundBackfill);
+  app.post('/api/v1/integrations/refund-backfill', authenticateToken, requireAction('integrations:write'), httpRefundBackfill);
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/shopify-billing', shopifyBillingRoutes);
   app.use('/api/v1/exports', exportsRoutes);

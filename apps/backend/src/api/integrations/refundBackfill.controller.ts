@@ -1,6 +1,8 @@
 // apps/backend/src/api/integrations/refundBackfill.controller.ts
 
 import { Request, Response } from 'express';
+import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
+import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { backfillShopifyRefunds } from '../../services/shopify/shopifyRefundBackfill.service.js';
 
 /**
@@ -17,10 +19,22 @@ import { backfillShopifyRefunds } from '../../services/shopify/shopifyRefundBack
  */
 export async function httpRefundBackfill(req: Request, res: Response) {
   try {
-    const shopId = req.user?.shopId;
+    const authenticatedShopId = req.user?.shopId;
 
-    if (!shopId) {
+    if (!authenticatedShopId) {
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { userId } = requireAuthStrict(req);
+    let shopId: number;
+    try {
+      ({ shopId } = await requireShopContextForUser(userId));
+    } catch {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    if (shopId !== authenticatedShopId) {
+      return res.status(403).json({ error: 'Shop context mismatch.' });
     }
 
     const result = await backfillShopifyRefunds(shopId);

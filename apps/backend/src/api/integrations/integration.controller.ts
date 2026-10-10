@@ -1297,7 +1297,7 @@ export const preFlightCheck = async (req: Request, res: Response) => {
 
 export const triggerManualSync = async (req: Request, res: Response) => {
   try {
-    const { userId } = requireAuthStrict(req);
+    const { userId, shopId: authenticatedShopId } = requireAuthStrict(req);
 
     const rawIntegrationId = req.params.integrationId;
     const integrationId = Array.isArray(rawIntegrationId)
@@ -1309,6 +1309,10 @@ export const triggerManualSync = async (req: Request, res: Response) => {
       ({ shopId } = await requireShopContextForUser(userId));
     } catch {
       return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    if (shopId !== authenticatedShopId) {
+      return res.status(403).json({ error: 'Shop context mismatch.' });
     }
 
     // Verify the integration belongs to the user's shop

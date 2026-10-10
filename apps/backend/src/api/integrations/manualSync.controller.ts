@@ -18,6 +18,7 @@
 import { Request, Response } from 'express';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
+import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { resolveShopifyAdminCredentialForConsumer } from '../../services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { performInitialSync } from '../../services/shopify.service.js';
 
@@ -27,9 +28,9 @@ export async function triggerManualInitialSync(
 ) {
   try {
     // 🔐 Auth guard (required)
-    requireAuthStrict(req);
+    const { userId, shopId: authenticatedShopId } = requireAuthStrict(req);
 
-    const { shopId: requestedShopId, integrationId: requestedIntegrationId } = req.body;
+    const { shopId: requestedShopId, integrationId: requestedIntegrationId } = req.body ?? {};
 
     if (!requestedShopId || !requestedIntegrationId) {
       return res.status(400).json({
@@ -37,8 +38,37 @@ export async function triggerManualInitialSync(
       });
     }
 
-    const shopId = Number(requestedShopId);
+    if (
+      !['number', 'string'].includes(typeof requestedShopId) ||
+      !['number', 'string'].includes(typeof requestedIntegrationId)
+    ) {
+      return res.status(400).json({
+        error: 'shopId and integrationId must be positive safe integers',
+      });
+    }
+
+    const requestedShop = Number(requestedShopId);
     const integrationId = Number(requestedIntegrationId);
+
+    if (
+      !Number.isSafeInteger(requestedShop) || requestedShop <= 0 ||
+      !Number.isSafeInteger(integrationId) || integrationId <= 0
+    ) {
+      return res.status(400).json({
+        error: 'shopId and integrationId must be positive safe integers',
+      });
+    }
+
+    let shopId: number;
+    try {
+      ({ shopId } = await requireShopContextForUser(userId));
+    } catch {
+      return res.status(403).json({ error: 'User shop not found.' });
+    }
+
+    if (shopId !== authenticatedShopId || requestedShop !== shopId) {
+      return res.status(403).json({ error: 'Shop context mismatch.' });
+    }
 
     // 1. Load integration (operational identity)
     const integration = await withTenant(shopId, (trx) =>

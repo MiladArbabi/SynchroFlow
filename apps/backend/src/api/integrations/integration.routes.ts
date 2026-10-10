@@ -33,6 +33,7 @@ router.get('/pre-flight', authenticateToken, preFlightCheck);
 router.post(
   '/manual-initial-sync',
   authenticateToken,
+  requireAction('integrations:write'),
   triggerManualInitialSync
 );
 
@@ -42,5 +43,5 @@ router.post('/sync-notify', authenticateToken, requestSyncNotification);
 /* router.get('/discovery-status', authenticateToken, getDiscoveryStatus);
  */
 
-router.post('/sync/:integrationId', authenticateToken, triggerManualSync);
+router.post('/sync/:integrationId', authenticateToken, requireAction('integrations:write'), triggerManualSync);
 export default router;
