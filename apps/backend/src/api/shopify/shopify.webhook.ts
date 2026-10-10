@@ -16,6 +16,8 @@ import { Request, Response } from 'express';
 import { onShopifyAppUninstalled } from './handlers/appUninstalled.handler.js';
 import { handleOrderCreated } from './handlers/handleOrderCreated.js';
 import { handleOrderFulfillment } from './handlers/handleOrderFulfillment.js';
+import type { WebhookEnvelope } from '../webhooks/types.js';
+import { recoverOrderIdentityAfterCommit } from '../../services/order-identity-guard.service.js';
 import { handleOrderPaid } from './handlers/handleOrderPaid.js';
 import { handleOrderCancelled } from './handlers/handleOrderCancelled.js';
 import { handleRefundCreated } from './handlers/handleRefundCreated.js';
@@ -38,6 +40,26 @@ import { handleAppSubscriptionUpdate } from './handlers/handleAppSubscriptionUpd
  */
 
 console.log('[SHOPIFY WEBHOOK REGISTRATION FILE LOADED]');
+
+async function recoverFulfillmentIdentityAfterFailure(
+  envelope: WebhookEnvelope,
+  error: unknown
+): Promise<void> {
+  if (!(error instanceof Error) || error.message !== 'ORDER_IDENTITY_RECOVERY_REQUIRED') return;
+
+  const shopId = envelope.shopId;
+  const payload = envelope.rawPayload;
+  const orderId = payload && typeof payload === 'object' && 'order_id' in payload
+    ? payload.order_id : undefined;
+  const text = typeof orderId === 'string' ? orderId
+    : typeof orderId === 'number' && Number.isSafeInteger(orderId) && orderId > 0 ? String(orderId) : '';
+  const match = /^(?:gid:\/\/shopify\/Order\/)?([1-9][0-9]*)$/.exec(text);
+  if (typeof shopId !== 'number' || !Number.isSafeInteger(shopId) || shopId <= 0 || !match) {
+    throw new Error('ORDER_IDENTITY_RECOVERY_RETRYABLE');
+  }
+  await recoverOrderIdentityAfterCommit({ shopId, externalOrderNumericId: match[1] });
+}
+
 
 // App lifecycle
 WebhookRouter.register({
@@ -65,6 +87,7 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'orders/fulfilled',
   handle: handleOrderFulfillment,
+  afterFailure: recoverFulfillmentIdentityAfterFailure,
 });
 
 // Order Paid
@@ -87,12 +110,14 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'fulfillments/create',
   handle: handleOrderFulfillment,
+  afterFailure: recoverFulfillmentIdentityAfterFailure,
 });
 
 WebhookRouter.register({
   integration: 'shopify',
   eventType: 'fulfillments/update',
   handle: handleOrderFulfillment,
+  afterFailure: recoverFulfillmentIdentityAfterFailure,
 });
 
 // Refunds (authoritative revenue regression)

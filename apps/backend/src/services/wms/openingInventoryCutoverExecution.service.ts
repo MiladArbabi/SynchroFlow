@@ -39,7 +39,7 @@ import {
 
 import { withTenant } from '@lasyncro/backend-core/db.js';
 
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../shopify/shopifyAdminCredentialConsumer.service.js';
 import { generationFingerprint } from './openingInventoryCutoverGeneration.service.js';
 import {
   assertOpeningInventoryPhysicalReadiness,
@@ -490,10 +490,39 @@ async function claimExecution(
   });
 }
 
+type CutoverCredential =
+  | { ok: true; accessToken: string; shopDomain: string }
+  | { ok: false; code: string };
+
+/** Resolve rotating ACCESS only after the caller's local transaction commits. */
+async function resolveCutoverCredential(shopId: number): Promise<CutoverCredential> {
+  const credential = await resolveShopifyAdminCredentialForConsumer({
+    shopId,
+    now: new Date(),
+  });
+
+  if (credential.kind !== 'READY') {
+    return { ok: false, code: `SHOPIFY_CREDENTIAL_${credential.kind}` };
+  }
+
+  return {
+    ok: true,
+    accessToken: credential.accessToken,
+    shopDomain: credential.shopDomain,
+  };
+}
+
+class OpeningInventoryCutoverCredentialUnavailableError extends Error {
+  constructor(readonly code: string) {
+    super('Shopify Admin credential is not ready');
+    this.name = 'OpeningInventoryCutoverCredentialUnavailableError';
+  }
+}
+
 // ─── current-authority revalidation ──────────────────────────────────────────
 
 type Authority =
-  | { ok: true; shopDomain: string; encryptedAccessToken: string }
+  | { ok: true; shopDomain: string }
   | { ok: false; reason: string };
 
 /**
@@ -504,7 +533,6 @@ type Authority =
 interface CapturedAuthority {
   shopGid: string;
   shopDomain: string;
-  encryptedAccessToken: string;
   snapshotId: string;
   warehouseId: string;
   locationGid: string;
@@ -561,14 +589,21 @@ async function captureCurrentAuthorityInTrx(
   const installation = await trx('shopify_app_installations')
     .where({ shop_id: shopId })
     .whereNull('uninstalled_at')
-    .first('shop_domain', 'shop_gid', 'access_token');
+    .first('shop_domain', 'shop_gid');
 
-  if (!installation?.shop_domain || !installation?.access_token) {
+  if (!installation?.shop_domain) {
     return drift('INSTALLATION_MISSING');
   }
 
-  if (installation.shop_gid !== generation.shopify_shop_gid) {
+  if (
+    !/^gid:\/\/shopify\/Shop\/[0-9]+$/.test(String(installation.shop_gid ?? '')) ||
+    installation.shop_gid !== generation.shopify_shop_gid
+  ) {
     return drift('SHOP_GID_CHANGED');
+  }
+
+  if (installation.shop_domain !== generation.shopify_shop_domain) {
+    return drift('SHOP_DOMAIN_CHANGED');
   }
 
   let scope: Awaited<ReturnType<typeof resolveOpeningInventoryParticipatingWarehouse>>;
@@ -642,7 +677,6 @@ async function captureCurrentAuthorityInTrx(
     authority: {
       shopGid: String(installation.shop_gid),
       shopDomain: String(installation.shop_domain),
-      encryptedAccessToken: installation.access_token,
       snapshotId: scope.snapshotId,
       warehouseId: scope.warehouseId,
       locationGid: String(normalizeShopifyGid('Location', scope.shopifyLocationId)),
@@ -674,7 +708,6 @@ async function revalidateCurrentAuthority(
   return {
     ok: true as const,
     shopDomain: captured.authority.shopDomain,
-    encryptedAccessToken: captured.authority.encryptedAccessToken,
   };
 }
 
@@ -1147,16 +1180,24 @@ async function runOwnedExecution(
       return result('requires_regeneration', ids);
     }
 
+    const credential = await resolveCutoverCredential(lease.shopId);
+
+    if (credential.ok === false) {
+      throw new OpeningInventoryCutoverCredentialUnavailableError(credential.code);
+    }
+
+    if (credential.shopDomain !== authority.shopDomain) {
+      await markRequiresRegeneration(lease, 'SHOP_DOMAIN_CHANGED');
+      return result('requires_regeneration', ids);
+    }
+
     const factory =
       deps.createShopifyGraphQLClient ?? (await defaultClientFactory());
 
     const client = factory({
       shopId: lease.shopId,
-      platformShopName: authority.shopDomain,
-      accessToken: decrypt(
-        authority.encryptedAccessToken,
-        'wms.openingInventoryCutover'
-      ),
+      platformShopName: credential.shopDomain,
+      accessToken: credential.accessToken,
       apiVersion: batch.requestedApiVersion,
     });
 
@@ -1252,6 +1293,7 @@ interface FrozenRecoveryBatch {
   requestedApiVersion: string;
   servedApiVersion: string;
   shopGid: string;
+  shopDomain: string;
   locationGid: string;
   idempotencyKey: string;
   entryCount: number;
@@ -1280,6 +1322,7 @@ async function readFrozenRecoveryBatch(
         'requested_api_version',
         'served_api_version',
         'shopify_shop_gid',
+        'shopify_shop_domain',
         'shopify_location_gid'
       );
 
@@ -1319,6 +1362,7 @@ async function readFrozenRecoveryBatch(
       requestedApiVersion: String(generation.requested_api_version),
       servedApiVersion: String(generation.served_api_version),
       shopGid: String(generation.shopify_shop_gid),
+      shopDomain: String(generation.shopify_shop_domain),
       locationGid: String(generation.shopify_location_gid),
       idempotencyKey: String(batch.idempotency_key),
       entryCount: Number(batch.entry_count),
@@ -1769,10 +1813,10 @@ async function runOwnedRecovery(
     trx('shopify_app_installations')
       .where({ shop_id: lease.shopId })
       .whereNull('uninstalled_at')
-      .first('shop_domain', 'access_token')
+      .first('shop_domain', 'shop_gid')
   );
 
-  if (!installation?.shop_domain || !installation?.access_token) {
+  if (!installation?.shop_domain) {
     await withLease(lease, (trx) =>
       requireRegenerationInTrx(trx, lease, RECOVERY_INSTALLATION_MISSING)
     );
@@ -1780,6 +1824,29 @@ async function runOwnedRecovery(
     return result('requires_regeneration', {
       ...ids,
       code: RECOVERY_INSTALLATION_MISSING,
+    });
+  }
+
+  const merchantDrift =
+    !/^gid:\/\/shopify\/Shop\/[0-9]+$/.test(String(installation.shop_gid ?? '')) ||
+    installation.shop_gid !== frozen.shopGid
+      ? 'SHOP_GID_CHANGED'
+      : installation.shop_domain !== frozen.shopDomain
+        ? 'SHOP_DOMAIN_CHANGED'
+        : null;
+
+  if (merchantDrift) {
+    await withLease(lease, (trx) =>
+      requireRegenerationInTrx(
+        trx,
+        lease,
+        `${OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT}:${merchantDrift}`
+      )
+    );
+
+    return result('requires_regeneration', {
+      ...ids,
+      code: OPENING_CUTOVER_RECOVERY_STRUCTURAL_DRIFT,
     });
   }
 
@@ -1821,16 +1888,18 @@ async function runOwnedRecovery(
     throw error;
   }
 
+  const credential = await resolveCutoverCredential(lease.shopId);
+
+  if (credential.ok === false) return transient(credential.code);
+  if (credential.shopDomain !== frozen.shopDomain) return structural('SHOP_DOMAIN_CHANGED');
+
   const factory =
     deps.createShopifyGraphQLClient ?? (await defaultClientFactory());
 
   const client = factory({
     shopId: lease.shopId,
-    platformShopName: String(installation.shop_domain),
-    accessToken: decrypt(
-      installation.access_token,
-      'wms.openingInventoryCutover'
-    ),
+    platformShopName: credential.shopDomain,
+    accessToken: credential.accessToken,
     // Frozen authority, never the process-global current version.
     apiVersion: frozen.requestedApiVersion,
   });
@@ -1949,6 +2018,7 @@ interface FrozenConvergenceAuthority {
   requestedApiVersion: string;
   servedApiVersion: string;
   shopGid: string;
+  shopDomain: string;
   locationGid: string;
   snapshotId: string;
   warehouseId: string;
@@ -1967,6 +2037,7 @@ async function readFrozenConvergenceAuthority(
         'requested_api_version',
         'served_api_version',
         'shopify_shop_gid',
+        'shopify_shop_domain',
         'shopify_location_gid',
         'opening_snapshot_id',
         'warehouse_id',
@@ -1997,6 +2068,7 @@ async function readFrozenConvergenceAuthority(
       requestedApiVersion: String(generation.requested_api_version),
       servedApiVersion: String(generation.served_api_version),
       shopGid: String(generation.shopify_shop_gid),
+      shopDomain: String(generation.shopify_shop_domain),
       locationGid: String(generation.shopify_location_gid),
       snapshotId: String(generation.opening_snapshot_id),
       warehouseId: String(generation.warehouse_id),
@@ -2024,6 +2096,7 @@ function frozenAuthorityViolation(
 ): string | null {
   if (captured.readinessPassed !== true) return 'READINESS';
   if (captured.shopGid !== frozen.shopGid) return 'SHOP_GID';
+  if (captured.shopDomain !== frozen.shopDomain) return 'SHOP_DOMAIN';
   if (captured.snapshotId !== frozen.snapshotId) return 'SNAPSHOT';
   if (captured.warehouseId !== frozen.warehouseId) return 'WAREHOUSE';
   if (captured.locationGid !== frozen.locationGid) return 'LOCATION';
@@ -2635,12 +2708,19 @@ async function runOwnedConvergence(
     throw error;
   }
 
+  const credential = await resolveCutoverCredential(lease.shopId);
+
+  if (credential.ok === false) return transient(credential.code);
+  if (credential.shopDomain !== v1.shopDomain) {
+    return structural(OPENING_CUTOVER_FINAL_LOCAL_DRIFT, 'SHOP_DOMAIN_CHANGED');
+  }
+
   const factory = deps.createShopifyGraphQLClient ?? (await defaultClientFactory());
 
   const client = factory({
     shopId: lease.shopId,
-    platformShopName: v1.shopDomain,
-    accessToken: decrypt(v1.encryptedAccessToken, 'wms.openingInventoryCutover'),
+    platformShopName: credential.shopDomain,
+    accessToken: credential.accessToken,
     // Frozen authority, never the process-global current version.
     apiVersion: frozen.requestedApiVersion,
   });

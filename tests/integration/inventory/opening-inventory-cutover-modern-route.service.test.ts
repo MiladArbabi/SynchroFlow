@@ -99,6 +99,7 @@ import { knex as knexFactory, type Knex } from 'knex';
 
 import { createApp } from 'api-src/bootstrap/express';
 import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
 import { issueTestToken } from '../../unit/helpers/auth';
 
@@ -374,12 +375,23 @@ async function createFixture(): Promise<Fixture> {
       external_sku: `E06R-${unique}`,
     });
 
-    await trx('shopify_app_installations').insert({
+    const [installation] = await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: `gh1179e06r-${unique}.myshopify.com`,
       shop_gid: `gid://shopify/Shop/${shopId}`,
-      access_token: encrypt(`e06r-offline-token-${unique}`),
       scopes: 'read_products,write_inventory',
+    }).returning('id');
+
+    await trx('shopify_admin_credentials').insert({
+      shop_id: shopId,
+      installation_id: installation.id,
+      access_token_encrypted: encrypt('e06r-canonical-access-no-network-call'),
+      refresh_token_encrypted: encrypt('e06r-canonical-refresh-no-network-call'),
+      access_expires_at: new Date(Date.now() + 86400000),
+      refresh_expires_at: new Date(Date.now() + 2592000000),
+      granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+      credential_state: 'ACTIVE',
+      credential_generation: '1',
     });
   });
 

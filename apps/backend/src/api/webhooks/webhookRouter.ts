@@ -31,6 +31,7 @@ interface RouteRegistration {
   integration: string;
   eventType: string;
   handle: WebhookHandler;
+  afterFailure?: (envelope: WebhookEnvelope, error: unknown) => Promise<void>;
 }
 
 export class WebhookRouter {
@@ -43,7 +44,7 @@ export class WebhookRouter {
    * Example:
    *   shopify::app/uninstalled
    */
-  private static routes = new Map<string, WebhookHandler>();
+  private static routes = new Map<string, RouteRegistration>();
 
   /**
    * Register a webhook handler.
@@ -53,7 +54,7 @@ export class WebhookRouter {
    */
   static register(reg: RouteRegistration): void {
     const key = WebhookRouter.key(reg.integration, reg.eventType);
-    WebhookRouter.routes.set(key, reg.handle);
+    WebhookRouter.routes.set(key, reg);
   }
 
   /**
@@ -173,6 +174,7 @@ export class WebhookRouter {
        * and Shopify still retries delivery.
        */
       let capturedError: any = null;
+      let capturedAfterFailure: RouteRegistration['afterFailure'];
 
       await db.transaction(async (trx) => {
         await trx.raw(`SET LOCAL app.current_tenant = '${resolvedShopId}'`);
@@ -276,9 +278,9 @@ export class WebhookRouter {
           willInvokeHandler: true,
         });
 
-        const handler = WebhookRouter.routes.get(key);
+        const route = WebhookRouter.routes.get(key);
 
-        if (!handler) {
+        if (!route) {
           await WebhookLedgerService.markIgnored(
             envelope.eventId,
             'unsupported_event',
@@ -343,7 +345,7 @@ export class WebhookRouter {
 
         await trx.raw('SAVEPOINT webhook_handler_execution');
         try {
-          await handler(envelope, trx);
+          await route.handle(envelope, trx);
           await trx.raw('RELEASE SAVEPOINT webhook_handler_execution');
         } catch (err: any) {
           await trx.raw('ROLLBACK TO SAVEPOINT webhook_handler_execution');
@@ -367,6 +369,7 @@ export class WebhookRouter {
 
           // Captured, not thrown here — see comment above this transaction.
           capturedError = handlerError;
+          capturedAfterFailure = route.afterFailure;
         } else {
           await WebhookLedgerService.markProcessed(
             envelope.eventId,
@@ -385,6 +388,18 @@ export class WebhookRouter {
        * Thrown AFTER commit so markFailed's write survives.
        */
       if (capturedError) {
+        if (capturedAfterFailure) {
+          try {
+            await capturedAfterFailure(envelope, capturedError);
+          } catch {
+            // Never expose arbitrary hook errors or replace the delivery outcome.
+            console.warn('[WEBHOOK_AFTER_FAILURE_FAILED]', {
+              eventId: envelope.eventId,
+              eventType: normalizedEventType,
+              error: 'WEBHOOK_AFTER_FAILURE_FAILED',
+            });
+          }
+        }
         throw capturedError;
       }
 

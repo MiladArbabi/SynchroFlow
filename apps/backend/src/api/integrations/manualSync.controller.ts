@@ -11,14 +11,14 @@
 // HARD RULES:
 // - Explicit shopId required
 // - Explicit integrationId required
-// - Shopify domain resolved ONLY from shopify_app_installations
+// - Shopify credentials/domain resolved ONLY from the canonical consumer boundary
 // - Uses existing performInitialSync (no duplication)
 // - Fail-fast, fail-closed
 
 import { Request, Response } from 'express';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
-import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../../services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { performInitialSync } from '../../services/shopify.service.js';
 
 export async function triggerManualInitialSync(
@@ -29,16 +29,19 @@ export async function triggerManualInitialSync(
     // 🔐 Auth guard (required)
     requireAuthStrict(req);
 
-    const { shopId, integrationId } = req.body;
+    const { shopId: requestedShopId, integrationId: requestedIntegrationId } = req.body;
 
-    if (!shopId || !integrationId) {
+    if (!requestedShopId || !requestedIntegrationId) {
       return res.status(400).json({
         error: 'shopId and integrationId are required',
       });
     }
 
-    // 1. Load integration (authoritative)
-    const integration = await withTenant(Number(shopId), (trx) =>
+    const shopId = Number(requestedShopId);
+    const integrationId = Number(requestedIntegrationId);
+
+    // 1. Load integration (operational identity)
+    const integration = await withTenant(shopId, (trx) =>
       trx('integrations')
         .where({ id: integrationId, shop_id: shopId })
         .first()
@@ -50,39 +53,22 @@ export async function triggerManualInitialSync(
       });
     }
 
-    // 2. Resolve Shopify domain (NOT from shops)
-    const installation = await withTenant(Number(shopId), (trx) =>
-      trx('shopify_app_installations')
-        .where({
-          shop_id: shopId,
-          uninstalled_at: null,
-        })
-        .select('shop_domain')
-        .first()
-    );
-
-    if (!installation?.shop_domain) {
-      return res.status(400).json({
-        error: 'Shopify installation not found or uninstalled',
+    // The integration read has committed before canonical resolution.
+    const credential = await resolveShopifyAdminCredentialForConsumer({
+      shopId,
+      now: new Date(),
+    });
+    if (credential.kind !== 'READY') {
+      const status = credential.kind === 'REAUTH_REQUIRED' ? 400
+        : credential.kind === 'PROVIDER_REJECTED' ? 502 : 503;
+      return res.status(status).json({
+        error: `SHOPIFY_CREDENTIAL_${credential.kind}`,
       });
     }
 
-    const shopDomain = installation.shop_domain;
-
-    // 3. Resolve decrypted access token
-    const accessToken =
-      await ShopifyAppService.getDecryptedAccessToken(shopDomain, Number(shopId));
-
-    if (!accessToken) {
-      return res.status(400).json({
-        error: 'Missing Shopify access token for shop',
-      });
-    }
-
-    // 4. Execute initial sync (authoritative, single-shot)
     await performInitialSync(
-      accessToken,
-      shopDomain,
+      credential.accessToken,
+      credential.shopDomain,
       shopId,
       integrationId
     );

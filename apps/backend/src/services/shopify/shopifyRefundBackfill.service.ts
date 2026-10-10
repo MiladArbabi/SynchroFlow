@@ -20,7 +20,7 @@
  */
 
 import { withTenant } from '@lasyncro/backend-core/db.js';
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from './shopifyAdminCredentialConsumer.service.js';
 import { createShopifyGraphQLClient } from './shopifyClient.service.js';
 
 const REFUNDS_QUERY = `
@@ -60,22 +60,17 @@ export async function backfillShopifyRefunds(shopId: number): Promise<{
   errors: number;
 }> {
 
-  const integration = await withTenant(shopId, (trx) =>
-    trx('integrations')
-      .where({ shop_id: shopId, platform: 'shopify' })
-      .select('access_token_encrypted', 'platform_shop_name')
-      .first()
-  );
-
-  if (!integration?.access_token_encrypted) {
-    throw new Error(`[REFUND_BACKFILL] No access token for shop ${shopId}`);
+  const credential = await resolveShopifyAdminCredentialForConsumer({
+    shopId,
+    now: new Date(),
+  });
+  if (credential.kind !== 'READY') {
+    throw new Error(`SHOPIFY_CREDENTIAL_${credential.kind}`);
   }
 
-  const accessToken = decrypt(integration.access_token_encrypted, 'shopify-token-backfill');
-
   const client = createShopifyGraphQLClient({
-    accessToken,
-    platformShopName: integration.platform_shop_name,
+    accessToken: credential.accessToken,
+    platformShopName: credential.shopDomain,
     shopId,
   });
 

@@ -15,7 +15,6 @@ jest.mock('api-src/services/shopify/shopifyClient.service', () => ({
 
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
-import { encrypt } from 'api-src/security/encryption.service';
 import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
 import { issueTestToken } from '../../unit/helpers/auth';
 import crypto from 'crypto';
@@ -240,7 +239,6 @@ async function createFixture(
         shop_id: shopId,
         shop_domain:
           `opening-cutover-${unique}.myshopify.com`,
-        access_token: 'test-token-no-network',
         scopes: 'read_products,write_inventory',
       });
     }
@@ -1079,7 +1077,7 @@ describe(
     );
 
     it(
-      'C20/C21/C22 — required correction fails closed on missing Shopify installation/token or item identity',
+      'C20/C22 — required correction fails closed on missing Shopify installation or item identity',
       async () => {
         const noInstall =
           await createFixture({
@@ -1096,41 +1094,6 @@ describe(
               noInstall.shopId,
             actingUserId:
               noInstall.ownerId,
-            acceptPhysicalTruth:
-              true,
-          })
-        ).rejects.toThrow(
-          /Shopify installation missing/
-        );
-
-        const noToken =
-          await createFixture();
-
-        await makeNegativeReview(
-          noToken
-        );
-
-        await withTenant(
-          noToken.shopId,
-          (trx) =>
-            trx(
-              'shopify_app_installations'
-            )
-              .where({
-                shop_id:
-                  noToken.shopId,
-              })
-              .update({
-                access_token: '',
-              })
-        );
-
-        await expect(
-          prepareOpeningInventoryCutover({
-            shopId:
-              noToken.shopId,
-            actingUserId:
-              noToken.ownerId,
             acceptPhysicalTruth:
               true,
           })
@@ -3041,7 +3004,6 @@ describe('GH-1179 RED-A — opening inventory start / Shopify scope safety', () 
       trx('shopify_app_installations').insert({
         shop_id: fixture.shopId,
         shop_domain: `gh1179-a3-${fixture.shopId}.myshopify.com`,
-        access_token: encrypt('gh1179-a3-offline-token-no-network-call'),
         scopes: 'read_locations,write_inventory',
       })
     );

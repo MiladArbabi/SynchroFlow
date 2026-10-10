@@ -42,6 +42,7 @@ import {
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { claimStowTask } from 'api-src/services/wms/stow.service';
 import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 jest.setTimeout(60000);
@@ -140,7 +141,7 @@ async function createMember(
 
 /**
  * Shopify-connected FT2 shop with every provider prerequisite present:
- * installation + encrypted token, warehouse Shopify location mapping, and a
+ * installation + fresh canonical credential, warehouse Shopify location mapping, and a
  * variant mapped to a Shopify inventory item. Also seeds the synthetic
  * PO → receive-job → receive-line chain inventory_units requires.
  */
@@ -183,11 +184,25 @@ async function createFixture(): Promise<Fixture> {
       last_event_id: crypto.randomUUID(),
     });
 
-    await trx('shopify_app_installations').insert({
+    const [installation] = await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: shopDomain,
-      access_token: encrypt('gh1193-offline-token-no-network-call'),
       scopes: 'write_inventory',
+    }).returning('id');
+
+    // Fresh canonical authority for the same merchant credential and domain.
+    const now = new Date();
+    const time = (seconds: number) => new Date(now.getTime() + seconds * 1000);
+    await trx('shopify_admin_credentials').insert({
+      shop_id: shopId,
+      installation_id: installation.id,
+      access_token_encrypted: encrypt('gh1193-offline-token-no-network-call'),
+      refresh_token_encrypted: encrypt('gh1193-refresh-token-no-network-call'),
+      access_expires_at: time(86400),
+      refresh_expires_at: time(2592000),
+      granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+      credential_generation: '7',
+      credential_state: 'ACTIVE',
     });
 
     await trx('warehouses').insert({

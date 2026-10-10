@@ -1,6 +1,4 @@
-import { withTenant } from '@lasyncro/backend-core/db.js';
-
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../shopify/shopifyAdminCredentialConsumer.service.js';
 import { createShopifyGraphQLClient } from '../shopify/shopifyClient.service.js';
 
 import type {
@@ -94,41 +92,16 @@ export async function executeOpeningInventoryCutoverBatch(
     shopifyInput
   );
 
-  const installation =
-    await withTenant(
-      shopId,
-      (trx) =>
-        trx('shopify_app_installations')
-          .where({
-            shop_id: shopId,
-          })
-          .select(
-            'shop_domain',
-            'access_token'
-          )
-          .first()
-    );
-
-  if (
-    !installation?.shop_domain ||
-    !installation?.access_token
-  ) {
-    throw new Error(
-      `[OPENING_CUTOVER_SHOPIFY] Shopify installation missing for shop ${shopId}`
-    );
+  const credential = await resolveShopifyAdminCredentialForConsumer({ shopId, now: new Date() });
+  if (credential.kind !== 'READY') {
+    throw new Error(`[OPENING_CUTOVER_SHOPIFY] SHOPIFY_CREDENTIAL_${credential.kind}`);
   }
-
-  const accessToken =
-    decrypt(
-      installation.access_token,
-      'wms.openingInventoryCutover'
-    );
 
   const client =
     createShopifyGraphQLClient({
-      accessToken,
+      accessToken: credential.accessToken,
       platformShopName:
-        installation.shop_domain,
+        credential.shopDomain,
       shopId,
     });
 

@@ -100,7 +100,6 @@ async function insertPendingIntegration(shopId: number, shopDomain: string) {
         shop_id: shopId,
         platform: 'shopify',
         platform_shop_name: shopDomain,
-        access_token_encrypted: 'offline-test-token-no-network-call',
         sync_status: 'SYNCING_ORDERS',
         updated_at: new Date(),
       })

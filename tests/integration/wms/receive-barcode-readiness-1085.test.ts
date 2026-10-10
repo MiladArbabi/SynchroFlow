@@ -39,7 +39,6 @@ import {
 } from 'api-src/services/wms/receiveJob.service';
 import { markLabelsPrinted } from 'api-src/services/wms/inventoryUnit.service';
 import { issueTestToken } from '../../unit/helpers/auth';
-import { encrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 jest.setTimeout(180000);
@@ -90,7 +89,6 @@ async function provisionFt2Shop(label: string) {
   await withTenant(shopId, (trx) =>
     trx('integrations').insert({
       shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      access_token_encrypted: encrypt('offline-test-token-no-network-call'),
       sync_status: 'COMPLETED', updated_at: new Date(),
     }));
   let c = 0;

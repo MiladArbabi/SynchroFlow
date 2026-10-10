@@ -25,30 +25,7 @@
 //   FRONTEND_URL (for post-activation redirect)
 
 import { Request, Response } from 'express';
-import axios from 'axios';
 import db from '@lasyncro/backend-core/db.js';
-import { decrypt } from '../../security/encryption.service.js';
-import { isValidTier, Tier, TIER_CONFIG } from '@lasyncro/backend-core/config/tiers.js';
-import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
-import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
-import { PEGGED_DISPLAY_PRICES } from '@lasyncro/backend-core/config/pricing.config.js';
-
-/**
- * Resolve shop's Shopify access token for API calls.
- * Decrypts from integrations table.
- */
-export async function resolveShopifyAccessToken(shopId: number): Promise<{ accessToken: string; shopDomain: string }> {
-  const integration = await db('integrations')
-    .where({ shop_id: shopId, platform: 'shopify' })
-    .first('access_token_encrypted', 'platform_shop_name');
-
-  if (!integration) {
-    throw new Error('SHOPIFY_INTEGRATION_NOT_FOUND');
-  }
-
-  const accessToken = decrypt(integration.access_token_encrypted, 'shopify.billing');
-  return { accessToken, shopDomain: integration.platform_shop_name };
-}
 
 /**
  * POST /api/v1/shopify-billing/checkout
@@ -151,72 +128,8 @@ export async function resolveShopifyAccessToken(shopId: number): Promise<{ acces
  * Query: { shopId, tier, interval, charge_id }
  */
 export async function handleShopifyCallback(req: Request, res: Response) {
-  const { shopId: rawShopId, tier, interval = 'monthly', charge_id } = req.query as Record<string, string>;
-  const shopId = parseInt(rawShopId, 10);
-  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-
-  if (!shopId || !isValidTier(tier) || !charge_id) {
-    return res.redirect(`${frontendUrl}/settings/billing?error=INVALID_CALLBACK`);
-  }
-
-  try {
-    const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
-
-    // GraphQL AppSubscription auto-activates after merchant approval — no activate call needed
-
-    const tierConfig = getTierConfig(tier as Tier);
-    const now = new Date();
-    const periodEnd = new Date(now.getTime() + (interval === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000);
-
-    // Upsert subscription record
-    await db('shop_subscriptions')
-      .insert({
-        shop_id: shopId,
-        tier,
-        billing_interval: interval,
-        status: 'active',
-        trial_ends_at: null,
-        current_period_start: now,
-        current_period_end: periodEnd,
-        updated_at: now,
-      })
-      .onConflict('shop_id')
-      .merge([
-        'tier',
-        'billing_interval',
-        'status',
-        'trial_ends_at',
-        'current_period_start',
-        'current_period_end',
-        'updated_at',
-      ]);
-
-    // Seed entitlements from tier constants
-    const moduleRows = tierConfig.modules.map((moduleKey) => ({
-      shop_id: shopId,
-      module_key: moduleKey,
-      flag_key: null as string | null,
-      source: `shopify_billing:${tier}`,
-    }));
-
-    const flagRows = tierConfig.flags.map((flagKey) => ({
-      shop_id: shopId,
-      module_key: flagKey.split('.')[0],
-      flag_key: flagKey,
-      source: `shopify_billing:${tier}`,
-    }));
-
-    await db.transaction(async (trx) => {
-      await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
-    });
-
-    console.log('[shopify-billing] charge activated', { shopId, tier, interval, charge_id });
-
-    return res.redirect(`${frontendUrl}/settings/billing?success=1&tier=${tier}`);
-  } catch (err: any) {
-    console.error('[shopify-billing] callback failed', { shopId, err: err.message });
-    return res.redirect(`${frontendUrl}/settings/billing?error=ACTIVATION_FAILED`);
-  }
+  // Unmounted compatibility tombstone; Managed Pricing owns billing transitions.
+  return res.status(410).json({ error: 'SHOPIFY_BILLING_CALLBACK_RETIRED' });
 };
 
 /**

@@ -40,6 +40,7 @@ import {
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 jest.setTimeout(90000);
@@ -252,11 +253,22 @@ async function createFixture(options: { itemCount?: number } = {}): Promise<Fixt
       bootstrap_model: 'reconcile_opening_expectation_v2',
     });
 
-    await trx('shopify_app_installations').insert({
+    const [installation] = await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: `gh1179b-${unique}.myshopify.com`,
-      access_token: encrypt('gh1179b-offline-token-no-network-call'),
       scopes: 'read_inventory,write_inventory,read_locations',
+    }).returning('id');
+
+    await trx('shopify_admin_credentials').insert({
+      shop_id: shopId,
+      installation_id: installation.id,
+      access_token_encrypted: encrypt('gh1179b-canonical-access-no-network-call'),
+      refresh_token_encrypted: encrypt('gh1179b-canonical-refresh-no-network-call'),
+      access_expires_at: new Date(Date.now() + 86400000),
+      refresh_expires_at: new Date(Date.now() + 2592000000),
+      granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+      credential_state: 'ACTIVE',
+      credential_generation: '1',
     });
 
     await trx('warehouses').insert({

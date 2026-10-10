@@ -493,7 +493,6 @@ async function createShopFixture(
     await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: `physical-target-${unique}.myshopify.com`,
-      access_token: 'test-token-no-network',
       scopes: 'read_products,write_inventory',
     });
 

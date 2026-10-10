@@ -28,7 +28,7 @@ import type { Knex } from 'knex';
 
 import { withTenant } from '@lasyncro/backend-core/db.js';
 
-import { decrypt } from '../../security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from '../shopify/shopifyAdminCredentialConsumer.service.js';
 import type { createShopifyGraphQLClient as CreateShopifyGraphQLClient } from '../shopify/shopifyClient.service.js';
 import {
   createOpeningInventoryCohort,
@@ -549,18 +549,15 @@ export function createOpeningInventoryLocationPageReader(): OpeningInventoryLoca
 
   return async ({ shopId, variables }) => {
     if (!client) {
-      const installation = await withTenant(shopId, (trx) =>
-        trx('shopify_app_installations')
-          .where({ shop_id: shopId })
-          .whereNull('uninstalled_at')
-          .select('shop_domain', 'access_token')
-          .first()
-      );
+      const credential = await resolveShopifyAdminCredentialForConsumer({
+        shopId,
+        now: new Date(),
+      });
 
-      if (!installation?.shop_domain || !installation?.access_token) {
+      if (credential.kind !== 'READY') {
         throw shopifyFailure(
-          'SHOPIFY_INSTALLATION_MISSING',
-          'Active Shopify installation is missing'
+          `SHOPIFY_CREDENTIAL_${credential.kind}`,
+          'Shopify Admin credential is not ready'
         );
       }
 
@@ -572,9 +569,8 @@ export function createOpeningInventoryLocationPageReader(): OpeningInventoryLoca
       );
 
       client = createShopifyGraphQLClient({
-        // Same Opening Inventory ↔ Shopify workflow as the cutover executor.
-        accessToken: decrypt(installation.access_token, 'wms.openingInventoryCutover'),
-        platformShopName: installation.shop_domain,
+        accessToken: credential.accessToken,
+        platformShopName: credential.shopDomain,
         shopId,
       });
     }

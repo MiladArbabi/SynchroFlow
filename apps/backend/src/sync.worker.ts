@@ -1,14 +1,8 @@
 // apps/backend/src/sync.worker.ts (add integration validation)
 import { getQueueChannel } from './queue.js';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
-import { decrypt } from './security/encryption.service.js';
+import { resolveShopifyAdminCredentialForConsumer } from './services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
-
-// CENTRALIZED DECRYPTION
-// NOTE: Delegates to encryption.service (single source of truth)
-const decryptToken = (encryptedToken: string): string => {
-  return decrypt(encryptedToken, 'sync.worker');
-};
 
 // --- Helper function to validate integration data ---
 const validateIntegration = (integration: any): { 
@@ -20,7 +14,7 @@ const validateIntegration = (integration: any): {
     return { isValid: false, error: 'Integration not found' };
   }
   
-  const requiredFields = ['id', 'shop_id', 'platform', 'platform_shop_name', 'access_token_encrypted'];
+  const requiredFields = ['id', 'shop_id', 'platform', 'platform_shop_name'];
   const missingFields = requiredFields.filter(field => !integration[field]);
   
   if (missingFields.length > 0) {
@@ -85,12 +79,12 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
       ? await withTenant(shopId, (trx) =>
           trx('integrations')
             .where({ id: integrationId, shop_id: shopId })
+            .select('id', 'shop_id', 'platform', 'platform_shop_name')
             .first<{
               id: number;
               shop_id: number;
               platform: string;
               platform_shop_name: string;
-              access_token_encrypted: string;
             }>()
         )
       : undefined;
@@ -122,21 +116,30 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
       return;
     }
 
-    // Decrypt the token
-    const accessToken = decryptToken(integration!.access_token_encrypted);
+    // The operational read has committed before credential resolution.
+    const credential = await resolveShopifyAdminCredentialForConsumer({
+      shopId: integration!.shop_id,
+      now: new Date(),
+    });
+    if (credential.kind !== 'READY') {
+      const code = `SHOPIFY_CREDENTIAL_${credential.kind}`;
+      await withTenant(integration!.shop_id, (trx) =>
+        trx('integrations').where({ id: integration!.id, shop_id: integration!.shop_id }).update({
+          sync_status: 'FAILED',
+          sync_last_error: code,
+        })
+      );
+      syncChannel.nack(msg as any, false, false);
+      return;
+    }
 
-    // --- The sync logic ---
-    if (integration!.platform === 'shopify') {
-       await performSmartSync(
-         accessToken, 
-         integration!.platform_shop_name, 
-         integration!.shop_id,
-         integration!.id
-       );
-     } else {
-       console.warn(`[sync.worker] No sync logic implemented for platform: ${integration!.platform}`);
-     }
-     
+    await performSmartSync(
+      credential.accessToken,
+      credential.shopDomain,
+      integration!.shop_id,
+      integration!.id
+    );
+
     console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
 
     syncChannel.ack(msg as any);

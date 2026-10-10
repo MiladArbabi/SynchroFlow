@@ -56,7 +56,6 @@ import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { evaluateOrderConstraints } from 'api-src/services/constraints/constraintEngine';
 import { generateDecisions } from 'api-src/domain/decision/decision.engine';
 import { issueTestToken } from '../../unit/helpers/auth';
-import { encrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 
@@ -125,7 +124,6 @@ async function provisionFt2Shop(label: string): Promise<{ shopId: number; token:
       shop_id: shopId,
       platform: 'shopify',
       platform_shop_name: shopDomain,
-      access_token_encrypted: encrypt('offline-test-token-no-network-call'),
       sync_status: 'COMPLETED',
       updated_at: new Date(),
     })

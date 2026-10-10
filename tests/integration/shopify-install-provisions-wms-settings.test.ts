@@ -125,7 +125,6 @@ describe('Shopify install flow', () => {
       trx('shopify_app_installations').insert({
         shop_id: shopId,
         shop_domain: reinstallDomain,
-        access_token: 'test-reinstall-token',
         scopes: 'read_products',
       })
     );

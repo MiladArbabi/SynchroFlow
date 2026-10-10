@@ -40,7 +40,6 @@ async function createFixtureShop(unique: string): Promise<{ shopId: number; shop
     trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: shopDomain,
-      access_token: 'test-token',
       scopes: 'read_orders,write_inventory',
     }),
   );

@@ -16,7 +16,6 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
-import { encrypt } from '../../security/encryption.service.js';
 
 import db, {
   setTenantContext,
@@ -24,13 +23,12 @@ import db, {
   systemTransaction,
   withTenant,
 } from '@lasyncro/backend-core/db.js';
-import axios from 'axios';
 import { issueAuthTokens } from '../../api/auth/token.service.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
 
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
-import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
+import { registerWebhooksForShop } from '../../services/shopify/shopifyWebhook.service.js';
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
@@ -40,34 +38,19 @@ import { transitionShopSubscription } from '../../services/billing/subscriptionT
 import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
 import {
   SHOPIFY_REQUIRED_SCOPE_STRING,
-  normalizeAndValidateShopifyGrantedScopes,
 } from '../../services/shopify/shopifyScopes.js';
-
-// CENTRALIZED ENCRYPTION
-// NOTE: Delegates to encryption.service (single source of truth)
-const encryptToken = (token: string): string => {
-  return encrypt(token);
-};
-
-/**
- * SHOP-REVIEW-OAUTH-REGRESSION-162 (Slice 162C) — safe provider-error projection.
- *
- * OAuth token-exchange and Shopify Admin API errors must never be logged raw: an
- * Axios error carries `config.data` (client_secret + OAuth code) and
- * `config.headers` (`X-Shopify-Access-Token`). This returns ONLY safe scalar
- * diagnostics — message, HTTP status line, network/axios error code — and never
- * reads `config`, `request`, request/response headers, response body/`data`, or
- * the stack.
- */
-const safeProviderError = (
-  err: unknown
-): { message: string; status?: number; code?: string } => {
-  const message = err instanceof Error ? err.message : String(err);
-  if (axios.isAxiosError(err)) {
-    return { message, status: err.response?.status, code: err.code };
-  }
-  return { message };
-};
+import {
+  acquireShopifyOAuthCredentials,
+  ShopifyOAuthAcquisitionError,
+  type ShopifyOAuthAcquisition,
+} from '../../services/shopify/shopifyOAuthAcquisition.service.js';
+import { persistShopifyAdminCredentials } from '../../services/shopify/shopifyAdminCredential.repository.js';
+import {
+  prepareShopifyAdminCredentialReconnect,
+  finalizeShopifyAdminCredentialReconnect,
+  settleShopifyAdminCredentialReconnect,
+  type ShopifyAdminCredentialReconnectPrepared,
+} from '../../services/shopify/shopifyAdminCredentialLifecycle.service.js';
 
 /**
  * SHOP-REVIEW-OAUTH-REGRESSION-162 (Slice 162C) — recognise the two
@@ -371,89 +354,44 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing OAuth authorization code' });
   }
 
-  let shopifyAccessToken: string;
-  let shopifyGrantedScopes: string;
-  let shopBaseCurrency = 'USD';
-  // SRC-05a: IANA zone, not timezoneOffset. An offset ("+02:00") is a snapshot
-  // that breaks twice a year at DST; the IANA identifier is durable.
-  let shopTimezone: string | null = null;
-  let shopRealName: string | null = null;
-  let shopContactEmail: string | null = null;
-  let shopGid: string | null = null;
+  if (platform !== 'shopify') {
+    return res.status(400).json({ error: 'Unsupported platform' });
+  }
 
-  // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
+  // Resolve only the consumed state's user membership before any Shopify acquisition.
+  let shopId: number;
+  let reconnect: ShopifyAdminCredentialReconnectPrepared | undefined;
   try {
-    if (platform === 'shopify') {
-      const tokenUrl = `https://${oauthContext.shopDomain}/admin/oauth/access_token`;
-
-      const tokenResponse = await axios.post(tokenUrl, {
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        code,
-      });
-
-      shopifyAccessToken = tokenResponse.data?.access_token;
-
-      // OBS-162B-1: confirm Shopify actually returned an access token BEFORE any
-      // further work — no granted-scope validation, and no Admin GraphQL call
-      // (which would otherwise fire with an undefined Authorization token).
-      if (!shopifyAccessToken) {
-        throw new Error('ACCESS_TOKEN_MISSING');
-      }
-
-      shopifyGrantedScopes =
-        normalizeAndValidateShopifyGrantedScopes(
-          tokenResponse.data?.scope
-        );
-
-      // Fetch store currency + identity via GraphQL Admin API (single round-trip).
-      // id → canonical Shopify Shop GID required by App Events reporting.
-      // currencyCode → sets shops.base_currency (display-only, never stored converted).
-      // name/contactEmail → used post-commit to backfill ghost shop/user identity.
-      // This optional metadata lookup must never block OAuth completion.
-      try {
-        const shopInfoRes = await axios.post(
-          `https://${oauthContext.shopDomain}/admin/api/2024-01/graphql.json`,
-          { query: '{ shop { id currencyCode name contactEmail ianaTimezone } }' },
-          {
-            headers: {
-              'X-Shopify-Access-Token': shopifyAccessToken,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        const shopGraphData = shopInfoRes.data?.data?.shop;
-        const shopGidCandidate = shopGraphData?.id;
-
-        shopBaseCurrency = shopGraphData?.currencyCode ?? 'USD';
-        // Null when Shopify omits it — the DB default ('UTC') then stands
-        // rather than us writing a guess.
-        shopTimezone = shopGraphData?.ianaTimezone ?? null;
-        shopRealName = shopGraphData?.name ?? null;
-        shopContactEmail = shopGraphData?.contactEmail ?? null;
-
-        if (
-          typeof shopGidCandidate === 'string' &&
-          shopGidCandidate.startsWith('gid://shopify/Shop/')
-        ) {
-          shopGid = shopGidCandidate;
-        } else {
-          console.warn(
-            '[OAuth] Shopify identity response omitted a valid Shop GID; App Events reporting will remain disabled',
-            { shopDomain: oauthContext.shopDomain }
-          );
-        }
-      } catch (err) {
-        console.warn(
-          '[OAuth] Failed to fetch Shopify currency/identity/GID — using optional metadata fallbacks',
-          safeProviderError(err)
-        );
-      }
-    } else {
-      return res.status(400).json({ error: 'Unsupported platform' });
+    ({ shopId } = await requireShopContextForUser(oauthContext.userId));
+    const preparation = await prepareShopifyAdminCredentialReconnect({
+      shopId, shopDomain: oauthContext.shopDomain!, now: new Date(),
+    });
+    if (preparation.kind === 'REFRESH_IN_PROGRESS' || preparation.kind === 'RETRYABLE') {
+      return res.status(409).json({ error: 'SHOPIFY_RECONNECT_IN_PROGRESS', retryable: true });
     }
+    if (preparation.kind === 'RECONNECT_PREPARED') reconnect = preparation;
   } catch (err) {
+    console.error('[OAuth] Credential preparation failed', { message: 'Shopify credential preparation failed' });
+    return res.status(500).json({ error: 'Failed to prepare Shopify integration' });
+  }
+
+  let acquisition: ShopifyOAuthAcquisition;
+
+  // Preparation has committed: no tenant transaction is held over acquisition/GID HTTP.
+  try {
+    acquisition = await acquireShopifyOAuthCredentials(oauthContext.shopDomain!, code);
+  } catch (err) {
+    if (reconnect) {
+      try {
+        await settleShopifyAdminCredentialReconnect({ ...reconnect, outcome: {
+          kind: err instanceof ShopifyOAuthAcquisitionError
+            ? err.issuance : 'POSSIBLY_ISSUED',
+        } });
+      } catch (cleanupError) {
+        console.error('[OAuth] Reconnect cleanup failed', { message: 'Shopify reconnect cleanup failed' });
+        return res.status(500).json({ error: 'Failed to settle Shopify integration' });
+      }
+    }
     // OBS-162B-2: an incomplete Shopify grant is a permissions problem, not a
     // token-endpoint failure — fail closed with a distinct 403 + SECURITY audit.
     const scopeFailure = classifyScopeFailure(err);
@@ -475,83 +413,100 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         .json({ error: 'Shopify did not grant all required permissions' });
     }
 
-    // OBS-162B-3: never log the raw Axios error (config.data carries
-    // client_secret + OAuth code).
-    console.error('[OAuth] Token exchange failed', safeProviderError(err));
+    if (err instanceof ShopifyOAuthAcquisitionError && err.kind === 'SHOP_IDENTITY_FAILURE') {
+      console.warn('[OAuth] Failed to fetch Shopify currency/identity/GID', err.diagnostics);
+      return res.status(502).json({ error: 'Failed to verify Shopify shop identity' });
+    }
+
+    console.error('[OAuth] Token exchange failed',
+      err instanceof ShopifyOAuthAcquisitionError
+        ? err.diagnostics : { message: 'Shopify OAuth acquisition failed' });
     return res.status(502).json({ error: 'Failed to exchange OAuth token' });
   }
 
+  const shopBaseCurrency = acquisition.shopIdentity.currencyCode ?? 'USD';
+  const shopTimezone = acquisition.shopIdentity.ianaTimezone;
+  const shopRealName = acquisition.shopIdentity.name;
+  const shopContactEmail = acquisition.shopIdentity.contactEmail;
+  const shopGid = acquisition.shopIdentity.gid;
+  const shopifyGrantedScopes = acquisition.grantedScopes;
+
   // --- Step 2.2.2.b: Persist integration atomically ---
+  let reconnectFinalized = false;
   try {
-    const { shopId } = await requireShopContextForUser(oauthContext.userId);
-    const result = await withTenant(shopId, async trx => {
-
-      // Persist shop base currency captured from Shopify at OAuth time.
-      await trx('shops')
-        .where({ id: shopId })
-        .update({ base_currency: shopBaseCurrency });
-
-      // SRC-05a: timezone is a SEPARATE statement because it carries a guard
-      // the currency write must not inherit. Folding both into one update with
-      // a trailing .where(timezone_source) would skip the currency refresh
-      // entirely for any shop that had set its own timezone.
-      // Only overwrite when Shopify supplied a zone AND the merchant hasn't
-      // chosen one — a re-install must never clobber a deliberate choice.
-      if (shopTimezone) {
-        await trx('shops')
-          .where({ id: shopId, timezone_source: 'shopify' })
-          .update({ timezone: shopTimezone });
+    let result: { integration: { id: number }; shopId: number };
+    if (reconnect) {
+      const completion = await finalizeShopifyAdminCredentialReconnect({ ...reconnect, credentials: acquisition });
+      if (completion.kind !== 'RECONNECTED') {
+        return res.status(409).json({ error: 'SHOPIFY_RECONNECT_STALE', retryable: true });
       }
+      result = { integration: completion.integration, shopId };
+      reconnectFinalized = true;
+    } else {
+      // First install and legacy bootstrap preserve GREEN-2 persistence/generation zero.
+      result = await withTenant(shopId, async trx => {
 
-      const encryptedToken = encryptToken(shopifyAccessToken);
+        // Persist shop base currency captured from Shopify at OAuth time.
+        await trx('shops')
+          .where({ id: shopId })
+          .update({ base_currency: shopBaseCurrency });
 
-      const [integration] = await trx('integrations')
-        .insert({
-          shop_id: shopId,
-          platform,
-          platform_shop_name: oauthContext.shopDomain,
-          access_token_encrypted: encryptedToken,
-          updated_at: new Date(),
-        })
-        .onConflict(['shop_id', 'platform'])
-        .merge({
-          access_token_encrypted: encryptedToken,
-          updated_at: new Date(),
-        })
-        .returning('*');
+        // SRC-05a: timezone is a SEPARATE statement because it carries a guard
+        // the currency write must not inherit. Folding both into one update with
+        // a trailing .where(timezone_source) would skip the currency refresh
+        // entirely for any shop that had set its own timezone.
+        // Only overwrite when Shopify supplied a zone AND the merchant hasn't
+        // chosen one — a re-install must never clobber a deliberate choice.
+        if (shopTimezone) {
+          await trx('shops')
+            .where({ id: shopId, timezone_source: 'shopify' })
+            .update({ timezone: shopTimezone });
+        }
 
-      // 🔐 SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN
-      await trx('shopify_app_installations')
-        .insert({
-          shop_id: shopId,
-          shop_domain: oauthContext.shopDomain,
-          shop_gid: shopGid,
-          access_token: encryptedToken,
-          scopes: shopifyGrantedScopes,
-          installed_at: new Date(),
-          uninstalled_at: null,
-        })
-        .onConflict(['shop_domain'])
-        .merge({
-          access_token: encryptedToken,
-          scopes: shopifyGrantedScopes,
-          // Preserve a previously captured GID if this optional lookup fails.
-          shop_gid: trx.raw(
-            'COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)'
-          ),
-          // SHB-08a: reinstall must clear uninstalled_at — otherwise
-          // manualSync.controller.ts's `uninstalled_at IS NULL` sync gate
-          // permanently blocks any shop that ever uninstalled once,
-          // even after a legitimate reinstall.
-          uninstalled_at: null,
-          updated_at: new Date(),
-        });
+        const [integration] = await trx('integrations')
+          .insert({
+            shop_id: shopId,
+            platform,
+            platform_shop_name: oauthContext.shopDomain,
+            updated_at: new Date(),
+          })
+          .onConflict(['shop_id', 'platform'])
+          .merge({
+            updated_at: new Date(),
+          })
+          .returning('*');
 
-      return {
-        integration,
-        shopId,
-      };
-    });
+        // Stable installation identity and lifecycle metadata; credentials persist separately.
+        const [installation] = await trx('shopify_app_installations')
+          .insert({
+            shop_id: shopId,
+            shop_domain: oauthContext.shopDomain,
+            shop_gid: shopGid,
+            scopes: shopifyGrantedScopes,
+            installed_at: new Date(),
+            uninstalled_at: null,
+          })
+          .onConflict(['shop_domain'])
+          .merge({
+            scopes: shopifyGrantedScopes,
+            shop_gid: shopGid,
+            // SHB-08a: reinstall must clear uninstalled_at — otherwise
+            // manualSync.controller.ts's `uninstalled_at IS NULL` sync gate
+            // permanently blocks any shop that ever uninstalled once,
+            // even after a legitimate reinstall.
+            uninstalled_at: null,
+            updated_at: new Date(),
+          })
+          .returning('id');
+
+        await persistShopifyAdminCredentials(trx, installation.id, shopId, acquisition);
+
+        return {
+          integration,
+          shopId,
+        };
+      });
+    }
 
     // --- Post-commit side effects ---
     await EntitlementsService.grantDefaultFreeTierForShop(result.shopId);
@@ -778,10 +733,19 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   
     const { accessToken: userJwt, refreshToken } = authTokens;
 
-    await ShopifyAppService.completePostInstallation(
-      oauthContext.shopDomain!,
-      result.shopId
-    );
+    try {
+      await registerWebhooksForShop(result.shopId);
+    } catch (webhookErr) {
+      // Retain only known credential-state messages; unexpected errors may carry secrets.
+      const message = webhookErr instanceof Error &&
+        /^SHOPIFY_CREDENTIAL_(REFRESH_IN_PROGRESS|RETRYABLE|PROVIDER_REJECTED|REAUTH_REQUIRED)$/.test(webhookErr.message)
+        ? webhookErr.message
+        : 'Shopify post-OAuth webhook registration failed';
+      console.warn('[SHOPIFY_POST_OAUTH_WEBHOOK_REGISTRATION_FAILED_NON_FATAL]', {
+        shopId: result.shopId,
+        error: message,
+      });
+    }
 
     console.info('[OAuth] Integration created successfully', {
       integrationId: result.integration.id,
@@ -829,7 +793,15 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       `${process.env.FRONTEND_URL}${redirectPath}?${redirectParams.toString()}`
     );
   } catch (err) {
-    console.error('[OAuth] Integration persistence failed', err);
+    if (reconnect && !reconnectFinalized) {
+      // Issuance already happened. Cleanup must never restore predecessor ACTIVE.
+      try {
+        await settleShopifyAdminCredentialReconnect({ ...reconnect, outcome: { kind: 'POSSIBLY_ISSUED' } });
+      } catch (cleanupError) {
+        console.error('[OAuth] Reconnect cleanup failed', { message: 'Shopify reconnect cleanup failed' });
+      }
+    }
+    console.error('[OAuth] Integration persistence failed', { message: 'Shopify integration persistence failed' });
     return res.status(500).json({ error: 'Failed to finalize integration' });
   }
 }

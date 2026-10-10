@@ -56,6 +56,7 @@ import { createTenantShop } from
   '@lasyncro/backend-core/services/pre-tenant.service.js';
 
 import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 
 import {
   addOpeningInventoryRecountLine,
@@ -580,12 +581,23 @@ async function createFixture(): Promise<Fixture> {
       external_sku: `E03-${unique}`,
     });
 
-    await trx('shopify_app_installations').insert({
+    const [installation] = await trx('shopify_app_installations').insert({
       shop_id: shopId,
       shop_domain: shopDomain,
       shop_gid: `gid://shopify/Shop/${shopId}`,
-      access_token: encrypt(accessToken),
       scopes: 'read_products,write_inventory',
+    }).returning('id');
+
+    await trx('shopify_admin_credentials').insert({
+      shop_id: shopId,
+      installation_id: installation.id,
+      access_token_encrypted: encrypt(accessToken),
+      refresh_token_encrypted: encrypt('e03-canonical-refresh-no-network-call'),
+      access_expires_at: new Date(Date.now() + 86400000),
+      refresh_expires_at: new Date(Date.now() + 2592000000),
+      granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+      credential_state: 'ACTIVE',
+      credential_generation: '1',
     });
   });
 

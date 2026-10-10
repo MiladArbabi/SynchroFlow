@@ -17,6 +17,5 @@ export async function seedIntegration({
     shop_id: shopId,
     platform,
     sync_status: syncStatus,
-    access_token_encrypted: 'test-encrypted-token',
   });
 }

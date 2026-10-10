@@ -56,7 +56,6 @@ import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { handleOrdersCancelled } from 'api-src/projection/handlers/orders.cancelled';
 import { applyFulfillmentPhysicalRemoval } from 'api-src/services/wms/fulfillmentPhysicalRemoval.service';
 import { issueTestToken } from '../../unit/helpers/auth';
-import { encrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 
@@ -105,7 +104,6 @@ async function provisionFt2Shop(label: string): Promise<{ shopId: number; token:
   await withTenant(shopId, (trx) =>
     trx('integrations').insert({
       shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      access_token_encrypted: encrypt('offline-test-token-no-network-call'),
       sync_status: 'COMPLETED', updated_at: new Date(),
     })
   );

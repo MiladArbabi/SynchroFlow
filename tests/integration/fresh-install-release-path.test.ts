@@ -41,7 +41,6 @@ import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/bac
 import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { issueTestToken } from '../unit/helpers/auth';
-import { encrypt } from 'api-src/security/encryption.service';
 
 const app = createApp();
 
@@ -122,7 +121,6 @@ it('keeps root inventory releasable across zero-bin -> one-empty-bin transition'
         shop_id: shopId,
         platform: 'shopify',
         platform_shop_name: shopDomain,
-        access_token_encrypted: encrypt('offline-test-token-no-network-call'),
         sync_status: 'COMPLETED',
         updated_at: new Date(),
       })

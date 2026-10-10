@@ -44,7 +44,6 @@ import db, {
 } from '@lasyncro/backend-core/db.js';
 import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
-import { encrypt } from 'api-src/security/encryption.service';
 import { confirmStow } from 'api-src/services/wms/stow.service';
 import { rebuildInventoryProjectionForVariants } from 'api-src/services/inventory/rebuildInventoryProjection';
 import { issueTestToken } from '../../unit/helpers/auth';
@@ -102,7 +101,6 @@ async function provisionFt2Shop(): Promise<{ shopId: number; userId: number; tok
   await withTenant(shopId, (trx) =>
     trx('integrations').insert({
       shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      access_token_encrypted: encrypt('offline-test-token-no-network-call'),
       sync_status: 'COMPLETED', updated_at: new Date(),
     })
   );

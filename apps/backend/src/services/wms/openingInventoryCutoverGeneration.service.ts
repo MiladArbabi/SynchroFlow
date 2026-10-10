@@ -535,15 +535,11 @@ async function readGenerationInstallation(
       )
       .select(
         'shop_domain',
-        'shop_gid',
-        'access_token'
+        'shop_gid'
       )
       .first();
 
-  if (
-    !installation?.shop_domain ||
-    !installation?.access_token
-  ) {
+  if (!installation?.shop_domain) {
     throw new Error(
       `[OPENING_CUTOVER_PREFLIGHT] Active Shopify installation missing for shop ${shopId}`
     );
