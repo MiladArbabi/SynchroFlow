@@ -96,7 +96,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         decodedUser = {
           id: jwtUserId(tokenFromUrl),
           shop_id: payload.shop_id ?? null,
-          plan: payload.plan ?? null,
+          plan: payload.tier ?? null,
           trial_ends_at: payload.trial_ends_at ?? null,
           created_at: payload.created_at ?? null,
           role: payload.shop_roles?.[0] ?? 'owner',

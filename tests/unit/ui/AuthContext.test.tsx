@@ -75,7 +75,7 @@ describe('AuthContext', () => {
      const token = fakeJwt({
        user_id: 42,
        shop_id: 77,
-       plan: 'starter',
+       tier: 'starter',
        shop_roles: ['owner'],
        email: 'owner@example.test',
      });
@@ -127,6 +127,25 @@ describe('AuthContext — JWT-authoritative identity (#1164)', () => {
     });
     expect(result.current.user?.id).toBe(25);
     expect(persistedUser()?.id).toBe(25);
+  });
+
+  it('GH-1133: OAuth handoff projects canonical JWT tier into PublicUser.plan', async () => {
+    const token = fakeJwt({
+      user_id: 25,
+      shop_id: 77,
+      tier: 'core',
+      shop_roles: ['owner'],
+    });
+    window.history.replaceState({}, '', `/overview?connect=success&token=${token}`);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoggedIn).toBe(true);
+    });
+
+    expect(result.current.user?.plan).toBe('core');
+    expect(persistedUser()?.plan).toBe('core');
   });
 
   it('hard reload repairs a stale persisted user.id to the access token user_id', async () => {
