@@ -5,7 +5,16 @@
 // GET  /api/v1/settings/permissions  — returns full permission matrix for shop
 // PATCH /api/v1/settings/permissions — update one or more action/role permissions
 //
-// Owner only — enforced via requireAction('wms:settings:write') on routes.
+// Authorization:
+//   GET   — owner/admin via route-level requireAction('wms:settings:write').
+//   PATCH — the same route-level admission (owner/admin) PLUS an independent,
+//           non-configurable owner-only guard in httpUpdatePermissions.
+//
+// AUTH-PERM-01 (D06): requireAction resolves through the shop-configurable
+// permission map (isActionAllowed / shop_role_permissions), and admin holds
+// 'wms:settings:write'. The owner-only guard reads the trusted JWT shop_roles
+// claim directly so no persisted grant can widen who may change the matrix
+// (RECOUNT-131 precedent, inventoryRecount.controller.ts).
 
 import { Request, Response } from 'express';
 import {
@@ -31,6 +40,13 @@ export async function httpGetPermissions(req: Request, res: Response) {
 export async function httpUpdatePermissions(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  // AUTH-PERM-01: owner-only, independent of shop permission config. Runs
+  // before body validation, persistence and cache invalidation.
+  const roles: string[] = req.user?.roles ?? [];
+  if (!roles.includes('owner')) {
+    return res.status(403).json({ error: 'ACTION_FORBIDDEN', requiredRole: 'owner' });
+  }
 
   const { updates } = req.body;
 

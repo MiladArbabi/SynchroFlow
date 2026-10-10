@@ -9,7 +9,7 @@ const router = Router();
 /**
  * GET /api/v1/settings/permissions
  * Returns full permission matrix for the shop.
- * Owner/admin can view — only owner can edit.
+ * Owner/admin can view — admitted by requireAction('wms:settings:write').
  */
 router.get(
   '/',
@@ -21,7 +21,9 @@ router.get(
 /**
  * PATCH /api/v1/settings/permissions
  * Update one or more action/role permission grants.
- * Owner only — enforced via wms:settings:write (owner-only locked action).
+ * Owner only. requireAction('wms:settings:write') admits owner/admin; the
+ * controller then applies an independent, non-configurable owner-only guard
+ * on the JWT roles (AUTH-PERM-01).
  */
 router.patch(
   '/',
