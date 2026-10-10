@@ -408,6 +408,13 @@ The owner/admin/problem solver remains the eventual commercial decision-maker.
 
 A Pick exception or recount result does not itself authorize shipment.
 
+**GH-1238 (2026-10-10) — containment until settlement exists:**
+
+- The legacy direct resolve `POST /problem-center/pick-exceptions/:exceptionId/resolve` is retired (410, no writes) for every role. Operators keep reporting through `POST /wms/batch/:batchId/exception`.
+- Ordinary Pick incidents (`item_missing`, `short_pick`, `product_defect`, `packaging_defect`, `wrong_item`) have no closing Problem Center disposition. `write_off`, `discard`, `re_stow` and `quarantine` return `409 RESOLUTION_NOT_ELIGIBLE`. `find_replacement` is investigation only.
+- Reason: the missing/defective units remain reserved at the allocation location and no resolution settles that residual reservation. A debit would consume healthy unreserved units and leave the reservation behind.
+- Residual reservation settlement and write-off/discard settlement are tracked as **GH-1240**.
+
 ---
 
 ## 13. Verification contract

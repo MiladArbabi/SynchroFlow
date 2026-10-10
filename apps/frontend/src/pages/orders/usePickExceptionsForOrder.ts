@@ -4,14 +4,13 @@
 // Endpoint: GET /api/v1/wms/problem-center/pick-exceptions?order_id=:id
 // Backend: httpGetProblemCenterExceptions
 //
-// See entity-detail-modal-playbook.md §2.3 — resolving ONE exception here
-// (httpResolveException) does NOT unblock the order. An order can have
-// multiple open exceptions; resolving one doesn't mean the order ships.
-// Unblocking is a SEPARATE action: resolve_operational_block, via the
-// existing useExecuteOrderDecision in useOrderDecision.ts. Do not conflate
-// the two invalidation scopes.
+// GH-1238 / PC-SAFE-01 W4: read-only. The legacy direct resolve
+// (POST /problem-center/pick-exceptions/:id/resolve) is retired — closing a
+// Pick exception requires canonical recovery evidence in Problem Center.
+// Unblocking the order stays a SEPARATE action (resolve_operational_block via
+// useExecuteOrderDecision in useOrderDecision.ts).
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
 export interface PickException {
@@ -54,33 +53,5 @@ export function usePickExceptionsForOrder(orderId: string | null) {
     // FIX (2026-07-04): same staleTime=0 + refetchOnWindowFocus flicker
     // as useOrderDecision.ts / useOrderDetail.ts.
     staleTime: 30_000,
-  });
-}
-
-export interface ResolveExceptionPayload {
-  exceptionId: string;
-  resolutionNote: string;
-}
-
-/**
- * useResolvePickException
- * ------------------------
- * Only invalidates this order's exception list — does NOT touch
- * order-detail/order-decision queries. See file header.
- */
-export function useResolvePickException(orderId: string | null) {
-  const queryClient = useQueryClient();
-
-  return useMutation<{ pick_exception_id: string; resolved: boolean }, Error, ResolveExceptionPayload>({
-    mutationFn: async ({ exceptionId, resolutionNote }) => {
-      const { data } = await axiosInstance.post(
-        `/api/v1/wms/problem-center/pick-exceptions/${exceptionId}/resolve`,
-        { resolution_note: resolutionNote }
-      );
-      return data;
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['pick-exceptions', 'by-order', orderId] });
-    },
   });
 }

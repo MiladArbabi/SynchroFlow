@@ -85,15 +85,30 @@ const TASKS = [
     variant_title: 'Missing Widget',
     sku: 'SKU-MISSING-1222',
   },
+  // GH-1238: a system-origin cancelled-pick incident is the verified case
+  // that offers management dispositions (Discard / Write Off).
   {
     problem_task_id: '22222222-2222-4222-8222-222222222222',
+    status: 'open',
+    source: 'pick',
+    exception_type: 'order_cancelled',
+    quantity: 2,
+    notes: 'PROB-1222-0002',
+    problem_bin_location: 'PROB-BIN',
+    created_at: '2026-10-07T09:00:00.000Z',
+    variant_title: 'Cancelled Gadget',
+    sku: 'SKU-CANCELLED-1222',
+  },
+  // GH-1238: a Receive incident has no verified safe generic resolution.
+  {
+    problem_task_id: '33333333-3333-4333-8333-333333333333',
     status: 'open',
     source: 'receive',
     exception_type: 'product_defect',
     quantity: 2,
-    notes: 'PROB-1222-0002',
+    notes: 'PROB-1222-0003',
     problem_bin_location: null,
-    created_at: '2026-10-07T09:00:00.000Z',
+    created_at: '2026-10-07T10:00:00.000Z',
     variant_title: 'Defective Gadget',
     sku: 'SKU-DEFECT-1222',
   },
@@ -256,7 +271,7 @@ describe('GH-1222 F — Problem Center resolution UI role parity', () => {
   });
 
   it.each(['owner', 'admin'] as const)(
-    'F2 GREEN CONTROL: %s — Resolve opens the dialog with the existing workflow options (Write Off, Discard)',
+    'F2 GREEN CONTROL: %s — Resolve opens the dialog with the supported management options (Write Off, Discard); an ineligible Receive incident shows a truthful non-destructive state',
     async (role) => {
       await renderPage(role, 'growth');
       await waitFor(() => expect(taskRowsVisible()).toBe(true));
@@ -264,17 +279,22 @@ describe('GH-1222 F — Problem Center resolution UI role parity', () => {
       const rowCtas = resolveCtas();
       expect(rowCtas.length).toBeGreaterThanOrEqual(2);
 
-      // item_missing task → Write Off is an offered action.
-      fireEvent.click(resolveCtaForTask('PROB-1222-0001'));
+      // pick/order_cancelled task → Write Off and Discard are offered actions.
+      fireEvent.click(resolveCtaForTask('PROB-1222-0002'));
       expect(await screen.findByText('Resolve Exception')).toBeInTheDocument();
       expect(screen.getByText('Write Off')).toBeInTheDocument();
+      expect(screen.getByText('Discard')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(screen.queryByText('Resolve Exception')).toBeNull());
 
-      // product_defect task → Discard is an offered action.
-      fireEvent.click(resolveCtaForTask('PROB-1222-0002'));
-      expect(await screen.findByText('Resolve Exception')).toBeInTheDocument();
-      expect(screen.getByText('Discard')).toBeInTheDocument();
+      // receive/product_defect task → no Resolve CTA in its row; it reads
+      // "Needs investigation" instead.
+      let receiveRow: HTMLElement | null = screen.getByText('PROB-1222-0003');
+      while (receiveRow && within(receiveRow).queryAllByText('Needs investigation').length === 0) {
+        receiveRow = receiveRow.parentElement;
+      }
+      expect(receiveRow).not.toBeNull();
+      expect(within(receiveRow as HTMLElement).queryAllByText(/Resolve\s*→/)).toHaveLength(0);
     },
   );
 });

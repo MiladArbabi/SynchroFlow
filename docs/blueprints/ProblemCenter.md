@@ -118,12 +118,30 @@ pick | pack | stow | receive | returns
 
 | `resolution_action` | Final Status | Inventory Cascade | Built |
 | --- | --- | --- | --- |
-| `re_stow` | `resolved` | Creates pending stow task; operator assigns a valid active bin; confirm transfers stock from problem bin → destination bin | ✅ LIVE |
-| `discard` | `resolved` | Writes the full task quantity as a `damage` movement against the single stock-holding location; 409 if zero/multiple stock locations exist or available inventory is insufficient | ✅ LIVE |
-| `write_off` | `resolved` | Writes the full task quantity as a `shrinkage` movement against the single stock-holding location; 409 if zero/multiple stock locations exist or available inventory is insufficient | ✅ LIVE |
+| `re_stow` | `resolved` | GH-1202 outside-truth incidents only: creates a credit-only recovery stow task (`order_cancelled_mid_pick` / `return_restock`); confirm credits the destination bin | ✅ LIVE (restricted — GH-1238) |
+| `discard` | `resolved` | GH-1202 outside-truth incidents only: record-only, no movement or truth change | ✅ LIVE (restricted — GH-1238) |
+| `write_off` | `resolved` | GH-1202 outside-truth incidents only: record-only, no movement or truth change | ✅ LIVE (restricted — GH-1238) |
 | `return` | `returned_to_supplier` | Future: creates return PO line | ❌ PLANNED |
-| `quarantine` | `resolved` | Moves the single stock-holding location to the problem bin; 409 if zero or multiple stock locations exist | ✅ LIVE |
-| `find_replacement` | `investigating` | No movement — triggers replacement search | ✅ LIVE (backend) / ❌ PLANNED (UI) |
+| `quarantine` | `resolved` | GH-1202 outside-truth incidents only: credits exactly `task.quantity` into the validated, non-pickable problem bin (`location_transfer`) | ✅ LIVE (restricted — GH-1238) |
+| `find_replacement` | `investigating` | Investigation only — no movement, never closes the incident; Pick/Pack shortage types | ✅ LIVE |
+
+**GH-1238 — fail-closed resolution eligibility (2026-10-10).** Eligibility is
+backend default-deny, decided from persisted incident evidence
+(`apps/backend/src/services/wms/problemCenterResolutionPolicy.ts`). Any other
+source × exception_type × action returns `409 RESOLUTION_NOT_ELIGIBLE` before
+any task, inventory, alert, stow or reconciliation write.
+
+| Incident | Eligible actions | Required evidence |
+| --- | --- | --- |
+| `pick/order_cancelled` | `re_stow`, `quarantine`, `discard`, `write_off` | the cancelled order in `source_exception_id`; no `source_pick_exception_id` |
+| `returns/repackaging_required` | `re_stow`, `quarantine`, `discard`, `write_off` | the return job in `source_exception_id` |
+| Pick/Pack `item_missing`, `missing_item`, `short_pick`, `wrong_item` | `find_replacement` (investigation only) | — |
+| everything else (reconciliation, count, stow, receive, `return_shortfall`, Pick/Pack defects, unknown types) | none — UI shows "Needs investigation" | — |
+
+- Terminal statuses `resolved`, `discarded` and `returned_to_supplier` all reject further resolution (`409 Task already resolved`).
+- Ordinary (in-truth) quarantine, which rewrote a whole projection row, and stock-debiting discard / write-off inferred from a variant's single positive row are retired.
+- **Open gap — GH-1240:** ordinary Pick incidents have no closing disposition. Their missing/defective units stay reserved at the allocation location (`recordShortPickPhysicalOutcome` releases only units found) and no resolution settles that residual reservation yet.
+- Reconciliation conflicts close only through canonical physical recount/finalization, never through Problem Center actions.
 
 ---
 
@@ -147,11 +165,11 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 | Method | Path | Handler | Status | Notes |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/wms/problem-center` | `httpGetProblemTasks` | ✅ LIVE | Role-filtered list of open/investigating tasks |
-| `POST` | `/api/v1/wms/problem-center` | `httpCreateProblemTask` | ✅ LIVE | Creates task + PROB label + print job |
+| `POST` | `/api/v1/wms/problem-center` | `httpCreateProblemTask` | ✅ LIVE | Creates task + PROB label + print job. GH-1238: operator-reportable classifications only (Receive, Pack, Pick, Stow taxonomies); system-owned types (`returns/*`, `order_cancelled`, …) and non-positive-integer quantities → 400 before any write |
 | `POST` | `/api/v1/wms/problem-center/:taskId/resolve` | `httpResolveProblemTask` | ✅ LIVE | Resolves with action + cascade |
 | `GET` | `/api/v1/wms/problem-center/:taskId/replacement` | `httpFindReplacementForTask` | ✅ LIVE | Finds same variant at other locations with sufficient stock |
 | `GET` | `/api/v1/wms/problem-center/pick-exceptions` | `httpGetProblemCenterExceptions` | ✅ LIVE | Legacy: reads `pick_exceptions` table directly |
-| `POST` | `/api/v1/wms/problem-center/pick-exceptions/:exceptionId/resolve` | `httpResolveException` | ✅ LIVE | Legacy: resolves `pick_exceptions` row (note-only, no cascade) |
+| `POST` | `/api/v1/wms/problem-center/pick-exceptions/:exceptionId/resolve` | `httpRetiredPickExceptionResolve` | ❌ RETIRED (GH-1238) | Returns `410 PICK_EXCEPTION_DIRECT_RESOLVE_RETIRED`, writes nothing. It previously closed the Pick exception and paired task from a note alone |
 
 ### 6.1 Key Request/Response Shapes
 
@@ -185,10 +203,9 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 // Response 200
 { "problem_task_id": "uuid", "status": "resolved", "resolution_action": "discard" }
 
-// Response 409 for discard/write_off when stock location is ambiguous/absent
-// or when the full task quantity exceeds available inventory at that location.
-// Failed resolutions roll back: task stays open and no movement/truth mutation is written.
-{ "error": "Multiple stock locations exist; select the affected location before writing off inventory" }
+// Response 409 (GH-1238) when the source × type × action is not eligible or its
+// persisted evidence is missing. Rejected before any write.
+{ "error": "This resolution is not supported for this incident", "code": "RESOLUTION_NOT_ELIGIBLE", "reason": "action_not_supported_for_incident" }
 ```
 
 **`GET /api/v1/wms/problem-center/:taskId/replacement`**
@@ -251,6 +268,8 @@ Maps `problem_center_tasks` shape → `PickException` contract (legacy type stil
 
 ### 8.3 Resolve Flow — Current State [PARTIAL]
 
+> **Superseded.** INV-PC-03 (v1.1) rewired the modal to `httpResolveProblemTask`; GH-1238 (2026-10-10) retired the legacy endpoint (410). Options now mirror the §4.2 eligibility policy: no hidden default action, the pre-selected option is shown as checked, and incidents without a safe action show "Needs investigation". The text below is historical.
+
 The resolve button opens a modal. Current modal accepts a **free-text note only** and calls `POST /api/v1/wms/problem-center/pick-exceptions/:exceptionId/resolve` (the **legacy endpoint** — not `httpResolveProblemTask`).
 
 This means:
@@ -311,6 +330,8 @@ Inventory truth reflects reality
 ---
 
 ## 11. Resolution Cascade — Live Implementation
+
+> **GH-1238 (2026-10-10):** the in-truth `discard` / `write_off` debits described below are retired — those actions are now eligible only for GH-1202 outside-truth incidents, where they are record-only (§4.2). Problem Center resolution no longer creates `trigger: 'problem_center'` stow tasks; `re_stow` uses the credit-only `order_cancelled_mid_pick` / `return_restock` triggers. The sections below are kept as history.
 
 ### `re_stow` (LIVE — INV-PC-04 / INV-BLOCK-11)
 
@@ -481,3 +502,13 @@ The Problem Center remains a supervisor resolution queue only. Operators interac
 **Table column changes:** REQ → QTY, FOUND removed, BATCH → PROB LABEL, BIN added.
 
 **`useProblemCenter`:** Direct field mapping — no stub values. `total_unresolved` counts `open` + `investigating` status rows only.
+
+### v1.4 — October 10, 2026 (GH-1238 / PC-SAFE-01)
+
+- Fail-closed, default-deny resolution eligibility (§4.2), enforced in `problemCenterResolutionPolicy.ts`; `409 RESOLUTION_NOT_ELIGIBLE` with zero side effects.
+- Every terminal status rejects re-resolution.
+- In-truth quarantine (whole-row rewrite) and inferred-stock discard / write-off removed; GH-1202 outside-truth behaviour unchanged.
+- Generic `POST /problem-center` rejects system-owned classifications and malformed quantities (400).
+- Legacy `POST /problem-center/pick-exceptions/:exceptionId/resolve` retired (410); Order Detail hands off to Problem Center instead of closing Pick exceptions.
+- Resolve dialog: no hidden `write_off` default, radio semantics, truthful Quarantine copy.
+- Open: ordinary Pick recovery/settlement — GH-1240.

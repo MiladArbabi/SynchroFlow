@@ -13,7 +13,7 @@ import { useState } from 'react';
 import {
   Box, Typography, Chip, Button, Alert,
   TextField, Dialog, DialogTitle, DialogContent,
-  DialogActions, Divider, useTheme,
+  DialogActions, Divider, ButtonBase, useTheme,
 } from '@mui/material';
 import { PackageX, Filter, CheckCircle } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
@@ -22,7 +22,7 @@ export type ProblemTask = {
   problem_task_id: string;
   lasyncro_variant_id: string;
   exception_type: string;
-  source: 'pick' | 'pack' | 'stow' | 'receive' | 'returns';
+  source: 'pick' | 'pack' | 'stow' | 'receive' | 'returns' | 'reconciliation' | 'count';
   quantity: number;
   prob_label: string | null;
   problem_bin_location: string | null;
@@ -76,55 +76,60 @@ const STAGE_COLORS: Record<string, string> = {
 
 const PER_PAGE_DEFAULT = 10;
 
-// Maps exception type → sensible default resolution action
-const DEFAULT_ACTION: Record<string, string> = {
-  item_missing:         'write_off',
-  short_pick:           'write_off',
-  product_defect:       'discard',
-  packaging_defect:     're_stow',
-  wrong_item:           'find_replacement',
-  // INV-BLOCK-10b: cancelled units are good stock in the problem bin,
-  // not shrinkage. Default to putting them back on a shelf.
-  order_cancelled:      're_stow',
-  stow_failure:         're_stow',
-  receive_rejection:    'quarantine',
-  repackaging_required: 're_stow',
-  return_shortfall:     'write_off',
-};
+// GH-1238: resolution choices mirror the backend's default-deny eligibility
+// (apps/backend/src/services/wms/problemCenterResolutionPolicy.ts). The backend
+// stays authoritative — it re-checks persisted evidence and answers 409 — but
+// the dialog never offers, defaults to, or submits an action outside this list.
+type ResolutionOption = { action: string; label: string; description: string };
 
-// Resolution options shown in dialog
-// forTypes: if set, only shown when exception matches one of those types
-const RESOLUTION_OPTIONS: { action: string; label: string; description: string; forTypes?: string[] }[] = [
-  {
+const RESOLUTION_OPTION: Record<string, ResolutionOption> = {
+  re_stow: {
     action: 're_stow',
     label: 'Re-stow',
-    description: 'Item is fine — place it back into the correct bin location.',
-    forTypes: ['packaging_defect', 'stow_failure', 'wrong_item', 'repackaging_required', 'order_cancelled'],
+    description: 'The unit is sellable — create a recovery stow task to place it in a bin.',
   },
-  {
+  find_replacement: {
     action: 'find_replacement',
     label: 'Find Replacement',
-    description: 'Locate same SKU at an alternate bin and fulfil the order from there.',
-    forTypes: ['wrong_item', 'item_missing', 'short_pick'],
+    description: 'Look for the same SKU at another bin. The incident stays open for investigation.',
   },
-  {
+  discard: {
     action: 'discard',
     label: 'Discard',
-    description: 'Item is damaged beyond use. Removes from inventory permanently.',
-    forTypes: ['product_defect', 'packaging_defect', 'receive_rejection'],
+    description: 'The unit is damaged beyond use and is disposed of.',
   },
-  {
+  write_off: {
     action: 'write_off',
     label: 'Write Off',
-    description: 'Item is unaccounted for. Records as shrinkage and removes from inventory.',
-    forTypes: ['item_missing', 'short_pick', 'order_cancelled', 'return_shortfall'],
+    description: 'The unit is unaccounted for and is recorded as a loss.',
   },
-  {
+  quarantine: {
     action: 'quarantine',
     label: 'Quarantine',
-    description: 'Hold item for further investigation. No inventory change.',
+    description: 'Hold the unit in the problem bin, where it is recorded as problem-bin stock.',
   },
-];
+};
+
+/** Ordered: the first option is the pre-selected (and visibly selected) one. */
+function resolutionOptionsFor(source: string, exceptionType: string): ResolutionOption[] {
+  const pick = (...actions: string[]) => actions.map((a) => RESOLUTION_OPTION[a]);
+  if (
+    (source === 'pick' && exceptionType === 'order_cancelled') ||
+    (source === 'returns' && exceptionType === 'repackaging_required')
+  ) {
+    return pick('re_stow', 'quarantine', 'discard', 'write_off');
+  }
+  // Ordinary Pick incidents: investigation only. Their units stay reserved at
+  // the allocation location and no path settles that reservation yet
+  // (GH-1240), so Write Off / Discard are not offered.
+  if (
+    (source === 'pick' && (exceptionType === 'item_missing' || exceptionType === 'short_pick')) ||
+    ((source === 'pick' || source === 'pack') && (exceptionType === 'wrong_item' || exceptionType === 'missing_item'))
+  ) {
+    return pick('find_replacement');
+  }
+  return [];
+}
 
 // ── Age formatter ─────────────────────────────────────────────
 const fmtAge = (iso: string): string => {
@@ -152,8 +157,8 @@ function ProblemCenterModuleFT2Inner({
     else { setSortField(field); setSortDir('asc'); }
     setPage(1);
   };
-  const [resolveDialog, setResolveDialog] = useState<{ id: string; exceptionType: string } | null>(null);
-  const [resolutionAction, setResolutionAction] = useState('write_off');
+  const [resolveDialog, setResolveDialog] = useState<{ id: string; options: ResolutionOption[] } | null>(null);
+  const [resolutionAction, setResolutionAction] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -182,17 +187,20 @@ function ProblemCenterModuleFT2Inner({
   const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
   const handleResolve = async () => {
-    if (!canResolve || !resolveDialog) return;
+    if (!canResolve || !resolveDialog || !resolutionAction) return;
+    // Never submit an action that is not offered for this incident.
+    if (!resolveDialog.options.some((o) => o.action === resolutionAction)) return;
     setResolving(true);
     setResolveError(null);
     try {
       await onResolve(resolveDialog.id, resolutionAction, resolutionNote);
       setResolveDialog(null);
       setResolutionNote('');
-      setResolutionAction('write_off');
+      setResolutionAction(null);
       onRefresh();
-    } catch {
-      setResolveError('Failed to resolve exception. Try again.');
+    } catch (err) {
+      const serverMessage = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      setResolveError(typeof serverMessage === 'string' ? serverMessage : 'Failed to resolve exception. Try again.');
     } finally {
       setResolving(false);
     }
@@ -303,6 +311,7 @@ function ProblemCenterModuleFT2Inner({
               const stageColor = STAGE_COLORS[t.source] ?? 'var(--ink-4)';
               const label = t.variant_title && t.variant_title !== 'Default Title' ? t.variant_title : t.sku ?? t.lasyncro_variant_id.slice(0, 8).toUpperCase();
               const isResolved = t.status === 'resolved' || t.status === 'discarded' || t.status === 'returned_to_supplier';
+              const options = resolutionOptionsFor(t.source, t.exception_type);
 
               return (
                 <Box key={t.problem_task_id}>
@@ -342,9 +351,15 @@ function ProblemCenterModuleFT2Inner({
                     {/* Action */}
                     {isResolved ? (
                       <Typography sx={{ fontSize: 11, color: theme.palette.success.main, fontWeight: 500 }}>Resolved</Typography>
-                    ) : !canResolve ? null : (
+                    ) : !canResolve ? null : options.length === 0 ? (
+                      // GH-1238: no verified safe generic resolution — a
+                      // truthful investigation state, never a Resolve control.
+                      <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 500 }}>
+                        Needs investigation
+                      </Typography>
+                    ) : (
                       <Box
-                        onClick={() => { setResolveDialog({ id: t.problem_task_id, exceptionType: t.exception_type }); setResolutionNote(''); setResolutionAction(DEFAULT_ACTION[t.exception_type] ?? 'write_off'); setResolveError(null); }}
+                        onClick={() => { setResolveDialog({ id: t.problem_task_id, options }); setResolutionNote(''); setResolutionAction(options[0].action); setResolveError(null); }}
                         sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                       >
                         Resolve →
@@ -396,16 +411,16 @@ function ProblemCenterModuleFT2Inner({
 
           {/* Action selector */}
           <Box>
-            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-4)', mb: 1 }}>RESOLUTION ACTION</Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {RESOLUTION_OPTIONS.filter(o =>
-                !o.forTypes || o.forTypes.includes(resolveDialog?.exceptionType ?? '')
-              ).map((opt) => (
-                <Box
+            <Typography id="pc-resolution-action-label" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-4)', mb: 1 }}>RESOLUTION ACTION</Typography>
+            <Box role="radiogroup" aria-labelledby="pc-resolution-action-label" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {(resolveDialog?.options ?? []).map((opt) => (
+                <ButtonBase
                   key={opt.action}
+                  role="radio"
+                  aria-checked={resolutionAction === opt.action}
                   onClick={() => setResolutionAction(opt.action)}
                   sx={{
-                    display: 'flex', flexDirection: 'column', px: 1.5, py: 1,
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', px: 1.5, py: 1,
                     borderRadius: '6px', cursor: 'pointer',
                     border: resolutionAction === opt.action
                       ? '0.5px solid var(--accent)'
@@ -420,7 +435,7 @@ function ProblemCenterModuleFT2Inner({
                     {opt.label}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{opt.description}</Typography>
-                </Box>
+                </ButtonBase>
               ))}
             </Box>
           </Box>
@@ -438,7 +453,7 @@ function ProblemCenterModuleFT2Inner({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setResolveDialog(null)} sx={{ fontSize: 13 }}>Cancel</Button>
-          <Button variant="contained" onClick={() => void handleResolve()} disabled={resolving} sx={{ fontSize: 13 }}>
+          <Button variant="contained" onClick={() => void handleResolve()} disabled={resolving || !resolutionAction} sx={{ fontSize: 13 }}>
             {resolving ? 'Resolving…' : 'Confirm'}
           </Button>
         </DialogActions>

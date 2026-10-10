@@ -8,8 +8,8 @@
 // blocked order, see why + resolve it" modal body, and it couldn't be
 // reused while private to another page. Moved here (apps/frontend/src/
 // pages/orders/, NOT modules/shared) deliberately: this component
-// orchestrates five data hooks (useOrderDecision, useExecuteOrderDecision,
-// usePickExceptionsForOrder, useResolvePickException, useOrderDetail) plus
+// orchestrates four data hooks (useOrderDecision, useExecuteOrderDecision,
+// usePickExceptionsForOrder, useOrderDetail) plus
 // contexts/hooks that only exist inside the apps/frontend workspace —
 // modules/shared is a separate package with no access to those, confirmed
 // via package.json/import audit before this move. A "presentational only"
@@ -47,7 +47,7 @@ import {
   type ConstrainedOrder,
   type ConstrainedOrdersResponse,
 } from './useConstrainedOrders';
-import { usePickExceptionsForOrder, useResolvePickException } from './usePickExceptionsForOrder';
+import { usePickExceptionsForOrder } from './usePickExceptionsForOrder';
 import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { ShippingAddressDialog } from './ShippingAddressDialog';
 import type {
@@ -530,7 +530,6 @@ export function OrderDetailModalBody({
   } = useExecuteOrderDecision();
 
   const exceptionsQuery = usePickExceptionsForOrder(orderId);
-  const resolveException = useResolvePickException(orderId);
   const detailQuery = useOrderDetail(orderId);
   const cachedRow = useCachedConstrainedRow(orderId);
   /**
@@ -1401,10 +1400,13 @@ export function OrderDetailModalBody({
                   {exc.resolved ? (
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#4CAF7A' }}>Resolved</Typography>
                   ) : (
-                    <Button size="small" variant="outlined" disabled={resolveException.isPending}
-                      onClick={() => resolveException.mutate({ exceptionId: exc.pick_exception_id, resolutionNote: 'Resolved from Order detail' })}
+                    // GH-1238: closure needs canonical recovery evidence, which
+                    // lives in Problem Center — a truthful handoff, not a
+                    // direct close of the exception from here.
+                    <Button size="small" variant="outlined"
+                      onClick={() => { onClose?.(); navigate('/problem-center'); }}
                       sx={{ fontSize: 11, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
-                      Resolve
+                      Open Problem Center
                     </Button>
                   )}
                 </Box>

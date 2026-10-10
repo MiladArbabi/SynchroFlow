@@ -638,59 +638,88 @@ it('B — an owner hold/reject decision holds the order in its batch and never r
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// C. OPERATIONAL RESOLUTION IS NOT PACK AUTHORIZATION
+// C. UNSAFE RECOVERY OF MISSING UNITS IS REFUSED; CUSTODY STAYS TRUTHFUL
 // ─────────────────────────────────────────────────────────────────────────────
 
-it('C — resolving the Pick exception settles custody only; resolved=true is not Pack authorization', async () => {
+/**
+ * Problem Center / recovery state that an operational resolution could touch,
+ * scoped to this fixture's shop.
+ */
+async function recoveryState(f: Fixture) {
+  return withTenant(f.shopId, async (trx) => ({
+    task: await trx('problem_center_tasks')
+      .where({ shop_id: f.shopId, problem_task_id: f.affected.problemTaskId })
+      .first('status', 'resolution_action', 'resolved_by', 'resolved_at'),
+    recoveryStowTasks: await trx('stow_tasks')
+      .where({ shop_id: f.shopId, source_task_id: f.affected.problemTaskId })
+      .select('stow_task_id'),
+    movementIds: (
+      await trx('inventory_movements').where({ shop_id: f.shopId }).pluck('lasyncro_inventory_movement_id')
+    ).map(String).sort(),
+    alerts: await trx('alerts')
+      .where({ shop_id: f.shopId }).orderBy('alert_key')
+      .select('alert_key', 'is_active'),
+  }));
+}
+
+/**
+ * GH-1238 corrected contract. The two missing short-pick units were never
+ * recovered, so a Re-stow would create recovery work for units nobody holds
+ * and close the incident on a false premise. It is refused (409) with zero
+ * side effects; the Pick exception and the Problem Center incident stay
+ * truthfully open; nothing authorizes Pack; healthy work continues.
+ *
+ * COVERAGE GAP (GH-1240): the previous positive scenario — "a genuinely
+ * completed operational recovery of these units still does not authorize
+ * Pack" — has no safe, evidence-backed execution path today. The missing
+ * units remain reserved at the allocation location and no resolution settles
+ * that residual reservation, so no eligible action can close this incident.
+ * packEligibility.service.ts still never reads pick_exceptions.resolved.
+ */
+it('C — an unsafe Re-stow of missing short-pick units is refused with zero side effects; custody stays truthful; nothing authorizes Pack', async () => {
   const f = await fixture();
 
-  /**
-   * re_stow is the operational resolution chosen here: it is a genuine
-   * physical-custody outcome for missing units, it resolves the task outright
-   * (unlike find_replacement, which parks it in 'investigating' and
-   * deliberately does not cascade), and its only side effect is a pending
-   * stow task — no inventory_truth preconditions, unlike discard / write_off /
-   * quarantine. That keeps this test about Pack authorization.
-   */
-  const resolve = await resolveProblemTask(f, f.affected.problemTaskId, 're_stow');
-  expect({ status: resolve.status, body: resolve.body }).toMatchObject({
-    status: 200,
-    body: {
-      problem_task_id: f.affected.problemTaskId,
-      resolved: true,
-      resolution_action: 're_stow',
-      status: 'resolved',
-    },
+  const before = await state(f);
+  const recoveryBefore = await recoveryState(f);
+  expect(recoveryBefore.task).toEqual({
+    status: 'open', resolution_action: null, resolved_by: null, resolved_at: null,
   });
+  expect(recoveryBefore.recoveryStowTasks).toEqual([]);
 
-  const resolvedState = await state(f);
-  // Production cascade (BL-08): resolving the task closes the pick exception.
+  const resolve = await resolveProblemTask(f, f.affected.problemTaskId, 're_stow');
+  expect({ status: resolve.status, code: resolve.body?.code })
+    .toEqual({ status: 409, code: 'RESOLUTION_NOT_ELIGIBLE' });
+
+  // Zero side effects: incident, Pick exception, recovery work, ledger,
+  // alerts, Pack evidence, decisions, constraints and warehouse status.
+  expect(await recoveryState(f)).toEqual(recoveryBefore);
+  const after = await state(f);
+  expect(after).toEqual(before);
   expect(
-    resolvedState.exceptions.find(
-      (e: any) => e.pick_exception_id === f.affected.pickExceptionId
-    ).resolved
-  ).toBe(true);
+    after.exceptions.find((e: any) => e.pick_exception_id === f.affected.pickExceptionId).resolved
+  ).toBe(false);
 
-  // No commercial Pack authorization was created by the operational action.
-  expect(resolvedState.decisions).toEqual([]);
+  // No commercial Pack authorization exists.
+  expect(after.decisions).toEqual([]);
 
-  // Still not ordinary ready-to-pack work.
+  // Affected order stays out of ordinary Pack; the healthy sibling continues.
   const ready = await readyToPack(f);
   expect(ready.status).toBe(200);
   expect(orderIdsIn(ready.body.orders ?? [])).not.toContain(f.affected.orderId);
+  expect(orderIdsIn(ready.body.orders ?? [])).toContain(f.healthy.orderId);
 
-  // Still not packable at the execution surface.
+  // Direct Pack scan on the short line fails closed without mutation.
   expect((await claimPack(f)).status).toBe(200);
-  const before = await state(f);
+  const beforeScan = await state(f);
 
   const scan = await packScan(
     f, f.affected.orderId, f.affected.shortLineItemId, f.affected.shortVariantId, 3
   );
   expectFailClosed(scan);
 
-  const after = await state(f);
-  expect(scansForOrder(after, f.affected.orderId)).toEqual([]);
-  expect(Number(after.batch.units_packed)).toBe(Number(before.batch.units_packed));
+  const afterScan = await state(f);
+  expect(scansForOrder(afterScan, f.affected.orderId)).toEqual([]);
+  expect(Number(afterScan.batch.units_packed)).toBe(Number(beforeScan.batch.units_packed));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

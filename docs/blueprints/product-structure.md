@@ -356,11 +356,17 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
      entirely) had **zero** alert-clearing logic — alerts were orphaned
      permanently, not just mismatched. Fixed + verified live (raised a
      real exception, resolved it, confirmed `alerts.is_active` flipped).
+     **GH-1238 (2026-10-10):** this endpoint is now retired (410, no
+     writes) — Pick exceptions close only through canonical Problem Center
+     resolution.
    - **ISS-054:** the generic task-creation endpoint (`httpCreateProblemTask`)
      accepted a client-supplied `source_exception_id` with zero validation
      — confirmed to be the **primary** creation path for 5+ web/mobile call
      sites, not a rare manual fallback. Now validates the source enum and
      verifies the exception row exists and belongs to the shop before insert.
+     **GH-1238 (2026-10-10):** it also rejects system-owned classifications
+     (`returns/*`, `order_cancelled`, …) and non-positive-integer quantities
+     with 400 before any write.
    - **Deferred, not yet fixed:** receive-exception resolution has no
      dedicated endpoint at all (mirrors pick's gap before ISS-065, but
      unresolved) — tracked as GitHub issue **#1039**, scope corrected

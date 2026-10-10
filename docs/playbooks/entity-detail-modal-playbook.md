@@ -135,6 +135,8 @@ router.post('/problem-center/:taskId/resolve', ...);
 
 **Both endpoints are fully implemented, fully correct, and have ZERO frontend consumer anywhere** — confirmed via `grep -rln "problem-center/pick-exceptions" apps/frontend/src` returning empty.
 
+> **GH-1238 (2026-10-10):** the resolve endpoint above is retired — it answers `410 PICK_EXCEPTION_DIRECT_RESOLVE_RETIRED` and writes nothing. It closed the exception and its paired Problem Center task from a note alone, without recovery evidence. The list endpoint is unchanged.
+
 **The lesson, stated plainly:** `problem_center_tasks` having `'pick'` in its source enum is a *red herring*, not evidence of intended integration. The two tables (`pick_exceptions`, `problem_center_tasks`) have **always** had fully separate, complete resolve flows — they just happen to share a URL prefix (`/problem-center/`) and similar-sounding names, which is what caused the confusion. **Before assuming any "missing integration" between two tables in this codebase, check for a route file's own inline comments first — they're often more current and more honest than a derived theory.**
 
 ### 2.4 — ✅ done
@@ -144,6 +146,8 @@ router.post('/problem-center/:taskId/resolve', ...);
 ### 2.5 — ✅ all six steps done
 
 What shipped: `EntityDetailModal` for Orders merges `useOrderDecision` (constraint + recommended action, with the "Mark as Resolved" button ported from the now-deleted `OrderDetailPanel.tsx`), `usePickExceptionsForOrder`/`useResolvePickException` (new hook, per-exception audit-trail resolve — does NOT unblock the order, see §2.3), and `useOrderDetail` (line items, total, tracking — title and full content). 
+> **GH-1238 (2026-10-10):** `useResolvePickException` is removed. Order Detail still lists Pick exceptions read-only; an open exception offers **Open Problem Center** (`onClose()` then `navigate('/problem-center')`), not a direct Resolve.
+
 ORD-03's four `navigate()` calls in `OrdersModuleFT2.tsx` now call `onOrderClick`, except the constraint-free "Release →" branch, which redirects to `/orders/flow` per explicit product decision (a clean SLA-breached pool order should be released, not inspected). **Superseded 2026-07-01 — see §2.9**: the modal itself now offers in-place resolution for this exact state (constraint-free, unbatched orders), so this note describes the click-to-open behavior only, not the full resolution path. The `['order-detail', orderId]` invalidation was added to `useExecuteOrderDecision`'s `onSettled`. ORD-01 fixed (`/orders` → `/orders/flow`).
 
 ### 2.6 Cleanup, and two corrected assumptions

@@ -21,7 +21,7 @@ import {
   httpConfirmPackScan,
   httpCompletePack,
   httpGetProblemCenterExceptions,
-  httpResolveException,
+  httpRetiredPickExceptionResolve,
   httpConfirmShipment,
   httpGetStowTasks,
   httpClaimStowTask,
@@ -283,14 +283,15 @@ router.post(
   requireAction('wms:pick:scan'),
   httpConfirmPickScan
 );
-// Resolves a pick exception under problem-center domain
+// GH-1238 / PC-SAFE-01 W4 — retired. This route closed a pick exception and
+// its paired Problem Center task from a note alone. It now answers 410 and
+// writes nothing; closure is POST /problem-center/:taskId/resolve
+// (wms:problem:resolve). Authenticated so the retirement is not an
+// unauthenticated probe surface.
 router.post(
   '/problem-center/pick-exceptions/:exceptionId/resolve',
   authenticateToken,
-  requireFt2,
-  requireCapability('warehouse.problem_center'),
-  requireAction('wms:exception:report'),
-  httpResolveException
+  httpRetiredPickExceptionResolve
 );
 
 // Resolve a problem_center_tasks row (re_stow / discard / return / write_off)

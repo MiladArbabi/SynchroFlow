@@ -43,6 +43,14 @@ import {
  * effects and Problem task — observable as one atomic unit at this seam.
  */
 import { createProblemCenterTask } from '../../services/wms/problemCenterTask.service.js';
+import {
+  evaluateProblemResolutionEligibility,
+  isGenericProblemClassificationAllowed,
+  isValidProblemQuantity,
+  PROBLEM_RESOLUTION_ACTIONS,
+  RESOLVABLE_PROBLEM_STATUSES,
+  type ProblemResolutionAction,
+} from '../../services/wms/problemCenterResolutionPolicy.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import {
   getBatchPackEligibility,
@@ -3794,106 +3802,34 @@ export const httpGetProblemCenterExceptions = async (req: Request, res: Response
 // ─────────────────────────────────────────
 // POST /api/v1/wms/problem-center/:exceptionId/resolve
 // ─────────────────────────────────────────
-export const httpResolveException = async (req: Request, res: Response) => {
-  const shopId = req.user?.shopId;
-  const userId = req.user?.userId;
-  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
-
-  const { exceptionId } = req.params;
-  const { resolution_note } = req.body;
-
-  if (!exceptionId) return res.status(400).json({ error: 'exceptionId is required' });
-  if (!resolution_note || typeof resolution_note !== 'string' || !resolution_note.trim()) {
-    return res.status(400).json({ error: 'resolution_note is required' });
-  }
-
-  try {
-    await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-      const exception = await trx('pick_exceptions')
-        .where({ pick_exception_id: exceptionId, shop_id: shopId })
-        .select('resolved', 'pick_batch_id')
-        .first();
-
-      if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
-      if (exception.resolved) throw new Error('EXCEPTION_ALREADY_RESOLVED');
-
-      await trx('pick_exceptions')
-        .where({ pick_exception_id: exceptionId })
-        .update({
-          resolved: true,
-          resolved_by: userId,
-          resolved_at: new Date(),
-          resolution_note: resolution_note.trim(),
-          updated_at: new Date(),
-        });
-
-      /**
-       * BL-05 — close the paired Problem Center task in the same transaction.
-       * Without this, resolving here would leave the task open forever and the
-       * two surfaces would disagree. Scoped by source_exception_id + shop_id.
-       */
-      await trx('problem_center_tasks')
-        .where({ source_exception_id: exceptionId, shop_id: shopId })
-        .whereIn('status', ['open', 'investigating'])
-        .update({
-          status: 'resolved',
-          resolved_by: userId,
-          resolved_at: new Date(),
-          resolution_notes: resolution_note.trim(),
-          updated_at: new Date(),
-        });
-
-      // ISS-065: this handler previously never cleared the alert fired by
-      // firePickExceptionAlert (wmsAlerts.service.ts) on exception report,
-      // which is keyed on entity_id = pick_batch_id. Unlike the
-      // problem_center_tasks resolve path (ISS-030), this handler already
-      // has pick_batch_id directly — no join needed.
-      // NOTE: a batch can have multiple concurrent pick exceptions sharing
-      // one alert_key (wms:exception:pick:{batchId}/wms:exception:pack:
-      // {batchId}) — deactivating here on a single exception's resolve is
-      // correct only when it's the last unresolved exception for that
-      // batch+stage. Checked explicitly below rather than assumed.
-      const remainingUnresolved = await trx('pick_exceptions')
-        .where({ pick_batch_id: exception.pick_batch_id, shop_id: shopId, resolved: false })
-        .count('* as count')
-        .first();
-
-      if (Number(remainingUnresolved?.count ?? 0) === 0) {
-        await trx('alerts')
-          .where({ shop_id: shopId, entity_id: exception.pick_batch_id, is_active: true })
-          .andWhere('alert_type', 'in', ['wms_pick_exception', 'wms_pack_exception'])
-          .update({ is_active: false, updated_at: new Date() });
-      }
-
-      console.info('[WMS_EXCEPTION_RESOLVED]', {
-        pick_exception_id: exceptionId,
-        resolved_by: userId,
-        shopId,
-        remaining_unresolved: Number(remainingUnresolved?.count ?? 0),
-      });
-    });
-
-    return res.status(200).json({ pick_exception_id: exceptionId, resolved: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message === 'EXCEPTION_NOT_FOUND') return res.status(404).json({ error: 'Exception not found' });
-    if (message === 'EXCEPTION_ALREADY_RESOLVED') return res.status(409).json({ error: 'Exception already resolved' });
-    console.error('[WMS_EXCEPTION_RESOLVE_FAILED]', { shopId, userId, exceptionId, error: message });
-    return res.status(500).json({ error: `Failed to resolve exception: ${message}` });
-  }
+/**
+ * GH-1238 / PC-SAFE-01 W4 — the legacy direct Pick-exception resolution
+ * (POST /problem-center/pick-exceptions/:exceptionId/resolve) is retired. It
+ * closed the pick exception and its paired Problem Center task from a free-text
+ * note, with no recovery evidence and for any role holding
+ * wms:exception:report. Closure now goes only through the canonical,
+ * management-authorized POST /problem-center/:taskId/resolve. Explicit 410 so
+ * stale clients get a truthful answer instead of a silent 404.
+ */
+export const httpRetiredPickExceptionResolve = async (_req: Request, res: Response) => {
+  return res.status(410).json({
+    error: 'Pick exceptions are resolved in Problem Center. This endpoint has been retired.',
+    code: 'PICK_EXCEPTION_DIRECT_RESOLVE_RETIRED',
+  });
 };
 
 // ─────────────────────────────────────────
 // POST /api/v1/wms/problem-center/:taskId/resolve
 // ─────────────────────────────────────────
-// Resolves an open problem_center_tasks row.
-// resolution_action drives downstream inventory impact (not yet implemented — INV-03):
-//   re_stow   → creates new stow task, item re-enters inventory
-//   discard   → writes 'damage' inventory_movement, decrements inventory_truth
-//   return    → future: return PO line
-//   write_off → writes 'shrinkage' inventory_movement, decrements inventory_truth
+// Resolves an open/investigating problem_center_tasks row.
+// GH-1238: eligibility is default-deny (problemCenterResolutionPolicy.ts). An
+// unsupported source × exception_type × action, or missing persisted evidence
+// for the stock effect, is rejected 409 before any write.
+//   re_stow   → recovery stow task (outside-truth incidents only)
+//   discard   → outside-truth incidents only; record-only, no stock change
+//   write_off → outside-truth incidents only; record-only, no stock change
+//   quarantine → credit-only problem-bin placement (outside-truth incidents only)
+//   find_replacement → 'investigating', no stock effect
 export const httpResolveProblemTask = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
@@ -3902,11 +3838,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const { resolution_action, resolution_notes } = req.body;
 
-  const VALID_ACTIONS = ['re_stow', 'discard', 'write_off', 'quarantine', 'find_replacement'];
   if (!taskId) return res.status(400).json({ error: 'taskId is required' });
-  if (!resolution_action || !VALID_ACTIONS.includes(resolution_action)) {
-    return res.status(400).json({ error: `resolution_action must be one of: ${VALID_ACTIONS.join(', ')}` });
+  if (!resolution_action || !PROBLEM_RESOLUTION_ACTIONS.includes(resolution_action)) {
+    return res.status(400).json({ error: `resolution_action must be one of: ${PROBLEM_RESOLUTION_ACTIONS.join(', ')}` });
   }
+  const action = resolution_action as ProblemResolutionAction;
+  let ineligibleReason: string | null = null;
 
   try {
     const result = await db.transaction(async (trx) => {
@@ -3924,21 +3861,32 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           'source_exception_id',
           'source',
           'exception_type',
-          'problem_bin_location'
+          'problem_bin_location',
+          'source_pick_exception_id'
         )
         .forUpdate()
         .first();
 
       if (!task) throw new Error('TASK_NOT_FOUND');
-      if (task.status === 'resolved') throw new Error('TASK_ALREADY_RESOLVED');
+      // GH-1238: every terminal status (resolved, discarded,
+      // returned_to_supplier) is final — not only 'resolved'.
+      if (!(RESOLVABLE_PROBLEM_STATUSES as readonly string[]).includes(task.status)) {
+        throw new Error('TASK_ALREADY_RESOLVED');
+      }
+
+      // GH-1238: default-deny eligibility, decided from persisted evidence
+      // before any incident, inventory, alert, stow or reconciliation write.
+      const eligibility = await evaluateProblemResolutionEligibility(trx, shopId, task, action);
+      if (!eligibility.eligible) {
+        ineligibleReason = eligibility.reason;
+        throw new Error('RESOLUTION_NOT_ELIGIBLE');
+      }
 
       // GH-1202: the physical unit these tasks represent is OUTSIDE
       // inventory_truth — a cancelled pick already left truth at Pick, and a
       // repackaging return was never credited at intake. Their resolution must
       // never select, debit or relocate an existing stock row.
-      const outsideTruth =
-        (task.exception_type === 'order_cancelled' && task.source === 'pick') ||
-        (task.exception_type === 'repackaging_required' && task.source === 'returns');
+      const outsideTruth = eligibility.basis === 'outside_truth';
 
       // Quarantine places that unit into the problem bin. Validate the
       // destination before any write: it must be an existing location that is
@@ -3984,88 +3932,11 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           updated_at: new Date(),
         });
 
-      // ── CASCADE: inventory_movements for write-off actions ──
-      // discard = physical damage (product destroyed)
-      // write_off = shrinkage (missing, unaccounted)
-      // GH-1202: an outside-truth unit's disposal changes no physical quantity.
-      // No movement, no truth write — the task resolution above is the record.
-      if (
-        !outsideTruth &&
-        (resolution_action === 'discard' || resolution_action === 'write_off')
-      ) {
-        const movementType = resolution_action === 'discard' ? 'damage' : 'shrinkage';
-
-        // INV-BLOCK-15: a write-off must own one physical stock location.
-        // Never apply one logical loss across every inventory_truth row for a variant.
-        const stockLocations = await trx('inventory_truth')
-          .where({
-            lasyncro_variant_id: task.lasyncro_variant_id,
-            shop_id: shopId,
-          })
-          .where('on_hand_quantity', '>', 0)
-          .select('available_quantity', 'on_hand_quantity', 'location_code');
-
-        if (stockLocations.length === 0) {
-          throw new Error('WRITE_OFF_LOCATION_NOT_FOUND');
-        }
-
-        if (stockLocations.length > 1) {
-          throw new Error('WRITE_OFF_LOCATION_AMBIGUOUS');
-        }
-
-        const [it] = stockLocations;
-
-        // INV-BLOCK-16: never silently truncate a problem-task write-off.
-        // If the full task quantity cannot be written, keep the task unresolved.
-        if (task.quantity > it.available_quantity) {
-          throw new Error('WRITE_OFF_INSUFFICIENT_AVAILABLE');
-        }
-
-        const writeQty = task.quantity;
-        if (writeQty > 0) {
-          await trx('inventory_movements').insert({
-            lasyncro_inventory_movement_id: trx.raw('gen_random_uuid()'),
-            lasyncro_variant_id: task.lasyncro_variant_id,
-            movement_type: movementType,
-            quantity_delta: -writeQty,
-            reference_type: 'problem_center_task',
-            reference_id: taskId,
-            location_code: it.location_code,
-            shop_id: shopId,
-            operator_id: userId,
-            triggered_by: 'problem_center',
-            occurred_at: new Date(),
-          });
-
-          const updatedTruthRows = await trx('inventory_truth')
-            .where({
-              lasyncro_variant_id: task.lasyncro_variant_id,
-              shop_id: shopId,
-              location_code: it.location_code,
-            })
-            .where('on_hand_quantity', '>=', writeQty)
-            .where('available_quantity', '>=', writeQty)
-            .update({
-              available_quantity: trx.raw(
-                'available_quantity - ?',
-                [writeQty]
-              ),
-              on_hand_quantity: trx.raw(
-                'on_hand_quantity - ?',
-                [writeQty]
-              ),
-            });
-
-          if (updatedTruthRows !== 1) {
-            throw new Error('WRITE_OFF_INSUFFICIENT_AVAILABLE');
-          }
-        }
-        console.info('[PROBLEM_CENTER_WRITE_OFF]', {
-          problem_task_id: taskId, movement_type: movementType,
-          qty_written: writeQty, variant_id: task.lasyncro_variant_id, shopId,
-        });
-        await enqueueShopSnapshotJob(trx, shopId);
-      }
+      // GH-1238: discard / write_off are eligible only for outside-truth
+      // incidents, whose disposal changes no physical quantity — no movement,
+      // no truth write; the task resolution above is the record. Ordinary
+      // (in-truth) disposition is refused by the policy until the residual
+      // reservation can be settled (GH-1240).
 
       // ── GH-1202: outside-truth quarantine — credit-only placement ─
       // The unit was outside truth, so it is credited into the validated
@@ -4120,6 +3991,8 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
               last_evaluated_at: now,
               updated_at: now,
             });
+          // The only inventory_truth write left in this handler.
+          await enqueueShopSnapshotJob(trx, shopId);
         }
 
         console.info('[PROBLEM_CENTER_QUARANTINE_CREDIT]', {
@@ -4132,49 +4005,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         });
       }
 
-      // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─
-      if (!outsideTruth && resolution_action === 'quarantine') {
-        if (!task.problem_bin_location) {
-          throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
-        }
-        const problemBin = task.problem_bin_location;
-
-        // INV-BLOCK-17: quarantine must own one physical stock location.
-        // Never rewrite every inventory_truth primary key for a split variant.
-        const stockLocations = await trx('inventory_truth')
-          .where({
-            lasyncro_variant_id: task.lasyncro_variant_id,
-            shop_id: shopId,
-          })
-          .where('on_hand_quantity', '>', 0)
-          .select('location_code');
-
-        if (stockLocations.length === 0) {
-          throw new Error('QUARANTINE_LOCATION_NOT_FOUND');
-        }
-
-        if (stockLocations.length > 1) {
-          throw new Error('QUARANTINE_LOCATION_AMBIGUOUS');
-        }
-
-        const [it] = stockLocations;
-
-        await trx('inventory_truth')
-          .where({
-            lasyncro_variant_id: task.lasyncro_variant_id,
-            shop_id: shopId,
-            location_code: it.location_code,
-          })
-          .update({ location_code: problemBin, updated_at: new Date() });
-
-        console.info('[PROBLEM_CENTER_QUARANTINE]', {
-          problem_task_id: taskId,
-          variant_id: task.lasyncro_variant_id,
-          source_location: it.location_code,
-          problem_bin: problemBin,
-          shopId,
-        });
-      }
+      // GH-1238: ordinary (in-truth) quarantine is never eligible — the old
+      // cascade rewrote the whole projection row into the problem bin without a
+      // ledger movement. Only the GH-1202 credit-only placement above remains.
 
       // INV-BLOCK-11: problem_bin_location remains the operational staging source.
       // INV-BLOCK-10b: an order-cancelled unit that was already picked has already
@@ -4185,12 +4018,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // its recovery is the credit-only return_restock placement, not a
       // problem_center transfer that would debit problem-bin truth.
       if (resolution_action === 're_stow') {
+        // GH-1238: re_stow is eligible only for outside-truth incidents. A
+        // 'problem_center' transfer would debit a problem bin that never
+        // received the unit, so there is no generic fallback trigger.
+        if (!outsideTruth) throw new Error('RESOLUTION_NOT_ELIGIBLE');
         const stowTrigger =
-          task.exception_type === 'order_cancelled' && task.source === 'pick'
-            ? 'order_cancelled_mid_pick'
-            : task.exception_type === 'repackaging_required' && task.source === 'returns'
-              ? 'return_restock'
-              : 'problem_center';
+          task.exception_type === 'order_cancelled' ? 'order_cancelled_mid_pick' : 'return_restock';
 
         await trx('stow_tasks').insert({
           shop_id: shopId,
@@ -4289,20 +4122,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     const message = getErrorMessage(err);
     if (message === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
     if (message === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });
-    if (message === 'WRITE_OFF_LOCATION_NOT_FOUND') {
-      return res.status(409).json({ error: 'No stock location exists for this write-off' });
-    }
-    if (message === 'WRITE_OFF_LOCATION_AMBIGUOUS') {
-      return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before writing off inventory' });
-    }
-    if (message === 'WRITE_OFF_INSUFFICIENT_AVAILABLE') {
-      return res.status(409).json({ error: 'Write-off quantity exceeds available inventory at the stock location' });
-    }
-    if (message === 'QUARANTINE_LOCATION_NOT_FOUND') {
-      return res.status(409).json({ error: 'No stock location exists for this quarantine' });
-    }
-    if (message === 'QUARANTINE_LOCATION_AMBIGUOUS') {
-      return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before quarantining inventory' });
+    if (message === 'RESOLUTION_NOT_ELIGIBLE') {
+      return res.status(409).json({
+        error: 'This resolution is not supported for this incident',
+        code: 'RESOLUTION_NOT_ELIGIBLE',
+        reason: ineligibleReason ?? 'action_not_supported_for_incident',
+      });
     }
     if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
       return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
@@ -5188,6 +5013,20 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
   }
   if (!VALID_PROBLEM_SOURCES.includes(source)) {
     return res.status(400).json({ error: `source must be one of: ${VALID_PROBLEM_SOURCES.join(', ')}` });
+  }
+  // GH-1238: validated before any write — a malformed quantity is a client
+  // error, never a 500 or a persisted task.
+  if (!isValidProblemQuantity(quantity)) {
+    return res.status(400).json({ error: 'quantity must be a positive integer' });
+  }
+  // GH-1238: this client-facing endpoint records operator-reported incidents
+  // only. System-owned classifications (returns/*, order_cancelled, …) have
+  // server writers and would otherwise unlock outside-truth stock effects.
+  if (!isGenericProblemClassificationAllowed(source, exception_type)) {
+    return res.status(400).json({
+      error: 'This incident type cannot be reported for this source',
+      code: 'PROBLEM_CLASSIFICATION_NOT_ALLOWED',
+    });
   }
   try {
     const result = await db.transaction(async (trx) => {
