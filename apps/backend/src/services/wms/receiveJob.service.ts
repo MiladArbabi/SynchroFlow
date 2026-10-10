@@ -506,8 +506,18 @@ export async function closeReceiveJob(
     throw new Error('[RECEIVE_JOB_CLOSE] Actual delivery date is required');
   }
 
+  /**
+   * CLOSE SERIALIZATION (GH-1243 / RECEIVE-CLOSE-SAFE)
+   * ---------------------------------------------------
+   * The job row lock is taken before the status check and before any write.
+   * A concurrent close of the same job waits here, then re-reads the
+   * committed 'closed' status and is refused as already closed, instead of
+   * re-applying every additive write below (quantity_received, total_pos,
+   * inventory_truth, stow_tasks) against an already-closed job.
+   */
   const job = await trx('receive_jobs')
     .where({ receive_job_id: receiveJobId, shop_id: shopId })
+    .forUpdate()
     .first();
 
   if (!job) throw new Error(`[RECEIVE_JOB_CLOSE] Job not found: ${receiveJobId}`);
@@ -638,7 +648,7 @@ export async function closeReceiveJob(
       RECEIVE_NAMESPACE
     );
 
-    await trx('inventory_movements')
+    const insertedMovements = await trx('inventory_movements')
       .insert({
         lasyncro_inventory_movement_id: movementId,
         lasyncro_variant_id: line.lasyncro_variant_id,
@@ -655,7 +665,22 @@ export async function closeReceiveJob(
         triggered_by: 'receive_job',      // traceability: source of movement
       })
       .onConflict(['device_event_id'])
-      .ignore();
+      .ignore()
+      .returning('lasyncro_inventory_movement_id');
+
+    /**
+     * GH-1243: the inbound_purchase movement is the receipt. Its identity is
+     * one per (job, variant) — receive_job_lines_variant_unique allows one
+     * linked line per variant — so a first close always inserts it. An
+     * ignored insert means this receipt already exists in the ledger: crediting
+     * truth, PO quantities or Stow on top of it would be a second receipt.
+     * Throwing rolls the whole close back.
+     */
+    if (insertedMovements.length !== 1) {
+      throw new Error(
+        `[RECEIVE_JOB_CLOSE] INBOUND_MOVEMENT_CONFLICT: inbound receipt already recorded for job ${receiveJobId} variant ${line.lasyncro_variant_id}`
+      );
+    }
 
     // Upsert inventory_truth — increment on_hand and available at ROOT
     await trx('inventory_truth')
@@ -756,16 +781,6 @@ export async function closeReceiveJob(
     isActive: false,
   });
 
-  console.info('[RECEIVE_JOB_CLOSED]', { shopId, receiveJobId, poId: job.po_id, newPoStatus, closedBy });
-    await writeAuditLog(trx, {
-      shopId,
-      operatorId: closedBy,
-      actionType: 'receive_close',
-      entityType: 'receive_job',
-      entityId: receiveJobId,
-      metadata: { po_id: job.po_id, po_status: newPoStatus },
-    });
-  
   console.info('[RECEIVE_JOB_CLOSED]', { shopId, receiveJobId, poId: job.po_id, newPoStatus, closedBy });
     await writeAuditLog(trx, {
       shopId,

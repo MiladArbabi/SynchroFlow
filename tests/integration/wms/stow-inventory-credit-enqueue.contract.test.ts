@@ -161,6 +161,9 @@ async function seedStowFixture(
         status: 'in_progress',
         trigger: opts.trigger,
         po_id: opts.trigger === 'inbound_stock' ? poId : null,
+        // Inbound Stow carries its Receive-line lineage (migration 0184);
+        // return_restock tasks have none.
+        receive_job_line_id: opts.trigger === 'inbound_stock' ? receiveJobLineId : null,
         claimed_by: claimedBy,
         claimed_at: new Date(),
       })

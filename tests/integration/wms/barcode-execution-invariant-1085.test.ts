@@ -333,16 +333,21 @@ async function stowTaskRow(shopId: number, stowTaskId: string) {
       .first('status', 'quantity', 'location_code', 'completed_at'));
 }
 
-/** An in-progress Receive-created Stow task, claimed and destined for a bin. */
+/**
+ * An in-progress Receive-created Stow task, claimed and destined for a bin.
+ * Carries its Receive-line lineage exactly as closeReceiveJob → createStowTask
+ * writes it (migration 0184), so confirmStow reaches the LSU checks.
+ */
 async function seedInProgressReceiveStow(
   shopId: number,
   userId: number,
-  opts: { lasyncroVariantId: string; quantity: number; locationCode: string }
+  opts: { lasyncroVariantId: string; receiveJobLineId: string; quantity: number; locationCode: string }
 ): Promise<string> {
   const [row] = await withTenant(shopId, (trx) =>
     trx('stow_tasks').insert({
       shop_id: shopId,
       lasyncro_variant_id: opts.lasyncroVariantId,
+      receive_job_line_id: opts.receiveJobLineId,
       quantity: opts.quantity,
       location_code: opts.locationCode,
       status: 'in_progress',
@@ -412,7 +417,7 @@ it('C1 — a Receive-created Stow cannot move inventory without an exact LSU sca
   });
 
   const stowTaskId = await seedInProgressReceiveStow(shop.shopId, shop.userId, {
-    lasyncroVariantId: variantId, quantity: 2, locationCode: binCode,
+    lasyncroVariantId: variantId, receiveJobLineId: jobLineId, quantity: 2, locationCode: binCode,
   });
 
   const before = await variantState(shop.shopId, variantId);
@@ -455,7 +460,7 @@ it('C2 — a Stow scan of another variant\'s LSU fails closed', async () => {
   });
 
   const stowTaskId = await seedInProgressReceiveStow(shop.shopId, shop.userId, {
-    lasyncroVariantId: variantA, quantity: 1, locationCode: binCode,
+    lasyncroVariantId: variantA, receiveJobLineId: lineA, quantity: 1, locationCode: binCode,
   });
 
   const beforeA = await variantState(shop.shopId, variantA);
@@ -495,7 +500,7 @@ it('C2b — one LSU scan cannot bulk-stow additional inbound units', async () =>
   expect(unitIds).toHaveLength(2);
 
   const stowTaskId = await seedInProgressReceiveStow(shop.shopId, shop.userId, {
-    lasyncroVariantId: variantId, quantity: 2, locationCode: binCode,
+    lasyncroVariantId: variantId, receiveJobLineId: jobLineId, quantity: 2, locationCode: binCode,
   });
 
   const before = await variantState(shop.shopId, variantId);

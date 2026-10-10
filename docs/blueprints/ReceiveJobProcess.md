@@ -142,7 +142,7 @@ To enable full inventory tracking, use the variant autocomplete when creating PO
 For variant-linked lines only (steps 7–10 skipped for unlinked lines):
 
 1. **Inventory movements written** — one `inbound_purchase` movement per accepted line
-   (deterministic UUID via uuidv5 — idempotent on replay)
+   (deterministic UUID via uuidv5; a conflicting movement aborts the close transaction)
 2. **Inventory truth upserted** — `on_hand_quantity` and `available_quantity` incremented
    at `WH-{shopId}-ROOT`
 3. **Barcode print jobs created** — one per accepted variant
@@ -150,7 +150,17 @@ For variant-linked lines only (steps 7–10 skipped for unlinked lines):
 
 > **Planned — WMS-EPIC-01 (Directed Putaway):** stow tasks currently default to `WH-{shopId}-ROOT`. The forward epic upgrades this so the system computes an optimal target bin per received unit against the PO — using zone affinity, bin capacity, SKU velocity, and pick-path proximity — turning the floor plan into a live routing engine instead of a static map. Likely builds on `locationSuggestion.service.ts` + `stow.service.ts`. Scoped as its own workshop post-submission audit.
 
-All-or-nothing. Failure rolls back entire close. Job remains open and retryable.
+**Exactly-once close (GH-1243):** The receive-job row is locked with
+`FOR UPDATE` before close eligibility is checked. Concurrent or sequential
+attempts to close an already-closed job return HTTP 409 without additional
+side effects. Each expected `inbound_purchase` movement must be inserted
+successfully before inventory truth can be credited. A movement conflict
+aborts and rolls back the entire close transaction, including PO, supplier,
+stock, Stow, alert, barcode-print and audit effects. A successful close
+writes exactly one `receive_close` audit entry.
+
+Other rejected close attempts roll back without consequential writes.
+The job remains open for correction and retry.
 
 ---
 
