@@ -61,7 +61,6 @@ describe('Slice 4 — enqueueShopSnapshotJob function-scoped wiring', () => {
       'httpCreatePurchaseOrder',
       'httpPatchPurchaseOrder',
       'httpUpdatePoStatus',
-      'httpReceiveShipment',
     ])('suppliers.controller.ts: %s contains exactly one enqueue call', (fnName) => {
       const source = readSource(suppliersControllerPath);
       expect(countEnqueueCalls(source, fnName)).toBe(1);
@@ -106,6 +105,17 @@ describe('Slice 4 — enqueueShopSnapshotJob function-scoped wiring', () => {
     it('stow.service.ts: confirmStow contains exactly one enqueue call (the inventory-credit branch — conditional correctness proven separately by the DB-backed stow contract test)', () => {
       const source = readSource('apps/backend/src/services/wms/stow.service.ts');
       expect(countEnqueueCalls(source, 'confirmStow')).toBe(1);
+    });
+  });
+
+
+  describe('RETIRED RECEIVE ROUTE — handoff fence must not enqueue', () => {
+    it('httpReceiveShipment refuses direct receipt instead of publishing a snapshot', () => {
+      const source = readSource('apps/backend/src/api/suppliers/suppliers.controller.ts');
+      const handler = extractFunctionSource(source, 'httpReceiveShipment');
+
+      expect(handler).toContain('RECEIVE_SESSION_REQUIRED');
+      expect(countEnqueueCalls(source, 'httpReceiveShipment')).toBe(0);
     });
   });
 
