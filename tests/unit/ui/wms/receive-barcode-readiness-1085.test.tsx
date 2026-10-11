@@ -1308,6 +1308,7 @@ it('R22d — canonical reconciliation allocations survive re-entry and reconstru
           quantity_affected: 2,
           resolved: false,
           raised_at: '2026-09-13T12:00:00.000Z',
+          counts_toward_shortfall: true,
         }],
       },
     })],
@@ -1342,6 +1343,7 @@ it('R22e — fully accounted canonical reconciliation restores final completion 
           quantity_affected: 2,
           resolved: false,
           raised_at: '2026-09-13T12:00:00.000Z',
+          counts_toward_shortfall: true,
         }],
       },
     })],
@@ -1352,9 +1354,12 @@ it('R22e — fully accounted canonical reconciliation restores final completion 
   await waitFor(() => expect(finishLine).not.toBeDisabled());
   fireEvent.click(finishLine);
 
+  // GH-1245 disposition: the 2 damaged units were physically delivered and rejected.
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledWith(expect.objectContaining({
     quantity_accepted: 8,
-    quantity_rejected: 0,
+    quantity_rejected: 2,
+    quantity_missing: 0,
+    quantity_deferred: 0,
   })));
 });
 
@@ -1517,9 +1522,13 @@ it('R24 — multiple allocations can account for one shortfall', async () => {
   const finishLine = await screen.findByRole('button', { name: /finish line/i });
   await waitFor(() => expect(finishLine).not.toBeDisabled());
   fireEvent.click(finishLine);
+  // GH-1245 disposition: damaged + wrong product are physically rejected (2);
+  // the missing item is supplier shortage (1). 7 + 2 + 1 + 0 = 10 expected.
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledWith(expect.objectContaining({
     quantity_accepted: 7,
-    quantity_rejected: 0,
+    quantity_rejected: 2,
+    quantity_missing: 1,
+    quantity_deferred: 0,
   })));
 });
 

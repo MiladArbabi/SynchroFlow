@@ -138,6 +138,8 @@ module.exports = {
       setupFiles: [
         '<rootDir>/tests/setup/jest.node.js',
         '<rootDir>/tests/setup/backend-integration.runtime-db-guard.js',
+        // GH-1245 TEST SAFETY — no real Resend requests from integration runs.
+        '<rootDir>/tests/setup/backend-integration.external-email-guard.js',
       ],
       testMatch: [
         '<rootDir>/tests/integration/**/*.test.ts',

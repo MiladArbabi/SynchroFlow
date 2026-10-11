@@ -33,6 +33,7 @@ interface PurchaseOrder {
   line_items_count: string;
   total_units_ordered: string;
   total_units_received: string;
+  total_units_pending_delivery?: string;
   total_cost_cents: string;
   unlinked_lines_count: string;
   notes?: string | null;
@@ -290,7 +291,7 @@ export default function OrdersInboundPage() {
   // ── Pulse ──
   const pulse = useMemo(() => {
     const open = orders.filter(o => isOpen(o.status));
-    const unitsExpected = open.reduce((s, o) => s + Number(o.total_units_ordered), 0);
+    const unitsExpected = open.reduce((s, o) => s + Number(o.total_units_pending_delivery ?? Math.max(0, Number(o.total_units_ordered) - Number(o.total_units_received))), 0);
     const arrivingSoon = open.filter(o => {
       const d = daysUntil(o.expected_delivery_date);
       return d !== null && d >= 0 && d <= 7;

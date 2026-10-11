@@ -177,8 +177,8 @@ export type WmsModuleFT2Props = {
     lines: ReceiveJobLine[];
   }>;
   onClaimReceiveJob?: (jobId: string) => Promise<void>;
-  onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
-  onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }) => Promise<void>;
+  onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }) => Promise<void>;
+  onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
   /**
    * GH-1108 / RECEIVE-OVERCOUNT-01 — REQUIRED, deliberately not optional,

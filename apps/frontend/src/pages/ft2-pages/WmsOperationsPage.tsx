@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsOperationsPage.tsx
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   WmsModuleFT2, 
   useOfflineScanQueue, 
@@ -488,17 +488,36 @@ export default function WmsOperationsPage() {
     );
   }, []);
 
+  // Keep a device event through a lost-response retry; a completed action
+  // releases its key so an intentional later allocation is a new event.
+  const receiveEvents = useRef(new Map<string, string>());
+  const newReceiveEventId = () => {
+    if (globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+  const postReceiveEvent = useCallback(async (url: string, params: object) => {
+    const key = JSON.stringify([url, params]);
+    const eventId = receiveEvents.current.get(key) ?? newReceiveEventId();
+    receiveEvents.current.set(key, eventId);
+    await axiosInstance.post(url, { ...params, device_event_id: eventId });
+    receiveEvents.current.delete(key);
+  }, []);
+
   const handleInspectReceiveLine = useCallback(async (
     jobId: string,
-    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }
+    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }
   ) => {
-    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
-  }, []);
+    await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
+  }, [postReceiveEvent]);
 
   const handlePersistReceiveLineProgress = useCallback(async (
     jobId: string,
     lineId: string,
-    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }
+    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }
   ) => {
     await axiosInstance.patch(`/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/progress`, params);
   }, []);
@@ -507,39 +526,18 @@ export default function WmsOperationsPage() {
     jobId: string,
     params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }
   ) => {
-    const { data } = await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
-    if (params.lasyncro_variant_id) {
-      await axiosInstance.post('/api/v1/wms/problem-center', {
-        lasyncro_variant_id:  params.lasyncro_variant_id,
-        quantity:             params.quantity_affected,
-        exception_type:       params.exception_type,
-        source:               'receive',
-        source_exception_id:  data?.receive_exception_id ?? undefined,
-      });
-    }
-  }, []);
+    await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
+  }, [postReceiveEvent]);
 
-  /**
-   * GH-1108 / RECEIVE-OVERCOUNT-01
-   * -------------------------------
-   * Persists the canonical overage approval — extra_item /
-   * accounting_role=overage — that inspectReceiveJobLine requires to already
-   * exist before it will commit an over-expected quantity_accepted. This is
-   * deliberately NOT handleReportReceiveException: that adapter always fires
-   * a Problem Center task, which is correct for the explicit "Report
-   * problem" choice but wrong here — choosing "Accept extra" approves the
-   * overage, it does not report a problem.
-   */
+  // Explicit overage approval is supplier delivery evidence, not recovery work.
   const handleApproveOverDelivery = useCallback(async (
     jobId: string,
     params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_affected: number; notes: string }
   ) => {
-    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, {
-      ...params,
-      exception_type: 'extra_item',
-      accounting_role: 'overage',
+    await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, {
+      ...params, exception_type: 'extra_item', accounting_role: 'overage',
     });
-  }, []);
+  }, [postReceiveEvent]);
 
   const handleCloseReceiveJob = useCallback(async (
     jobId: string,

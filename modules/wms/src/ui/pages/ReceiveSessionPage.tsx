@@ -48,6 +48,8 @@ export interface ReceiveJobLine {
   quantity_expected: number;
   quantity_accepted?: number;
   quantity_rejected?: number;
+  quantity_missing?: number | null;
+  quantity_deferred?: number | null;
   quantity_sellable_provisional?: number | null;
   reconciliation_started_at?: string | null;
   inspection_complete?: boolean;
@@ -110,6 +112,8 @@ export interface ReceiveSessionPageProps {
     receive_job_line_id: string;
     quantity_accepted: number;
     quantity_rejected: number;
+    quantity_missing?: number;
+    quantity_deferred?: number;
   }) => Promise<void>;
   onReportException: (params: {
     lasyncro_variant_id: string | null;
@@ -119,16 +123,7 @@ export interface ReceiveSessionPageProps {
     accounting_role?: string;
     notes?: string;
   }) => Promise<void>;
-  /**
-   * GH-1108 / RECEIVE-OVERCOUNT-01 — persists the canonical overage approval
-   * (extra_item / accounting_role=overage) the backend requires to exist
-   * BEFORE an over-expected inspection can be committed
-   * (inspectReceiveJobLine fails closed on quantityAccepted > expected unless
-   * this evidence is already there). Deliberately separate from
-   * onReportException: reusing that adapter would route "Accept extra"
-   * through the Problem Center task creation side effect, which is only
-   * correct for the explicit "Report problem" choice.
-   */
+  /** Persists explicit overage approval before inspection. */
   onApproveOverDelivery: (params: {
     lasyncro_variant_id: string | null;
     receive_job_line_id: string;
@@ -137,7 +132,7 @@ export interface ReceiveSessionPageProps {
   }) => Promise<void>;
   onPersistLineProgress?: (
     receiveJobLineId: string,
-    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean }
+    params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }
   ) => Promise<void>;
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
@@ -158,7 +153,7 @@ export interface ReceiveSessionPageProps {
   onExecutionFocusChange?: (focused: boolean) => void;
 }
 
-type ProblemType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'missing_item' | 'extra_item' | 'barcode_mismatch' | 'other';
+type ProblemType = 'deferred' | 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'missing_item' | 'extra_item' | 'barcode_mismatch' | 'other';
 
 type ProblemChoice =
   | 'defect'
@@ -171,6 +166,7 @@ type ProblemChoice =
   | 'other';
 
 const PROBLEM_LABELS: Record<ProblemType, string> = {
+  deferred: 'Later delivery',
   defect: 'Damaged unit',
   packaging_damage: 'Damaged packaging',
   wrong_item: 'Wrong product',
@@ -209,6 +205,7 @@ const PROBLEM_CHOICES: Array<{
 ];
 
 const RECONCILIATION_CHOICES: Array<{ type: ProblemType; label: string; requiresNotes?: boolean }> = [
+  { type: 'deferred', label: 'Coming in a later delivery' },
   { type: 'defect', label: 'Damaged unit' },
   { type: 'wrong_item', label: 'Wrong product' },
   { type: 'wrong_variant', label: 'Wrong variant' },
@@ -409,7 +406,7 @@ function projectedReconciliationState(line: ReceiveJobLine) {
     accepted: sellable,
     totalShortfall,
     remainingShortfall: unaccounted,
-    allocations: line.reconciliation.allocations.map((allocation) => ({
+    allocations: line.reconciliation.allocations.filter((allocation) => allocation.counts_toward_shortfall).map((allocation) => ({
       type: allocation.exception_type as ProblemType,
       quantity: Number(allocation.quantity_affected ?? 0),
     })),
@@ -833,12 +830,16 @@ export default function ReceiveSessionPage({
     line: ReceiveJobLine,
     quantityAccepted: number,
     quantityRejected: number,
+    quantityMissing = 0,
+    quantityDeferred = 0,
   ): Promise<{ awaitingLabelAck: boolean }> => {
     await onInspectLine({
       lasyncro_variant_id: line.lasyncro_variant_id,
       receive_job_line_id: line.receive_job_line_id,
       quantity_accepted: quantityAccepted,
       quantity_rejected: quantityRejected,
+      quantity_missing: quantityMissing,
+      quantity_deferred: quantityDeferred,
     });
 
     setAcceptedByLine((prev) => ({ ...prev, [line.receive_job_line_id]: quantityAccepted }));
@@ -1142,14 +1143,25 @@ export default function ReceiveSessionPage({
     setShortfallSubmitting(true);
     setSubmitError(null);
     try {
-      await onReportException({
-        lasyncro_variant_id: reconciliationLine.line.lasyncro_variant_id,
-        receive_job_line_id: reconciliationLine.line.receive_job_line_id,
-        exception_type: shortfallProblemType,
-        quantity_affected: qty,
-        accounting_role: 'shortfall',
-        notes: shortfallProblemNotes.trim() || `${qty} ${problemLabel(shortfallProblemType).toLowerCase()} during receive`,
-      });
+      if (shortfallProblemType === 'deferred') {
+        if (!onPersistLineProgress) throw new Error('Later-delivery reporting is unavailable. Please refresh.');
+        const deferred = reconciliationLine.allocations.filter((a) => a.type === 'deferred').reduce((n, a) => n + a.quantity, 0) + qty;
+        await flushLineProgress();
+        await onPersistLineProgress(reconciliationLine.line.receive_job_line_id, {
+          quantity_sellable_provisional: reconciliationLine.accepted,
+          reconciliation_required: true,
+          quantity_deferred: deferred,
+        });
+      } else {
+        await onReportException({
+          lasyncro_variant_id: reconciliationLine.line.lasyncro_variant_id,
+          receive_job_line_id: reconciliationLine.line.receive_job_line_id,
+          exception_type: shortfallProblemType,
+          quantity_affected: qty,
+          accounting_role: 'shortfall',
+          notes: shortfallProblemNotes.trim() || `${qty} ${problemLabel(shortfallProblemType).toLowerCase()} during receive`,
+        });
+      }
 
       const remainingShortfall = reconciliationLine.remainingShortfall - qty;
       const allocations = [...reconciliationLine.allocations, { type: shortfallProblemType, quantity: qty }];
@@ -1167,6 +1179,8 @@ export default function ReceiveSessionPage({
   }, [
     onRefresh,
     onReportException,
+    onPersistLineProgress,
+    flushLineProgress,
     reconciliationLine,
     shortfallProblemNotes,
     shortfallProblemQty,
@@ -1178,7 +1192,11 @@ export default function ReceiveSessionPage({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const outcome = await inspectAndResolveReadiness(reconciliationLine.line, reconciliationLine.accepted, 0);
+      const sum = (type: string) => reconciliationLine.allocations.filter((a) => a.type === type).reduce((n, a) => n + a.quantity, 0);
+      const missing = sum('missing_item');
+      const deferred = sum('deferred');
+      const rejected = reconciliationLine.totalShortfall - missing - deferred;
+      const outcome = await inspectAndResolveReadiness(reconciliationLine.line, reconciliationLine.accepted, rejected, missing, deferred);
       const completedLineId = reconciliationLine.line.receive_job_line_id;
       setReconciliationLine(null);
       setSessionPhase('inspect');

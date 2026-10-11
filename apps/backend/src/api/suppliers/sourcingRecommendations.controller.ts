@@ -1,3 +1,4 @@
+import { pendingDeliveryQuantitySql } from '../../services/purchasing/purchasingEvidence.js';
 // apps/backend/src/api/suppliers/sourcingRecommendations.controller.ts
 //
 // SOURCING RECOMMENDATIONS (Thread C, sourcing-recommendation-playbook.md §6)
@@ -823,7 +824,7 @@ export async function httpGetSourcingWorklist(req: Request, res: Response) {
         .groupBy('poli.lasyncro_variant_id')
         .select(
           'poli.lasyncro_variant_id',
-          trx.raw('SUM(GREATEST(poli.quantity_ordered - poli.quantity_received, 0))::integer as committed_inbound')
+          trx.raw(`SUM(${pendingDeliveryQuantitySql()})::integer as committed_inbound`)
         );
 
       // ── DRAFT PO workflow qty ────────────────────────────────────────────

@@ -27,6 +27,12 @@ import { Knex } from 'knex';
  * future inbound", which answers a different (planning) question. Two
  * questions, two definitions, both canonical — kept apart deliberately.
  */
+// NULL retains legacy commitment arithmetic; it is not exact physical history.
+// Known v2 values represent only explicitly scheduled later deliveries.
+export function pendingDeliveryQuantitySql(alias = 'poli'): string {
+  return `COALESCE(${alias}.quantity_pending_delivery, GREATEST(${alias}.quantity_ordered - ${alias}.quantity_received, 0))`;
+}
+
 export const COMMITTED_INBOUND_PO_STATUSES = [
   'ordered',
   'confirmed',
@@ -81,9 +87,7 @@ export async function getCommittedInboundQty(
     .andWhere('poli.lasyncro_variant_id', variantId)
     .whereIn('po.status', COMMITTED_INBOUND_PO_STATUSES as unknown as string[])
     .sum({
-      inbound: trx.raw(
-        'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
-      ),
+      inbound: trx.raw(pendingDeliveryQuantitySql()),
     })
     .first();
 

@@ -102,6 +102,7 @@ export interface ProductsModuleFT2DataProps {
         overdue_days: number | null;
         total_units_ordered: number;
         total_units_received: number;
+    total_units_pending_delivery?: number;
         covers_stocked_out_skus: string[];
       }>;
       pending_pos: Array<{
@@ -112,6 +113,7 @@ export interface ProductsModuleFT2DataProps {
         overdue_days: number | null;
         total_units_ordered: number;
         total_units_received: number;
+    total_units_pending_delivery?: number;
         covers_stocked_out_skus: string[];
       }>;
     } | null;
@@ -368,6 +370,7 @@ function InboundRow({ po, isOverdue }: {
     overdue_days: number | null;
     total_units_ordered: number;
     total_units_received: number;
+    total_units_pending_delivery?: number;
     covers_stocked_out_skus: string[];
   };
   isOverdue: boolean;
@@ -404,7 +407,7 @@ function InboundRow({ po, isOverdue }: {
             {isOverdue ? `${po.overdue_days}d overdue` : `Due ${dateLabel}`}
           </Typography>
           <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-            {po.total_units_ordered} units
+            {po.total_units_pending_delivery ?? Math.max(0, po.total_units_ordered - po.total_units_received)} units pending
             {po.covers_stocked_out_skus.length > 0 && ` · covers ${po.covers_stocked_out_skus.length} stocked out`}
           </Typography>
         </Box>

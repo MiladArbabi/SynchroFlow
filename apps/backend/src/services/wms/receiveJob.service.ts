@@ -14,6 +14,7 @@ import {
   assertReceiveJobBarcodeReady,
 } from './receiveBarcodeReadiness.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
+import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, receiveError } from './receiveWorkflowLock.service.js';
 
 const SHORTFALL_ACCOUNTING_TYPES = new Set(['defect', 'wrong_item', 'wrong_variant', 'missing_item', 'other']);
 
@@ -64,6 +65,8 @@ export async function receiveLineReconciliationState(
 
   const sellable = Number(input.sellable ?? 0);
   const shortfall = Math.max(0, Number(input.expected ?? 0) - sellable);
+  const line = await trx('receive_job_lines').where({ shop_id: input.shopId, receive_job_id: input.receiveJobId, receive_job_line_id: input.receiveJobLineId }).first('quantity_deferred');
+  const deferred = Number(line?.quantity_deferred ?? 0);
   const allocations = exceptions.map((exception: any) => ({
     receive_exception_id: exception.receive_exception_id,
     exception_type: exception.exception_type,
@@ -74,6 +77,7 @@ export async function receiveLineReconciliationState(
     accounting_role: exception.accounting_role ?? null,
     counts_toward_shortfall: shouldCountTowardShortfall(exception),
   }));
+  if (deferred > 0) allocations.push({ receive_exception_id: null, exception_type: 'deferred', quantity_affected: deferred, notes: null, resolved: false, raised_at: null, accounting_role: null, counts_toward_shortfall: true });
   const accounted = Math.min(
     shortfall,
     allocations
@@ -100,7 +104,7 @@ export async function receiveLineReconciliationState(
  * Key invariants:
  * - One receive job per delivery event (split deliveries = multiple jobs per PO)
  * - quantity_received on purchase_order_line_items written only on job close
- * - stow_tasks created automatically per variant on transition to stow_ready
+ * - stow_tasks created atomically with accepted stock credit on close
  * - actual_delivery_date written back to purchase_orders on job close → triggers rating recompute
  * - po_id on stow_tasks is application-enforced (no DB FK — migration ordering constraint)
  */
@@ -127,14 +131,24 @@ export async function createReceiveJob(
 ): Promise<string> {
   const { shopId, poId, operatorId } = input;
 
-  const lineItems = await trx('purchase_order_line_items')
-    .where({ po_id: poId, shop_id: shopId });
+  const po = await trx('purchase_orders').where({ id: poId, shop_id: shopId }).forUpdate().first();
+  if (!po) throw receiveError('Purchase order not found', 404);
+  if (['received', 'cancelled'].includes(po.status)) throw receiveError('PO receiving is finalized');
+  const active = await trx('receive_jobs').where({ po_id: poId, shop_id: shopId }).whereIn('status', ACTIVE_RECEIVE_STATUSES).first();
+  if (active) throw Object.assign(receiveError('An active receive job already exists for this PO'), { receive_job_id: active.receive_job_id });
+  const lineItems = (await trx('purchase_order_line_items')
+    .where({ po_id: poId, shop_id: shopId }).orderBy('id').forUpdate())
+    .map((li: any) => ({ ...li, pending: li.quantity_pending_delivery == null
+      ? Math.max(0, Number(li.quantity_ordered) - Number(li.quantity_received))
+      : Number(li.quantity_pending_delivery) }));
+  // Legacy NULL supplies only the old commitment ceiling, never physical history.
+  if (!lineItems.some((li: any) => li.pending > 0)) throw receiveError('No pending delivery remains');
 
   if (lineItems.length === 0) {
     throw new Error(`[RECEIVE_JOB_CREATE] No line items found for PO ${poId}`);
   }
 
-  const totalUnits = lineItems.reduce((sum: number, li: any) => sum + li.quantity_ordered, 0);
+  const totalUnits = lineItems.reduce((sum: number, li: any) => sum + li.pending, 0);
 
   const [receiveJobId] = await trx('receive_jobs')
     .insert({
@@ -144,6 +158,7 @@ export async function createReceiveJob(
       assigned_operator_id: operatorId ?? null,
       total_variants: lineItems.length,
       total_units: totalUnits,
+      delivery_accounting_version: 2,
     })
     .returning('receive_job_id');
 
@@ -161,7 +176,7 @@ export async function createReceiveJob(
         receive_job_id: jobId,
         po_line_item_id: li.id,
         lasyncro_variant_id: li.lasyncro_variant_id,
-        quantity_expected: li.quantity_ordered,
+        quantity_expected: li.pending,
         suggested_location_code: suggestedLocation ?? null,
       };
     })
@@ -184,6 +199,11 @@ export interface InspectLineInput {
   receiveJobLineId?: string | null;
   quantityAccepted: number;
   quantityRejected: number;
+  quantityMissing?: number;
+  quantityDeferred?: number;
+  quantityHeldRecoverable?: number;
+  deviceEventId?: string;
+  requireExplicitDisposition?: boolean;
   inspectedBy: number;
 }
 
@@ -193,6 +213,7 @@ export interface UpdateReceiveLineProgressInput {
   receiveJobLineId: string;
   quantitySellableProvisional: number;
   reconciliationRequired?: boolean;
+  quantityDeferred?: number;
 }
 
 export async function updateReceiveJobLineProgress(
@@ -212,13 +233,15 @@ export async function updateReceiveJobLineProgress(
     throw new Error('[RECEIVE_PROGRESS] quantity_sellable_provisional must be a non-negative integer');
   }
 
+  const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
+  assertReceiveMutable(job);
   const line = await trx('receive_job_lines')
-    .where({
-      shop_id: shopId,
-      receive_job_id: receiveJobId,
-      receive_job_line_id: receiveJobLineId,
-    })
-    .first('receive_job_line_id', 'quantity_expected', 'inspection_complete');
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .forUpdate().first('receive_job_line_id', 'quantity_expected', 'inspection_complete');
+  if (input.quantityDeferred !== undefined && (!Number.isInteger(input.quantityDeferred) || input.quantityDeferred < 0 || input.quantityDeferred > Number(line?.quantity_expected ?? 0))) {
+    throw receiveError('Invalid later-delivery quantity', 400);
+  }
+  if (input.quantityDeferred !== undefined && job.delivery_accounting_version !== 2) throw receiveError('Legacy job cannot persist a v2 delivery draft');
 
   if (!line) throw new Error(`[RECEIVE_PROGRESS] Line not found on job ${receiveJobId}`);
   if (line.inspection_complete) {
@@ -233,6 +256,7 @@ export async function updateReceiveJobLineProgress(
     })
     .update({
       quantity_sellable_provisional: quantitySellableProvisional,
+      ...(input.quantityDeferred !== undefined ? { quantity_deferred: input.quantityDeferred } : {}),
       ...(reconciliationRequired ? { reconciliation_started_at: new Date() } : {}),
       updated_at: new Date(),
     });
@@ -257,6 +281,7 @@ export async function inspectReceiveJobLine(
 ): Promise<void> {
 
   const { shopId, receiveJobId, lasyncroVariantId, receiveJobLineId, quantityAccepted, quantityRejected, inspectedBy } = input;
+  const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
   const query = trx('receive_job_lines')
     .where({ receive_job_id: receiveJobId, shop_id: shopId });
   if (receiveJobLineId) {
@@ -266,37 +291,43 @@ export async function inspectReceiveJobLine(
   } else {
     throw new Error('[RECEIVE_INSPECT] Either lasyncroVariantId or receiveJobLineId required');
   }
-  const line = await query.first();
-  if (!line) throw new Error(`[RECEIVE_INSPECT] Line not found on job ${receiveJobId}`);
-  if (line.inspection_complete) throw new Error(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`);
-
+  const line = await query.forUpdate().first();
+  if (!line) throw receiveError(`[RECEIVE_INSPECT] Line not found on job ${receiveJobId}`, 404);
+  if (lasyncroVariantId && line.lasyncro_variant_id !== lasyncroVariantId) throw receiveError('Receive line variant mismatch', 400);
   const expected = Number(line.quantity_expected ?? 0);
-  if (quantityAccepted > expected) {
-    const reconciliation = await receiveLineReconciliationState(trx, {
-      shopId,
-      receiveJobId,
-      receiveJobLineId: line.receive_job_line_id,
-      expected,
-      sellable: quantityAccepted,
-    });
-    if (!reconciliation.overage_approved) {
-      throw new Error('[RECEIVE_INSPECT] overdelivery requires persisted overage approval before committing');
-    }
+  const evidence = await trx('receive_exceptions').where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: line.receive_job_line_id });
+  const canonicalMissing = evidence.filter((e: any) => e.exception_type === 'missing_item').reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
+  const explicit = input.quantityMissing !== undefined && input.quantityDeferred !== undefined;
+  if ((input.quantityMissing !== undefined) !== (input.quantityDeferred !== undefined)) throw receiveError('Both missing and later-delivery quantities are required', 400);
+  // Only an unambiguous all-accepted old HTTP request is compatible. The
+  // internal service can retain the certified canonical missing-exception
+  // path used by GH-1085; it never interprets rejected as absent stock.
+  if (!explicit && input.requireExplicitDisposition && (quantityAccepted < expected || quantityRejected !== 0)) {
+    throw receiveError('RECEIVE_CLIENT_UPGRADE_REQUIRED: report missing vs later delivery explicitly before completing a partial line', 409);
   }
-
-  if (quantityAccepted < expected && quantityAccepted + quantityRejected < expected) {
-    const reconciliation = await receiveLineReconciliationState(trx, {
-      shopId,
-      receiveJobId,
-      receiveJobLineId: line.receive_job_line_id,
-      expected,
-      sellable: quantityAccepted,
-    });
-    const physicallyRejected = Math.max(0, quantityRejected);
-    const unaccounted = Math.max(0, reconciliation.unaccounted - physicallyRejected);
-    if (unaccounted > 0) {
-      throw new Error(`[RECEIVE_INSPECT] shortfall must be fully accounted before completion; ${unaccounted} unaccounted`);
-    }
+  const missing = input.quantityMissing ?? canonicalMissing;
+  const deferred = input.quantityDeferred ?? 0;
+  const held = input.quantityHeldRecoverable ?? 0;
+  for (const q of [quantityAccepted, quantityRejected, missing, deferred, held]) {
+    if (!Number.isSafeInteger(q) || q < 0) throw receiveError('Disposition quantities must be non-negative integers', 400);
+  }
+  if (held !== 0) throw receiveError('Recoverable-held disposition requires S4 atomic capture', 409);
+  const delivered = quantityAccepted + quantityRejected;
+  const approvedExtra = evidence.filter((e: any) => e.accounting_role === 'overage' && e.exception_type === 'extra_item')
+    .reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
+  const actualExtra = Math.max(0, delivered - expected);
+  if (actualExtra > approvedExtra) throw receiveError('[RECEIVE_INSPECT] physical overdelivery exceeds persisted overage approval', 409);
+  if (missing !== canonicalMissing) throw receiveError('Missing quantity must match canonical missing-item exceptions', 409);
+  if (delivered + missing + deferred !== expected + actualExtra) throw receiveError('[RECEIVE_INSPECT] shortfall accounting must reconcile accepted, rejected, missing and deferred quantities', 409);
+  if (line.inspection_complete) {
+    if (input.deviceEventId && line.inspection_device_event_id === input.deviceEventId
+      && Number(line.quantity_accepted) === quantityAccepted && Number(line.quantity_rejected) === quantityRejected
+      && Number(line.quantity_missing) === missing && Number(line.quantity_deferred) === deferred) return;
+    throw receiveError(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`, 409);
+  }
+  assertReceiveMutable(job);
+  if (job.delivery_accounting_version !== 2 && explicit && (missing !== 0 || deferred !== 0 || quantityRejected !== 0)) {
+    throw receiveError('Legacy Receive job has unknown delivery accounting; partial cutover requires review', 409);
   }
 
   await trx('receive_job_lines')
@@ -304,6 +335,9 @@ export async function inspectReceiveJobLine(
     .update({
       quantity_accepted: quantityAccepted,
       quantity_rejected: quantityRejected,
+      ...(job.delivery_accounting_version === 2 ? { quantity_delivered: delivered, quantity_missing: missing, quantity_deferred: deferred, quantity_held_recoverable: held } : {}),
+      inspected_by: inspectedBy,
+      inspection_device_event_id: input.deviceEventId ?? null,
       quantity_sellable_provisional: null,
       reconciliation_started_at: null,
       inspection_complete: true,
@@ -506,25 +540,14 @@ export async function closeReceiveJob(
     throw new Error('[RECEIVE_JOB_CLOSE] Actual delivery date is required');
   }
 
-  /**
-   * CLOSE SERIALIZATION (GH-1243 / RECEIVE-CLOSE-SAFE)
-   * ---------------------------------------------------
-   * The job row lock is taken before the status check and before any write.
-   * A concurrent close of the same job waits here, then re-reads the
-   * committed 'closed' status and is refused as already closed, instead of
-   * re-applying every additive write below (quantity_received, total_pos,
-   * inventory_truth, stow_tasks) against an already-closed job.
-   */
-  const job = await trx('receive_jobs')
-    .where({ receive_job_id: receiveJobId, shop_id: shopId })
-    .forUpdate()
-    .first();
-
-  if (!job) throw new Error(`[RECEIVE_JOB_CLOSE] Job not found: ${receiveJobId}`);
-  if (job.status === 'closed') throw new Error(`[RECEIVE_JOB_CLOSE] Already closed: ${receiveJobId}`);
+  // GH-1245 extends GH-1243's job fence with a shared PO-first lock.
+  const { po, job } = await lockReceiveJob(trx, shopId, receiveJobId);
+  if (job.status === 'closed') throw receiveError(`[RECEIVE_JOB_CLOSE] Already closed: ${receiveJobId}`);
+  assertReceiveMutable(job);
+  if (po.status === 'cancelled') throw receiveError('Cannot close Receive for a cancelled PO');
 
   const lines = await trx('receive_job_lines')
-    .where({ receive_job_id: receiveJobId, shop_id: shopId });
+    .where({ receive_job_id: receiveJobId, shop_id: shopId }).orderBy('lasyncro_variant_id').orderBy('receive_job_line_id').forUpdate();
 
   const incomplete = lines.filter((l: any) => !l.inspection_complete);
   if (incomplete.length > 0) {
@@ -547,6 +570,9 @@ export async function closeReceiveJob(
    * the caller's transaction back whole, so a refused close leaves nothing
    * behind.
    */
+  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable !== 0)) {
+    throw receiveError('Incomplete v2 delivery accounting');
+  }
   await assertReceiveJobBarcodeReady(trx, shopId, receiveJobId);
 
   // 1. Write quantity_received back to PO line items
@@ -555,14 +581,12 @@ export async function closeReceiveJob(
       .where({ id: line.po_line_item_id, shop_id: shopId })
       .update({
         quantity_received: trx.raw('quantity_received + ?', [line.quantity_accepted]),
+        ...(job.delivery_accounting_version === 2 ? { quantity_pending_delivery: line.quantity_deferred } : {}),
+        updated_at: new Date(),
       });
   }
 
   // 2. Write required actual_delivery_date to PO
-  const po = await trx('purchase_orders')
-    .where({ id: job.po_id, shop_id: shopId })
-    .first();
-
   await trx('purchase_orders')
     .where({ id: job.po_id, shop_id: shopId })
     .update({ actual_delivery_date: actualDeliveryDate, updated_at: new Date() });
@@ -571,12 +595,12 @@ export async function closeReceiveJob(
   const allLineItems = await trx('purchase_order_line_items')
     .where({ po_id: job.po_id, shop_id: shopId });
 
-  const fullyReceived = allLineItems.every(
-    (li: any) => li.quantity_received >= li.quantity_ordered
-  );
+  const fullyReceived = allLineItems.every((li: any) => job.delivery_accounting_version === 2
+    ? li.quantity_pending_delivery === 0
+    : li.quantity_received >= li.quantity_ordered);
   const hasPartial = allLineItems.some((li: any) => li.quantity_received > 0);
 
-  const newPoStatus = fullyReceived ? 'received' : hasPartial ? 'partially_received' : po.status;
+  const newPoStatus = fullyReceived ? 'received' : (job.delivery_accounting_version === 2 || hasPartial) ? 'partially_received' : po.status;
   if (newPoStatus !== po.status) {
     await trx('purchase_orders')
       .where({ id: job.po_id, shop_id: shopId })
@@ -607,7 +631,7 @@ export async function closeReceiveJob(
   }
 
   // 3a. Increment supplier total_pos on full receipt — mirrors httpUpdatePoStatus behaviour
-  if (fullyReceived) {
+  if (fullyReceived && po.status !== 'received') {
     await trx('suppliers')
       .where({ id: po.supplier_id, shop_id: shopId })
       .increment('total_pos', 1);
@@ -769,6 +793,8 @@ export async function closeReceiveJob(
     .update({
       status: 'closed',
       closed_at: new Date(),
+      actual_delivery_date: actualDeliveryDate,
+      closed_by: closedBy,
       updated_at: new Date(),
     });
 

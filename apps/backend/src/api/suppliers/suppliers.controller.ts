@@ -1,3 +1,4 @@
+import { pendingDeliveryQuantitySql } from '../../services/purchasing/purchasingEvidence.js';
 // apps/backend/src/api/suppliers/suppliers.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
@@ -254,6 +255,7 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
           trx.raw('COUNT(li.id) as line_items_count'),
           trx.raw('COALESCE(SUM(li.quantity_ordered), 0) as total_units_ordered'),
           trx.raw('COALESCE(SUM(li.quantity_received), 0) as total_units_received'),
+          trx.raw(`CASE WHEN po.status IN ('received', 'cancelled') THEN 0 ELSE COALESCE(SUM(${pendingDeliveryQuantitySql('li')}), 0) END as total_units_pending_delivery`),
           trx.raw('COALESCE(SUM(li.unit_cost_cents * li.quantity_ordered), 0) as total_cost_cents'),
           trx.raw('COUNT(*) FILTER (WHERE li.lasyncro_variant_id IS NULL) as unlinked_lines_count')
         );
@@ -347,12 +349,19 @@ export async function httpGetPoLineItems(req: Request, res: Response) {
         .orderBy('li.created_at', 'asc')
         .select(
           'li.id', 'li.lasyncro_variant_id', 'li.description',
-          'li.quantity_ordered', 'li.quantity_received', 'li.unit_cost_cents',
+          'li.quantity_ordered', 'li.quantity_received', 'li.quantity_pending_delivery', 'li.unit_cost_cents',
           'v.sku', 'v.image_url', 'p.title as product_title'
         );
     });
 
-    return res.json({ line_items });
+    const deliveries = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('receive_job_lines as l').join('receive_jobs as j', 'j.receive_job_id', 'l.receive_job_id')
+        .where({ 'j.shop_id': shopId, 'l.shop_id': shopId, 'j.po_id': poId }).where('j.status', 'closed')
+        .select('l.po_line_item_id', 'l.receive_job_line_id', 'j.receive_job_id', 'j.delivery_accounting_version', 'j.actual_delivery_date', 'l.inspected_by', 'j.closed_by', 'l.quantity_expected', 'l.quantity_accepted', 'l.quantity_rejected', 'l.quantity_delivered', 'l.quantity_missing', 'l.quantity_deferred', 'l.quantity_held_recoverable')
+        .orderBy('j.closed_at').orderBy('l.receive_job_line_id');
+    });
+    return res.json({ line_items, deliveries });
   } catch (err) {
     console.error('[suppliers] httpGetPoLineItems failed', err);
     return res.status(500).json({ error: 'Failed to fetch line items' });
@@ -382,12 +391,19 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
         .join('suppliers as s', 'po.supplier_id', 's.id')
         .where({ 'po.id': poId, 'po.shop_id': shopId })
         .select('po.*', 's.name as supplier_name')
-        .first();
+        .forUpdate('po').first();
 
-      if (!po) {
-        res.status(404).json({ error: 'Purchase order not found' });
-        return;
+      if (!po) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 });
+      const active = await trx('receive_jobs').where({ shop_id: shopId, po_id: poId }).whereNotIn('status', ['closed', 'cancelled']).first('receive_job_id');
+      const allowedNext: Record<string, string[]> = {
+        draft: ['ordered', 'cancelled'], ordered: ['confirmed', 'in_production', 'shipped', 'cancelled'],
+        confirmed: ['in_production', 'shipped', 'cancelled'], in_production: ['shipped', 'cancelled'],
+        shipped: ['cancelled'], partially_received: ['cancelled'], received: [], cancelled: [],
+      };
+      if (active || (status !== po.status && !(allowedNext[po.status] ?? []).includes(status)) || ['received', 'partially_received'].includes(status)) {
+        throw Object.assign(new Error('PO status is protected by the Receive lifecycle'), { statusCode: 409 });
       }
+      if (status === po.status) return; // no repeated alerts or supplier count
 
       await trx('purchase_orders')
         .where({ id: poId, shop_id: shopId })
@@ -396,15 +412,6 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
           actual_delivery_date: actual_delivery_date ?? po.actual_delivery_date,
           updated_at: new Date(),
         });
-
-      if (status === 'received') {
-        await trx('suppliers')
-          .where({ id: po.supplier_id, shop_id: shopId })
-          .increment('total_pos', 1);
-        await recomputeSupplierRating(trx, shopId, po.supplier_id);
-        // Resolve the receive alert — PO fully received, no further operator action needed.
-        await fireReceiveArrivedAlert(trx, { shopId, poId, supplierName: po.supplier_name, isActive: false });
-      }
 
       // FEAT-004: Emit receive alert so operators are notified to open a receive session.
       if (status === 'shipped') {
@@ -421,15 +428,12 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
         await recomputeSupplierRating(trx, shopId, po.supplier_id);
       }
 
-      if (status === 'partially_received') {
-        await recomputeSupplierRating(trx, shopId, po.supplier_id);
-      }
-
       await enqueueShopSnapshotJob(trx, shopId);
     });
 
     return res.json({ success: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     console.error('[suppliers] httpUpdatePoStatus failed', err);
     return res.status(500).json({ error: 'Failed to update PO status' });
   }
@@ -437,88 +441,26 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
 
 /**
  * POST /api/v1/suppliers/purchase-orders/:poId/receive
- * Records quantities received per line item.
- * Auto-transitions PO to received if all items fully received.
- * Triggers supplier rating recompute on every receive action.
+ * Retired quantity writer: preserves route authorization/tenant lookup,
+ * then refuses receipt outside the canonical Receive transaction.
  */
 export async function httpReceiveShipment(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
-
-  const poId = req.params.poId as string;
-  const { receive_notes, line_items } = req.body;
-
-  if (!Array.isArray(line_items) || line_items.length === 0) {
-    return res.status(400).json({ error: 'line_items required' });
-  }
-
   try {
+    let poExists = false;
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
       const po = await trx('purchase_orders')
-        .where({ id: poId, shop_id: shopId })
-        .first();
-
-      if (!po) {
-        res.status(404).json({ error: 'Purchase order not found' });
-        return;
-      }
-
-      // Increment quantity_received per line item
-      for (const item of line_items) {
-        if (!item.line_item_id || item.quantity_received == null || item.quantity_received < 0) continue;
-
-        const existing = await trx('purchase_order_line_items')
-          .where({ id: item.line_item_id, po_id: poId, shop_id: shopId })
-          .first();
-
-        if (!existing) continue;
-
-        const newQty = Math.min(
-          existing.quantity_received + item.quantity_received,
-          existing.quantity_ordered // never exceed ordered qty
-        );
-
-        await trx('purchase_order_line_items')
-          .where({ id: item.line_item_id })
-          .update({ quantity_received: newQty, updated_at: new Date() });
-      }
-
-      // Check if fully received
-      const allItems = await trx('purchase_order_line_items')
-        .where({ po_id: poId, shop_id: shopId });
-
-      const fullyReceived = allItems.every(
-        (i: any) => i.quantity_received >= i.quantity_ordered
-      );
-
-      const today = new Date().toISOString().split('T')[0];
-      const newStatus = fullyReceived ? 'received' : 'partially_received';
-
-      await trx('purchase_orders')
-        .where({ id: poId, shop_id: shopId })
-        .update({
-          status: newStatus,
-          actual_delivery_date: po.actual_delivery_date ?? today,
-          receive_notes: receive_notes ?? po.receive_notes,
-          updated_at: new Date(),
-        });
-
-      if (fullyReceived) {
-        await trx('suppliers')
-          .where({ id: po.supplier_id, shop_id: shopId })
-          .increment('total_pos', 1);
-      }
-
-      await recomputeSupplierRating(trx, shopId, po.supplier_id);
-      await enqueueShopSnapshotJob(trx, shopId);
+        .where({ id: req.params.poId, shop_id: shopId })
+        .first('id');
+      poExists = Boolean(po);
     });
-
-    return res.json({ success: true });
+    if (!poExists) return res.status(404).json({ error: 'Purchase order not found' });
+    return res.status(409).json({ code: 'RECEIVE_SESSION_REQUIRED', error: 'Receive this delivery through a Receive job' });
   } catch (err) {
     console.error('[suppliers] httpReceiveShipment failed', err);
-    return res.status(500).json({ error: 'Failed to record shipment receipt' });
+    return res.status(500).json({ error: 'Failed to check purchase order' });
   }
 }
 

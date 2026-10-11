@@ -1,3 +1,4 @@
+import { lockReceiveJob } from './receiveWorkflowLock.service.js';
 import { Knex } from 'knex';
 import crypto from 'crypto';
 import { refreshReadinessForUnits } from './receiveBarcodeReadiness.service.js';
@@ -362,6 +363,13 @@ export async function markLabelsPrinted(
   unitIds: string[]
 ): Promise<void> {
   if (unitIds.length === 0) return;
+
+  const parents = await trx('inventory_units as iu')
+    .join('receive_job_lines as l', 'l.receive_job_line_id', 'iu.receive_job_line_id')
+    .join('receive_jobs as j', 'j.receive_job_id', 'l.receive_job_id')
+    .where('iu.shop_id', shopId).where('l.shop_id', shopId).where('j.shop_id', shopId)
+    .whereIn('iu.lasyncro_unit_id', unitIds).distinct('j.po_id', 'j.receive_job_id').orderBy('j.po_id').orderBy('j.receive_job_id');
+  for (const parent of parents) await lockReceiveJob(trx, shopId, parent.receive_job_id);
 
   await trx('inventory_units')
     .whereIn('lasyncro_unit_id', unitIds)

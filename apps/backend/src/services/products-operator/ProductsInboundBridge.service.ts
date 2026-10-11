@@ -1,3 +1,4 @@
+import { pendingDeliveryQuantitySql } from '../purchasing/purchasingEvidence.js';
 // apps/backend/src/services/products-operator/ProductsInboundBridge.service.ts
 //
 // ProductsInboundBridge
@@ -42,6 +43,7 @@ export type InboundPO = {
   overdue_days: number | null;
   total_units_ordered: number;
   total_units_received: number;
+  total_units_pending_delivery: number;
   /** Unit IDs on this PO that are currently at zero stock in inventory_truth */
   covers_stocked_out_skus: string[];
 };
@@ -88,6 +90,7 @@ export async function getProductsInboundSignals(
           's.name as supplier_name',
           trx.raw('COALESCE(SUM(poli.quantity_ordered), 0)::integer AS total_units_ordered'),
           trx.raw('COALESCE(SUM(poli.quantity_received), 0)::integer AS total_units_received'),
+          trx.raw(`COALESCE(SUM(${pendingDeliveryQuantitySql()}), 0)::integer AS total_units_pending_delivery`),
           trx.raw(`
             CASE
               WHEN COUNT(poli.unit_cost_cents) = COUNT(poli.id)
@@ -122,6 +125,7 @@ export async function getProductsInboundSignals(
       const lineItemRows = await trx('purchase_order_line_items')
         .whereIn('po_id', poIds)
         .whereNotNull('lasyncro_variant_id')
+        .whereRaw(pendingDeliveryQuantitySql('purchase_order_line_items') + ' > 0')
         .select(['po_id', 'lasyncro_variant_id']);
 
       // Map: po_id → stocked-out SKUs covered by this PO
@@ -160,10 +164,11 @@ export async function getProductsInboundSignals(
           overdue_days: overdueDays,
           total_units_ordered: Number(row.total_units_ordered),
           total_units_received: Number(row.total_units_received),
+          total_units_pending_delivery: Number(row.total_units_pending_delivery),
           covers_stocked_out_skus: poStockedOutMap.get(row.id) ?? [],
         };
 
-        total_units_expected += po.total_units_ordered;
+        total_units_expected += po.total_units_pending_delivery;
 
         // Committed value — null if any PO has missing costs
         if (total_committed_value_cents !== null) {

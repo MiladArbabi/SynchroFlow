@@ -638,7 +638,7 @@ describe('GH-1243 Receive close safety', () => {
           actualDeliveryDate: DELIVERY_DATE,
           closedBy: foreign.userId,
         }))
-    ).rejects.toThrow(/Job not found/);
+    ).rejects.toThrow(/job not found/i);
 
     expect(await closeEffects(f)).toEqual(before);
 

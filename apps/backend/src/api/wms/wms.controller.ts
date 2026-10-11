@@ -5014,6 +5014,9 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
   if (!VALID_PROBLEM_SOURCES.includes(source)) {
     return res.status(400).json({ error: `source must be one of: ${VALID_PROBLEM_SOURCES.join(', ')}` });
   }
+  // GH-1245: Receive recovery capture requires S4's atomic LSU/task contract.
+  // Supplier discrepancy evidence cannot fabricate physical recovery work.
+  if (source === 'receive') return res.status(409).json({ code: 'RECEIVE_RECOVERY_REQUIRES_S4', error: 'Receive discrepancies are recorded on the delivery; recovery capture is unavailable' });
   // GH-1238: validated before any write — a malformed quantity is a client
   // error, never a 500 or a persisted task.
   if (!isValidProblemQuantity(quantity)) {

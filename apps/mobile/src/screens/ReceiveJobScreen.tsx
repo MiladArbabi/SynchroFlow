@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/ReceiveJobScreen.tsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
   Alert, ScrollView, TouchableOpacity, TextInput, Modal,
@@ -24,6 +24,10 @@ type ReceiveJobLine = {
   quantity_expected: number;
   quantity_accepted: number;
   quantity_rejected: number;
+  quantity_missing?: number | null;
+  quantity_deferred?: number | null;
+  quantity_sellable_provisional?: number | null;
+  reported_problems?: Array<{ exception_type: string; quantity_affected: number; counts_toward_shortfall: boolean }>;
   inspection_complete: boolean;
 };
 
@@ -39,7 +43,7 @@ type ReceiveJob = {
 type ExceptionEntry = {
   exception_type: string;
   quantity: number;
-  prob_label: string;
+  prob_label?: string;
 };
 
 type LineState = {
@@ -52,6 +56,8 @@ type ScreenPhase = 'brief' | 'inspect' | 'scan' | 'summary' | 'closed';
 type InspectMode = 'count' | 'scan';
 
 const EXCEPTION_TYPES = [
+  { type: 'deferred', label: 'Later delivery', icon: 'time-outline' },
+  { type: 'missing_item', label: 'Missing now', icon: 'help-outline' },
   { type: 'defect', label: 'Damaged', icon: 'hammer-outline' },
   { type: 'packaging_damage', label: 'Packaging', icon: 'cube-outline' },
   { type: 'wrong_item', label: 'Wrong item', icon: 'swap-horizontal-outline' },
@@ -63,6 +69,15 @@ const EXCEPTION_TYPES = [
 function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').TaskStackParamList['ReceiveJob']['task'] }) {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
   const { newEventId } = useSession();
+  const pendingEvents = useRef(new Map<string, string>());
+  const postReceiveEvent = useCallback(async (url: string, payload: object, allocationIndex = 0) => {
+    const key = JSON.stringify([url, payload, allocationIndex]);
+    const deviceEventId = pendingEvents.current.get(key) ?? newEventId();
+    pendingEvents.current.set(key, deviceEventId);
+    // Retain successful allocation IDs too: a subsequent failed inspect must
+    // replay the same evidence rather than issue another supplier incident.
+    await apiClient.post(url, { ...payload, device_event_id: deviceEventId });
+  }, [newEventId]);
   const { userId } = useAuth();
 
   const [job, setJob] = useState<ReceiveJob | null>(null);
@@ -99,8 +114,11 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
       const init: Record<string, LineState> = {};
       for (const line of fetchedLines) {
         init[line.receive_job_line_id] = {
-          input: line.inspection_complete ? String(line.quantity_accepted) : '',
-          exceptions: [],
+          input: line.inspection_complete ? String(line.quantity_accepted) : line.quantity_sellable_provisional != null ? String(line.quantity_sellable_provisional) : '',
+          exceptions: [
+            ...(line.reported_problems ?? []).filter((e) => e.counts_toward_shortfall).map((e) => ({ exception_type: e.exception_type, quantity: Number(e.quantity_affected) })),
+            ...(Number(line.quantity_deferred ?? 0) > 0 ? [{ exception_type: 'deferred', quantity: Number(line.quantity_deferred) }] : []),
+          ],
           confirmed: line.inspection_complete,
         };
       }
@@ -177,12 +195,16 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     const shortfall = line.quantity_expected - accepted;
 
     if (shortfall > 0) {
+      const existing = lineStates[line.receive_job_line_id]?.exceptions ?? [];
+      const accounted = existing.reduce((n, e) => n + e.quantity, 0);
+      if (accounted > shortfall) { Alert.alert('Reconciliation required', 'The count conflicts with recorded delivery evidence.'); return; }
+      if (accounted === shortfall) { await submitLineInspection(line, accepted, shortfall, null, existing); return; }
       setShortfallModal({
         line,
         accepted,
         totalShortfall: shortfall,
-        remainingShortfall: shortfall,
-        reportedExceptions: [],
+        remainingShortfall: shortfall - accounted,
+        reportedExceptions: existing,
       });
       setSelectedExceptionType('');
       setExceptionQtyInput(String(shortfall));
@@ -205,32 +227,28 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     try {
       let exceptions: ExceptionEntry[] = preReportedExceptions ?? [];
 
-      // Single exception path (direct confirm with one type)
+      // Persist supplier evidence only; physical recovery capture belongs to S4.
       if (shortfall > 0 && exceptionType && !preReportedExceptions) {
-        const { data: exData } = await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
-          lasyncro_variant_id: line.lasyncro_variant_id,
-          receive_job_line_id: line.receive_job_line_id,
-          exception_type: exceptionType,
-          quantity_affected: shortfall,
-          notes: `${shortfall} unit${shortfall > 1 ? 's' : ''} unaccounted during receive`,
-          device_event_id: newEventId(),
-        });
-        const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
-          lasyncro_variant_id:  line.lasyncro_variant_id,
-          quantity:             shortfall,
-          exception_type:       exceptionType,
-          source:               'receive',
-          source_exception_id:  exData?.receive_exception_id ?? undefined,
-        });
-        exceptions = [{ exception_type: exceptionType, quantity: shortfall, prob_label: probData.prob_label }];
+        if (exceptionType === 'deferred') {
+          await apiClient.patch(`/api/v1/suppliers/receive-jobs/${task.id}/lines/${line.receive_job_line_id}/progress`, {
+            quantity_sellable_provisional: accepted, quantity_deferred: shortfall, reconciliation_required: true,
+          });
+        } else {
+          await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+            lasyncro_variant_id: line.lasyncro_variant_id, receive_job_line_id: line.receive_job_line_id,
+            exception_type: exceptionType, quantity_affected: shortfall, accounting_role: 'shortfall',
+            notes: `${shortfall} units reported during receive`,
+          });
+        }
+        exceptions = [{ exception_type: exceptionType, quantity: shortfall }];
       }
-
-      // Inspect line
-      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/inspect`, {
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        quantity_accepted: accepted,
-        quantity_rejected: shortfall,
-        device_event_id: newEventId(),
+      const quantityMissing = exceptions.filter((e) => e.exception_type === 'missing_item').reduce((n, e) => n + e.quantity, 0);
+      const quantityDeferred = exceptions.filter((e) => e.exception_type === 'deferred').reduce((n, e) => n + e.quantity, 0);
+      const quantityRejected = exceptions.filter((e) => !['missing_item', 'deferred'].includes(e.exception_type)).reduce((n, e) => n + e.quantity, 0);
+      await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${task.id}/inspect`, {
+        lasyncro_variant_id: line.lasyncro_variant_id, receive_job_line_id: line.receive_job_line_id,
+        quantity_accepted: accepted, quantity_rejected: quantityRejected,
+        quantity_missing: quantityMissing, quantity_deferred: quantityDeferred,
       });
 
       // Update local state
@@ -246,7 +264,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
 
       setLines(prev => prev.map(l =>
         l.receive_job_line_id === line.receive_job_line_id
-          ? { ...l, inspection_complete: true, quantity_accepted: accepted, quantity_rejected: shortfall }
+          ? { ...l, inspection_complete: true, quantity_accepted: accepted, quantity_rejected: quantityRejected, quantity_missing: quantityMissing, quantity_deferred: quantityDeferred }
           : l
       ));
 
@@ -259,7 +277,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     } finally {
       setSubmitting(false);
     }
-  }, [task.id]);
+  }, [task.id, postReceiveEvent]);
 
   // Handle shortfall modal confirm
   const handleShortfallConfirm = useCallback(async () => {
@@ -273,37 +291,20 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
 
     setSubmitting(true);
     try {
-      // Report this exception
-      const { data: exData } = await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
-        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
-        receive_job_line_id: shortfallModal.line.receive_job_line_id,
-        exception_type: selectedExceptionType,
-        quantity_affected: qty,
-        notes: `${qty} unit${qty > 1 ? 's' : ''} unaccounted during receive`,
-        device_event_id: newEventId(),
-      });
-
-      const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
-        lasyncro_variant_id:  shortfallModal.line.lasyncro_variant_id,
-        quantity:             qty,
-        exception_type:       selectedExceptionType,
-        source:               'receive',
-        source_exception_id:  exData?.receive_exception_id ?? undefined,
-      });
-
-      const probLabel = probData.prob_label ?? 'PROB-?';
-      // All receive exception types involve a physical item — always route to prob bin
-      Alert.alert(
-        '⚠ Place in Problem Bin',
-        `Label ${probLabel} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
-        [{ text: 'Got it', style: 'default' }]
-      );
-      
-      const newException: ExceptionEntry = {
-        exception_type: selectedExceptionType,
-        quantity: qty,
-        prob_label: probLabel,
-      };
+      if (selectedExceptionType === 'deferred') {
+        const deferred = shortfallModal.reportedExceptions.filter((e) => e.exception_type === 'deferred').reduce((n, e) => n + e.quantity, 0) + qty;
+        await apiClient.patch(`/api/v1/suppliers/receive-jobs/${task.id}/lines/${shortfallModal.line.receive_job_line_id}/progress`, {
+          quantity_sellable_provisional: shortfallModal.accepted, quantity_deferred: deferred, reconciliation_required: true,
+        });
+      } else {
+        await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+          lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
+          receive_job_line_id: shortfallModal.line.receive_job_line_id,
+          exception_type: selectedExceptionType, quantity_affected: qty, accounting_role: 'shortfall',
+          notes: `${qty} units reported during receive`,
+        }, shortfallModal.reportedExceptions.length);
+      }
+      const newException: ExceptionEntry = { exception_type: selectedExceptionType, quantity: qty };
 
       const newRemaining = shortfallModal.remainingShortfall - qty;
       const newReported = [...shortfallModal.reportedExceptions, newException];
@@ -334,7 +335,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     } finally {
       setSubmitting(false);
     }
-  }, [shortfallModal, selectedExceptionType, exceptionQtyInput, task.id, submitLineInspection]);
+  }, [shortfallModal, selectedExceptionType, exceptionQtyInput, task.id, submitLineInspection, postReceiveEvent]);
 
   // Miscount — accept all
   const handleMiscount = useCallback(async () => {
@@ -508,7 +509,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
           <Text style={styles.completeSub}>
             Unit labels (LSU-) generated for all accepted items.{'\n'}
             {totalExceptions > 0
-              ? `${totalExceptions} item${totalExceptions > 1 ? 's' : ''} sent to Problem Center.\n`
+              ? `${totalExceptions} delivery allocation${totalExceptions > 1 ? 's' : ''} recorded.\n`
               : ''}
             Stow tasks created — ready to put away.
           </Text>
@@ -570,7 +571,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                 </Row>
                 {state?.exceptions.map((ex, i) => (
                   <Text key={i} style={styles.summaryException}>
-                    ⚠ {ex.prob_label} · {ex.quantity} × {ex.exception_type} → Problem Center
+                    {ex.quantity} × {ex.exception_type === 'deferred' ? 'Later delivery' : ex.exception_type}
                   </Text>
                 ))}
               </View>
@@ -724,12 +725,10 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                         <Text style={styles.exceptionEntryText}>
                           {ex.quantity} × {ex.exception_type}
                         </Text>
-                        <View style={styles.probLabel}>
-                          <Text style={styles.probLabelText}>{ex.prob_label}</Text>
-                        </View>
+
                       </Row>
                       <Text style={styles.probInstruction}>
-                        Move to problem bin · print label
+                        Delivery evidence recorded
                       </Text>
                     </View>
                   ))}
@@ -778,7 +777,9 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                   {state.confirmed && (
                     <Text style={styles.confirmedText}>
                       {line.quantity_accepted} accepted
-                      {line.quantity_rejected > 0 ? ` · ${line.quantity_rejected} to Problem Center` : ''}
+                      {line.quantity_rejected > 0 ? ` · ${line.quantity_rejected} rejected` : ''}
+                      {Number(line.quantity_missing ?? 0) > 0 ? ` · ${line.quantity_missing} missing` : ''}
+                      {Number(line.quantity_deferred ?? 0) > 0 ? ` · ${line.quantity_deferred} coming later` : ''}
                     </Text>
                   )}
                 </Card>
@@ -836,7 +837,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                 {shortfallModal.reportedExceptions.map((ex, i) => (
                   <View key={i} style={styles.reportedEx}>
                     <Text style={styles.reportedExText}>
-                      ✓ {ex.quantity} × {ex.exception_type} → {ex.prob_label}
+                      ✓ {ex.quantity} × {ex.exception_type === 'deferred' ? 'Later delivery' : ex.exception_type}
                     </Text>
                   </View>
                 ))}

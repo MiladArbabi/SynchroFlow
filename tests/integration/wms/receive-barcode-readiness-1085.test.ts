@@ -652,6 +652,78 @@ it('B9 — supplier receive-job GET projects canonical reported problems without
   expect(foreign.status).toBe(404);
 });
 
+// ── GH-1245 post-inspection / closed-job exception fencing ─────────────────
+
+/** state() plus the exception and supplier accounting a refused report must not touch. */
+async function exceptionFenceState(f: ReceiveFixture) {
+  const base = await state(f);
+  const accounting = await withTenant(f.shopId, async (trx) => {
+    const po = await trx('purchase_orders')
+      .where({ shop_id: f.shopId, id: f.poId })
+      .first('status', 'supplier_id', 'actual_delivery_date');
+    return {
+      po: { status: po.status, actual_delivery_date: po.actual_delivery_date },
+      poLinePending: (await trx('purchase_order_line_items')
+        .where({ shop_id: f.shopId, id: f.poLineItemId })
+        .first('quantity_pending_delivery')).quantity_pending_delivery,
+      lineDisposition: await trx('receive_job_lines')
+        .where({ shop_id: f.shopId, receive_job_line_id: f.receiveJobLineId })
+        .first('quantity_delivered', 'quantity_missing', 'quantity_deferred', 'quantity_held_recoverable'),
+      supplier: await trx('suppliers')
+        .where({ shop_id: f.shopId, id: po.supplier_id })
+        .first('total_pos', 'fill_rate'),
+      exceptions: await trx('receive_exceptions')
+        .where({ shop_id: f.shopId, receive_job_id: f.receiveJobId })
+        .orderBy('receive_exception_id')
+        .select('receive_exception_id', 'exception_type', 'quantity_affected', 'accounting_role'),
+    };
+  });
+  return { ...base, ...accounting };
+}
+
+it('B9b — accounting exceptions after final inspection fail closed with zero side effects', async () => {
+  // Barcode-less, so inspection mints LSU identities the refusal must not touch.
+  const f = await receiveFixture({ externalBarcode: null, quantityOrdered: 2 });
+  await inspect(f, 2);
+
+  const before = await exceptionFenceState(f);
+  expect(before.job!.status).toBe('barcode_assignment');
+  expect(Boolean(before.line!.inspection_complete)).toBe(true);
+  expect(before.units).toHaveLength(2);
+
+  const attempts = [
+    { exception_type: 'missing_item', accounting_role: 'shortfall' },
+    { exception_type: 'defect' },
+    { exception_type: 'extra_item', accounting_role: 'overage' },
+    { exception_type: 'other', notes: 'GH1245 post-inspection other' },
+  ];
+  const statuses: number[] = [];
+  for (const attempt of attempts) {
+    statuses.push((await reportReceiveProblem(f, { quantity_affected: 1, ...attempt })).status);
+  }
+
+  expect(statuses).toEqual([409, 409, 409, 409]);
+  expect(await exceptionFenceState(f)).toEqual(before);
+});
+
+it('B9c — a closed Receive job accepts no further exceptions, not even a barcode incident', async () => {
+  const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
+  await inspect(f, 2);
+  await expect(close(f, '2026-09-14')).resolves.toBeUndefined();
+
+  const before = await exceptionFenceState(f);
+  expect(before.job!.status).toBe('closed');
+
+  const report = await reportReceiveProblem(f, {
+    exception_type: 'barcode_mismatch',
+    quantity_affected: 1,
+    notes: 'BAD-CODE-AFTER-CLOSE',
+  });
+
+  expect(report.status).toBe(409);
+  expect(await exceptionFenceState(f)).toEqual(before);
+});
+
 // ── Receive reconciliation accounting model ────────────────────────────────
 
 async function reportReceiveProblem(

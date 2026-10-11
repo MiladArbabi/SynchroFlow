@@ -1,5 +1,9 @@
 // apps/backend/src/api/suppliers/receiveJob.controller.ts
 import { Request, Response } from 'express';
+import { randomUUID } from 'crypto';
+import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, receiveError } from '../../services/wms/receiveWorkflowLock.service.js';
+
+const validEventId = (value: unknown) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
 import db from '@lasyncro/backend-core/db.js';
 import {
   createReceiveJob,
@@ -93,8 +97,12 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
     const jobId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // Refusal-only hint: an in-flight close must not turn this create into
+      // an unintended next delivery. Re-check again after the PO lock.
+      const observedActive = await trx('receive_jobs').where({ shop_id: shopId, po_id: poId }).whereIn('status', ACTIVE_RECEIVE_STATUSES).first('receive_job_id');
+      if (observedActive) throw Object.assign(receiveError('An active receive job already exists for this PO'), { receive_job_id: observedActive.receive_job_id });
       const po = await trx('purchase_orders')
-        .where({ id: poId, shop_id: shopId })
+        .where({ id: poId, shop_id: shopId }).forUpdate()
         .first();
 
       if (!po) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 });
@@ -128,6 +136,7 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
     if (err.statusCode === 400) return res.status(400).json({ error: err.message });
     if (err.statusCode === 404) return res.status(404).json({ error: err.message });
     if (err.statusCode === 409) return res.status(409).json({ error: err.message, receive_job_id: err.receive_job_id });
+    if (err.code === '23505') return res.status(409).json({ error: 'Receive creation conflict' });
     console.error('[RECEIVE_JOB_CREATE_FAILED]', { shopId, poId, error: err.message });
     return res.status(500).json({ error: `Failed to create receive job: ${err.message}` });
   }
@@ -218,7 +227,6 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           's.name as supplier_name',
           'po.po_number',
           'po.expected_delivery_date',
-          'po.actual_delivery_date',
         )
         .first();
 
@@ -550,7 +558,7 @@ export async function httpUpdateReceiveJobLineProgress(req: Request, res: Respon
 
   const jobId = req.params.jobId as string;
   const lineId = req.params.lineId as string;
-  const { quantity_sellable_provisional, reconciliation_required } = req.body ?? {};
+  const { quantity_sellable_provisional, reconciliation_required, quantity_deferred } = req.body ?? {};
   if (!Number.isInteger(quantity_sellable_provisional) || quantity_sellable_provisional < 0) {
     return res.status(400).json({ error: 'quantity_sellable_provisional must be a non-negative integer' });
   }
@@ -567,6 +575,7 @@ export async function httpUpdateReceiveJobLineProgress(req: Request, res: Respon
         receiveJobLineId: lineId,
         quantitySellableProvisional: quantity_sellable_provisional,
         reconciliationRequired: reconciliation_required === true,
+        quantityDeferred: quantity_deferred,
       });
     });
 
@@ -580,6 +589,7 @@ export async function httpUpdateReceiveJobLineProgress(req: Request, res: Respon
     });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_PROGRESS_FAILED]', { shopId, jobId, lineId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('already inspected')) return res.status(409).json({ error: err.message });
     return res.status(500).json({ error: `Progress update failed: ${err.message}` });
@@ -594,14 +604,15 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const jobId = req.params.jobId as string;
-  const { lasyncro_variant_id, receive_job_line_id, quantity_accepted, quantity_rejected } = req.body;
+  const { lasyncro_variant_id, receive_job_line_id, quantity_accepted, quantity_rejected, quantity_missing, quantity_deferred, quantity_held_recoverable, device_event_id } = req.body;
+  if (!validEventId(device_event_id)) return res.status(400).json({ error: 'Invalid device_event_id' });
   if (!lasyncro_variant_id && !receive_job_line_id) {
     return res.status(400).json({ error: 'lasyncro_variant_id or receive_job_line_id required' });
   }
   if (quantity_accepted == null || quantity_rejected == null) {
     return res.status(400).json({ error: 'quantity_accepted, quantity_rejected required' });
   }
-  if (quantity_accepted < 0 || quantity_rejected < 0) {
+  if (!Number.isSafeInteger(quantity_accepted) || !Number.isSafeInteger(quantity_rejected) || quantity_accepted < 0 || quantity_rejected < 0) {
     return res.status(400).json({ error: 'Quantities must be non-negative' });
   }
 
@@ -615,6 +626,11 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
         receiveJobLineId: receive_job_line_id ?? null,
         quantityAccepted: quantity_accepted,
         quantityRejected: quantity_rejected,
+        quantityMissing: quantity_missing,
+        quantityDeferred: quantity_deferred,
+        quantityHeldRecoverable: quantity_held_recoverable,
+        deviceEventId: device_event_id,
+        requireExplicitDisposition: true,
         inspectedBy: req.user!.userId,
       });
     });
@@ -622,6 +638,8 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
     return res.json({ success: true });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_INSPECT_FAILED]', { shopId, jobId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.code === '23505') return res.status(409).json({ error: 'Inspection event conflicts with existing evidence' });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('already inspected')) return res.status(409).json({ error: err.message });
     return res.status(500).json({ error: `Inspection failed: ${err.message}` });
@@ -637,6 +655,9 @@ export async function httpCloseReceiveJob(req: Request, res: Response) {
 
   const jobId = req.params.jobId as string;
   const { actual_delivery_date } = req.body;
+  if (typeof actual_delivery_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(actual_delivery_date) || Number.isNaN(Date.parse(actual_delivery_date)) || new Date(actual_delivery_date).toISOString().slice(0, 10) !== actual_delivery_date) {
+    return res.status(400).json({ error: 'A valid actual_delivery_date is required' });
+  }
 
   try {
     await db.transaction(async (trx) => {
@@ -652,6 +673,7 @@ export async function httpCloseReceiveJob(req: Request, res: Response) {
     return res.json({ success: true });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_CLOSE_FAILED]', { shopId, jobId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('Already closed')) return res.status(409).json({ error: err.message });
     if (err.message.includes('not yet inspected')) return res.status(409).json({ error: err.message });
@@ -674,7 +696,13 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     quantity_affected,
     notes,
     accounting_role,
+    device_event_id,
   } = req.body;
+  const affected = quantity_affected ?? 1;
+  if (!Number.isSafeInteger(affected) || affected <= 0 || !validEventId(device_event_id)) return res.status(400).json({ error: 'Positive integer quantity and valid device_event_id required' });
+  if (accounting_role != null && !['shortfall', 'overage'].includes(accounting_role)) return res.status(400).json({ error: 'Invalid accounting_role' });
+  if (accounting_role === 'overage' && exception_type !== 'extra_item') return res.status(400).json({ error: 'Only extra_item can approve overage' });
+  if (['extra_item', 'barcode_mismatch'].includes(exception_type) && accounting_role === 'shortfall') return res.status(400).json({ error: 'This exception cannot account for shortfall' });
 
   if (!lasyncro_variant_id || !receive_job_line_id || !exception_type) {
     return res.status(400).json({ error: 'lasyncro_variant_id, receive_job_line_id, exception_type required' });
@@ -695,7 +723,30 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     let receiveExceptionId: string | null = null;
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      const { randomUUID } = await import('crypto');
+      const { job } = await lockReceiveJob(trx, shopId, jobId);
+      const line = await trx('receive_job_lines').where({ shop_id: shopId, receive_job_id: jobId, receive_job_line_id }).forUpdate().first();
+      if (!line) throw receiveError('Receive line not found', 404);
+      if (line.lasyncro_variant_id !== lasyncro_variant_id) throw receiveError('Receive line variant mismatch', 400);
+      const role = accounting_role ?? (['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type) ? 'shortfall' : null);
+      if (device_event_id) {
+        const original = await trx('receive_exceptions').where({ shop_id: shopId, device_event_id }).first();
+        if (original) {
+          if (original.receive_job_id !== jobId || original.receive_job_line_id !== receive_job_line_id
+            || original.lasyncro_variant_id !== lasyncro_variant_id || original.exception_type !== exception_type
+            || Number(original.quantity_affected) !== affected || original.accounting_role !== role || original.notes !== (notes ?? null)) {
+            throw receiveError('Exception replay differs from original evidence');
+          }
+          receiveExceptionId = original.receive_exception_id;
+          return;
+        }
+      }
+      assertReceiveMutable(job);
+      // After final inspection only non-accounting incidents may be reported:
+      // no shortfall/overage role, and not 'other' (which the reconciliation
+      // projection counts toward shortfall). Inspected quantities never change.
+      if (line.inspection_complete && (role !== null || exception_type === 'other')) {
+        throw receiveError('Cannot add accounting exceptions after final inspection');
+      }
       receiveExceptionId = randomUUID();
       await trx('receive_exceptions').insert({
         receive_exception_id: receiveExceptionId,
@@ -704,7 +755,8 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         receive_job_line_id,
         lasyncro_variant_id,
         exception_type,
-        quantity_affected: quantity_affected ?? 1,
+        quantity_affected: affected,
+        device_event_id: device_event_id ?? null,
         // GH-1108 AUDIT CORRECTION — exception_type='extra_item' must NOT
         // imply accounting_role='overage' by default. Overage approval is
         // the explicit evidence "Accept extra" persists (accounting_role
@@ -718,8 +770,7 @@ export async function httpReportReceiveException(req: Request, res: Response) {
             ? 'shortfall'
             : null
         ),
-        counts_toward_shortfall: ['defect', 'wrong_item', 'wrong_variant', 'missing_item'].includes(exception_type)
-          || (exception_type === 'other' && accounting_role === 'shortfall'),
+        counts_toward_shortfall: role === 'shortfall',
         notes: notes ?? null,
         raised_by: req.user!.userId,
         raised_at: new Date(),
@@ -735,6 +786,8 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     return res.status(201).json({ success: true, receive_exception_id: receiveExceptionId });
   } catch (err: any) {
     console.error('[RECEIVE_EXCEPTION_FAILED]', { shopId, jobId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.code === '23505') return res.status(409).json({ error: 'Exception event conflicts with existing evidence' });
     return res.status(500).json({ error: `Failed to report exception: ${err.message}` });
   }
 }

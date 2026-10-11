@@ -1,3 +1,4 @@
+import { pendingDeliveryQuantitySql } from '../purchasing/purchasingEvidence.js';
 // apps/backend/src/services/demand/demandIntelligence.service.ts
 
 import type { Knex } from 'knex';
@@ -419,12 +420,7 @@ export async function computeVariantPlanning(
       .whereNotNull('poli.lasyncro_variant_id')
       .select(
         'poli.lasyncro_variant_id',
-        trx.raw(`
-          GREATEST(
-            poli.quantity_ordered - COALESCE(poli.quantity_received, 0),
-            0
-          ) as remaining_qty
-        `),
+        trx.raw(`${pendingDeliveryQuantitySql()} as remaining_qty`),
         trx.raw(`
           CASE
             WHEN po.expected_delivery_date IS NULL THEN NULL
