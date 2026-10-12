@@ -2,7 +2,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { runWithTenantContext } from '../tenant-context.js';
-import { resolveTierForShop } from '../services/shop-resolution.service.js';
+import { resolveShopContextForUser, resolveTierForShop } from '../services/shop-resolution.service.js';
 
 /**
  * Canonical Auth Context extracted from JWT + resolved at request time.
@@ -85,6 +85,39 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       });
     }
 
+    if (payload.actor_type !== 'shop_user' &&
+        payload.actor_type !== 'system_service' &&
+        payload.actor_type !== 'support_admin') {
+      return res.status(401).json({ error: 'INVALID_TOKEN_ACTOR_TYPE' });
+    }
+
+    // AUTH-ADMISSION-01: shop_user JWT claims are issuance-time hints.
+    // Resolve current membership before publishing auth or tenant context.
+    // Other actor types retain their existing JWT role behavior.
+    let currentRoles = payload.shop_roles;
+    if (payload.actor_type === 'shop_user') {
+      try {
+        const membership = await resolveShopContextForUser(payload.user_id);
+        if (!membership) {
+          return res.status(403).json({ error: 'User shop not found.' });
+        }
+        if (membership.shopId !== shopId) {
+          return res.status(403).json({ error: 'Shop context mismatch.' });
+        }
+        currentRoles = [membership.role];
+      } catch (resolutionError) {
+        console.error('[auth] Failed to resolve authoritative membership for user', {
+          userId: payload.user_id,
+          error: resolutionError instanceof Error ? resolutionError.message : resolutionError,
+        });
+        // Includes ambiguous membership: fail closed, never trust JWT roles.
+        return res.status(503).json({
+          error: 'MEMBERSHIP_STATE_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+    }
+
     // GH-1136 — resolve CURRENT authoritative tier from shop_subscriptions
     // rather than trusting the JWT's issuance-time tier claim. This is the
     // one place request-time commercial authority is established; downstream
@@ -114,7 +147,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       userId: payload.user_id,
       shopId,
       actorType: payload.actor_type,
-      roles: payload.shop_roles,
+      roles: currentRoles,
       tier: currentTier,
     };
 
