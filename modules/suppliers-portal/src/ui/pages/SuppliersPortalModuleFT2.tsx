@@ -1260,6 +1260,37 @@ function PoProgressTrack({ status }: { status: PurchaseOrderStatus }) {
   );
 }
 
+/**
+ * GH-1245 — canonical job-first, ownership-aware Receive decision shared by
+ * the PO accordion CTA and the action=receive deep-link. The PO projection
+ * only carries the active (non-closed/cancelled) job, so any non-pending
+ * status means the job has started. Inconsistent or unknown state fails
+ * closed ('none') so no duplicate Receive job can be dispatched.
+ */
+type ReceiveAction = 'assign' | 'open_own' | 'resume_own' | 'reassign' | 'none';
+
+function resolveReceiveAction(
+  po: PurchaseOrder,
+  currentUserId: number | null
+): ReceiveAction {
+  const jobId = po.receive_job_id ?? null;
+  const status = po.receive_status ?? null;
+  const assigneeId = po.receive_assigned_operator_id ?? null;
+
+  if (jobId == null) {
+    return status == null && assigneeId == null ? 'assign' : 'none';
+  }
+  if (status == null) return 'none';
+  // Legacy pending/unassigned work — guarded 409 recovery in the app wrapper.
+  if (status === 'pending' && assigneeId == null) return 'assign';
+  if (currentUserId != null && assigneeId === currentUserId) {
+    return status === 'pending' ? 'open_own' : 'resume_own';
+  }
+  // GH-1143 — pending work assigned to another operator is managed only via
+  // explicit Reassign. Started work owned by another operator: no action.
+  return status === 'pending' ? 'reassign' : 'none';
+}
+
 function PoAccordion({
   po,
   onFetchLineItems,
@@ -1351,6 +1382,16 @@ function PoAccordion({
     setAssignReceiveOpen(true);
   }, [po.receive_assigned_operator_id]);
 
+  const receiveAction = resolveReceiveAction(po, currentUserId);
+  const existingReceiveJobId = po.receive_job_id ?? null;
+
+  // GH-1245 — the current user's own job opens (pending) or resumes
+  // (started) that exact job. Never creates or reassigns work.
+  const handleOpenOwnReceive = useCallback(() => {
+    if (!existingReceiveJobId) return;
+    navigate(`/wms?receiveJobId=${existingReceiveJobId}`);
+  }, [existingReceiveJobId, navigate]);
+
   const autoReceiveOpenedRef = useRef(false);
 
   useEffect(() => {
@@ -1361,10 +1402,19 @@ function PoAccordion({
     ) {
       return;
     }
+    // GH-1245 — ownership cannot be decided until the authenticated user ID
+    // resolves; keep the one-shot guard unconsumed and reevaluate then.
+    if (currentUserId == null) return;
 
     autoReceiveOpenedRef.current = true;
-    handleReceive();
-  }, [autoOpenReceive, handleReceive, po.status]);
+    // GH-1245 — same decision as the PO accordion CTA. Reassignment stays
+    // explicit; started work never routes through handleReceive.
+    if (receiveAction === 'assign') {
+      handleReceive();
+    } else if (receiveAction === 'open_own' || receiveAction === 'resume_own') {
+      handleOpenOwnReceive();
+    }
+  }, [autoOpenReceive, currentUserId, handleReceive, handleOpenOwnReceive, po.status, receiveAction]);
 
   const handleCloseReceiveAssignment = () => {
     if (assigningReceive) return;
@@ -1441,14 +1491,16 @@ function PoAccordion({
     po.status === 'shipped' || po.status === 'partially_received';
 
   // GH-1143 RECEIVE-REASSIGN-UI-01 — an existing PENDING/UNSTARTED Receive
-  // job already assigned to someone gets explicit "Reassign Receive"
+  // job already assigned to another operator gets explicit "Reassign Receive"
   // instead of the initial "Receive via WMS" → Assign flow. Once the job
   // has started (or closed/cancelled), receive_status !== 'pending' and no
   // Reassign affordance is offered — no takeover path (see J).
-  const canReassignExistingReceive =
-    po.receive_job_id != null &&
-    po.receive_status === 'pending' &&
-    po.receive_assigned_operator_id != null;
+  // GH-1245 — all Receive CTAs derive from resolveReceiveAction.
+  const canReassignExistingReceive = receiveAction === 'reassign';
+  const canOpenOwnReceive =
+    receiveAction === 'open_own' || receiveAction === 'resume_own';
+  const receiveJobStarted = receiveAction === 'resume_own';
+  const canStartReceiveDispatch = receiveAction === 'assign';
 
   const receiveAssignmentLabel = isReceiveEligible
     ? po.receive_job_id && po.receive_assigned_operator_id != null
@@ -1643,8 +1695,21 @@ function PoAccordion({
                 Reassign Receive
               </Button>
             )}
-            {/* Arrived, no existing pending assignment → start receive session in WMS */}
-            {!canReassignExistingReceive && (po.status === 'shipped' || po.status === 'partially_received') && (
+            {/* GH-1245 — own existing job → open/resume that exact job in WMS */}
+            {canOpenOwnReceive && (po.status === 'shipped' || po.status === 'partially_received') && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                startIcon={<CheckCircle size={14} />}
+                onClick={handleOpenOwnReceive}
+                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+              >
+                {receiveJobStarted ? 'Resume Receive' : 'Open Receive'}
+              </Button>
+            )}
+            {/* Arrived, no active job (or legacy unassigned pending) → assign Receive */}
+            {canStartReceiveDispatch && (po.status === 'shipped' || po.status === 'partially_received') && (
               <Button
                 size="small"
                 variant="contained"

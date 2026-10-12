@@ -193,13 +193,32 @@ export default function WmsOperationsPage() {
   const [showQzPrompt, setShowQzPrompt] = useState(false);
   const [finishedCountLabel, setFinishedCountLabel] = useState<string | null>(null);
 
+  // GH-1245 — a page that ARRIVES with ?receiveJobId (Suppliers Portal
+  // handoff or refresh) holds WmsModuleFT2 until that exact job resolves, so
+  // the ordinary Operations board never paints first. In-module entry (the
+  // module is already mounted) never holds.
+  const requestedReceiveJobId = searchParams.get('receiveJobId');
+  const [awaitingReceiveHandoff, setAwaitingReceiveHandoff] = useState(
+    () => requestedReceiveJobId != null
+  );
+  const [receiveHandoffFailedJobId, setReceiveHandoffFailedJobId] = useState<string | null>(null);
+  const [receiveHandoffAttempt, setReceiveHandoffAttempt] = useState(0);
+
   useEffect(() => {
     const receiveJobId = searchParams.get('receiveJobId');
-    if (!receiveJobId) return;
+    if (!receiveJobId) {
+      // GH-1245 — destination dropped; the hold must never re-arm later.
+      setAwaitingReceiveHandoff(false);
+      return;
+    }
+    // GH-1245 — ignore responses for a job ID the URL no longer requests.
+    let superseded = false;
     // Keep param in URL while session is active — enables refresh recovery
     // Param is cleaned only when session completes (exitSession below)
     handleFetchReceiveJob(receiveJobId)
       .then((result) => {
+        if (superseded) return;
+        setAwaitingReceiveHandoff(false);
         // Hand off pre-fetched job to WmsModuleFT2 — auto-enters receive session on mount
         setPendingReceiveSession({
           receiveJobId,
@@ -214,9 +233,14 @@ export default function WmsOperationsPage() {
         });
       })
       .catch(() => {
+        if (superseded) return;
+        setReceiveHandoffFailedJobId(receiveJobId);
         console.error('[WmsOperationsPage] Failed to auto-enter receive session', { receiveJobId });
       });
-  }, [searchParams, setSearchParams, handleFetchReceiveJob]);
+    return () => {
+      superseded = true;
+    };
+  }, [searchParams, setSearchParams, handleFetchReceiveJob, receiveHandoffAttempt]);
 
   // Register Web Push subscription on first WMS load (WM-22)
   useWebPush({ httpPost });
@@ -811,6 +835,53 @@ export default function WmsOperationsPage() {
       return_notes: input.returnNotes,
     });
   };
+
+  // GH-1245 — Receive handoff hold. Rendered only before the module has ever
+  // mounted for this page instance and only while the requested job is
+  // unresolved; no work is created, assigned or claimed here.
+  if (awaitingReceiveHandoff && requestedReceiveJobId) {
+    const handoffFailed = receiveHandoffFailedJobId === requestedReceiveJobId;
+    return (
+      <Box
+        role="status"
+        aria-live="polite"
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 8, px: 2 }}
+      >
+        {handoffFailed ? (
+          <>
+            <Typography sx={{ fontSize: 14, color: 'var(--ink-2)' }}>
+              Couldn’t open this Receive job.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => {
+                  setReceiveHandoffFailedJobId(null);
+                  setReceiveHandoffAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  setAwaitingReceiveHandoff(false);
+                  setReceiveHandoffFailedJobId(null);
+                  setSearchParams({}, { replace: true });
+                }}
+              >
+                Back to Warehouse
+              </Button>
+            </Box>
+          </>
+        ) : (
+          <Typography sx={{ fontSize: 14, color: 'var(--ink-3)' }}>Opening Receive…</Typography>
+        )}
+      </Box>
+    );
+  }
 
   return (
     <>
