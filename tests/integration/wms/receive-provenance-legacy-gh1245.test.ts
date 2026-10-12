@@ -332,7 +332,20 @@ function getJob(j: JobFixture) {
     .set(auth(j.po.shop.token));
 }
 
-function inspect(j: JobFixture, accepted: number, rejected: number, deferred?: number) {
+/** GH-1241 S3-A1 — the operator's persisted physical count (real route). */
+function confirmCount(j: JobFixture, quantity: number) {
+  return request(app)
+    .post(`/api/v1/suppliers/receive-jobs/${j.receiveJobId}/lines/${j.receiveJobLineId}/confirm-count`)
+    .set(auth(j.po.shop.token))
+    .send({ quantity_confirmed: quantity, device_event_id: crypto.randomUUID() });
+}
+
+/** Operator Finish Count: confirm the physical (accepted) count, then inspect. */
+async function inspect(j: JobFixture, accepted: number, rejected: number, deferred?: number, opts = { confirm: true }) {
+  if (opts.confirm) {
+    const confirmed = await confirmCount(j, accepted);
+    if (confirmed.status !== 200) return confirmed;
+  }
   return request(app).post(`/api/v1/suppliers/receive-jobs/${j.receiveJobId}/inspect`)
     .set(auth(j.po.shop.token)).send({
       lasyncro_variant_id: j.po.lasyncroVariantId,
@@ -453,8 +466,10 @@ describe('GH-1245 B1 delivery provenance and genuine legacy-v1 receipt', () => {
     const shop = await provisionFt2Shop('v1-partial');
     const po = await shippedPo(shop, 3);
     const job = await legacyJob(po);
+    // GH-1241 S3-A1: count confirmed first, so the refusal is about the ambiguous payload.
+    expect((await confirmCount(job, 2)).status).toBe(200);
     const before = await economicState(po);
-    const refused = await inspect(job, 2, 1);
+    const refused = await inspect(job, 2, 1, undefined, { confirm: false });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toContain('RECEIVE_CLIENT_UPGRADE_REQUIRED');
     expect(await economicState(po)).toEqual(before);

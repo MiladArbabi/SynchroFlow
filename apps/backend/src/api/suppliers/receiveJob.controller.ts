@@ -9,6 +9,7 @@ import {
   createReceiveJob,
   inspectReceiveJobLine,
   closeReceiveJob,
+  confirmReceiveJobLineCount,
   receiveLineReconciliationState,
   updateReceiveJobLineProgress,
 } from '../../services/wms/receiveJob.service.js';
@@ -304,8 +305,21 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           expected: Number(line.quantity_expected ?? 0),
           sellable: provisionalSellable,
         });
+        // GH-1241 S3-A1 — sellable for an untouched line is a projection
+        // (expected − reported problems), never a count. Only the persisted
+        // operator confirmation is physical-count evidence.
+        const countConfirmed = line.quantity_count_confirmed != null;
+        const countState = line.inspection_complete ? 'inspected' : countConfirmed ? 'confirmed' : 'not_counted';
+        const sellableBasis = line.inspection_complete
+          ? 'inspected'
+          : line.quantity_sellable_provisional == null
+            ? 'uncounted_projection'
+            : countConfirmed && Number(line.quantity_count_confirmed) === Number(line.quantity_sellable_provisional)
+              ? 'confirmed_count'
+              : 'unconfirmed_draft';
         return {
           ...line,
+          count_state: countState,
           barcode_ready: lineReadiness?.ready ?? false,
           barcode_readiness_reason: lineReadiness?.reason ?? 'not_inspected',
           awaiting_label_ack: lineReadiness?.reason === 'labels_outstanding'
@@ -313,7 +327,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           accepted_unit_count: lineReadiness?.acceptedUnitCount ?? 0,
           labelled_unit_count: lineReadiness?.labelledUnitCount ?? 0,
           reported_problems: lineProblems,
-          reconciliation,
+          reconciliation: { ...reconciliation, sellable_basis: sellableBasis },
         };
       }));
 
@@ -589,10 +603,50 @@ export async function httpUpdateReceiveJobLineProgress(req: Request, res: Respon
     });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_PROGRESS_FAILED]', { shopId, jobId, lineId, error: err.message });
-    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('already inspected')) return res.status(409).json({ error: err.message });
     return res.status(500).json({ error: `Progress update failed: ${err.message}` });
+  }
+}
+
+// ─────────────────────────────────────────
+// POST /receive-jobs/:jobId/lines/:lineId/confirm-count
+// ─────────────────────────────────────────
+/** GH-1241 S3-A1 — the operator's explicit physical count; inspection requires it. */
+export async function httpConfirmReceiveJobLineCount(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const lineId = req.params.lineId as string;
+  const { quantity_confirmed, device_event_id } = req.body ?? {};
+  if (!Number.isSafeInteger(quantity_confirmed) || quantity_confirmed < 0) {
+    return res.status(400).json({ error: 'quantity_confirmed must be a non-negative integer', code: 'RECEIVE_COUNT_INVALID' });
+  }
+  if (device_event_id === undefined || !validEventId(device_event_id)) {
+    return res.status(400).json({ error: 'A valid device_event_id is required', code: 'RECEIVE_COUNT_EVENT_REQUIRED' });
+  }
+
+  try {
+    const confirmed = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return confirmReceiveJobLineCount(trx, {
+        shopId,
+        receiveJobId: jobId,
+        receiveJobLineId: lineId,
+        quantityConfirmed: quantity_confirmed,
+        confirmationEventId: device_event_id,
+        confirmedBy: req.user!.userId,
+      });
+    });
+
+    return res.json({ success: true, receive_job_id: jobId, receive_job_line_id: lineId, ...confirmed });
+  } catch (err: any) {
+    console.error('[RECEIVE_JOB_CONFIRM_COUNT_FAILED]', { shopId, jobId, lineId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    if (err.code === '23505') return res.status(409).json({ error: 'Count confirmation event conflicts with existing evidence', code: 'RECEIVE_COUNT_CONFIRMATION_REPLAY_CONFLICT' });
+    return res.status(500).json({ error: `Count confirmation failed: ${err.message}` });
   }
 }
 
@@ -638,7 +692,7 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
     return res.json({ success: true });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_INSPECT_FAILED]', { shopId, jobId, error: err.message });
-    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     if (err.code === '23505') return res.status(409).json({ error: 'Inspection event conflicts with existing evidence' });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('already inspected')) return res.status(409).json({ error: err.message });
@@ -673,7 +727,7 @@ export async function httpCloseReceiveJob(req: Request, res: Response) {
     return res.json({ success: true });
   } catch (err: any) {
     console.error('[RECEIVE_JOB_CLOSE_FAILED]', { shopId, jobId, error: err.message });
-    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     if (err.message.includes('Already closed')) return res.status(409).json({ error: err.message });
     if (err.message.includes('not yet inspected')) return res.status(409).json({ error: err.message });
@@ -786,7 +840,7 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     return res.status(201).json({ success: true, receive_exception_id: receiveExceptionId });
   } catch (err: any) {
     console.error('[RECEIVE_EXCEPTION_FAILED]', { shopId, jobId, error: err.message });
-    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     if (err.code === '23505') return res.status(409).json({ error: 'Exception event conflicts with existing evidence' });
     return res.status(500).json({ error: `Failed to report exception: ${err.message}` });
   }

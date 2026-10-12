@@ -24,6 +24,7 @@ import {
   createReceiveJob,
   inspectReceiveJobLine,
   closeReceiveJob,
+  confirmReceiveJobLineCount,
 } from 'api-src/services/wms/receiveJob.service';
 
 async function createFixtureShop(unique: string): Promise<number> {
@@ -135,8 +136,17 @@ describe('closeReceiveJob — Stock Protection enqueue placement', () => {
 
     const operatorId = await seedFixtureUser(shopId);
 
-    await withTenant(shopId, (trx) =>
-      inspectReceiveJobLine(trx, {
+    // GH-1241 S3-A1: the operator confirms the physical count before inspection.
+    await withTenant(shopId, async (trx) => {
+      await confirmReceiveJobLineCount(trx, {
+        shopId,
+        receiveJobId,
+        receiveJobLineId: line.receive_job_line_id,
+        quantityConfirmed: 5,
+        confirmationEventId: crypto.randomUUID(),
+        confirmedBy: operatorId,
+      });
+      await inspectReceiveJobLine(trx, {
         shopId,
         receiveJobId,
         lasyncroVariantId: variantId,
@@ -144,8 +154,8 @@ describe('closeReceiveJob — Stock Protection enqueue placement', () => {
         quantityAccepted: 5,
         quantityRejected: 0,
         inspectedBy: operatorId,
-      }),
-    );
+      });
+    });
 
     await withTenant(shopId, (trx) =>
       closeReceiveJob(trx, {

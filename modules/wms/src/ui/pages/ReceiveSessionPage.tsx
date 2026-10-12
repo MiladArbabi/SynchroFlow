@@ -52,6 +52,11 @@ export interface ReceiveJobLine {
   quantity_deferred?: number | null;
   quantity_sellable_provisional?: number | null;
   reconciliation_started_at?: string | null;
+  /** GH-1241 S3-A1 — the operator's persisted physical count; null = never confirmed. */
+  quantity_count_confirmed?: number | null;
+  count_confirmed_at?: string | null;
+  /** GH-1241 S3-A1 — GET evidence contract; only 'confirmed' is a physical count. */
+  count_state?: 'not_counted' | 'confirmed' | 'inspected';
   inspection_complete?: boolean;
   image_url: string | null;
   barcode: string | null;
@@ -82,6 +87,12 @@ export interface ReceiveJobLine {
      * over-delivery decision from server data instead of local UI state.
      */
     overage_approved?: boolean;
+    /**
+     * GH-1241 S3-A1 — what `sellable` is: an uncounted projection (untouched
+     * line), an unconfirmed draft, the operator's confirmed count, or the
+     * inspected result. Only 'confirmed_count' / 'inspected' are counts.
+     */
+    sellable_basis?: 'uncounted_projection' | 'unconfirmed_draft' | 'confirmed_count' | 'inspected';
   };
 }
 
@@ -133,6 +144,15 @@ export interface ReceiveSessionPageProps {
   onPersistLineProgress?: (
     receiveJobLineId: string,
     params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }
+  ) => Promise<void>;
+  /**
+   * GH-1241 S3-A1 — persists the operator's explicit physical count for a
+   * line. Inspection is refused without it, so a host that omits it cannot
+   * finish lines (fails closed).
+   */
+  onConfirmLineCount?: (
+    receiveJobLineId: string,
+    params: { quantity_confirmed: number }
   ) => Promise<void>;
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
@@ -377,14 +397,26 @@ function projectedSellable(line: ReceiveJobLine): number {
 // uninspected over-expected provisional count and the canonical persisted
 // overage approval must reconstruct the approved over-delivery decision from
 // server data, not rely on local UI state that resets to null on reload.
+// GH-1241 S3-A1 — re-entry may rebuild the decision only when the operator's
+// persisted confirmed count IS the over-expected draft. A draft plus approval
+// without a confirmed count re-enters counting: the operator must Finish Count
+// again, and Accept extra never turns the draft into count evidence.
 function hasApprovedOverage(line: ReceiveJobLine): boolean {
   return !line.inspection_complete
     && line.reconciliation?.overage_approved === true
-    && projectedSellable(line) > line.quantity_expected;
+    && projectedSellable(line) > line.quantity_expected
+    && confirmedCount(line) === projectedSellable(line);
+}
+
+// GH-1241 S3-A1 — only the operator's persisted physical count can seed an
+// accepted quantity. The GET projection's sellable for an untouched line is
+// expected minus reported problems: an inference, never a count.
+function confirmedCount(line: ReceiveJobLine): number | null {
+  return line.quantity_count_confirmed == null ? null : Number(line.quantity_count_confirmed);
 }
 
 function hasProjectedReconciliation(line: ReceiveJobLine): boolean {
-  if (!line.reconciliation) return false;
+  if (!line.reconciliation || confirmedCount(line) == null) return false;
   return !!line.reconciliation_started_at
     || line.reconciliation.allocations.length > 0
     || line.reconciliation.unaccounted === 0 && line.reconciliation.sellable < line.reconciliation.expected
@@ -393,9 +425,9 @@ function hasProjectedReconciliation(line: ReceiveJobLine): boolean {
 }
 
 function projectedReconciliationState(line: ReceiveJobLine) {
-  if (!line.reconciliation) return null;
+  const sellable = confirmedCount(line);
+  if (!line.reconciliation || sellable == null) return null;
   const expected = Number(line.reconciliation.expected ?? line.quantity_expected);
-  const sellable = Number(line.reconciliation.sellable ?? line.quantity_accepted ?? 0);
   const accounted = Number(line.reconciliation.accounted ?? 0);
   const unaccounted = Number(line.reconciliation.unaccounted ?? Math.max(0, expected - sellable - accounted));
   const totalShortfall = accounted + unaccounted;
@@ -546,6 +578,7 @@ export default function ReceiveSessionPage({
   onReportException,
   onApproveOverDelivery,
   onPersistLineProgress,
+  onConfirmLineCount,
   onCloseJob,
   onComplete,
   onResolveBarcode,
@@ -629,6 +662,7 @@ export default function ReceiveSessionPage({
       line: lines[firstApprovedOverageIndex],
       counted: projectedSellable(lines[firstApprovedOverageIndex]),
       approved: true,
+      countConfirmed: true,
     }
     : null;
 
@@ -674,6 +708,14 @@ export default function ReceiveSessionPage({
      * operator just counted past expected in this session.
      */
     approved?: boolean;
+    /**
+     * GH-1241 S3-A1 — true when `counted` is the operator's persisted
+     * confirmed count (Finish Count, or re-entry with matching evidence):
+     * only then can the overage be approved. Otherwise the decision is the
+     * live +/typed/scan warning; it can keep the extra in the draft count,
+     * which Finish Count must confirm before any approval.
+     */
+    countConfirmed?: boolean;
   } | null>(initialOverDeliveryDecision);
   const [overDeliverySubmitting, setOverDeliverySubmitting] = useState(false);
   const [overDeliveryError, setOverDeliveryError] = useState<string | null>(null);
@@ -788,6 +830,16 @@ export default function ReceiveSessionPage({
     await progressPersistQueueRef.current;
     if (progressPersistErrorRef.current) throw progressPersistErrorRef.current;
   }, []);
+
+  // GH-1241 S3-A1 — the operator's explicit "this is my physical count".
+  // Only explicit operator actions call it; never Start, mode changes,
+  // mount/refresh, projections or problem reports.
+  const confirmLineCount = useCallback(async (line: ReceiveJobLine, quantity: number) => {
+    if (!onConfirmLineCount) {
+      throw new Error('Count confirmation is unavailable. Refresh and try again.');
+    }
+    await onConfirmLineCount(line.receive_job_line_id, { quantity_confirmed: quantity });
+  }, [onConfirmLineCount]);
 
   useEffect(() => {
     if (!currentLine) return;
@@ -946,9 +998,21 @@ export default function ReceiveSessionPage({
       setSubmitError(err?.message ?? 'Could not save count progress. Please retry.');
       return;
     }
+    try {
+      await confirmLineCount(currentLine, accepted);
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not confirm this count. Your count is kept; retry when ready.');
+      return;
+    }
     if (accepted > currentLine.quantity_expected) {
       setOverDeliveryError(null);
-      setOverDeliveryDecision({ line: currentLine, counted: accepted });
+      setOverDeliveryDecision({
+        line: currentLine,
+        counted: accepted,
+        countConfirmed: true,
+        // A persisted approval (e.g. before a refresh) is never posted twice.
+        approved: currentLine.reconciliation?.overage_approved === true,
+      });
       return;
     }
 
@@ -977,7 +1041,7 @@ export default function ReceiveSessionPage({
     }
 
     await completeLine(currentLine, accepted, 0);
-  }, [accepted, completeLine, currentAwaitingLabel, currentComplete, currentLine, flushLineProgress, persistLineProgress]);
+  }, [accepted, completeLine, confirmLineCount, currentAwaitingLabel, currentComplete, currentLine, flushLineProgress, persistLineProgress]);
 
   const handleScan = useCallback(async (value: string) => {
     if (!scanReady || !currentLine || !onResolveBarcode || scanProcessing) return;
@@ -998,7 +1062,7 @@ export default function ReceiveSessionPage({
       }
 
       const next = activeAccepted + 1;
-      if (next > currentLine.quantity_expected) {
+      if (next > currentLine.quantity_expected && activeAccepted <= currentLine.quantity_expected) {
         setOverDeliveryError(null);
         setOverDeliveryDecision({ line: currentLine, counted: next });
         return;
@@ -1210,41 +1274,24 @@ export default function ReceiveSessionPage({
     }
   }, [inspectAndResolveReadiness, moveToNextLineOrReview, reconciliationLine]);
 
+  // GH-1241 S3-A1 — "I miscounted" means the confirmed count was wrong, not
+  // that every expected unit is present. Return to counting this line; the
+  // next Finish Count confirms the corrected physical count. Never inspect
+  // the expected quantity without a count.
   const handleMiscount = useCallback(async () => {
     if (!shortfallModal) return;
-    setShortfallSubmitting(true);
-    setAccepted(shortfallModal.line.quantity_expected);
-    try {
-      const outcome = await inspectAndResolveReadiness(shortfallModal.line, shortfallModal.line.quantity_expected, 0);
-      setShortfallModal(null);
-      if (!outcome.awaitingLabelAck) {
-        moveToNextLineOrReview(shortfallModal.line.receive_job_line_id);
-      }
-    } catch (err: any) {
-      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
-    } finally {
-      setShortfallSubmitting(false);
-    }
-  }, [inspectAndResolveReadiness, moveToNextLineOrReview, shortfallModal]);
+    setShortfallModal(null);
+    setLineAction('count');
+    setSessionPhase('inspect');
+  }, [shortfallModal]);
 
   const handleReconciliationMiscount = useCallback(async () => {
     if (!reconciliationLine) return;
-    setShortfallSubmitting(true);
-    setAccepted(reconciliationLine.line.quantity_expected);
-    try {
-      const outcome = await inspectAndResolveReadiness(reconciliationLine.line, reconciliationLine.line.quantity_expected, 0);
-      const completedLineId = reconciliationLine.line.receive_job_line_id;
-      setReconciliationLine(null);
-      setSessionPhase('inspect');
-      if (!outcome.awaitingLabelAck) {
-        moveToNextLineOrReview(completedLineId);
-      }
-    } catch (err: any) {
-      setSubmitError(err?.message ?? 'Could not save this line. Please retry.');
-    } finally {
-      setShortfallSubmitting(false);
-    }
-  }, [inspectAndResolveReadiness, moveToNextLineOrReview, reconciliationLine]);
+    setAccepted(reconciliationLine.accepted);
+    setReconciliationLine(null);
+    setLineAction('count');
+    setSessionPhase('inspect');
+  }, [reconciliationLine]);
 
   const openProblemDialog = useCallback((defaults?: { choice?: ProblemChoice; qty?: string; notes?: string }) => {
     const choice = defaults?.choice ?? null;
@@ -1272,7 +1319,10 @@ export default function ReceiveSessionPage({
   // optimistic completion.
   const handleAcceptOverDelivery = useCallback(async () => {
     if (!overDeliveryDecision) return;
-    const { line, counted, approved } = overDeliveryDecision;
+    const { line, counted, approved, countConfirmed } = overDeliveryDecision;
+    // GH-1241 S3-A1 — approval follows the persisted physical count; it never
+    // confirms a count itself.
+    if (!countConfirmed) return;
     const extra = Math.max(0, counted - line.quantity_expected);
 
     setOverDeliveryError(null);
@@ -1306,6 +1356,16 @@ export default function ReceiveSessionPage({
       setOverDeliverySubmitting(false);
     }
   }, [flushLineProgress, inspectAndResolveReadiness, moveToNextLineOrReview, onApproveOverDelivery, overDeliveryDecision, persistLineProgress]);
+
+  // GH-1241 S3-A1 — the live warning's "keep": the extra stays in the draft
+  // count (a scan has not drafted it yet) and the operator continues to
+  // Finish Count, which confirms the physical count before any approval.
+  const handleKeepOverCount = useCallback(() => {
+    if (!overDeliveryDecision || overDeliveryDecision.countConfirmed) return;
+    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.counted);
+    setOverDeliveryError(null);
+    setOverDeliveryDecision(null);
+  }, [overDeliveryDecision, persistLineProgress]);
 
   const handleRejectOverDelivery = useCallback(() => {
     if (!overDeliveryDecision) return;
@@ -1827,8 +1887,9 @@ export default function ReceiveSessionPage({
                       onChange={(event) => {
                         const next = Number.parseInt(event.target.value, 10);
                         if (Number.isNaN(next) || next < 0) return;
+                        const crossedExpected = accepted <= currentLine.quantity_expected;
                         void persistLineProgress(currentLine, next);
-                        if (next > currentLine.quantity_expected) {
+                        if (next > currentLine.quantity_expected && crossedExpected) {
                           setOverDeliveryError(null);
                           setOverDeliveryDecision({ line: currentLine, counted: next });
                           return;
@@ -1846,7 +1907,7 @@ export default function ReceiveSessionPage({
                       onClick={() => {
                         const next = accepted + 1;
                         void persistLineProgress(currentLine, next);
-                        if (accepted >= currentLine.quantity_expected) {
+                        if (accepted === currentLine.quantity_expected) {
                           setOverDeliveryError(null);
                           setOverDeliveryDecision({ line: currentLine, counted: next });
                           return;
@@ -2501,22 +2562,33 @@ export default function ReceiveSessionPage({
                 </Paper>
               ))}
             </Box>
+            {!overDeliveryDecision?.countConfirmed && (
+              <Typography variant="body2" color="text.secondary">
+                Keep counting, then Finish Count to confirm your physical count before approving the extra.
+              </Typography>
+            )}
             {overDeliveryError && <Alert severity="error">{overDeliveryError}</Alert>}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleRejectOverDelivery} color="inherit" disabled={overDeliverySubmitting}>Do not receive extra</Button>
           <Button onClick={handleReportOverDelivery} color="warning" disabled={overDeliverySubmitting}>Report problem</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            disabled={overDeliverySubmitting}
-            onClick={() => void handleAcceptOverDelivery()}
-          >
-            {overDeliverySubmitting
-              ? 'Approving...'
-              : `Accept extra unit${Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}`}
-          </Button>
+          {overDeliveryDecision?.countConfirmed ? (
+            <Button
+              variant="contained"
+              color="warning"
+              disabled={overDeliverySubmitting}
+              onClick={() => void handleAcceptOverDelivery()}
+            >
+              {overDeliverySubmitting
+                ? 'Approving...'
+                : `Accept extra unit${Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}`}
+            </Button>
+          ) : (
+            <Button variant="contained" color="warning" onClick={handleKeepOverCount}>
+              Keep extra in count
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 

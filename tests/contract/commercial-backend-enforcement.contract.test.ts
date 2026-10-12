@@ -329,6 +329,8 @@ const BASIC_PURCHASING_ROUTES = [
   'PATCH /receive-jobs/:jobId/assignment',
   'POST /receive-jobs/:jobId/claim',
   'PATCH /receive-jobs/:jobId/lines/:lineId/progress',
+  // GH-1241 S3-A1 — operator physical-count confirmation (required before inspect).
+  'POST /receive-jobs/:jobId/lines/:lineId/confirm-count',
   'POST /receive-jobs/:jobId/inspect',
   'POST /receive-jobs/:jobId/close',
   'POST /receive-jobs/:jobId/exception',

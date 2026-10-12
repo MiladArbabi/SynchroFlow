@@ -179,6 +179,8 @@ export type WmsModuleFT2Props = {
   onClaimReceiveJob?: (jobId: string) => Promise<void>;
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }) => Promise<void>;
   onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }) => Promise<void>;
+  /** GH-1241 S3-A1 — operator physical-count confirmation; absent → Receive lines fail closed. */
+  onConfirmReceiveLineCount?: (jobId: string, lineId: string, params: { quantity_confirmed: number }) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
   /**
    * GH-1108 / RECEIVE-OVERCOUNT-01 — REQUIRED, deliberately not optional,
@@ -1990,6 +1992,7 @@ function WmsModuleFT2Inner({
   onClaimReceiveJob,
   onInspectReceiveLine,
   onPersistReceiveLineProgress,
+  onConfirmReceiveLineCount,
   onReportReceiveException,
   onApproveOverDelivery,
   onCloseReceiveJob,
@@ -2920,6 +2923,9 @@ function WmsModuleFT2Inner({
         }
         onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve()}
+        onConfirmLineCount={onConfirmReceiveLineCount
+          ? (lineId, params) => onConfirmReceiveLineCount(activeSession.receiveJobId, lineId, params)
+          : undefined}
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onApproveOverDelivery={(params) => onApproveOverDelivery(activeSession.receiveJobId, params)}
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}

@@ -261,8 +261,27 @@ interface Disposition {
   held?: number;
 }
 
+/** GH-1241 S3-A1 — the operator's persisted physical count (real route). */
+function httpConfirmCount(j: JobFixture, quantity: number) {
+  return request(app)
+    .post(`/api/v1/suppliers/receive-jobs/${j.receiveJobId}/lines/${j.receiveJobLineId}/confirm-count`)
+    .set(auth(j.po.shop.token))
+    .send({ quantity_confirmed: quantity, device_event_id: crypto.randomUUID() });
+}
+
+/**
+ * The operator's Finish Count: confirm the counted (accepted) quantity, then
+ * inspect with the S2 explicit disposition body. GH-1241 S3-A1 refuses
+ * inspection without a persisted confirmed count.
+ */
+async function httpInspect(j: JobFixture, d: Disposition) {
+  const confirmed = await httpConfirmCount(j, d.accepted);
+  if (confirmed.status !== 200) return confirmed;
+  return httpInspectOnly(j, d);
+}
+
 /** Real inspect route with the S2 explicit disposition body. */
-function httpInspect(j: JobFixture, d: Disposition) {
+function httpInspectOnly(j: JobFixture, d: Disposition) {
   return request(app)
     .post(`/api/v1/suppliers/receive-jobs/${j.receiveJobId}/inspect`)
     .set(auth(j.po.shop.token))
@@ -961,6 +980,9 @@ describe('GH-1245 Receive delivery-scoped accounting (S2)', () => {
     const shop = await provisionFt2Shop('inspectrace');
     const po = await shippedPo(shop, 3);
     const j = await openJob(po);
+    // GH-1241 S3-A1: the count is confirmed once, before the race, so the
+    // overlap below stays between the two inspections themselves.
+    expect((await httpConfirmCount(j, 3)).status).toBe(200);
 
     const gate = holdRowLock(shop.shopId, 'receive_job_lines', {
       shop_id: shop.shopId, receive_job_line_id: j.receiveJobLineId,
@@ -969,8 +991,8 @@ describe('GH-1245 Receive delivery-scoped accounting (S2)', () => {
 
     let settled = 0;
     const track = (r: request.Response) => { settled += 1; return r; };
-    const inspectA = httpInspect(j, { accepted: 3, rejected: 0, missing: 0, deferred: 0 }).then(track);
-    const inspectB = httpInspect(j, { accepted: 3, rejected: 0, missing: 0, deferred: 0 }).then(track);
+    const inspectA = httpInspectOnly(j, { accepted: 3, rejected: 0, missing: 0, deferred: 0 }).then(track);
+    const inspectB = httpInspectOnly(j, { accepted: 3, rejected: 0, missing: 0, deferred: 0 }).then(track);
 
     let waiters: LockWaiter[];
     try {
@@ -1096,6 +1118,9 @@ describe('GH-1245 Receive delivery-scoped accounting (S2)', () => {
     const shop = await provisionFt2Shop('legacyclient');
     const po = await shippedPo(shop, 10);
     const j = await openJob(po);
+    // GH-1241 S3-A1: the count is confirmed, so the refusal is about the
+    // ambiguous payload, not about a missing count.
+    expect((await httpConfirmCount(j, 6)).status).toBe(200);
     const before = await poState(po);
 
     // The pre-S2 web/mobile shape: shortfall folded into quantity_rejected.

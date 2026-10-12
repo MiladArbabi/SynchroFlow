@@ -157,4 +157,71 @@ describe('GH-1245 — web Receive disposition never fabricates Problem Center wo
     ]);
     expect(postedRoutes()).not.toContain(PROBLEM_CENTER_ROUTE);
   });
+
+  // GH-1241 S3-A1 — the operator's physical count is persisted through the
+  // real adapter; a lost-response retry replays the SAME confirmation event
+  // (a backend no-op), and only a later deliberate confirmation is a new event.
+  it('W3 — count confirmation posts to confirm-count and a retry replays the same event', async () => {
+    const props = renderPage();
+    const CONFIRM_ROUTE = `/api/v1/suppliers/receive-jobs/${JOB_ID}/lines/${LINE_ID}/confirm-count`;
+    expect(typeof props.onConfirmReceiveLineCount).toBe('function');
+
+    post.mockRejectedValueOnce(new Error('network lost'));
+    await expect(props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 7 })).rejects.toThrow('network lost');
+    await props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 7 });
+    await props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 7 });
+
+    expect(postedRoutes()).toEqual([CONFIRM_ROUTE, CONFIRM_ROUTE, CONFIRM_ROUTE]);
+    const events = post.mock.calls.map((call) => call[1].device_event_id);
+    expect(post.mock.calls.every((call) => call[1].quantity_confirmed === 7)).toBe(true);
+    expect(events[0]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(events[1]).toBe(events[0]);
+    expect(events[2]).not.toBe(events[0]);
+  });
+
+  // GH-1241 S3-A1 G1 — an event ID belongs to ONE pending confirmation. A
+  // count change starts a new intent, so a later confirmation of a quantity
+  // used before must never replay the earlier (now invalidated) event, which
+  // the backend permanently refuses with 409.
+  it('W4 — a recount after an unacknowledged confirmation issues a new event for the new intent', async () => {
+    const props = renderPage();
+    const patch = axiosInstance.patch as jest.Mock;
+    patch.mockReset();
+    patch.mockResolvedValue({ data: {} });
+    const confirmEvents = () => post.mock.calls.map((call) => call[1].device_event_id);
+
+    // 1. Confirm 8 (E1); the response is lost, so E1 stays pending.
+    post.mockRejectedValueOnce(new Error('network lost'));
+    await expect(props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 8 })).rejects.toThrow('network lost');
+    // A metadata-only draft with the same count keeps the pending operation:
+    // the network retry still replays E1.
+    await props.onPersistReceiveLineProgress(JOB_ID, LINE_ID, { quantity_sellable_provisional: 8, quantity_deferred: 2 });
+    post.mockRejectedValueOnce(new Error('network lost'));
+    await expect(props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 8 })).rejects.toThrow('network lost');
+    const [e1, e1Retry] = confirmEvents();
+    expect(e1Retry).toBe(e1);
+
+    // 2–3. The physical count changes to 7 and is confirmed (E2).
+    await props.onPersistReceiveLineProgress(JOB_ID, LINE_ID, { quantity_sellable_provisional: 7 });
+    await props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 7 });
+    // 4–5. Recount 8: a legitimate new confirmation, never the invalidated E1.
+    await props.onPersistReceiveLineProgress(JOB_ID, LINE_ID, { quantity_sellable_provisional: 8 });
+    await props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 8 });
+
+    const [, , e2, e3] = confirmEvents();
+    expect(post.mock.calls.map((call) => call[1].quantity_confirmed)).toEqual([8, 8, 7, 8]);
+    expect(new Set([e1, e2, e3]).size).toBe(3);
+  });
+
+  it('W5 — a definitive refusal releases the event; the next confirmation is a new event', async () => {
+    const props = renderPage();
+    post.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 409'), {
+      response: { status: 409, data: { code: 'RECEIVE_COUNT_CONFIRMATION_REPLAY_CONFLICT' } },
+    }));
+    await expect(props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 8 })).rejects.toThrow('409');
+    await props.onConfirmReceiveLineCount(JOB_ID, LINE_ID, { quantity_confirmed: 8 });
+
+    const [refused, next] = post.mock.calls.map((call) => call[1].device_event_id);
+    expect(next).not.toBe(refused);
+  });
 });

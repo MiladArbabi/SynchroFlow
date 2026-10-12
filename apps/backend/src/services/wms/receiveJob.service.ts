@@ -18,6 +18,11 @@ import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, receiveE
 
 const SHORTFALL_ACCOUNTING_TYPES = new Set(['defect', 'wrong_item', 'wrong_variant', 'missing_item', 'other']);
 
+/** Receive refusal with a stable machine-readable code for clients. */
+function receiveCodedError(errorCode: string, message: string, statusCode = 409) {
+  return Object.assign(receiveError(`${errorCode}: ${message}`, statusCode), { errorCode });
+}
+
 function shouldCountTowardShortfall(exception: any): boolean {
   if (exception.counts_toward_shortfall === true) return true;
   if (exception.accounting_role === 'shortfall') return true;
@@ -237,7 +242,7 @@ export async function updateReceiveJobLineProgress(
   assertReceiveMutable(job);
   const line = await trx('receive_job_lines')
     .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
-    .forUpdate().first('receive_job_line_id', 'quantity_expected', 'inspection_complete');
+    .forUpdate().first('receive_job_line_id', 'quantity_expected', 'inspection_complete', 'quantity_count_confirmed');
   if (input.quantityDeferred !== undefined && (!Number.isInteger(input.quantityDeferred) || input.quantityDeferred < 0 || input.quantityDeferred > Number(line?.quantity_expected ?? 0))) {
     throw receiveError('Invalid later-delivery quantity', 400);
   }
@@ -247,6 +252,13 @@ export async function updateReceiveJobLineProgress(
   if (line.inspection_complete) {
     throw new Error('[RECEIVE_PROGRESS] cannot update progress for an already inspected line');
   }
+
+  // GH-1241 S3-A1: a draft that changes the counted quantity voids the
+  // operator's confirmation under the same line lock. A metadata-only update
+  // (same quantity, e.g. a later-delivery allocation) keeps it, and no draft
+  // ever creates confirmation evidence.
+  const countChanged = line.quantity_count_confirmed != null
+    && Number(line.quantity_count_confirmed) !== quantitySellableProvisional;
 
   await trx('receive_job_lines')
     .where({
@@ -258,6 +270,7 @@ export async function updateReceiveJobLineProgress(
       quantity_sellable_provisional: quantitySellableProvisional,
       ...(input.quantityDeferred !== undefined ? { quantity_deferred: input.quantityDeferred } : {}),
       ...(reconciliationRequired ? { reconciliation_started_at: new Date() } : {}),
+      ...(countChanged ? CLEARED_COUNT_CONFIRMATION : {}),
       updated_at: new Date(),
     });
 
@@ -268,6 +281,109 @@ export async function updateReceiveJobLineProgress(
     expected: Number(line.quantity_expected ?? 0),
     sellable: quantitySellableProvisional,
   });
+}
+
+const CLEARED_COUNT_CONFIRMATION = {
+  quantity_count_confirmed: null,
+  count_confirmed_by: null,
+  count_confirmed_at: null,
+  count_confirmation_event_id: null,
+};
+
+export interface ConfirmReceiveLineCountInput {
+  shopId: number;
+  receiveJobId: string;
+  receiveJobLineId: string;
+  quantityConfirmed: number;
+  confirmationEventId: string;
+  confirmedBy: number;
+}
+
+/**
+ * GH-1241 S3-A1 — the operator's explicit physical count (0 or N) for one
+ * line. This is the only writer of count-confirmation evidence, and the only
+ * evidence inspection accepts: provisional drafts, reconciliation markers,
+ * exceptions and the GET projection never count as a physical count.
+ * Replaying the same confirmation event with the same quantity is a no-op;
+ * any other reuse of the event fails closed.
+ */
+export async function confirmReceiveJobLineCount(
+  trx: Knex.Transaction,
+  input: ConfirmReceiveLineCountInput
+) {
+  const { shopId, receiveJobId, receiveJobLineId, quantityConfirmed, confirmationEventId, confirmedBy } = input;
+  if (!Number.isSafeInteger(quantityConfirmed) || quantityConfirmed < 0) {
+    throw receiveCodedError('RECEIVE_COUNT_INVALID', 'confirmed count must be a non-negative integer', 400);
+  }
+
+  const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
+  const line = await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .forUpdate().first();
+  if (!line) throw receiveCodedError('RECEIVE_LINE_NOT_FOUND', 'Receive line not found', 404);
+
+  // A confirmation event is consumed once, durably. Replay is a no-op only
+  // while that exact event is still this line's ACTIVE confirmation; once a
+  // draft edit voided it, or a newer event superseded it, or it belongs to
+  // another line/quantity, reuse fails closed and can never restore evidence.
+  const consumed = await trx('receive_count_confirmation_events')
+    .where({ shop_id: shopId, event_id: confirmationEventId })
+    .first('receive_job_line_id', 'quantity_confirmed');
+  if (consumed) {
+    if (consumed.receive_job_line_id === receiveJobLineId
+      && Number(consumed.quantity_confirmed) === quantityConfirmed
+      && line.count_confirmation_event_id === confirmationEventId) {
+      return receiveLineCountState(trx, shopId, receiveJobId, receiveJobLineId);
+    }
+    throw receiveCodedError('RECEIVE_COUNT_CONFIRMATION_REPLAY_CONFLICT', 'this confirmation event was already used and is no longer the active count');
+  }
+
+  if (!ACTIVE_RECEIVE_STATUSES.includes(job.status)) {
+    throw receiveCodedError('RECEIVE_JOB_TERMINAL', 'this Receive job is finished; its counts cannot change');
+  }
+  if (line.inspection_complete) {
+    throw receiveCodedError('RECEIVE_LINE_ALREADY_INSPECTED', 'the count of a finished line cannot change');
+  }
+
+  const confirmedAt = new Date();
+  await trx('receive_count_confirmation_events').insert({
+    shop_id: shopId,
+    event_id: confirmationEventId,
+    receive_job_line_id: receiveJobLineId,
+    quantity_confirmed: quantityConfirmed,
+    confirmed_by: confirmedBy,
+    confirmed_at: confirmedAt,
+  });
+  await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .update({
+      quantity_count_confirmed: quantityConfirmed,
+      count_confirmed_by: confirmedBy,
+      count_confirmed_at: confirmedAt,
+      count_confirmation_event_id: confirmationEventId,
+      // The confirmed count is the line's current draft.
+      quantity_sellable_provisional: quantityConfirmed,
+      updated_at: new Date(),
+    });
+
+  return receiveLineCountState(trx, shopId, receiveJobId, receiveJobLineId);
+}
+
+async function receiveLineCountState(trx: Knex.Transaction, shopId: number, receiveJobId: string, receiveJobLineId: string) {
+  const line = await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .first('quantity_expected', 'quantity_count_confirmed', 'count_confirmed_at');
+  return {
+    quantity_count_confirmed: Number(line.quantity_count_confirmed),
+    count_confirmed_at: line.count_confirmed_at,
+    reconciliation: await receiveLineReconciliationState(trx, {
+      shopId,
+      receiveJobId,
+      receiveJobLineId,
+      expected: Number(line.quantity_expected ?? 0),
+      sellable: Number(line.quantity_count_confirmed),
+    }),
+  };
 }
 
 /**
@@ -328,6 +444,15 @@ export async function inspectReceiveJobLine(
   assertReceiveMutable(job);
   if (job.delivery_accounting_version !== 2 && explicit && (missing !== 0 || deferred !== 0 || quantityRejected !== 0)) {
     throw receiveError('Legacy Receive job has unknown delivery accounting; partial cutover requires review', 409);
+  }
+  // GH-1241 S3-A1: accepted units require the operator's persisted physical
+  // count. Nothing else — draft, reconciliation marker, exception or
+  // projection — is evidence. Refused before any write.
+  if (line.quantity_count_confirmed == null) {
+    throw receiveCodedError('RECEIVE_COUNT_NOT_CONFIRMED', 'confirm the physical count before finishing this line (update the app if this persists)');
+  }
+  if (Number(line.quantity_count_confirmed) !== quantityAccepted) {
+    throw receiveCodedError('RECEIVE_COUNT_MISMATCH', `accepted ${quantityAccepted} does not match the confirmed count ${line.quantity_count_confirmed}`);
   }
 
   await trx('receive_job_lines')

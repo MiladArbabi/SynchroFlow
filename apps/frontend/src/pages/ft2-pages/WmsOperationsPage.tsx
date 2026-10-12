@@ -538,12 +538,47 @@ export default function WmsOperationsPage() {
     await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
   }, [postReceiveEvent]);
 
+  // GH-1241 S3-A1 — one pending count confirmation per line. Its event is
+  // replayed only by a network retry of that same confirmation; the backend
+  // permanently refuses a consumed event once it is no longer the line's
+  // active count, so every new count intent needs a new event.
+  const pendingCountConfirmations = useRef(new Map<string, { quantity: number; eventId: string }>());
+
   const handlePersistReceiveLineProgress = useCallback(async (
     jobId: string,
     lineId: string,
     params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }
   ) => {
+    // A count-changing draft voids the confirmation server-side: a later
+    // confirmation is a new intent, never a replay of the pending one.
+    const pendingKey = `${jobId}:${lineId}`;
+    if (pendingCountConfirmations.current.get(pendingKey)?.quantity !== params.quantity_sellable_provisional) {
+      pendingCountConfirmations.current.delete(pendingKey);
+    }
     await axiosInstance.patch(`/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/progress`, params);
+  }, []);
+
+  const handleConfirmReceiveLineCount = useCallback(async (
+    jobId: string,
+    lineId: string,
+    params: { quantity_confirmed: number }
+  ) => {
+    const pendingKey = `${jobId}:${lineId}`;
+    const pending = pendingCountConfirmations.current.get(pendingKey);
+    const eventId = pending?.quantity === params.quantity_confirmed ? pending.eventId : newReceiveEventId();
+    pendingCountConfirmations.current.set(pendingKey, { quantity: params.quantity_confirmed, eventId });
+    try {
+      await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/confirm-count`, {
+        ...params, device_event_id: eventId,
+      });
+    } catch (err: any) {
+      // Only an unanswered request may still have been applied; a definitive
+      // refusal ends this confirmation, so a retry is a new event.
+      const status = err?.response?.status;
+      if (status >= 400 && status < 500) pendingCountConfirmations.current.delete(pendingKey);
+      throw err;
+    }
+    pendingCountConfirmations.current.delete(pendingKey);
   }, []);
 
   const handleReportReceiveException = useCallback(async (
@@ -985,6 +1020,7 @@ export default function WmsOperationsPage() {
       onClaimReceiveJob={handleClaimReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}
       onPersistReceiveLineProgress={handlePersistReceiveLineProgress}
+      onConfirmReceiveLineCount={handleConfirmReceiveLineCount}
       onReportReceiveException={handleReportReceiveException}
       onApproveOverDelivery={handleApproveOverDelivery}
       onCloseReceiveJob={handleCloseReceiveJob}

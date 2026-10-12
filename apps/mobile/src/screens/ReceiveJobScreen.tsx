@@ -78,6 +78,33 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     // replay the same evidence rather than issue another supplier incident.
     await apiClient.post(url, { ...payload, device_event_id: deviceEventId });
   }, [newEventId]);
+  // GH-1241 S3-A1 — one pending count confirmation per line, separate from the
+  // evidence events above. Its event is replayed only by a network retry of
+  // that same confirmation: the backend permanently refuses a consumed event
+  // once it is no longer the line's active count, so every new count intent
+  // (a recount, or a retry after a definitive refusal) needs a new event.
+  const pendingCountConfirmations = useRef(new Map<string, { quantity: number; eventId: string }>());
+  const confirmLineCount = useCallback(async (lineId: string, quantity: number) => {
+    const pending = pendingCountConfirmations.current.get(lineId);
+    const eventId = pending?.quantity === quantity ? pending.eventId : newEventId();
+    pendingCountConfirmations.current.set(lineId, { quantity, eventId });
+    try {
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/lines/${lineId}/confirm-count`, {
+        quantity_confirmed: quantity, device_event_id: eventId,
+      });
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== undefined && status >= 400 && status < 500) pendingCountConfirmations.current.delete(lineId);
+      throw err;
+    }
+    pendingCountConfirmations.current.delete(lineId);
+  }, [newEventId, task.id]);
+  // A count-changing draft voids the confirmation server-side.
+  const releaseChangedCountConfirmation = useCallback((lineId: string, quantity: number) => {
+    if (pendingCountConfirmations.current.get(lineId)?.quantity !== quantity) {
+      pendingCountConfirmations.current.delete(lineId);
+    }
+  }, []);
   const { userId } = useAuth();
 
   const [job, setJob] = useState<ReceiveJob | null>(null);
@@ -230,6 +257,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
       // Persist supplier evidence only; physical recovery capture belongs to S4.
       if (shortfall > 0 && exceptionType && !preReportedExceptions) {
         if (exceptionType === 'deferred') {
+          releaseChangedCountConfirmation(line.receive_job_line_id, accepted);
           await apiClient.patch(`/api/v1/suppliers/receive-jobs/${task.id}/lines/${line.receive_job_line_id}/progress`, {
             quantity_sellable_provisional: accepted, quantity_deferred: shortfall, reconciliation_required: true,
           });
@@ -245,6 +273,10 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
       const quantityMissing = exceptions.filter((e) => e.exception_type === 'missing_item').reduce((n, e) => n + e.quantity, 0);
       const quantityDeferred = exceptions.filter((e) => e.exception_type === 'deferred').reduce((n, e) => n + e.quantity, 0);
       const quantityRejected = exceptions.filter((e) => !['missing_item', 'deferred'].includes(e.exception_type)).reduce((n, e) => n + e.quantity, 0);
+      // GH-1241 S3-A1 — the backend accepts units only against the operator's
+      // persisted physical count. Every caller passes a typed count or the
+      // number of physically scanned units, never an expected quantity.
+      await confirmLineCount(line.receive_job_line_id, accepted);
       await postReceiveEvent(`/api/v1/suppliers/receive-jobs/${task.id}/inspect`, {
         lasyncro_variant_id: line.lasyncro_variant_id, receive_job_line_id: line.receive_job_line_id,
         quantity_accepted: accepted, quantity_rejected: quantityRejected,
@@ -277,7 +309,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     } finally {
       setSubmitting(false);
     }
-  }, [task.id, postReceiveEvent]);
+  }, [task.id, postReceiveEvent, confirmLineCount, releaseChangedCountConfirmation]);
 
   // Handle shortfall modal confirm
   const handleShortfallConfirm = useCallback(async () => {
@@ -293,6 +325,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     try {
       if (selectedExceptionType === 'deferred') {
         const deferred = shortfallModal.reportedExceptions.filter((e) => e.exception_type === 'deferred').reduce((n, e) => n + e.quantity, 0) + qty;
+        releaseChangedCountConfirmation(shortfallModal.line.receive_job_line_id, shortfallModal.accepted);
         await apiClient.patch(`/api/v1/suppliers/receive-jobs/${task.id}/lines/${shortfallModal.line.receive_job_line_id}/progress`, {
           quantity_sellable_provisional: shortfallModal.accepted, quantity_deferred: deferred, reconciliation_required: true,
         });
@@ -335,22 +368,16 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     } finally {
       setSubmitting(false);
     }
-  }, [shortfallModal, selectedExceptionType, exceptionQtyInput, task.id, submitLineInspection, postReceiveEvent]);
+  }, [shortfallModal, selectedExceptionType, exceptionQtyInput, task.id, submitLineInspection, postReceiveEvent, releaseChangedCountConfirmation]);
 
-  // Miscount — accept all
+  // Miscount — GH-1241 S3-A1: return to counting. Accepting every expected
+  // unit without a physical count is refused by the backend; the operator
+  // re-enters the counted quantity and confirms it.
   const handleMiscount = useCallback(async () => {
     if (!shortfallModal) return;
-    const line = shortfallModal.line;
-    setLineStates(prev => ({
-      ...prev,
-      [line.receive_job_line_id]: {
-        ...prev[line.receive_job_line_id],
-        input: String(line.quantity_expected),
-      },
-    }));
     setShortfallModal(null);
-    await submitLineInspection(line, line.quantity_expected, 0, null);
-  }, [shortfallModal, submitLineInspection]);
+    Alert.alert('Recount', 'Enter the quantity you physically counted, then confirm the line.');
+  }, [shortfallModal]);
 
   // Close job
   const handleClose = useCallback(async () => {
@@ -905,7 +932,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
                 >
                   <Ionicons name="refresh-outline" size={16} color={colors.ink3} />
                   <Text style={styles.miscountText}>
-                    I miscounted — all {shortfallModal.line.quantity_expected} are good
+                    I miscounted — recount
                   </Text>
                 </TouchableOpacity>
               </>

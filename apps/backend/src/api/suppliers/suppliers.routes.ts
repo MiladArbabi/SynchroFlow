@@ -36,6 +36,7 @@ import {
   httpClaimReceiveJob,
   httpAssignReceiveJob,
   httpUpdateReceiveJobLineProgress,
+  httpConfirmReceiveJobLineCount,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
@@ -212,6 +213,16 @@ router.patch(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpUpdateReceiveJobLineProgress
+);
+// GH-1241 S3-A1 — explicit operator physical count; inspection requires it.
+router.post(
+  '/receive-jobs/:jobId/lines/:lineId/confirm-count',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpConfirmReceiveJobLineCount
 );
 router.post(
   '/receive-jobs/:jobId/inspect',

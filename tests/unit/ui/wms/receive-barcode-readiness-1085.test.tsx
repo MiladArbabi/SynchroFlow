@@ -63,6 +63,7 @@ function renderSession(overrides: {
   onReportException?: jest.Mock;
   onApproveOverDelivery?: jest.Mock;
   onPersistLineProgress?: jest.Mock;
+  onConfirmLineCount?: jest.Mock;
   onCloseJob?: jest.Mock;
   onRefresh?: jest.Mock;
   closedAt?: string | null;
@@ -82,6 +83,8 @@ function renderSession(overrides: {
     onReportException: overrides.onReportException ?? jest.fn().mockResolvedValue(undefined),
     onApproveOverDelivery: overrides.onApproveOverDelivery ?? jest.fn().mockResolvedValue(undefined),
     onPersistLineProgress: overrides.onPersistLineProgress,
+    // GH-1241 S3-A1 — the host's operator count confirmation (succeeds by default).
+    onConfirmLineCount: overrides.onConfirmLineCount ?? jest.fn().mockResolvedValue(undefined),
     onCloseJob: overrides.onCloseJob ?? jest.fn().mockResolvedValue(undefined),
     onComplete: jest.fn(),
     onPrintUnitLabels: overrides.onPrintUnitLabels,
@@ -414,7 +417,9 @@ it('R6 — human-decision states release scanner capture and do not autofocus co
 
   expect(await screen.findByRole('dialog')).toBeTruthy();
   expect(document.activeElement).not.toBe(input);
-  expect(document.activeElement).not.toBe(screen.getByRole('button', { name: /accept extra/i }));
+  // GH-1241 S3-A1 G2: an unconfirmed live over-count offers "Keep extra in
+  // count" (approval follows Finish Count); it is the consequential CTA here.
+  expect(document.activeElement).not.toBe(screen.getByRole('button', { name: /keep extra in count/i }));
 });
 
 it('R7 — label hold preserves accepted quantity and removes conflicting inspection actions', async () => {
@@ -450,6 +455,12 @@ it('R8 — the miscount path cannot bypass label acknowledgement', async () => {
   fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
   fireEvent.click(screen.getByRole('button', { name: /confirm line/i }));
   fireEvent.click(await screen.findByText(/miscounted/i));
+
+  // GH-1241 S3-A1: "I miscounted" returns to counting instead of accepting
+  // every expected unit uncounted. The corrected recount is confirmed and
+  // must still stop at label acknowledgement.
+  fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
+  fireEvent.click(screen.getByRole('button', { name: /confirm line/i }));
 
   expect(await screen.findByTestId(ACK_TESTID)).toBeTruthy();
   expect(screen.queryByText(/close receive session/i)).toBeNull();
@@ -628,6 +639,9 @@ it('R12 — expected plus one over-delivery persists canonical overage approval 
   await enterReceiveExecution('count');
   fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
   fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
+  fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
@@ -664,6 +678,9 @@ it('R12 — expected plus one over-delivery persists canonical overage approval 
   await scan('5012345678900');
   await waitFor(() => expect(screen.getByText(/1\/1/)).toBeTruthy());
   await scan('5012345678900');
+  // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
+  fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
@@ -694,6 +711,9 @@ it('R12b — a rejected overage approval keeps the decision open, preserves the 
   await enterReceiveExecution('count');
   fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
   fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
+  fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
 
   await screen.findByText(/overage approval failed/i);
@@ -780,12 +800,19 @@ it('R12f — refresh/re-entry with a persisted overage approval reconstructs the
   // exactly the canonical server shape a refresh would deliver: an
   // uninspected line whose provisional count already exceeds expected and
   // whose reconciliation carries the persisted overage_approved evidence.
+  //
+  // GH-1241 S3-A1: reconstruction additionally requires the operator's
+  // persisted confirmed count to equal that draft (quantity_count_confirmed 2).
+  // A draft plus approval WITHOUT a confirmed count must re-enter counting
+  // instead (covered by ReceiveSessionPage.uncounted-safety-gh1241 U10).
   const inspect = jest.fn().mockResolvedValue(undefined);
   const approve = jest.fn().mockResolvedValue(undefined);
+  const confirmCount = jest.fn().mockResolvedValue(undefined);
   renderSession({
     barcode: '5012345678900',
     onInspectLine: inspect,
     onApproveOverDelivery: approve,
+    onConfirmLineCount: confirmCount,
     onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
     lines: [line({
@@ -793,6 +820,7 @@ it('R12f — refresh/re-entry with a persisted overage approval reconstructs the
       quantity_expected: 1,
       quantity_accepted: 0,
       quantity_sellable_provisional: 2,
+      quantity_count_confirmed: 2,
       inspection_complete: false,
       reconciliation: {
         expected: 1,
@@ -813,8 +841,10 @@ it('R12f — refresh/re-entry with a persisted overage approval reconstructs the
   fireEvent.click(within(dialog).getByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-  // Already-persisted approval must not be persisted again.
+  // Already-persisted approval must not be persisted again, and the
+  // already-persisted confirmed count is not re-manufactured.
   expect(approve).not.toHaveBeenCalled();
+  expect(confirmCount).not.toHaveBeenCalled();
   // The operator finishes the already-approved overage against the actual
   // provisional quantity (expected 1 + 1).
   await waitFor(() => expect(inspect).toHaveBeenCalledWith(expect.objectContaining({
@@ -836,6 +866,9 @@ it('R12e — Review truthfully reports expected, accepted, and extra for an appr
   await enterReceiveExecution('count');
   fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
   fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
+  fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
@@ -1268,6 +1301,9 @@ it('R22c — canonical shortfall projection restores reconciliation on initial r
       quantity_expected: 10,
       quantity_accepted: 0,
       reconciliation_started_at: '2026-09-13T12:00:00.000Z',
+      // GH-1241 S3-A1: reconciliation restores only from a persisted operator count.
+      quantity_sellable_provisional: 9,
+      quantity_count_confirmed: 9,
       barcode: '5012345678900',
       reconciliation: {
         expected: 10,
@@ -1296,6 +1332,9 @@ it('R22d — canonical reconciliation allocations survive re-entry and reconstru
     lines: [line({
       quantity_expected: 10,
       quantity_accepted: 0,
+      // GH-1241 S3-A1: reconciliation restores only from a persisted operator count.
+      quantity_sellable_provisional: 7,
+      quantity_count_confirmed: 7,
       barcode: '5012345678900',
       reconciliation: {
         expected: 10,
@@ -1321,7 +1360,46 @@ it('R22d — canonical reconciliation allocations survive re-entry and reconstru
   expect(screen.queryByRole('button', { name: /start receive/i })).toBeNull();
 });
 
-it('R22e — fully accounted canonical reconciliation restores final completion state', async () => {
+// GH-1241 S3-A1 — R22e previously asserted that an UNTOUCHED line (no draft,
+// no reconciliation marker) whose GET projection reported sellable 8 next to
+// 2 reported defects restored straight into Finish line and inspected 8
+// accepted units. Nothing was ever counted: projected sellable is expected
+// minus reported problems, an inference. That expectation is the phantom
+// acceptance S3-A1 removes. Ratified invariant: restoration into a final
+// completion state requires the operator's persisted confirmed count, and
+// the inspected accepted quantity is exactly that count.
+it('R22e — fully accounted reconciliation restores final completion only from a persisted confirmed count', async () => {
+  const defect = {
+    receive_exception_id: 'rx-2',
+    exception_type: 'defect',
+    quantity_affected: 2,
+    resolved: false,
+    raised_at: '2026-09-13T12:00:00.000Z',
+    counts_toward_shortfall: true,
+  };
+  const projection = { expected: 10, sellable: 8, accounted: 2, unaccounted: 0, allocations: [defect] };
+
+  // (a) Unconfirmed: the projection alone never restores a completion action.
+  const unconfirmedInspect = jest.fn().mockResolvedValue(undefined);
+  renderSession({
+    barcode: '5012345678900',
+    onInspectLine: unconfirmedInspect,
+    onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
+    onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
+    lines: [line({
+      quantity_expected: 10,
+      quantity_accepted: 0,
+      quantity_count_confirmed: null,
+      barcode: '5012345678900',
+      reconciliation: projection,
+    })],
+  });
+  expect(await screen.findByRole('button', { name: /start receive/i })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /finish line/i })).toBeNull();
+  expect(unconfirmedInspect).not.toHaveBeenCalled();
+  cleanup();
+
+  // (b) Confirmed 8: restores, and Finish line inspects exactly the confirmed count.
   const onInspectLine = jest.fn().mockResolvedValue(undefined);
   renderSession({
     barcode: '5012345678900',
@@ -1331,21 +1409,10 @@ it('R22e — fully accounted canonical reconciliation restores final completion 
     lines: [line({
       quantity_expected: 10,
       quantity_accepted: 0,
+      quantity_sellable_provisional: 8,
+      quantity_count_confirmed: 8,
       barcode: '5012345678900',
-      reconciliation: {
-        expected: 10,
-        sellable: 8,
-        accounted: 2,
-        unaccounted: 0,
-        allocations: [{
-          receive_exception_id: 'rx-2',
-          exception_type: 'defect',
-          quantity_affected: 2,
-          resolved: false,
-          raised_at: '2026-09-13T12:00:00.000Z',
-          counts_toward_shortfall: true,
-        }],
-      },
+      reconciliation: projection,
     })],
   });
 
@@ -1422,6 +1489,8 @@ it('R22h — short post-Finish count restores reconciliation from canonical 9 / 
     lines: [line({
       quantity_expected: 10,
       quantity_sellable_provisional: 9,
+      // GH-1241 S3-A1: reconciliation restores only from a persisted operator count.
+      quantity_count_confirmed: 9,
       reconciliation_started_at: '2026-09-13T12:00:00.000Z',
       barcode: '5012345678900',
       reconciliation: {
@@ -1635,6 +1704,7 @@ it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSess
   const onResolveBarcode = jest.fn().mockResolvedValue(null);
   const onPrintUnitLabels = jest.fn().mockResolvedValue(undefined);
   const onConfirmUnitLabelsPrinted = jest.fn().mockResolvedValue(undefined);
+  const onConfirmReceiveLineCount = jest.fn().mockResolvedValue(undefined);
   const onFetchReceiveJob = jest.fn().mockResolvedValue({
     job: { po_id: 'po-1085', supplier_name: 'GH1085 Supplier' },
     lines: [line({ barcode: null })],
@@ -1683,6 +1753,7 @@ it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSess
       onResolveBarcode,
       onPrintUnitLabels,
       onConfirmUnitLabelsPrinted,
+      onConfirmReceiveLineCount,
       onFetchReceiveJob,
       onRefresh: jest.fn(),
     };
@@ -1707,6 +1778,9 @@ it('B9 — WmsModuleFT2 forwards the required Receive callbacks into ReceiveSess
   void (forwarded.onApproveOverDelivery as Function)({ receive_job_line_id: LINE_ID, quantity_affected: 1, notes: 'n' });
   void (forwarded.onCloseJob as Function)({ actual_delivery_date: '2026-09-12' });
   void (forwarded.onRefresh as Function)();
+  // GH-1241 S3-A1 — the operator count confirmation reaches the host, job-scoped.
+  void (forwarded.onConfirmLineCount as Function)(LINE_ID, { quantity_confirmed: 1 });
+  expect(onConfirmReceiveLineCount).toHaveBeenCalledWith(RECEIVE_JOB_ID, LINE_ID, { quantity_confirmed: 1 });
 
   expect(onInspectReceiveLine).toHaveBeenCalledWith(RECEIVE_JOB_ID, { receive_job_line_id: LINE_ID });
   expect(onReportReceiveException).toHaveBeenCalledWith(RECEIVE_JOB_ID, { receive_job_line_id: LINE_ID });

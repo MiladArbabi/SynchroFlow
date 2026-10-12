@@ -36,6 +36,7 @@ import {
   createReceiveJob,
   inspectReceiveJobLine,
   closeReceiveJob,
+  confirmReceiveJobLineCount,
 } from 'api-src/services/wms/receiveJob.service';
 import { markLabelsPrinted } from 'api-src/services/wms/inventoryUnit.service';
 import { issueTestToken } from '../../unit/helpers/auth';
@@ -248,10 +249,22 @@ async function receiveFixture(opts: {
   };
 }
 
-/** Real inspection path. */
+/**
+ * Real inspection path. GH-1241 S3-A1: inspection requires the operator's
+ * persisted physical count, so the operator first confirms the counted
+ * (accepted) quantity, in the same transaction as the inspection.
+ */
 function inspect(f: ReceiveFixture, quantityAccepted: number, quantityRejected = 0) {
-  return withTenant(f.shopId, (trx) =>
-    inspectReceiveJobLine(trx, {
+  return withTenant(f.shopId, async (trx) => {
+    await confirmReceiveJobLineCount(trx, {
+      shopId: f.shopId,
+      receiveJobId: f.receiveJobId,
+      receiveJobLineId: f.receiveJobLineId,
+      quantityConfirmed: quantityAccepted,
+      confirmationEventId: crypto.randomUUID(),
+      confirmedBy: f.userId,
+    });
+    return inspectReceiveJobLine(trx, {
       shopId: f.shopId,
       receiveJobId: f.receiveJobId,
       lasyncroVariantId: null,
@@ -259,7 +272,8 @@ function inspect(f: ReceiveFixture, quantityAccepted: number, quantityRejected =
       quantityAccepted,
       quantityRejected,
       inspectedBy: f.userId,
-    }));
+    });
+  });
 }
 
 /**
