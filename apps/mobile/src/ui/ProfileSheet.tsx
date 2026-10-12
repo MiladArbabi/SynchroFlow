@@ -1,5 +1,5 @@
 // apps/mobile/src/ui/ProfileSheet.tsx
-import { Modal, View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import { Alert, Modal, View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, font, spacing, radius } from '../theme';
 import { useAuth } from '../hooks/useAuth';
@@ -15,7 +15,14 @@ export function ProfileSheet({ visible, onClose, onSettings }: Props) {
 
   const handleLogout = async () => {
     onClose();
-    await logout();
+    try { await logout(); }
+    catch (failure: unknown) {
+      const durablyBlocked = typeof failure === 'object' && failure !== null &&
+        'durableInvalidation' in failure && failure.durableInvalidation === true;
+      Alert.alert('Sign out incomplete', durablyBlocked
+        ? 'We could not remove all saved credentials. This device has blocked the saved session. Please retry sign out.'
+        : 'We could not remove all saved credentials. Local sign out durability could not be confirmed. Please retry sign out.');
+    }
   };
 
   return (
@@ -64,7 +71,7 @@ export function ProfileSheet({ visible, onClose, onSettings }: Props) {
         <View style={styles.divider} />
 
         {/* Sign out */}
-        <TouchableOpacity style={styles.signOutBtn} onPress={() => void handleLogout()}>
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>

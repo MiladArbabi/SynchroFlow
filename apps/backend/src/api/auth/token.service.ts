@@ -25,6 +25,7 @@
 
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import type { Knex } from 'knex';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
@@ -62,6 +63,8 @@ export interface IssueAuthTokensParams {
 
   // Defaults to 1 if omitted
   tokenVersion?: number;
+  sessionId?: string;
+  transaction?: Knex.Transaction;
 }
 
 
@@ -79,7 +82,8 @@ export async function persistRefreshToken(record: {
   token_version?: number;
   token_hash: string;
   expires_at: Date;
-}): Promise<{ id: number }[]> {
+}, transaction?: Knex.Transaction): Promise<{ id: number }[]> {
+  if (transaction) return transaction('refresh_tokens').insert(record).returning('id');
   return withTenant(record.shop_id, (trx) =>
     trx('refresh_tokens')
       .insert(record)
@@ -105,6 +109,12 @@ export async function persistRefreshToken(record: {
 export const tokenPersistence = {
   persistRefreshToken,
 };
+
+/** Every session mutation for this tenant/user takes this lock first. */
+export async function lockAuthUser(transaction: Knex.Transaction, shopId: number, userId: number) {
+  const user = await transaction('users').where({ id: userId, shop_id: shopId }).forUpdate().first('id');
+  if (!user) throw new Error('AUTH_INVARIANT_VIOLATION: user does not exist');
+}
 
 export async function issueAuthTokens(
   params: IssueAuthTokensParams
@@ -159,11 +169,12 @@ export async function issueAuthTokens(
   // 🔒 User existence invariant
   // ─────────────────────────────────────────────────────────────
 
-  const userExists = await withTenant(shopId, (trx) =>
+  const readUser = (trx: Knex.Transaction) =>
     trx('users')
       .where({ id: userId, shop_id: shopId })
-      .first('id', 'email', 'first_name')
-  );
+      .first('id', 'email', 'first_name');
+  const userExists = params.transaction
+    ? await readUser(params.transaction) : await withTenant(shopId, readUser);
 
   if (!userExists) {
     throw new Error('AUTH_INVARIANT_VIOLATION: user does not exist');
@@ -173,11 +184,11 @@ export async function issueAuthTokens(
   // 🔐 Session anchor
   // ─────────────────────────────────────────────────────────────
 
-  const sessionId = crypto.randomUUID();
+  const sessionId = params.sessionId ?? crypto.randomUUID();
 
   // Resolve subscription tier for JWT claim (MON-03)
   // Falls back to 'starter' — never blocks token issuance
-  const tier = await resolveTierForShop(shopId);
+  const tier = await resolveTierForShop(shopId, params.transaction);
 
   // ─────────────────────────────────────────────────────────────
   // 🔐 Access Token (JWT)
@@ -218,6 +229,8 @@ export async function issueAuthTokens(
   const refreshToken = jwt.sign(
     {
       user_id: userId,
+      shop_id: shopId,
+      jti: crypto.randomUUID(),
       session_id: sessionId,
       token_version: tokenVersion,
     },
@@ -243,7 +256,7 @@ export async function issueAuthTokens(
         token_version: tokenVersion,
         token_hash: tokenHash,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
+      }, params.transaction);
     } catch {
       throw new Error('AUTH_INVARIANT_VIOLATION: refresh token not persisted');
     }

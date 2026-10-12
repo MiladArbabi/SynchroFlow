@@ -77,8 +77,8 @@ export default function CheckInboxPage() {
     return () => bc?.close();
   }, [navigate]);
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    await logout();
     navigate('/login');
   };
 

@@ -12,12 +12,11 @@ import {
   resolveEmailVerificationUser,
   resolvePasswordResetUser,
   resolveRefreshToken as resolvePersistedRefreshToken,
-  revokeRefreshToken,
 } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { issueAuthTokens } from './token.service.js';
+import { issueAuthTokens, lockAuthUser } from './token.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { TIERS } from '@lasyncro/backend-core/config/tiers.js';
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
@@ -324,32 +323,20 @@ export const loginUser = async (req: Request, res: Response) => {
       });
     }
 
-    // 🔥 HARD SESSION RESET (THE FIX)
-    await withTenant(shopContext.shopId, (trx) =>
-      trx('refresh_tokens')
-        .where({ user_id: user.id, revoked_at: null })
-        .update({ revoked_at: new Date() })
-    );
-
-    audit({
-      level: 'INFO',
-      event: 'login_session_reset',
-      userId: user.id,
-      metadata: {
-        reason: 'explicit_login',
-      },
+    // Reset and issue under the same user lock as refresh and logout.
+    const { accessToken, refreshToken } = await withTenant(shopContext.shopId, async (trx) => {
+      await lockAuthUser(trx, shopContext.shopId, user.id);
+      await trx('refresh_tokens')
+        .where({ shop_id: shopContext.shopId, user_id: user.id, revoked_at: null })
+        .update({ revoked_at: new Date() });
+      return issueAuthTokens({
+        userId: user.id, shopId: shopContext.shopId, actorType: 'shop_user',
+        authProvider: 'password', shopRoles: [shopContext.role], scopes: [],
+        tokenVersion: 1, transaction: trx,
+      });
     });
-
-    // SINGLE AUTHORITY FOR TOKEN ISSUANCE
-    const { accessToken, refreshToken } = await issueAuthTokens({
-      userId: user.id,
-      shopId: shopContext.shopId,
-      actorType: 'shop_user',
-      authProvider: 'password',
-      shopRoles: [shopContext.role],
-      scopes: [],
-      tokenVersion: 1,
-    });
+    audit({ level: 'INFO', event: 'login_session_reset', userId: user.id,
+      metadata: { reason: 'explicit_login' } });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
@@ -374,239 +361,137 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 };
 
+class SessionFailure extends Error {
+  constructor(public status: number, public code: string) { super(code); }
+}
+
+function auditRefresh(entry: Parameters<typeof audit>[0]): void {
+  try { audit(entry); } catch { /* Observability must not affect session mutations or responses. */ }
+}
+
+function sessionCredential(req: Request): { token: string | null; bodyClient: boolean } {
+  const cookie = req.cookies?.refreshToken;
+  const body = req.body?.refreshToken;
+  if (cookie && body && cookie !== body) throw new SessionFailure(400, 'REFRESH_TOKEN_CONFLICT');
+  const token = body ?? cookie;
+  return { token: typeof token === 'string' && token ? token : null, bodyClient: !!body };
+}
+
 export const refreshToken = async (req: Request, res: Response) => {
-
-  const ip =
-   req.headers['x-forwarded-for']?.toString() ||
-   req.socket.remoteAddress ||
-   'unknown';
-
-  const allowed = rateLimit(
-    `refresh:${ip}`,
-    10,              // max 10 attempts
-    60_000,          // per 1 minute
-  );
-
-  if (!allowed) {
-    return res.status(429).json({
-      error: 'TOO_MANY_REQUESTS',
-      retryAfter: 60,
-    });
-  }
-  // 1. Get refresh token from HttpOnly cookie (web) or request body (mobile)
-  const incomingRefreshToken = req.cookies.refreshToken ?? req.body?.refreshToken;
-  if (!incomingRefreshToken) {
-    return res.status(401).json({
-      error: 'SESSION_EXPIRED',
-      action: 'LOGOUT_REQUIRED',
-    });
-  }
-
-  // 2. Verify the refresh token
-  const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
-  if (!jwtRefreshSecret) {
-    console.error('JWT Refresh Secret is not set!');
-    return res.status(500).json({ error: 'Internal server error: JWT secret missing.' });
-  }
-
+  let auditIdentity: { userId?: number; sessionId?: string } = {};
   try {
-    const decoded = jwt.verify(incomingRefreshToken, jwtRefreshSecret) as JwtPayload;
-
-    const {
-      user_id,
-      session_id,
-      token_version,
-    } = decoded as {
-      user_id: number;
-      session_id: string;
-      token_version?: number;
-    };
-
-    const incomingHash = hashRefreshToken(incomingRefreshToken);
- 
-    const existingToken = await resolvePersistedRefreshToken({
-      tokenHash: incomingHash,
-      sessionId: session_id,
-      tokenVersion: token_version ?? 1,
+    const { token, bodyClient } = sessionCredential(req);
+    const ip = req.headers['x-forwarded-for']?.toString() || req.socket.remoteAddress || 'unknown';
+    if (!rateLimit(`refresh:${ip}`, 10, 60_000)) {
+      return res.status(429).json({ error: 'TOO_MANY_REQUESTS', retryAfter: 60 });
+    }
+    if (!token) throw new SessionFailure(401, 'SESSION_EXPIRED');
+    const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT refresh secret missing');
+    let decoded: JwtPayload;
+    try { decoded = jwt.verify(token, secret) as JwtPayload; }
+    catch { throw new SessionFailure(401, 'SESSION_EXPIRED'); }
+    const { user_id: userId, session_id: sessionId, token_version: version = 1 } = decoded;
+    if (!Number.isInteger(userId) || typeof sessionId !== 'string') {
+      throw new SessionFailure(401, 'SESSION_EXPIRED');
+    }
+    auditIdentity = { userId, sessionId };
+    const hash = hashRefreshToken(token);
+    const persisted = await resolvePersistedRefreshToken({ tokenHash: hash, sessionId, tokenVersion: version });
+    if (!persisted) throw new SessionFailure(401, 'SESSION_EXPIRED');
+    let context: ResolvedShopContext;
+    try { context = await requireShopContextForUser(userId); }
+    catch { throw new SessionFailure(403, 'SHOP_CONTEXT_REQUIRED'); }
+    if (persisted.user_id !== userId || persisted.shop_id !== context.shopId ||
+        (decoded.shop_id !== undefined && decoded.shop_id !== context.shopId)) {
+      throw new SessionFailure(403, 'SHOP_CONTEXT_MISMATCH');
+    }
+    const outcome = await withTenant(context.shopId, async (trx) => {
+      await lockAuthUser(trx, context.shopId, userId);
+      const original = await trx('refresh_tokens').where({
+        id: persisted.id, shop_id: context.shopId, user_id: userId,
+        session_id: sessionId, token_hash: hash, token_version: version,
+      }).forUpdate().first();
+      if (!original || new Date(original.expires_at) <= new Date()) {
+        throw new SessionFailure(401, 'SESSION_EXPIRED');
+      }
+      const containReplay = async () => {
+        await trx('refresh_tokens').where({ shop_id: context.shopId, user_id: userId,
+          session_id: sessionId, revoked_at: null }).update({ revoked_at: new Date() });
+        // Return normally so containment commits instead of rolling back.
+        return { kind: 'compromised' as const };
+      };
+      if (original.revoked_at) return containReplay();
+      // Revalidate JWT expiry after waiting for the shared mutation lock.
+      try { jwt.verify(token, secret); }
+      catch { throw new SessionFailure(401, 'SESSION_EXPIRED'); }
+      const claimed = await trx('refresh_tokens').where({ id: original.id, shop_id: context.shopId,
+        revoked_at: null }).update({ revoked_at: new Date() });
+      if (claimed !== 1) return containReplay();
+      const tokens = await issueAuthTokens({ userId, shopId: context.shopId, actorType: 'shop_user',
+        authProvider: 'password', shopRoles: [context.role], scopes: [], tokenVersion: version,
+        sessionId, transaction: trx });
+      return { kind: 'rotated' as const, tokens,
+        ipDrift: !!original.ip_address && original.ip_address !== ip,
+        uaDrift: !!original.user_agent && !!req.headers['user-agent'] &&
+          original.user_agent !== req.headers['user-agent'],
+      };
     });
-
-    // 🔒 No record → expired or invalid
-    if (!existingToken) {
-      return res.status(503).json({
-        error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
-        retryable: true,
-      });
+    // Replay containment must commit before its terminal response is returned.
+    if (outcome.kind === 'compromised') {
+      return res.status(403).json({ error: 'SESSION_COMPROMISED', action: 'LOGOUT_REQUIRED' });
     }
-
-    // 🔒 Explicit expiry check
-    if (existingToken.expires_at <= new Date()) {
-      return res.status(401).json({
-        error: 'SESSION_EXPIRED',
-        action: 'LOGOUT_REQUIRED',
-      });
-    }
-
-    // 🔒 Revoked token → replay / compromise
-    if (existingToken.revoked_at) {
-      return res.status(403).json({
-        error: 'SESSION_COMPROMISED',
-        action: 'LOGOUT_REQUIRED',
-      });
-    }
-
-    // 🔍 Anomaly detection (audit-only)
-    const currentIp =
-      req.headers['x-forwarded-for']?.toString() ||
-      req.socket.remoteAddress ||
-      'unknown';
-
-    const currentUa = req.headers['user-agent'];
-
-    if (
-      existingToken.ip_address &&
-      existingToken.ip_address !== currentIp
-    ) {
-      audit({
-        level: 'WARN',
-        event: 'refresh_token_ip_drift',
-        userId: user_id,
-        metadata: {
-          sessionId: session_id,
-          issuedFrom: existingToken.ip_address,
-          usedFrom: currentIp,
-        },
-      });
-    }
-
-    if (
-      existingToken.user_agent &&
-      currentUa &&
-      existingToken.user_agent !== currentUa
-    ) {
-      audit({
-        level: 'WARN',
-        event: 'refresh_token_ua_drift',
-        userId: user_id,
-        metadata: {
-          sessionId: session_id,
-          issuedFrom: existingToken.user_agent,
-          usedFrom: currentUa,
-        },
-      });
-    };
-
-    const userExists = await withTenant(existingToken.shop_id, (trx) =>
-      trx('users')
-        .where({ id: user_id, shop_id: existingToken.shop_id })
-        .first()
-    );
-
-    if (!userExists) {
-      return res.status(401).json({
-        error: 'Unauthorized: User no longer exists.'
-      });
-    }
-    
-    let newTokens: { refreshToken: any; accessToken: any; };
-
-    try {
-      let shopContext: ResolvedShopContext;
-        try {
-          shopContext = await requireShopContextForUser(user_id);
-        } catch {
-          return res.status(403).json({
-            error: 'SHOP_CONTEXT_REQUIRED',
-          });
-        }
-
-        newTokens = await issueAuthTokens({
-          userId: user_id,
-          shopId: shopContext.shopId,
-          actorType: 'shop_user',
-          authProvider: 'password',
-          shopRoles: [shopContext.role],
-          scopes: [],
-          tokenVersion: token_version ?? 1,
-        });
-    } catch (err) {
-
-      audit({
-        level: 'WARN',
-        event: 'refresh_token_transient_failure',
-        userId: user_id,
-        metadata: {
-          sessionId: session_id,
-          reason: err instanceof Error ? err.message : 'unknown',
-        },
-      });
-
-      // 🔁 Transient failure → SAFE RETRY
-      return res.status(503).json({
-        error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
-        retryable: true,
-      });
-    }
-
-    // 2️⃣ Now revoke OLD token (must succeed)
-    const revoked = await withTenant(existingToken.shop_id, (trx) =>
-      trx('refresh_tokens')
-        .where({ id: existingToken.id, revoked_at: null })
-        .update({ revoked_at: new Date() })
-    );
-
-    if (revoked !== 1) {
-      return res.status(403).json({
-        error: 'SESSION_COMPROMISED',
-        action: 'LOGOUT_REQUIRED',
-      });
-    }
-
-    // 3️⃣ Set new refresh cookie
-    res.cookie('refreshToken', newTokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+    const { tokens } = outcome;
+    // Audit only committed rotations; never log raw headers or credentials.
+    // Legacy drift signals remain conditional on persisted comparison metadata.
+    if (outcome.ipDrift) auditRefresh({ level: 'WARN', event: 'refresh_token_ip_drift',
+      userId, metadata: { sessionId } });
+    if (outcome.uaDrift) auditRefresh({ level: 'WARN', event: 'refresh_token_ua_drift',
+      userId, metadata: { sessionId } });
+    // withTenant has committed before any credential is exposed.
+    if (!bodyClient) res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-
-    // 4️⃣ Return access token
-    return res.status(200).json({ accessToken: newTokens.accessToken });
-
-  } catch (err) {
-    console.error(
-      '[auth][refresh] transient failure',
-      err instanceof Error ? err.message : err
-    );
-
-    return res.status(503).json({
-      error: 'REFRESH_TEMPORARILY_UNAVAILABLE',
-      retryable: true,
-    });
+    return res.status(200).json(bodyClient ? tokens : { accessToken: tokens.accessToken });
+  } catch (error) {
+    if (error instanceof SessionFailure) {
+      return res.status(error.status).json(error.code === 'SESSION_EXPIRED' || error.code === 'SESSION_COMPROMISED'
+        ? { error: error.code, action: 'LOGOUT_REQUIRED' } : { error: error.code });
+    }
+    auditRefresh({ level: 'WARN', event: 'refresh_token_transient_failure',
+      userId: auditIdentity.userId,
+      metadata: { sessionId: auditIdentity.sessionId, reason: 'REFRESH_TEMPORARILY_UNAVAILABLE' } });
+    console.error('[auth][refresh] persistence failure');
+    return res.status(503).json({ error: 'REFRESH_TEMPORARILY_UNAVAILABLE', retryable: true });
   }
 };
 
 export const logoutUser = async (req: Request, res: Response) => {
-
-  const refreshToken = req.cookies.refreshToken;
-
-  if (refreshToken) {
-    const hash = hashRefreshToken(refreshToken);
-    try {
-      await revokeRefreshToken(hash);
-    } catch (error) {
-      console.error('[AUTH][LOGOUT] refresh token revocation failed', error);
+  // Clear the browser cookie even when server-side revocation is unconfirmed.
+  res.cookie('refreshToken', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict', expires: new Date(0), maxAge: 0 });
+  try {
+    const { token } = sessionCredential(req);
+    if (token) {
+      // Exact persisted hash proves credential ownership; expired ancestors may log out.
+      const decoded = jwt.decode(token) as JwtPayload | null;
+      if (decoded && typeof decoded.session_id === 'string') {
+        const persisted = await resolvePersistedRefreshToken({ tokenHash: hashRefreshToken(token),
+          sessionId: decoded.session_id, tokenVersion: decoded.token_version ?? 1 });
+        if (persisted) await withTenant(persisted.shop_id, async (trx) => {
+          await lockAuthUser(trx, persisted.shop_id, persisted.user_id);
+          await trx('refresh_tokens').where({ shop_id: persisted.shop_id, user_id: persisted.user_id,
+            session_id: persisted.session_id, revoked_at: null }).update({ revoked_at: new Date() });
+        });
+      }
     }
+    return res.status(204).send();
+  } catch (error) {
+    if (error instanceof SessionFailure) return res.status(error.status).json({ error: error.code });
+    console.error('[AUTH][LOGOUT] refresh token revocation failed', error instanceof Error ? error.message : 'unknown');
+    return res.status(503).json({ error: 'LOGOUT_TEMPORARILY_UNAVAILABLE', retryable: true });
   }
-
-  // Clear the refresh token cookie
-  res.cookie('refreshToken', '', { // Set value to empty string
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    expires: new Date(0), // Set expiry date to the past
-    maxAge: 0 // Explicitly set maxAge to 0
-  });
-  res.status(204).send(); // Send 204 No Content
 };
 
 export const getDevToken = async (req: Request, res: Response) => {

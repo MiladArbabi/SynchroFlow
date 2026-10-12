@@ -19,6 +19,7 @@
  * ✅ All shop context flows through this file.
  */
 
+import type { Knex } from 'knex';
 import { withTenant } from '../db.js'
 import { resolveActiveShopMemberships } from './pre-tenant.service.js';
 
@@ -148,13 +149,17 @@ export async function requireShopIdForUser(
  *   - require-entitlement middleware (MON-03)
  */
 export async function resolveTierForShop(
-  shopId: number
+  shopId: number,
+  transaction?: Knex.Transaction
 ): Promise<string> {
-  const row = await withTenant(shopId, (trx) =>
+  const readTier = (trx: Knex.Transaction) =>
     trx('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('tier')
-  );
+      .first('tier');
+
+  const row = transaction
+    ? await readTier(transaction)
+    : await withTenant(shopId, readTier);
 
   if (!row) {
     console.warn('[shop-resolution] no subscription row for shop, defaulting to starter', { shopId });

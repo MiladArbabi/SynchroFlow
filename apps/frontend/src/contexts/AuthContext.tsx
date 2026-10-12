@@ -3,21 +3,23 @@
 // apps/frontend/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
-import { getToken, setToken, clearToken, setOnTokenRefreshed } from 'utils/authStore';
+import { getToken, setToken, clearToken, setOnTokenRefreshed, getSessionGeneration, advanceSessionGeneration } from 'utils/authStore';
+import { axiosInstance } from 'api/axiosConfig';
 import { identifyUser, groupByShop, resetAnalyticsIdentity } from '../analytics/adapter';
 
 // --- Define State Shape ---
+type SessionUser = PublicUser & { role?: string };
 interface AuthState {
   isLoggedIn: boolean;
   isLoading: boolean; // For initial auth check (e.g., checking refresh token)
-  user: PublicUser | null;
+  user: SessionUser | null;
   accessToken: string | null;
 }
 
 // --- Define Context Shape ---
 interface AuthContextType extends AuthState {
   login: (user: PublicUser, accessToken: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   setAccessToken: (token: string | null) => void; // Needed for token refresh
 }
 
@@ -57,6 +59,24 @@ function withTokenIdentity(user: PublicUser, token: string | null): PublicUser {
   return { ...user, id: tokenUserId };
 }
 
+/** Only preserve non-JWT metadata when it belongs to the same user and shop. */
+function projectRefreshedUser(user: PublicUser | null, token: string): PublicUser | null {
+  const claims = decodeJwtPayload(token);
+  const id = jwtUserId(token);
+  if (!claims || id === null) return user;
+  const sameIdentity = user?.id === id && user?.shop_id === claims.shop_id;
+  return {
+    ...(sameIdentity ? user : {}),
+    id,
+    role: Array.isArray(claims.shop_roles) && typeof claims.shop_roles[0] === 'string'
+      ? claims.shop_roles[0] : undefined,
+    plan: typeof claims.tier === 'string' ? claims.tier : undefined,
+    shop_id: Number.isSafeInteger(claims.shop_id) ? claims.shop_id : undefined,
+    email: typeof claims.email === 'string' ? claims.email : undefined,
+    first_name: typeof claims.first_name === 'string' ? claims.first_name : null,
+  } as PublicUser;
+}
+
 // --- Create Provider Component ---
 interface AuthProviderProps {
   children: ReactNode;
@@ -84,6 +104,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       /* console.info('[AUTH][OAUTH_HANDOFF] token detected in URL'); */
 
       // Store token immediately
+      advanceSessionGeneration();
       setToken(tokenFromUrl);
 
       // ⚠️ User must be fetched OR decoded (depending on your system)
@@ -99,7 +120,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           plan: payload.tier ?? null,
           trial_ends_at: payload.trial_ends_at ?? null,
           created_at: payload.created_at ?? null,
-          role: payload.shop_roles?.[0] ?? 'owner',
+          role: Array.isArray(payload.shop_roles) && typeof payload.shop_roles[0] === 'string'
+            ? payload.shop_roles[0] : undefined,
           email: payload.email ?? null,
           first_name: payload.first_name ?? null,
         } as unknown as PublicUser;
@@ -201,21 +223,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    * mount (safe — only one AuthProvider exists in the tree).
    */
   React.useEffect(() => {
-    setOnTokenRefreshed((newToken: string) => {
-      console.info('[AUTH] Silent refresh → React state synced');
-      setAccessToken(newToken);
-      // #1164: identity follows the refreshed token, never a stale user.
+    setOnTokenRefreshed((newToken, generation) => {
+      if (generation !== getSessionGeneration()) return;
       setAuthState(prev => {
-        if (!prev.user) return prev;
-        const user = withTokenIdentity(prev.user, newToken);
-        if (user === prev.user) return prev;
-        localStorage.setItem('user', JSON.stringify(user));
-        return { ...prev, user };
+        if (generation !== getSessionGeneration()) return prev;
+        if (!newToken) return { isLoggedIn: false, isLoading: false, user: null, accessToken: null };
+        const user = projectRefreshedUser(prev.user, newToken);
+        if (user) localStorage.setItem('user', JSON.stringify(user));
+        else localStorage.removeItem('user');
+        return { ...prev, isLoggedIn: true, user, accessToken: newToken };
       });
     });
-  }, [setAccessToken]);
+    return () => setOnTokenRefreshed(null);
+  }, []);
 
   const login = useCallback((suppliedUser: PublicUser, accessToken: string) => {
+    advanceSessionGeneration();
     const user = withTokenIdentity(suppliedUser, accessToken);
     setAuthState({
       isLoggedIn: true,
@@ -228,7 +251,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     console.info('[AUTH] login(): token stored via authStore');
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    advanceSessionGeneration();
+    // Start revocation before clearing locally; its failure never retains credentials.
+    const revocation = axiosInstance.post('/api/v1/auth/logout', {}, { withCredentials: true })
+      .catch(() => { console.warn('[AUTH] Server logout unconfirmed; local session cleared'); });
+    delete axiosInstance.defaults.headers.common.Authorization;
     resetAnalyticsIdentity();
     setAuthState({
       isLoggedIn: false,
@@ -239,6 +267,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearToken();
     localStorage.removeItem('user');
     console.info('[AUTH] logout(): token cleared via authStore');
+    await revocation;
   }, []);
 
   const value = {

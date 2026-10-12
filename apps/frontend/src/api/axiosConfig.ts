@@ -1,7 +1,7 @@
 // apps/frontend/src/api/axiosConfig.ts
 
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import { getToken, setToken, clearToken, notifyTokenRefreshed } from 'utils/authStore';
+import { getToken, setToken, clearToken, notifyTokenRefreshed, getSessionGeneration } from 'utils/authStore';
 
 /**
  * AXIOS AUTH PHILOSOPHY (v3 — silent refresh + error-aware retry)
@@ -49,7 +49,7 @@ import { getToken, setToken, clearToken, notifyTokenRefreshed } from 'utils/auth
  *   immediately — retrying those can never succeed.
  *
  * Guarantees:
- * - No refresh loops (isRefreshing gate + originalRequest._retry)
+ * - No refresh loops (generation-scoped single-flight + originalRequest._retry)
  * - No poisoned login (auth routes excluded)
  * - No identity corruption (clearToken before hardLogout)
  * - Active WMS operators mid-workflow are not interrupted by token expiry,
@@ -64,6 +64,20 @@ const axiosInstance = axios.create();
 // Typed window extension for PostHog (avoids unsafe `any`)
 interface WindowWithPostHog extends Window {
   posthog?: { capture: (event: string, props?: Record<string, unknown>) => void };
+}
+
+function captureRefreshFailure(status: number | undefined, code: unknown): void {
+  // Only known machine-readable codes: never forward arbitrary provider payloads.
+  const safeCodes = ['SESSION_EXPIRED', 'SESSION_COMPROMISED', 'SHOP_CONTEXT_REQUIRED',
+    'SHOP_CONTEXT_MISMATCH', 'REFRESH_TEMPORARILY_UNAVAILABLE', 'REFRESH_TOKEN_CONFLICT',
+    'TOO_MANY_REQUESTS', 'REFRESH_IDENTITY_INVALID'];
+  try {
+    const ph = (window as WindowWithPostHog).posthog;
+    ph?.capture?.('auth.token.refresh_failed', {
+      status: status ?? 'network_error',
+      code: typeof code === 'string' && safeCodes.includes(code) ? code : null,
+    });
+  } catch { /* Non-fatal analytics. */ }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -115,7 +129,9 @@ function hardLogout(reason: string): void {
  * Resolves with the new access token on success, rejects on failure.
  * Reset to null after each cycle so the next expiry starts fresh.
  */
-let isRefreshing = false;
+let refreshGeneration = -1;
+let cooldownGeneration = -1;
+let refreshNotBefore = 0;
 let refreshPromise: Promise<string> | null = null;
 
 /**
@@ -123,18 +139,28 @@ let refreshPromise: Promise<string> | null = null;
  * Extracted so silentRefresh() can retry it once for transient failures
  * without re-entering the single-flight gate.
  */
-async function performRefresh(): Promise<string> {
+async function performRefresh(generation: number): Promise<string> {
+  if (generation !== getSessionGeneration()) throw new Error('OBSOLETE_AUTH_SESSION');
   const res = await axios.post(
     '/api/v1/auth/refresh_token',
     {},
     { withCredentials: true } // sends HttpOnly refreshToken cookie
   );
-  const newToken: string = res.data.accessToken;
-  if (!newToken) throw new Error('REFRESH_RESPONSE_MISSING_TOKEN');
+  if (generation !== getSessionGeneration()) throw new Error('OBSOLETE_AUTH_SESSION');
+  const newToken: string = res.data?.accessToken;
+  const currentIdentity = readAccessTokenIdentity(getToken());
+  const refreshedIdentity = readAccessTokenIdentity(newToken);
+  if (!currentIdentity || !refreshedIdentity ||
+      currentIdentity.userId !== refreshedIdentity.userId ||
+      currentIdentity.shopId !== refreshedIdentity.shopId) {
+    captureRefreshFailure(res.status ?? 200, 'REFRESH_IDENTITY_INVALID');
+    hardLogout('refresh_identity_invalid');
+    throw new Error('REFRESH_IDENTITY_INVALID');
+  }
 
   setToken(newToken);
   axiosInstance.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-  notifyTokenRefreshed(newToken);
+  notifyTokenRefreshed(newToken, generation);
 
   try {
     const ph = (window as WindowWithPostHog).posthog;
@@ -168,54 +194,39 @@ function isRetryableRefreshError(err: unknown): boolean {
   );
 }
 
-async function silentRefresh(): Promise<string> {
-  if (isRefreshing && refreshPromise) {
-    // Another request already kicked off a refresh — queue behind it
-    return refreshPromise;
+async function silentRefresh(generation: number): Promise<string> {
+  if (generation !== getSessionGeneration()) throw new Error('OBSOLETE_AUTH_SESSION');
+  if (cooldownGeneration === generation && Date.now() < refreshNotBefore) {
+    throw new Error('REFRESH_COOLDOWN');
   }
-
-  isRefreshing = true;
-
-  refreshPromise = performRefresh()
-    .catch(async initialErr => {
-      let err = initialErr;
-
-      if (isRetryableRefreshError(err)) {
-        console.warn(
-          '[AUTH] Silent refresh transient failure — retrying once',
-          err?.response?.status,
-          err?.response?.data?.error
-        );
-        try {
-          return await performRefresh();
-        } catch (retryErr) {
-          err = retryErr;
-        }
-      }
-
-      const status = err?.response?.status;
-      const code = err?.response?.data?.error;
-
-      try {
-        const ph = (window as WindowWithPostHog).posthog;
-        if (ph?.capture) {
-          ph.capture('auth.token.refresh_failed', {
-            status: status ?? 'network_error',
-            code: code ?? null,
-          });
-        }
-      } catch { /* non-fatal */ }
-
-      console.warn('[AUTH] Silent refresh failed — logging out', status, code);
+  if (refreshPromise && refreshGeneration === generation) return refreshPromise;
+  refreshGeneration = generation;
+  const current = performRefresh(generation).catch(async initialError => {
+    if (generation !== getSessionGeneration()) throw initialError;
+    let error = initialError;
+    if (isRetryableRefreshError(error)) {
+      try { return await performRefresh(generation); }
+      catch (retryError) { error = retryError; }
+    }
+    if (generation !== getSessionGeneration()) throw error;
+    const failure = error as AxiosError<RefreshErrorPayload & { retryAfter?: number }>;
+    const status = failure.response?.status;
+    captureRefreshFailure(status, failure.response?.data?.error);
+    if (status === 429) {
+      const seconds = Number(failure.response?.data?.retryAfter ?? failure.response?.headers?.['retry-after'] ?? 60);
+      cooldownGeneration = generation;
+      refreshNotBefore = Date.now() + (Number.isFinite(seconds) && seconds > 0 ? seconds : 60) * 1000;
+    } else if (status === 401 || status === 403 ||
+        (status === 400 && failure.response?.data?.error === 'REFRESH_TOKEN_CONFLICT')) {
       hardLogout('refresh_failed');
-      throw err;
-    })
-    .finally(() => {
-      isRefreshing = false;
-      refreshPromise = null;
-    });
-
-  return refreshPromise;
+    }
+    // Transient exhaustion and cooldown preserve credentials, but reject the operation.
+    throw error;
+  }).finally(() => {
+    if (refreshPromise === current) refreshPromise = null;
+  });
+  refreshPromise = current;
+  return current;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -228,6 +239,12 @@ axiosInstance.interceptors.request.use(
       return config;
     }
 
+    const sessionRequest = config as typeof config & { _sessionGeneration?: number };
+    if (sessionRequest._sessionGeneration !== undefined &&
+        sessionRequest._sessionGeneration !== getSessionGeneration()) {
+      return Promise.reject(new Error('OBSOLETE_AUTH_SESSION'));
+    }
+    sessionRequest._sessionGeneration = getSessionGeneration();
     const token = getToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -264,15 +281,12 @@ function isCommercialTier(value: unknown): value is CommercialTier {
 }
 
 /**
- * Reads the `tier` claim out of an access JWT's payload WITHOUT verifying
- * the signature. This is only used to detect stale client-side commercial
- * metadata (does this token's tier claim disagree with the backend's
- * authoritative currentTier?) — it is never used for authorization. Backend
- * authorization (authenticateToken re-resolving tier from the DB) remains
- * the sole source of truth.
+ * Reads access JWT claims WITHOUT verifying the signature, for session
+ * continuity and stale commercial metadata detection. Backend verification
+ * and authorization remain authoritative.
  */
-function readCommercialTierFromAccessToken(token: string | null): CommercialTier | null {
-  if (!token) return null;
+function readAccessTokenPayload(token: unknown): Record<string, unknown> | null {
+  if (typeof token !== 'string' || !token) return null;
 
   try {
     const payloadSegment = token.split('.')[1];
@@ -289,10 +303,25 @@ function readCommercialTierFromAccessToken(token: string | null): CommercialTier
 
     const payload = JSON.parse(atob(padded));
 
-    return isCommercialTier(payload?.tier) ? payload.tier : null;
+    return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
   } catch {
     return null;
   }
+}
+
+/** Claim decoding checks session continuity; backend JWT verification remains authoritative. */
+function readAccessTokenIdentity(token: unknown): { userId: number; shopId: number } | null {
+  const payload = readAccessTokenPayload(token);
+  const userId = payload?.user_id;
+  const shopId = payload?.shop_id;
+  if (typeof userId !== 'number' || !Number.isSafeInteger(userId) || userId <= 0 ||
+      typeof shopId !== 'number' || !Number.isSafeInteger(shopId) || shopId <= 0) return null;
+  return { userId, shopId };
+}
+
+function readCommercialTierFromAccessToken(token: string | null): CommercialTier | null {
+  const tier = readAccessTokenPayload(token)?.tier;
+  return isCommercialTier(tier) ? tier : null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -312,7 +341,7 @@ axiosInstance.interceptors.response.use(
   async error => {
     const status: number | undefined = error?.response?.status;
     const url: string | undefined = error?.config?.url;
-    const originalRequest: AxiosRequestConfig & { _retry?: boolean } = error?.config ?? {};
+    const originalRequest: AxiosRequestConfig & { _retry?: boolean; _sessionGeneration?: number } = error?.config ?? {};
 
     if (import.meta.env.MODE === 'development') {
       console.warn('[HTTP ← ERROR]', status, url);
@@ -357,6 +386,9 @@ axiosInstance.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const generation = originalRequest._sessionGeneration ?? getSessionGeneration();
+    if (generation !== getSessionGeneration()) return Promise.reject(error);
+
     // No token at all — nothing to refresh, hard logout immediately
     if (!getToken()) {
       hardLogout('401_no_token');
@@ -367,7 +399,8 @@ axiosInstance.interceptors.response.use(
     originalRequest._retry = true;
 
     try {
-      const newToken = await silentRefresh();
+      const newToken = await silentRefresh(generation);
+      if (generation !== getSessionGeneration()) return Promise.reject(error);
       // Inject new token and replay original request
       originalRequest.headers = {
         ...(originalRequest.headers ?? {}),
@@ -375,7 +408,7 @@ axiosInstance.interceptors.response.use(
       };
       return axiosInstance(originalRequest);
     } catch {
-      // silentRefresh already called hardLogout — just propagate
+      // Terminal failure, cooldown, or stale generation: reject the operation.
       return Promise.reject(error);
     }
   }

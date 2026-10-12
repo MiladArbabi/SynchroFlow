@@ -47,7 +47,8 @@
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
     "test:activation-matrix": "node scripts/activation-user-state-matrix.mjs",
-    "storybook": "npm run storybook -w ui"
+    "storybook": "npm run storybook -w ui",
+    "test:mobile": "npm run test --workspace apps/mobile --"
   },
   "keywords": [],
   "author": "",

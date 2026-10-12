@@ -1,6 +1,6 @@
 // apps/mobile/src/screens/OperatorSettingsScreen.tsx
 import { useNavigation } from '@react-navigation/native';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, AppHeader, Card, Row, Divider } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
@@ -14,6 +14,17 @@ export default function OperatorSettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [alertTone, setAlertTone] = useState<'urgent' | 'standard' | 'silent'>('standard');
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  const handleLogout = async () => {
+    try { await logout(); }
+    catch (failure: unknown) {
+      const durablyBlocked = typeof failure === 'object' && failure !== null &&
+        'durableInvalidation' in failure && failure.durableInvalidation === true;
+      Alert.alert('Sign out incomplete', durablyBlocked
+        ? 'We could not remove all saved credentials. This device has blocked the saved session. Please retry sign out.'
+        : 'We could not remove all saved credentials. Local sign out durability could not be confirmed. Please retry sign out.');
+    }
+  };
 
   // Load preferences on mount
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function OperatorSettingsScreen() {
         <Divider />
 
         {/* Sign out */}
-        <TouchableOpacity style={styles.signOutBtn} onPress={logout}>
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>

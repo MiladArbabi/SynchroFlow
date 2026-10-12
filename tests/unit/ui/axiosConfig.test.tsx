@@ -5,6 +5,7 @@ import { getToken } from '../../../apps/frontend/src/utils/authStore';
 // Mock the in-memory store module
 jest.mock('utils/authStore', () => ({
   getToken: jest.fn(),
+  getSessionGeneration: jest.fn(() => 1),
 }));
 
 const mockedGetToken = getToken as jest.Mock;

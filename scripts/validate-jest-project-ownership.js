@@ -4,8 +4,8 @@
  * TEST-INFRA-FOUNDATION — Jest project ownership validator.
  *
  * Read-only. Verifies that every Jest test candidate under tests/**\/*.test.ts
- * and tests/**\/*.test.tsx belongs to exactly one Jest project as configured
- * in jest.config.js, and that every configured project actually discovers at
+ * and tests/**\/*.test.tsx, plus mobile .test.ts(x) candidates, belongs
+ * to exactly one root project or the isolated mobile runner. Every collection discovers at
  * least one test (so a project can't silently target a directory that no
  * longer exists — the api-ui/tests/unit/api mistake this replaces).
  *
@@ -21,6 +21,8 @@ const { execFileSync } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT_DIR, 'tests');
+const MOBILE_DIR = path.join(ROOT_DIR, 'apps/mobile');
+const MOBILE_TESTS_DIR = path.join(MOBILE_DIR, '__tests__');
 const TEST_FILE_PATTERN = /\.test\.tsx?$/;
 
 /** Recursively collect every tests/**\/*.test.ts(x) candidate as an absolute path. */
@@ -66,7 +68,7 @@ function discoverProjectTests(projectName) {
   try {
     stdout = execFileSync(
       'npx',
-      ['--no-install', 'jest', '--listTests', '--selectProjects', projectName, '--no-cache'],
+      ['--no-install', 'jest', '--listTests', '--selectProjects', projectName, '--no-cache', '--no-watchman'],
       { cwd: ROOT_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
     );
   } catch (err) {
@@ -86,8 +88,24 @@ function relativeToRoot(absPath) {
   return path.relative(ROOT_DIR, absPath);
 }
 
+function discoverMobileTests() {
+  try {
+    return JSON.parse(execFileSync(process.execPath, [
+      path.join(MOBILE_DIR, 'node_modules/jest/bin/jest.js'),
+      '--config', path.join(MOBILE_DIR, 'jest.config.js'),
+      '--listTests', '--json', '--runInBand', '--no-cache', '--no-watchman',
+    ], { cwd: MOBILE_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  } catch (err) {
+    throw new Error(`Mobile jest --listTests failed: ${err.stderr || err.message}`);
+  }
+}
+
+function isWithin(file, dir) {
+  return file.startsWith(`${dir}${path.sep}`);
+}
+
 function main() {
-  const candidates = collectCandidates(TESTS_DIR);
+  const candidates = [...collectCandidates(TESTS_DIR), ...collectCandidates(MOBILE_TESTS_DIR)];
   const candidateSet = new Set(candidates);
 
   const projectNames = loadConfiguredProjectNames();
@@ -96,15 +114,20 @@ function main() {
     console.error('FATAL: jest.config.js declares no projects with a displayName.');
     process.exit(1);
   }
+  if (projectNames.includes('mobile')) throw new Error('Root project name collides with mobile.');
+  const collectionNames = [...projectNames, 'mobile'];
 
   /** @type {Map<string, Set<string>>} absolute test path -> set of owning project names */
   const ownership = new Map();
   /** @type {Record<string, number>} */
   const perProjectCounts = {};
   const zeroDiscoveryProjects = [];
+  const rootMobileClaims = [];
+  const mobileOutsideClaims = [];
 
-  for (const projectName of projectNames) {
-    const discovered = discoverProjectTests(projectName);
+  for (const projectName of collectionNames) {
+    const discovered = projectName === 'mobile'
+      ? discoverMobileTests() : discoverProjectTests(projectName);
     perProjectCounts[projectName] = discovered.length;
 
     if (discovered.length === 0) {
@@ -112,6 +135,12 @@ function main() {
     }
 
     for (const filePath of discovered) {
+      if (projectName !== 'mobile' && isWithin(filePath, MOBILE_TESTS_DIR)) {
+        rootMobileClaims.push(`${projectName}: ${relativeToRoot(filePath)}`);
+      }
+      if (projectName === 'mobile' && !isWithin(filePath, MOBILE_TESTS_DIR)) {
+        mobileOutsideClaims.push(relativeToRoot(filePath));
+      }
       candidateSet.add(filePath); // union, in case discovery finds something the fs walk missed
       if (!ownership.has(filePath)) ownership.set(filePath, new Set());
       ownership.get(filePath).add(projectName);
@@ -130,13 +159,20 @@ function main() {
   unowned.sort();
   multiOwned.sort();
 
-  for (const projectName of projectNames) {
+  for (const projectName of collectionNames) {
     console.log(`PROJECT=${projectName} TEST_COUNT=${perProjectCounts[projectName]}`);
   }
   console.log(`UNOWNED=${unowned.length}`);
   console.log(`MULTI_OWNED=${multiOwned.length}`);
+  console.log(`ROOT_MOBILE_CLAIMS=${rootMobileClaims.length}`);
+  console.log(`MOBILE_OUTSIDE_CLAIMS=${mobileOutsideClaims.length}`);
 
   let failed = false;
+  if (rootMobileClaims.length || mobileOutsideClaims.length) {
+    failed = true;
+    console.error('Runner isolation violations:');
+    for (const claim of [...rootMobileClaims, ...mobileOutsideClaims]) console.error(`  ${claim}`);
+  }
 
   if (unowned.length > 0) {
     failed = true;

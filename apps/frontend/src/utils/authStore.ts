@@ -6,6 +6,9 @@
  * frontend, including non-React files like axios interceptors.
  */
 let inMemoryAccessToken: string | null = null;
+let sessionGeneration = 0;
+export const getSessionGeneration = (): number => sessionGeneration;
+export const advanceSessionGeneration = (): number => ++sessionGeneration;
 
 export const setToken = (token: string | null): void => {
   inMemoryAccessToken = token;
@@ -22,8 +25,11 @@ export const getToken = (): string | null => {
 };
 
 export const clearToken = (): void => {
+  advanceSessionGeneration();
   inMemoryAccessToken = null;
   localStorage.removeItem('accessToken');
+  localStorage.removeItem('user');
+  _onTokenRefreshed?.(null, sessionGeneration);
 };
 
 /**
@@ -36,12 +42,12 @@ export const clearToken = (): void => {
  * Without this, React state shows the old (expired) token even though
  * authStore and the Authorization header have been updated.
  */
-let _onTokenRefreshed: ((token: string) => void) | null = null;
+let _onTokenRefreshed: ((token: string | null, generation: number) => void) | null = null;
 
-export const setOnTokenRefreshed = (cb: (token: string) => void): void => {
+export const setOnTokenRefreshed = (cb: typeof _onTokenRefreshed): void => {
   _onTokenRefreshed = cb;
 };
 
-export const notifyTokenRefreshed = (token: string): void => {
-  _onTokenRefreshed?.(token);
+export const notifyTokenRefreshed = (token: string, generation = sessionGeneration): void => {
+  if (generation === sessionGeneration) _onTokenRefreshed?.(token, generation);
 };

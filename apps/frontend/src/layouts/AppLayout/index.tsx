@@ -83,20 +83,14 @@ const AppLayout = (props: AppLayoutProps) => {
     ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
     : user?.email ?? 'Signed in';
   const handleOperatorLogout = async () => {
-    try {
-      await axiosInstance.post('/api/v1/auth/logout');
-    } catch {
-      // non-fatal
-    } finally {
-      logout();
-      navigate('/login');
-    }
+    await logout();
+    navigate('/login');
   };
   // Idle timeout — log out after 15min of inactivity, save route for return-to on re-login.
   useIdleTimeout(() => {
     const currentPath = window.location.pathname + window.location.search;
     if (currentPath !== '/login') sessionStorage.setItem('returnTo', currentPath);
-    logout();
+    void logout();
   });
   /**
    * LIFECYCLE → SIDENAV VISIBILITY CONTRACT

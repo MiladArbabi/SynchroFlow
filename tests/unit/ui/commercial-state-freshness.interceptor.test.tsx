@@ -20,19 +20,23 @@
 import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { axiosInstance } from 'api/axiosConfig';
-import { getToken, setToken, clearToken, notifyTokenRefreshed } from 'utils/authStore';
+import { getToken, setToken, clearToken, notifyTokenRefreshed, getSessionGeneration } from 'utils/authStore';
+
+let mockSessionGeneration = 1;
 
 jest.mock('utils/authStore', () => ({
   getToken: jest.fn(),
   setToken: jest.fn(),
   clearToken: jest.fn(),
   notifyTokenRefreshed: jest.fn(),
+  getSessionGeneration: jest.fn(() => mockSessionGeneration),
 }));
 
 const mockedGetToken = getToken as jest.Mock;
 const mockedSetToken = setToken as jest.Mock;
 const mockedClearToken = clearToken as jest.Mock;
 const mockedNotifyTokenRefreshed = notifyTokenRefreshed as jest.Mock;
+const mockedGetSessionGeneration = getSessionGeneration as jest.Mock;
 
 const FLOOR_PLANNING_ROUTE = '/api/v1/floor-planning/layout';
 
@@ -50,7 +54,6 @@ function makeJwt(payload: Record<string, unknown>): string {
 }
 
 function getResponseInterceptorRejectedHandler(): (error: unknown) => Promise<unknown> {
-  // @ts-expect-error - accessing private interceptor manager, same pattern
   // as tests/unit/ui/axiosConfig.test.tsx.
   return axiosInstance.interceptors.response.handlers[0].rejected;
 }
@@ -67,11 +70,18 @@ describe('GH-1136 — commercial-state freshness must trigger silent refresh on 
     mockedSetToken.mockReset();
     mockedClearToken.mockReset();
     mockedNotifyTokenRefreshed.mockReset();
+    mockedGetSessionGeneration.mockReset();
 
+    mockSessionGeneration = 1;
     currentToken = null;
+    mockedGetSessionGeneration.mockImplementation(() => mockSessionGeneration);
     mockedGetToken.mockImplementation(() => currentToken);
     mockedSetToken.mockImplementation((token: string | null) => {
       currentToken = token;
+    });
+    mockedClearToken.mockImplementation(() => {
+      mockSessionGeneration += 1;
+      currentToken = null;
     });
   });
 
@@ -81,8 +91,8 @@ describe('GH-1136 — commercial-state freshness must trigger silent refresh on 
   });
 
   it('stale-mismatch: JWT tier=growth vs backend currentTier=starter triggers silent refresh and replays with the new token', async () => {
-    const staleGrowthToken = makeJwt({ tier: 'growth' });
-    const newStarterToken = makeJwt({ tier: 'starter' });
+    const staleGrowthToken = makeJwt({ user_id: 1, shop_id: 77, tier: 'growth' });
+    const newStarterToken = makeJwt({ user_id: 1, shop_id: 77, tier: 'starter' });
 
     currentToken = staleGrowthToken;
     postSpy.mockResolvedValue({ data: { accessToken: newStarterToken } });
@@ -130,7 +140,7 @@ describe('GH-1136 — commercial-state freshness must trigger silent refresh on 
     );
 
     expect(mockedSetToken).toHaveBeenCalledWith(newStarterToken);
-    expect(mockedNotifyTokenRefreshed).toHaveBeenCalledWith(newStarterToken);
+    expect(mockedNotifyTokenRefreshed).toHaveBeenCalledWith(newStarterToken, 1);
 
     // Original request replayed with the NEW token.
     expect(mockAdapter.history.get.length).toBe(1);
@@ -148,7 +158,7 @@ describe('GH-1136 — commercial-state freshness must trigger silent refresh on 
   });
 
   it('negative control: JWT tier === backend currentTier === starter is a legitimate paywall denial, not stale metadata — no refresh', async () => {
-    const currentStarterToken = makeJwt({ tier: 'starter' });
+    const currentStarterToken = makeJwt({ user_id: 1, shop_id: 77, tier: 'starter' });
 
     currentToken = currentStarterToken;
     postSpy.mockResolvedValue({ data: { accessToken: 'should-not-be-used' } });

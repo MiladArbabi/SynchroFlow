@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
-import { clearToken } from 'utils/authStore';
+import { getSessionGeneration } from 'utils/authStore';
 
 // -- ANALYTICS
 import { useUiEvents } from '../../../analytics/useUiEvents';
@@ -130,7 +130,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
       })}
       onSubmit={async (values, { setSubmitting }) => {
         setSubmitError(null);
-        clearToken();
+        const loginAttemptGeneration = getSessionGeneration();
         try {
           console.info('[AUTH][LOGIN_ATTEMPT]', {
             has_email: Boolean(values.email.trim()), // Auth instrumentation must not log PII.
@@ -140,6 +140,9 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             email: values.email.trim(),
             password: values.password,
           });
+
+          // Reject obsolete responses before identity adoption or side effects.
+          if (getSessionGeneration() !== loginAttemptGeneration) return;
 
           // --- Call AuthContext to store token and user data ---
           if (response.data.accessToken && response.data.user) {
@@ -184,6 +187,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             throw new Error('Invalid login response from server.');
           }
         } catch (err: any) {
+          if (getSessionGeneration() !== loginAttemptGeneration) return;
           console.error('--- [LOGIN DEBUG 5] ---');
           
           // --- ROBUST ERROR HANDLER ---

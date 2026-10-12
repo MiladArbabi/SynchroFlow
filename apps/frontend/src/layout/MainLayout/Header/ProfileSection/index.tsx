@@ -8,7 +8,6 @@ import {
 import { useTheme, alpha } from '@mui/material/styles';
 import { Settings, LogOut } from 'lucide-react';
 import { useAuth } from 'contexts/AuthContext';
-import { axiosInstance } from 'api/axiosConfig';
 import Transitions from 'ui-component/extended/Transitions';
 
 // ─── PROFILE MENU ─────────────────────────────────────────────────────────────
@@ -30,14 +29,8 @@ const ProfileSection: React.FC = () => {
 
   const handleLogout = async () => {
     setOpen(false);
-    try {
-      await axiosInstance.post('/api/v1/auth/logout');
-    } catch {
-      // non-fatal
-    } finally {
-      logout();
-      navigate('/login');
-    }
+    await logout();
+    navigate('/login');
   };
 
   const handleClose = (e: MouseEvent | TouchEvent) => {

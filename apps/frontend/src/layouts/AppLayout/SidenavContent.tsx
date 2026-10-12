@@ -164,12 +164,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
   const handleLogout = async () => {
     setProfileAnchorEl(null);
-    try {
-      await axiosInstance.post('/api/v1/auth/logout');
-    } catch (err) {
-      console.warn('[ProfileMenu] logout API call failed (non-fatal — clearing local session)', err);
-    }
-    logout();
+    await logout();
     navigate('/login');
   };
 
