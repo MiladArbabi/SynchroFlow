@@ -14,7 +14,14 @@ import {
   assertReceiveJobBarcodeReady,
 } from './receiveBarcodeReadiness.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
-import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, receiveError } from './receiveWorkflowLock.service.js';
+import {
+  ACTIVE_RECEIVE_STATUSES,
+  lockReceiveJob,
+  assertReceiveMutable,
+  assertReceiveNotGroupFinalized,
+  groupedFinalizedLineIds,
+  receiveError,
+} from './receiveWorkflowLock.service.js';
 
 const SHORTFALL_ACCOUNTING_TYPES = new Set(['defect', 'wrong_item', 'wrong_variant', 'missing_item', 'other']);
 
@@ -210,6 +217,8 @@ export interface InspectLineInput {
   deviceEventId?: string;
   requireExplicitDisposition?: boolean;
   inspectedBy: number;
+  /** GH-1241 S3-B: set only by the grouped finalizer, which owns the finalization fence. */
+  groupedFinalization?: boolean;
 }
 
 export interface UpdateReceiveLineProgressInput {
@@ -240,6 +249,7 @@ export async function updateReceiveJobLineProgress(
 
   const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
   assertReceiveMutable(job);
+  await assertReceiveNotGroupFinalized(trx, shopId, receiveJobId);
   const line = await trx('receive_job_lines')
     .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
     .forUpdate().first('receive_job_line_id', 'quantity_expected', 'inspection_complete', 'quantity_count_confirmed');
@@ -341,6 +351,7 @@ export async function confirmReceiveJobLineCount(
   if (!ACTIVE_RECEIVE_STATUSES.includes(job.status)) {
     throw receiveCodedError('RECEIVE_JOB_TERMINAL', 'this Receive job is finished; its counts cannot change');
   }
+  await assertReceiveNotGroupFinalized(trx, shopId, receiveJobId);
   if (line.inspection_complete) {
     throw receiveCodedError('RECEIVE_LINE_ALREADY_INSPECTED', 'the count of a finished line cannot change');
   }
@@ -398,6 +409,7 @@ export async function inspectReceiveJobLine(
 
   const { shopId, receiveJobId, lasyncroVariantId, receiveJobLineId, quantityAccepted, quantityRejected, inspectedBy } = input;
   const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
+  if (!input.groupedFinalization) await assertReceiveNotGroupFinalized(trx, shopId, receiveJobId);
   const query = trx('receive_job_lines')
     .where({ receive_job_id: receiveJobId, shop_id: shopId });
   if (receiveJobLineId) {
@@ -671,8 +683,22 @@ export async function closeReceiveJob(
   assertReceiveMutable(job);
   if (po.status === 'cancelled') throw receiveError('Cannot close Receive for a cancelled PO');
 
-  const lines = await trx('receive_job_lines')
+  const allLines = await trx('receive_job_lines')
     .where({ receive_job_id: receiveJobId, shop_id: shopId }).orderBy('lasyncro_variant_id').orderBy('receive_job_line_id').forUpdate();
+
+  // GH-1241 S3-B: a grouped-finalized v2 job excludes its expected-zero lines.
+  // They carry no count, inspection or delivery evidence and are never
+  // written here; every other line must be in the finalization. Ordinary and
+  // legacy jobs keep the full every-line gate.
+  const finalizedLineIds = await groupedFinalizedLineIds(trx, shopId, receiveJobId);
+  let lines = allLines;
+  if (finalizedLineIds) {
+    const excluded = allLines.filter((l: any) => !finalizedLineIds.has(l.receive_job_line_id));
+    if (excluded.some((l: any) => Number(l.quantity_expected) !== 0)) {
+      throw receiveError('Grouped reconciliation does not account for every applicable line');
+    }
+    lines = allLines.filter((l: any) => finalizedLineIds.has(l.receive_job_line_id));
+  }
 
   const incomplete = lines.filter((l: any) => !l.inspection_complete);
   if (incomplete.length > 0) {

@@ -23,3 +23,29 @@ export async function lockReceiveJob(trx: Knex.Transaction, shopId: number, jobI
 export function assertReceiveMutable(job: any) {
   if (!ACTIVE_RECEIVE_STATUSES.includes(job.status)) throw receiveError('Receive job is terminal');
 }
+
+/** GH-1241 S3-B: line ids of the job's immutable grouped finalization, or null when it has none. */
+export async function groupedFinalizedLineIds(
+  trx: Knex.Transaction, shopId: number, jobId: string
+): Promise<Set<string> | null> {
+  const finalization = await trx('receive_reconciliation_finalizations')
+    .where({ shop_id: shopId, receive_job_id: jobId }).first('reconciliation_id');
+  if (!finalization) return null;
+  const rows = await trx('receive_reconciliation_finalization_lines')
+    .where({ shop_id: shopId, reconciliation_id: finalization.reconciliation_id }).select('receive_job_line_id');
+  return new Set(rows.map((r: any) => r.receive_job_line_id as string));
+}
+
+/**
+ * GH-1241 S3-B: a grouped finalization is immutable. Per-line accounting
+ * writers refuse once it exists; corrections belong to a compensating workflow.
+ * Call under the job lock.
+ */
+export async function assertReceiveNotGroupFinalized(trx: Knex.Transaction, shopId: number, jobId: string) {
+  if (await groupedFinalizedLineIds(trx, shopId, jobId)) {
+    throw Object.assign(
+      receiveError('RECEIVE_RECONCILIATION_FINALIZED: this Receive was finalized as a group; its accounting cannot change'),
+      { errorCode: 'RECEIVE_RECONCILIATION_FINALIZED' },
+    );
+  }
+}

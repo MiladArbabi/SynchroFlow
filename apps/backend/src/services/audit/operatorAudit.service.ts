@@ -22,6 +22,7 @@ import { Knex } from 'knex';
 
 export type AuditActionType =
   | 'receive_inspect'
+  | 'receive_reconcile_finalize'
   | 'receive_close'
   | 'barcode_print'
   | 'stow_claim'

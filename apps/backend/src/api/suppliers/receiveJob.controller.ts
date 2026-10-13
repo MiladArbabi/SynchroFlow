@@ -1,7 +1,7 @@
 // apps/backend/src/api/suppliers/receiveJob.controller.ts
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, receiveError } from '../../services/wms/receiveWorkflowLock.service.js';
+import { ACTIVE_RECEIVE_STATUSES, lockReceiveJob, assertReceiveMutable, assertReceiveNotGroupFinalized, receiveError } from '../../services/wms/receiveWorkflowLock.service.js';
 
 const validEventId = (value: unknown) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
 import db from '@lasyncro/backend-core/db.js';
@@ -795,6 +795,8 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         }
       }
       assertReceiveMutable(job);
+      // GH-1241 S3-B: a grouped finalization's accounting is immutable.
+      if (role !== null || exception_type === 'other') await assertReceiveNotGroupFinalized(trx, shopId, jobId);
       // After final inspection only non-accounting incidents may be reported:
       // no shortfall/overage role, and not 'other' (which the reconciliation
       // projection counts toward shortfall). Inspected quantities never change.

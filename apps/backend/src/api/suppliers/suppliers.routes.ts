@@ -41,6 +41,11 @@ import {
   httpCloseReceiveJob,
   httpReportReceiveException,
 } from './receiveJob.controller.js';
+import {
+  httpGetReceiveReconciliation,
+  httpSaveReceiveReconciliationDraft,
+  httpFinalizeReceiveReconciliation,
+} from './receiveReconciliation.controller.js';
 import { 
   httpConvertReorderRequests, 
   httpListReorderRequests, 
@@ -223,6 +228,34 @@ router.post(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpConfirmReceiveJobLineCount
+);
+// GH-1241 S3-B — opt-in grouped reconciliation. Reads inherit job reads;
+// draft/finalize inherit inspection and claimed-job ownership.
+router.get(
+  '/receive-jobs/:jobId/reconciliation',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:read'),
+  httpGetReceiveReconciliation
+);
+router.put(
+  '/receive-jobs/:jobId/reconciliation/draft',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpSaveReceiveReconciliationDraft
+);
+router.post(
+  '/receive-jobs/:jobId/reconciliation/finalize',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpFinalizeReceiveReconciliation
 );
 router.post(
   '/receive-jobs/:jobId/inspect',

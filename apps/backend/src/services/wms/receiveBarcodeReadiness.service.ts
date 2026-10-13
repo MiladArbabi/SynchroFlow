@@ -180,6 +180,19 @@ export async function evaluateReceiveJobBarcodeReadiness(
     ) u ON TRUE
     WHERE rjl.shop_id = ?
       AND rjl.receive_job_id = ?
+      -- GH-1241 S3-B: only a grouped-finalized job excludes its expected-zero
+      -- lines that the finalization left out; nothing else is ever excluded.
+      AND NOT (
+        rjl.quantity_expected = 0
+        AND EXISTS (
+          SELECT 1 FROM receive_reconciliation_finalizations f
+           WHERE f.shop_id = rjl.shop_id AND f.receive_job_id = rjl.receive_job_id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM receive_reconciliation_finalization_lines fl
+           WHERE fl.shop_id = rjl.shop_id AND fl.receive_job_line_id = rjl.receive_job_line_id
+        )
+      )
     ORDER BY rjl.receive_job_line_id
     `,
     [shopId, receiveJobId]
