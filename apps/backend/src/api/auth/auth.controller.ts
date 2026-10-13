@@ -715,26 +715,43 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid or expired reset link.' });
   }
 
-  if (!user.password_reset_expires_at || new Date() > new Date(user.password_reset_expires_at)) {
-    return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
-  }
-
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  await withTenant(user.shop_id, async (trx) => {
-    await trx('users')
+  // Pre-tenant resolution discovers identity only. Authorize consumption after
+  // the shared user lock, against the current credential and PostgreSQL time.
+  const outcome = await withTenant(user.shop_id, async (trx) => {
+    await lockAuthUser(trx, user.shop_id, user.id);
+    const current = await trx('users')
       .where({ id: user.id, shop_id: user.shop_id })
+      .first('password_reset_token');
+    if (current?.password_reset_token !== token) return 'invalid' as const;
+
+    const consumed = await trx('users')
+      .where({ id: user.id, shop_id: user.shop_id, password_reset_token: token })
+      .whereRaw('password_reset_expires_at > clock_timestamp()')
       .update({
         password_hash: passwordHash,
         password_reset_token: null,
         password_reset_expires_at: null,
       });
+    if (consumed !== 1) return 'expired' as const;
 
     // Revoke all active sessions on password reset — security best practice
     await trx('refresh_tokens')
-      .where({ user_id: user.id, revoked_at: null })
+      .where({ shop_id: user.shop_id, user_id: user.id, revoked_at: null })
       .update({ revoked_at: new Date() });
-  });
+    return 'consumed' as const;
+  }).catch(() => null);
+
+  if (outcome === null) {
+    return res.status(500).json({ error: 'Internal server error during password reset.' });
+  }
+
+  if (outcome !== 'consumed') {
+    return res.status(400).json({ error: outcome === 'invalid'
+      ? 'Invalid or expired reset link.'
+      : 'Reset link has expired. Please request a new one.' });
+  }
 
   console.info('[AUTH][RESET_PASSWORD] password reset successful', { userId: user.id });
 
