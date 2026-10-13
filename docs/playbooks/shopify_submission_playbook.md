@@ -639,16 +639,57 @@ Shopify App Store certification passed end-to-end
 - **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03** (`8e488b20`) — provided the final
   genuinely fresh real-provider end-to-end certification.
 
-**A20 residual edge — SHOP-REVIEW-OAUTH-RETRY-03b (parked, non-blocking).** A20 is
+**A20 residual edge — SHOP-REVIEW-OAUTH-RETRY-03b (D08 local certification,
+2026-10-13).** A20 is
 PASS for the umbrella's required safe-separation / reinstall baseline: the
 fresh-install (`handleShopifyInstall`, HMAC) and authenticated reconnect
 (`initiateOAuth`) paths are distinct and guarded, and a normal reinstall reuses
-existing Shopify installation ownership. Residual edge: if a fresh install creates
-its local tenant but the OAuth callback never completes, there is no
-`shopify_app_installations` row yet, so a later install attempt for that same
-domain may not resolve as a reinstall and could create another tenant. Callback-
-failure recovery edge only; not exercised by the successful normal reviewer path;
-does not block umbrella closure; not fixed here.
+existing Shopify installation ownership. The 2026-08-28 umbrella certification
+parked interrupted-install recovery as non-blocking; its successful normal
+reviewer path did not exercise this edge. That historical A20 evidence and
+umbrella closure remain unchanged.
+
+**Previously confirmed defect.** A first install could commit its local tenant
+and ghost owner before OAuth completed, leaving no `shopify_app_installations`
+row. A later signed install attempt took the new-install path instead of
+recovering that pending installation. Five recovery regressions returned HTTP
+500 instead of the required OAuth authorization redirect (HTTP 302), including
+retry before callback, after denial or token-exchange failure, and after state
+expiry.
+
+**Implemented recovery.** After Shopify HMAC and timestamp validation, install
+resolution acquires a PostgreSQL transaction-scoped advisory lock keyed by the
+normalized Shopify domain in the `shopify_app_store_install` namespace. The same
+transaction holds the lock across completed/pending/new ownership resolution and
+initial provisioning. Completed installations retain canonical reinstall
+handling. Pending installations recover the original tenant and ghost owner
+through the existing RLS-safe lookup, validating exact domain-derived identity,
+tenant/user IDs, owner membership and `entry_channel='shopify_app_store'`;
+conflicting or ambiguous ownership fails closed. Only a new installation
+provisions a tenant. The lock is released before the OAuth redirect and provider
+calls.
+
+Recovery creates fresh server-generated, DB-backed OAuth state for the same
+owner and domain without resetting the original Growth trial, commercial grants
+or history, warehouse/root location, WMS settings or merchant profile. D07
+callback validation, single-use state security, existing state cleanup and
+canonical credential authority remain unchanged.
+
+**LOCAL IMPLEMENTATION AND REGRESSION CERTIFICATION: GREEN**
+
+Automated regressions: **56/56 PASS** — D08 recovery **9/9**, neighboring
+Shopify/OAuth coverage **46/46**, and deterministic PostgreSQL concurrency
+**1/1**. The concurrency case observed two distinct application transactions
+waiting on the exact advisory lock before releasing the blocker; both requests
+returned HTTP 302 with distinct persisted OAuth states for one tenant/owner and
+one initial provisioning set. Backend TypeScript: **GREEN — exit 0, zero
+errors**. Disposable database cleanup: **PASS**.
+
+**PRODUCTION CERTIFICATION: PENDING**
+
+Production deployment has not yet been performed. These local automated results
+do not certify a production Shopify App Store reviewer retry or a real-provider
+retry flow; neither retry flow has been production-tested as part of D08.
 
 **Other parked non-blockers (unchanged — see "Remaining Known Issues
 (Non-blocking)"):**
@@ -660,8 +701,11 @@ does not block umbrella closure; not fixed here.
 - **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — `integrations.updated_at` not refreshed at
   completion, so `lastSyncedAt` reads stale while `sync_status = COMPLETED`. Sync
   status remains correct. Non-blocking.
-- **SHOP-REVIEW-OAUTH-RETRY-03b** — callback-failure retry edge, described above.
-  Non-blocking.
+- **SHOP-REVIEW-OAUTH-RETRY-03b** — previously parked non-blocking pending-install
+  retry defect; D08 local implementation and regression certification GREEN
+  (56/56 automated regressions; backend TypeScript GREEN). Production
+  certification PENDING; deployment and real-provider/reviewer retry
+  certification have not yet been performed. See the D08 update above.
 - **SHOP-REVIEW-NONPCD-SYNC-DEADEND-04 remains unopened** — the final fresh-store
   certification completed through the canonical `performInitialSync` and never
   entered the PCD fallback / `DISABLED_ARCHITECTURE_GUARD` path.

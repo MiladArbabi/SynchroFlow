@@ -887,7 +887,9 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  * Flow:
  *   1. Validate Shopify HMAC + timestamp (replay protection)
  *   2. Resolve or create shop + owner user
+ *      - Serialize by canonical shop domain before resolving ownership
  *      - Reinstall: find existing owner via shopify_app_installations
+ *      - Pending install: validate and reuse the original ghost owner
  *      - New install: create ghost shop + user, then set tenant context
  *   3. Seed integration_oauth_states with install_source: 'app_store'
  *   4. Redirect directly to Shopify OAuth (no frontend step)
@@ -961,55 +963,110 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
     return res.status(401).send('Request timestamp expired');
   }
 
-  const shopDomain = normalizeShopDomain(shop);
+  const shopDomain = normalizeShopDomain(shop.toLowerCase());
+  const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
   let userId: number;
 
   try {
-    // Check for any existing installation (reinstall case — with or without uninstalled_at)
-    const reinstallLookup = await systemQuery(
-      db.raw(
+    userId = await systemTransaction(async (trx) => {
+      // A waiter must see the preceding install's commit after acquiring the
+      // lock. All ownership lookups and provisioning use this same transaction.
+      await trx.raw('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'shopify_app_store_install', shopDomain,
+      ]);
+
+      // Completed installation takes precedence, including uninstalled shops
+      // and owners whose ghost profile has already been backfilled.
+      const reinstallLookup = await trx.raw(
         'SELECT shop_id FROM public.resolve_shopify_reinstall_shop(?)',
         [shopDomain]
-      )
-    );
-    const existing = reinstallLookup.rows?.[0];
-
-    if (existing) {
-      // Reinstall — reuse existing owner, re-stamp billing_provider and ensure
-      // the tenant has a WMS configuration row for first release.
-      const membership = await withTenant(existing.shop_id, (trx) =>
-        trx('shop_memberships')
-          .where({ shop_id: existing.shop_id, role: 'owner' })
-          .first('user_id')
       );
+      const existing = reinstallLookup.rows?.[0];
 
-      if (!membership) {
-        console.error('[shopify-install] No owner found for reinstall', { shopDomain, shopId: existing.shop_id });
-        return res.status(500).send('Installation error');
-      }
+      if (existing) {
+        const shopId = Number(existing.shop_id);
+        await setTenantContext(trx, shopId);
+        const owners = await trx('shop_memberships')
+          .where({ shop_id: shopId, role: 'owner' })
+          .select('user_id')
+          .limit(2);
 
-      await withTenant(existing.shop_id, (trx) =>
-        trx('shop_wms_settings')
+        if (owners.length !== 1) {
+          throw new Error('SHOPIFY_INSTALL_OWNER_AMBIGUOUS');
+        }
+
+        await trx('shop_wms_settings')
           // GH-1145-A1: reinstall of an EXISTING shop. onConflict().ignore()
           // never overwrites its bootstrap_model; this value only lands if the
           // row was never provisioned, and an existing shop is classified
           // like every other pre-migration tenant.
-          .insert({ shop_id: existing.shop_id, bootstrap_model: 'legacy_opening_balance_v1' })
+          .insert({ shop_id: shopId, bootstrap_model: 'legacy_opening_balance_v1' })
           .onConflict('shop_id')
-          .ignore()
-      );
+          .ignore();
 
-      userId = membership.user_id;
+        console.info('[shopify-install] Reinstall detected', {
+          shopDomain,
+          shopId,
+          userId: owners[0].user_id,
+        });
+        return Number(owners[0].user_id);
+      }
 
-      console.info('[shopify-install] Reinstall detected', {
-        shopDomain,
-        shopId: existing.shop_id,
-        userId,
-      });
-    } else {
+      // Use the existing pre-tenant SECURITY DEFINER facility on the locked
+      // connection. Project only identity fields; never return its password hash.
+      const pendingLookup = await trx.raw(`
+        SELECT candidate.value->>'id' AS user_id,
+               candidate.value->>'shop_id' AS shop_id,
+               candidate.value->>'email' AS email,
+               candidate.value->>'entry_channel' AS entry_channel
+        FROM (SELECT public.resolve_auth_user_by_email(?) AS value) AS candidate
+        WHERE candidate.value IS NOT NULL
+      `, [ghostEmail]);
+      const pending = pendingLookup.rows?.[0];
+
+      if (pending) {
+        const shopId = Number(pending.shop_id);
+        const pendingUserId = Number(pending.user_id);
+        if (!Number.isInteger(shopId) || shopId <= 0
+          || !Number.isInteger(pendingUserId) || pendingUserId <= 0
+          || pending.email !== ghostEmail
+          || pending.entry_channel !== 'shopify_app_store') {
+          throw new Error('SHOPIFY_INSTALL_PENDING_IDENTITY_INVALID');
+        }
+
+        await setTenantContext(trx, shopId);
+        // The signed domain's deterministic email is only a discovery key.
+        // Recovery also requires the tenant root, matching App Store user,
+        // and an unambiguous owner membership under tenant RLS.
+        const owner = await trx('users as u')
+          .join('shops as s', 's.id', 'u.shop_id')
+          .where({
+            'u.id': pendingUserId,
+            'u.shop_id': shopId,
+            'u.email': ghostEmail,
+            'u.entry_channel': 'shopify_app_store',
+          })
+          .first('u.id');
+        const owners = await trx('shop_memberships')
+          .where({ shop_id: shopId, role: 'owner' })
+          .select('user_id')
+          .limit(2);
+        const installation = await trx('shopify_app_installations')
+          .where({ shop_id: shopId })
+          .first('id');
+
+        if (!owner || owners.length !== 1
+          || Number(owners[0].user_id) !== pendingUserId || installation) {
+          throw new Error('SHOPIFY_INSTALL_PENDING_OWNERSHIP_CONFLICT');
+        }
+
+        // Recovery is read-only: retain the original provisioning and profile.
+        return pendingUserId;
+      }
+
       // New install — create the tenant root, then adopt it on the same
       // restricted transaction before any tenant-owned write.
-      const result = await systemTransaction(async (trx) => {
        const shopId = await createTenantShop(trx, shopDomain);
        await setTenantContext(trx, shopId);
 
@@ -1057,7 +1114,6 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           .ignore();
 
         // Ghost user — password-login-disabled via random irreversible hash
-        const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
         const ghostPasswordHash = await bcrypt.hash(
           crypto.randomBytes(32).toString('hex'),
           10
@@ -1161,13 +1217,11 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           shopDomain,
         });
 
-        return { userId: ghostUser.id, shopId };
-      });
-
-      userId = result.userId;
-    }
-  } catch (err) {
-    console.error('[shopify-install] Failed to resolve/create user', { shopDomain, err });
+      return Number(ghostUser.id);
+    });
+  } catch {
+    // Database errors may include failed-row data; do not log credential material.
+    console.error('[shopify-install] Failed to resolve/create user', { shopDomain });
     return res.status(500).send('Installation error — please try again');
   }
 
