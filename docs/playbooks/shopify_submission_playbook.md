@@ -639,7 +639,7 @@ Shopify App Store certification passed end-to-end
 - **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03** (`8e488b20`) — provided the final
   genuinely fresh real-provider end-to-end certification.
 
-**A20 residual edge — SHOP-REVIEW-OAUTH-RETRY-03b (D08 local certification,
+**A20 residual edge — SHOP-REVIEW-OAUTH-RETRY-03b (D08 local and production certification,
 2026-10-13).** A20 is
 PASS for the umbrella's required safe-separation / reinstall baseline: the
 fresh-install (`handleShopifyInstall`, HMAC) and authenticated reconnect
@@ -685,11 +685,38 @@ returned HTTP 302 with distinct persisted OAuth states for one tenant/owner and
 one initial provisioning set. Backend TypeScript: **GREEN — exit 0, zero
 errors**. Disposable database cleanup: **PASS**.
 
-**PRODUCTION CERTIFICATION: PENDING**
+**PRODUCTION CERTIFICATION: GREEN — 2026-10-13**
 
-Production deployment has not yet been performed. These local automated results
-do not certify a production Shopify App Store reviewer retry or a real-provider
-retry flow; neither retry flow has been production-tested as part of D08.
+- Deployment: commit `c32079b4b344955b2001626bcbdb56efe24fbc8a`;
+  Fly release v814, CI/deployment GREEN, production health HTTP 200.
+- Live first-install control: `d08-live-production-acceptance.myshopify.com`,
+  tenant #55. Real Shopify authorization, canonical installation and integration,
+  initial sync and Aha-moment completed successfully.
+- Controlled pending-install recovery: test-signed requests sent through the
+  production HTTP endpoint for
+  `d08-live-production-acceptance-v02.myshopify.com`. First request created
+  tenant #56 and ghost owner #54 but did not follow OAuth authorization.
+  Second request returned HTTP 302, reused both identities, generated a fresh
+  owner-bound OAuth state and did not duplicate provisioning.
+- Before/after provisioning SHA-256:
+  `b1b7d364673b4fc8ecb57646641015ed5d0e6e2367d3f490b803c095d5c4a410`.
+  Original warehouse, WMS settings, 16 Growth grants, trial and creation
+  transition were preserved.
+- Genuine Shopify authorization then completed on the same v02 store.
+  P7 restricted-role production audit passed all 14 checks: one installation,
+  one integration, one ACTIVE canonical credential record, original tenant
+  and owner, preserved Growth trial and normalized provisioning fingerprint.
+  Initial synchronization completed; Aha-moment displayed 17 products and
+  zero orders.
+
+**Evidence boundary:** Recovery HTTP requests were test-signed inside the
+production runtime, not independently Shopify-originated. The final
+installation and OAuth completion used the genuine Shopify flow. Restricted
+`sf_app` verification did not constitute an unrestricted cross-tenant scan.
+One unconsumed, expiring OAuth state remained after P7; it was not exposed
+or manually removed.
+
+**D08 RECOVERY DEFECT: PRODUCTION-CERTIFIED.**
 
 **Other parked non-blockers (unchanged — see "Remaining Known Issues
 (Non-blocking)"):**
@@ -701,11 +728,6 @@ retry flow; neither retry flow has been production-tested as part of D08.
 - **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — `integrations.updated_at` not refreshed at
   completion, so `lastSyncedAt` reads stale while `sync_status = COMPLETED`. Sync
   status remains correct. Non-blocking.
-- **SHOP-REVIEW-OAUTH-RETRY-03b** — previously parked non-blocking pending-install
-  retry defect; D08 local implementation and regression certification GREEN
-  (56/56 automated regressions; backend TypeScript GREEN). Production
-  certification PENDING; deployment and real-provider/reviewer retry
-  certification have not yet been performed. See the D08 update above.
 - **SHOP-REVIEW-NONPCD-SYNC-DEADEND-04 remains unopened** — the final fresh-store
   certification completed through the canonical `performInitialSync` and never
   entered the PCD fallback / `DISABLED_ARCHITECTURE_GUARD` path.
