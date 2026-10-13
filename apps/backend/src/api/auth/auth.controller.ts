@@ -324,8 +324,19 @@ export const loginUser = async (req: Request, res: Response) => {
     }
 
     // Reset and issue under the same user lock as refresh and logout.
-    const { accessToken, refreshToken } = await withTenant(shopContext.shopId, async (trx) => {
+    const issued = await withTenant(shopContext.shopId, async (trx) => {
       await lockAuthUser(trx, shopContext.shopId, user.id);
+
+      // Reject credentials verified before a concurrently committed
+      // password reset. The user lock serializes this check with reset.
+      const current = await trx('users')
+        .where({ id: user.id, shop_id: shopContext.shopId })
+        .first('password_hash');
+
+      if (!current || current.password_hash !== user.password_hash) {
+        return null;
+      }
+
       await trx('refresh_tokens')
         .where({ shop_id: shopContext.shopId, user_id: user.id, revoked_at: null })
         .update({ revoked_at: new Date() });
@@ -335,6 +346,12 @@ export const loginUser = async (req: Request, res: Response) => {
         tokenVersion: 1, transaction: trx,
       });
     });
+
+    if (!issued) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const { accessToken, refreshToken } = issued;
     audit({ level: 'INFO', event: 'login_session_reset', userId: user.id,
       metadata: { reason: 'explicit_login' } });
 
