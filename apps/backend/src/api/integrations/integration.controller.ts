@@ -265,10 +265,62 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     error_description?: string;
   };
 
+  // Shopify's signed callback is a separate trust boundary from OAuth state.
+  // Inspect the wire query as well as Express's parsed values: coercing arrays,
+  // objects, or first/last duplicate values would make the signature ambiguous.
+  if (platform === 'shopify') {
+    const raw = new URLSearchParams(req.originalUrl.split('?')[1] ?? '');
+    const seen = new Set<string>();
+    const critical = new Set(['code', 'state', 'shop', 'hmac', 'timestamp',
+      'error', 'error_description', 'host']);
+    for (const [key, value] of raw) {
+      const root = key.split('[')[0];
+      if (seen.has(key) || (critical.has(root) && key !== root)
+        || typeof req.query[key] !== 'string' || req.query[key] !== value) {
+        return res.status(400).json({ error: 'Ambiguous OAuth callback parameters' });
+      }
+      seen.add(key);
+    }
+    if (Object.keys(req.query).length !== seen.size
+      || !state?.trim() || !shop || !raw.get('hmac') || !raw.get('timestamp')
+      || (error !== undefined && !error.trim())
+      || (error && code !== undefined)
+      || (!error && !code?.trim())
+      || (error_description !== undefined && !error)) {
+      return res.status(400).json({ error: 'Invalid OAuth callback parameters' });
+    }
+
+    const hmac = raw.get('hmac')!;
+    const timestamp = raw.get('timestamp')!;
+    if (hmac.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(hmac)
+      || timestamp !== timestamp.trim() || !/^\d+$/.test(timestamp) || !Number.isSafeInteger(Number(timestamp))
+      || Number(timestamp) <= 0) {
+      return res.status(400).json({ error: 'Malformed OAuth callback signature parameters' });
+    }
+    // One DNS label, no scheme, port, path, extra suffix, or embedded authority.
+    if (shop !== shop.trim()
+      || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/i.test(shop)) {
+      return res.status(400).json({ error: 'Invalid Shopify shop hostname' });
+    }
+    const secret = process.env.SHOPIFY_API_SECRET;
+    if (!secret) {
+      return res.status(500).json({ error: 'Shopify OAuth is not configured' });
+    }
+    // Reuse the install endpoint's decoded, sorted key=value canonicalization.
+    const message = [...raw.entries()].filter(([key]) => key !== 'hmac')
+      .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+      .map(([key, value]) => `${key}=${value}`).join('&');
+    const expected = crypto.createHmac('sha256', secret).update(message).digest();
+    if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), expected)) {
+      audit({ level: 'SECURITY', event: 'shopify_callback_hmac_invalid' });
+      return res.status(401).json({ error: 'Invalid OAuth callback signature' });
+    }
+  }
+
   console.log('🔵 Starting OAuth callback for platform:', platform);
 
   // --- 1. Handle OAuth Failure (Sad Path) ---
-  if (error) {
+  if (error && platform !== 'shopify') {
     console.log('❌ OAuth error detected:', error);
     const userFriendlyError = getHumanReadableError(error, error_description || '');
     const redirectUrl = new URL(`${process.env.FRONTEND_URL}/`);
@@ -302,6 +354,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         throw new Error('OAUTH_STATE_NOT_FOUND');
       }
 
+      if (platform === 'shopify' && (
+        typeof row.shop_domain !== 'string'
+        || row.shop_domain.toLowerCase() !== shop.toLowerCase()
+      )) {
+        throw new Error('OAUTH_SHOP_MISMATCH');
+      }
+
       if (row.expires_at < new Date()) {
         console.warn('[OAuth] Expired OAuth state', {
           platform,
@@ -316,10 +375,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         throw new Error('OAUTH_STATE_EXPIRED');
       }
 
-      // Burn the state immediately (replay protection)
-      await trx('integration_oauth_states')
-        .where({ id: row.id })
-        .delete();
+      // Only authenticated, shop-bound success callbacks burn the locked state.
+      // A signed denial safely redirects without invalidating a pending install.
+      if (!error) {
+        await trx('integration_oauth_states')
+          .where({ id: row.id })
+          .delete();
+      }
 
       return {
         userId: row.user_id,
@@ -333,6 +395,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         ? 'Invalid or reused OAuth state'
         : err.message === 'OAUTH_STATE_EXPIRED'
         ? 'Expired OAuth state'
+        : err.message === 'OAUTH_SHOP_MISMATCH'
+        ? 'OAuth shop does not match authorization state'
         : 'OAuth state validation failed';
 
     audit({
@@ -342,6 +406,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     });
 
     return res.status(403).json({ error: reason });
+  }
+
+  if (error) {
+    const redirectUrl = new URL(`${process.env.FRONTEND_URL}/`);
+    redirectUrl.searchParams.append('connect', 'error');
+    redirectUrl.searchParams.append('message', getHumanReadableError(error, error_description || ''));
+    return res.redirect(redirectUrl.toString());
   }
 
     console.info('[OAuth] State validated — starting token exchange', {

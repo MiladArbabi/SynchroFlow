@@ -53,6 +53,7 @@ jest.mock('axios', () => {
 });
 
 import crypto from 'crypto';
+import { isDeepStrictEqual } from 'util';
 import request from 'supertest';
 import axios from 'axios';
 import { createApp } from 'api-src/bootstrap/express';
@@ -245,8 +246,106 @@ async function seedOAuthState(input: {
 function callback(query: Record<string, string>) {
   return request(app)
     .get('/api/v1/integrations/oauth/callback/shopify')
-    .query(query)
+    .query(d07SignedQuery({ timestamp: String(Math.floor(Date.now() / 1000)), ...query }))
     .redirects(0);
+}
+
+// D07 rejection fixtures remain separate from the signed legacy callback helper.
+// Shopify OAuth canonicalization: omit hmac, sort decoded scalar parameters,
+// join key=value pairs with &, then HMAC-SHA256 with the app secret.
+// https://shopify.dev/docs/apps/build/authentication-authorization/authenticate-standalone-apps
+function d07SignedQuery(params: Record<string, string>): Record<string, string> {
+  const message = Object.keys(params).filter(key => key !== 'hmac').sort()
+    .map(key => `${key}=${params[key]}`).join('&');
+  return { ...params, hmac: crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+    .update(message).digest('hex') };
+}
+
+let d07Client = 0;
+function d07Callback(query: Record<string, string> | string) {
+  // Isolate the callback's 20/minute IP budget from legacy cases. Keep the real
+  // rate limiter enabled; no security middleware or controller is mocked.
+  return request(app).get('/api/v1/integrations/oauth/callback/shopify')
+    .set('X-Forwarded-For', `192.0.2.${++d07Client}`)
+    .query(query).redirects(0)
+    .timeout({ response: 5_000, deadline: 10_000 });
+}
+
+async function d07Authority(shopId: number) {
+  return withTenant(shopId, async trx => ({
+    integrations: await trx('integrations').where({ shop_id: shopId, platform: 'shopify' })
+      .select('id', 'platform_shop_name').orderBy('id'),
+    installations: await trx('shopify_app_installations').where({ shop_id: shopId })
+      .select('id', 'shop_domain', 'shop_gid', 'scopes', 'uninstalled_at').orderBy('id'),
+    credentials: await trx('shopify_admin_credentials').where({ shop_id: shopId })
+      .select('id', 'installation_id', 'access_token_encrypted', 'refresh_token_encrypted',
+        'access_expires_at', 'refresh_expires_at', 'granted_scopes', 'credential_state',
+        'credential_generation', 'rotation_lease_token', 'rotation_lease_expires_at')
+      .orderBy('id'),
+  }));
+}
+
+async function d07Fixture() {
+  const shopDomain = `oauth-d07-${crypto.randomBytes(8).toString('hex')}.myshopify.com`;
+  const fixture = await installFreshShop(shopDomain);
+  const state = await readOAuthState(fixture.userId);
+  const query = d07SignedQuery({ code: 'd07-synthetic-code', state, shop: shopDomain,
+    timestamp: String(Math.floor(Date.now() / 1000)) });
+  return { ...fixture, state, query };
+}
+
+function d07SessionEffects(res: request.Response) {
+  const location = new URL(String(res.headers.location ?? '/'), 'https://d07.invalid');
+  return {
+    redirectToken: location.searchParams.get('token'),
+    bodyToken: res.body?.token ?? res.body?.accessToken ?? res.body?.access_token ?? null,
+    refreshCookies: (res.headers['set-cookie'] ?? []).filter((cookie: string) =>
+      cookie.startsWith('refreshToken=')),
+  };
+}
+
+async function d07Reject(fixture: Awaited<ReturnType<typeof d07Fixture>>,
+  query: Record<string, string> | string) {
+  const beforeState = await systemQuery(db('integration_oauth_states')
+    .where({ platform: 'shopify', state: fixture.state }).select('*'));
+  expect(beforeState).toHaveLength(1);
+  const beforeAuthority = await d07Authority(fixture.shopId);
+  // A valid mocked grant ensures a missing trust gate cannot look rejected merely
+  // because the provider mock failed. All provider boundaries stay synthetic.
+  programAxios({ token: tokenOk('d07-unauthorized-access', FULL_GRANT_STRING),
+    graphql: graphqlOk(fixture.shopDomain) });
+  const billingCallsBefore = billingFetch.mock.calls.length;
+  const res = await d07Callback(query);
+  const afterState = await systemQuery(db('integration_oauth_states')
+    .where({ platform: 'shopify', state: fixture.state }).select('*'));
+  const afterAuthority = await d07Authority(fixture.shopId);
+  expect(res.status).toBeGreaterThanOrEqual(400);
+  expect(res.status).toBeLessThan(500);
+  expect(res.status).not.toBe(429);
+  // Compare complete authority in memory; never print credential material on failure.
+  expect(isDeepStrictEqual(afterState, beforeState)).toBe(true);
+  expect(isDeepStrictEqual(afterAuthority.integrations, beforeAuthority.integrations)).toBe(true);
+  expect(isDeepStrictEqual(afterAuthority.installations, beforeAuthority.installations)).toBe(true);
+  expect(isDeepStrictEqual(afterAuthority.credentials, beforeAuthority.credentials)).toBe(true);
+  expect(axiosPost.mock.calls.length).toBe(0);
+  expect(axiosGet.mock.calls.length).toBe(0);
+  expect(billingFetch.mock.calls.length).toBe(billingCallsBefore);
+  const session = d07SessionEffects(res);
+  expect(session.redirectToken === null).toBe(true);
+  expect(session.bodyToken === null).toBe(true);
+  expect(session.refreshCookies.length).toBe(0);
+}
+
+async function d07RejectHostname(fixture: Awaited<ReturnType<typeof d07Fixture>>,
+  shopDomain: string) {
+  // Match the signed query and persisted domain so shop-identity equality alone
+  // cannot satisfy the strict-hostname contract. Reuse the real installed user's
+  // membership; only the pending OAuth state's domain is intentionally invalid.
+  const state = `d07-host-${crypto.randomBytes(8).toString('hex')}`;
+  await seedOAuthState({ userId: fixture.userId, shopDomain, state });
+  await d07Reject({ ...fixture, state }, d07SignedQuery({ ...fixture.query,
+    state, shop: shopDomain }));
+  expect(await oauthStateRows(fixture.state)).toBe(1);
 }
 
 /** Fixture-scoped counts. */
@@ -400,6 +499,175 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     for (const observed of adminObservations) {
       expect(observed.canonicalAccess).toBe(true);
     }
+  });
+
+  // D07 — ratified callback trust boundary and signed lifecycle controls.
+  it('D07: missing callback HMAC rejects before state consumption or acquisition', async () => {
+    const fixture = await d07Fixture();
+    const { hmac: _hmac, ...unsigned } = fixture.query;
+    await d07Reject(fixture, unsigned);
+  });
+
+  it('D07: malformed callback HMAC fails closed without an exception', async () => {
+    const fixture = await d07Fixture();
+    await d07Reject(fixture, { ...fixture.query, hmac: 'not-a-sha256-digest' });
+  });
+
+  it('D07: well-formed but incorrect callback HMAC rejects without side effects', async () => {
+    const fixture = await d07Fixture();
+    const hmac = (fixture.query.hmac[0] === '0' ? '1' : '0') + fixture.query.hmac.slice(1);
+    await d07Reject(fixture, { ...fixture.query, hmac });
+  });
+
+  it('D07: signed callback for another valid shop preserves the persisted shop state', async () => {
+    const fixture = await d07Fixture();
+    await d07Reject(fixture, d07SignedQuery({ ...fixture.query,
+      shop: 'd07-other-store.myshopify.com' }));
+  });
+
+  it('D07: signed suffix injection is rejected by strict shop hostname validation', async () => {
+    const fixture = await d07Fixture();
+    await d07RejectHostname(fixture, `${fixture.shopDomain}.attacker.example`);
+  });
+
+  it('D07: signed URL authority instead of a hostname is rejected by strict shop hostname validation', async () => {
+    const fixture = await d07Fixture();
+    await d07RejectHostname(fixture, `https://${fixture.shopDomain}`);
+  });
+
+  it('D07: signed invalid hostname label is rejected by strict shop hostname validation', async () => {
+    const fixture = await d07Fixture();
+    await d07RejectHostname(fixture, 'invalid_shop.myshopify.com');
+  });
+
+  it('D07: duplicate code parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.append('code', fixture.query.code);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: duplicate state parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.append('state', fixture.query.state);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: duplicate shop parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.append('shop', fixture.query.shop);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: duplicate hmac parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.append('hmac', fixture.query.hmac);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: duplicate timestamp parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.append('timestamp', fixture.query.timestamp);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: duplicate error parameters fail closed without consuming legitimate state', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(d07SignedQuery({
+      state: fixture.state,
+      shop: fixture.shopDomain,
+      timestamp: fixture.query.timestamp,
+      error: 'access_denied',
+    }));
+    raw.append('error', 'access_denied');
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: structured state query input fails closed without an unhandled exception', async () => {
+    const fixture = await d07Fixture();
+    const raw = new URLSearchParams(fixture.query);
+    raw.delete('state');
+    raw.append('state[value]', fixture.state);
+    await d07Reject(fixture, raw.toString());
+  });
+
+  it('D07: unsigned OAuth denial cannot bypass callback authenticity checks', async () => {
+    const fixture = await d07Fixture();
+    const { hmac: _hmac, code: _code, ...query } = fixture.query;
+    await d07Reject(fixture, { ...query, error: 'access_denied' });
+  });
+
+  it('D07: forged signed-looking OAuth denial cannot bypass callback authenticity checks', async () => {
+    const fixture = await d07Fixture();
+    const { code: _code, ...query } = fixture.query;
+    await d07Reject(fixture, { ...query, error: 'access_denied', hmac: '0'.repeat(64) });
+  });
+
+  it('D07: authenticated authorization denial remains safely handled (positive control)', async () => {
+    const fixture = await d07Fixture();
+    const before = await d07Authority(fixture.shopId);
+    const { code: _code, ...query } = fixture.query;
+    programAxios({});
+    const billingCallsBefore = billingFetch.mock.calls.length;
+    const res = await d07Callback(d07SignedQuery({ ...query, error: 'access_denied',
+      error_description: 'The merchant declined authorization' }));
+    expect(res.status).toBe(302);
+    const location = new URL(String(res.headers.location));
+    expect(location.origin).toBe(new URL(process.env.FRONTEND_URL!).origin);
+    expect(location.searchParams.get('connect')).toBe('error');
+    const session = d07SessionEffects(res);
+    expect(session.redirectToken === null).toBe(true);
+    expect(session.bodyToken === null).toBe(true);
+    expect(session.refreshCookies.length).toBe(0);
+    expect(isDeepStrictEqual(await d07Authority(fixture.shopId), before)).toBe(true);
+    expect(axiosPost.mock.calls.length).toBe(0);
+    expect(billingFetch.mock.calls.length).toBe(billingCallsBefore);
+  });
+
+  it('D07: valid signed callback preserves credentials, state burn, sync and session issuance (positive control)', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('d07-valid-access', FULL_GRANT_STRING, 'd07-valid-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    const res = await d07Callback(fixture.query);
+    expect(res.status).toBe(302);
+    const location = new URL(String(res.headers.location));
+    expect(location.origin).toBe(new URL(process.env.FRONTEND_URL!).origin);
+    expect(location.searchParams.get('connect')).toBe('app_store');
+    expect(location.searchParams.get('token')).toBeTruthy();
+    expect(d07SessionEffects(res).refreshCookies).toHaveLength(1);
+    expect(await oauthStateRows(fixture.state)).toBe(0);
+    const authority = await d07Authority(fixture.shopId);
+    expect(authority.integrations).toHaveLength(1);
+    expect(authority.integrations[0].platform_shop_name).toBe(fixture.shopDomain);
+    expect(authority.installations).toHaveLength(1);
+    expect(authority.installations[0]).toMatchObject({ shop_domain: fixture.shopDomain,
+      shop_gid: SHOP_GID, scopes: EFFECTIVE_SCOPES_SORTED, uninstalled_at: null });
+    expect(authority.credentials).toHaveLength(1);
+    expect(authority.credentials[0].installation_id).toBe(authority.installations[0].id);
+    expect(decrypt(authority.credentials[0].access_token_encrypted, 'shopify.dev')).toBe('d07-valid-access');
+    expect(decrypt(authority.credentials[0].refresh_token_encrypted, 'shopify.dev')).toBe('d07-valid-refresh');
+    const events = await syncRequestedEvents(fixture.shopId);
+    expect(events).toHaveLength(1);
+    expect(Number(events[0].event_payload.integration_id)).toBe(Number(authority.integrations[0].id));
+    expect(await outboxRowsForEvent(fixture.shopId, Number(events[0].id))).toHaveLength(1);
+    expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  it('D07: unauthenticated reconnect preserves existing canonical credentials and fencing generation', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('d07-prior-access', FULL_GRANT_STRING, 'd07-prior-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    expect((await d07Authority(fixture.shopId)).credentials).toHaveLength(1);
+    const state = `d07-reconnect-${crypto.randomBytes(8).toString('hex')}`;
+    await seedOAuthState({ userId: fixture.userId, shopDomain: fixture.shopDomain,
+      state, installSource: 'reconnect' });
+    await d07Reject({ ...fixture, state }, { code: 'd07-untrusted-reconnect-code',
+      shop: fixture.shopDomain, state, timestamp: fixture.query.timestamp });
   });
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -70,7 +70,6 @@ import request from 'supertest';
 import axios from 'axios';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
-import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 // EntitlementsService.getForUser computes effective access as
@@ -103,7 +102,15 @@ function programAxios(shopDomain: string) {
   axiosPost.mockReset();
   axiosPost.mockImplementation(async (url: unknown) => {
     if (typeof url === 'string' && url.includes(TOKEN_URL_FRAGMENT)) {
-      return { data: { access_token: `fake-token-${Date.now()}`, scope: FULL_GRANT_STRING } };
+      return {
+        data: {
+          access_token: `fake-token-${Date.now()}`,
+          refresh_token: `fake-refresh-${Date.now()}`,
+          expires_in: 86400,
+          refresh_token_expires_in: 2592000,
+          scope: FULL_GRANT_STRING,
+        },
+      };
     }
     if (typeof url === 'string' && url.includes(GRAPHQL_URL_FRAGMENT)) {
       return {
@@ -274,11 +281,17 @@ async function seedOAuthState(input: {
   );
 }
 
-const callback = (query: Record<string, string>) =>
-  request(app)
+const callback = (query: Record<string, string>) => {
+  const params: Record<string, string> = { timestamp: String(Math.floor(Date.now() / 1000)), ...query };
+  const message = Object.keys(params).filter(key => key !== 'hmac').sort()
+    .map(key => `${key}=${params[key]}`).join('&');
+  const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+    .update(message).digest('hex');
+  return request(app)
     .get('/api/v1/integrations/oauth/callback/shopify')
-    .query(query)
+    .query({ ...params, hmac })
     .redirects(0);
+};
 
 /**
  * Establishes the pre-reconnect commercial reality: a shop already installed
@@ -458,7 +471,6 @@ function successToken(res: { status: number; headers: Record<string, string> }):
 // ── suite ───────────────────────────────────────────────────────────────────
 
 describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative commercial state', () => {
-  let completePostInstallationSpy: jest.SpyInstance;
 
   beforeAll(() => {
     process.env.SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || 'test_shopify_secret';
@@ -474,16 +486,11 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
     process.env.SHOPIFY_APP_GID = 'gid://shopify/App/320563019777';
     process.env.SHOPIFY_PARTNER_API_ACCESS_TOKEN = 'test-partner-token-not-printed';
 
-    completePostInstallationSpy = jest
-      .spyOn(ShopifyAppService, 'completePostInstallation')
-      .mockResolvedValue(undefined);
-
     billingFetch = jest.fn();
     (global as unknown as { fetch: unknown }).fetch = billingFetch;
   });
 
   afterAll(() => {
-    completePostInstallationSpy.mockRestore();
     (global as unknown as { fetch: unknown }).fetch = realFetch;
   });
 
