@@ -32,6 +32,7 @@ import { registerWebhooksForShop } from '../../services/shopify/shopifyWebhook.s
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
+import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 import { getQueueChannel, connection } from '../../queue.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
@@ -433,7 +434,17 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   let shopId: number;
   let reconnect: ShopifyAdminCredentialReconnectPrepared | undefined;
   try {
-    ({ shopId } = await requireShopContextForUser(oauthContext.userId));
+    const shopContext = await requireShopContextForUser(oauthContext.userId);
+    shopId = shopContext.shopId;
+    // Reconnect intent does not preserve a permission revoked after initiation.
+    // App Store completion has no pre-existing browser JWT and retains its flow.
+    if (oauthContext.installSource === 'reconnect') {
+      const allowed = await withTenant(shopId, () =>
+        isActionAllowed(shopId, 'integrations:write', shopContext.role, { freshDb: true }));
+      if (!allowed) {
+        return res.status(403).json({ error: 'ACTION_FORBIDDEN', action: 'integrations:write' });
+      }
+    }
     const preparation = await prepareShopifyAdminCredentialReconnect({
       shopId, shopDomain: oauthContext.shopDomain!, now: new Date(),
     });

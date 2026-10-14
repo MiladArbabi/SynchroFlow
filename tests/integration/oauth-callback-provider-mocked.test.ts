@@ -52,6 +52,19 @@ jest.mock('axios', () => {
   return { __esModule: true, default: callable };
 });
 
+// Deterministic permission cache; canonical DB grants and policy remain real.
+const mockOAuthPermissionCache = new Map<string, string>();
+jest.mock('@lasyncro/backend-core/services/redis.client.js', () => ({
+  getRedisClient: () => ({
+    get: async (key: string) => mockOAuthPermissionCache.get(key) ?? null,
+    set: async (key: string, value: string) => {
+      mockOAuthPermissionCache.set(key, value);
+      return 'OK';
+    },
+    del: async (key: string) => Number(mockOAuthPermissionCache.delete(key)),
+  }),
+}));
+
 import crypto from 'crypto';
 import { isDeepStrictEqual } from 'util';
 import request from 'supertest';
@@ -60,6 +73,8 @@ import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { SHOPIFY_REQUIRED_SCOPES } from 'api-src/services/shopify/shopifyScopes';
 import { decrypt } from 'api-src/security/encryption.service';
+import { invalidatePermissionCache, isActionAllowed } from 'api-src/services/permissions/permissionCache.service';
+import { issueTestToken } from '../unit/helpers/auth';
 
 const app = createApp();
 
@@ -434,6 +449,7 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
   });
 
   beforeEach(() => {
+    mockOAuthPermissionCache.clear();
     billingFetch.mockReset();
     fixtureShops.clear();
     adminObservations = [];
@@ -655,6 +671,202 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(Number(events[0].event_payload.integration_id)).toBe(Number(authority.integrations[0].id));
     expect(await outboxRowsForEvent(fixture.shopId, Number(events[0].id))).toHaveLength(1);
     expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  it('AUTH-OAUTH-REAUTH-01 A: authorized real reconnect completes without a callback browser JWT', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('reauth-initial-access', FULL_GRANT_STRING, 'reauth-initial-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    const token = issueTestToken({ userId: fixture.userId, shopId: fixture.shopId, roles: ['owner'] });
+    const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+      .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+    expect(initiated.status).toBe(200);
+    const state = await readOAuthState(fixture.userId);
+    expect(new URL(initiated.body.authorizationUrl).searchParams.get('state')).toBe(state);
+    const eventsBefore = await syncRequestedEvents(fixture.shopId);
+    programAxios({ token: tokenOk('reauth-authorized-access', FULL_GRANT_STRING, 'reauth-authorized-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    const res = await d07Callback(d07SignedQuery({ code: 'reauth-authorized-code', state,
+      shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+    expect(res.status).toBe(302);
+    expect(await oauthStateRows(state)).toBe(0);
+    const authority = await d07Authority(fixture.shopId);
+    expect(authority.credentials).toHaveLength(1);
+    expect(decrypt(authority.credentials[0].access_token_encrypted, 'shopify.dev')).toBe('reauth-authorized-access');
+    expect(decrypt(authority.credentials[0].refresh_token_encrypted, 'shopify.dev')).toBe('reauth-authorized-refresh');
+    expect(d07SessionEffects(res).redirectToken).toBeTruthy();
+    expect(d07SessionEffects(res).refreshCookies).toHaveLength(1);
+    const events = await syncRequestedEvents(fixture.shopId);
+    expect(events).toHaveLength(eventsBefore.length + 1);
+    expect(await outboxRowsForEvent(fixture.shopId, Number(events[events.length - 1].id))).toHaveLength(1);
+    expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  it('AUTH-OAUTH-REAUTH-01 B/C: revoked Admin grant denies the original signed reconnect without privileged effects', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('reauth-prior-access', FULL_GRANT_STRING, 'reauth-prior-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    const adminId = await withTenant(fixture.shopId, async trx => {
+      const [admin] = await trx('users').insert({ shop_id: fixture.shopId,
+        email: `reauth-admin-${crypto.randomBytes(8).toString('hex')}@test.example`,
+        password_hash: 'not_a_real_password_hash', first_name: 'Synthetic Admin', role: 'admin' }).returning('id');
+      await trx('shop_memberships').insert({ shop_id: fixture.shopId, user_id: admin.id,
+        role: 'admin', revoked_at: null });
+      await trx('shop_role_permissions').insert({ shop_id: fixture.shopId,
+        action: 'integrations:write', role: 'admin', granted: true, locked: false })
+        .onConflict(['shop_id', 'action', 'role']).merge({ granted: true });
+      return Number(admin.id);
+    });
+    const token = issueTestToken({ userId: adminId, shopId: fixture.shopId, roles: ['admin'] });
+    const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+      .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+    expect(initiated.status).toBe(200);
+    const state = await readOAuthState(adminId);
+    expect(new URL(initiated.body.authorizationUrl).searchParams.get('state')).toBe(state);
+    const intent = await systemQuery(db('integration_oauth_states').where({ platform: 'shopify', state }).first());
+    expect(intent).toMatchObject({ user_id: adminId, shop_domain: fixture.shopDomain, install_source: 'reconnect' });
+    const cacheKey = `permissions:shop:${fixture.shopId}`;
+    expect(JSON.parse(mockOAuthPermissionCache.get(cacheKey)!)).toMatchObject({ 'integrations:write:admin': true });
+    await withTenant(fixture.shopId, trx => trx('shop_role_permissions')
+      .where({ shop_id: fixture.shopId, action: 'integrations:write', role: 'admin' })
+      .update({ granted: false, updated_at: trx.fn.now() }));
+    await invalidatePermissionCache(fixture.shopId);
+    expect(mockOAuthPermissionCache.has(cacheKey)).toBe(false);
+    const deniedInitiation = await request(app).get('/api/v1/integrations/oauth/initiate')
+      .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+    expect(deniedInitiation.status).toBe(403);
+    expect(deniedInitiation.body).toMatchObject({ error: 'ACTION_FORBIDDEN', action: 'integrations:write' });
+    expect(JSON.parse(mockOAuthPermissionCache.get(cacheKey)!)).toMatchObject({ 'integrations:write:admin': false });
+    expect(await readOAuthState(adminId)).toBe(state);
+    const snapshot = () => withTenant(fixture.shopId, async trx => ({
+      credentials: await trx('shopify_admin_credentials').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      integrations: await trx('integrations').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      installations: await trx('shopify_app_installations').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      syncEvents: await trx('domain_events').where({ shop_id: fixture.shopId, event_type: 'integration/sync_requested' })
+        .select('*').orderBy('id'),
+      outbox: await trx('domain_event_outbox as o').join('domain_events as e', 'e.id', 'o.domain_event_id')
+        .where('e.shop_id', fixture.shopId).select('o.*').orderBy('o.id'),
+      sessions: await trx('refresh_tokens').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+    }));
+    const before = await snapshot();
+    // A valid provider success response prevents an unrelated mock failure from
+    // masquerading as an authorization denial. No real provider is invoked.
+    programAxios({ token: tokenOk('reauth-forbidden-access', FULL_GRANT_STRING, 'reauth-forbidden-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    const billingCallsBefore = billingFetch.mock.calls.length;
+    const res = await d07Callback(d07SignedQuery({ code: 'reauth-revoked-code', state,
+      shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+    const after = await snapshot();
+    const session = d07SessionEffects(res);
+    const effects = {
+      status: res.status,
+      tokenAcquisitions: axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT)).length,
+      providerPosts: axiosPost.mock.calls.length,
+      providerGets: axiosGet.mock.calls.length,
+      billingCalls: billingFetch.mock.calls.length - billingCallsBefore,
+      credentialsChanged: !isDeepStrictEqual(after.credentials, before.credentials),
+      integrationsChanged: !isDeepStrictEqual(after.integrations, before.integrations),
+      installationsChanged: !isDeepStrictEqual(after.installations, before.installations),
+      syncEventsChanged: !isDeepStrictEqual(after.syncEvents, before.syncEvents),
+      outboxChanged: !isDeepStrictEqual(after.outbox, before.outbox),
+      sessionsChanged: !isDeepStrictEqual(after.sessions, before.sessions),
+      redirectTokenIssued: session.redirectToken !== null,
+      bodyTokenIssued: session.bodyToken !== null,
+      refreshCookies: session.refreshCookies.length,
+    };
+    // Failure evidence contains only counts/booleans, never credential material.
+    expect(effects).toEqual({ status: 403, tokenAcquisitions: 0, providerPosts: 0, providerGets: 0,
+      billingCalls: 0, credentialsChanged: false, integrationsChanged: false, installationsChanged: false,
+      syncEventsChanged: false, outboxChanged: false, sessionsChanged: false,
+      redirectTokenIssued: false, bodyTokenIssued: false, refreshCookies: 0 });
+    expect(res.body).toMatchObject({ error: 'ACTION_FORBIDDEN', action: 'integrations:write' });
+    expect(await oauthStateRows(state)).toBe(0); // Existing successful-state consumption remains single-use.
+  });
+
+  it('AUTH-OAUTH-REAUTH-01 B/C: revoked Admin grant with stale positive Redis denies reconnect without privileged effects', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('reauth-prior-access', FULL_GRANT_STRING, 'reauth-prior-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    const adminId = await withTenant(fixture.shopId, async trx => {
+      const [admin] = await trx('users').insert({ shop_id: fixture.shopId,
+        email: `reauth-admin-${crypto.randomBytes(8).toString('hex')}@test.example`,
+        password_hash: 'not_a_real_password_hash', first_name: 'Synthetic Admin', role: 'admin' }).returning('id');
+      await trx('shop_memberships').insert({ shop_id: fixture.shopId, user_id: admin.id,
+        role: 'admin', revoked_at: null });
+      await trx('shop_role_permissions').insert({ shop_id: fixture.shopId,
+        action: 'integrations:write', role: 'admin', granted: true, locked: false })
+        .onConflict(['shop_id', 'action', 'role']).merge({ granted: true });
+      return Number(admin.id);
+    });
+    const token = issueTestToken({ userId: adminId, shopId: fixture.shopId, roles: ['admin'] });
+    const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+      .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+    expect(initiated.status).toBe(200);
+    const state = await readOAuthState(adminId);
+    expect(new URL(initiated.body.authorizationUrl).searchParams.get('state')).toBe(state);
+    const intent = await systemQuery(db('integration_oauth_states').where({ platform: 'shopify', state }).first());
+    expect(intent).toMatchObject({ user_id: adminId, shop_domain: fixture.shopDomain, install_source: 'reconnect' });
+    const cacheKey = `permissions:shop:${fixture.shopId}`;
+    expect(JSON.parse(mockOAuthPermissionCache.get(cacheKey)!)).toMatchObject({ 'integrations:write:admin': true });
+    await withTenant(fixture.shopId, trx => trx('shop_role_permissions')
+      .where({ shop_id: fixture.shopId, action: 'integrations:write', role: 'admin' })
+      .update({ granted: false, updated_at: trx.fn.now() }));
+    // Leave the initiation's positive Redis entry untouched after the DB revocation.
+    const stalePositiveCache = mockOAuthPermissionCache.get(cacheKey)!;
+    expect(await withTenant(fixture.shopId, () =>
+      isActionAllowed(fixture.shopId, 'integrations:write', 'admin'))).toBe(true);
+    expect(await withTenant(fixture.shopId, () =>
+      isActionAllowed(fixture.shopId, 'integrations:write', 'admin', { freshDb: true }))).toBe(false);
+    expect(mockOAuthPermissionCache.get(cacheKey)).toBe(stalePositiveCache);
+    expect(JSON.parse(stalePositiveCache)).toMatchObject({ 'integrations:write:admin': true });
+    expect(await readOAuthState(adminId)).toBe(state);
+    const snapshot = () => withTenant(fixture.shopId, async trx => ({
+      credentials: await trx('shopify_admin_credentials').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      integrations: await trx('integrations').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      installations: await trx('shopify_app_installations').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+      syncEvents: await trx('domain_events').where({ shop_id: fixture.shopId, event_type: 'integration/sync_requested' })
+        .select('*').orderBy('id'),
+      outbox: await trx('domain_event_outbox as o').join('domain_events as e', 'e.id', 'o.domain_event_id')
+        .where('e.shop_id', fixture.shopId).select('o.*').orderBy('o.id'),
+      sessions: await trx('refresh_tokens').where({ shop_id: fixture.shopId }).select('*').orderBy('id'),
+    }));
+    const before = await snapshot();
+    // A valid provider success response prevents an unrelated mock failure from
+    // masquerading as an authorization denial. No real provider is invoked.
+    programAxios({ token: tokenOk('reauth-forbidden-access', FULL_GRANT_STRING, 'reauth-forbidden-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    const billingCallsBefore = billingFetch.mock.calls.length;
+    const res = await d07Callback(d07SignedQuery({ code: 'reauth-revoked-code', state,
+      shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+    const after = await snapshot();
+    const session = d07SessionEffects(res);
+    const effects = {
+      status: res.status,
+      tokenAcquisitions: axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT)).length,
+      providerPosts: axiosPost.mock.calls.length,
+      providerGets: axiosGet.mock.calls.length,
+      billingCalls: billingFetch.mock.calls.length - billingCallsBefore,
+      credentialsChanged: !isDeepStrictEqual(after.credentials, before.credentials),
+      integrationsChanged: !isDeepStrictEqual(after.integrations, before.integrations),
+      installationsChanged: !isDeepStrictEqual(after.installations, before.installations),
+      syncEventsChanged: !isDeepStrictEqual(after.syncEvents, before.syncEvents),
+      outboxChanged: !isDeepStrictEqual(after.outbox, before.outbox),
+      sessionsChanged: !isDeepStrictEqual(after.sessions, before.sessions),
+      redirectTokenIssued: session.redirectToken !== null,
+      bodyTokenIssued: session.bodyToken !== null,
+      refreshCookies: session.refreshCookies.length,
+    };
+    // Failure evidence contains only counts/booleans, never credential material.
+    expect(effects).toEqual({ status: 403, tokenAcquisitions: 0, providerPosts: 0, providerGets: 0,
+      billingCalls: 0, credentialsChanged: false, integrationsChanged: false, installationsChanged: false,
+      syncEventsChanged: false, outboxChanged: false, sessionsChanged: false,
+      redirectTokenIssued: false, bodyTokenIssued: false, refreshCookies: 0 });
+    expect(res.body).toMatchObject({ error: 'ACTION_FORBIDDEN', action: 'integrations:write' });
+    expect(mockOAuthPermissionCache.get(cacheKey)).toBe(stalePositiveCache);
+    expect(await oauthStateRows(state)).toBe(0); // Existing successful-state consumption remains single-use.
   });
 
   it('D07: unauthenticated reconnect preserves existing canonical credentials and fencing generation', async () => {

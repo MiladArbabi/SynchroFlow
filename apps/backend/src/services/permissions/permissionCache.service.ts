@@ -95,14 +95,16 @@ export async function getPermissionMap(shopId: number): Promise<PermissionMap> {
 export async function isActionAllowed(
   shopId: number,
   action: string,
-  role: string
+  role: string,
+  options: { freshDb?: boolean } = {}
 ): Promise<boolean> {
   // Locked permissions must not consult Redis or persisted grants.
   if (LOCKED_ACTIONS.has(action)) {
     return (ACTION_ROLE_MAP[action] ?? []).includes(role);
   }
 
-  const map = await getPermissionMap(shopId);
+  // Sensitive reauthorization can bypass Redis without changing its cached grants.
+  const map = options.freshDb ? await loadFromDb(shopId) : await getPermissionMap(shopId);
   const key = `${action}:${role}`;
 
   // If key not in map (new action added after seed), fall back to ACTION_ROLE_MAP default
