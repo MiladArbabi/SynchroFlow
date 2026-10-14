@@ -5,8 +5,9 @@
 // Replaces requireRole([...]) across all routes.
 //
 // Routes declare WHAT they do (action), not WHO can do it (role).
-// The role→action map here is the single source of truth for
-// permission policy. Changing who can do something = one line change here.
+// The canonical role→action map lives in
+// services/permissions/permissionPolicy.ts. This middleware consumes
+// that policy; locked permissions cannot be overridden per shop.
 //
 // Usage:
 //   router.post('/batch/release', authenticateToken, requireFt2, requireAction('wms:batch:release'), handler)
@@ -22,119 +23,18 @@
 //   operator — warehouse floor only
 //
 // CHANGE POLICY:
-//   To change who can perform an action: edit ACTION_ROLE_MAP only.
+//   To change action-role defaults, edit ACTION_ROLE_MAP in
+//   services/permissions/permissionPolicy.ts.
 //   Never add role arrays to route files.
-//   Never add new roles without updating this map.
+//   Never add new roles without updating the canonical map.
 
 import type { Request, Response, NextFunction } from 'express';
 import '@lasyncro/backend-core/middleware/auth.middleware.js'; // augments Express.Request with .user
 import { isActionAllowed } from '../services/permissions/permissionCache.service.js';
+import { ACTION_ROLE_MAP } from '../services/permissions/permissionPolicy.js';
+export { ACTION_ROLE_MAP };
 
-/**
- * Canonical action → allowed roles map.
- *
- * Actions are grouped by domain for readability.
- * Every requireRole([...]) in the codebase maps to exactly one action here.
- */
-export const ACTION_ROLE_MAP: Record<string, string[]> = {
 
-  // ── SUPPLIERS / PO ─────────────────────────────────────────
-  'suppliers:read':           ['owner', 'admin'],
-  'suppliers:write':          ['owner', 'admin'],
-  'po:read':                  ['owner', 'admin'],
-  'po:write':                 ['owner', 'admin'],
-  'po:receive':               ['owner', 'admin'],
-  'po:status':                ['owner', 'admin'],
-  'receive-job:create':       ['owner', 'admin'],
-  'receive-job:assign':       ['owner', 'admin'],
-  'receive-job:read':         ['owner', 'admin', 'operator'],
-  'receive-job:inspect':      ['owner', 'admin', 'operator'],
-  'receive-job:close':        ['owner', 'admin', 'operator'],
-  'receive-job:exception':    ['owner', 'admin', 'operator'],
-
-  // ── WMS ────────────────────────────────────────────────────
-  'wms:read':                 ['owner', 'admin', 'operator'],
-  'wms:batch:release':        ['owner', 'admin'],
-  'wms:batch:claim':          ['owner', 'admin', 'operator'],
-  'wms:pick:scan':            ['owner', 'admin', 'operator'],
-  'wms:pack:scan':            ['owner', 'admin', 'operator'],
-  'wms:returns:scan':         ['owner', 'admin', 'operator'],
-  'wms:stow:claim':           ['owner', 'admin', 'operator'],
-  'wms:stow:confirm':         ['owner', 'admin', 'operator'],
-  'wms:stow:assign':          ['owner', 'admin'],
-  'wms:stow:location':        ['owner', 'admin', 'operator'],
-  'wms:exception:report':     ['owner', 'admin', 'operator'],
-  'wms:ship:confirm':         ['owner', 'admin', 'operator'],
-  'wms:settings:write':       ['owner', 'admin'],
-
-  // GH-1222: management boundaries — owner/admin only, LOCKED in
-  // permissionSettings so a shop cannot re-grant them to operator.
-  'wms:analytics:read':          ['owner', 'admin'],
-  'wms:analytics:display:write': ['owner', 'admin'],
-  'wms:problem:resolve':         ['owner', 'admin'], // resolve/discard/write_off decisions
-
-  // Inventory recount: operators count; owner/admin control task + corrections.
-  'wms:recount:create':       ['owner', 'admin'],
-  'wms:recount:read':         ['owner', 'admin', 'operator'],
-  'wms:recount:claim':        ['owner', 'admin', 'operator'],
-  'wms:recount:count':        ['owner', 'admin', 'operator'],
-  'wms:recount:review':       ['owner', 'admin'],
-  'wms:recount:commit':       ['owner', 'admin'],
-  'wms:recount:reassign':     ['owner', 'admin'],
-
-  // ── RETURNS ────────────────────────────────────────────────
-  'returns:read':             ['owner', 'admin', 'operator'],
-  'returns:job:create':       ['owner', 'admin', 'operator'], // operator creates return job on mobile
-  'returns:job:claim':        ['owner', 'admin', 'operator'], // operator claims job on mobile
-  'returns:job:process':      ['owner', 'admin', 'operator'], // operator sets condition on line items
-  'returns:job:complete':     ['owner', 'admin', 'operator'], // operator completes job
-  'returns:decision:write':   ['owner', 'admin'],             // owner/admin sets decision on flagged items
-  
-  // ── FLOOR PLANNING ─────────────────────────────────────────
-  'floor-planning:read':      ['owner', 'admin'],
-  'floor-planning:write':     ['owner', 'admin'],
-
-  // ── ALERTS ─────────────────────────────────────────────────
-  'alerts:read':              ['owner', 'admin', 'operator'],
-  // audience filtering enforced server-side in controller
-  'alerts:acknowledge':       ['owner', 'admin', 'operator'],
-  'alerts:snooze':            ['owner', 'admin', 'operator'],
-  'alerts:resolve':           ['owner', 'admin'],
-  'alerts:rules:read':        ['owner', 'admin'],
-  'alerts:rules:write':       ['owner', 'admin'],
-
-  // ── ORDER NEXUS ────────────────────────────────────────────────────────────
-  'orders:prioritise':        ['owner', 'admin'],
-  // GH-1223: user-triggered Orders writes — owner/admin only, LOCKED.
-  'orders:execute':                ['owner', 'admin'],
-  'orders:shipping-address:write': ['owner', 'admin'],
-
-  // ── CUSTOMERS ──────────────────────────────────────────────────────────────
-  'customers:read':           ['owner', 'admin'],
-
-  // ── OVERVIEW / MORNING BRIEF ───────────────────────────────
-  'overview:read':            ['owner', 'admin'],
-  'morning-brief:read':       ['owner', 'admin'],
-
-  // ── MEMBERS ────────────────────────────────────────────────
-  'members:read':             ['owner', 'admin'],
-  'members:write':            ['owner'],           // owner-only: role assignment
-  'members:remove':           ['owner'],           // owner-only: seat removal
-
-  // ── EXPORTS ────────────────────────────────────────────────
-  'exports:read':             ['owner', 'admin'],
-
-  // ── BILLING ────────────────────────────────────────────────
-  'billing:read':             ['owner', 'admin'],
-  'billing:write':            ['owner'],           // owner-only: plan changes
-
-  // ── INTEGRATIONS ───────────────────────────────────────────
-  'integrations:write':       ['owner', 'admin'],
-
-  // ── SHOPIFY BILLING ────────────────────────────────────────
-  'shopify-billing:read':     ['owner', 'admin'],
-  'shopify-billing:write':    ['owner'],
-};
 
 /**
  * Middleware: require a specific action entitlement.
@@ -169,10 +69,8 @@ export function requireAction(action: string) {
       });
     }
 
-    // Shop-configured permissions (Redis-cached, DB-backed).
-    // Falls back to ACTION_ROLE_MAP if shop has no config yet.
-    // Shop-configured permissions (Redis-cached, DB-backed).
-    // Falls back to ACTION_ROLE_MAP if shop has no config yet.
+    // Locked actions follow canonical roles. Configurable actions use
+    // Redis/DB-backed grants with canonical defaults where absent.
     if (shopId) {
       let allowed = false;
       for (const role of roles) {

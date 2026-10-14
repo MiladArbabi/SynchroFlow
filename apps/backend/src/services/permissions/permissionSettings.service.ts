@@ -16,7 +16,8 @@
 //   PATCH /api/v1/settings/permissions
 
 import db from '@lasyncro/backend-core/db.js';
-import { ACTION_ROLE_MAP } from '../../middleware/require-action.middleware.js';
+import { ACTION_ROLE_MAP, LOCKED_ACTIONS } from './permissionPolicy.js';
+export { LOCKED_ACTIONS };
 import { invalidatePermissionCache } from './permissionCache.service.js';
 
 export const ROLES = ['owner', 'admin', 'operator'] as const;
@@ -26,20 +27,7 @@ export type Role = typeof ROLES[number];
  * Actions that cannot be modified via settings UI.
  * Owner always retains these regardless of shop config.
  */
-export const LOCKED_ACTIONS = new Set([
-  'members:write',
-  'members:remove',
-  'billing:write',
-  'shopify-billing:write',
-  'wms:settings:write',
-  // GH-1222: ratified owner/admin management boundaries — never configurable.
-  'wms:analytics:read',
-  'wms:analytics:display:write',
-  'wms:problem:resolve',
-  // GH-1223: ratified owner/admin Orders write boundaries — never configurable.
-  'orders:execute',
-  'orders:shipping-address:write',
-]);
+
 
 export interface PermissionRow {
   action: string;
@@ -128,9 +116,17 @@ export async function getPermissionMatrix(shopId: number): Promise<PermissionMat
 
     for (const role of ROLES) {
       const key = `${action}:${role}`;
+      if (LOCKED_ACTIONS.has(action)) {
+        permissions[role] = {
+          granted: (ACTION_ROLE_MAP[action] ?? []).includes(role),
+          locked: true,
+        };
+        continue;
+      }
+
       permissions[role] = lookup[key] ?? {
         granted: (ACTION_ROLE_MAP[action] as string[]).includes(role),
-        locked: LOCKED_ACTIONS.has(action),
+        locked: false,
       };
     }
 

@@ -24,7 +24,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { getRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
-import { ACTION_ROLE_MAP } from '../../middleware/require-action.middleware.js';
+import { ACTION_ROLE_MAP, LOCKED_ACTIONS } from './permissionPolicy.js';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 const cacheKey = (shopId: number) => `permissions:shop:${shopId}`;
@@ -97,6 +97,11 @@ export async function isActionAllowed(
   action: string,
   role: string
 ): Promise<boolean> {
+  // Locked permissions must not consult Redis or persisted grants.
+  if (LOCKED_ACTIONS.has(action)) {
+    return (ACTION_ROLE_MAP[action] ?? []).includes(role);
+  }
+
   const map = await getPermissionMap(shopId);
   const key = `${action}:${role}`;
 

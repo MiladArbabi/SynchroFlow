@@ -292,7 +292,7 @@ describe('SHOP-REVIEW-AUTH-01 — canonical Shopify Admin credential architectur
   });
 
   it('declares integrations:write in ACTION_ROLE_MAP for exactly owner and admin', () => {
-    const source = parse('apps/backend/src/middleware/require-action.middleware.ts');
+    const source = parse('apps/backend/src/services/permissions/permissionPolicy.ts');
     const declaration = nodes(source).find(node => ts.isVariableDeclaration(node)
       && ts.isIdentifier(node.name) && node.name.text === 'ACTION_ROLE_MAP') as ts.VariableDeclaration;
     expect(ts.isObjectLiteralExpression(declaration.initializer!)).toBe(true);
