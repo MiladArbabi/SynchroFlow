@@ -14,6 +14,7 @@ on:
       - 'fly.toml'
       - 'tests/integration/fresh-install-release-path.test.ts'
       - 'tests/integration/settings/locked-action-runtime-gh1242.test.ts'
+      - 'tests/integration/oauth-callback-provider-mocked.test.ts'
       - 'tests/unit/helpers/auth.ts'
       - 'scripts/with-test-db.js'
   push:
@@ -28,6 +29,7 @@ on:
       - 'fly.toml'
       - 'tests/integration/fresh-install-release-path.test.ts'
       - 'tests/integration/settings/locked-action-runtime-gh1242.test.ts'
+      - 'tests/integration/oauth-callback-provider-mocked.test.ts'
       - 'tests/unit/helpers/auth.ts'
       - 'scripts/with-test-db.js'
 
@@ -151,3 +153,129 @@ jobs:
           PGMIGRATION_USER: sf_user
           PGMIGRATION_PASSWORD: sf_pass
         run: npm run test:integration -- --testPathPatterns locked-action-runtime-gh1242.test.ts
+
+      - name: Run OAuth callback regression with external egress blocked
+        shell: bash
+        timeout-minutes: 20
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SHOPIFY_API_KEY: ci-shopify-key
+          SHOPIFY_API_SECRET: ci-shopify-secret
+          RESEND_API_KEY: re_ci_placeholder_not_used
+          STRIPE_SECRET_KEY: sk_test_ci_placeholder_not_used
+        run: |
+          set -euo pipefail
+          # Filter before Docker's localhost PostgreSQL DNAT. No established-
+          # connection exception: provider traffic is denied even on open sockets.
+          command -v nft
+          command -v ip
+          command -v python3
+          sudo -n true
+          table="auth_oauth_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          export OAUTH_ISOLATION_TABLE="$table"
+          sudo -n nft -j list tables | python3 -I -c 'import json,os,sys; assert not any(x.get("table", {}).get("name") == os.environ["OAUTH_ISOLATION_TABLE"] for x in json.load(sys.stdin)["nftables"])'
+          installed=0
+          probe_route=0
+          restore_network() {
+            result=$?
+            trap - EXIT INT TERM
+            restored=1
+            if [ "$probe_route" = 1 ]; then
+              sudo -n ip -6 route del 2001:db8::1/128 dev lo || { result=1; restored=0; }
+            fi
+            if [ "$installed" = 1 ]; then
+              sudo -n nft delete table inet "$table" || { result=1; restored=0; }
+              # Confirm removal without treating an inspection error as success.
+              if ! sudo -n nft -j list tables | python3 -I -c 'import json,os,sys; assert not any(x.get("table", {}).get("name") == os.environ["OAUTH_ISOLATION_TABLE"] for x in json.load(sys.stdin)["nftables"])'; then
+                result=1
+                restored=0
+              fi
+              echo "OAUTH_NETWORK_RESTORED=$([ "$restored" = 1 ] && echo PASS || echo FAIL)"
+            fi
+            exit "$result"
+          }
+          trap restore_network EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          # Atomic transaction; never flush or replace existing runner rules.
+          sudo -n nft -f - <<RULES
+          add table inet $table
+          add chain inet $table output { type filter hook output priority -300; policy drop; }
+          add rule inet $table output oifname "lo" ip daddr 127.0.0.0/8 accept
+          add rule inet $table output oifname "lo" ip6 daddr ::1 accept
+          add rule inet $table output meta nfproto ipv4 counter drop
+          add rule inet $table output meta nfproto ipv6 counter drop
+          RULES
+          installed=1
+          # Ensure an IPv6 documentation-address probe reaches the output hook
+          # even when the hosted runner has no external IPv6 route.
+          sudo -n ip -6 route add 2001:db8::1/128 dev lo
+          probe_route=1
+          python3 -I - <<'PY'
+          import errno, json, os, socket, subprocess
+          table = os.environ["OAUTH_ISOLATION_TABLE"]
+          def policy():
+              data = json.loads(subprocess.check_output(
+                  ["sudo", "-n", "nft", "-j", "list", "table", "inet", table]))
+              chains = [x["chain"] for x in data["nftables"] if "chain" in x]
+              assert len(chains) == 1
+              chain = chains[0]
+              assert (chain["family"], chain["name"], chain["type"], chain["hook"],
+                      chain["prio"], chain["policy"]) == (
+                          "inet", "output", "filter", "output", -300, "drop")
+              rules = [x["rule"] for x in data["nftables"] if "rule" in x]
+              assert len(rules) == 4
+              def match(left, right):
+                  return {"match": {"op": "==", "left": left, "right": right}}
+              loopback = match({"meta": {"key": "oifname"}}, "lo")
+              assert rules[0]["expr"] == [loopback, match(
+                  {"payload": {"protocol": "ip", "field": "daddr"}},
+                  {"prefix": {"addr": "127.0.0.0", "len": 8}}), {"accept": None}]
+              assert rules[1]["expr"] == [loopback, match(
+                  {"payload": {"protocol": "ip6", "field": "daddr"}}, "::1"),
+                  {"accept": None}]
+              counts = []
+              for rule, family in zip(rules[2:], ["ipv4", "ipv6"]):
+                  expressions = rule["expr"]
+                  assert len(expressions) == 3
+                  assert expressions[0] == match({"meta": {"key": "nfproto"}}, family)
+                  assert expressions[2] == {"drop": None}
+                  counts.append(expressions[1]["counter"]["packets"])
+              return counts
+          before = policy()
+          # Real packets must hit each family's DROP counter. A denied send alone
+          # is insufficient; unrelated routing/socket errors fail the preflight.
+          for family, address in [(socket.AF_INET, "192.0.2.1"),
+                                  (socket.AF_INET6, "2001:db8::1")]:
+              with socket.socket(family, socket.SOCK_DGRAM) as probe:
+                  try:
+                      probe.sendto(b"oauth-isolation-probe", (address, 9))
+                  except OSError as error:
+                      if error.errno not in (errno.EPERM, errno.EACCES):
+                          raise
+          after = policy()
+          assert all(end > start for start, end in zip(before, after))
+          # Prove both loopback families still work, including dynamic test ports.
+          for family, address in [(socket.AF_INET, "127.0.0.1"),
+                                  (socket.AF_INET6, "::1")]:
+              with socket.socket(family, socket.SOCK_STREAM) as server:
+                  server.settimeout(3)
+                  server.bind((address, 0))
+                  server.listen(1)
+                  with socket.create_connection((address, server.getsockname()[1]), 3):
+                      connection, _ = server.accept()
+                      connection.close()
+          with socket.create_connection(("127.0.0.1", 5432), 3):
+              pass
+          print("OAUTH_EGRESS_IPV4=BLOCKED")
+          print("OAUTH_EGRESS_IPV6=BLOCKED")
+          print("OAUTH_LOOPBACK=PASS")
+          print("OAUTH_POSTGRES_LOOPBACK=PASS")
+          print("OAUTH_ISOLATION_PREFLIGHT=PASS")
+          PY
+          npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
