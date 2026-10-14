@@ -1939,6 +1939,8 @@ Property/mutation testing remains optional advanced protection for high-value ru
 
 Source root .env without printing secrets.
 
+Root .env sourcing is allowed only for these controlled standalone DB operations. An automated DB/API integration run must never inherit it (see 20.2.1).
+
 Construct connection material only in-process/local shell where required.
 
 Application behaviour uses the restricted application role.
@@ -1971,6 +1973,28 @@ Safety expectations:
 - migrations run from empty;
 - no implicit global seed;
 - cleanup proves exact removal and zero orphans.
+
+20.2.1 Credential and egress isolation
+
+The disposable harness isolates the database. It does not isolate credentials or network: scripts/with-test-db.js loads root .env when one is present.
+
+Automated DB/API integration tests must not inherit real provider credentials.
+
+A provider-capable integration run (any code path that can reach Stripe, Shopify, email, push or another external service) additionally requires:
+
+- a fresh allowlisted environment, with no repository .env loaded;
+- synthetic provider credentials only;
+- enforced external-network denial, proven by negative canaries that are refused;
+- local disposable PostgreSQL access proven in that same isolated process;
+- the cleanup proof of 11.4 and 20.2, unchanged.
+
+A failed isolation preflight means STOP: no tests run and no workaround.
+
+The enforcement mechanism is platform-specific. macOS sandbox-exec is a verified example, not a universal requirement. Another platform needs an equivalent enforced denial, proven by the same canaries.
+
+Authorised real-provider acceptance is a separate, explicitly controlled workflow (PROVIDER_E2E). It is never an integration run that carries real credentials.
+
+Procedure and verified precedent: docs/playbooks/testing_strategy_playbook.md §3, "Provider-free isolated integration runs".
 
 20.3 Scratch migration rehearsals
 

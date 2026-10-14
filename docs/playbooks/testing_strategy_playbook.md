@@ -172,6 +172,103 @@ tracked separately as **TEST-INFRA-FOUNDATION-12**. This guarantee covers the
 `backend-integration` disposable harness and the explicit test-mode unsafe-DB
 targeting described above — not yet every backend test.
 
+### Provider-free isolated integration runs (verified precedent: GH-1255, 2026-10-14)
+
+`npm run test:integration` isolates the **database**. It does not, by itself,
+isolate **credentials** or **network egress**. `scripts/with-test-db.js` loads
+`<repo root>/.env` via `dotenv`. In a developer checkout that file can hold real
+provider credentials, and any call that escapes a mock can reach the internet.
+
+Standing rules (they apply whether or not a brief asks for them; they match
+`engineering_workflow.md` §20.2.1 and `agent_operation_guidelines.md`
+"INTEGRATION CREDENTIAL AND EGRESS ISOLATION"):
+
+- **Every automated DB/API integration test run must not inherit real provider
+  credentials.**
+- **A provider-capable run** (any code path that can reach Stripe, Shopify,
+  email, push or another external service) additionally requires all of the
+  following, proven in the same isolated environment:
+  - synthetic provider values only;
+  - outbound-network denial proven effective by refused canaries;
+  - successful local disposable-DB access.
+- **`env -i` alone is not sufficient.** `dotenv` fills every variable the
+  environment does not already set. A clean `env -i` environment therefore
+  *receives* the root `.env` values if `scripts/with-test-db.js` can find that
+  file. Removing variables from the shell does not stop the harness from
+  loading them; the file itself must be absent (step 1).
+- **Plain `npm run test:integration` is not currently certified as isolated**
+  when run from a checkout that contains a root `.env` with real provider
+  credentials. Fail-closed enforcement in the harness itself is tracked as
+  **GH-1204** ("Integration tests can invoke external providers when local
+  secrets are loaded"). Until that lands, compliance comes from the procedure
+  below.
+- **Explicitly authorised real-provider E2E stays a separate, controlled
+  workflow** (§9; `PROVIDER_E2E` in `engineering_workflow.md`). It is never an
+  integration run that carries real credentials.
+- **A failed isolation preflight means STOP.** No tests run.
+
+The verified procedure (GH-1255):
+
+1. **No repository `.env`.** Run from a worktree that has no `.env`. The runner
+   checks the file is absent before it starts. Do not source the root `.env`
+   into the shell either.
+2. **Fresh, allowlisted environment.** Start the runner with `env -i` and pass
+   only an explicit allowlist: `PATH`, `HOME`, `TMPDIR`, the runner's own
+   variables, `NODE_ENV`, the `PG*` and `PGMIGRATION_*` connection variables, the
+   JWT/encryption secrets, and the provider variable *names* the app reads. The
+   preflight fails if any variable outside the allowlist is present.
+3. **Synthetic provider credentials.** Every provider-like variable
+   (Stripe/Shopify/…) holds a `synthetic-` value. The non-secret
+   `SHOPIFY_API_VERSION` is the only exception. The preflight compares SHA-256
+   hashes of every variable value with hashes of the root `.env` provider
+   values, so the values themselves are never printed, and requires zero
+   matches.
+4. **Enforced outbound-network denial.** Egress is denied by the operating
+   system, not by test code, with loopback PostgreSQL still allowed. The
+   GH-1255 runs used a macOS `sandbox-exec` profile:
+   `(deny network-outbound)`, allowing only `localhost:*` and Unix sockets,
+   with `mDNSResponder` denied. That mechanism is **macOS-specific**. Other
+   platforms need an equivalent enforced denial (for example a network
+   namespace or a container without egress), proven by the same canaries.
+5. **Canaries before any test runs.** Every external canary must be refused:
+   HTTPS fetch by hostname, raw TCP to a public IP (`1.1.1.1:443`), `curl`
+   HTTPS, and DNS resolution. Loopback PostgreSQL must be reachable as the
+   runtime role (non-superuser, no `BYPASSRLS`) and as the migration role. The
+   runner stops before Jest if any check fails.
+6. **Disposable lifecycle and cleanup proof.** Only then run
+   `scripts/with-test-db.js` with the exact suite selection. Capture
+   `TEST_DB_CREATED → TEST_DB_MIGRATED → TEST_DB_RUNTIME_OK → TEST_DB_DROPPED`
+   for every generated DB. Afterwards prove zero `synchroflow_test_*` orphans
+   and that the normal `PGDATABASE` still exists.
+
+Status: the GH-1255 runner lived in an agent scratchpad. It is **not** a
+repository script and **not** a CI gate. CI isolation is defined by the
+workflows themselves.
+
+Isolation findings recorded during GH-1255:
+
+- **Order-dependent suite (E01-M17a).**
+  `opening-inventory-cutover-execution-persistence.migration.test.ts`
+  E01-M17a asserts **global** (cross-tenant) zero Slice-E row counts before
+  calling `0203.down()`. In the shared per-run disposable DB its outcome
+  depends on which suites ran first. It failed in one 40-suite run and passed
+  in another with a different order. It is classified as a test-isolation
+  defect and is still unresolved.
+- **Avoid global-count assertions.** A real-DB suite must not assert global or
+  cross-tenant row counts, or migration-down preconditions, that other suites
+  in the same run can change. Scope assertions to fixture IDs instead.
+- **Sequences are shared, non-transactional state.**
+  - Suites must assert identity format and uniqueness, never absolute
+    sequence values.
+  - Values consumed by other suites, or by rollbacks, are expected gaps.
+  - A test that calls `setval` must restore the value in `finally`, as the
+    GH-1255 exhaustion test does.
+- **Known red baseline at the time.** On 2026-10-14 six opening-inventory
+  and Shopify cutover tests failed identically on the untouched baseline
+  (`2f8b7cf8`) and on the GH-1255 branch: GH1179-A3,
+  CONTRACT-1164-START-05/06, and three `shopify-opening-inventory-cutover`
+  executor tests. They are pre-existing and are not GH-1255 regressions.
+
 ### Contract-test host portability (TEST-CI-DOTENV-161)
 
 The `contract` project runs in CI with no `.env` on disk (root `.env` is

@@ -35,10 +35,15 @@ scannable identities:
   Every Shopify-backed variant must have one stable LSP. It is distinct
   from `variants.barcode` and must never be written into or treated as
   an EAN/UPC/GTIN.
-- **LSU-{8char}** — LaSyncro's own unit identity, unique per physical
+- **LSU-** — LaSyncro's own unit identity, globally unique per physical
   unit. Every accepted inbound physical unit receives one LSU record.
   For barcode-less stock, that LSU must also be physically established
   and acknowledged before the stock may become Stow-ready.
+  - New units: `LSU-{10 digits}` from the global sequence (GH-1255).
+  - Legacy units keep `LSU-{8 hex}`.
+  - Both resolve by exact match within the tenant. They cannot collide
+    because their lengths differ.
+  - See `docs/blueprints/unit_barcode_architecture.md` §3.
 - **LSO-{8char}** — LaSyncro's invoice/order barcode, scanned at pack
   time to identify which order a packed unit belongs to. Not a
   variant/unit identity — resolved separately, rejected early by the

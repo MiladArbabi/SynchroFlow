@@ -576,6 +576,8 @@ For ordinary standalone application-role SQL:
 set -a
 . ./.env
 set +a
+Root .env sourcing is allowed only for controlled standalone DB operations like this one.
+Never let an automated DB/API integration run inherit it (see INTEGRATION CREDENTIAL AND EGRESS ISOLATION).
 
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}"
 Do not print:
@@ -634,6 +636,22 @@ Unless explicitly authorised, tests must not:
 * trigger external fulfillment.
 Use synthetic data / injectable boundaries where requested.
 If the existing code cannot safely prevent a real external call, report BLOCKED.
+INTEGRATION CREDENTIAL AND EGRESS ISOLATION
+The disposable DB harness isolates the database, not credentials or network.
+scripts/with-test-db.js loads root .env when one is present.
+Automated DB/API integration tests must not inherit real provider credentials.
+A provider-capable integration run additionally requires:
+* a fresh allowlisted environment, with no repository .env loaded;
+* synthetic provider credentials only;
+* enforced external-network denial, proven by negative canaries that are refused;
+* local disposable PostgreSQL access proven in that same isolated process;
+* the existing cleanup proof, unchanged.
+A failed isolation preflight means STOP: run no tests, attempt no workaround, report BLOCKED.
+macOS sandbox-exec is a verified example, not a universal requirement.
+Another platform needs an equivalent enforced denial, proven by the same canaries.
+Authorised real-provider E2E is a separate, explicitly controlled workflow.
+It is never an integration run that carries real credentials.
+Procedure: docs/playbooks/testing_strategy_playbook.md §3, "Provider-free isolated integration runs".
 FILESYSTEM / SHELL FACTS
 * rg unavailable.
 * Use grep, sed, ls.

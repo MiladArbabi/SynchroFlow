@@ -2,6 +2,7 @@
 **Version:** 1.0
 **Date:** June 3, 2026
 **Status:** ✅ Locked — approved for implementation
+**Amended:** October 14, 2026 — GH-1255 LSU-IDENTITY-01 (new-unit identity, label geometry; see Decision 4, §3, §8, §11)
 **Sprint:** WM-46 (backend) + WEB-RECEIVE-UNIT-01 (webapp)
 **Author:** Derived from workshop session, June 3, 2026
 
@@ -37,9 +38,28 @@ With PO:    LSU-{SHA256(shop_id + variant_id + po_line_id + receive_sequence)[0:
 Without PO: LSU-{SHA256(shop_id + variant_id + receive_session_id + receive_sequence)[0:8]}
 ```
 
+> **Superseded by Decision 4 (GH-1255).** The formula above was the workshop design and never matched the code. From WM-46 (3e19ca92) until GH-1255, the implementation was `LSU-` + `SHA256("{shop_id}:{anchor_id}:{receive_sequence}")[0:8]`, where the anchor is `receive_job_line_id` (Receive) or `recount_line_id` (Reconcile). That derivation is retained only to verify units already issued with it. It no longer mints identities.
+
 ### Decision 3 — Backfill approach: Progressive labelling with natural stock rotation
 
 No mandatory stocktake is required to go live. The system launches with a dual-namespace resolver. Legacy stock rotates out naturally under FIFO. New inbound units are labelled automatically at receive. Coverage climbs without operator intervention. Full architecture detailed in §6.
+
+### Decision 4 — New-unit identity: one global, noncycling sequence (GH-1255, ratified October 14, 2026)
+
+The 8-hex hash space (2³² values) cannot guarantee global uniqueness. New units now take their identity from one PostgreSQL sequence:
+
+```
+lasyncro_unit_id = 'LSU-' + 10 zero-padded decimal digits   (14 characters)
+source           = public.inventory_unit_lsu_seq             (migration 0212)
+                   bigint, START 1, MINVALUE 1, MAXVALUE 9999999999, NO CYCLE
+```
+
+- **Global, not per shop.** One sequence serves every tenant. `UNIQUE (lasyncro_unit_id)` stays global.
+- **Persisted, never derived.** The identity is written once at issuance and read back afterwards. A committed retry for the same `(shop, source line, receive_sequence)` returns the stored unit; it never re-mints one.
+- **Gaps are valid.** A rolled-back issuance may consume sequence values. Numbers are not contiguous and never encode quantity, order or time.
+- **Exhaustion fails closed.** Value 9999999999 is the last one. After it, issuance refuses with `INVENTORY_UNIT_LSU_SEQUENCE_EXHAUSTED` (PostgreSQL `2200H`). Nothing is reissued.
+- **Least privilege.** The runtime role `sf_app` holds `USAGE` only on the sequence. It can call `nextval()` but cannot read it (`SELECT`) or rewind it (`setval`).
+- Legacy identities are unchanged. See §3 for every identity format that remains valid.
 
 ---
 
@@ -48,21 +68,37 @@ No mandatory stocktake is required to go live. The system launches with a dual-n
 ### The LSU identifier
 
 ```
-lasyncro_unit_id = LSU-{8 hex chars}
-
-Examples:
-  LSU-a3f72c1d
-  LSU-009b4e82
+New units (GH-1255):  lasyncro_unit_id = LSU-{10 digits}    e.g. LSU-0000000001, LSU-0012345678
+Legacy units:         lasyncro_unit_id = LSU-{8 hex chars}  e.g. LSU-a3f72c1d, LSU-009b4e82
 ```
+
+Persisted identity formats that remain valid:
+
+| Format | Origin | Issued today? | Replay rule |
+|---|---|---|---|
+| `LSU-{10 digits}` | `inventory_unit_lsu_seq` (Decision 4) | **Yes**, the only format minted for new Receive and Reconcile units | Returned exactly as stored |
+| `LSU-{8 lowercase hex}` | Legacy hash, WM-46 through GH-1255 | No | Must equal the legacy derivation of its own lineage (shop, anchor, `receive_sequence`), otherwise replay refuses |
+| `LSU-{6 uppercase hex}-{n}` | `apps/backend/src/scripts/seed_reviewer_activity.ts` (reviewer demo seed; applied to production shop 1 on 2026-08-03) | No; it is **not** an issuance format | Kept for historical compatibility only, returned unchanged on Receive replay |
+
+The two current shapes cannot collide. `LSU-12345678` (8 characters, legacy hex) and `LSU-0012345678` (10 digits) are different lengths. Resolution is an exact match, never a prefix match, and only within the scanning tenant.
 
 The `LSU-` prefix is reserved and must never be used by any other barcode namespace in the system. Existing namespaces:
 - `LSO-{8char}` — order invoice barcodes (WM-34)
 - `TEST-{N}` — dev/test barcodes
 - Raw EAN/UPC — legacy Shopify-synced variant barcodes
 
-### Deterministic hash guarantee
+### Persisted identity guarantee (replaces "Deterministic hash guarantee", GH-1255)
 
-The same physical unit will always produce the same `lasyncro_unit_id` as long as the receive facts exist in the database. Re-printing is retrieval, not regeneration. The ID is written once at receive and is immutable for the lifetime of the unit record.
+The persisted row is the identity. Re-printing is retrieval, not regeneration. The ID is written once at issuance and is immutable for the lifetime of the unit record. Issuance (`batchConfirmUnits` for Receive, `issueReconciledUnits` for Reconcile) behaves as follows:
+
+- It locks the source line (`FOR UPDATE`), scoped to the shop. It refuses a line that is missing or belongs to another shop, and a variant that is not the line's own.
+- A committed retry returns the persisted units without consuming a sequence value. For Receive that includes legacy and reviewer-seed rows; for Reconcile, legacy rows.
+- It **never tops up** missing units. If the persisted unit count differs from the requested quantity, issuance refuses (`*_ISSUANCE_MISMATCH`).
+- It refuses if the persisted lineage disagrees: wrong sequence, variant, source anchor or provenance, or a legacy-shaped ID that is not its own derivation (`*_ISSUANCE_INVARIANT`).
+- Code prefixes: Receive uses `INVENTORY_UNIT_RECEIVE_ISSUANCE_*`; Reconcile uses `INVENTORY_UNIT_RECOUNT_ISSUANCE_*`.
+- On the Receive inspect route, both refusals are **HTTP 409** with the code in `code`. The whole inspection rolls back, so the job, line, PO, units, movements, truth and Stow tasks are untouched.
+- Inserts have no conflict clause. A global identity collision or an unexpected lineage conflict aborts the transaction instead of being swallowed.
+- Concurrent issuers for the same line serialize on the line lock and return one canonical set of identities.
 
 ### Two product classes
 
@@ -97,7 +133,7 @@ LSU remains per-unit inventory identity owned by the WMS/unit-label architecture
 ```sql
 inventory_units (
   id                         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  lasyncro_unit_id           text NOT NULL UNIQUE,  -- LSU-{8char deterministic hash}
+  lasyncro_unit_id           varchar(20) NOT NULL UNIQUE,  -- globally unique; LSU-{10 digits} (new) or legacy LSU-{8 hex} — see §3
   shop_id                    int NOT NULL REFERENCES shops(id),
 
   -- Variant identity
@@ -257,9 +293,28 @@ Unit labels are a **separate concern** from invoice PDFs (WM-34). They must not 
 | Library | `pdf-lib` | `bwip-js` (barcode only) + thermal layout |
 | Trigger | Pack claim / first pack scan | Batch-confirm at receive (all labels for the line) |
 | Printer | Standard printer / browser print | Thermal printer (Zebra, Dymo, Brother) |
-| Barcode | Code128, `LSO-{8char}` | Code128, `LSU-{8char}` |
+| Barcode | Code128, `LSO-{8char}` | Code128, `LSU-{10 digits}` (new) or legacy `LSU-{8 hex}` (full ID printed under the bars) |
 
 Printer configuration (thermal printer connection, label size, format) is added to `ShopSettingsWarehousePage`.
+
+### Label geometry (GH-1255) — `apps/backend/src/services/wms/unitLabelPdf.service.ts`
+
+- The page is 50 × 25 mm (141.73 × 70.87 pt), one label per unit.
+- **Designed for 203 dpi.** Each Code128 module is a whole number of 203-dpi printer dots (at most 3; 2 in practice). Every canonical format renders at 2 dots per module, which is 0.25 mm (9.85 mil).
+  - A 10-digit ID is 145 modules, so the barcode is about 36.3 mm wide.
+  - A legacy 8-hex ID is at most 167 modules.
+- Quiet zones are at least 10 modules on each side. The barcode is centred and its bars are 10 mm tall.
+- The full ID is printed in text under the bars. Leading zeros are preserved.
+- The SKU and title line is cut to fit within the margins.
+- Digital checks only: the generated PNGs decode to the exact IDs, including leading zeros. **This is not proof of physical scannability.**
+
+### Print-pipeline caveats and release gate
+
+- **100% scale is assumed and is not enforced.** Whole-dot geometry only holds when the PDF reaches the printer unscaled.
+  - QZ Tray (`qzPrint.ts`) creates its config with no options, so qz-tray 2.2.6 defaults apply: `scaleContent: true`, `size: null`, `interpolation: 'bicubic'`. If the driver's media or printable area differs from 50 × 25 mm, the label is rescaled and the bar edges are resampled.
+  - The browser fallback depends on the operator choosing *Actual size / 100%*.
+- **300 dpi is unverified.** A 0.25 mm module is about 2.96 dots at 300 dpi, so bars are resampled into a mix of 2- and 3-dot widths.
+- **Physical acceptance is pending.** Production activation of the new labels is blocked until each supported printer and scanner combination passes a physical test. Record the printer model and DPI, the stock, the real QZ or browser pipeline, and the scanner model and type, and use the exact decoded value including leading zeros. The proposed criterion, pending lead ratification, is at least 99/100 first-pass exact reads and zero wrong reads. Any combination that fails blocks activation on that hardware.
 
 ---
 
@@ -282,6 +337,7 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 | WEB-PACK-02 | P1 | 📋 PLANNED | Pack webapp redesign — item-centric free-scan. Resolver returns unit + order context on `LSU-` scan. Blocked on WEB-PICK-UNIT-01 (all upstream workflows must be on unit barcodes before pack free-scan is reliable). |
 | GH-998 | — | 📋 SUPERSEDED | Per-unit barcode tracking (inventory_units table) — original ticket. Superseded by WM-46. |
 | WM-28 | P2 | 🔴 OPEN | Shelf/bin barcodes — location barcode scan for bin confirmation. Elevates Class B reprint flow and stow UX. Schedule immediately after WEB-RECEIVE-UNIT-01. |
+| GH-1255 | P1 | ✅ Implemented on `feat/gh1255-lsu-identity` (988b37cb), October 14, 2026 · physical label acceptance pending | LSU-IDENTITY-01: new units get `LSU-{10 digits}` from the global sequence `inventory_unit_lsu_seq` (migration 0212). Identity is persisted, never derived. Legacy and reviewer-seed IDs are preserved. Issuance conflicts return HTTP 409. Labels use 203-dpi whole-dot geometry. See Decision 4, §3, §8, §11. |
 
 ---
 
@@ -293,6 +349,10 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 4. The `LSU-` prefix is **reserved** — no other barcode namespace may use it.
 5. `legacy_barcode_fallback_enabled = false` is a **one-way gate** once crossed via auto-sunset. Manual re-enable requires owner/admin explicit confirmation.
 6. `reprint_count` is **always incremented** on reprint, never decremented.
+7. New identities come **only** from `inventory_unit_lsu_seq`. The sequence never cycles, and no identity is ever reissued (GH-1255).
+8. No historical identity (legacy 8-hex or reviewer-seed) is ever renamed, regenerated or backfilled into the numeric format.
+9. Issuance never tops up missing units and never swallows a conflict. A count or lineage mismatch refuses with zero mutation.
+10. Migration 0212 cannot be rolled back once any `LSU-{10 digits}` unit exists. `down()` refuses with `INVENTORY_UNIT_LSU_SEQUENCE_ROLLBACK_BLOCKED`. Re-creating the sequence would restart at 1 and collide with issued labels.
 
 ---
 

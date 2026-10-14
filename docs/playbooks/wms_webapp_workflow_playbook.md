@@ -493,7 +493,7 @@ When scan count exceeds expected qty, pause and confirm:
 
 | Prefix | Namespace | Table | Notes |
 | -------- | ----------- | ------- | ------- |
-| `LSU-{8hex}` | Unit barcode | `inventory_units` | Generated at receive batch-confirm. Immutable. |
+| `LSU-{10 digits}` (new) / `LSU-{8hex}` (legacy) | Unit barcode | `inventory_units` | Issued at receive batch-confirm. Immutable. New units use the global sequence (GH-1255). |
 | `LSO-{8hex}` | Order invoice | `orders.wms_barcode` | Generated at batch release (WM-34). |
 | Raw EAN/UPC/Shopify | Legacy variant | `external_product_identity_map` | Accepted while `legacy_barcode_fallback_enabled = true`. |
 
@@ -509,10 +509,15 @@ When scan count exceeds expected qty, pause and confirm:
 ### Unit barcode generation (WM-46)
 
 - **At receive batch-confirm:** `batchConfirmUnits` creates one `inventory_units` row per accepted unit
-- **ID format:** `LSU-{SHA256(shop_id:receive_job_line_id:receive_sequence)[0:8]}` — deterministic, 12 chars, fits 50×25mm thermal label
+- **ID format (GH-1255, October 14, 2026):** new units get `LSU-{10 zero-padded digits}` (14 characters) from the global, noncycling sequence `inventory_unit_lsu_seq` (migration 0212).
+  - Legacy units keep the historical `LSU-{SHA256(shop_id:receive_job_line_id:receive_sequence)[0:8]}`.
+  - Neither format is ever rewritten.
+  - Full contract: `docs/blueprints/unit_barcode_architecture.md` Decision 4 and §3.
 - **Class A (has EAN/UPC):** `shopify_barcode` stored alongside for reprint disambiguation
 - **Class B (no barcode):** anchored by receive_job_line_id + receive_sequence only
-- **Reprint:** retrieval not regeneration — same inputs always produce same ID
+- **Reprint:** retrieval, not regeneration.
+  - The persisted identity is returned. A committed retry for the same line returns the same units.
+  - A retry whose quantity or lineage disagrees is refused with HTTP 409 (`INVENTORY_UNIT_RECEIVE_ISSUANCE_MISMATCH` / `_INVARIANT`), with no writes.
 
 ### Progressive labelling + legacy sunset
 
@@ -525,8 +530,8 @@ When scan count exceeds expected qty, pause and confirm:
 
 | SKU | Shopify barcode | LSU- format |
 | ----- | ---------------- | ------------- |
-| sku-hosted-1 | TEST-003 | LSU-{8hex} per unit |
-| sku-managed-1 | — (Class B) | LSU-{8hex} per unit |
+| sku-hosted-1 | TEST-003 | LSU-{10 digits} per new unit (units received before GH-1255 keep LSU-{8hex}) |
+| sku-managed-1 | — (Class B) | LSU-{10 digits} per new unit (units received before GH-1255 keep LSU-{8hex}) |
 
 ### Full architecture reference
 
