@@ -274,7 +274,7 @@ jobs:
           sudo -n ip -6 route add 2001:db8::1/128 dev lo
           probe_route=1
           python3 -I - <<'PY'
-          import errno, json, os, socket, subprocess
+          import errno, json, os, socket, subprocess, sys
           table = os.environ["OAUTH_ISOLATION_TABLE"]
           def policy():
               data = json.loads(subprocess.check_output(
@@ -297,15 +297,27 @@ jobs:
                   {"payload": {"protocol": "ip6", "field": "daddr"}}, "::1"),
                   {"accept": None}]
               bridge_rule = rules[2]["expr"]
-              assert len(bridge_rule) == 6
-              assert bridge_rule[:4] == [
+              bridge_matches = [
                   match({"meta": {"key": "oifname"}}, os.environ["PG_SERVICE_BRIDGE"]),
                   match({"payload": {"protocol": "ip", "field": "daddr"}},
-                        os.environ["PG_SERVICE_IP"]),
-                  match({"meta": {"key": "l4proto"}}, "tcp"),
-                  match({"payload": {"protocol": "tcp", "field": "dport"}}, 5432)]
-              assert "counter" in bridge_rule[4]
-              assert bridge_rule[5] == {"accept": None}
+                        os.environ["PG_SERVICE_IP"])]
+              tcp_port = match(
+                  {"payload": {"protocol": "tcp", "field": "dport"}}, 5432)
+              # nft may omit the redundant l4proto dependency when listing a
+              # symbolic TCP payload match. Accept only these two exact forms;
+              # raw transport payloads, prefixes, sets and extra actions fail.
+              try:
+                  assert bridge_rule[:-2] in (
+                      bridge_matches + [tcp_port],
+                      bridge_matches + [match({"meta": {"key": "l4proto"}}, "tcp"),
+                                        tcp_port])
+                  assert set(bridge_rule[-2]) == {"counter"}
+                  assert bridge_rule[-1] == {"accept": None}
+              except AssertionError:
+                  # Only nft expressions: no environment or connection secrets.
+                  print("OAUTH_POSTGRES_BRIDGE_RULE_JSON=" + json.dumps(bridge_rule),
+                        file=sys.stderr)
+                  raise
               counts = []
               for rule, family in zip(rules[3:], ["ipv4", "ipv6"]):
                   expressions = rule["expr"]
@@ -385,7 +397,7 @@ jobs:
           });
           JS
           # Authenticated sessions must actually traverse the narrow exception.
-          sudo -n nft -j list table inet "$table" | python3 -I -c 'import json,sys; rules=[x["rule"] for x in json.load(sys.stdin)["nftables"] if "rule" in x]; assert rules[2]["expr"][4]["counter"]["packets"] > 0'
+          sudo -n nft -j list table inet "$table" | python3 -I -c 'import json,sys; rules=[x["rule"] for x in json.load(sys.stdin)["nftables"] if "rule" in x]; assert rules[2]["expr"][-2]["counter"]["packets"] > 0'
           echo "OAUTH_POSTGRES_BRIDGE_FORWARDING=PASS"
           echo "OAUTH_ISOLATION_PREFLIGHT=PASS"
           npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
