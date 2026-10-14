@@ -11,7 +11,7 @@
 //   [SKU · variant title]
 //
 // Uses same bwip-js + pdf-lib stack as invoicePdf.service.ts (WM-34).
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 import bwipjs from 'bwip-js';
 import { Knex } from 'knex';
 
@@ -20,22 +20,50 @@ const LABEL_W = 141.73;
 const LABEL_H =  70.87;
 const BLACK   = rgb(0, 0, 0);
 const GREY    = rgb(0.45, 0.45, 0.45);
+const MARGIN  = 8;
 
-async function generateCode128Png(value: string): Promise<Buffer> {
+// GH-1255 — barcode geometry in whole thermal-printer dots. A module is an
+// exact multiple of one 203-dpi dot, so a 203-dpi printer at 100% scale
+// renders every bar with the same integer width instead of resampling it.
+// At least 10X quiet zone each side; bars have an explicit height.
+const TARGET_DPI           = 203;
+const DOT_PT               = 72 / TARGET_DPI;
+const MAX_DOTS_PER_MODULE  = 3;
+const QUIET_ZONE_MODULES   = 10;
+const BAR_HEIGHT_PT        = 28.35; // 10mm
+
+function renderCode128(value: string, scale: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     bwipjs.toBuffer(
-      {
-        bcid: 'code128',
-        text: value,
-        scale: 2,
-        height: 10,
-        includetext: false,
-        paddingwidth: 4,
-        paddingheight: 2,
-      },
+      { bcid: 'code128', text: value, scale, height: 10, includetext: false, paddingwidth: 0, paddingheight: 0 },
       (err, png) => { if (err) reject(err); else resolve(png); }
     );
   });
+}
+
+const pngWidth = (png: Buffer) => png.readUInt32BE(16);
+
+/** Largest whole number of dots per module that fits the label with quiet zones, or 0. */
+function dotsPerModule(modules: number): number {
+  for (let dots = MAX_DOTS_PER_MODULE; dots >= 1; dots -= 1) {
+    if ((modules + 2 * QUIET_ZONE_MODULES) * dots * DOT_PT <= LABEL_W) return dots;
+  }
+  return 0;
+}
+
+/** Largest font size (<= max) at which text fits the label between margins. */
+function fittedSize(font: PDFFont, text: string, max: number): number {
+  const available = LABEL_W - 2 * MARGIN;
+  const width = font.widthOfTextAtSize(text, max);
+  return width <= available ? max : max * (available / width);
+}
+
+/** Longest prefix of text that fits between margins at the given size. */
+function fittedText(font: PDFFont, text: string, size: number): string {
+  const available = LABEL_W - 2 * MARGIN;
+  let fitted = text;
+  while (fitted && font.widthOfTextAtSize(fitted, size) > available) fitted = fitted.slice(0, -1);
+  return fitted;
 }
 
 export interface UnitLabelInput {
@@ -57,30 +85,46 @@ export async function generateUnitLabelPdf(units: UnitLabelInput[]): Promise<Uin
   for (const unit of units) {
     const page = doc.addPage([LABEL_W, LABEL_H]);
 
-    // Barcode
-    const barcodePng = await generateCode128Png(unit.lasyncro_unit_id);
+    // Barcode — one image pixel per printer dot at TARGET_DPI.
+    const modules = pngWidth(await renderCode128(unit.lasyncro_unit_id, 1));
+    const dots = dotsPerModule(modules);
+    let barcodeW: number;
+    let barcodePng: Buffer;
+    if (dots > 0) {
+      barcodePng = await renderCode128(unit.lasyncro_unit_id, dots);
+      if (pngWidth(barcodePng) !== modules * dots) {
+        throw new Error(`[UNIT_LABEL_GEOMETRY] ${unit.lasyncro_unit_id}: expected ${modules * dots}px barcode, got ${pngWidth(barcodePng)}px`);
+      }
+      barcodeW = modules * dots * DOT_PT;
+    } else {
+      // Longer than any whole-dot module allows: keep the previous fit-to-width
+      // label rather than refusing to print an existing identity.
+      console.warn('[UNIT_LABEL] barcode below one printer dot per module', { lasyncro_unit_id: unit.lasyncro_unit_id, modules });
+      barcodePng = await renderCode128(unit.lasyncro_unit_id, 2);
+      barcodeW = LABEL_W - 2 * MARGIN;
+    }
     const barcodeImg = await doc.embedPng(barcodePng);
-    const barcodeW   = LABEL_W - 16;
-    const barcodeH   = barcodeImg.height * (barcodeW / barcodeImg.width);
-    const barcodeY   = LABEL_H - barcodeH - 8;
+    const barcodeX   = (LABEL_W - barcodeW) / 2;
+    const barcodeY   = LABEL_H - BAR_HEIGHT_PT - MARGIN;
 
-    page.drawImage(barcodeImg, { x: 8, y: barcodeY, width: barcodeW, height: barcodeH });
+    page.drawImage(barcodeImg, { x: barcodeX, y: barcodeY, width: barcodeW, height: BAR_HEIGHT_PT });
 
     // LSU- id — human readable below barcode
+    const idSize = fittedSize(mono, unit.lasyncro_unit_id, 7);
     page.drawText(unit.lasyncro_unit_id, {
-      x: 8, y: barcodeY - 11,
-      size: 7, font: mono, color: BLACK,
+      x: (LABEL_W - mono.widthOfTextAtSize(unit.lasyncro_unit_id, idSize)) / 2, y: barcodeY - 11,
+      size: idSize, font: mono, color: BLACK,
     });
 
     // SKU + variant
-    const label = [unit.sku, unit.variant_title]
+    const label = fittedText(font, [unit.sku, unit.variant_title]
       .filter(Boolean)
       .join(' · ')
-      .slice(0, 36);
+      .slice(0, 36), 6);
 
     if (label) {
       page.drawText(label, {
-        x: 8, y: barcodeY - 21,
+        x: MARGIN, y: barcodeY - 21,
         size: 6, font, color: GREY,
       });
     }

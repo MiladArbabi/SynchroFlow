@@ -8,9 +8,14 @@ import { refreshReadinessForUnits } from './receiveBarcodeReadiness.service.js';
  * --------------------------------
  * Manages per-unit LSU- barcode lifecycle.
  *
- * LSU- ID generation:
- *   SHA256(shop_id + receive_job_line_id + receive_sequence)[0:8]
- *   Deterministic — same inputs always produce the same ID.
+ * LSU- ID issuance (GH-1255 LSU-IDENTITY-01):
+ *   New units: 'LSU-' + 10 zero-padded digits from the single global,
+ *   noncycling sequence public.inventory_unit_lsu_seq (migration 0212).
+ *   Identity is persisted, never derived: a committed retry for the same
+ *   (shop, source line, receive_sequence) returns the stored LSU. A rolled-back
+ *   transaction may leave a gap; gaps are valid.
+ *   Legacy units keep 'LSU-' + SHA256(shop:anchor:sequence)[0:8]
+ *   (generateLsuId), which is retained only to verify those stored rows.
  *   Re-printing is retrieval, not regeneration.
  *
  * Caller must:
@@ -65,8 +70,8 @@ export interface CoverageResult {
 }
 
 /**
- * Generates a deterministic LSU- identifier.
- * Inputs must be stable and immutable — changing any input produces a different ID.
+ * Legacy deterministic LSU- identifier ('LSU-' + 8 hex). No longer used to
+ * mint units (GH-1255); retained so previously issued rows can be verified.
  */
 export function generateLsuId(
   shopId: number,
@@ -78,15 +83,69 @@ export function generateLsuId(
   return `LSU-${hash}`;
 }
 
+const LSU_SEQUENCE = 'public.inventory_unit_lsu_seq';
+const SEQUENCE_LSU = /^LSU-\d{10}$/;
+const LEGACY_LSU = /^LSU-[0-9a-f]{8}$/;
+
+/**
+ * A known Receive issuance conflict: the line's persisted units disagree with
+ * this request. Carries the shared statusCode/errorCode convention so the
+ * caller answers 409 with a stable code; unexpected errors stay plain.
+ */
+function issuanceConflict(errorCode: string, message: string): Error {
+  return Object.assign(new Error(`[${errorCode}] ${message}`), { statusCode: 409, errorCode });
+}
+
+function assertIssuanceQuantity(quantity: number): void {
+  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    throw new Error(`[INVENTORY_UNIT_QUANTITY_INVALID] Unit issuance requires a positive integer quantity, got ${quantity}`);
+  }
+}
+
+/**
+ * Allocates `count` new LSU identities from the global sequence, ascending.
+ * Exhaustion is refused: the sequence never cycles, so no identity is reissued.
+ */
+async function allocateLsuIds(trx: Knex.Transaction, count: number): Promise<string[]> {
+  let values: string[];
+  try {
+    const result = await trx.raw(
+      `SELECT nextval('${LSU_SEQUENCE}')::text AS value FROM generate_series(1, ?::int)`,
+      [count]
+    );
+    values = result.rows.map((row: { value: string }) => row.value);
+  } catch (err: any) {
+    if (err?.code === '2200H') {
+      throw Object.assign(
+        new Error('[INVENTORY_UNIT_LSU_SEQUENCE_EXHAUSTED] No new LSU identity can be issued'),
+        { code: '2200H', cause: err }
+      );
+    }
+    throw err;
+  }
+
+  return values.map((value) => {
+    const id = `LSU-${value.padStart(10, '0')}`;
+    if (!SEQUENCE_LSU.test(id)) {
+      throw new Error(`[INVENTORY_UNIT_LSU_SEQUENCE_INVALID] Sequence value ${value} is not a 10-digit LSU identity`);
+    }
+    return id;
+  });
+}
+
 /**
  * Batch-confirms a receive job line — creates one inventory_units row per unit
  * and marks all labels as pending print.
  *
- * Sequences are assigned 1–N in bulk (batch-confirm model).
- * Idempotent within a transaction via ON CONFLICT DO NOTHING on the
- * (shop_id, receive_job_line_id, receive_sequence) unique constraint.
+ * Sequences are assigned 1–N in bulk (batch-confirm model). The source line is
+ * locked and must belong to this shop and variant, so concurrent issuers for
+ * the same line serialize here. A committed retry returns the persisted units
+ * (legacy or sequence-issued) instead of minting new ones; a retry whose
+ * quantity or lineage disagrees with them fails closed. New identities come
+ * from the global sequence, and the insert has no conflict clause: a global
+ * identity collision or an unexpected lineage conflict aborts the caller.
  *
- * Returns created unit rows (lasyncro_unit_id + receive_sequence) for label printing.
+ * Returns the line's unit rows (lasyncro_unit_id + receive_sequence) for label printing.
  */
 export async function batchConfirmUnits(
   trx: Knex.Transaction,
@@ -102,30 +161,84 @@ export async function batchConfirmUnits(
     shopifyBarcode,
   } = input;
 
-  const rows = Array.from({ length: quantity }, (_, i) => {
-    const seq = i + 1;
-    return {
-      lasyncro_unit_id: generateLsuId(shopId, receiveJobLineId, seq),
-      shop_id: shopId,
-      lasyncro_variant_id: lasyncroVariantId,
-      receive_job_line_id: receiveJobLineId,
-      receive_sequence: seq,
-      ean: ean ?? null,
-      upc: upc ?? null,
-      shopify_barcode: shopifyBarcode ?? null,
-      source: 'lasyncro_receive',
-      status: 'received',
-      reprint_count: 0,
-      received_at: new Date(),
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-  });
+  assertIssuanceQuantity(quantity);
+
+  const line = await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_line_id: receiveJobLineId })
+    .forUpdate()
+    .first('receive_job_line_id', 'lasyncro_variant_id');
+
+  if (!line) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECEIVE_LINE_NOT_FOUND] Receive line ${receiveJobLineId} was not found for shop ${shopId}`
+    );
+  }
+
+  if (String(line.lasyncro_variant_id) !== lasyncroVariantId) {
+    throw new Error(
+      `[INVENTORY_UNIT_RECEIVE_VARIANT_MISMATCH] Receive line ${receiveJobLineId} belongs to variant ${line.lasyncro_variant_id}, not ${lasyncroVariantId}`
+    );
+  }
+
+  const existing = await trx('inventory_units')
+    .where({ shop_id: shopId, receive_job_line_id: receiveJobLineId })
+    .orderBy('receive_sequence', 'asc')
+    .select('id', 'lasyncro_unit_id', 'receive_sequence', 'lasyncro_variant_id', 'recount_line_id', 'source');
+
+  if (existing.length > 0) {
+    if (existing.length !== quantity) {
+      throw issuanceConflict(
+        'INVENTORY_UNIT_RECEIVE_ISSUANCE_MISMATCH',
+        `Expected ${quantity} units for receive line ${receiveJobLineId}, found ${existing.length}`
+      );
+    }
+    existing.forEach((row: any, i: number) => {
+      // A legacy-shaped identity is deterministic, so it must be the derivation
+      // of this exact lineage. Sequence-issued and other historical identities
+      // (e.g. reviewer-seed 'LSU-<RUN>-<n>') are persisted facts, returned as is.
+      const misderivedLegacy =
+        LEGACY_LSU.test(row.lasyncro_unit_id) &&
+        row.lasyncro_unit_id !== generateLsuId(shopId, receiveJobLineId, i + 1);
+      if (
+        misderivedLegacy ||
+        row.receive_sequence !== i + 1 ||
+        row.lasyncro_variant_id !== lasyncroVariantId ||
+        row.recount_line_id !== null ||
+        row.source !== 'lasyncro_receive'
+      ) {
+        throw issuanceConflict(
+          'INVENTORY_UNIT_RECEIVE_ISSUANCE_INVARIANT',
+          `Canonical LSU lineage mismatch for receive line ${receiveJobLineId}`
+        );
+      }
+    });
+    return existing.map((row: any) => ({
+      id: row.id,
+      lasyncro_unit_id: row.lasyncro_unit_id,
+      receive_sequence: row.receive_sequence,
+    }));
+  }
+
+  const ids = await allocateLsuIds(trx, quantity);
+  const rows = ids.map((lasyncroUnitId, i) => ({
+    lasyncro_unit_id: lasyncroUnitId,
+    shop_id: shopId,
+    lasyncro_variant_id: lasyncroVariantId,
+    receive_job_line_id: receiveJobLineId,
+    receive_sequence: i + 1,
+    ean: ean ?? null,
+    upc: upc ?? null,
+    shopify_barcode: shopifyBarcode ?? null,
+    source: 'lasyncro_receive',
+    status: 'received',
+    reprint_count: 0,
+    received_at: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
+  }));
 
   const created = await trx('inventory_units')
     .insert(rows)
-    .onConflict(['shop_id', 'receive_job_line_id', 'receive_sequence'])
-    .ignore()
     .returning(['id', 'lasyncro_unit_id', 'receive_sequence']);
 
   console.info('[INVENTORY_UNIT] batch_confirm', {
@@ -135,7 +248,7 @@ export async function batchConfirmUnits(
     created: created.length,
   });
 
-  return created;
+  return created.sort((a: InventoryUnitRow, b: InventoryUnitRow) => a.receive_sequence - b.receive_sequence);
 }
 
 function assertRecountIssuance(
@@ -151,18 +264,18 @@ function assertRecountIssuance(
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const sequence = i + 1;
-    const expectedLsu = generateLsuId(
-      input.shopId,
-      input.recountLineId,
-      sequence
-    );
+    // A stored identity is either the legacy derivation of this exact lineage
+    // or a sequence-issued LSU; it is verified, never regenerated.
+    const canonicalIdentity =
+      row.lasyncro_unit_id === generateLsuId(input.shopId, input.recountLineId, sequence) ||
+      SEQUENCE_LSU.test(row.lasyncro_unit_id);
 
     if (
       row.receive_job_line_id !== null ||
       row.recount_line_id !== input.recountLineId ||
       row.lasyncro_variant_id !== input.lasyncroVariantId ||
       row.receive_sequence !== sequence ||
-      row.lasyncro_unit_id !== expectedLsu ||
+      !canonicalIdentity ||
       row.source !== 'opening_inventory_reconcile' ||
       row.status !== 'stowed' ||
       row.current_location_code !== input.currentLocationCode
@@ -270,17 +383,15 @@ export async function issueReconciledUnits(
     );
   }
 
-  const rows = Array.from(
-    { length: normalizedInput.quantity },
-    (_, i) => {
+  assertIssuanceQuantity(normalizedInput.quantity);
+  const ids = await allocateLsuIds(trx, normalizedInput.quantity);
+
+  const rows = ids.map(
+    (lasyncroUnitId, i) => {
       const sequence = i + 1;
 
       return {
-        lasyncro_unit_id: generateLsuId(
-          normalizedInput.shopId,
-          normalizedInput.recountLineId,
-          sequence
-        ),
+        lasyncro_unit_id: lasyncroUnitId,
         shop_id: normalizedInput.shopId,
         lasyncro_variant_id:
           normalizedInput.lasyncroVariantId,
@@ -306,14 +417,10 @@ export async function issueReconciledUnits(
     }
   );
 
+  // The recount line is locked above, so no concurrent issuer can race this
+  // insert; any uniqueness conflict (including a global LSU collision) aborts.
   await trx('inventory_units')
-    .insert(rows)
-    .onConflict([
-      'shop_id',
-      'recount_line_id',
-      'receive_sequence',
-    ])
-    .ignore();
+    .insert(rows);
 
   const persisted =
     await readExisting();

@@ -7,9 +7,12 @@ import {
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import {
-  generateLsuId,
   issueReconciledUnits,
 } from 'api-src/services/wms/inventoryUnit.service';
+
+// GH-1255: new units carry a sequence-issued identity, persisted rather than
+// derived from lineage; a retry must return exactly the persisted identities.
+const SEQUENCE_LSU = /^LSU-\d{10}$/;
 
 jest.setTimeout(30000);
 
@@ -122,6 +125,7 @@ async function createFixture(): Promise<Fixture> {
 
 describe('canonical LSU issuance from Reconcile lineage', () => {
   let fixture: Fixture;
+  let issuedIds: string[] = [];
 
   beforeAll(async () => {
     fixture = await createFixture();
@@ -143,10 +147,9 @@ describe('canonical LSU issuance from Reconcile lineage', () => {
 
     expect(units).toHaveLength(2);
     expect(units.map((row) => row.receive_sequence)).toEqual([1, 2]);
-    expect(units.map((row) => row.lasyncro_unit_id)).toEqual([
-      generateLsuId(fixture.shopId, fixture.recountLineId, 1),
-      generateLsuId(fixture.shopId, fixture.recountLineId, 2),
-    ]);
+    issuedIds = units.map((row) => row.lasyncro_unit_id);
+    expect(new Set(issuedIds).size).toBe(2);
+    for (const id of issuedIds) expect(id).toMatch(SEQUENCE_LSU);
 
     const persisted = await withTenant(fixture.shopId, (trx) =>
       trx('inventory_units')
@@ -195,10 +198,8 @@ describe('canonical LSU issuance from Reconcile lineage', () => {
       })
     );
 
-    expect(retry.map((row) => row.lasyncro_unit_id)).toEqual([
-      generateLsuId(fixture.shopId, fixture.recountLineId, 1),
-      generateLsuId(fixture.shopId, fixture.recountLineId, 2),
-    ]);
+    expect(issuedIds).toHaveLength(2);
+    expect(retry.map((row) => row.lasyncro_unit_id)).toEqual(issuedIds);
 
     const count = await withTenant(fixture.shopId, (trx) =>
       trx('inventory_units')

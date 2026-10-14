@@ -44,8 +44,8 @@ import { issueTestToken } from '../../unit/helpers/auth';
 const app = createApp();
 jest.setTimeout(180000);
 
-/** generateLsuId → 'LSU-' + first 8 hex of a sha256. */
-const LSU_PATTERN = /^LSU-[0-9a-f]{8}$/;
+/** GH-1255: newly minted units carry a sequence-issued 'LSU-' + 10 digits. */
+const LSU_PATTERN = /^LSU-\d{10}$/;
 
 beforeAll(() => {
   process.env.SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || 'test_shopify_secret';
