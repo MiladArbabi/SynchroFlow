@@ -143,13 +143,14 @@ jobs:
         run: |
           expected="$GITHUB_WORKSPACE/tests/integration/wms/lsu-identity-gh1255.test.ts"
           listed="$(npx --no-install jest --selectProjects backend-integration --listTests --testPathPatterns lsu-identity-gh1255.test.ts)"
-          mapfile -t files <<< "$listed"
-          if [ "${#files[@]}" -ne 1 ] || [ "${files[0]}" != "$expected" ]; then
+          # Accept the precise single-project banner Jest prints on this CI runner.
+          banner="$(printf 'Running one project: backend-integration\n%s' "$expected")"
+          if [ "$listed" != "$expected" ] && [ "$listed" != "$banner" ]; then
             echo 'Jest did not select exactly the GH-1255 suite; refusing. Listed:' >&2
-            printf '%s\n' "${files[@]}" >&2
+            printf '%s\n' "$listed" >&2
             exit 1
           fi
-          echo "GH1255_JEST_SELECTED=${files[0]}"
+          echo "GH1255_JEST_SELECTED=$expected"
 
       - name: Check isolation prerequisites (fail closed)
         run: |
