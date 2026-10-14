@@ -30,6 +30,12 @@ import PackSessionPage, {
 } from './PackSessionPage.js';
 import ReceiveSessionPage, {
 type ReceiveJobLine,
+type ReceiveReconciliationEvidence,
+type ReceiveReconciliationDraftPayload,
+type ReceiveReconciliationFinalizePayload,
+type ReceiveReconciliationRevisionResult,
+type ReceiveSessionMode,
+resolveReceiveSessionMode,
 } from './ReceiveSessionPage.js';
 import StowSessionPage, { type StowPlacement } from './StowSessionPage.js';
 import CountingSessionPage, {
@@ -173,9 +179,20 @@ export type WmsModuleFT2Props = {
       assigned_operator_id?: number | null;
       closed_at?: string | null;
       actual_delivery_date?: string | null;
+      /** GH-1241 S3C-M1 — receive_jobs.delivery_accounting_version (1 legacy, 2 delivery-scoped). */
+      delivery_accounting_version?: number | null;
     };
     lines: ReceiveJobLine[];
   }>;
+  /**
+   * GH-1241 S3C-M1 — GET /receive-jobs/:jobId/reconciliation. Required for v2
+   * sessions: when absent the session fails closed (no per-line fallback).
+   */
+  onFetchReceiveReconciliation?: (jobId: string) => Promise<ReceiveReconciliationEvidence>;
+  /** GH-1241 S3C-M3 — PUT /reconciliation/draft; the host owns the idempotency event. */
+  onSaveReceiveReconciliationDraft?: (jobId: string, payload: ReceiveReconciliationDraftPayload) => Promise<ReceiveReconciliationRevisionResult>;
+  /** GH-1241 S3C-M3 — POST /reconciliation/finalize; the host owns the idempotency event. */
+  onFinalizeReceiveReconciliation?: (jobId: string, payload: ReceiveReconciliationFinalizePayload) => Promise<unknown>;
   onClaimReceiveJob?: (jobId: string) => Promise<void>;
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }) => Promise<void>;
   onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }) => Promise<void>;
@@ -332,6 +349,7 @@ export type WmsModuleFT2Props = {
     assignedOperatorId?: number | null;
     closedAt?: string | null;
     actualDeliveryDate?: string | null;
+    deliveryAccountingVersion?: number | null;
     lines: ReceiveJobLine[];
   } | null;
   /** Stow task ID from URL param — auto-enters stow session on mount. */
@@ -1969,6 +1987,7 @@ type ActiveSession =
       assignedOperatorId?: number | null;
       closedAt?: string | null;
       actualDeliveryDate?: string | null;
+      deliveryAccountingVersion?: number | null;
       lines: ReceiveJobLine[];
     }
   | { type: 'stow'; taskId: string }
@@ -1989,6 +2008,9 @@ function WmsModuleFT2Inner({
 
   onCreateReceiveJob,
   onFetchReceiveJob,
+  onFetchReceiveReconciliation,
+  onSaveReceiveReconciliationDraft,
+  onFinalizeReceiveReconciliation,
   onClaimReceiveJob,
   onInspectReceiveLine,
   onPersistReceiveLineProgress,
@@ -2382,11 +2404,70 @@ function WmsModuleFT2Inner({
       ? { type: 'stow', taskId: pendingStowTaskId }
       : null
   );
+  // GH-1241 S3C-E1 — Receive exit is authoritative over in-flight Receive
+  // reads. Every entry attempt takes a new generation; exit (and any later
+  // entry) supersedes it, so an older response never touches the session,
+  // its error or the loading state. The exited job is also fenced against a
+  // handoff that resolves before the router commits the cleared URL; the
+  // fence lifts once the host stops handing that job off.
+  const receiveEntryGenerationRef = useRef(0);
+  const receiveEntryInFlightRef = useRef(false);
+  const exitedReceiveJobIdRef = useRef<string | null>(null);
+  // GH-1241 S3C-M2 — the latest in-session refresh; an older one never lands.
+  const receiveRefreshSequenceRef = useRef(0);
   useEffect(() => {
-    if (pendingReceiveSession) {
-      setActiveSession({ type: 'receive', ...pendingReceiveSession });
+    if (!pendingReceiveSession) {
+      exitedReceiveJobIdRef.current = null;
+      return;
     }
+    if (pendingReceiveSession.receiveJobId === exitedReceiveJobIdRef.current) return;
+    setActiveSession({ type: 'receive', ...pendingReceiveSession });
   }, [pendingReceiveSession]);
+
+  // GH-1241 S3C-M1 — the Receive session mode is resolved from canonical job
+  // data plus GET /reconciliation every time the session is (re)built: entry,
+  // URL handoff and canonical refresh. A refresh of the same job keeps its
+  // resolved mode until new evidence arrives (no remount mid-work); a newer
+  // request or another job always supersedes an older response.
+  const [receiveMode, setReceiveMode] = useState<{
+    receiveJobId: string;
+    mode: ReceiveSessionMode;
+    reconciliation: ReceiveReconciliationEvidence | null;
+  } | null>(null);
+  const receiveModeRequestRef = useRef(0);
+  const onFetchReceiveReconciliationRef = useRef(onFetchReceiveReconciliation);
+  onFetchReceiveReconciliationRef.current = onFetchReceiveReconciliation;
+  useEffect(() => {
+    const requestId = ++receiveModeRequestRef.current;
+    if (activeSession?.type !== 'receive') {
+      setReceiveMode(null);
+      return;
+    }
+    const { receiveJobId, deliveryAccountingVersion, lines } = activeSession;
+    const settle = (mode: ReceiveSessionMode, reconciliation: ReceiveReconciliationEvidence | null) => {
+      if (requestId !== receiveModeRequestRef.current) return;
+      setReceiveMode({ receiveJobId, mode, reconciliation });
+    };
+    const version = deliveryAccountingVersion == null ? null : Number(deliveryAccountingVersion);
+    if (version !== 2) {
+      settle(resolveReceiveSessionMode({ receiveJobId, deliveryAccountingVersion, lines, reconciliation: null }), null);
+      return;
+    }
+    const fetchReconciliation = onFetchReceiveReconciliationRef.current;
+    if (!fetchReconciliation) {
+      settle('unavailable', null);
+      return;
+    }
+    setReceiveMode((previous) => (
+      previous?.receiveJobId === receiveJobId ? previous : { receiveJobId, mode: 'resolving', reconciliation: null }
+    ));
+    fetchReconciliation(receiveJobId)
+      .then((evidence) => settle(
+        resolveReceiveSessionMode({ receiveJobId, deliveryAccountingVersion, lines, reconciliation: evidence }),
+        evidence ?? null,
+      ))
+      .catch(() => settle('unavailable', null));
+  }, [activeSession]);
 
   // RECEIVE-FOCUS-EXIT-02 — ReceiveSessionPage's execution-focus effect
   // (WAREHOUSE-FOCUS-SHELL-01A) is keyed on
@@ -2602,6 +2683,13 @@ function WmsModuleFT2Inner({
       return;
     }
 
+    // GH-1241 S3C-E1 — this attempt supersedes any earlier one; a deliberate
+    // (re)open lifts the exit fence for this job.
+    const generation = ++receiveEntryGenerationRef.current;
+    const isCurrentEntry = () => generation === receiveEntryGenerationRef.current;
+    receiveEntryInFlightRef.current = true;
+    exitedReceiveJobIdRef.current = null;
+
     setLoadingSession(true);
     setSessionError(null);
 
@@ -2611,6 +2699,7 @@ function WmsModuleFT2Inner({
 
     try {
       const result = await onFetchReceiveJob(jobId);
+      if (!isCurrentEntry()) return;
 
       setActiveSession({
         type: 'receive',
@@ -2622,16 +2711,21 @@ function WmsModuleFT2Inner({
         assignedOperatorId: result.job.assigned_operator_id ?? null,
         closedAt: result.job.closed_at ?? null,
         actualDeliveryDate: result.job.actual_delivery_date ?? null,
+        deliveryAccountingVersion: result.job.delivery_accounting_version ?? null,
         lines: result.lines,
       });
     } catch (error) {
+      if (!isCurrentEntry()) return;
       setSessionError(
         error instanceof Error
           ? error.message
           : 'Failed to open Receive work.'
       );
     } finally {
-      setLoadingSession(false);
+      if (isCurrentEntry()) {
+        receiveEntryInFlightRef.current = false;
+        setLoadingSession(false);
+      }
     }
   };
 
@@ -2813,6 +2907,16 @@ function WmsModuleFT2Inner({
     if (current?.type === 'count') {
       exitedCountTaskIdRef.current = current.task.recount_task_id;
     }
+    // GH-1241 S3C-E1 — exit supersedes every outstanding Receive entry read
+    // and fences the exited job against an obsolete URL handoff.
+    receiveEntryGenerationRef.current += 1;
+    if (receiveEntryInFlightRef.current) {
+      receiveEntryInFlightRef.current = false;
+      setLoadingSession(false);
+    }
+    if (current?.type === 'receive') {
+      exitedReceiveJobIdRef.current = current.receiveJobId;
+    }
     setActiveSession(null);
     onRefresh();
     onSessionExit?.();
@@ -2888,7 +2992,21 @@ function WmsModuleFT2Inner({
   if (activeSession?.type === 'receive') {
     const refreshReceiveSession = async () => {
       if (!onFetchReceiveJob) return;
-      const latest = await onFetchReceiveJob(activeSession.receiveJobId);
+      // GH-1241 S3C-M2 — same authority as E1 entry reads: a refresh started
+      // before exit, before a (re)open, or before a newer refresh never lands.
+      const generation = receiveEntryGenerationRef.current;
+      const sequence = ++receiveRefreshSequenceRef.current;
+      const receiveJobId = activeSession.receiveJobId;
+      const latest = await onFetchReceiveJob(receiveJobId);
+      const current = activeSessionRef.current;
+      if (
+        generation !== receiveEntryGenerationRef.current
+        || sequence !== receiveRefreshSequenceRef.current
+        || current?.type !== 'receive'
+        || current.receiveJobId !== receiveJobId
+      ) {
+        return;
+      }
       setActiveSession({
         type: 'receive',
         receiveJobId: activeSession.receiveJobId,
@@ -2899,9 +3017,14 @@ function WmsModuleFT2Inner({
         assignedOperatorId: latest.job.assigned_operator_id ?? null,
         closedAt: latest.job.closed_at ?? null,
         actualDeliveryDate: latest.job.actual_delivery_date ?? null,
+        deliveryAccountingVersion: latest.job.delivery_accounting_version ?? null,
         lines: latest.lines,
       });
     };
+    const resolvedReceiveMode = receiveMode?.receiveJobId === activeSession.receiveJobId ? receiveMode : null;
+    // Missing host writers fail closed rather than reporting a write that never happened.
+    const unavailableReceiveWrite = (what: string) =>
+      Promise.reject(new Error(`${what} is unavailable. Return to Operations and try again.`));
 
     return (
       <ReceiveSessionPage
@@ -2921,20 +3044,28 @@ function WmsModuleFT2Inner({
             new Error('Receive claim is unavailable. Return to Operations and try again.')
           )
         }
-        onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
-        onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? Promise.resolve()}
+        onInspectLine={(params) => onInspectReceiveLine?.(activeSession.receiveJobId, params) ?? unavailableReceiveWrite('Finishing a line')}
+        onPersistLineProgress={(lineId, params) => onPersistReceiveLineProgress?.(activeSession.receiveJobId, lineId, params) ?? unavailableReceiveWrite('Saving count progress')}
         onConfirmLineCount={onConfirmReceiveLineCount
           ? (lineId, params) => onConfirmReceiveLineCount(activeSession.receiveJobId, lineId, params)
           : undefined}
-        onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? unavailableReceiveWrite('Reporting a problem')}
         onApproveOverDelivery={(params) => onApproveOverDelivery(activeSession.receiveJobId, params)}
-        onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
+        onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? unavailableReceiveWrite('Closing this Receive')}
         onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
         onPrintUnitLabels={onPrintUnitLabels}
         onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
         onRefresh={refreshReceiveSession}
         onExecutionFocusChange={handleReceiveExecutionFocusChange}
+        sessionMode={resolvedReceiveMode?.mode ?? 'resolving'}
+        reconciliation={resolvedReceiveMode?.reconciliation ?? null}
+        onSaveReconciliationDraft={onSaveReceiveReconciliationDraft
+          ? (payload) => onSaveReceiveReconciliationDraft(activeSession.receiveJobId, payload)
+          : undefined}
+        onFinalizeReconciliation={onFinalizeReceiveReconciliation
+          ? (payload) => onFinalizeReceiveReconciliation(activeSession.receiveJobId, payload)
+          : undefined}
       />
     );
   }

@@ -246,6 +246,9 @@ describe('WAREHOUSE-FOCUS-SHELL-01A — WmsModuleFT2 wires the actual receiveJob
         assignedOperatorId: CURRENT_USER_ID,
         closedAt: null,
         actualDeliveryDate: null,
+        // Authored before migration 0208; every pre-existing job is legacy v1
+        // (NOT NULL DEFAULT 1), the per-line journey this test drives.
+        deliveryAccountingVersion: 1,
         lines: [line()],
       },
     });

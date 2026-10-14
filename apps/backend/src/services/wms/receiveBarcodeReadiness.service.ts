@@ -265,9 +265,14 @@ export async function assertReceiveJobBarcodeReady(
     const detail = readiness.blockingLines
       .map((l) => `${l.receiveJobLineId}:${l.reason}(${l.labelledUnitCount}/${l.quantityAccepted})`)
       .join(',');
-    throw new Error(
-      `${RECEIVE_BARCODE_READINESS_REQUIRED}: accepted units on job ${receiveJobId} ` +
-        `have no physical barcode label acknowledgement${detail ? ` [${detail}]` : ''}`
+    // GH-1241 S3C-M4 — an operator-state refusal, not a server failure: callers
+    // that honour statusCode/errorCode answer 409 with this machine-readable code.
+    throw Object.assign(
+      new Error(
+        `${RECEIVE_BARCODE_READINESS_REQUIRED}: accepted units on job ${receiveJobId} ` +
+          `have no physical barcode label acknowledgement${detail ? ` [${detail}]` : ''}`
+      ),
+      { statusCode: 409, errorCode: RECEIVE_BARCODE_READINESS_REQUIRED }
     );
   }
 

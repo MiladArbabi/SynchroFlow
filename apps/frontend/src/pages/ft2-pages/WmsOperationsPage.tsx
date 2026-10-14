@@ -171,6 +171,12 @@ export default function WmsOperationsPage() {
     return data;
   }, []);
 
+  // GH-1241 S3C-M1 — canonical grouped-reconciliation evidence for session mode routing.
+  const handleFetchReceiveReconciliation = useCallback(async (jobId: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}/reconciliation`);
+    return data;
+  }, []);
+
   /**
    * RECEIVE SESSION AUTO-ENTRY
    * --------------------------
@@ -188,6 +194,7 @@ export default function WmsOperationsPage() {
     assignedOperatorId?: number | null;
     closedAt?: string | null;
     actualDeliveryDate?: string | null;
+    deliveryAccountingVersion?: number | null;
     lines: import('@lasyncro/wms').ReceiveJobLine[];
   } | null>(null);
   const [showQzPrompt, setShowQzPrompt] = useState(false);
@@ -209,6 +216,9 @@ export default function WmsOperationsPage() {
     if (!receiveJobId) {
       // GH-1245 — destination dropped; the hold must never re-arm later.
       setAwaitingReceiveHandoff(false);
+      // GH-1241 S3C-E1 — nor may the last handoff outlive it: a stale
+      // pendingReceiveSession would re-enter the exited Receive session.
+      setPendingReceiveSession(null);
       return;
     }
     // GH-1245 — ignore responses for a job ID the URL no longer requests.
@@ -229,6 +239,7 @@ export default function WmsOperationsPage() {
           assignedOperatorId: result.job.assigned_operator_id ?? null,
           closedAt: result.job.closed_at ?? null,
           actualDeliveryDate: result.job.actual_delivery_date ?? null,
+          deliveryAccountingVersion: result.job.delivery_accounting_version ?? null,
           lines: result.lines,
         });
       })
@@ -301,8 +312,12 @@ export default function WmsOperationsPage() {
         scanned_value: scannedValue,
       });
       return data;
-    } catch {
-      return null;
+    } catch (err) {
+      // GH-1241 S3C-M2 (H1) — only an answered 404 means "unknown barcode".
+      // Network and server failures reject, so a session can say the lookup
+      // failed instead of misreporting the barcode as unrecognised.
+      if ((err as { response?: { status?: number } })?.response?.status === 404) return null;
+      throw err;
     }
   }, []);
 
@@ -597,6 +612,57 @@ export default function WmsOperationsPage() {
       ...params, exception_type: 'extra_item', accounting_role: 'overage',
     });
   }, [postReceiveEvent]);
+
+  // GH-1241 S3C-M3 — grouped draft/finalize. One stable device_event_id per
+  // unchanged intent: an unanswered request (or 5xx) may have been applied,
+  // so its retry replays the same event; a definitive answer (success or 4xx)
+  // ends the intent, and any changed payload is a new intent.
+  const reconciliationIntents = useRef(new Map<string, { intent: string; eventId: string }>());
+  const sendReconciliationIntent = useCallback(async <T,>(
+    slot: string,
+    intent: string,
+    send: (deviceEventId: string) => Promise<T>,
+  ): Promise<T> => {
+    const pending = reconciliationIntents.current.get(slot);
+    const eventId = pending?.intent === intent ? pending.eventId : newReceiveEventId();
+    reconciliationIntents.current.set(slot, { intent, eventId });
+    try {
+      const result = await send(eventId);
+      reconciliationIntents.current.delete(slot);
+      return result;
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status >= 400 && status < 500) reconciliationIntents.current.delete(slot);
+      throw err;
+    }
+  }, []);
+
+  const handleSaveReceiveReconciliationDraft = useCallback(async (
+    jobId: string,
+    payload: { base_revision_id: string | null; lines: unknown[] }
+  ) => {
+    const baseRevisionId = payload.base_revision_id ?? null;
+    return sendReconciliationIntent(`draft:${jobId}`, JSON.stringify([baseRevisionId, payload.lines]), async (deviceEventId) => {
+      const { data } = await axiosInstance.put(`/api/v1/suppliers/receive-jobs/${jobId}/reconciliation/draft`, {
+        base_revision_id: baseRevisionId,
+        lines: payload.lines,
+        device_event_id: deviceEventId,
+      });
+      return data;
+    });
+  }, [sendReconciliationIntent]);
+
+  const handleFinalizeReceiveReconciliation = useCallback(async (
+    jobId: string,
+    payload: { current_revision_id: string; lines: unknown[] }
+  ) => sendReconciliationIntent(`finalize:${jobId}`, JSON.stringify([payload.current_revision_id, payload.lines]), async (deviceEventId) => {
+    const { data } = await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/reconciliation/finalize`, {
+      current_revision_id: payload.current_revision_id,
+      lines: payload.lines,
+      device_event_id: deviceEventId,
+    });
+    return data;
+  }), [sendReconciliationIntent]);
 
   const handleCloseReceiveJob = useCallback(async (
     jobId: string,
@@ -1017,6 +1083,9 @@ export default function WmsOperationsPage() {
       onSetupBinsClick={handleSetupBinsClick}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
+      onFetchReceiveReconciliation={handleFetchReceiveReconciliation}
+      onSaveReceiveReconciliationDraft={handleSaveReceiveReconciliationDraft}
+      onFinalizeReceiveReconciliation={handleFinalizeReceiveReconciliation}
       onClaimReceiveJob={handleClaimReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}
       onPersistReceiveLineProgress={handlePersistReceiveLineProgress}

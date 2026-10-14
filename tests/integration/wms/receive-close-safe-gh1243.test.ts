@@ -600,7 +600,8 @@ describe('GH-1243 Receive close safety', () => {
 
     const res = await httpClose(f);
     console.info('[GH1243_C5A_STATUS]', res.status, JSON.stringify(res.body));
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    // GH-1241 S3C-M4: the readiness refusal is a client refusal, never a 500.
+    expect({ status: res.status, code: res.body?.code }).toEqual({ status: 409, code: 'RECEIVE_BARCODE_READINESS_REQUIRED' });
 
     expect(await closeEffects(f)).toEqual(before);
   });

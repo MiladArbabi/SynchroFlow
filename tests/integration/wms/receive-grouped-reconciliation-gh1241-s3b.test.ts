@@ -1286,6 +1286,51 @@ describe('GH-1241 S3-B — grouped Receive reconciliation (RED)', () => {
     expect(legacyAfter).toEqual(legacyBefore);
     expect(legacyAfter.lines[0]).toEqual(expect.objectContaining({ delivered: null, missing: null, deferred: null, held: null }));
   });
+
+  // GH-1241 S3-C audit: an expected-zero line is excluded from grouped
+  // finalization, close and readiness. If it already holds accepted physical
+  // stock (per-line inspection with approved overage), excluding it would
+  // leave minted LSUs with no receipt, movement, truth or Stow credit.
+  it('S3C-E0 — grouped finalization refuses an excluded expected-zero line containing accepted physical stock', async () => {
+    const shop = await provisionFt2Shop('s3ce0');
+    const po = await shippedMultiLinePo(shop, [5, 10]);
+
+    // Delivery 1 (existing per-line path, as B10): line A complete, line B entirely later.
+    const first = await openJob(po);
+    await confirmCount(first, first.lines[0], 5);
+    expect((await httpInspectLine(first, first.lines[0], { accepted: 5, rejected: 0, missing: 0, deferred: 0 })).status).toBe(200);
+    await confirmCount(first, first.lines[1], 0);
+    expect((await httpInspectLine(first, first.lines[1], { accepted: 0, rejected: 0, missing: 0, deferred: 10 })).status).toBe(200);
+    expect((await httpClose(first)).status).toBe(200);
+
+    // Delivery 2: line A has zero outstanding, yet one extra unit physically arrives.
+    const second = await openJob(po);
+    const [a, b] = second.lines;
+    expect([a.expected, b.expected]).toEqual([0, 10]);
+    await report(second, a, { exception_type: 'extra_item', quantity_affected: 1, accounting_role: 'overage', notes: 'Accepted 1 extra unit' });
+    await confirmCount(second, a, 1);
+    expect((await httpInspectLine(second, a, { accepted: 1, rejected: 0, missing: 0, deferred: 0 })).status).toBe(200);
+    await confirmCount(second, b, 10);
+
+    // A. Line A really holds accepted, counted, inspected physical stock.
+    const before = await jobEffects(second);
+    expect(before.lines[0]).toEqual(expect.objectContaining({
+      expected: 0, countConfirmed: 1, inspectionComplete: true, accepted: 1, lsuCount: 1,
+    }));
+
+    // B. Grouped finalization over only the applicable line B is refused.
+    const attempt = await attemptGroup(second, [[b, { accepted: 10, rejected: 0, missing: 0, deferred: 0 }]]);
+    console.info('[S3C_E0_FINALIZE]', attempt.response.status, JSON.stringify(attempt.response.body));
+    expectSemanticRefusal(attempt.response, 409);
+    expect(attempt.response.body.code).toBe('RECEIVE_RECONCILIATION_LINE_ALREADY_FINISHED');
+
+    // C. No grouped finalization is persisted.
+    expect((await readReconciliation(second)).finalization ?? null).toBeNull();
+
+    // D + E. No new inspection, LSU, exception, movement, truth, PO receipt or
+    // Stow effect, and line A's persisted evidence is unchanged.
+    expect(await jobEffects(second)).toEqual(before);
+  });
 });
 
 // ── migration 0210 safety (precedent: S3-A1 0209 / GH-1245 0208 suites) ──────

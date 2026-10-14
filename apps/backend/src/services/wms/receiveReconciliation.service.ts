@@ -296,6 +296,15 @@ export async function finalizeReconciliation(
   if (finished) {
     throw reconciliationError('RECEIVE_RECONCILIATION_LINE_ALREADY_FINISHED', `line ${finished.receive_job_line_id} was already finished on the per-line path`);
   }
+  // GH-1241 S3C-E0: expected-zero lines are excluded from finalization, close
+  // and readiness. One already inspected or holding accepted physical stock
+  // would be dropped from receipt, so the group fails closed instead.
+  const finishedExcluded = jobLines.find((l: any) => Number(l.quantity_expected) <= 0
+    && (l.inspection_complete || Number(l.quantity_accepted ?? 0) > 0));
+  if (finishedExcluded) {
+    throw reconciliationError('RECEIVE_RECONCILIATION_LINE_ALREADY_FINISHED',
+      `excluded line ${finishedExcluded.receive_job_line_id} was already finished on the per-line path`);
+  }
 
   // 5. Immutable finalization header, then each line in lock order.
   const [finalization] = await trx('receive_reconciliation_finalizations')

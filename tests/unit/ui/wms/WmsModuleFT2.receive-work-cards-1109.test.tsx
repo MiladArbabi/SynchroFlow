@@ -120,30 +120,24 @@ describe('GH-1109 — WmsModuleFT2 Receive work queue', () => {
 
     render(<WmsModuleFT2 {...props} />);
 
-    const receiving = screen
-      .getAllByText('Receiving')
-      .map((label) => label.closest('div'))
-      .find(
-        (node) =>
-          node !== null &&
-          within(node as HTMLElement).queryByText('2') !== null
-      );
+    // The Receive lifecycle stage is the queue (WMS-OPS-LIFECYCLE-IA-02): its
+    // accessible name and count description are the tally contract — the
+    // same assertion WmsModuleFT2.operations-lifecycle-ia.test.tsx makes.
+    const receiveStage = screen.getByRole('region', { name: /^Receive$/i });
+    expect(receiveStage).toHaveAccessibleDescription(/\b2 receive jobs\b/i);
 
-    expect(receiving).not.toBeNull();
-    expect(
-      within(receiving as HTMLElement).getByText('2')
-    ).toBeInTheDocument();
-
-    const pending = screen.getByTestId('receive-work-card-receive-pending-self');
+    const pending = within(receiveStage).getByTestId('receive-work-card-receive-pending-self');
     expect(pending).toHaveTextContent('North Dock Supply');
     expect(pending).toHaveTextContent('PO-1109');
     expect(pending).not.toHaveTextContent('550e8400-e29b-41d4-a716-446655440001');
     expect(pending).toHaveTextContent('8');
-    expect(pending).toHaveTextContent('Assigned to you · Not started');
+    // Ownership and lifecycle state are both shown; their grouping is presentation.
+    expect(pending).toHaveTextContent('Assigned to you');
+    expect(pending).toHaveTextContent('Not started');
     expect(pending).toHaveTextContent('Review shipment and claim Receive');
     expect(within(pending).getByRole('button', { name: /open receive/i })).toBeInTheDocument();
 
-    const active = screen.getByTestId('receive-work-card-receive-active-self');
+    const active = within(receiveStage).getByTestId('receive-work-card-receive-active-self');
     expect(within(active).getByRole('button', { name: /resume receive/i })).toBeInTheDocument();
 
     expect(screen.queryByText('Closed Supply')).toBeNull();
@@ -194,7 +188,8 @@ describe('GH-1109 — WmsModuleFT2 Receive work queue', () => {
 
     // Existing queue copy remains unchanged alongside the coach mark.
     const pending = screen.getByTestId('receive-work-card-receive-pending-self');
-    expect(pending).toHaveTextContent('Assigned to you · Not started');
+    expect(pending).toHaveTextContent('Assigned to you');
+    expect(pending).toHaveTextContent('Not started');
     expect(within(pending).getByRole('button', { name: /open receive/i })).toBeInTheDocument();
   });
 

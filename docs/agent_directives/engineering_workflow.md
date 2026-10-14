@@ -217,6 +217,10 @@ DEPLOY-GATE-01
 
 Direct-main does not mean uncontrolled production deployment. Required pre-push verification must pass before pushing consequential code, and production deployment should not outrun required CI. If the deployment pipeline can publish a red main commit before required CI finishes, treat that pipeline ordering as infrastructure debt and use the strongest required local gate until it is corrected.
 
+RELEASE-CONTINUITY-01
+
+A multi-slice feature must not be shipped in a configuration that leaves an enabled live journey uncompletable. Release all dependent slices together or preserve a safe feature gate/compatible path.
+
 CONTRACT-INHERITANCE-01
 
 Before mutating an existing product family, UX family, lifecycle, navigation
