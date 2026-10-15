@@ -1,9 +1,13 @@
 // apps/frontend/src/pages/wms/useWms.ts
 import { useQuery } from '@tanstack/react-query';
+import type { AxiosRequestConfig } from 'axios';
 import { axiosInstance } from 'api/axiosConfig';
 import type { OpeningInventoryCutoverView, WmsStowTask } from '@lasyncro/wms';
 import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
 import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
+import { useCommercialAccess } from '../../runtime/commercialContext';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
+import { getSessionGeneration } from '../../utils/authStore';
 
 /**
  * WMS HOOK
@@ -14,6 +18,24 @@ import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
 export function useWms() {
   const { can, hasResolved: entitlementsResolved } = usePlanEntitlement();
   const recountEntitled = can('wms.recount');
+
+  /**
+   * GH-1246 — listing receive jobs requires purchasing.core (Growth+). Only a
+   * resolved, allowed canonical decision for a known shop may read or show
+   * them; unresolved, errored, logged-out and denied states fail closed.
+   */
+  const { isResolved: commercialResolved, decide } = useCommercialAccess();
+  const { shopId: entitlementShopId, isLoading: entitlementsLoading } = useEntitlements();
+  const receiveJobsAllowed =
+    commercialResolved && entitlementShopId !== null && decide('purchasing.core').allowed;
+  // Never read while the entitlement snapshot is in flight: the decision and
+  // shop identity may still belong to the previous session.
+  const receiveJobsReadable = receiveJobsAllowed && !entitlementsLoading;
+  const receiveJobsSessionGeneration = getSessionGeneration();
+  const receiveJobsRequestConfig: AxiosRequestConfig & { _sessionGeneration: number } = {
+    params: { status: RECEIVE_JOB_OPEN_STATUSES.join(',') },
+    _sessionGeneration: receiveJobsSessionGeneration,
+  };
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['wms', 'batches'],
@@ -38,16 +60,16 @@ export function useWms() {
   /**
    * Work tally — open receive jobs. Filtered server-side to the canonical open
    * set, so the number here cannot drift from the one on the Inbound page
-   * (RECEIVE-ACTIVE-UNDERCOUNT-45).
+   * (RECEIVE-ACTIVE-UNDERCOUNT-45). Keyed by shop so cached rows are never
+   * shown for another tenant.
    */
   const { data: receiveJobsData, refetch: refetchReceiveJobs } = useQuery({
-    queryKey: ['wms', 'receive-jobs', 'open'],
+    queryKey: ['wms', 'receive-jobs', 'open', entitlementShopId],
     queryFn: () =>
       axiosInstance
-        .get('/api/v1/suppliers/receive-jobs', {
-          params: { status: RECEIVE_JOB_OPEN_STATUSES.join(',') },
-        })
+        .get('/api/v1/suppliers/receive-jobs', receiveJobsRequestConfig)
         .then((r) => r.data.receive_jobs),
+    enabled: receiveJobsReadable,
     refetchInterval: 10_000,
   });
 
@@ -91,7 +113,8 @@ export function useWms() {
     data, isLoading, isError,
     stowTasks: stowData ?? [],
     settings: settingsData ?? null,
-    openReceiveJobs: receiveJobsData ?? [],
+    // A disabled query still returns its cache; never show it once access is denied.
+    openReceiveJobs: receiveJobsAllowed ? receiveJobsData ?? [] : [],
     recountTasks: recountTasksData ?? [],
     recountLocked: !recountEntitled || recountIsError,
     /**
@@ -111,7 +134,8 @@ export function useWms() {
       void refetch();
       void refetchStow();
       void refetchSettings();
-      void refetchReceiveJobs();
+      // refetch() ignores `enabled`, so the entitlement gate is repeated here.
+      if (receiveJobsReadable) void refetchReceiveJobs();
       if (recountEntitled) void refetchRecountTasks();
     },
   };

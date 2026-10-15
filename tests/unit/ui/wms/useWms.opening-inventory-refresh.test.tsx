@@ -27,6 +27,19 @@ jest.mock('hooks/usePlanEntitlement', () => ({
   }),
 }));
 
+// GH-1246: useWms reads the canonical commercial decision. A resolved Growth
+// shop keeps every read in this suite exactly as before.
+jest.mock('contexts/EntitlementsContext', () => ({
+  useEntitlements: () => ({
+    shopId: 7,
+    tier: 'growth',
+    snapshot: { modules: new Set<string>(), flags: new Set<string>() },
+    isLoading: false,
+    hasResolved: true,
+    error: null,
+  }),
+}));
+
 const mockedGet = axiosInstance.get as jest.Mock;
 const PROGRESS_URL = '/api/v1/wms/opening-inventory/progress';
 

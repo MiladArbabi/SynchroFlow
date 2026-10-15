@@ -71,6 +71,22 @@ Build it inside the tenant boundary instead, keyed on `shop_id`:
 const tenantQueryClient = React.useMemo(() => new QueryClient(), [user?.shop_id]);
 ```
 
+**GH-1247/GH-1246 — observer isolation:** Creating a replacement QueryClient
+is necessary but insufficient. Mounted React Query observers may retain
+their original client when only the provider's `client` prop changes.
+The authenticated provider subtree must also remount on shop changes:
+
+```tsx
+<QueryClientProvider key={user?.shop_id ?? 'unknown'} client={tenantQueryClient}>
+  {/* Existing authenticated providers and consumers */}
+</QueryClientProvider>
+```
+
+This remount includes `IntegrationProvider` and its query observers.
+`AuthProvider` remains outside the boundary. A same-shop silent refresh
+preserves the client and authenticated subtree.
+
+
 `shop_id`, not `user.id` — two operators in one shop are the same tenant and
 should share a warm cache. `shop_id` is present on all three `AuthContext`
 hydration paths (login response, localStorage rehydrate, OAuth handoff decode).
@@ -79,9 +95,13 @@ The `eslint react-hooks/exhaustive-deps` warning on that line is a false
 positive and is disabled inline: the dependency is the invalidation trigger,
 not a value the factory reads. Removing it rebuilds the client every render.
 
-**Query keys in this app carry no shop dimension.** `['floor-planning','layout']`,
-`['wms','batches']`, `['wms','order-pool']`, `['alerts', ...]` and the rest are
-tenant-agnostic. Rule 1 is the only thing making that safe. Two consequences:
+**Many authenticated query keys still omit shop identity.** Examples include
+`['floor-planning','layout']`, `['wms','batches']`, `['wms','order-pool']`
+and `['alerts', ...]`. The open receive-job query now explicitly includes
+the entitlement shop ID.
+
+Client creation and keyed subtree remounting are required together
+for authenticated tenant isolation. Two consequences:
 
 - Anything rendering *outside* `AuthenticatedAppShell`'s client is not covered.
   `WmsDisplayPage` is a public route under `main.tsx`'s separate client, scoped
@@ -94,3 +114,51 @@ tenant-agnostic. Rule 1 is the only thing making that safe. Two consequences:
 `placeholderData: (prev) => prev`, so the previous tenant's zones paint
 immediately on mount, before any refetch resolves. Overview rendering another
 shop's zones after an account switch is the canary.
+
+### Session-bound entitlements (GH-1247)
+
+`EntitlementsProvider` binds committed entitlement state to the valid
+positive-integer `shop_id` claim of the authenticated access token.
+
+- Responses must match the requesting shop.
+- Late responses from an obsolete session cannot commit.
+- Last-good entitlement fallback is allowed only for the same shop.
+- Logout, invalid identity and cross-shop transitions cannot expose
+  the previous shop's entitlement snapshot or capabilities.
+- Unresolved new-shop entitlements remain fail-closed.
+
+The client-side decoded identity provides session binding, not JWT
+verification or commercial authority. Backend authentication and
+commercial authorization remain authoritative.
+
+### Receive-job authorization and request fencing (GH-1246)
+
+The `useWms` open receive-job tally requires resolved, allowed
+`purchasing.core` access (Growth+). This does not introduce a blanket
+Growth requirement for all operational WMS receiving.
+
+The query key includes the entitlement shop ID. Cached rows are hidden
+when access is denied, and manual refetch repeats the capability gate
+because React Query's `refetch()` can bypass `enabled`.
+
+The receive-job Axios configuration carries `_sessionGeneration`,
+captured during the originating React render rather than inside the
+later request callback.
+
+The existing Axios interceptor rejects obsolete generations before
+dispatch or current-token injection. An old Shop A callback must not
+dispatch using Shop B's credentials.
+
+Same-shop silent refresh and token replay remain supported.
+
+### Regression boundary
+
+Permanent protection:
+
+- `EntitlementsContext.cross-shop-gh1247.test.tsx`
+- `useWms.receive-jobs-entitlement-gh1246.test.tsx`
+- `App.authenticated-shop-isolation-gh1247-gh1246.test.tsx`
+
+Local verification: 8/8 full-shell security tests and 78/78
+neighboring regressions passed. These are synthetic/JSDOM results,
+not deployed-browser, backend JWT or Shopify-provider certification.

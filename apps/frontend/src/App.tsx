@@ -173,7 +173,10 @@ function AuthenticatedAppShell() {
     return null;
   }
   return (
-    <QueryClientProvider client={tenantQueryClient}>
+    <QueryClientProvider
+      key={user?.shop_id ?? 'unknown'}
+      client={tenantQueryClient}
+    >
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
 

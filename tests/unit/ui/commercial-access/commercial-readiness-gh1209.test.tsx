@@ -32,7 +32,8 @@ jest.mock('api/axiosConfig', () => ({
 jest.mock('contexts/AuthContext', () => ({
   useAuth: () => ({
     isLoggedIn: true,
-    accessToken: 'test-token',
+    // GH-1247: unsigned JWT-shaped token for shop 1209 ({ user_id: 1, shop_id: 1209 }).
+    accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJzaG9wX2lkIjoxMjA5fQ.sig',
     user: { role: 'owner', first_name: 'Test', last_name: '', email: 'owner@example.test' },
     logout: jest.fn(),
   }),

@@ -27,11 +27,11 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  ReactNode,
+  type ReactNode,
 } from 'react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
-import { Tier, isValidTier } from '../config/tiers';
+import { type Tier, isValidTier } from '../config/tiers';
 import type { EntitlementSnapshot } from '../runtime/EntitlementSnapshot';
 
 // --- Backend payload shape ---
@@ -95,6 +95,43 @@ interface EntitlementsProviderProps {
   children: ReactNode;
 }
 
+/**
+ * GH-1247 — SHOP SESSION BINDING
+ * ───────────────────────────────
+ * A snapshot belongs to the authenticated shop session it was fetched for:
+ * the access token's shop_id claim. Same-shop silent refresh keeps the
+ * snapshot. A snapshot is exposed, and the last-good snapshot restored, only
+ * for the same shop — never across shops, never after logout. A token without
+ * a valid shop identity never binds: it resolves fail-closed and no snapshot
+ * is fetched or exposed for it.
+ */
+const SESSION_UNKNOWN_ERROR = 'ENTITLEMENTS_SESSION_UNKNOWN';
+
+/**
+ * The shop the access token is issued for (its shop_id claim), decoded the
+ * same way as AuthContext's canonical #1164 JWT identity. Session identity
+ * only — never commercial authority (the JWT tier is ignored). Absent,
+ * undecodable or invalid claim → null.
+ */
+function jwtShopId(token: string): number | null {
+  try {
+    const segment = token.split('.')[1];
+    if (!segment) return null;
+    const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/')));
+    const shopId = payload && typeof payload === 'object' ? payload.shop_id : undefined;
+    return Number.isSafeInteger(shopId) && shopId > 0 ? shopId : null;
+  } catch {
+    return null;
+  }
+}
+
+const EMPTY_LIST: string[] = [];
+
+/** Same known shop session. An unknown session (null) never matches anything. */
+function sameSession(a: number | null, b: number | null): boolean {
+  return a !== null && a === b;
+}
+
 export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   children,
 }) => {
@@ -114,8 +151,12 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
 
+  // Session the committed state belongs to (GH-1247).
+  const [committedSession, setCommittedSession] = useState<number | null>(null);
+
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
   const lastGoodSnapshotRef = React.useRef<{
+    session: number;
     shopId: number | null;
     modules: string[];
     flags: string[];
@@ -127,12 +168,6 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     billingProvider: 'stripe' | 'shopify' | null;
   } | null>(null);
 
-  const snapshot = React.useMemo(() => ({
-    shopId,
-    modules: new Set(modules),
-    flags: new Set(flags)
-  }), [shopId, modules, flags]);
-
   // simple invalidation token to force re-fetch
   const [refreshToken, setRefreshToken] = useState(0);
   const refresh = useCallback(() => {
@@ -141,10 +176,14 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
 
   useEffect(() => {
     if (!isLoggedIn || !accessToken) {
-      // logged out → clear entitlements
+      // logged out → clear entitlements; previous-shop access is invalidated (GH-1247)
+      lastGoodSnapshotRef.current = null;
+      setCommittedSession(null);
       setShopId(null);
       setModules([]);
       setFlags([]);
+      setTier('starter');
+      setBillingProvider(null);
       setTrialEndsAt(null);
       setSubscriptionStatus(null);
       setError(null);
@@ -158,6 +197,16 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
       return;
     }
 
+    // Unknown session identity: nothing is fetched or committed; the exposed
+    // view below resolves it fail-closed (SESSION_UNKNOWN_ERROR).
+    const session = jwtShopId(accessToken);
+    if (session === null) {
+      setIsLoading(false);
+      return;
+    }
+
+    // A response is only ever committed to the session it was requested for;
+    // a later token change cancels this request (stale responses are dropped).
     let cancelled = false;
     setIsLoading(true);
 
@@ -169,6 +218,11 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         const payload = res.data || ({} as Partial<EntitlementsResponse>);
         const nextShopId =
           typeof payload.shopId === 'number' ? payload.shopId : null;
+
+        // The snapshot must describe the shop the token is issued for.
+        if (nextShopId !== session) {
+          throw new Error('ENTITLEMENTS_SHOP_MISMATCH');
+        }
 
         if (import.meta.env.DEV) {
           console.debug('[Entitlements] token-auth snapshot', {
@@ -230,8 +284,10 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setBillingProvider(nextBillingProvider);
         setError(null);
         setHasResolved(true);
+        setCommittedSession(session);
         // --- Persist last known good snapshot ---
         lastGoodSnapshotRef.current = {
+          session,
           shopId: nextShopId,
           modules: nextModules,
           flags: nextFlags,
@@ -258,8 +314,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         );
       }
 
-      // --- Fallback to last known good snapshot if available ---
-      if (lastGoodSnapshotRef.current) {
+      // --- Fallback to last known good snapshot, same shop session only (GH-1247) ---
+      if (lastGoodSnapshotRef.current && sameSession(lastGoodSnapshotRef.current.session, session)) {
         const snap = lastGoodSnapshotRef.current;
 
         if (import.meta.env.DEV) {
@@ -277,17 +333,23 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setBillingProvider(snap.billingProvider);
         setError(null);
         setHasResolved(true);
+        setCommittedSession(session);
 
         return;
       }
 
-      // --- Hard failure only if no snapshot exists ---
+      // --- Hard failure: no same-session snapshot — fail closed ---
       setShopId(null);
       setModules([]);
       setFlags([]);
+      setTier('starter');
+      setBillingProvider(null);
+      setSubscriptionStatus(null);
+      setTrialEndsAt(null);
       setError(err?.message || 'Failed to load entitlements');
       setHasResolved(true);
-      
+      setCommittedSession(session);
+
       })
       .finally(() => {
         if (!cancelled) {
@@ -300,35 +362,56 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     };
   }, [isLoggedIn, accessToken, refreshToken]);
 
+  /**
+   * GH-1247 — committed state is exposed only to the session it belongs to,
+   * evaluated at render time so not even the render right after a token
+   * change shows the previous shop. Logged out → cleared; unknown session
+   * identity → resolved fail-closed; any other mismatch → pending,
+   * fail-closed defaults until this session resolves.
+   */
+  const loggedOut = !isLoggedIn || !accessToken;
+  const sessionShop = loggedOut ? null : jwtShopId(accessToken);
+  const unknownSession = !loggedOut && sessionShop === null;
+  const bound = sameSession(committedSession, sessionShop);
+  const exposedShopId = bound ? shopId : null;
+  const exposedModules = bound ? modules : EMPTY_LIST;
+  const exposedFlags = bound ? flags : EMPTY_LIST;
+
+  const snapshot = React.useMemo(() => ({
+    shopId: exposedShopId,
+    modules: new Set(exposedModules),
+    flags: new Set(exposedFlags)
+  }), [exposedShopId, exposedModules, exposedFlags]);
+
   // ⚠️ LEGACY — DO NOT USE IN NEW CODE
   const hasModule = useCallback(
-    (moduleId: string) => modules.includes(moduleId),
-    [modules]
+    (moduleId: string) => exposedModules.includes(moduleId),
+    [exposedModules]
   );
 
   // ⚠️ LEGACY — DO NOT USE IN NEW CODE
   const hasFlag = useCallback(
-    (flagId: string) => flags.includes(flagId),
-    [flags]
+    (flagId: string) => exposedFlags.includes(flagId),
+    [exposedFlags]
   );
 
   const value: EntitlementsContextValue = {
-    shopId,
-    modules,
-    flags,
+    shopId: exposedShopId,
+    modules: exposedModules,
+    flags: exposedFlags,
     snapshot,
 
-    tier,
-    trialEndsAt,
-    subscriptionStatus,
+    tier: bound ? tier : 'starter',
+    trialEndsAt: bound ? trialEndsAt : null,
+    subscriptionStatus: bound ? subscriptionStatus : null,
 
-    displayCurrency,
-    locale,
-    billingCurrency,
-    billingProvider,
-    isLoading,
-    hasResolved,
-    error,
+    displayCurrency: bound ? displayCurrency : 'USD',
+    locale: bound ? locale : 'en-US',
+    billingCurrency: bound ? billingCurrency : 'USD',
+    billingProvider: bound ? billingProvider : null,
+    isLoading: bound ? isLoading : !loggedOut && !unknownSession,
+    hasResolved: bound ? hasResolved : loggedOut || unknownSession,
+    error: bound ? error : unknownSession ? SESSION_UNKNOWN_ERROR : null,
     hasModule,
     hasFlag,
     refresh,
