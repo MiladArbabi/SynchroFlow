@@ -54,34 +54,114 @@ export async function syncProducts(
   shopId: number,
   edges: any[]
 ) {
-  for (const { node } of edges) {
-    const productId = crypto.randomUUID();
+  // GH-1262 A1 / R14:
+  // Multiple products share one transaction. Acquire their advisory locks
+  // in a deterministic order to prevent reversed-order sync deadlocks.
+  // Sort a copy: never mutate the caller's Shopify payload.
+  const orderedEdges = [...edges].sort((left, right) => {
+    const leftId = String(left.node.id);
+    const rightId = String(right.node.id);
 
-    // 1. Insert product container
-    await trx('products')
-      .insert({
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+  });
+
+  for (const { node } of orderedEdges) {
+    const variantEdges = node.variants?.edges || [];
+
+    /**
+     * 0. PER-PRODUCT SERIALIZATION (GH-1262)
+     * --------------------------------------
+     * The parent lookup below is read-then-write. Two concurrent syncs of the
+     * same Shopify product (initial sync racing a products/* webhook, or two
+     * webhook deliveries) would both see no mapping and each create a parent.
+     * A transaction-scoped advisory lock keyed by shop + Shopify product makes
+     * the second caller wait for the first commit; under READ COMMITTED its
+     * next statement then sees the first caller's mappings and reuses them.
+     */
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+      'shopify_catalog_product', `${shopId}:${node.id}`,
+    ]);
+
+    /**
+     * 1. CANONICAL PRODUCT PARENT (GH-1262)
+     * -------------------------------------
+     * products carries no Shopify id. A Shopify product is identified only
+     * through external_product_identity_map → variants → products, so the
+     * persisted parents are exactly the parents its mapped variants use.
+     *
+     * Historical ingestion minted a new parent on every sync, so one Shopify
+     * product may already be split across several parents. All of them are
+     * kept (never reparented, never deleted) and all receive the product-level
+     * fields. New variants attach to one deterministic parent: the oldest.
+     */
+    const mappedParents: Array<{ lasyncro_product_id: string }> = await trx('external_product_identity_map as m')
+      .join('variants as v', 'v.lasyncro_variant_id', 'm.lasyncro_variant_id')
+      .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+      .where({
+        'm.shop_id': shopId,
+        'm.platform': 'shopify',
+        'm.external_product_id': node.id,
+        'p.shop_id': shopId,
+      })
+      .groupBy('p.lasyncro_product_id', 'p.created_at')
+      .orderBy([
+        { column: 'p.created_at', order: 'asc' },
+        { column: 'p.lasyncro_product_id', order: 'asc' },
+      ])
+      .select('p.lasyncro_product_id');
+
+    // An absent status is unknown, not 'active' — it must never reactivate an
+    // archived or draft product.
+    const shopifyStatus = typeof node.status === 'string' && node.status
+      ? node.status.toLowerCase()
+      : null;
+
+    let productId: string;
+
+    if (mappedParents.length > 0) {
+      productId = mappedParents[0].lasyncro_product_id;
+
+      // Update mutable fields on resync — title, status and type can change in Shopify
+      await trx('products')
+        .where({ shop_id: shopId })
+        .whereIn('lasyncro_product_id', mappedParents.map((p) => p.lasyncro_product_id))
+        .update({
+          ...(node.title != null ? { title: node.title } : {}),
+          ...(shopifyStatus ? { status: shopifyStatus } : {}),
+          // Missing Shopify type is unknown, not physical.
+          // Preserve the existing classification on partial updates.
+          ...(node.productType != null
+            ? {
+                product_type: mapShopifyProductType(node.productType),
+                shopify_product_type_raw: node.productType,
+              }
+            : {}),
+          updated_at: new Date().toISOString(),
+        });
+    } else if (variantEdges.length === 0) {
+      // Unknown product and nothing to map: a parent written here could never
+      // be resolved back to Shopify. Skip rather than invent an identity.
+      console.warn('[SHOPIFY_PRODUCT_SKIPPED_NO_VARIANTS]', { shopId, externalProductId: node.id });
+      continue;
+    } else {
+      productId = crypto.randomUUID();
+
+      // Insert product container
+      await trx('products').insert({
         lasyncro_product_id: productId,
         shop_id: shopId,
         title: node.title,
-        status: node.status?.toLowerCase() || 'active',
+        status: shopifyStatus ?? 'active',
         // product_type sourced from Shopify productType field.
         // Maps to canonical values: physical, digital, gift_card, service.
         // Defaults to 'physical' — most products are physical.
         product_type: mapShopifyProductType(node.productType),
         shopify_product_type_raw: node.productType ?? null,
-      })
-      .onConflict('lasyncro_product_id')
-      .merge({
-        // Update mutable fields on resync — title and type can change in Shopify
-        title: node.title,
-        status: node.status?.toLowerCase() || 'active',
-        product_type: mapShopifyProductType(node.productType),
-        shopify_product_type_raw: node.productType ?? null,
-        updated_at: new Date().toISOString(),
       });
+    }
 
-    const variantEdges = node.variants?.edges || [];
-
+    // Variants absent from this payload are left untouched: a webhook payload
+    // is not proof of catalog completeness, so omission never deactivates.
     for (const { node: variant } of variantEdges) {
 
       /**
@@ -100,7 +180,7 @@ export async function syncProducts(
 
       let unitCost = 0;
 
-      if (!unitCostAmount) {
+      if (unitCostAmount == null) {
         console.warn(
           `[SHOPIFY_COST_MISSING] Variant ${variant.id} has no inventory cost`
         );
@@ -135,10 +215,13 @@ export async function syncProducts(
         })
         .onConflict('lasyncro_variant_id')
         .merge({
-          // Update mutable variant fields on resync
+          // Update mutable variant fields on resync. lasyncro_product_id is
+          // deliberately absent — an existing variant is never reparented.
           sku: variant.sku || null,
           title: variant.title,
-          unit_cost: unitCost,
+          // Absent provider cost (REST webhooks never carry it) keeps the stored
+          // cost; the 0 placeholder applies to first insert only.
+          ...(unitCostAmount != null ? { unit_cost: unitCost } : {}),
           status: 'active',
           barcode: variant.barcode || null, // merchant may add EAN after initial sync
           image_url: variant.image?.url || node.featuredImage?.url || null, // merchant may add image after initial sync

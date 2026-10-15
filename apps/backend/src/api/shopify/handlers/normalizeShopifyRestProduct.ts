@@ -36,7 +36,9 @@ export function normalizeRestProductToEdge(product: RestProduct) {
     node: {
       id: toGid('Product', product.id),
       title: product.title,
-      status: product.status ?? 'active',
+      // Absent status stays absent: syncProducts treats it as unknown and never
+      // reactivates an archived/draft product from it (GH-1262).
+      status: product.status ?? null,
       productType: product.product_type ?? null,
       featuredImage: product.image?.src ? { url: product.image.src } : null,
       variants: {
