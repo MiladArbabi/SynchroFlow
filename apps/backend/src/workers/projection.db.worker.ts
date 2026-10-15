@@ -24,6 +24,7 @@ import { CanonicalContractError } from '../services/mappers/canonicalContractErr
 
 const BATCH_SIZE = 1; // strict ordering (do NOT increase yet)
 const POLL_INTERVAL_MS = 200;
+const IDLE_POLL_INTERVAL_MS = 1000;
 
 let running = false;
 const MAX_TRANSIENT_GAP_RETRIES = 50; // ~10 seconds at 200ms poll interval
@@ -520,13 +521,16 @@ export async function processNextProjectionEventOnce(): Promise<ProjectionStepRe
   }
 }
 
-export async function startDbProjectionWorker() {
+export async function startDbProjectionWorker(
+  projectionStep: () => Promise<ProjectionStepResult> = processNextProjectionEventOnce
+) {
   if (running) return;
   running = true;
 
   console.info('[projection-db-worker] started');
 
   while (running) {
+    let pollIntervalMs = POLL_INTERVAL_MS;
     try {
       /**
        * STEP 1-3 — event/cursor decision, extracted to the production seam
@@ -534,7 +538,7 @@ export async function startDbProjectionWorker() {
        * CanonicalContractError (or any other fatal) thrown here still reaches
        * the [projection-db-worker][FATAL] path below and terminates the loop.
        */
-      await processNextProjectionEventOnce();
+      const projectionResult = await projectionStep();
 
     // THREAD A-2 (2026-06-29): FOR UPDATE was silently filtering this query
     // to zero rows. Confirmed directly: PostgreSQL RLS evaluates FOR UPDATE
@@ -675,6 +679,10 @@ export async function startDbProjectionWorker() {
       );
     }
 
+    if (projectionResult.status === 'idle' && intentLocators.length === 0) {
+      pollIntervalMs = IDLE_POLL_INTERVAL_MS;
+    }
+
     } catch (err) {
       console.error('[projection-db-worker][FATAL]', err);
 
@@ -703,6 +711,6 @@ export async function startDbProjectionWorker() {
       throw err;
     }
 
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
 }
