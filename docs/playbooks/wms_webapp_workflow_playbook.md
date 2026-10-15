@@ -549,6 +549,37 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 - **Summary:** per-line expected vs accepted table, total row, warning if shortfall, Close & Create Stow Tasks
 - **Session key:** `?receiveJobId=` in URL · `receive-mode-{jobId}` in sessionStorage
 
+#### Held recoverable units — GH-1254 S4-B backend contract (dark; no webapp surface yet)
+
+S4-B is implemented and locally verified on `feat/gh1254-s4b-dark`. It is **not merged
+or deployed**, and **no webapp UI exists**. Until S4-F, no live operator journey may
+depend on it.
+
+- **Gate:** `RECEIVE_HELD_CAPTURE_ENABLED`, OFF unless exactly `true`. While OFF, a grouped
+  draft carrying `recovery: 'recoverable'` and any held finalization are refused with
+  409 (`Recoverable-held disposition requires S4 atomic capture`). Exact replays and
+  legacy drafts still work.
+- **Payload (grouped reconciliation only):** a new `new_exceptions` entry of type `defect`
+  or `packaging_damage` with `recovery: 'recoverable'` reports held units, and the line's
+  `quantity_held_recoverable` must equal their sum. Missing items, ordinary discrepancies
+  and non-recoverable rejections never create held units or recovery tasks. The per-line
+  inspect route never accepts held units.
+- **Accounting:** confirmed good count = accepted; delivered = accepted + rejected + held;
+  the line balances with held. `held_recoverable` evidence is never shortfall. Because
+  sellable = accepted, the job-detail reconciliation projection reports held units as
+  `unaccounted`. S4-C must show them separately so operators do not read them as an
+  unexplained shortfall.
+- **Close:** credits and stows accepted units only. Held units stay outside `inventory_truth`,
+  allocation and Shopify availability. PO receipt/status semantics are unchanged.
+- **Stow:** scanning a held LSU on any Stow task is refused before any write with 409
+  `STOW_HELD_UNIT_REFUSED`.
+- **Problem Center:** one recovery task per held LSU, with no copied problem bin. It is
+  hidden from the existing list, resolve and replacement endpoints until S4-F.
+- **Not implemented:** held-LSU label printing and the grouped review UI (S4-C), Problem
+  Bin custody scanning (S4-D), recovery/discard and credit-on-Stow plus supplier KPIs
+  (S4-E), and the full enable gate (S4-F). Physical barcode certification for numeric LSUs
+  (#1261) is pending, and the GH-1255 merge/deploy holds are unchanged.
+
 ### Stow *(STOW-SPLIT-01 — verified August 12, 2026)*
 
 - **Brief:** task/SKU/unit orientation and one Start CTA.

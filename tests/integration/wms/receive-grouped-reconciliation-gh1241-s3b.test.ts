@@ -65,6 +65,8 @@ import * as migration0209 from
   '../../../apps/backend/migrations/20261012150000_0209_receive_line_count_confirmation';
 import * as migration0211 from
   '../../../apps/backend/migrations/20261013160000_0211_receive_count_confirmation_events_privileges';
+import * as migration0213 from
+  '../../../apps/backend/migrations/20261015120000_0213_receive_held_unit_capture';
 
 const app = createApp();
 jest.setTimeout(240000);
@@ -1142,8 +1144,10 @@ describe('GH-1241 S3-B — grouped Receive reconciliation (RED)', () => {
     expectSemanticRefusal((await attemptGroup(j, [[l1, full], [l2, full], [l3, { accepted: 8, rejected: 0, missing: 2, deferred: 0 }]])).response);
     expect(await jobEffects(j)).toEqual(before);
 
-    // (c) Recoverable-held physical units stay outside S3-B until S4.
-    expectSemanticRefusal((await attemptGroup(j, [[l1, { ...full, accepted: 9, held: 1 }], [l2, full], [l3, l3Deferred]])).response);
+    // (c) Recoverable-held physical units stay outside S3-B until S4. Count-consistent
+    // (GH-1254 D6): l3 accepted 8 = its confirmed count, and 8 + 1 held + 1 deferred
+    // balances the expected 10, so only the held disposition can be refused here.
+    expectSemanticRefusal((await attemptGroup(j, [[l1, full], [l2, full], [l3, { accepted: 8, rejected: 0, missing: 0, deferred: 1, held: 1 }]])).response);
     expect(await jobEffects(j)).toEqual(before);
 
     // (d) Balanced but accepted ≠ the confirmed physical count (9 vs 10).
@@ -1439,16 +1443,28 @@ describe('GH-1241 S3-B — migration 0210 is tenant-isolated, append-only and ne
   }
 
   it('M1 — head schema is FORCE-RLS, SELECT/INSERT-only for sf_app and append-only; without evidence DOWN → UP round-trips', async () => {
+    // GH-1254 S4-B: 0213 depends on 0210's tables, so the round-trip respects
+    // migration order — 0213 comes off first and goes back on last, through its
+    // own fail-closed down() (it refuses while held evidence exists).
+    const heldCaptures = async (trx: Knex.Transaction) =>
+      (await trx.raw(`SELECT to_regclass('public.receive_held_captures') IS NOT NULL AS present`)).rows[0].present;
     await inRolledBackTransaction(async (trx) => {
       expect(await schema0210(trx)).toEqual(HEAD);
+      expect(await heldCaptures(trx)).toBe(true);
+      expect(await inSavepoint(trx, (sp) => migration0213.down(sp))).toEqual({ ok: true });
+      expect(await heldCaptures(trx)).toBe(false);
       await withoutPersistedEvidence(trx);
       expect(await inSavepoint(trx, (sp) => migration0210.down(sp))).toEqual({ ok: true });
       expect(await schema0210(trx)).toEqual(PRE_0210);
       expect(await inSavepoint(trx, (sp) => migration0210.up(sp))).toEqual({ ok: true });
       expect(await schema0210(trx)).toEqual(HEAD);
+      expect(await inSavepoint(trx, (sp) => migration0213.up(sp))).toEqual({ ok: true });
+      expect(await schema0210(trx)).toEqual(HEAD);
+      expect(await heldCaptures(trx)).toBe(true);
     });
     await inRolledBackTransaction(async (trx) => {
       expect(await schema0210(trx)).toEqual(HEAD);
+      expect(await heldCaptures(trx)).toBe(true);
     });
   });
 

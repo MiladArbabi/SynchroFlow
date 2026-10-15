@@ -7,6 +7,8 @@ import { inspectReceiveJobLine } from './receiveJob.service.js';
 import { applyReceiveJobBarcodeReadiness } from './receiveBarcodeReadiness.service.js';
 import { fireReceiveExceptionAlert } from './wmsAlerts.service.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
+import { issueHeldReceiveUnits } from './inventoryUnit.service.js';
+import { createHeldUnitRecoveryTask } from './problemCenterTask.service.js';
 
 /**
  * GROUPED RECEIVE RECONCILIATION (GH-1241 S3-B)
@@ -30,6 +32,13 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  *   persists the immutable finalization evidence. Any refusal rolls back all of it.
  * Stock, truth, movements and Stow remain the normal close's responsibility.
  *
+ * GH-1254 S4-B (dark, RECEIVE_HELD_CAPTURE_ENABLED): a new grouped defect or
+ * packaging_damage exception marked recovery='recoverable' reports HELD units.
+ * In the same transaction each becomes one receive_held_captures row, one held
+ * LSU per unit (separate anchor, never the Receive line) and one recovery task
+ * per LSU, bound to the shop's single active default warehouse. Held units are
+ * physically delivered but never sellable: Close credits accepted units only.
+ *
  * Opt-in: jobs that never use these endpoints keep the existing per-line flow.
  * After finalization the per-line accounting writers refuse
  * (assertReceiveNotGroupFinalized); post-final correction is a future
@@ -41,10 +50,22 @@ const RECONCILIATION_NAMESPACE = 'b3f0d0a6-5c2e-4f8e-9a51-1241000053b0';
 /** New discrepancy evidence the group may report: physical rejection or absence only. */
 const GROUPED_EXCEPTION_TYPES = new Set(['missing_item', 'defect', 'packaging_damage', 'wrong_item', 'wrong_variant']);
 const SHORTFALL_DEFAULT_TYPES = new Set(['missing_item', 'defect', 'wrong_item', 'wrong_variant']);
+/** GH-1254 S4-B: the only evidence that may report recoverable held units. */
+const RECOVERABLE_TYPES = new Set(['defect', 'packaging_damage']);
+const HELD_ROLE = 'held_recoverable';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function reconciliationError(code: string, message: string, statusCode = 409) {
   return Object.assign(receiveError(`${code}: ${message}`, statusCode), { errorCode: code });
+}
+
+/** GH-1254 S4-B global gate, OFF unless exactly 'true'. Read at call time. */
+export function isHeldCaptureEnabled(): boolean {
+  return process.env.RECEIVE_HELD_CAPTURE_ENABLED === 'true';
+}
+
+function heldCaptureDisabled() {
+  return reconciliationError('RECEIVE_HELD_CAPTURE_DISABLED', 'Recoverable-held disposition requires S4 atomic capture');
 }
 
 export interface GroupedNewException {
@@ -52,7 +73,12 @@ export interface GroupedNewException {
   quantity_affected: number;
   accounting_role: string | null;
   notes: string | null;
+  /** Present only on recoverable evidence, so every pre-S4 payload keeps its hash. */
+  recovery?: 'recoverable';
 }
+
+const isRecoverable = (e: GroupedNewException) => e.recovery === 'recoverable';
+const reportsHeld = (line: GroupedLine) => line.quantity_held_recoverable > 0 || line.new_exceptions.some(isRecoverable);
 
 export interface GroupedLine {
   receive_job_line_id: string;
@@ -122,6 +148,24 @@ function parseNewException(lineId: string, e: any): GroupedNewException {
   }
   if (!Number.isSafeInteger(e.quantity_affected) || e.quantity_affected <= 0) {
     throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: quantity_affected must be a positive integer`, 400);
+  }
+  // GH-1254 S4-B: recoverable evidence. Only new grouped defect / packaging
+  // damage qualifies; its role is the held role, never caller-supplied.
+  if (e.recovery != null) {
+    if (e.notes != null && typeof e.notes !== 'string') {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: notes must be a string`, 400);
+    }
+    if (e.recovery !== 'recoverable') {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: recovery must be 'recoverable'`, 400);
+    }
+    if (!RECOVERABLE_TYPES.has(type)) {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID',
+        `line ${lineId}: only defect or packaging_damage can be held for recovery`, 400);
+    }
+    if (e.accounting_role != null) {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: recoverable evidence cannot carry accounting_role`, 400);
+    }
+    return { exception_type: type, quantity_affected: e.quantity_affected, accounting_role: HELD_ROLE, notes: e.notes ?? null, recovery: 'recoverable' };
   }
   const role = e.accounting_role ?? (SHORTFALL_DEFAULT_TYPES.has(type) ? 'shortfall' : null);
   // Overage approval is never inferred from a payload; missing is always shortfall.
@@ -199,6 +243,9 @@ export async function saveReconciliationDraft(
       && (replay.base_revision_id ?? null) === baseRevisionId) return revisionResult(replay);
     throw reconciliationError('RECEIVE_RECONCILIATION_REPLAY_CONFLICT', 'this draft event was already used for a different revision');
   }
+  // GH-1254 S4-B: new recovery requests are refused while the gate is OFF.
+  // Exact replays above and legacy held-only drafts stay compatible.
+  if (!isHeldCaptureEnabled() && lines.some((l) => l.new_exceptions.some(isRecoverable))) throw heldCaptureDisabled();
 
   await assertGroupedWritable(trx, shopId, job);
   const jobLineIds = new Set((await trx('receive_job_lines')
@@ -306,6 +353,25 @@ export async function finalizeReconciliation(
       `excluded line ${finishedExcluded.receive_job_line_id} was already finished on the per-line path`);
   }
 
+  // GH-1254 S4-B: held capture is decided here, after the replay gate and before
+  // any write. Gate OFF keeps the S3 refusal; ON requires exact recoverable
+  // evidence, a linked variant and one unambiguous warehouse.
+  let heldWarehouseId: string | null = null;
+  if (lines.some(reportsHeld)) {
+    if (!isHeldCaptureEnabled()) throw heldCaptureDisabled();
+    for (const line of lines) {
+      const recoverable = line.new_exceptions.filter(isRecoverable).reduce((n, e) => n + e.quantity_affected, 0);
+      if (recoverable !== line.quantity_held_recoverable) {
+        throw reconciliationError('RECEIVE_HELD_EVIDENCE_MISMATCH',
+          `line ${line.receive_job_line_id}: ${line.quantity_held_recoverable} held unit(s) need exactly that much recoverable defect or packaging_damage evidence (got ${recoverable})`);
+      }
+      if (line.quantity_held_recoverable > 0 && !byId.get(line.receive_job_line_id).lasyncro_variant_id) {
+        throw reconciliationError('RECEIVE_HELD_VARIANT_REQUIRED', `line ${line.receive_job_line_id}: held units need a linked product`);
+      }
+    }
+    heldWarehouseId = await resolveHeldWarehouseId(trx, shopId);
+  }
+
   // 5. Immutable finalization header, then each line in lock order.
   const [finalization] = await trx('receive_reconciliation_finalizations')
     .insert({
@@ -320,7 +386,7 @@ export async function finalizeReconciliation(
     .returning('*');
 
   for (const line of lines) {
-    await finalizeLine(trx, { shopId, receiveJobId, finalization, line, row: byId.get(line.receive_job_line_id), actorId });
+    await finalizeLine(trx, { shopId, receiveJobId, finalization, line, row: byId.get(line.receive_job_line_id), actorId, heldWarehouseId });
   }
 
   // 6. Readiness now sees the finalization (expected-zero lines excluded).
@@ -331,17 +397,39 @@ export async function finalizeReconciliation(
     actionType: 'receive_reconcile_finalize',
     entityType: 'receive_job',
     entityId: receiveJobId,
-    metadata: { reconciliation_id: finalization.reconciliation_id, revision_id: revisionId, lines: lines.length },
+    metadata: {
+      reconciliation_id: finalization.reconciliation_id,
+      revision_id: revisionId,
+      lines: lines.length,
+      held_units: lines.reduce((n, l) => n + l.quantity_held_recoverable, 0),
+    },
   });
   console.info('[RECEIVE_RECONCILIATION_FINALIZED]', { shopId, receiveJobId, reconciliationId: finalization.reconciliation_id, lines: lines.length });
   return finalizationResult(finalization);
 }
 
+/**
+ * GH-1254 S4-B: Receive carries no warehouse of its own, so held units belong to
+ * the shop's single active warehouse, which must also be the default. Zero or
+ * several active warehouses is ambiguous and refused before any write. The row
+ * is share-locked so it cannot be deactivated mid-finalization.
+ */
+async function resolveHeldWarehouseId(trx: Knex.Transaction, shopId: number): Promise<string> {
+  const active = await trx('warehouses').where({ shop_id: shopId, active: true }).forShare()
+    .select('warehouse_id', 'is_default');
+  if (active.length !== 1 || active[0].is_default !== true) {
+    throw reconciliationError('RECEIVE_HELD_WAREHOUSE_AMBIGUOUS',
+      'held units need exactly one active default warehouse; resolve the warehouse setup first');
+  }
+  return active[0].warehouse_id as string;
+}
+
 async function finalizeLine(
   trx: Knex.Transaction,
-  ctx: { shopId: number; receiveJobId: string; finalization: any; line: GroupedLine; row: any; actorId: number }
+  ctx: { shopId: number; receiveJobId: string; finalization: any; line: GroupedLine; row: any; actorId: number; heldWarehouseId: string | null }
 ) {
-  const { shopId, receiveJobId, finalization, line, row, actorId } = ctx;
+  const { shopId, receiveJobId, finalization, line, row, actorId, heldWarehouseId } = ctx;
+  const held = line.quantity_held_recoverable;
   const lineId = line.receive_job_line_id;
   const evidence = await trx('receive_exceptions')
     .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: lineId })
@@ -361,6 +449,7 @@ async function finalizeLine(
   }
 
   const created: string[] = [];
+  const recoverableCreated: { id: string; e: GroupedNewException }[] = [];
   for (const e of line.new_exceptions) {
     const [inserted] = await trx('receive_exceptions')
       .insert({
@@ -378,6 +467,7 @@ async function finalizeLine(
       })
       .returning('receive_exception_id');
     created.push(inserted.receive_exception_id ?? inserted);
+    if (isRecoverable(e)) recoverableCreated.push({ id: inserted.receive_exception_id ?? inserted, e });
     if (row.lasyncro_variant_id) {
       await fireReceiveExceptionAlert(trx, {
         shopId, receiveJobId, lasyncroVariantId: row.lasyncro_variant_id, exceptionType: e.exception_type,
@@ -402,13 +492,14 @@ async function finalizeLine(
       requireExplicitDisposition: true,
       inspectedBy: actorId,
       groupedFinalization: true,
+      heldCapture: heldWarehouseId !== null,
     });
   } catch (err: any) {
     if (!err?.statusCode) throw err;
     throw reconciliationError(err.errorCode ?? 'RECEIVE_RECONCILIATION_LINE_INVALID', `line ${lineId}: ${err.message}`, err.statusCode);
   }
 
-  const delivered = line.quantity_accepted + line.quantity_rejected;
+  const delivered = line.quantity_accepted + line.quantity_rejected + held;
   await trx('receive_reconciliation_finalization_lines').insert({
     shop_id: shopId,
     reconciliation_id: finalization.reconciliation_id,
@@ -421,6 +512,7 @@ async function finalizeLine(
     quantity_rejected: line.quantity_rejected,
     quantity_missing: line.quantity_missing,
     quantity_deferred: line.quantity_deferred,
+    quantity_held_recoverable: held,
     quantity_overage_approved: Math.max(0, delivered - Number(row.quantity_expected)),
   });
 
@@ -436,6 +528,46 @@ async function finalizeLine(
       receive_job_line_id: lineId,
       link_kind: l.kind,
     })));
+  }
+
+  // GH-1254 S4-B: exception → capture → one held LSU per unit → one task per LSU.
+  if (held > 0 && heldWarehouseId) {
+    const variant = await trx('variants')
+      .where({ shop_id: shopId, lasyncro_variant_id: row.lasyncro_variant_id }).first('barcode');
+    for (const { id, e } of recoverableCreated) {
+      const [capture] = await trx('receive_held_captures')
+        .insert({
+          shop_id: shopId,
+          reconciliation_id: finalization.reconciliation_id,
+          receive_job_id: receiveJobId,
+          receive_job_line_id: lineId,
+          receive_exception_id: id,
+          lasyncro_variant_id: row.lasyncro_variant_id,
+          exception_type: e.exception_type,
+          warehouse_id: heldWarehouseId,
+          quantity_held: e.quantity_affected,
+          created_by: actorId,
+        })
+        .returning('held_capture_id');
+      const units = await issueHeldReceiveUnits(trx, {
+        shopId,
+        heldCaptureId: capture.held_capture_id,
+        lasyncroVariantId: row.lasyncro_variant_id,
+        quantity: e.quantity_affected,
+        shopifyBarcode: variant?.barcode ?? null,
+      });
+      for (const unit of units) {
+        await createHeldUnitRecoveryTask(trx, {
+          shopId,
+          lasyncroUnitId: unit.lasyncro_unit_id,
+          heldCaptureId: capture.held_capture_id,
+          warehouseId: heldWarehouseId,
+          receiveExceptionId: id,
+          lasyncroVariantId: row.lasyncro_variant_id,
+          exceptionType: e.exception_type as 'defect' | 'packaging_damage',
+        });
+      }
+    }
   }
 }
 
@@ -482,6 +614,7 @@ export async function readReconciliation(trx: Knex.Transaction, shopId: number, 
         quantity_rejected: Number(l.quantity_rejected),
         quantity_missing: Number(l.quantity_missing),
         quantity_deferred: Number(l.quantity_deferred),
+        quantity_held_recoverable: Number(l.quantity_held_recoverable ?? 0),
         quantity_overage_approved: Number(l.quantity_overage_approved),
         created_exception_ids: links.filter((k: any) => k.receive_job_line_id === l.receive_job_line_id && k.link_kind === 'created')
           .map((k: any) => k.receive_exception_id),

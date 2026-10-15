@@ -42,7 +42,7 @@ import {
  * indirection, which is what keeps the whole outcome — exception, physical
  * effects and Problem task — observable as one atomic unit at this seam.
  */
-import { createProblemCenterTask } from '../../services/wms/problemCenterTask.service.js';
+import { createProblemCenterTask, excludeHeldRecoveryTasks } from '../../services/wms/problemCenterTask.service.js';
 import {
   evaluateProblemResolutionEligibility,
   isGenericProblemClassificationAllowed,
@@ -3035,6 +3035,10 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+        // GH-1254 S4-B — a held recovery unit is refused before any write.
+        if (message.includes('STOW_HELD_UNIT_REFUSED')) {
+          return res.status(409).json({ error: 'Unit is held for recovery and cannot be stowed', code: 'STOW_HELD_UNIT_REFUSED' });
+        }
         if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
         if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });
         if (message.includes('different operator')) return res.status(403).json({ error: 'Stow task owned by different operator' });
@@ -3852,8 +3856,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // GH-1202: lock the task row before deciding it is still resolvable, so a
       // resolution that waited behind a concurrent one re-checks the committed
       // status instead of acting on a stale read.
-      const task = await trx('problem_center_tasks')
-        .where({ problem_task_id: taskId, shop_id: shopId })
+      // GH-1254 S4-B: held recovery tasks are hidden until S4-F (→ TASK_NOT_FOUND).
+      const task = await excludeHeldRecoveryTasks(trx('problem_center_tasks')
+        .where({ problem_task_id: taskId, shop_id: shopId }))
         .select(
           'status',
           'lasyncro_variant_id',
@@ -5124,9 +5129,9 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
     const tasks = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      let query = trx('problem_center_tasks as pct')
+      let query = excludeHeldRecoveryTasks(trx('problem_center_tasks as pct')
         .join('variants as v', 'v.lasyncro_variant_id', 'pct.lasyncro_variant_id')
-        .where('pct.shop_id', shopId)
+        .where('pct.shop_id', shopId), 'pct')
         .whereIn('pct.status', ['open', 'investigating'])
         .orderBy('pct.created_at', 'desc')
         .select(
@@ -5177,8 +5182,9 @@ export const httpFindReplacementForTask = async (req: Request, res: Response) =>
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const task = await trx('problem_center_tasks as pct')
-        .where({ 'pct.problem_task_id': taskId, 'pct.shop_id': shopId })
+      // GH-1254 S4-B: held recovery tasks are hidden until S4-F.
+      const task = await excludeHeldRecoveryTasks(trx('problem_center_tasks as pct')
+        .where({ 'pct.problem_task_id': taskId, 'pct.shop_id': shopId }), 'pct')
         .select('pct.lasyncro_variant_id', 'pct.quantity')
         .first();
 

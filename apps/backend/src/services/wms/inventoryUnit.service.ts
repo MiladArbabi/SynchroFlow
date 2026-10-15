@@ -251,6 +251,68 @@ export async function batchConfirmUnits(
   return created.sort((a: InventoryUnitRow, b: InventoryUnitRow) => a.receive_sequence - b.receive_sequence);
 }
 
+export interface HeldUnitIssuanceInput {
+  shopId: number;
+  heldCaptureId: string;
+  lasyncroVariantId: string;
+  quantity: number;
+  shopifyBarcode?: string | null;
+}
+
+/**
+ * GH-1254 S4-B: issues one held LSU per recoverable physical unit of a held
+ * capture (migration 0213). Held units hang off the capture — never the
+ * Receive line — so accepted-line replay, readiness, labels and Stow never see
+ * them. They are born 'held' with no location and the database keeps them
+ * there until S4-E. Identity comes from the same global sequence as every new
+ * unit; a committed retry for the capture returns the stored units.
+ */
+export async function issueHeldReceiveUnits(
+  trx: Knex.Transaction,
+  input: HeldUnitIssuanceInput
+): Promise<InventoryUnitRow[]> {
+  const { shopId, heldCaptureId, lasyncroVariantId, quantity, shopifyBarcode } = input;
+  assertIssuanceQuantity(quantity);
+
+  const existing = await trx('inventory_units')
+    .where({ shop_id: shopId, receive_held_capture_id: heldCaptureId })
+    .orderBy('receive_sequence', 'asc')
+    .select('id', 'lasyncro_unit_id', 'receive_sequence', 'lasyncro_variant_id', 'source', 'status');
+  if (existing.length > 0) {
+    const consistent = existing.length === quantity && existing.every((row: any, i: number) =>
+      row.receive_sequence === i + 1 && row.lasyncro_variant_id === lasyncroVariantId
+      && row.source === 'receive_held_recoverable' && row.status === 'held');
+    if (!consistent) {
+      throw issuanceConflict('INVENTORY_UNIT_HELD_ISSUANCE_INVARIANT', `Held LSU lineage mismatch for capture ${heldCaptureId}`);
+    }
+    return existing.map((row: any) => ({ id: row.id, lasyncro_unit_id: row.lasyncro_unit_id, receive_sequence: row.receive_sequence }));
+  }
+
+  const ids = await allocateLsuIds(trx, quantity);
+  const now = new Date();
+  const created = await trx('inventory_units')
+    .insert(ids.map((lasyncroUnitId, i) => ({
+      lasyncro_unit_id: lasyncroUnitId,
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      receive_job_line_id: null,
+      receive_held_capture_id: heldCaptureId,
+      receive_sequence: i + 1,
+      shopify_barcode: shopifyBarcode ?? null,
+      source: 'receive_held_recoverable',
+      status: 'held',
+      current_location_code: null,
+      reprint_count: 0,
+      received_at: now,
+      created_at: now,
+      updated_at: now,
+    })))
+    .returning(['id', 'lasyncro_unit_id', 'receive_sequence']);
+
+  console.info('[INVENTORY_UNIT] held_issue', { shopId, heldCaptureId, quantity, created: created.length });
+  return created.sort((a: InventoryUnitRow, b: InventoryUnitRow) => a.receive_sequence - b.receive_sequence);
+}
+
 function assertRecountIssuance(
   input: ReconcileUnitIssuanceInput,
   rows: RecountIssuedUnitRow[]
@@ -571,10 +633,11 @@ export async function computeCoverage(
   const totalPhysical = Number(truthRow?.sum ?? 0);
 
   // Numerator: physical stock that is LSU-backed. Each active inventory_units row
-  // (not shipped/lost) represents one physically-present labelled unit.
+  // (not shipped/lost) represents one physically-present labelled unit. Held
+  // units (GH-1254 S4-B) are outside inventory_truth, so they never count here.
   const unitRow = await trx('inventory_units')
     .where({ shop_id: shopId })
-    .whereNotIn('status', ['shipped', 'lost'])
+    .whereRaw(`status::text NOT IN ('shipped', 'lost', 'held')`)
     .count<{ count: string }>('* as count')
     .first();
   const labelled = Number(unitRow?.count ?? 0);

@@ -3,6 +3,7 @@
 **Date:** June 3, 2026
 **Status:** ✅ Locked — approved for implementation
 **Amended:** October 14, 2026 — GH-1255 LSU-IDENTITY-01 (new-unit identity, label geometry; see Decision 4, §3, §8, §11)
+**Amended:** October 15, 2026 — GH-1254 S4-B held-unit source anchor (dark, not deployed; see §4, §6, §10, §11, §12)
 **Sprint:** WM-46 (backend) + WEB-RECEIVE-UNIT-01 (webapp)
 **Author:** Derived from workshop session, June 3, 2026
 
@@ -176,6 +177,34 @@ receive_job_line_id        uuid NOT NULL REFERENCES receive_job_lines(receive_jo
 
 RLS: `shop_id = current_setting('app.current_tenant')::int` enforced on all operations.
 
+### Held-unit source anchor (GH-1254 S4-B, migration 0213) — implemented, dark, not deployed
+
+A unit now originates from exactly one of three anchors
+(`inventory_units_source_anchor_xor`: `num_nonnulls(...) = 1`):
+
+| Anchor | Source | Created by |
+|---|---|---|
+| `receive_job_line_id` | `lasyncro_receive` | accepted Receive stock (`batchConfirmUnits`) |
+| `recount_line_id` | `opening_inventory_reconcile` | settled Reconcile (`issueReconciledUnits`) |
+| `receive_held_capture_id` | `receive_held_recoverable` | recoverable held units (`issueHeldReceiveUnits`) |
+
+- A held unit hangs off its `receive_held_captures` row, one row per recoverable
+  defect or packaging-damage exception. It never hangs off the Receive line, so
+  accepted-line replay, barcode readiness, line labels, label acknowledgement,
+  inbound Stow and Pick never see it.
+- Identity comes from the same global sequence (`LSU-{10 digits}`, Decision 4).
+  `receive_sequence` is 1..N within the capture.
+- Lifecycle: born `status = 'held'` with `current_location_code` NULL. The DB
+  keeps it there (`inventory_units_held_state_check`): a held unit cannot leave
+  `held` or gain a location, and no other unit can become `held`. S4-E will
+  replace this check with a verified recovery-to-Stow transition.
+- Provenance is FK-bound: the unit references its capture and the capture's
+  variant. The capture references the finalization line, the exception link
+  (`created`), the exception (same job, line, variant, type and `held_recoverable`
+  role), the Receive line's variant and the shop's warehouse.
+- Held labels are not printable yet (S4-C). Physical barcode certification
+  (#1261) is still pending for numeric LSUs.
+
 ### `shop_wms_settings` additions
 
 Two new columns added to the existing table:
@@ -249,6 +278,10 @@ WHERE shop_id = $shopId
 ```
 
 This metric is surfaced in the WMS dashboard and settings page as **Unit Label Coverage**.
+
+GH-1254 S4-B: `computeCoverage` also excludes `status = 'held'`. Held units are outside
+`inventory_truth`, so counting them would inflate coverage and could trigger the legacy
+sunset early.
 
 ### The coverage metric UI
 
@@ -338,6 +371,7 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 | GH-998 | — | 📋 SUPERSEDED | Per-unit barcode tracking (inventory_units table) — original ticket. Superseded by WM-46. |
 | WM-28 | P2 | 🔴 OPEN | Shelf/bin barcodes — location barcode scan for bin confirmation. Elevates Class B reprint flow and stow UX. Schedule immediately after WEB-RECEIVE-UNIT-01. |
 | GH-1255 | P1 | ✅ Implemented on `feat/gh1255-lsu-identity` (988b37cb), October 14, 2026 · physical label acceptance pending | LSU-IDENTITY-01: new units get `LSU-{10 digits}` from the global sequence `inventory_unit_lsu_seq` (migration 0212). Identity is persisted, never derived. Legacy and reviewer-seed IDs are preserved. Issuance conflicts return HTTP 409. Labels use 203-dpi whole-dot geometry. See Decision 4, §3, §8, §11. |
+| GH-1254 S4-B | P1 | 🔒 Implemented on `feat/gh1254-s4b-dark`, October 15, 2026 · dark (`RECEIVE_HELD_CAPTURE_ENABLED` OFF) · not merged or deployed | Held-unit source anchor (migration 0213): one held LSU and one recovery task per recoverable physical unit, never in sellable stock. Depends on unmerged GH-1255. S4-C/D/E/F (labels and UI, custody, recovery, enable) are not implemented. See §4, §6, §11, §12. |
 
 ---
 
@@ -353,6 +387,9 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 8. No historical identity (legacy 8-hex or reviewer-seed) is ever renamed, regenerated or backfilled into the numeric format.
 9. Issuance never tops up missing units and never swallows a conflict. A count or lineage mismatch refuses with zero mutation.
 10. Migration 0212 cannot be rolled back once any `LSU-{10 digits}` unit exists. `down()` refuses with `INVENTORY_UNIT_LSU_SEQUENCE_ROLLBACK_BLOCKED`. Re-creating the sequence would restart at 1 and collide with issued labels.
+11. A held unit (GH-1254 S4-B) is never credited, stowed, picked, packed or shipped. It writes no movement and no truth, and it gets no location until S4-E defines verified recovery. The DB check and `STOW_HELD_UNIT_REFUSED` enforce this.
+12. Exactly one recovery task exists per held LSU (`pct_held_unit_unique`). It carries no copied `problem_bin_location`; custody is never inferred from that string.
+13. Held units never share an anchor with accepted units. Accepted-unit counts per Receive line stay equal to `quantity_accepted`.
 
 ---
 
@@ -365,5 +402,6 @@ Every LSU lifecycle status transition is backed by an `inventory_movements` ledg
 | `received` (initial) | `inbound_purchase` | `receiveJob.service.ts` |
 | `received → stowed` | `location_transfer` (debit + credit pair) | `stow.service.ts` |
 | `stowed → picked` | `sale` | `pickScan.service.ts` |
+| `held` (initial, GH-1254 S4-B) | **none** — held units are outside `inventory_truth`; Receive Close credits accepted units only | `receiveReconciliation.service.ts` |
 
 See full audit trail architecture: `docs/blueprints/inventory_movement_audit_trail.md`

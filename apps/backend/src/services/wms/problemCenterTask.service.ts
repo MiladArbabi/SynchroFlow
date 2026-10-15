@@ -184,3 +184,53 @@ export async function createProblemCenterTask(
     problem_bin_location: raced.problem_bin_location ?? null,
   };
 }
+
+/**
+ * GH-1254 S4-B: one recovery task for one held LSU (migration 0213).
+ *
+ * Unlike createProblemCenterTask this never copies shop_wms_settings
+ * .problem_bin_location (custody is never inferred from a copied string) and
+ * never swallows a conflict: the grouped finalizer holds the Receive locks, so
+ * a second task for the same LSU can only be a defect and aborts the caller.
+ */
+export interface CreateHeldUnitRecoveryTaskInput {
+  shopId: number;
+  lasyncroUnitId: string;
+  heldCaptureId: string;
+  warehouseId: string;
+  receiveExceptionId: string;
+  lasyncroVariantId: string;
+  exceptionType: 'defect' | 'packaging_damage';
+}
+
+export async function createHeldUnitRecoveryTask(
+  trx: Knex.Transaction,
+  input: CreateHeldUnitRecoveryTaskInput
+): Promise<string> {
+  const [row] = await trx('problem_center_tasks')
+    .insert({
+      shop_id: input.shopId,
+      status: 'open',
+      source: 'receive',
+      source_exception_id: input.receiveExceptionId,
+      lasyncro_variant_id: input.lasyncroVariantId,
+      quantity: 1,
+      exception_type: input.exceptionType,
+      problem_bin_location: null,
+      notes: 'Recoverable unit held at Receive',
+      source_lasyncro_unit_id: input.lasyncroUnitId,
+      receive_held_capture_id: input.heldCaptureId,
+      warehouse_id: input.warehouseId,
+    })
+    .returning('problem_task_id');
+  return row.problem_task_id ?? row;
+}
+
+/**
+ * GH-1254 S4-B: held recovery tasks stay invisible on the existing Problem
+ * Center read surfaces (list, resolve, replacement) until S4-F certifies the
+ * complete recovery journey. Remove with S4-F.
+ */
+export function excludeHeldRecoveryTasks<Q extends Knex.QueryBuilder>(query: Q, alias?: string): Q {
+  return query.whereNull(alias ? `${alias}.source_lasyncro_unit_id` : 'source_lasyncro_unit_id') as Q;
+}

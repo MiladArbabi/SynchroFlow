@@ -31,6 +31,9 @@ function receiveCodedError(errorCode: string, message: string, statusCode = 409)
 }
 
 function shouldCountTowardShortfall(exception: any): boolean {
+  // GH-1254 S4-B: held-recoverable units are physically present and captured,
+  // never a shortfall, whatever their exception type.
+  if (exception.accounting_role === 'held_recoverable') return false;
   if (exception.counts_toward_shortfall === true) return true;
   if (exception.accounting_role === 'shortfall') return true;
   return SHORTFALL_ACCOUNTING_TYPES.has(exception.exception_type)
@@ -219,6 +222,11 @@ export interface InspectLineInput {
   inspectedBy: number;
   /** GH-1241 S3-B: set only by the grouped finalizer, which owns the finalization fence. */
   groupedFinalization?: boolean;
+  /**
+   * GH-1254 S4-B: set only by the grouped finalizer, after the held-capture gate
+   * and evidence checks pass, when it captures this line's held units itself.
+   */
+  heldCapture?: boolean;
 }
 
 export interface UpdateReceiveLineProgressInput {
@@ -439,8 +447,13 @@ export async function inspectReceiveJobLine(
   for (const q of [quantityAccepted, quantityRejected, missing, deferred, held]) {
     if (!Number.isSafeInteger(q) || q < 0) throw receiveError('Disposition quantities must be non-negative integers', 400);
   }
-  if (held !== 0) throw receiveError('Recoverable-held disposition requires S4 atomic capture', 409);
-  const delivered = quantityAccepted + quantityRejected;
+  // GH-1254 S4-B: held units are accepted only from the grouped finalizer, which
+  // captures them atomically. Every other caller keeps the S3 refusal.
+  if (held !== 0 && !(input.groupedFinalization && input.heldCapture)) {
+    throw receiveError('Recoverable-held disposition requires S4 atomic capture', 409);
+  }
+  // Physically delivered = accepted + rejected + held (0208 CHECK definition).
+  const delivered = quantityAccepted + quantityRejected + held;
   const approvedExtra = evidence.filter((e: any) => e.accounting_role === 'overage' && e.exception_type === 'extra_item')
     .reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
   const actualExtra = Math.max(0, delivered - expected);
@@ -450,7 +463,8 @@ export async function inspectReceiveJobLine(
   if (line.inspection_complete) {
     if (input.deviceEventId && line.inspection_device_event_id === input.deviceEventId
       && Number(line.quantity_accepted) === quantityAccepted && Number(line.quantity_rejected) === quantityRejected
-      && Number(line.quantity_missing) === missing && Number(line.quantity_deferred) === deferred) return;
+      && Number(line.quantity_missing) === missing && Number(line.quantity_deferred) === deferred
+      && Number(line.quantity_held_recoverable ?? 0) === held) return;
     throw receiveError(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`, 409);
   }
   assertReceiveMutable(job);
@@ -485,7 +499,8 @@ export async function inspectReceiveJobLine(
   await trx('receive_jobs')
     .where({ receive_job_id: receiveJobId })
     .update({
-      units_inspected: trx.raw('units_inspected + ?', [quantityAccepted + quantityRejected]),
+      // Physically held units were inspected too (GH-1254 S4-B); accepted/rejected stay independent.
+      units_inspected: trx.raw('units_inspected + ?', [quantityAccepted + quantityRejected + held]),
       units_accepted: trx.raw('units_accepted + ?', [quantityAccepted]),
       units_rejected: trx.raw('units_rejected + ?', [quantityRejected]),
       updated_at: new Date(),
@@ -659,6 +674,38 @@ export async function revalidateOrdersForReceivedVariants(
 }
 
 /**
+ * GH-1254 S4-B: a line with held units may close only when every held unit was
+ * captured by its grouped finalization — Σ captures = held = held LSUs = held
+ * recovery tasks. Fails closed before any Close write; never credits held units.
+ */
+async function assertHeldObligationsCaptured(
+  trx: Knex.Transaction, shopId: number, receiveJobId: string, lines: any[], grouped: boolean
+): Promise<void> {
+  const heldLines = lines.filter((l: any) => Number(l.quantity_held_recoverable ?? 0) > 0);
+  if (heldLines.length === 0) return;
+  if (!grouped) {
+    throw receiveCodedError('RECEIVE_HELD_EVIDENCE_MISSING', 'held units exist without a grouped held capture');
+  }
+  for (const line of heldLines) {
+    const captures = await trx('receive_held_captures')
+      .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: line.receive_job_line_id })
+      .select('held_capture_id', 'quantity_held');
+    const captureIds = captures.map((c: any) => c.held_capture_id as string);
+    const captured = captures.reduce((n: number, c: any) => n + Number(c.quantity_held), 0);
+    const units = captureIds.length === 0 ? [] : await trx('inventory_units')
+      .where({ shop_id: shopId }).whereIn('receive_held_capture_id', captureIds).pluck('lasyncro_unit_id');
+    const tasks = units.length === 0 ? { count: 0 } : await trx('problem_center_tasks')
+      .where({ shop_id: shopId }).whereIn('source_lasyncro_unit_id', units)
+      .count<{ count: string }>('* as count').first();
+    const held = Number(line.quantity_held_recoverable);
+    if (captured !== held || units.length !== held || Number(tasks?.count ?? 0) !== held) {
+      throw receiveCodedError('RECEIVE_HELD_EVIDENCE_MISSING',
+        `line ${line.receive_job_line_id}: ${held} held unit(s) but ${captured} captured, ${units.length} LSU(s), ${Number(tasks?.count ?? 0)} task(s)`);
+    }
+  }
+}
+
+/**
  * Closes a receive job:
  * 1. Validates all lines are inspection_complete
  * 2. Writes quantity_accepted back to purchase_order_line_items.quantity_received
@@ -721,9 +768,13 @@ export async function closeReceiveJob(
    * the caller's transaction back whole, so a refused close leaves nothing
    * behind.
    */
-  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable !== 0)) {
+  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable == null || l.quantity_held_recoverable < 0)) {
     throw receiveError('Incomplete v2 delivery accounting');
   }
+  // GH-1254 S4-B: held units close with the job but are never credited. Data
+  // driven (not gated) so a held-finalized job always stays closable; the held
+  // obligations must be fully captured, one LSU and one task per unit.
+  await assertHeldObligationsCaptured(trx, shopId, receiveJobId, lines, Boolean(finalizedLineIds));
   await assertReceiveJobBarcodeReady(trx, shopId, receiveJobId);
 
   // 1. Write quantity_received back to PO line items

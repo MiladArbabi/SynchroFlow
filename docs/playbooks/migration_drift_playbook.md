@@ -194,6 +194,12 @@ All eight were the exact same root cause (§1). Listed for reference so nobody r
 
 19. **Logical migration numbers are not unique across parallel work — timestamps order execution.** Knex orders migrations by filename timestamp, and `origin/main` already carries repeated logical numbers (three `0204`s, two `0205`s). On 2026-10-14 an unpublished parallel worktree (`SynchroFlow-1164`, branch `ux/pack-workflow-hardening`) held untracked migrations `0206`–`0212` with timestamps `20261008130000`–`20261008130600`. Those sort *before* main's `0208`–`0211` and GH-1255's `0212`. If they are ever published, re-timestamp them after the current head and renumber them, or knex will run them out of order. Before naming or publishing a migration, check the real highest timestamp on `origin/main` (§7.4), not just the logical number.
 
+20. **Migration `0213` (GH-1254 S4-B, `20261015120000_0213_receive_held_unit_capture`) depends on `0210` and fails closed on rollback.** As of October 15, 2026 it exists only on the unmerged `feat/gh1254-s4b-dark` branch, which itself sits on unmerged GH-1255 `0212`.
+    - **Ordering:** it sorts after `0212` (`20261014120000`). Its composite FKs reference `0210`'s finalization-line and exception-link tables, so `0210` can roll back only after `0213`. Knex's reverse order does this. A test that calls `0210.down()` directly at head must call `0213.down()` first, as the corrected GH-1241 S3-B M1 test does.
+    - **Rollback guard:** `down()` takes `ACCESS EXCLUSIVE` on the affected tables, sets `row_security = off`, and refuses with `RECEIVE_HELD_CAPTURE_ROLLBACK_BLOCKED` while any held capture, held unit, held recovery task or positive held quantity exists. Once production holds held evidence, fix forward.
+    - **Not purely additive:** it replaces three CHECKs (`receive_delivery_disposition_valid` held ≥ 0, the finalization-line balance including held, and the three-way `inventory_units_source_anchor_xor`). Existing rows satisfy the replacements, but validating them holds `ACCESS EXCLUSIVE` briefly on `receive_job_lines`, `receive_reconciliation_finalization_lines` and `inventory_units`.
+    - **Enum values are permanent:** `'held'` and `'receive_held_recoverable'` are added with `ADD VALUE IF NOT EXISTS` and stay after `down()` (§18, `0195` precedent). New-value comparisons use `::text`, because a value added in the same transaction cannot be used as an enum literal before commit.
+
 ---
 
 

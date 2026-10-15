@@ -321,6 +321,24 @@ export async function confirmStow(
   if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
 
+  // GH-1254 S4-B: a held recovery unit is outside inventory truth and is never
+  // stowed by this path, whatever the trigger. Refused before the first truth
+  // or movement write below (credit paths and problem_center re-stow would
+  // otherwise reach them without a status check). Task → unit lock order
+  // matches the inbound and cancelled-pick branches.
+  if (lasyncroUnitId) {
+    const scanned = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .forUpdate()
+      .first('receive_held_capture_id', 'status');
+    if (scanned && (scanned.receive_held_capture_id != null || String(scanned.status) === 'held')) {
+      throw Object.assign(
+        new Error(`[STOW_CONFIRM] STOW_HELD_UNIT_REFUSED: ${lasyncroUnitId} is held for recovery and cannot be stowed`),
+        { statusCode: 409, errorCode: 'STOW_HELD_UNIT_REFUSED' }
+      );
+    }
+  }
+
     const completedAt = new Date();
     const qty = quantityPlaced ?? task.quantity; // support partial stow
     const isInboundStock = task.trigger === 'inbound_stock';

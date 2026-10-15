@@ -230,6 +230,14 @@ The verified procedure (GH-1255):
    with `mDNSResponder` denied. That mechanism is **macOS-specific**. Other
    platforms need an equivalent enforced denial (for example a network
    namespace or a container without egress), proven by the same canaries.
+   **Darwin 25 correction (GH-1254, 2026-10-15):** denying the
+   `com.apple.mDNSResponder` / `com.apple.dnssd.service` mach names is not
+   enough. System DNS still resolved public names through the
+   `/var/run/mDNSResponder` Unix socket, which a blanket `(remote unix-socket)`
+   allow permits. The profile must also deny that socket explicitly:
+   `(deny network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))`
+   and the same for `/var/run/mDNSResponder`. The DNS canary caught this: the
+   first S4-B preflight stopped with `CANARY_DNS_SYSTEM=ALLOWED` before any test ran.
 5. **Canaries before any test runs.** Every external canary must be refused:
    HTTPS fetch by hostname, raw TCP to a public IP (`1.1.1.1:443`), `curl`
    HTTPS, and DNS resolution. Loopback PostgreSQL must be reachable as the
@@ -268,6 +276,26 @@ Isolation findings recorded during GH-1255:
   (`2f8b7cf8`) and on the GH-1255 branch: GH1179-A3,
   CONTRACT-1164-START-05/06, and three `shopify-opening-inventory-cutover`
   executor tests. They are pre-existing and are not GH-1255 regressions.
+
+Isolation findings recorded during GH-1254 S4-B (2026-10-15):
+
+- **Order-dependent suite (GH-1241 S3-B M1 ↔ GH-1254 S4-B).** S3-B M1 now rolls
+  back `0213` before `0210` (migration dependency). `0213.down()` refuses while
+  held evidence exists. If the S4-B suite runs before S3-B in the **same**
+  disposable DB, for example a full `npm run test:integration`, S3-B M1 fails
+  closed. Classification: a documented test-harness limitation of the E01-M17a
+  class, not a product defect and not a release blocker. The production and
+  knex rollback order is unaffected. Targeted runs in separate disposable DBs
+  are green: S3-B 18/18 and S4-B 17/17. Unresolved.
+- **Savepoint attempts must stay independent.** In DB-invariant tests that run
+  several attempts inside one rolled-back transaction, roll back each attempt's
+  savepoint even when it succeeds. Otherwise a successful control row leaks into
+  later attempts and turns the expected FK/CHECK violation into a unique-index
+  violation (S4-B I2).
+- **The verified S4-B runner** is scratchpad-only, like GH-1255's, and is not a
+  repository script or CI gate. It ran a fresh synthetic PostgreSQL 17 cluster
+  inside the same `sandbox-exec` boundary as the canaries, harness and Jest,
+  with loopback TCP only and no repository `.env`.
 
 ### Contract-test host portability (TEST-CI-DOTENV-161)
 
