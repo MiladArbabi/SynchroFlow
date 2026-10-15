@@ -62,11 +62,45 @@ export async function getProductsFt2Snapshot(
   }
 > {
   const { shopId, period } = input;
-  return withTenant(shopId, async (trx) => {
+  const startedAt = process.hrtime.bigint();
+  const durationsMs: Record<string, number> = {};
+  let outcome: 'ok' | 'error' = 'error';
+  let failedStage: string | null = null;
+
+  const elapsedMs = (at: bigint): number =>
+    Math.round(
+      Number(process.hrtime.bigint() - at) / 1_000_000
+    );
+
+  async function measure<T>(
+    stage: string,
+    task: () => Promise<T>
+  ): Promise<T> {
+    const started = process.hrtime.bigint();
+
+    try {
+      return await task();
+    } catch (error) {
+      failedStage = stage;
+      throw error;
+    } finally {
+      durationsMs[stage] = elapsedMs(started);
+    }
+  }
+
+  try {
+    const result = await withTenant(shopId, async (trx) => {
+      // Includes connection acquisition and tenant-context setup.
+      durationsMs.tenant_ready_ms = elapsedMs(startedAt);
+      const bodyStartedAt = process.hrtime.bigint();
+
+      try {
   // ─────────────────────────────────────────
   // Core Products FT2
   // ─────────────────────────────────────────
-  const facts = await getProductsFacts(input, trx);
+  const facts = await measure('core_facts', () =>
+    getProductsFacts(input, trx)
+  );
   const intelligence = buildProductsIntelligence(facts);
   const exposureBase = buildProductsFtep({
     facts,
@@ -77,19 +111,22 @@ export async function getProductsFt2Snapshot(
   // ─────────────────────────────────────────
   // FT2-Paid — Product Data Integrity
   // ─────────────────────────────────────────
-  const productDataIntegrity =
-  await getProductDataIntegritySnapshot({
-    shopId,
-    period,
-  }, trx);
+  const productDataIntegrity = await measure('data_integrity', () =>
+    getProductDataIntegritySnapshot({
+      shopId,
+      period,
+    }, trx)
+  );
 
   // ─────────────────────────────────────────
   // Operational Exposure (FT2-safe)
   // ─────────────────────────────────────────
-  const operationalFacts = await getProductOperationalFacts({
-    shopId,
-    period,
-  }, trx);
+  const operationalFacts = await measure('operational_facts', () =>
+    getProductOperationalFacts({
+      shopId,
+      period,
+    }, trx)
+  );
 
   const operationalIntelligence =
     buildProductOperationalIntelligence(operationalFacts);
@@ -102,10 +139,12 @@ export async function getProductsFt2Snapshot(
   // ─────────────────────────────────────────
   // Supply & Replenishment Reality (FT2-safe)
   // ─────────────────────────────────────────
-  const supplyFacts = await getProductSupplyFacts({
-    shopId,
-    period,
-  }, trx);
+  const supplyFacts = await measure('supply_facts', () =>
+    getProductSupplyFacts({
+      shopId,
+      period,
+    }, trx)
+  );
 
   const supplyIntelligence =
     buildProductSupplyIntelligence(supplyFacts);
@@ -118,10 +157,12 @@ export async function getProductsFt2Snapshot(
   // ─────────────────────────────────────────
   // Data Freshness & Trust Latency (FT2-safe)
   // ─────────────────────────────────────────
-  const freshnessFacts = await getProductDataFreshnessFacts({
-    shopId,
-    period,
-  }, trx);
+  const freshnessFacts = await measure('freshness_facts', () =>
+    getProductDataFreshnessFacts({
+      shopId,
+      period,
+    }, trx)
+  );
 
   const freshnessIntelligence =
     buildProductDataFreshnessIntelligence(freshnessFacts);
@@ -183,10 +224,12 @@ const alignmentIntelligence =
   // ─────────────────────────────────────────
   // Dependency — Facts → Intelligence → FTEP
   // ─────────────────────────────────────────
-  const dependencyFacts = await getProductDependencyFacts({
-    shopId,
-    period,
-  }, trx);
+  const dependencyFacts = await measure('dependency_facts', () =>
+    getProductDependencyFacts({
+      shopId,
+      period,
+    }, trx)
+  );
 
   const dependencyIntelligence =
     buildProductDependencyIntelligence(dependencyFacts);
@@ -225,5 +268,27 @@ const alignmentIntelligence =
         }
       : null,
     };
-  });
+      } finally {
+        durationsMs.transaction_body_ms = elapsedMs(bodyStartedAt);
+      }
+    });
+
+    outcome = 'ok';
+    return result;
+  } finally {
+    // Temporary Gate 0 diagnostics. No tenant IDs or payloads.
+    try {
+      console.info(
+        '[GATE0_PRODUCTS_TIMING]',
+        JSON.stringify({
+          outcome,
+          failed_stage: failedStage,
+          total_ms: elapsedMs(startedAt),
+          ...durationsMs,
+        })
+      );
+    } catch {
+      // Logging must not alter endpoint behavior.
+    }
+  }
 }
