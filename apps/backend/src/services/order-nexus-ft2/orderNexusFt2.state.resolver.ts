@@ -20,23 +20,65 @@ import { OrderNexusFT2Snapshot } from "./orderNexusFt2.types.js";
 export async function getOrderNexusFt2StateSnapshot(
   shopId: number
 ): Promise<OrderNexusFT2Snapshot | null> {
-  return withTenant(shopId, async (trx) => {
+  const startedAt = process.hrtime.bigint();
+  const durationsMs: Record<string, number> = {};
+  let outcome: 'ok' | 'error' = 'error';
+  let failedStage: string | null = null;
+
+  const elapsedMs = (at: bigint): number =>
+    Math.round(
+      Number(process.hrtime.bigint() - at) / 1_000_000
+    );
+
+  async function measure<T>(
+    stage: string,
+    task: () => Promise<T>
+  ): Promise<T> {
+    const started = process.hrtime.bigint();
+
+    try {
+      return await task();
+    } catch (error) {
+      failedStage = stage;
+      throw error;
+    } finally {
+      durationsMs[stage] = elapsedMs(started);
+    }
+  }
+
+  try {
+    const result = await withTenant(shopId, async (trx) => {
+      // Includes connection acquisition and tenant-context setup.
+      durationsMs.tenant_ready_ms = elapsedMs(startedAt);
+      const bodyStartedAt = process.hrtime.bigint();
+
+      try {
   // Fulfillment state
-  const fulfillmentFacts = await extractOrderFulfillmentFacts(shopId, trx);
-  const fulfilledOrders = await extractFulfilledOrdersCount(shopId, trx);
-  const activeOrders = await extractActiveOrdersCount(shopId, trx);
+  const fulfillmentFacts = await measure('fulfillment_facts', () =>
+    extractOrderFulfillmentFacts(shopId, trx)
+  );
+  const fulfilledOrders = await measure('fulfilled_count', () =>
+    extractFulfilledOrdersCount(shopId, trx)
+  );
+  const activeOrders = await measure('active_count', () =>
+    extractActiveOrdersCount(shopId, trx)
+  );
 
   const fulfillmentIntelligence =
     deriveOrderFulfillmentIntelligence(fulfillmentFacts);
 
   // Refunds (lifetime)
-  const refundsFacts = await extractRefundsFacts(shopId, trx);
+  const refundsFacts = await measure('refunds', () =>
+    extractRefundsFacts(shopId, trx)
+  );
 
     // Freshness (state-based)
-  const freshnessRow = await trx('orders')
-    .where('shop_id', shopId)
-    .max('updated_at as last')
-    .first();
+  const freshnessRow = await measure('freshness', async () =>
+    trx('orders')
+      .where('shop_id', shopId)
+      .max('updated_at as last')
+      .first()
+  );
 
   let freshnessStatus: 'recent' | 'stale' | 'unknown' = 'unknown';
 
@@ -60,10 +102,12 @@ export async function getOrderNexusFt2StateSnapshot(
     planes: [],
   });
 
-  const totalOrdersRow = await trx('orders')
-    .where('shop_id', shopId)
-    .count<{ count: string }>('lasyncro_order_id as count')
-    .first();
+  const totalOrdersRow = await measure('total_count', async () =>
+    trx('orders')
+      .where('shop_id', shopId)
+      .count<{ count: string }>('lasyncro_order_id as count')
+      .first()
+  );
 
   const totalOrders =
     totalOrdersRow?.count != null
@@ -84,13 +128,15 @@ export async function getOrderNexusFt2StateSnapshot(
    * aggregate_version is monotonic within the event stream
    * and guarantees stable replay ordering.
    */
-  const operationalControlRow = await trx('orders_operational_control_snapshot')
-    .where({ shop_id: shopId })
-    .orderBy([
-      { column: 'snapshot_date', order: 'desc' },
-      { column: 'aggregate_version', order: 'desc' },
-    ])
-    .first();
+  const operationalControlRow = await measure('operational_snapshot', async () =>
+    trx('orders_operational_control_snapshot')
+      .where({ shop_id: shopId })
+      .orderBy([
+        { column: 'snapshot_date', order: 'desc' },
+        { column: 'aggregate_version', order: 'desc' },
+      ])
+      .first()
+  );
 
   /**
    * CONSTRAINED ORDERS (PROJECTION SOURCE)
@@ -199,10 +245,12 @@ export async function getOrderNexusFt2StateSnapshot(
    * be exposed through the FT2 state surface to avoid
    * multi-API drift in the UI.
    */
-  const decisionBriefRow = await trx('daily_operational_brief_snapshot')
-    .where({ shop_id: shopId })
-    .orderBy('brief_date', 'desc')
-    .first();
+  const decisionBriefRow = await measure('decision_brief', async () =>
+    trx('daily_operational_brief_snapshot')
+      .where({ shop_id: shopId })
+      .orderBy('brief_date', 'desc')
+      .first()
+  );
   
   /**
    * NUMERIC NORMALIZATION
@@ -377,5 +425,27 @@ export async function getOrderNexusFt2StateSnapshot(
   } as any;
 
   return snapshot;
-  });
+      } finally {
+        durationsMs.transaction_body_ms = elapsedMs(bodyStartedAt);
+      }
+    });
+
+    outcome = 'ok';
+    return result;
+  } finally {
+    // Temporary Gate 0 diagnostics. No tenant identifiers or payloads.
+    try {
+      console.info(
+        '[GATE0_ORDERS_TIMING]',
+        JSON.stringify({
+          outcome,
+          failed_stage: failedStage,
+          total_ms: elapsedMs(startedAt),
+          ...durationsMs,
+        })
+      );
+    } catch {
+      // Diagnostic logging must not change endpoint behavior.
+    }
+  }
 }
