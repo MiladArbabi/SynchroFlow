@@ -439,17 +439,30 @@ jobs:
 
           function checkProcess() {
             const status = fs.readFileSync('/proc/self/status', 'utf8');
-            const field = (k) => ((status.match(new RegExp('^' + k + ':\\s*(.*)$', 'm')) || [])[1] || '').trim();
+            const before = failures.length;
+            // Horizontal whitespace only: an empty field (Groups) must not
+            // consume the newline and capture the next line. Missing fails closed.
+            const field = (k) => {
+              const m = new RegExp('^' + k + ':[ \\t]*([^\\n]*)$', 'm').exec(status);
+              if (!m) { fail('/proc/self/status field missing: ' + k); return null; }
+              return m[1].replace(/[ \t]+$/, '');
+            };
+            const values = (k) => { const v = field(k); return v === null ? null : v.split(/[ \t]+/); };
             const uid = process.env.GH1255_EXPECT_UID;
             const gid = process.env.GH1255_EXPECT_GID;
-            if (!field('Uid').split(/\s+/).every((v) => v === uid)) fail('uid is not the unprivileged runner');
-            if (!field('Gid').split(/\s+/).every((v) => v === gid)) fail('gid is not the runner group');
-            if (field('Groups') !== '') fail('supplementary groups present');
+            const uids = values('Uid');
+            if (uids && !uids.every((v) => v === uid)) fail('uid is not the unprivileged runner');
+            const gids = values('Gid');
+            if (gids && !gids.every((v) => v === gid)) fail('gid is not the runner group');
+            const groups = field('Groups');
+            if (groups !== null && groups !== '') fail('supplementary groups present');
             for (const cap of ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb']) {
-              if (!/^0+$/.test(field(cap))) fail(cap + ' is not empty');
+              const v = field(cap);
+              if (v !== null && !/^0+$/.test(v)) fail(cap + ' is not empty');
             }
-            if (field('NoNewPrivs') !== '1') fail('no_new_privs is not set');
-            ok('uid/gid ' + uid + '/' + gid + ', no groups, no capabilities, no_new_privs');
+            const nnp = field('NoNewPrivs');
+            if (nnp !== null && nnp !== '1') fail('no_new_privs is not set');
+            if (failures.length === before) ok('uid/gid ' + uid + '/' + gid + ', no groups, no capabilities, no_new_privs');
           }
 
           function checkNamespace() {
