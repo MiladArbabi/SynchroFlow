@@ -171,4 +171,71 @@ describe('registered worker lifecycle', () => {
     expect(stopProduct).toHaveBeenCalledTimes(1);
     expect(lateStart).not.toHaveBeenCalled();
   });
+
+  it('owns and awaits the existing projection owner without duplicate supervisor startup', async () => {
+    const projectionGate = deferred();
+    const startProjection = jest.fn();
+    jest.doMock('api-src/workers/projectionWorkerSupervisor', () => ({
+      startProjectionWorkerSupervisor: startProjection,
+    }));
+
+    const realOwner = jest.requireActual('api-src/worker') as {
+      startWorker: () => unknown;
+      stopWorker?: () => Promise<void>;
+    };
+    expect(typeof realOwner.startWorker).toBe('function');
+    expect(typeof realOwner.stopWorker).toBe('function');
+
+    stopA.mockReturnValue(projectionGate.promise);
+
+    const workers = await import('api-src/bootstrap/workers');
+    await workers.startWorkers();
+
+    expect(startA).toHaveBeenCalledTimes(1);
+    expect(startProjection).not.toHaveBeenCalled();
+
+    let settled = false;
+    const stopping = workers.stopWorkers().then(() => { settled = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stopA).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    projectionGate.resolve();
+    await stopping;
+    expect(settled).toBe(true);
+  });
+
+  it('starts sync and product consumers once and awaits both registered drains', async () => {
+    const syncGate = deferred();
+    const productGate = deferred();
+    const startProduct = jest.fn();
+    const stopProduct = jest.fn(() => productGate.promise);
+    stopB.mockReturnValue(syncGate.promise);
+    jest.doMock('api-src/workers/product-ingestion.worker', () => ({
+      startProductIngestionWorker: startProduct,
+      stopProductIngestionWorker: stopProduct,
+    }));
+
+    const workers = await import('api-src/bootstrap/workers');
+    await workers.startWorkers();
+    expect(startB).toHaveBeenCalledTimes(1);
+    expect(startProduct).toHaveBeenCalledTimes(1);
+
+    let settled = false;
+    const stopping = workers.stopWorkers().then(() => { settled = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stopB).toHaveBeenCalledTimes(1);
+    expect(stopProduct).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    syncGate.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    productGate.resolve();
+    await stopping;
+    expect(settled).toBe(true);
+  });
 });

@@ -11,6 +11,7 @@ import { startProjectionWorkerSupervisor } from './workers/projectionWorkerSuper
  */
 
 let eventChannel: ReturnType<typeof getQueueChannel> | null = null;
+let projectionSupervisorPromise: Promise<void> | null = null;
 
 function getEventChannel() {
   if (!eventChannel) {
@@ -85,9 +86,15 @@ export function startWorker() {
    * ---------------------------------------------
    * Runs in parallel with queue worker during migration phase.
    */
-  void startProjectionWorkerSupervisor().catch((err) => {
-    console.error('[worker] Projection worker supervisor stopped unexpectedly', err);
-  });
+  if (!projectionSupervisorPromise) {
+    projectionSupervisorPromise = startProjectionWorkerSupervisor()
+      .catch((err) => {
+        console.error('[worker] Projection worker supervisor stopped unexpectedly', err);
+      })
+      .finally(() => {
+        projectionSupervisorPromise = null;
+      });
+  }
 
   const channel = getEventChannel();
 
@@ -142,4 +149,13 @@ export function startWorker() {
   });
 
   console.log('[worker] Worker ready. Awaiting domain events...');
+}
+
+export async function stopWorker(): Promise<void> {
+  const { stopProjectionWorkerSupervisor } = await import(
+    './workers/projectionWorkerSupervisor.js'
+  );
+  await stopProjectionWorkerSupervisor();
+  const activeSupervisor = projectionSupervisorPromise;
+  if (activeSupervisor) await activeSupervisor;
 }

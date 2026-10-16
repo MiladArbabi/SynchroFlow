@@ -199,6 +199,11 @@ async function startWorkersInternal(): Promise<void> {
 
           if (stopRequested) return;
           if (typeof execution.startExecutionWorker === 'function') {
+            if (typeof execution.stopExecutionWorker === 'function') {
+              workerStopFns.push(async () => {
+                await execution.stopExecutionWorker();
+              });
+            }
             superviseWorker('execution', () => execution.startExecutionWorker());
 
             console.log('[bootstrap/workers] Execution worker started');
@@ -213,6 +218,11 @@ async function startWorkersInternal(): Promise<void> {
            */
           if (stopRequested) return;
           if (typeof dispatcher.startExecutionDispatcher === 'function') {
+            if (typeof dispatcher.stopExecutionDispatcher === 'function') {
+              workerStopFns.push(async () => {
+                await dispatcher.stopExecutionDispatcher();
+              });
+            }
             // WORKER-CRASH-01: this start was the one worker missed by
             // RUNTIME-BOOT-03. Unsupervised, its rejection was unowned and
             // Node 20 exited the runtime — the dispatcher's own per-row

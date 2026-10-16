@@ -453,7 +453,7 @@ async function processExecutionMessage(
    * - Must confirm enqueue BEFORE ack
    * - Prevents message loss on failure
    */
-  const enqueueOk = channel.sendToQueue(
+  await channel.sendToQueue(
     EXECUTION_QUEUE,
     msg.content,
     {
@@ -465,24 +465,6 @@ async function processExecutionMessage(
       expiration: String(retryDelayMs)
     }
   );
-
-  if (!enqueueOk) {
-    /**
-     * DO NOT ACK → message will be redelivered
-     */
-    console.error('[EXECUTION_RETRY_ENQUEUE_FAILED]', {
-      decision_id: (() => {
-        try {
-          return JSON.parse(msg.content.toString())?.decision_id;
-        } catch {
-          return 'UNKNOWN_DECISION_ID';
-        }
-      })(),
-      retry_count: nextRetryCount
-    });
-
-    return;
-  }
 
   console.warn('[EXECUTION_RETRY_SCHEDULED]', {
     retry_count: nextRetryCount,
@@ -500,8 +482,51 @@ async function processExecutionMessage(
   }
 }
 
-export function startExecutionWorker() {
+let executionChannel: ReturnType<typeof getQueueChannel> | null = null;
+let executionConsumerTag: string | null = null;
+let executionAttachmentPromise: Promise<void> | null = null;
+let executionStopPromise: Promise<void> | null = null;
+let acceptingExecutionDeliveries = false;
+const activeExecutionDeliveries = new Set<Promise<void>>();
+let executionDeliveryFailures: unknown[] = [];
+
+function ownExecutionDelivery(
+  msg: { content: Buffer; properties?: any } | null
+): Promise<void> {
+  if (!acceptingExecutionDeliveries) return Promise.resolve();
+
+  let owned!: Promise<void>;
+  owned = processExecutionMessage(msg)
+    .catch((error) => {
+      executionDeliveryFailures.push(error);
+      throw error;
+    })
+    .finally(() => {
+      activeExecutionDeliveries.delete(owned);
+    });
+  activeExecutionDeliveries.add(owned);
+  return owned;
+}
+
+function handleExecutionDelivery(
+  msg: { content: Buffer; properties?: any } | null
+): void {
+  void ownExecutionDelivery(msg).catch(() => undefined);
+}
+
+export function startExecutionWorker(): Promise<void> {
+  if (executionStopPromise) {
+    return executionStopPromise.then(() => startExecutionWorker());
+  }
+  if (executionAttachmentPromise) return executionAttachmentPromise;
+  if (acceptingExecutionDeliveries && executionConsumerTag) {
+    return Promise.resolve();
+  }
+
   const channel = getQueueChannel(EXECUTION_QUEUE);
+  executionChannel = channel;
+  acceptingExecutionDeliveries = true;
+  executionDeliveryFailures = [];
 
   channel.addSetup(async (ch: any) => {
     const { assertExecutionQueue } = await import('../queues/execution.queue.js');
@@ -517,11 +542,67 @@ export function startExecutionWorker() {
      */
   });
 
-  channel.consume(
-    EXECUTION_QUEUE,
-    processExecutionMessage,
-    { noAck: false }
-  );
+  const attachment = Promise.resolve(channel.consume(
+      EXECUTION_QUEUE,
+      handleExecutionDelivery,
+      { noAck: false }
+    ))
+    .then(async (reply) => {
+      const consumerTag = reply?.consumerTag;
+      if (!consumerTag) {
+        throw new Error('[execution-worker] consume() returned no consumerTag');
+      }
+      if (!acceptingExecutionDeliveries) {
+        await channel.cancel(consumerTag);
+        return;
+      }
+      executionConsumerTag = consumerTag;
+    });
+
+  let ownedAttachment!: Promise<void>;
+  ownedAttachment = attachment.finally(() => {
+    if (executionAttachmentPromise === ownedAttachment) {
+      executionAttachmentPromise = null;
+    }
+  });
+  executionAttachmentPromise = ownedAttachment;
 
   console.log('[execution-worker] listening on', EXECUTION_QUEUE);
+  return ownedAttachment;
+}
+
+export function stopExecutionWorker(): Promise<void> {
+  if (executionStopPromise) return executionStopPromise;
+
+  acceptingExecutionDeliveries = false;
+  const operation = (async () => {
+    const failures: unknown[] = [];
+    const attachment = executionAttachmentPromise;
+    if (attachment) {
+      try { await attachment; } catch (error) { failures.push(error); }
+    }
+
+    const channel = executionChannel;
+    const consumerTag = executionConsumerTag;
+    executionConsumerTag = null;
+    if (channel && consumerTag) {
+      try { await channel.cancel(consumerTag); } catch (error) { failures.push(error); }
+    }
+
+    const deliveryResults = await Promise.allSettled(Array.from(activeExecutionDeliveries));
+    for (const result of deliveryResults) {
+      if (result.status === 'rejected') failures.push(result.reason);
+    }
+    failures.push(...executionDeliveryFailures);
+    executionDeliveryFailures = [];
+    executionChannel = null;
+    if (failures.length > 0) throw failures[0];
+  })();
+
+  let ownedStop!: Promise<void>;
+  ownedStop = operation.finally(() => {
+    if (executionStopPromise === ownedStop) executionStopPromise = null;
+  });
+  executionStopPromise = ownedStop;
+  return ownedStop;
 }

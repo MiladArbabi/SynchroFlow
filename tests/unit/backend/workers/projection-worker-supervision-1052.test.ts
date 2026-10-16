@@ -45,46 +45,43 @@ describe('GH-1052 — projection worker supervision', () => {
 });
 
 describe('GH-1052 — runtime ownership wiring', () => {
-  it('routes the authoritative worker through supervision and makes fatal runs restartable', () => {
-    const fs = require('fs');
-    const path = require('path');
+  it('retains one supervised start and stopWorker awaits that owned operation', async () => {
+    jest.resetModules();
+    let finishSupervisor!: () => void;
+    const supervisorRun = new Promise<void>((resolve) => { finishSupervisor = resolve; });
+    const startSupervisor = jest.fn(() => supervisorRun);
+    const stopSupervisor = jest.fn().mockResolvedValue(undefined);
+    const channel = { addSetup: jest.fn() };
 
-    const workerSource = fs.readFileSync(
-      path.resolve(process.cwd(), 'apps/backend/src/worker.ts'),
-      'utf8'
-    );
+    jest.doMock('api-src/workers/projectionWorkerSupervisor', () => ({
+      startProjectionWorkerSupervisor: startSupervisor,
+      stopProjectionWorkerSupervisor: stopSupervisor,
+    }));
+    jest.doMock('api-src/queue', () => ({
+      getQueueChannel: jest.fn(() => channel),
+    }));
+    jest.doMock('api-src/projection/projection.engine', () => ({
+      projectDomainEventFromMessage: jest.fn(),
+    }));
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
-    const projectionSource = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        'apps/backend/src/workers/projection.db.worker.ts'
-      ),
-      'utf8'
-    );
+    const worker = require('api-src/worker') as {
+      startWorker: () => void;
+      stopWorker: () => Promise<void>;
+    };
+    worker.startWorker();
+    worker.startWorker();
+    expect(startSupervisor).toHaveBeenCalledTimes(1);
 
-    // The transport worker must own the supervisor promise. Reintroducing the
-    // old detached dynamic start would recreate GH-1052.
-    expect(workerSource).toContain(
-      "import { startProjectionWorkerSupervisor } from './workers/projectionWorkerSupervisor.js';"
-    );
-    expect(workerSource).toContain(
-      'void startProjectionWorkerSupervisor().catch'
-    );
-    expect(workerSource).not.toContain(
-      '.then(({ startDbProjectionWorker }) =>'
-    );
+    let stopped = false;
+    const stopping = worker.stopWorker().then(() => { stopped = true; });
+    for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+    expect(stopSupervisor).toHaveBeenCalledTimes(1);
+    expect(stopped).toBe(false);
 
-    // A fatal run must release the module-level latch before rejection reaches
-    // the supervisor; otherwise its retry returns immediately through
-    // `if (running) return`.
-    const fatalStart = projectionSource.indexOf(
-      "console.error('[projection-db-worker][FATAL]', err);"
-    );
-    const reset = projectionSource.indexOf('running = false;', fatalStart);
-    const rethrow = projectionSource.indexOf('throw err;', fatalStart);
-
-    expect(fatalStart).toBeGreaterThan(-1);
-    expect(reset).toBeGreaterThan(fatalStart);
-    expect(rethrow).toBeGreaterThan(reset);
+    finishSupervisor();
+    await stopping;
+    expect(stopped).toBe(true);
+    jest.restoreAllMocks();
   });
 });

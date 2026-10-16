@@ -20,11 +20,29 @@ import { listPendingDecisionExecutions } from '@lasyncro/backend-core/services/p
 import { enqueueExecutionJob } from '../queues/execution.queue.js';
 
 const POLL_INTERVAL_MS = 1000;
+let dispatcherRunning = false;
+let dispatcherRunPromise: Promise<void> | null = null;
+let wakePollDelay: (() => void) | null = null;
 
-export async function startExecutionDispatcher() {
+function waitForNextPoll(): Promise<void> {
+  if (!dispatcherRunning) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      wakePollDelay = null;
+      resolve();
+    }, POLL_INTERVAL_MS);
+    wakePollDelay = () => {
+      clearTimeout(timer);
+      wakePollDelay = null;
+      resolve();
+    };
+  });
+}
+
+async function runExecutionDispatcher(): Promise<void> {
   console.info('[EXECUTION_DISPATCHER_STARTED]');
 
-  while (true) {
+  while (dispatcherRunning) {
     try {
         /**
          * Bounded discovery — no tenant context exists yet. The resolver
@@ -38,7 +56,10 @@ export async function startExecutionDispatcher() {
           created_at: string;
         }>(50);
 
+      if (!dispatcherRunning) break;
+
       for (const row of pending) {
+        if (!dispatcherRunning) break;
         try {
         /**
          * TENANT CONTEXT FRAME (WORKER-ALS-01)
@@ -213,6 +234,29 @@ export async function startExecutionDispatcher() {
       });
     }
 
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    if (!dispatcherRunning) break;
+    await waitForNextPoll();
   }
+}
+
+export function startExecutionDispatcher(): Promise<void> {
+  if (dispatcherRunPromise) return dispatcherRunPromise;
+
+  dispatcherRunning = true;
+  const run = runExecutionDispatcher();
+  let ownedRun!: Promise<void>;
+  ownedRun = run.finally(() => {
+    dispatcherRunning = false;
+    wakePollDelay = null;
+    if (dispatcherRunPromise === ownedRun) dispatcherRunPromise = null;
+  });
+  dispatcherRunPromise = ownedRun;
+  return ownedRun;
+}
+
+export async function stopExecutionDispatcher(): Promise<void> {
+  dispatcherRunning = false;
+  wakePollDelay?.();
+  const activeRun = dispatcherRunPromise;
+  if (activeRun) await activeRun;
 }

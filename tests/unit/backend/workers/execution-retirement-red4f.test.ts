@@ -1,5 +1,11 @@
 /** RED-4F worker classification: real consumer/executeJob, bounded DB/queue seams. */
-const mockChannel = { consume: jest.fn(), addSetup: jest.fn(), ack: jest.fn(), sendToQueue: jest.fn(() => true) };
+const mockChannel = {
+  consume: jest.fn().mockResolvedValue({ consumerTag: 'red4f-execution-consumer' }),
+  cancel: jest.fn().mockResolvedValue(undefined),
+  addSetup: jest.fn(),
+  ack: jest.fn(),
+  sendToQueue: jest.fn(() => Promise.resolve(true)),
+};
 const mockQuery: any = { where: jest.fn(), first: jest.fn(), update: jest.fn() };
 mockQuery.where.mockImplementation(() => mockQuery);
 mockQuery.first.mockResolvedValue({ status: 'pending' }); mockQuery.update.mockResolvedValue(1);
@@ -16,7 +22,7 @@ jest.mock('api-src/domain/decision/decision.repository', () => ({ DecisionReposi
 import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
-const { startExecutionWorker } = require('api-src/workers/execution.worker');
+const { startExecutionWorker, stopExecutionWorker } = require('api-src/workers/execution.worker');
 const { withTenant } = require('@lasyncro/backend-core/db.js');
 const { validateExecution } = require('api-src/execution/execution.guard');
 const { DecisionRepository } = require('api-src/domain/decision/decision.repository');
@@ -51,7 +57,8 @@ describe('RED-4F worker non-retryable retirement', () => {
     const msg = { content: Buffer.from(JSON.stringify({ decision_id: 'red4f-worker-decision', entity_id: 'red4f-worker-order',
       shop_id: 94001, aggregate_version: 1, action_type: 'proceed_fulfillment', payload: {}, execution_mode: 'automated' })),
       properties: { headers: { 'x-retry-count': 0 } } };
-    await callback(msg);
+    callback(msg);
+    await stopExecutionWorker();
     expect(validateExecution).toHaveBeenCalledTimes(1);
     expect(DecisionRepository.markFailure).toHaveBeenCalledWith(mockDb, 'red4f-worker-decision', RETIRED);
     expect(DecisionRepository.markSuccess).not.toHaveBeenCalled();

@@ -27,6 +27,7 @@ const POLL_INTERVAL_MS = 200;
 const IDLE_POLL_INTERVAL_MS = 1000;
 
 let running = false;
+let projectionRunPromise: Promise<void> | null = null;
 const MAX_TRANSIENT_GAP_RETRIES = 50; // ~10 seconds at 200ms poll interval
 let transientGapRetries = 0;
 
@@ -521,11 +522,9 @@ export async function processNextProjectionEventOnce(): Promise<ProjectionStepRe
   }
 }
 
-export async function startDbProjectionWorker(
+async function runDbProjectionWorker(
   projectionStep: () => Promise<ProjectionStepResult> = processNextProjectionEventOnce
-) {
-  if (running) return;
-  running = true;
+) : Promise<void> {
 
   console.info('[projection-db-worker] started');
 
@@ -711,6 +710,30 @@ export async function startDbProjectionWorker(
       throw err;
     }
 
+    if (!running) break;
     await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
+}
+
+export function startDbProjectionWorker(
+  projectionStep: () => Promise<ProjectionStepResult> = processNextProjectionEventOnce
+): Promise<void> {
+  if (projectionRunPromise) return projectionRunPromise;
+
+  running = true;
+  const run = runDbProjectionWorker(projectionStep);
+  const ownedRun = run.finally(() => {
+    running = false;
+    if (projectionRunPromise === ownedRun) {
+      projectionRunPromise = null;
+    }
+  });
+  projectionRunPromise = ownedRun;
+  return ownedRun;
+}
+
+export async function stopDbProjectionWorker(): Promise<void> {
+  running = false;
+  const activeRun = projectionRunPromise;
+  if (activeRun) await activeRun;
 }

@@ -37,6 +37,12 @@ const validateIntegration = (integration: any): {
 
 const SYNC_QUEUE_NAME = 'sync_jobs';
 let syncChannel: ReturnType<typeof getQueueChannel>;
+let syncConsumerTag: string | null = null;
+let syncAttachmentPromise: Promise<void> | null = null;
+let syncStopPromise: Promise<void> | null = null;
+let acceptingSyncDeliveries = false;
+const activeSyncDeliveries = new Set<Promise<void>>();
+let syncDeliveryFailures: unknown[] = [];
 
 export async function processSyncJob(msg: { content: Buffer } | null) {
   if (msg === null) {
@@ -162,12 +168,91 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 }
 
 // This function starts the consumer
-export function startSyncWorker() {
+function ownSyncDelivery(msg: { content: Buffer } | null): Promise<void> {
+  if (!acceptingSyncDeliveries) return Promise.resolve();
+
+  let owned!: Promise<void>;
+  owned = processSyncJob(msg)
+    .catch((error) => {
+      syncDeliveryFailures.push(error);
+      throw error;
+    })
+    .finally(() => {
+      activeSyncDeliveries.delete(owned);
+    });
+  activeSyncDeliveries.add(owned);
+  return owned;
+}
+
+function handleSyncDelivery(msg: { content: Buffer } | null): void {
+  void ownSyncDelivery(msg).catch(() => undefined);
+}
+
+export function startSyncWorker(): Promise<void> {
+  if (syncStopPromise) return syncStopPromise.then(() => startSyncWorker());
+  if (syncAttachmentPromise) return syncAttachmentPromise;
+  if (acceptingSyncDeliveries && syncConsumerTag) return Promise.resolve();
+
   console.log('[sync.worker] Starting Sync worker...');
 
   syncChannel = getQueueChannel(SYNC_QUEUE_NAME);
+  acceptingSyncDeliveries = true;
+  syncDeliveryFailures = [];
 
-  syncChannel.consume(SYNC_QUEUE_NAME, processSyncJob, { noAck: false });
+  const attachment = Promise.resolve(
+    syncChannel.consume(SYNC_QUEUE_NAME, handleSyncDelivery, { noAck: false })
+  ).then(async (reply) => {
+    const consumerTag = reply?.consumerTag;
+    if (!consumerTag) {
+      throw new Error('[sync.worker] consume() returned no consumerTag');
+    }
+    if (!acceptingSyncDeliveries) {
+      await syncChannel.cancel(consumerTag);
+      return;
+    }
+    syncConsumerTag = consumerTag;
+  });
+
+  let ownedAttachment!: Promise<void>;
+  ownedAttachment = attachment.finally(() => {
+    if (syncAttachmentPromise === ownedAttachment) syncAttachmentPromise = null;
+  });
+  syncAttachmentPromise = ownedAttachment;
 
   console.log('[sync.worker] Sync worker started. Waiting for jobs...');
+  return ownedAttachment;
+}
+
+export function stopSyncWorker(): Promise<void> {
+  if (syncStopPromise) return syncStopPromise;
+
+  acceptingSyncDeliveries = false;
+  const operation = (async () => {
+    const failures: unknown[] = [];
+    const attachment = syncAttachmentPromise;
+    if (attachment) {
+      try { await attachment; } catch (error) { failures.push(error); }
+    }
+
+    const consumerTag = syncConsumerTag;
+    syncConsumerTag = null;
+    if (consumerTag) {
+      try { await syncChannel.cancel(consumerTag); } catch (error) { failures.push(error); }
+    }
+
+    const deliveryResults = await Promise.allSettled(Array.from(activeSyncDeliveries));
+    for (const result of deliveryResults) {
+      if (result.status === 'rejected') failures.push(result.reason);
+    }
+    failures.push(...syncDeliveryFailures);
+    syncDeliveryFailures = [];
+    if (failures.length > 0) throw failures[0];
+  })();
+
+  let ownedStop!: Promise<void>;
+  ownedStop = operation.finally(() => {
+    if (syncStopPromise === ownedStop) syncStopPromise = null;
+  });
+  syncStopPromise = ownedStop;
+  return ownedStop;
 }

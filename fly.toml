@@ -1,5 +1,6 @@
 app = 'synchroflow'
 primary_region = 'arn'
+kill_timeout = 15
 
 [build]
   dockerfile = "Dockerfile"
