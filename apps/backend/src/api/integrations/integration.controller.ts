@@ -1314,6 +1314,7 @@ export const getSyncStatus = async (req: Request, res: Response) => {
         .where({ shop_id: shopId, platform: 'shopify' })
         .first(
           'id',
+          'platform_shop_name',
           'sync_status',
           'sync_progress_current',
           'sync_progress_total',
@@ -1330,6 +1331,22 @@ export const getSyncStatus = async (req: Request, res: Response) => {
         "lastError": null
       });
     }
+
+    // GH-1068 T1: installation lifecycle is independent of historical
+    // sync completion. Report only a verified uninstall in this slice.
+    // Remaining connection states require separate credential-authority tests.
+    const installation = integration.platform_shop_name
+      ? await withTenant(shopId, (trx) =>
+          trx('shopify_app_installations')
+            .where({
+              shop_id: shopId,
+              shop_domain: integration.platform_shop_name,
+            })
+            .orderBy('id', 'desc')
+            .first('uninstalled_at'))
+      : undefined;
+
+    const isUninstalled = Boolean(installation?.uninstalled_at);
 
     // Calculate percentage
     let percentage = 0;
@@ -1369,6 +1386,7 @@ export const getSyncStatus = async (req: Request, res: Response) => {
     res.json({
       integrationId: integration.id,
       status: integration.sync_status,
+      ...(isUninstalled && { connectionStatus: 'UNINSTALLED' }),
       lastSyncedAt: integration.updated_at ?? null,
       progress: {
         current: integration.sync_progress_current,

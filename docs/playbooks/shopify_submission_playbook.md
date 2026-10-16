@@ -845,6 +845,29 @@ the API, then cleared it and verified the restored null state.
 
 ---
 
+### GH-1068 — Uninstall connection projection (T1)
+
+Local regression verified 2026-10-16; production acceptance pending.
+
+`GET /api/v1/integrations/sync-status` additionally returns
+`connectionStatus: 'UNINSTALLED'` when the integration's matching
+Shopify installation has a non-null `uninstalled_at`.
+
+Connection lifecycle is independent of historical synchronization.
+A previously completed sync remains `COMPLETED` after uninstall;
+the database completion-transition invariant is unchanged.
+
+This slice does not establish connected, authorization-health,
+provider-reachability, or unknown-state classification.
+An absent `connectionStatus` must not imply connected.
+
+`lastSyncedAt` remains based on `integrations.updated_at`;
+last-successful-sync accuracy is outside T1 scope.
+
+Local verification: 7/7 credential architecture integration tests
+passed on disposable PostgreSQL; backend TypeScript passed.
+No production uninstall/reinstall test or repair performed.
+
 ## Remaining Known Issues (Non-blocking)
 
 - Webhook "address already taken" errors on re-install — non-fatal, webhooks already registered

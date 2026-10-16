@@ -6,6 +6,7 @@ jest.mock('axios', () => {
     create: () => client, isAxiosError: () => false };
   return { __esModule: true, default: client };
 });
+import { getSyncStatus } from 'api-src/api/integrations/integration.controller';
 import crypto from 'crypto';
 import axios from 'axios';
 import db, { systemTransaction, withTenant } from '@lasyncro/backend-core/db.js';
@@ -145,6 +146,97 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(String(after.credential_generation)).toBe((BigInt(before.credential_generation) + 1n).toString());
     expect(post).not.toHaveBeenCalled();
   });
+  it('GH-1068 T1 — uninstalled connection projection overrides historical sync completion', async () => {
+    const f = await fixture();
+
+    // Reproduce a legally completed historical synchronization.
+    const integration = (await metadata(f)).integration;
+    for (const status of ['SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'COMPLETED']) {
+      await withTenant(f.shopId, trx =>
+        trx('integrations')
+          .where({ id: integration.id, shop_id: f.shopId })
+          .update({
+            sync_status: status,
+            sync_progress_current: status === 'COMPLETED' ? 12 : 0,
+            sync_progress_total: 12,
+          })
+      );
+    }
+
+    expect((await metadata(f)).integration.sync_status).toBe('COMPLETED');
+
+    const [user] = await withTenant(f.shopId, trx =>
+      trx('users').insert({
+        shop_id: f.shopId,
+        role: 'owner',
+        email: `gh1068-${crypto.randomUUID()}@test.invalid`,
+        password_hash: 'synthetic-test-only',
+      }).returning('id')
+    );
+
+    await withTenant(f.shopId, trx =>
+      trx('shop_memberships').insert({
+        shop_id: f.shopId,
+        user_id: user.id,
+        role: 'owner',
+      })
+    );
+
+    // An installed shop must not be classified as uninstalled.
+    const installedResponse = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const request = {
+      path: '/api/v1/integrations/sync-status',
+      user: { userId: Number(user.id), shopId: f.shopId },
+    };
+
+    await getSyncStatus(request as any, installedResponse as any);
+    expect(installedResponse.status).not.toHaveBeenCalled();
+    expect(installedResponse.json).toHaveBeenCalledTimes(1);
+    expect(installedResponse.json.mock.calls[0][0]).toMatchObject({
+      status: 'COMPLETED',
+    });
+    expect(
+      installedResponse.json.mock.calls[0][0].connectionStatus
+    ).not.toBe('UNINSTALLED');
+
+    await withTenant(f.shopId, trx =>
+      ShopifyAppService.hardFenceAppUninstalled(f.shopId, trx, NOW, f.domain)
+    );
+
+    const after = await metadata(f);
+    expect(after.installation.uninstalled_at).toEqual(NOW);
+    expect(after.integration.sync_status).toBe('COMPLETED');
+    expect(
+      await resolveShopifyAdminCredentialForConsumer({
+        shopId: f.shopId,
+        now: NOW,
+      })
+    ).toEqual({ kind: 'REAUTH_REQUIRED' });
+
+    // Exercise the actual status controller with real membership resolution.
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await getSyncStatus({
+      path: '/api/v1/integrations/sync-status',
+      user: { userId: Number(user.id), shopId: f.shopId },
+    } as any, res as any);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+
+    // Expected new read-model field; does not mutate historical sync status.
+    expect(res.json.mock.calls[0][0]).toMatchObject({
+      status: 'COMPLETED',
+      connectionStatus: 'UNINSTALLED',
+    });
+  });
+
   it('C6 — expired access refreshes through the canonical provider and lifecycle', async () => {
     const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
     const [before] = await credentials(f), metadataBefore = await metadata(f);
