@@ -1,7 +1,12 @@
 // apps/backend/src/services/shopify.service.ts
 import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { createShopifyGraphQLClient } from './shopify/shopifyClient.service.js';
-import { GET_PRODUCTS_QUERY, GET_ORDERS_QUERY } from './shopify/shopify.queries.js';
+import {
+  GET_PRODUCTS_QUERY,
+  GET_PRODUCT_VARIANTS_QUERY,
+  GET_ORDERS_QUERY,
+} from './shopify/shopify.queries.js';
+import { collectShopifyCatalogProducts } from './shopify/shopifyCatalogPagination.service.js';
 import { paginateShopify } from './shopify/shopifyPagination.service.js';
 import { registerWebhooksForShop } from './shopify/shopifyWebhook.service.js';
 import { syncShopifyProducts } from './shopify/shopifyProductSync.service.js';
@@ -67,14 +72,36 @@ export const performInitialSync = async (
       shopId,
     });
 
-  const productsQuery = GET_PRODUCTS_QUERY;
   const ordersQuery = GET_ORDERS_QUERY;
 
   try {
+    // GH-1262 A2.1 — enter the legal in-progress state before
+    // catalog collection. Provider failure must transition
+    // SYNCING_PRODUCTS -> FAILED, never PENDING -> FAILED.
+    await updateIntegrationStatus({
+      integrationId,
+      shopId,
+      status: 'SYNCING_PRODUCTS',
+      progressCurrent: 0,
+      progressTotal: 0,
+      error: null,
+    });
+
     console.log(`[ShopifyService] Making GraphQL request to Shopify...`);
-    const response = await client.request(productsQuery);
-    const data = response.data as any;
-    const totalProducts = data.products?.edges.length || 0;
+    /**
+     * COMPLETE CATALOG COLLECTION (GH-1262 A2.1)
+     * ------------------------------------------
+     * Every product page and every nested variant page is collected before
+     * anything is persisted. A pagination failure throws into the FAILED
+     * path below, so COMPLETED is never reported for a partial catalog.
+     */
+    const productEdges = await collectShopifyCatalogProducts({
+      client,
+      productsQuery: GET_PRODUCTS_QUERY,
+      variantsQuery: GET_PRODUCT_VARIANTS_QUERY,
+      shopId,
+    });
+    const totalProducts = productEdges.length;
     const totalOrders = 0;
     const totalLineItems = 0;
 
@@ -98,16 +125,14 @@ export const performInitialSync = async (
      */
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
-      if (data.products) {
-        await syncShopifyProducts({
-          trx,
-          shopId,
-          integrationId,
-          accessToken,
-          platformShopName,
-          products: data.products.edges,
-        });
-      }
+      await syncShopifyProducts({
+        trx,
+        shopId,
+        integrationId,
+        accessToken,
+        platformShopName,
+        products: productEdges,
+      });
     });
 
     /**

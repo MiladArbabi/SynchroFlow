@@ -1493,6 +1493,27 @@ Do not advance to WORKFLOW DOCUMENTATION DECISION until:
 - required live browser acceptance passes;
 - no unresolved acceptance failure remains.
 
+13.12 Agent directive completion accounting
+
+Every agent report must explicitly account for requested directives that were not fully completed.
+
+Use a mandatory NOT COMPLETED section, separate from BLOCKED and STATE_MUTATED.
+
+For each unfinished directive record:
+
+- the exact brief item or objective;
+- status: NOT_STARTED, PARTIAL, FAILED, or SKIPPED;
+- the specific reason it remains unfinished;
+- the approval, evidence, correction, or action required to resume.
+
+Include dependent verification that was not run. Do not silently omit an unfinished directive or count an attempted but unsuccessful action as completed.
+
+If everything requested was completed and evidenced, report NOT COMPLETED: NONE.
+
+The engineering lead must reconcile this section against the original brief before authorizing the next phase. An explicitly deferred item remains visible until its disposition is decided.
+
+BLOCKED describes obstacles; NOT COMPLETED describes unfinished obligations. They are not interchangeable.
+
 ⸻
 
 14. PHASE 7 — WORKFLOW DOCUMENTATION DECISION

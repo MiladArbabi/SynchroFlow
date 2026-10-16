@@ -121,6 +121,15 @@ DEVIATIONS
 BLOCKED
 * Anything requested that could not be obtained or proved.
 * NONE if nothing is blocked.
+NOT COMPLETED
+* List every requested directive, objective, or verification that was not fully completed.
+* Use: ITEM=<brief item>; STATUS=<NOT_STARTED|PARTIAL|FAILED|SKIPPED>; REASON=<specific cause>; TO_RESUME=<required decision or action>.
+* Include work omitted because an earlier guard stopped execution.
+* Record partially executed work and unfinished sub-actions explicitly.
+* Never mark an attempted but failed action as completed.
+* Do not silently omit deferred or intentionally skipped directives.
+* NONE only when all requested directives are completed and evidenced.
+* BLOCKED identifies obstacles; NOT COMPLETED identifies the resulting unfinished work.
 STATE_MUTATED
 * Every source file changed.
 * Every test file changed.

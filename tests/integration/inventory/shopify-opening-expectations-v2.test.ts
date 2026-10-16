@@ -115,10 +115,12 @@ function buildShopifyResponse(
                 edges: variants.map((v) => ({
                   node: { id: v.shopifyVariantId, inventoryQuantity: v.inventoryQuantity },
                 })),
+                pageInfo: { hasNextPage: false, endCursor: null },
               },
             },
           },
         ],
+        pageInfo: { hasNextPage: false, endCursor: null },
       },
     },
   };

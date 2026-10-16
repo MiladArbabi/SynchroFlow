@@ -101,7 +101,10 @@ function makeEmptyStoreClient() {
       // GET_PRODUCTS_QUERY and the opening-balance products query
       return {
         data: {
-          products: { edges: [] },
+          products: {
+            edges: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
           shop: {
             id: 'gid://shopify/Shop/1',
             name: 'X',

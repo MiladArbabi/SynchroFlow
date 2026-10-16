@@ -32,7 +32,14 @@ describe('SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 — seedShopifyOpeningBalances zero p
   it('T1 — resolves with zero writes for a valid zero-product response (products.edges = [])', async () => {
     const trx = makeExplodingTrx();
     const client = {
-      request: jest.fn().mockResolvedValue({ data: { products: { edges: [] } } }),
+      request: jest.fn().mockResolvedValue({
+        data: {
+          products: {
+            edges: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      }),
     };
 
     await expect(
@@ -56,8 +63,17 @@ describe('SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 — seedShopifyOpeningBalances zero p
         data: {
           products: {
             edges: [
-              { node: { title: 'P1', variants: { edges: [] } } },
+              {
+                node: {
+                  title: 'P1',
+                  variants: {
+                    edges: [],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
             ],
+            pageInfo: { hasNextPage: false, endCursor: null },
           },
         },
       }),

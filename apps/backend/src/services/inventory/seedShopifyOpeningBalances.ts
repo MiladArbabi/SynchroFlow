@@ -2,6 +2,11 @@ import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { createShopifyGraphQLClient } from '../../services/shopify-client.factory.js';
 import { resolveBootstrapModel } from './bootstrapModel.js';
+import { collectShopifyCatalogProducts } from '../shopify/shopifyCatalogPagination.service.js';
+import {
+  GET_OPENING_INVENTORY_PRODUCTS_QUERY,
+  GET_OPENING_INVENTORY_VARIANTS_QUERY,
+} from '../shopify/shopify.queries.js';
 
 const OPENING_BALANCE_NAMESPACE =
   '9f0e7b9c-6d4a-4e91-bc5e-2a1f8c7d3e44';
@@ -28,24 +33,19 @@ export async function seedShopifyOpeningBalances(
     injectedClient ??
     createShopifyGraphQLClient(accessToken, platformShopName, shopId);
 
-  const response = await client.request(`
-  query {
-    products(first: 50) {
-      edges {
-        node {
-          variants(first: 100) {
-            edges {
-              node {
-                id
-                inventoryQuantity
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`);
+  /**
+   * COMPLETE SNAPSHOT COLLECTION (GH-1262 A2.1)
+   * -------------------------------------------
+   * Every product page and nested variant page is collected before trx is
+   * touched. A pagination or provider failure rejects with zero writes, so
+   * neither path below can accept an incomplete snapshot.
+   */
+  const productEdges = await collectShopifyCatalogProducts({
+    client,
+    productsQuery: GET_OPENING_INVENTORY_PRODUCTS_QUERY,
+    variantsQuery: GET_OPENING_INVENTORY_VARIANTS_QUERY,
+    shopId,
+  });
 
   /**
    * ZERO-VARIANT SHORT CIRCUIT
@@ -53,7 +53,7 @@ export async function seedShopifyOpeningBalances(
    * A valid response with no variants has nothing to bootstrap under either
    * model, so the bootstrap_model read below is not required.
    */
-  const totalVariantCount = response.data.products.edges.reduce(
+  const totalVariantCount = productEdges.reduce(
     (sum: number, p: any) => sum + p.node.variants.edges.length,
     0
   );
@@ -72,14 +72,14 @@ export async function seedShopifyOpeningBalances(
   const bootstrapModel = await resolveBootstrapModel(trx, shopId);
 
   if (bootstrapModel === 'reconcile_opening_expectation_v2') {
-    await seedOpeningExpectationsV2(trx, shopId, response);
+    await seedOpeningExpectationsV2(trx, shopId, productEdges);
     return;
   }
 
   // legacy_opening_balance_v1 — unchanged below.
   let missingMappings = 0;
 
-  for (const p of response.data.products.edges) {
+  for (const p of productEdges) {
     for (const v of p.node.variants.edges) {
       const shopifyVariantId = v.node.id;
       const rawQty = v.node.inventoryQuantity ?? 0;
@@ -213,7 +213,7 @@ export async function seedShopifyOpeningBalances(
 async function seedOpeningExpectationsV2(
   trx: Knex.Transaction,
   shopId: number,
-  response: { data?: any }
+  productEdges: any[]
 ): Promise<void> {
   const existingRow = await trx('shopify_opening_inventory_expectations')
     .where({ shop_id: shopId })
@@ -233,7 +233,7 @@ async function seedOpeningExpectationsV2(
     observed_at: Date;
   }> = [];
 
-  for (const p of response.data.products.edges) {
+  for (const p of productEdges) {
     for (const v of p.node.variants.edges) {
       const shopifyVariantId = v.node.id;
       const reportedQuantity = v.node.inventoryQuantity ?? 0;
