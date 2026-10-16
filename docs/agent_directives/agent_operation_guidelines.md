@@ -305,6 +305,72 @@ When the brief explicitly states this:
 * if it unexpectedly fails, classify the failure exactly as instructed;
 * if it passes, report that it protects existing verified behaviour rather than claiming a newly reproduced pre-fix defect.
 A RED/GREEN cycle is mandatory only when the brief requires it for an active defect/fix sequence.
+AGENT-EXECUTION-AUTONOMY-01 — Explicit closed-loop delegation
+
+Default operating restrictions remain unchanged. Only a brief
+explicitly marked MODE: CLOSED_LOOP_IMPLEMENT_AND_VERIFY grants
+the bounded execution permissions described here.
+
+Within that brief the execution agent MAY:
+* modify approved source, test and fixture files;
+* execute approved targeted tests, typechecks and safe diagnostics
+  using the VS Code terminal;
+* diagnose failures and correct implementation defects inside the
+  authorised mutation allowlist;
+* repair mechanically incomplete fixtures or test infrastructure
+  inside authorised test/fixture files without changing semantics;
+* rerun the originally failing contract and selected neighbors;
+* inspect and report exact Git, test and cleanup evidence.
+
+The agent MUST:
+* perform a local scope/WIP preflight before mutation;
+* preserve the original business and regression contracts;
+* classify every unexpected RED before correcting anything;
+* distinguish expected TDD RED from harness/environment failure;
+* record each failure, exact correction, rerun and resulting evidence;
+* use only the approved disposable PostgreSQL harness for DB tests;
+* prove generated database and owned-process cleanup;
+* protect all unrelated tracked/untracked WIP;
+* complete no more than three correction cycles per delegated slice;
+* finish with GREEN evidence or an explicit BLOCKED report.
+
+The agent MUST NOT:
+* independently change scope, architecture, acceptance criteria,
+  test-layer selection, or product behavior;
+* weaken assertions, skip tests, suppress errors or manufacture GREEN;
+* increase arbitrary timeouts, retries, or use --forceExit to hide
+  unresolved resource leaks;
+* substitute mocked tests for required real DB/API/runtime proofs;
+* use privileged access to bypass tenant isolation or forced RLS;
+* touch unrelated source, fixtures, processes or generated artifacts;
+* perform stage/commit/push/deploy or production mutations.
+
+A configured Jest timeout may be corrected when the original approved
+test design demonstrably requires a longer bounded window. This does
+not authorise hiding a hang or relaxing the contention proof.
+
+Expected TDD RED is preserved. If the same brief authorises both
+regression creation and the corresponding implementation, the agent
+may proceed through RED to GREEN. Otherwise stop at the approved
+boundary.
+
+Material contradictions, unsafe environments, scope conflicts,
+contract disputes and exhausted correction budgets always require
+STOP and escalation. Mechanical corrections preserving the exact
+approved contract may continue inside the authorised closed loop.
+
+Each report must include:
+* all targeted and neighboring test outcomes;
+* typecheck and resource-cleanup outcomes;
+* actual corrections and causal error evidence;
+* exact mutated files and protected-WIP integrity;
+* unresolved blockers and incomplete directives.
+
+Independent final terminal certification remains mandatory.
+All existing restrictions continue to apply unless this explicit
+closed-loop delegation narrowly overrides their stop-after-failure
+behavior for a mechanically correctable failure.
+
 TEST ASSERTION INTEGRITY
 Never autonomously:
 * change expected values because the test failed;
@@ -871,6 +937,10 @@ CONTRADICTIONS
 If observed evidence contradicts expected behaviour:
 REPORT THE CONTRADICTION.
 STOP AT THE REQUESTED BOUNDARY.
+For an explicitly approved closed-loop brief, a mechanically
+correctable failure that preserves the accepted contract may
+continue inside the allowed correction budget. Material
+contradictions and unexpected product behavior still require STOP.
 Do not:
 * reinterpret requirement;
 * repair state;

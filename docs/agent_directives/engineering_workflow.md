@@ -1,8 +1,8 @@
-ENGINEERING WORKFLOW v3.3
+ENGINEERING WORKFLOW v3.4
 
 Mode: Solo-developer, main-first execution
 
-Effective: 2026-10-02
+Effective: 2026-10-16
 
 Primary repository: SynchroFlow
 
@@ -1482,6 +1482,67 @@ VERIFY failure
 → TARGETED VERIFY
 
 Do not restart the entire issue unless evidence invalidated the original audit/design.
+
+13.10.1 AGENT-CLOSED-LOOP-01 — Bounded autonomous verification
+
+An approved CLOSED_LOOP_IMPLEMENT_AND_VERIFY brief delegates the
+complete implementation and targeted-verification loop to the
+execution agent for one explicitly bounded issue slice.
+
+Prerequisites:
+- Approved architecture, scope, acceptance criteria and regression contract.
+- Explicit source/test/fixture mutation allowlist.
+- Approved verification commands and safe execution environment.
+- Identified protected WIP and neighboring regression requirements.
+- No material unresolved product or architecture decision.
+
+Execution:
+1. Verify Git baseline, allowed files and protected WIP.
+2. Inspect canonical implementation, fixtures and test infrastructure.
+3. Implement the approved change.
+4. Execute the approved targeted test commands in the VS Code terminal.
+5. Classify failures before editing: production, fixture, test harness,
+   environment, stale contract, or material specification conflict.
+6. For repairable defects within the approved scope, preserve the
+   original invariant, make the smallest justified correction, and
+   rerun the same failing contract.
+7. After targeted GREEN, run approved neighboring tests and typechecks.
+8. Verify file scope, WIP integrity, disposable resource cleanup and
+   completion evidence.
+9. Return one report containing final results and correction history.
+
+Correction budget:
+- Maximum three correction cycles per delegated slice.
+- Never use unlimited retries or repeated execution until a flaky PASS.
+- A new failure class does not reset the slice-wide budget.
+- On exhaustion, stop and report the remaining failure.
+
+A mechanical fixture or test-harness correction is permitted only
+within explicitly approved test/fixture files and only when it
+preserves the same business state, execution path and assertions.
+An expected TDD RED must be recorded as RED, not concealed.
+Continue from RED to GREEN only when the same brief explicitly
+authorizes the corresponding implementation.
+
+Stop immediately when:
+- A change needs files or privileges outside the approved boundary.
+- Architecture, product semantics or acceptance criteria are disputed.
+- Passing would require weakening, skipping or replacing assertions.
+- Tenant isolation, authorization, RLS or data safety would be bypassed.
+- The database/provider/runtime safety target cannot be confirmed.
+- Unrelated WIP or parallel file ownership conflicts.
+- The environment is unsafe, cleanup cannot be assured, or material
+  unexpected behavior appears.
+- The correction budget is exhausted.
+
+Never use --forceExit as proof that Jest open handles are resolved.
+Never arbitrarily increase timeouts to conceal deadlocks. A test-runner
+timeout may be corrected only when an approved longer contention
+window or teardown requirement is evidenced and bounded.
+
+Agent-owned verification is preliminary evidence. Independent final
+terminal verification, documentation acceptance, stage/commit/push,
+CI, release and production certification remain lead/user-owned.
 
 13.11 Exit to WORKFLOW DOCUMENTATION DECISION
 
