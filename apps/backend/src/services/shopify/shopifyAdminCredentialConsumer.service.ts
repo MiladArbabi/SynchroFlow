@@ -9,7 +9,7 @@ import {
 import { refreshShopifyAdminCredential } from './shopifyAdminCredentialRefreshProvider.service.js';
 
 export type ShopifyAdminCredentialConsumerResult =
-  | { kind: 'READY'; accessToken: string; shopDomain: string; installationId: number }
+  | { kind: 'READY'; accessToken: string; shopDomain: string; installationId: number; generation: string }
   | { kind: 'REFRESH_IN_PROGRESS' | 'RETRYABLE' | 'PROVIDER_REJECTED' | 'REAUTH_REQUIRED' };
 
 type CurrentAuthority = Extract<ShopifyAdminCredentialCompletion, { kind: 'STALE_RESULT' }>['current'];
@@ -27,11 +27,16 @@ async function consumerResult(
           .andOn('credential.shop_id', '=', 'installation.shop_id');
       })
       .select('installation.id', 'installation.shop_domain')
-      .where('installation.shop_id', shopId).whereNull('installation.uninstalled_at')
+      .where('installation.shop_id', shopId)
+      .andWhere('installation.id', current.installationId)
+      .andWhere('credential.credential_generation', current.generation)
+      .andWhere('credential.credential_state', 'ACTIVE')
+      .whereNull('installation.uninstalled_at')
       .first<{ id: number; shop_domain: string }>());
-  if (!installation) return { kind: 'REAUTH_REQUIRED' };
+  if (!installation) return { kind: 'RETRYABLE' };
   return { kind: 'READY', accessToken: current.accessToken,
-    installationId: installation.id, shopDomain: installation.shop_domain };
+    installationId: installation.id, shopDomain: installation.shop_domain,
+    generation: current.generation };
 }
 
 /** Short lifecycle transactions commit before the single provider attempt. */
@@ -61,7 +66,8 @@ export async function resolveShopifyAdminCredentialForConsumer(
     if (completion.kind === 'STALE_RESULT') return consumerResult(input.shopId, completion.current);
     if (completion.kind !== 'ROTATED') return { kind: 'REAUTH_REQUIRED' };
     return { kind: 'READY', accessToken: provider.credentials.accessToken,
-      installationId: resolution.installationId, shopDomain: resolution.shopDomain };
+      installationId: resolution.installationId, shopDomain: resolution.shopDomain,
+      generation: String(completion.generation) };
   }
 
   const completion = await settleShopifyAdminCredentialRotation({

@@ -17,22 +17,37 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
   const platformShopName = 'test-shop.myshopify.com';
   const shopId = 1;
   const integrationId = 123;
+  const authority = {
+    installationId: 42,
+    shopDomain: platformShopName,
+    generation: '7',
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
+  it('rejects missing execution authority before dispatch', async () => {
+    await expect(
+      performSmartSync(accessToken, platformShopName, shopId, integrationId)
+    ).rejects.toThrow('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+
+    expect(mockPerformInitialSync).not.toHaveBeenCalled();
+    expect(mockPerformNonPCDSync).not.toHaveBeenCalled();
+  });
+
   it('uses performInitialSync on happy path and does not call fallback', async () => {
     mockPerformInitialSync.mockResolvedValueOnce(undefined);
 
-    await performSmartSync(accessToken, platformShopName, shopId, integrationId);
+    await performSmartSync(accessToken, platformShopName, shopId, integrationId, authority);
 
     expect(mockPerformInitialSync).toHaveBeenCalledTimes(1);
     expect(mockPerformInitialSync).toHaveBeenCalledWith(
       accessToken,
       platformShopName,
       shopId,
-      integrationId
+      integrationId,
+      { executionAuthority: authority }
     );
     expect(mockPerformNonPCDSync).not.toHaveBeenCalled();
   });
@@ -42,7 +57,7 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
       new Error('Access denied: Protected Customer Data is not approved for this app')
     );
 
-    await performSmartSync(accessToken, platformShopName, shopId, integrationId);
+    await performSmartSync(accessToken, platformShopName, shopId, integrationId, authority);
 
     expect(mockPerformInitialSync).toHaveBeenCalledTimes(1);
     expect(mockPerformNonPCDSync).toHaveBeenCalledTimes(1);
@@ -50,7 +65,8 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
       accessToken,
       platformShopName,
       shopId,
-      integrationId
+      integrationId,
+      authority
     );
   });
 
@@ -59,7 +75,7 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
       new Error('Your app is not approved to access the Order object in this store')
     );
 
-    await performSmartSync(accessToken, platformShopName, shopId, integrationId);
+    await performSmartSync(accessToken, platformShopName, shopId, integrationId, authority);
 
     expect(mockPerformInitialSync).toHaveBeenCalledTimes(1);
     expect(mockPerformNonPCDSync).toHaveBeenCalledTimes(1);
@@ -67,7 +83,8 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
       accessToken,
       platformShopName,
       shopId,
-      integrationId
+      integrationId,
+      authority
     );
   });
 
@@ -76,7 +93,7 @@ describe('ShopifySyncOrchestrator - performSmartSync', () => {
     mockPerformInitialSync.mockRejectedValueOnce(networkError);
 
     await expect(
-      performSmartSync(accessToken, platformShopName, shopId, integrationId)
+      performSmartSync(accessToken, platformShopName, shopId, integrationId, authority)
     ).rejects.toBe(networkError);
 
     expect(mockPerformInitialSync).toHaveBeenCalledTimes(1);

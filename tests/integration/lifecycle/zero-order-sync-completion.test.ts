@@ -30,8 +30,13 @@ import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/backend-core/db.js';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
+import { seedOfflineShopifySyncAuthority } from './shopify-sync-authority.fixture';
 
 const app = createApp();
+
+afterAll(async () => {
+  await db.destroy();
+});
 
 /** Drains every unprocessed domain event for the shop, oldest first. */
 async function pumpEvents(shopId: number, afterId = 0) {
@@ -105,7 +110,10 @@ async function insertPendingIntegration(shopId: number, shopDomain: string) {
       })
       .returning(['id'])
   );
-  return row.id as number;
+  const executionAuthority =
+    await seedOfflineShopifySyncAuthority(shopId, shopDomain);
+
+  return { integrationId: Number(row.id), executionAuthority };
 }
 
 /**
@@ -162,7 +170,7 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
     );
     expect(preSnapshot).toBeUndefined();
 
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
 
     // Drive the REAL emitter — proves the emission contract, not just the handler.
     await updateIntegrationStatus({
@@ -170,6 +178,7 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
       shopId,
       status: 'COMPLETED',
       error: null,
+      executionAuthority,
     });
 
     const integration = await withTenant(shopId, (trx) =>
@@ -220,7 +229,7 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
     const shopDomain = `zero-order-pcd-${Date.now()}.myshopify.com`;
     const { shopId } = await installFreshShop(shopDomain);
 
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId } = await insertPendingIntegration(shopId, shopDomain);
 
     // Direct write mirroring shopify-fallback.service.ts's own pattern —
     // bypasses updateIntegrationStatus entirely, exactly as the real
@@ -258,9 +267,12 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
   it('CASE 3 — duplicate completion is a no-op once FT1 is reached', async () => {
     const shopDomain = `zero-order-dup-${Date.now()}.myshopify.com`;
     const { shopId, ghostUser } = await installFreshShop(shopDomain);
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
 
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     let cursor = await pumpEvents(shopId);
 
     const afterFirst = await withTenant(shopId, (trx) =>
@@ -270,7 +282,10 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
 
     // A second legitimate completion for the same shop (e.g. a resync) —
     // recurring by design, not deduplicated at the producer.
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     cursor = await pumpEvents(shopId, cursor);
 
     const snapshots = await withTenant(shopId, (trx) =>
@@ -284,7 +299,7 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
   it('CASE 4a — snapshot already anchored: sync_completed handler no-ops', async () => {
     const shopDomain = `zero-order-race-anchored-${Date.now()}.myshopify.com`;
     const { shopId, ghostUser } = await installFreshShop(shopDomain);
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
 
     // The real order is inserted and pumped FIRST — domain_events.id
     // ordering is what pumpEvents drains by, so this deterministically
@@ -312,7 +327,10 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
 
     // NOW the completion event is emitted and drained — the new handler
     // must see the snapshot orders.create already anchored and no-op.
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     await pumpEvents(shopId, cursorAfterOrder);
 
     const snapshots = await withTenant(shopId, (trx) =>
@@ -325,7 +343,7 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
   it('CASE 4b — snapshot absent but live orders > 0: handler no-ops on the order-count guard, not the snapshot guard, then orders.create owns FT0', async () => {
     const shopDomain = `zero-order-race-ordercount-${Date.now()}.myshopify.com`;
     const { shopId, ghostUser } = await installFreshShop(shopDomain);
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
 
     // 1. An order ROW exists (raw insert — see rawInsertOrder's header for
     //    why a real orders/create event can't produce this state alone),
@@ -345,7 +363,10 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
 
     // 2. Emit and process integration/sync_completed while BOTH hold:
     //    snapshot absent AND live orders count > 0.
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     const cursorAfterCompletion = await pumpEvents(shopId);
 
     // 3. Prove the zero-order materializer did NOT run — no-opped on the
@@ -395,9 +416,12 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
   it('CASE 5 — a real order after zero-order FT1 ingests without lifecycle regression', async () => {
     const shopDomain = `zero-order-then-order-${Date.now()}.myshopify.com`;
     const { shopId, ghostUser } = await installFreshShop(shopDomain);
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
 
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     let cursor = await pumpEvents(shopId);
 
     const atFt1 = await withTenant(shopId, (trx) =>
@@ -461,8 +485,11 @@ describe('SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — zero-order sync completion', (
       })
     );
 
-    const integrationId = await insertPendingIntegration(shopId, shopDomain);
-    await updateIntegrationStatus({ integrationId, shopId, status: 'COMPLETED', error: null });
+    const { integrationId, executionAuthority } = await insertPendingIntegration(shopId, shopDomain);
+    await updateIntegrationStatus({
+      integrationId, shopId, status: 'COMPLETED',
+      error: null, executionAuthority,
+    });
     await pumpEvents(shopId);
 
     const atFt1 = await withTenant(shopId, (trx) =>

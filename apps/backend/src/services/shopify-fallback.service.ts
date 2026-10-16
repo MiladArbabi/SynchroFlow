@@ -2,6 +2,9 @@
 import { shopifyApi, ApiVersion, Session, LogSeverity } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import type {
+  ShopifySyncExecutionAuthority,
+} from './shopify/shopifyIntegrationStatus.service.js';
 import { Knex } from 'knex';
 
 // Add required scopes for non-PCD data
@@ -84,7 +87,23 @@ const NON_PCD_QUERIES = {
   `
 };
 
-export const performNonPCDSync = async (accessToken: string, platformShopName: string, shopId: number, integrationId: number) => {
+export const performNonPCDSync = async (
+  accessToken: string,
+  platformShopName: string,
+  shopId: number,
+  integrationId: number,
+  executionAuthority?: ShopifySyncExecutionAuthority
+) => {
+  if (
+    !executionAuthority ||
+    executionAuthority.shopDomain !== platformShopName ||
+    !Number.isSafeInteger(executionAuthority.installationId) ||
+    executionAuthority.installationId <= 0 ||
+    typeof executionAuthority.generation !== 'string' ||
+    !/^[0-9]+$/.test(executionAuthority.generation)
+  ) {
+    throw new Error('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+  }
   console.log(`[ShopifyFallback] Starting non-PCD sync for shopId: ${shopId}`);
 
   /**
@@ -104,17 +123,9 @@ export const performNonPCDSync = async (accessToken: string, platformShopName: s
     integrationId
   });
 
-  await withTenant(shopId, (trx) =>
-    trx('integrations')
-      .where({ id: integrationId, shop_id: shopId })
-      .update({
-        sync_status: 'DISABLED_ARCHITECTURE_GUARD',
-        sync_last_error:
-          'Fallback sync disabled — products/inventory must enter via domain events'
-      })
-  );
-
-  return;
+  // A disabled fallback must not mutate integration state directly.
+  // The worker records its failure through the generation-fenced writer.
+  throw new Error('SHOPIFY_FALLBACK_SYNC_DISABLED_ARCHITECTURE_GUARD');
 
   const session = new Session({
     id: `session-fallback-${shopId}`,

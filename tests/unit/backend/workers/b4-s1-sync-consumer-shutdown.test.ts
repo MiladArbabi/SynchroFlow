@@ -76,7 +76,11 @@ describe('B4-S1 sync consumer shutdown', () => {
       return callback(trx);
     });
     mockResolveCredential.mockResolvedValue({
-      kind: 'READY', accessToken: 'synthetic-token', shopDomain: 'b4-s1.myshopify.com',
+      kind: 'READY',
+      accessToken: 'synthetic-token',
+      shopDomain: 'b4-s1.myshopify.com',
+      installationId: 5,
+      generation: '4',
     });
     mockPerformSmartSync.mockResolvedValue(undefined);
   });

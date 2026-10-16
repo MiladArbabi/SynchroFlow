@@ -19,6 +19,10 @@
 // Refund-backfill isolation and the deterministic zero-entity Shopify client
 // mirror tests/integration/lifecycle/zero-product-initial-sync.test.ts.
 
+jest.mock('api-src/services/shopify/shopifyWebhook.service', () => ({
+  registerWebhooksForShop: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('api-src/services/shopify/shopifyRefundBackfill.service', () => ({
   backfillShopifyRefunds: jest
     .fn()
@@ -30,8 +34,13 @@ import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { performInitialSync } from 'api-src/services/shopify.service';
+import { seedOfflineShopifySyncAuthority } from './shopify-sync-authority.fixture';
 
 const app = createApp();
+
+afterAll(async () => {
+  await db.destroy();
+});
 
 /** Fresh HMAC install — same pattern as zero-product-initial-sync.test.ts. */
 async function installFreshShop(shopDomain: string) {
@@ -102,7 +111,10 @@ function makeEmptyStoreClient() {
       }
       return {
         data: {
-          products: { edges: [] },
+          products: {
+            edges: [],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
           shop: {
             id: 'gid://shopify/Shop/1',
             name: 'X',
@@ -149,12 +161,15 @@ describe('SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07 — manual recovery from FAI
     expect(before.sync_status).toBe('FAILED');
 
     const shopifyClient = makeEmptyStoreClient();
+    const executionAuthority =
+      await seedOfflineShopifySyncAuthority(shopId, shopDomain);
 
     // Canonical owner, invoked directly with the -06 seam. Must NOT throw
     // "Illegal sync_status transition: FAILED -> COMPLETED".
     await expect(
       performInitialSync('test-token', shopDomain, shopId, integrationId, {
         shopifyClient,
+        executionAuthority,
       })
     ).resolves.toBeUndefined();
 

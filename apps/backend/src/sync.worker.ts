@@ -3,6 +3,10 @@ import { getQueueChannel } from './queue.js';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { resolveShopifyAdminCredentialForConsumer } from './services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
+import {
+  updateIntegrationStatus,
+  type ShopifySyncExecutionAuthority,
+} from './services/shopify/shopifyIntegrationStatus.service.js';
 
 // --- Helper function to validate integration data ---
 const validateIntegration = (integration: any): { 
@@ -34,6 +38,10 @@ const validateIntegration = (integration: any): {
   
   return { isValid: true };
 };
+
+const staleSyncError = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message === 'SHOPIFY_SYNC_STALE_AUTHORITY';
 
 const SYNC_QUEUE_NAME = 'sync_jobs';
 let syncChannel: ReturnType<typeof getQueueChannel>;
@@ -100,15 +108,7 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     if (!validation.isValid) {
       console.error(`[sync.worker] Invalid integration data: ${validation.error}`);
       
-      // Update integration status to reflect the error
-      if (shopId) {
-        await withTenant(shopId, (trx) =>
-          trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
-            sync_status: 'FAILED',
-            sync_last_error: validation.error,
-          })
-        );
-      }
+      // No authenticated installation authority: do not mutate status.
       
       syncChannel.nack(msg as any, false, false);
       return;
@@ -129,39 +129,71 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     });
     if (credential.kind !== 'READY') {
       const code = `SHOPIFY_CREDENTIAL_${credential.kind}`;
-      await withTenant(integration!.shop_id, (trx) =>
-        trx('integrations').where({ id: integration!.id, shop_id: integration!.shop_id }).update({
-          sync_status: 'FAILED',
-          sync_last_error: code,
-        })
-      );
+      console.warn('[sync.worker] Credential authority unavailable:', code);
       syncChannel.nack(msg as any, false, false);
       return;
     }
 
-    await performSmartSync(
-      credential.accessToken,
-      credential.shopDomain,
-      integration!.shop_id,
-      integration!.id
-    );
+    const executionAuthority: ShopifySyncExecutionAuthority = {
+      installationId: credential.installationId,
+      shopDomain: credential.shopDomain,
+      generation: credential.generation,
+    };
+
+    if (
+      !Number.isSafeInteger(executionAuthority.installationId) ||
+      executionAuthority.installationId <= 0 ||
+      typeof executionAuthority.generation !== 'string' ||
+      executionAuthority.generation.length === 0 ||
+      executionAuthority.shopDomain !== integration!.platform_shop_name
+    ) {
+      console.error('[sync.worker] Missing or mismatched sync authority');
+      syncChannel.nack(msg as any, false, false);
+      return;
+    }
+
+    try {
+      await performSmartSync(
+        credential.accessToken,
+        credential.shopDomain,
+        integration!.shop_id,
+        integration!.id,
+        executionAuthority
+      );
+    } catch (error) {
+      if (staleSyncError(error)) {
+        console.warn('[sync.worker] Stale sync job discarded');
+        syncChannel.ack(msg as any);
+        return;
+      }
+
+      try {
+        await updateIntegrationStatus({
+          integrationId: integration!.id,
+          shopId: integration!.shop_id,
+          status: 'FAILED',
+          error: error instanceof Error ? error.message : String(error),
+          executionAuthority,
+        });
+      } catch (writeError) {
+        if (staleSyncError(writeError)) {
+          console.warn('[sync.worker] Failure write rejected by generation fence');
+          syncChannel.ack(msg as any);
+          return;
+        }
+        console.error('[sync.worker] Fenced failure write failed:', writeError);
+      }
+
+      throw error;
+    }
 
     console.log(`[sync.worker] Sync job COMPLETED for ${integrationId}`);
 
     syncChannel.ack(msg as any);
 
   } catch (error) {
-    // --- START: Pizza Dropped Reporting ---
-    if (integrationId && shopId) {
-      await withTenant(shopId, (trx) =>
-        trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
-          sync_status: 'FAILED',
-          sync_last_error: (error as Error).message || 'An unknown sync error occurred.',
-        })
-      );
-    }
-    // --- END: Pizza Dropped Reporting ---
-
+    // Failure persistence is exclusively generation-fenced above.
+    // Preserve the B4 delivery failure/ACK/NACK ownership contract.
     console.error('[sync.worker] Error processing sync job:', error);
     syncChannel.nack(msg as any, false, false);
   }

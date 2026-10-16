@@ -14,9 +14,13 @@
 //
 // The post-completion refund backfill (a fire-and-forget, non-fatal side
 // effect that runs AFTER sync_status = COMPLETED) is mocked so this test does
-// not poll for 60s / attempt a provider REST call. Webhook registration is
-// left real: it fails fast and non-fatally here because the offline fixture
-// has no shopify_app_installations row.
+// not poll for 60s / attempt a provider REST call. Webhook registration
+// is also mocked because this fixture now contains canonical credentials
+// and must never contact the Shopify provider.
+
+jest.mock('api-src/services/shopify/shopifyWebhook.service', () => ({
+  registerWebhooksForShop: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('api-src/services/shopify/shopifyRefundBackfill.service', () => ({
   backfillShopifyRefunds: jest
@@ -29,8 +33,13 @@ import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { performInitialSync } from 'api-src/services/shopify.service';
+import { seedOfflineShopifySyncAuthority } from './shopify-sync-authority.fixture';
 
 const app = createApp();
+
+afterAll(async () => {
+  await db.destroy();
+});
 
 /** Fresh HMAC install — same pattern as zero-order-sync-completion.test.ts. */
 async function installFreshShop(shopDomain: string) {
@@ -146,9 +155,12 @@ describe('SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 — zero-product / zero-order perform
 
     const integrationId = await insertPendingIntegration(shopId, shopDomain);
     const shopifyClient = makeEmptyStoreClient();
+    const executionAuthority =
+      await seedOfflineShopifySyncAuthority(shopId, shopDomain);
 
     await performInitialSync('test-token', shopDomain, shopId, integrationId, {
       shopifyClient,
+      executionAuthority,
     });
 
     // --- integration terminal state ---

@@ -10,7 +10,10 @@ import { collectShopifyCatalogProducts } from './shopify/shopifyCatalogPaginatio
 import { paginateShopify } from './shopify/shopifyPagination.service.js';
 import { registerWebhooksForShop } from './shopify/shopifyWebhook.service.js';
 import { syncShopifyProducts } from './shopify/shopifyProductSync.service.js';
-import { updateIntegrationStatus } from './shopify/shopifyIntegrationStatus.service.js';
+import {
+  updateIntegrationStatus,
+  type ShopifySyncExecutionAuthority,
+} from './shopify/shopifyIntegrationStatus.service.js';
 
 import { syncShopifyOrders } from './shopify/shopifyOrderSync.service.js';
 
@@ -31,8 +34,20 @@ export const performInitialSync = async (
   platformShopName: string,
   shopId: number,
   integrationId: number,
-  deps?: { shopifyClient?: ShopifyGraphqlLike }
+  deps?: {
+    shopifyClient?: ShopifyGraphqlLike;
+    executionAuthority?: ShopifySyncExecutionAuthority;
+  }
 ) => {
+
+  const executionAuthority = deps?.executionAuthority;
+
+  if (
+    !executionAuthority ||
+    executionAuthority.shopDomain !== platformShopName
+  ) {
+    throw new Error('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+  }
 
   const syncStart = Date.now();
 
@@ -82,6 +97,7 @@ export const performInitialSync = async (
       integrationId,
       shopId,
       status: 'SYNCING_PRODUCTS',
+      executionAuthority,
       progressCurrent: 0,
       progressTotal: 0,
       error: null,
@@ -111,6 +127,7 @@ export const performInitialSync = async (
       integrationId,
       shopId,
       status: 'SYNCING_PRODUCTS',
+      executionAuthority,
       progressCurrent: 0,
       progressTotal: totalProgress,
       error: null,
@@ -201,6 +218,7 @@ export const performInitialSync = async (
       integrationId,
       shopId,
       status: 'SYNCING_ORDERS',
+      executionAuthority,
       progressCurrent: totalProducts,
     });
 
@@ -260,6 +278,7 @@ export const performInitialSync = async (
       integrationId,
       shopId,
       status: 'COMPLETED',
+      executionAuthority,
       error: null,
     });
 
@@ -358,6 +377,7 @@ export const performInitialSync = async (
       integrationId,
       shopId,
       status: 'FAILED',
+      executionAuthority,
       error: error.message,
     });
     

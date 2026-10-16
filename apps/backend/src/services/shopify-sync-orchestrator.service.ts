@@ -2,6 +2,9 @@
 
 import { performNonPCDSync } from "./shopify-fallback.service.js";
 import { performInitialSync } from "./shopify.service.js";
+import type {
+  ShopifySyncExecutionAuthority,
+} from './shopify/shopifyIntegrationStatus.service.js';
 
 /**
  * Orchestrates a "smart" sync for Shopify integrations.
@@ -13,8 +16,15 @@ export const performSmartSync = async (
   accessToken: string,
   platformShopName: string,
   shopId: number,
-  integrationId: number
+  integrationId: number,
+  executionAuthority?: ShopifySyncExecutionAuthority
 ): Promise<void> => {
+  if (
+    !executionAuthority ||
+    executionAuthority.shopDomain !== platformShopName
+  ) {
+    throw new Error('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+  }
 
   console.info('[SHOPIFY_SMART_SYNC_STARTED]', {
     shopId,
@@ -23,7 +33,13 @@ export const performSmartSync = async (
   
   try {
     console.log(`[ShopifySyncOrchestrator] Attempting full sync for shopId: ${shopId}`);
-    await performInitialSync(accessToken, platformShopName, shopId, integrationId);
+    await performInitialSync(
+      accessToken,
+      platformShopName,
+      shopId,
+      integrationId,
+      { executionAuthority }
+    );
 
     return;
   } catch (error: any) {
@@ -34,7 +50,13 @@ export const performSmartSync = async (
         String(error.message).includes('Protected Customer Data'))
     ) {
       console.log(`[ShopifySyncOrchestrator] PCD access denied, falling back to non-PCD sync for shopId: ${shopId}`);
-      await performNonPCDSync(accessToken, platformShopName, shopId, integrationId);
+      await performNonPCDSync(
+        accessToken,
+        platformShopName,
+        shopId,
+        integrationId,
+        executionAuthority
+      );
 
       return;
     }

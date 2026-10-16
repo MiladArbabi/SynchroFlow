@@ -100,7 +100,14 @@ export async function triggerManualInitialSync(
       credential.accessToken,
       credential.shopDomain,
       shopId,
-      integrationId
+      integrationId,
+      {
+        executionAuthority: {
+          installationId: credential.installationId,
+          shopDomain: credential.shopDomain,
+          generation: credential.generation,
+        },
+      }
     );
 
     return res.status(200).json({

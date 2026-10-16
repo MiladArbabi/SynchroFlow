@@ -1,4 +1,11 @@
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import { lockShopifyAdminCredentialRotation } from './shopifyAdminCredential.repository.js';
+
+export interface ShopifySyncExecutionAuthority {
+  installationId: number;
+  shopDomain: string;
+  generation: string;
+}
 
 /**
  * SHOPIFY INTEGRATION STATUS SERVICE
@@ -18,6 +25,7 @@ export const updateIntegrationStatus = async ({
   progressCurrent,
   progressTotal,
   error,
+  executionAuthority,
 }: {
   integrationId: number;
   shopId: number;
@@ -25,7 +33,22 @@ export const updateIntegrationStatus = async ({
   progressCurrent?: number;
   progressTotal?: number;
   error?: string | null;
+  // Temporarily optional for migration of existing callers.
+  // Runtime enforcement below is unconditional.
+  executionAuthority?: ShopifySyncExecutionAuthority;
 }) => {
+  if (
+    !executionAuthority ||
+    !Number.isSafeInteger(executionAuthority.installationId) ||
+    executionAuthority.installationId <= 0 ||
+    typeof executionAuthority.shopDomain !== 'string' ||
+    !executionAuthority.shopDomain ||
+    typeof executionAuthority.generation !== 'string' ||
+    !/^\d+$/.test(executionAuthority.generation)
+  ) {
+    throw new Error('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+  }
+
   /**
      * PROGRESS PERSISTENCE GUARANTEE
      * ------------------------------
@@ -46,9 +69,41 @@ export const updateIntegrationStatus = async ({
     }
 
     await withTenant(shopId, async (trx) => {
-      await trx('integrations')
-        .where({ id: integrationId, shop_id: shopId })
+      // Same transaction-level lock used by uninstall, refresh and reconnect.
+      // No generation can advance between this check and the status/event commit.
+      await lockShopifyAdminCredentialRotation(trx, shopId);
+
+      const authority = await trx('shopify_app_installations as installation')
+        .join('shopify_admin_credentials as credential', function () {
+          this.on('credential.installation_id', '=', 'installation.id')
+            .andOn('credential.shop_id', '=', 'installation.shop_id');
+        })
+        .where({
+          'installation.id': executionAuthority.installationId,
+          'installation.shop_id': shopId,
+          'installation.shop_domain': executionAuthority.shopDomain,
+          'credential.credential_state': 'ACTIVE',
+          'credential.credential_generation': executionAuthority.generation,
+        })
+        .whereNull('installation.uninstalled_at')
+        .first('installation.id');
+
+      if (!authority) {
+        throw new Error('SHOPIFY_SYNC_STALE_AUTHORITY');
+      }
+
+      const updated = await trx('integrations')
+        .where({
+          id: integrationId,
+          shop_id: shopId,
+          platform: 'shopify',
+          platform_shop_name: executionAuthority.shopDomain,
+        })
         .update(updatePayload);
+
+      if (updated !== 1) {
+        throw new Error('SHOPIFY_SYNC_INTEGRATION_NOT_FOUND');
+      }
 
       /**
        * ATOMIC COMPLETION EVENT EMISSION (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02)

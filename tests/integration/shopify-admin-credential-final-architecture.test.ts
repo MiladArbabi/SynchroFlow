@@ -7,6 +7,7 @@ jest.mock('axios', () => {
   return { __esModule: true, default: client };
 });
 import { getSyncStatus } from 'api-src/api/integrations/integration.controller';
+import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
 import crypto from 'crypto';
 import axios from 'axios';
 import db, { systemTransaction, withTenant } from '@lasyncro/backend-core/db.js';
@@ -102,6 +103,7 @@ describe('Final Shopify Admin credential architecture', () => {
     const f = await fixture();
     expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW })).toEqual({
       kind: 'READY', accessToken: ACCESS_A, installationId: f.installationId, shopDomain: f.domain,
+      generation: '0',
     });
     expect(post).not.toHaveBeenCalled();
   });
@@ -130,6 +132,7 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(rows[0].credential_state).toBe('ACTIVE');
     expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW })).toEqual({
       kind: 'READY', accessToken: ACCESS_B, installationId: f.installationId, shopDomain: f.domain,
+      generation,
     });
     expect(post).not.toHaveBeenCalled();
   });
@@ -237,6 +240,167 @@ describe('Final Shopify Admin credential architecture', () => {
     });
   });
 
+  it('GH-1068 T2 — stale generation cannot complete after uninstall', async () => {
+    const f = await fixture();
+    const integration = (await metadata(f)).integration;
+    const [credential] = await credentials(f);
+
+    const expectedCredentialGeneration =
+      String(credential.credential_generation);
+
+    // Establish the legal pre-completion state.
+    for (const status of ['SYNCING_PRODUCTS', 'SYNCING_ORDERS']) {
+      await withTenant(f.shopId, trx =>
+        trx('integrations')
+          .where({ id: integration.id, shop_id: f.shopId })
+          .update({ sync_status: status })
+      );
+    }
+
+    // Uninstall invalidates the generation captured by this sync.
+    await withTenant(f.shopId, trx =>
+      ShopifyAppService.hardFenceAppUninstalled(
+        f.shopId, trx, NOW, f.domain
+      )
+    );
+
+    const afterUninstall = await metadata(f);
+    const [fencedCredential] = await credentials(f);
+
+    expect(afterUninstall.installation.uninstalled_at).toEqual(NOW);
+    expect(afterUninstall.integration.sync_status).toBe('SYNCING_ORDERS');
+    expect(fencedCredential.credential_state).toBe('REAUTH_REQUIRED');
+    expect(String(fencedCredential.credential_generation))
+      .not.toBe(expectedCredentialGeneration);
+
+    // Deliberately supply the generation the worker started with.
+    // Current implementation ignores it: this must RED before the fix.
+    const staleCompletion = {
+      integrationId: Number(integration.id),
+      shopId: f.shopId,
+      status: 'COMPLETED',
+      error: null,
+      executionAuthority: {
+        installationId: f.installationId,
+        shopDomain: f.domain,
+        generation: expectedCredentialGeneration,
+      },
+    };
+
+    let outcome = 'ACCEPTED';
+
+    try {
+      await updateIntegrationStatus(staleCompletion);
+    } catch (error) {
+      expect((error as Error).message).toBe('SHOPIFY_SYNC_STALE_AUTHORITY');
+      outcome = 'REJECTED';
+    }
+
+    const observed = await withTenant(f.shopId, async trx => {
+      const row = await trx('integrations')
+        .where({ id: integration.id, shop_id: f.shopId })
+        .first('sync_status');
+
+      const eventCount = await trx('domain_events')
+        .where({
+          shop_id: f.shopId,
+          event_type: 'integration/sync_completed',
+        })
+        .count('* as count')
+        .first();
+
+      return {
+        syncStatus: row?.sync_status,
+        completionEvents: Number(eventCount?.count ?? 0),
+      };
+    });
+
+    // A stale worker must not claim completion or emit its event.
+    expect({ outcome, ...observed }).toEqual({
+      outcome: 'REJECTED',
+      syncStatus: 'SYNCING_ORDERS',
+      completionEvents: 0,
+    });
+  });
+
+  it('GH-1068 T2 — missing authority fails closed; current generation completes', async () => {
+    const f = await fixture();
+    const integration = (await metadata(f)).integration;
+    const [credential] = await credentials(f);
+
+    for (const status of ['SYNCING_PRODUCTS', 'SYNCING_ORDERS']) {
+      await withTenant(f.shopId, trx =>
+        trx('integrations')
+          .where({ id: integration.id, shop_id: f.shopId })
+          .update({ sync_status: status })
+      );
+    }
+
+    const base = {
+      integrationId: Number(integration.id),
+      shopId: f.shopId,
+      status: 'COMPLETED',
+      error: null,
+    };
+
+    let missingAuthorityOutcome = 'ACCEPTED';
+    try {
+      await updateIntegrationStatus(base);
+    } catch (error) {
+      expect((error as Error).message).toBe('SHOPIFY_SYNC_AUTHORITY_REQUIRED');
+      missingAuthorityOutcome = 'REJECTED';
+    }
+
+    const before = await withTenant(f.shopId, async trx => ({
+      status: (await trx('integrations')
+        .where({ id: integration.id, shop_id: f.shopId })
+        .first('sync_status'))?.sync_status,
+      events: Number((await trx('domain_events')
+        .where({
+          shop_id: f.shopId,
+          event_type: 'integration/sync_completed',
+        })
+        .count('* as count')
+        .first())?.count ?? 0),
+    }));
+
+    expect({
+      missingAuthorityOutcome,
+      ...before,
+    }).toEqual({
+      missingAuthorityOutcome: 'REJECTED',
+      status: 'SYNCING_ORDERS',
+      events: 0,
+    });
+
+    await updateIntegrationStatus({
+      ...base,
+      executionAuthority: {
+        installationId: f.installationId,
+        shopDomain: f.domain,
+        generation: String(credential.credential_generation),
+      },
+    });
+
+    const after = await withTenant(f.shopId, async trx => ({
+      status: (await trx('integrations')
+        .where({ id: integration.id, shop_id: f.shopId })
+        .first('sync_status'))?.sync_status,
+      events: Number((await trx('domain_events')
+        .where({
+          shop_id: f.shopId,
+          event_type: 'integration/sync_completed',
+        })
+        .count('* as count')
+        .first())?.count ?? 0),
+    }));
+
+    expect(after).toEqual({
+      status: 'COMPLETED',
+      events: 1,
+    });
+  });
+
   it('C6 — expired access refreshes through the canonical provider and lifecycle', async () => {
     const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
     const [before] = await credentials(f), metadataBefore = await metadata(f);
@@ -247,7 +411,9 @@ describe('Final Shopify Admin credential architecture', () => {
       return { data: { access_token: ACCESS_B, refresh_token: REFRESH_B,
         expires_in: 3600, refresh_token_expires_in: 86400, scope: SHOPIFY_REQUIRED_SCOPE_STRING } };
     });
-    const ready = { kind: 'READY', accessToken: ACCESS_B, installationId: f.installationId, shopDomain: f.domain };
+    const ready = { kind: 'READY', accessToken: ACCESS_B, installationId: f.installationId,
+      shopDomain: f.domain,
+      generation: (BigInt(before.credential_generation) + 1n).toString() };
     expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW })).toEqual(ready);
     const rows = await credentials(f);
     expect(rows).toHaveLength(1);

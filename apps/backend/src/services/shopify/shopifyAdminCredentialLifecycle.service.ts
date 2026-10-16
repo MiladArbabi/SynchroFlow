@@ -24,7 +24,7 @@ import {
 } from './shopifyAdminCredential.repository.js';
 
 export type ShopifyAdminCredentialResolution =
-  | { kind: 'READY'; accessToken: string }
+  | { kind: 'READY'; accessToken: string; installationId: number; generation: string }
   | { kind: 'REAUTH_REQUIRED' | 'REFRESH_IN_PROGRESS' }
   | { kind: 'ROTATION_CLAIMED'; leaseToken: string; generation: string;
       refreshTokenEncrypted: string; installationId: number; shopDomain: string };
@@ -33,8 +33,15 @@ type Input = { shopId: number; now: Date };
 const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
 const DECRYPT_CONTEXT = 'shopify.adminCredential.lifecycle';
 
-function ready(credential: ShopifyAdminCredentialRow): ShopifyAdminCredentialResolution {
-  return { kind: 'READY', accessToken: decrypt(credential.access_token_encrypted!, DECRYPT_CONTEXT) };
+function ready(
+  credential: ShopifyAdminCredentialRow,
+): Extract<ShopifyAdminCredentialResolution, { kind: 'READY' }> {
+  return {
+    kind: 'READY',
+    accessToken: decrypt(credential.access_token_encrypted!, DECRYPT_CONTEXT),
+    installationId: credential.installation_id,
+    generation: String(credential.credential_generation),
+  };
 }
 
 /** Undefined means a short, locked T1 claim is needed. No refresh plaintext here. */
@@ -100,7 +107,7 @@ export async function claimShopifyAdminCredentialRotation(
 
 type RotationInput = ShopifyAdminCredentialRotationOwner & { now: Date };
 type CurrentAuthority =
-  | { kind: 'READY'; accessToken: string }
+  | { kind: 'READY'; accessToken: string; installationId: number; generation: string }
   | { kind: 'REAUTH_REQUIRED' | 'REFRESH_IN_PROGRESS' | 'RETRYABLE' };
 export type ShopifyAdminCredentialCompletion =
   | { kind: 'ROTATED' | 'REAUTH_REQUIRED'; generation: string }
@@ -132,7 +139,7 @@ async function staleRotationResult(
     authority = { kind: 'REAUTH_REQUIRED' };
   } else if (current.access_token_encrypted
     && (current.access_expires_at?.getTime() ?? -Infinity) > now.getTime()) {
-    authority = { kind: 'READY', accessToken: decrypt(current.access_token_encrypted, DECRYPT_CONTEXT) };
+    authority = ready(current);
   } else {
     authority = { kind: current.rotation_lease_token
       && (current.rotation_lease_expires_at?.getTime() ?? -Infinity) > now.getTime()

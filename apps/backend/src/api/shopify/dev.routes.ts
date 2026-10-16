@@ -52,7 +52,12 @@ router.post('/dev/trigger-sync', async (_req: Request, res: Response) => {
       credential.accessToken,
       credential.shopDomain,
       shop_id,
-      integration_id
+      integration_id,
+      {
+        installationId: credential.installationId,
+        shopDomain: credential.shopDomain,
+        generation: credential.generation,
+      }
     );
 
     return res.status(200).json({ status: 'sync completed' });
