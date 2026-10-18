@@ -204,7 +204,14 @@ describe('AUTH-TENANT-01 real PostgreSQL certification', () => {
     const refund = await post('refund-backfill', { shopId: shopB.shopId }, 'admin');
     expect([initial.status, manual.status, refund.status]).toEqual([200, 200, 200]);
     expect(resolveShopifyAdminCredentialForConsumer).toHaveBeenCalledWith(expect.objectContaining({ shopId: shopA.shopId }));
-    expect((performInitialSync as jest.Mock).mock.calls).toEqual([['synthetic-auth-tenant-token', 'auth-tenant.invalid', shopA.shopId, shopA.integrationId]]);
+    // GH-1068 T2: the controller forwards the resolved credential's authority as the
+    // fifth argument. This suite's resolver mock supplies neither installationId nor
+    // generation, so both are forwarded as undefined; strict equality pins the exact
+    // shape and the shop-domain/tenant association without inventing fixture values.
+    expect((performInitialSync as jest.Mock).mock.calls).toStrictEqual([[
+      'synthetic-auth-tenant-token', 'auth-tenant.invalid', shopA.shopId, shopA.integrationId,
+      { executionAuthority: { installationId: undefined, shopDomain: 'auth-tenant.invalid', generation: undefined } },
+    ]]);
     expect((backfillShopifyRefunds as jest.Mock).mock.calls).toEqual([[shopA.shopId]]);
     const after = await bothStates();
     expect(after.B).toEqual(before.B);

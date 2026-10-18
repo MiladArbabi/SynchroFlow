@@ -255,56 +255,6 @@ export async function fenceShopifyAdminCredentialReconnect(
   return updatedGeneration(rows);
 }
 
-/** Canonical replacement and identity/sync metadata share one owner transaction. */
-export async function replaceOwnedShopifyAdminReconnectCredentials(
-  trx: Knex.Transaction,
-  credential: ShopifyAdminCredentialRow,
-  owner: ShopifyAdminCredentialReconnectOwner,
-  credentials: ShopifyOAuthAcquisition,
-  now: Date,
-): Promise<{ generation: string; integration: { id: number } } | undefined> {
-  const accessTokenEncrypted = encrypt(credentials.accessToken);
-  const refreshTokenEncrypted = encrypt(credentials.refreshToken);
-  const rows = await ownedReconnectQuery(trx, credential, owner).update({
-    access_token_encrypted: accessTokenEncrypted,
-    refresh_token_encrypted: refreshTokenEncrypted,
-    access_expires_at: credentials.accessExpiresAt,
-    refresh_expires_at: credentials.refreshExpiresAt,
-    granted_scopes: credentials.grantedScopes,
-    credential_state: 'ACTIVE',
-    ...CLEARED_ROTATION_LEASE,
-    updated_at: now,
-  }).returning('credential_generation');
-  const generation = updatedGeneration(rows);
-  if (generation === undefined) return undefined;
-
-  const installations = await reconnectInstallationQuery(trx, owner).update({
-    shop_gid: credentials.shopIdentity.gid,
-    scopes: credentials.grantedScopes,
-    ...(owner.installationState === 'UNINSTALLED' ? { uninstalled_at: null } : {}),
-    updated_at: now,
-  }).returning('id');
-  if (installations.length !== 1) throw new Error('SHOPIFY_RECONNECT_INSTALLATION_UPDATE_CARDINALITY');
-
-  await trx('shops').where({ id: owner.shopId })
-    .update({ base_currency: credentials.shopIdentity.currencyCode ?? 'USD' });
-  if (credentials.shopIdentity.ianaTimezone) {
-    await trx('shops').where({ id: owner.shopId, timezone_source: 'shopify' })
-      .update({ timezone: credentials.shopIdentity.ianaTimezone });
-  }
-
-  const integrations = await trx('integrations').insert({
-    shop_id: owner.shopId,
-    platform: 'shopify',
-    platform_shop_name: owner.shopDomain,
-    updated_at: now,
-  }).onConflict(['shop_id', 'platform']).merge({
-    updated_at: now,
-  }).returning('id');
-  if (integrations.length !== 1) throw new Error('SHOPIFY_RECONNECT_INTEGRATION_UPSERT_CARDINALITY');
-  return { generation, integration: integrations[0] };
-}
-
 /** Restore prior state only for definitive no-issuance, while retaining the advanced epoch. */
 export async function settleOwnedShopifyAdminCredentialReconnect(
   trx: Knex.Transaction,

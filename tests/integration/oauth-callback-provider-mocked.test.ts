@@ -67,6 +67,7 @@ jest.mock('@lasyncro/backend-core/services/redis.client.js', () => ({
 
 import crypto from 'crypto';
 import { isDeepStrictEqual } from 'util';
+import pg from 'pg';
 import request from 'supertest';
 import axios from 'axios';
 import { createApp } from 'api-src/bootstrap/express';
@@ -74,6 +75,7 @@ import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { SHOPIFY_REQUIRED_SCOPES } from 'api-src/services/shopify/shopifyScopes';
 import { decrypt } from 'api-src/security/encryption.service';
 import { invalidatePermissionCache, isActionAllowed } from 'api-src/services/permissions/permissionCache.service';
+import { closeShopifyReconnectExecutor } from 'api-src/services/shopify/shopifyReconnectExecutor.db';
 import { issueTestToken } from '../unit/helpers/auth';
 
 const app = createApp();
@@ -483,10 +485,12 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     });
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (savedAppBaseUrl === undefined) delete process.env.APP_BASE_URL;
     else process.env.APP_BASE_URL = savedAppBaseUrl;
     (global as unknown as { fetch: unknown }).fetch = realFetch;
+    // GH-1068 T3: release this suite's E sessions; no executor pool outlives the suite.
+    await closeShopifyReconnectExecutor();
   });
 
   afterEach(() => {
@@ -701,6 +705,73 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(events).toHaveLength(eventsBefore.length + 1);
     expect(await outboxRowsForEvent(fixture.shopId, Number(events[events.length - 1].id))).toHaveLength(1);
     expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  it('GH-1068 T3: executor readiness gates Shopify acquisition; a real readiness failure releases the lease without fallback', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('t3-ready-initial-access', FULL_GRANT_STRING, 't3-ready-initial-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    const token = issueTestToken({ userId: fixture.userId, shopId: fixture.shopId, roles: ['owner'] });
+    const reconnect = async (code: string) => {
+      const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+        .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+      expect(initiated.status).toBe(200);
+      const state = await readOAuthState(fixture.userId);
+      return d07Callback(d07SignedQuery({ code, state, shop: fixture.shopDomain,
+        timestamp: String(Math.floor(Date.now() / 1000)) }));
+    };
+    const before = await d07Authority(fixture.shopId);
+    const eventsBefore = await syncRequestedEvents(fixture.shopId);
+
+    // Real database-side readiness failure: E temporarily loses USAGE on the
+    // private schema, so attestation fails on a live, authenticated E session.
+    const admin = new pg.Client({ host: process.env.PGHOST, port: Number(process.env.PGPORT),
+      database: process.env.PGDATABASE, user: process.env.PGMIGRATION_USER,
+      password: process.env.PGMIGRATION_PASSWORD, connectionTimeoutMillis: 3_000 });
+    await admin.connect();
+    // Exact ACL entry set (grantee, grantor, privilege, grantable); aclitem order is not semantic.
+    const acl = async () => (await admin.query(`SELECT pg_get_userbyid(a.grantee) || '/' ||
+        pg_get_userbyid(a.grantor) || '/' || a.privilege_type || '/' || a.is_grantable AS entry
+      FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'shopify_reconnect_private'
+      ORDER BY 1`)).rows.map(row => row.entry);
+    const aclBefore = await acl();
+    let aclAfter: string[] | undefined;
+    let failed: request.Response | undefined;
+    try {
+      await admin.query('REVOKE USAGE ON SCHEMA shopify_reconnect_private FROM sf_shopify_reconnect_executor');
+      programAxios({ token: tokenOk('t3-ready-forbidden-access', FULL_GRANT_STRING, 't3-ready-forbidden-refresh'),
+        graphql: graphqlOk(fixture.shopDomain) });
+      failed = await reconnect('t3-readiness-failure-code');
+    } finally {
+      try {
+        await admin.query('GRANT USAGE ON SCHEMA shopify_reconnect_private TO sf_shopify_reconnect_executor');
+        aclAfter = await acl();
+      } finally { await admin.end(); }
+    }
+    expect(aclAfter).toEqual(aclBefore);
+    expect(failed?.status).toBe(500);
+    expect(axiosPost.mock.calls.length).toBe(0);
+    const after = await d07Authority(fixture.shopId);
+    expect(isDeepStrictEqual(after.integrations, before.integrations)).toBe(true);
+    expect(isDeepStrictEqual(after.installations, before.installations)).toBe(true);
+    expect(after.credentials).toHaveLength(1);
+    // No sf_app fallback: predecessor material is untouched and the prepared lease is released.
+    expect(after.credentials[0].access_token_encrypted).toBe(before.credentials[0].access_token_encrypted);
+    expect(after.credentials[0].refresh_token_encrypted).toBe(before.credentials[0].refresh_token_encrypted);
+    expect(after.credentials[0]).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
+    expect(await syncRequestedEvents(fixture.shopId)).toHaveLength(eventsBefore.length);
+    expect(d07SessionEffects(failed!).refreshCookies).toHaveLength(0);
+
+    // Restored readiness: the same reconnect now acquires exactly once and finalizes through E.
+    programAxios({ token: tokenOk('t3-ready-restored-access', FULL_GRANT_STRING, 't3-ready-restored-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    const restored = await reconnect('t3-readiness-restored-code');
+    expect(restored.status).toBe(302);
+    expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+    const reconnected = await d07Authority(fixture.shopId);
+    expect(decrypt(reconnected.credentials[0].access_token_encrypted, 'shopify.dev')).toBe('t3-ready-restored-access');
+    expect(reconnected.credentials[0]).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
   });
 
   it('AUTH-OAUTH-REAUTH-01 B/C: revoked Admin grant denies the original signed reconnect without privileged effects', async () => {

@@ -12,6 +12,7 @@ import { runSchemaGuard } from './utils/schemaGuard.js';
 import { initRedisClient, closeRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
 import { flushAnalytics } from './utils/analytics.js';
 import { assertRuntimeDatabaseIdentity } from '@lasyncro/backend-core/db.js';
+import { closeShopifyReconnectExecutor } from './services/shopify/shopifyReconnectExecutor.db.js';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -88,6 +89,10 @@ const shutdown = createProcessShutdown({
     stopWorkers(),
   ],
   cleanup: [
+    {
+      name: 'shopify-reconnect-executor',
+      run: () => closeShopifyReconnectExecutor(),
+    },
     {
       name: 'analytics',
       run: () => flushAnalytics(),

@@ -1,0 +1,244 @@
+#!/usr/bin/env node
+'use strict';
+
+// No dotenv, application imports, credential defaults or production provisioning.
+// PROVISION is a library operation for a trusted disposable-cluster orchestrator:
+// verifyDisposableContext must independently inspect isolation, not echo input or
+// trust NODE_ENV/a name/CI=true. No CLI/env switch supplies that capability.
+// Production bootstrap and password rotation remain separate operator work.
+const crypto = require('node:crypto');
+const path = require('node:path');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+const E = 'sf_shopify_reconnect_executor';
+const O = 'sf_shopify_reconnect_owner';
+const MIGRATION = path.resolve(__dirname,
+  '../apps/backend/migrations/20261016150000_0215_harden_reconnect_and_priority_function_authority.ts');
+const reject = () => new Error('SHOPIFY_RECONNECT_PREREQUISITES_REJECTED');
+
+// Narrow provisioning facts only. Full migration security/body/ACL validation
+// is owned by 0215 and delegated below, never reimplemented here.
+const ROLE_FACTS = `
+  SELECT r.rolname, r.rolcanlogin, r.rolsuper, r.rolbypassrls,
+    r.rolcreatedb, r.rolcreaterole, r.rolreplication,
+    EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m
+      WHERE m.member=r.oid OR m.roleid=r.oid) AS membership,
+    (EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datdba=r.oid)
+      OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspowner=r.oid)
+      OR EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relowner=r.oid)
+      OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=r.oid
+        AND NOT (r.rolname='sf_shopify_reconnect_owner' AND oid=COALESCE(
+          pg_catalog.to_regprocedure('shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text)')::oid,0))))
+      AS unexpected_ownership,
+    pg_catalog.has_schema_privilege(r.oid,'public','CREATE') AS public_create,
+    EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+        AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp'
+        AND c.relkind IN ('r','p','v','m','f')
+        AND (pg_catalog.has_table_privilege(r.oid,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+          OR pg_catalog.has_any_column_privilege(r.oid,c.oid,'INSERT,UPDATE,REFERENCES')))
+      AS table_write
+  FROM pg_catalog.pg_roles r WHERE r.rolname IN ($1,$2)
+`;
+const PUBLIC_FACTS = `
+  SELECT
+    EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n,
+      LATERAL pg_catalog.aclexplode(COALESCE(n.nspacl,pg_catalog.acldefault('n',n.nspowner))) a
+      WHERE n.nspname='public' AND a.grantee=0 AND a.privilege_type='CREATE')
+      AS public_create,
+    EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) a
+      WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+        AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp'
+        AND c.relkind IN ('r','p','v','m','f') AND a.grantee=0
+        AND a.privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'))
+    OR EXISTS (SELECT 1 FROM pg_catalog.pg_attribute col
+      JOIN pg_catalog.pg_class c ON c.oid=col.attrelid
+      JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(col.attacl) a
+      WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+        AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp'
+        AND c.relkind IN ('r','p','v','m','f') AND a.grantee=0
+        AND a.privilege_type IN ('INSERT','UPDATE','REFERENCES')) AS public_write,
+    EXISTS (SELECT 1 FROM pg_catalog.pg_namespace
+      WHERE nspname='shopify_reconnect_private') AS private_schema
+`;
+
+function configuration(input) {
+  const c = { ...input, target: { ...input?.target }, administrator: { ...input?.administrator },
+    mode: input?.mode ?? 'CHECK', phase: input?.phase ?? 'PRE' };
+  if (!['CHECK', 'PROVISION'].includes(c.mode) || !['PRE', 'POST'].includes(c.phase)
+    || !c.target || !c.administrator) throw reject();
+  for (const value of [c.target.host, c.target.database, c.target.systemIdentifier,
+    c.administrator.user, c.administrator.password]) {
+    if (typeof value !== 'string' || !value || value.includes('\0')) throw reject();
+  }
+  if (!/^\d+$/.test(c.target.systemIdentifier)
+    || !Number.isInteger(c.target.port) || c.target.port < 1 || c.target.port > 65535
+    || ['sf_app', E, O].includes(c.administrator.user)
+    || !['verify-full', 'disable'].includes(c.target.tls ?? 'verify-full')) throw reject();
+  if (c.mode === 'PROVISION' && (typeof c.executorPassword !== 'string'
+    || c.executorPassword.length < 32 || c.executorPassword.includes('\0'))) throw reject();
+  return c;
+}
+
+function connection(c, database = c.target.database) {
+  return {
+    host: c.target.host, port: c.target.port, database,
+    user: c.administrator.user, password: c.administrator.password,
+    ssl: c.target.tls === 'disable' ? false : { rejectUnauthorized: true },
+    connectionTimeoutMillis: 3000, statement_timeout: 5000,
+    query_timeout: 6000, lock_timeout: 2000,
+    idle_in_transaction_session_timeout: 10000,
+    options: '-c search_path=pg_catalog,pg_temp',
+    application_name: 'shopify-reconnect-prerequisites',
+  };
+}
+
+async function identity(client, c, database = c.target.database) {
+  const result = await client.query(`SELECT current_database() AS database,
+    session_user::text AS session_user, current_user::text AS current_user,
+    r.rolsuper, control.system_identifier::text AS system_identifier
+    FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_control_system() control
+    WHERE r.rolname=session_user`);
+  const r = result.rows[0];
+  // Superuser is deliberately required: CREATEROLE/SET ROLE memberships cannot
+  // safely replace 0215's ownership transfer under its zero-membership contract.
+  if (result.rows.length !== 1 || r.database !== database
+    || r.session_user !== c.administrator.user || r.current_user !== c.administrator.user
+    || r.rolsuper !== true || r.system_identifier !== c.target.systemIdentifier) throw reject();
+}
+
+function validateRoles(rows, allowMissing) {
+  if (rows.length > 2 || new Set(rows.map(r => r.rolname)).size !== rows.length) throw reject();
+  for (const name of [E, O]) {
+    const r = rows.find(row => row.rolname === name);
+    if (!r) { if (!allowMissing) throw reject(); continue; }
+    if (r.rolcanlogin !== (name === E)
+      || ['rolsuper', 'rolbypassrls', 'rolcreatedb', 'rolcreaterole', 'rolreplication',
+        'membership', 'unexpected_ownership', 'public_create'].some(key => r[key] !== false)
+      || (name === E && r.table_write !== false)) throw reject();
+  }
+  if (rows.some(r => ![E, O].includes(r.rolname))) throw reject();
+}
+
+async function facts(client, allowMissing) {
+  const roles = (await client.query(ROLE_FACTS, [E, O])).rows;
+  const result = await client.query(PUBLIC_FACTS);
+  const p = result.rows[0];
+  if (result.rows.length !== 1 || p.public_create !== false || p.public_write !== false
+    || typeof p.private_schema !== 'boolean') throw reject();
+  validateRoles(roles, allowMissing);
+  return { roles, privateSchema: p.private_schema };
+}
+
+async function authoritativePostcheck(client) {
+  // Compile ONLY the fixed, current migration in memory. Its imports are type
+  // only; evaluating definitions does not run UP/DOWN or load application code.
+  // No stale dist fallback and no generated file. TypeScript is an explicit
+  // operator-tool dependency, already installed by this repository's npm ci.
+  const ts = require('typescript');
+  const output = ts.transpileModule(fs.readFileSync(MIGRATION, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const sandbox = { exports: /** @type {Record<string, Function>} */ ({}) };
+  vm.runInNewContext(output, sandbox, { filename: MIGRATION, timeout: 1000 });
+  if (typeof sandbox.exports.assertSecurityPostconditions !== 'function') throw reject();
+  await sandbox.exports.assertSecurityPostconditions({ raw: sql => client.query(sql) });
+}
+
+// PostgreSQL DDL cannot bind a PASSWORD parameter. Send a SCRAM verifier rather
+// than plaintext, using only locally generated base64/digits in a fixed DDL shape.
+// Never log SQL, verifiers or driver errors; server diagnostic policy remains
+// operator-owned. This utility never returns credential/verifier material.
+function verifier(password) {
+  const salt = crypto.randomBytes(16);
+  const salted = crypto.pbkdf2Sync(password, salt, 16384, 32, 'sha256');
+  const clientKey = crypto.createHmac('sha256', salted).update('Client Key').digest();
+  const stored = crypto.createHash('sha256').update(clientKey).digest('base64');
+  const server = crypto.createHmac('sha256', salted).update('Server Key').digest('base64');
+  return `SCRAM-SHA-256$16384:${salt.toString('base64')}$${stored}:${server}`;
+}
+
+async function run(input, dependencies = {}) {
+  let client, lockClient, transaction = false, result, failed = false;
+  try {
+    const c = configuration(input);
+    if (c.mode === 'PROVISION') {
+      if (c.context !== 'disposable-ci' || typeof dependencies.verifyDisposableContext !== 'function') throw reject();
+      const proof = await dependencies.verifyDisposableContext(Object.freeze({ ...c.target }));
+      if (!proof || proof.isolated !== true || proof.disposable !== true
+        || proof.administrator !== c.administrator.user
+        || ['host', 'port', 'database', 'systemIdentifier'].some(k => proof[k] !== c.target[k])
+        || !/^synchroflow_test_[A-Za-z0-9_]+$/.test(c.target.database)) throw reject();
+    }
+    const createClient = dependencies.createClient ?? (options => new (require('pg').Client)(options));
+    client = createClient(connection(c));
+    await client.connect();
+    await identity(client, c);
+    if (c.mode === 'PROVISION') {
+      // Roles are cluster-global. All target DBs serialize through the SAME
+      // fixed maintenance DB, not independent database-local lock namespaces.
+      lockClient = createClient(connection(c, 'postgres'));
+      await lockClient.connect();
+      await identity(lockClient, c, 'postgres');
+      await lockClient.query('BEGIN');
+      await lockClient.query("SELECT pg_catalog.pg_advisory_xact_lock(1068, 215)");
+    }
+    await client.query(c.mode === 'CHECK' ? 'BEGIN READ ONLY' : 'BEGIN');
+    transaction = true;
+    const before = await facts(client, c.mode === 'PROVISION');
+    // Existing private authority must already satisfy 0215, even in PRE mode.
+    if (c.phase === 'POST' || before.privateSchema) await authoritativePostcheck(client);
+    const created = [];
+    if (c.mode === 'PROVISION') {
+      if (!before.roles.some(r => r.rolname === E)) {
+        await client.query(`CREATE ROLE sf_shopify_reconnect_executor LOGIN NOSUPERUSER
+          NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '${verifier(c.executorPassword)}'`);
+        created.push(E);
+      }
+      if (!before.roles.some(r => r.rolname === O)) {
+        await client.query(`CREATE ROLE sf_shopify_reconnect_owner NOLOGIN NOSUPERUSER
+          NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION`);
+        created.push(O);
+      }
+      await facts(client, false);
+    }
+    await client.query('COMMIT');
+    transaction = false;
+    result = { mode: c.mode, phase: c.phase, created,
+      security: c.phase === 'POST' || before.privateSchema ? '0215_VALIDATED' : 'ROLE_PREREQUISITES_ONLY' };
+  } catch {
+    failed = true;
+    if (transaction) { try { await client.query('ROLLBACK'); } catch { /* close below */ } }
+  } finally {
+    // Closing the maintenance session releases its transaction-scoped lock.
+    for (const c of [client, lockClient]) {
+      if (c) { try { await c.end(); } catch { failed = true; } }
+    }
+  }
+  // No causes, SQLSTATEs, messages, URLs or configuration escape this boundary.
+  if (failed) throw reject();
+  return result;
+}
+
+function fromEnvironment(env, argv) {
+  if (argv.length > 1 || (argv[0] !== undefined && !['CHECK', 'PROVISION'].includes(argv[0]))) throw reject();
+  return {
+    mode: argv[0] ?? 'CHECK', phase: env.RECONNECT_CHECK_PHASE ?? 'PRE',
+    target: { host: env.RECONNECT_TARGET_HOST, port: Number(env.RECONNECT_TARGET_PORT),
+      database: env.RECONNECT_TARGET_DATABASE, systemIdentifier: env.RECONNECT_TARGET_SYSTEM_IDENTIFIER,
+      tls: env.RECONNECT_TARGET_TLS ?? 'verify-full' },
+    administrator: { user: env.RECONNECT_ADMIN_USER, password: env.RECONNECT_ADMIN_PASSWORD },
+  };
+}
+
+module.exports = { run, fromEnvironment };
+if (require.main === module) {
+  Promise.resolve().then(() => run(fromEnvironment(process.env, process.argv.slice(2))))
+    .then(result => console.log(JSON.stringify(result)))
+    .catch(() => { console.error('SHOPIFY_RECONNECT_PREREQUISITES_REJECTED'); process.exitCode = 1; });
+}

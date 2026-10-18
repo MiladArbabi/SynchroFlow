@@ -15,10 +15,30 @@ Claude is the engineering lead and owns:
 * whether automated tests are required, optional, or skipped;
 * whether verification evidence is sufficient.
 Milad is the decision maker and code approver.
-The current engineering workflow is:
-AUDIT→ optional WORKSHOP when explicitly requested→ TEST STRATEGY / REGRESSION CONTRACT→ IMPLEMENT→ VERIFY + REGRESSION→ DOC→ COMMIT & PUSH→ REPEAT
-The execution agent operates only inside the single phase/slice named in the current brief.
+The current engineering workflow is risk-adaptive (engineering_workflow.md RISK-TIER-01). The engineering lead selects one risk tier per issue:
+* LOW: IMPLEMENT → TARGETED VERIFY → SHIP
+* MEDIUM: FOCUSED AUDIT / EXISTING CONTRACT → IMPLEMENT + TARGETED VERIFY → SHIP
+* HIGH: SECURITY / BUSINESS CONTRACT → IMPLEMENT + TARGETED VERIFY → RISK-BASED REVIEW → CERTIFY → SHIP
+The full gate inventory (AUDIT, WORKSHOP, TEST STRATEGY / REGRESSION CONTRACT, IMPLEMENT, VERIFY + REGRESSION, DOC, COMMIT & PUSH) still exists; the tier selects which gates run. The agent does not choose, change or downgrade the risk tier. If evidence suggests higher risk than the brief's tier, report it under FINDINGS and stop at the brief boundary.
+The execution agent operates only inside the single phase/slice named in the current brief. A brief may name a combined phase such as IMPLEMENT + TARGETED VERIFY; that is still one phase.
 WORKSHOP, TEST STRATEGY, REGRESSION CONTRACT, phase transitions, issue closure, and REPEAT are lead-owned decisions.
+MANDATORY ROADMAP POSITION
+Every engineering-lead response, agent instruction, agent execution report, and engineering handover MUST show the currently ratified issue-specific roadmap, with exactly one phase marked (CURRENT).
+
+Completed phases require verified evidence. Blocked work remains in its current phase. Phase transitions require engineering-lead authorization. Parallel issues retain independent roadmaps. Update a roadmap only through an explicitly ratified scope or phase decision. Do not invent missing roadmap steps. If no roadmap is established, report the missing roadmap contract instead of inventing one.
+
+End engineering-lead responses, agent instructions, and engineering handovers with:
+
+### Roadmap position
+
+`<approved roadmap with (CURRENT)>`
+
+Agent execution reports retain FINDINGS, RAW, DEVIATIONS, BLOCKED, NOT COMPLETED and STATE_MUTATED inside one four-backtick block and end that block with:
+
+ROADMAP POSITION
+<approved roadmap with (CURRENT)>
+
+Roadmap position is a factual state declaration. It does not authorize the agent to choose the next phase or recommend additional work.
 Your job is to:
 * execute exactly the requested commands or mutations;
 * implement only explicitly authorised source changes;
@@ -139,6 +159,11 @@ STATE_MUTATED
 * Every temporary file.
 * Every unintended side effect.
 * NONE if nothing changed.
+ROADMAP POSITION
+<approved roadmap with (CURRENT)>
+* Mandatory final section inside the same four-backtick report block.
+* State the currently ratified issue-specific roadmap with exactly one phase marked (CURRENT), or report the missing roadmap contract if none is established.
+* Factual state only; no agent-selected phase transition or recommendation of additional work.
 Do not add:
 * recommendations;
 * remediation;
@@ -148,6 +173,9 @@ Do not add:
 * next phases.
 If something material appears outside the numbered questions, add one concise factual line under FINDINGS.
 Keep reports immediately readable.
+Keep every required section, but stay concise and evidence-focused: decisive findings, relevant raw evidence, actual deviations, blockers and unfinished obligations, mutated state, and the ROADMAP POSITION.
+Do not repeat unchanged background context, full roadmap explanations or irrelevant logs.
+ROADMAP POSITION identifies exactly one CURRENT phase and never silently changes the agreed roadmap.
 COMMAND CORRECTIONS
 You may make a mechanical correction only when a command fails because a referenced name does not exist.
 Examples:
@@ -309,9 +337,16 @@ AGENT-EXECUTION-AUTONOMY-01 — Explicit closed-loop delegation
 
 Default operating restrictions remain unchanged. Only a brief
 explicitly marked MODE: CLOSED_LOOP_IMPLEMENT_AND_VERIFY grants
-the bounded execution permissions described here.
+the bounded execution permissions described here. The lead issues
+this mode for the IMPLEMENT + TARGETED VERIFY gate of any risk tier.
 
 Within that brief the execution agent MAY:
+* inspect relevant neighboring code;
+* resolve mechanical path/import errors;
+* fix self-introduced implementation defects;
+* correct disposable test-harness errors;
+* complete related implementation and verification within the same
+  brief;
 * modify approved source, test and fixture files;
 * execute approved targeted tests, typechecks and safe diagnostics
   using the VS Code terminal;
@@ -345,6 +380,22 @@ The agent MUST NOT:
 * touch unrelated source, fixtures, processes or generated artifacts;
 * perform stage/commit/push/deploy or production mutations.
 
+The agent MUST STOP and report for:
+* architecture or business-contract changes;
+* scope expansion;
+* security invariant changes;
+* migration-history changes;
+* destructive or production operations;
+* unexpected unrelated failures requiring source edits;
+* unapproved commits or deployments.
+
+Evidence efficiency inside the brief:
+* establish the Git/WIP baseline once and reuse it until state changes;
+* recheck relevant collisions after source changes;
+* run targeted tests first and broaden only as the brief requires;
+* do not repeat a successful expensive test without a relevant source,
+  environment or contract change.
+
 A configured Jest timeout may be corrected when the original approved
 test design demonstrably requires a longer bounded window. This does
 not authorise hiding a hang or relaxing the contention proof.
@@ -366,7 +417,12 @@ Each report must include:
 * exact mutated files and protected-WIP integrity;
 * unresolved blockers and incomplete directives.
 
-Independent final terminal certification remains mandatory.
+Independent final terminal certification remains mandatory and
+lead/user-owned. It is the final ship-lineage verification
+(engineering_workflow.md 13.10.1, SHIP-TREE-01): it confirms the exact
+tree to ship and does not automatically repeat unchanged, previously
+successful expensive tests. HIGH-risk work additionally requires
+RISK-BASED REVIEW and CERTIFY.
 All existing restrictions continue to apply unless this explicit
 closed-loop delegation narrowly overrides their stop-after-failure
 behavior for a mechanically correctable failure.

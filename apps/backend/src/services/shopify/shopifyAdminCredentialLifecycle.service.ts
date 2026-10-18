@@ -5,6 +5,7 @@ import { decrypt } from '../../security/encryption.service.js';
 import { normalizeAndValidateShopifyGrantedScopes } from './shopifyScopes.js';
 import type { ShopifyOAuthAcquisition } from './shopifyOAuthAcquisition.service.js';
 import { refreshShopifyAdminCredential } from './shopifyAdminCredentialRefreshProvider.service.js';
+import { executeShopifyReconnectFinalizer } from './shopifyReconnectExecutor.db.js';
 import {
   readShopifyAdminCredential,
   lockShopifyAdminCredentialRotation,
@@ -14,7 +15,6 @@ import {
   markOwnedShopifyAdminCredentialReauthRequired,
   readShopifyAdminReconnectAuthority,
   fenceShopifyAdminCredentialReconnect,
-  replaceOwnedShopifyAdminReconnectCredentials,
   settleOwnedShopifyAdminCredentialReconnect,
   type ShopifyAdminCredentialReconnectOwner,
   type ShopifyAdminReconnectInstallation,
@@ -314,18 +314,12 @@ export type ShopifyAdminCredentialReconnectCompletion =
 export async function finalizeShopifyAdminCredentialReconnect(
   input: ReconnectInput & { credentials: ShopifyOAuthAcquisition },
 ): Promise<ShopifyAdminCredentialReconnectCompletion> {
-  return withTenant(input.shopId, async trx => {
-    await lockShopifyAdminCredentialRotation(trx, input.shopId);
-    const { installation, credential } = await readShopifyAdminReconnectAuthority(
-      trx, input.shopId, input.shopDomain, input.installationId);
-    if (!ownsReconnect(installation, credential, input)) return staleRotationResult(trx, input);
-    const credentials = { ...input.credentials,
-      grantedScopes: normalizeAndValidateShopifyGrantedScopes(input.credentials.grantedScopes) };
-    const result = await replaceOwnedShopifyAdminReconnectCredentials(
-      trx, credential, input, credentials, input.now);
-    if (!result) return staleRotationResult(trx, input);
-    return { kind: 'RECONNECTED', ...result };
-  });
+  // E owns the entire finalization transaction and canonical T2 lock. No sf_app fallback.
+  const result = await executeShopifyReconnectFinalizer(input, input.credentials);
+  if (result.kind === 'STALE_RESULT') {
+    return withTenant(input.shopId, trx => staleRotationResult(trx, input));
+  }
+  return result;
 }
 
 /** No-issuance can restore prior ACTIVE; all possibly-issued outcomes remain fail-closed. */

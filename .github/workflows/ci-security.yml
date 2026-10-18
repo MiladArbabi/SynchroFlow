@@ -17,6 +17,13 @@ on:
       - 'tests/integration/oauth-callback-provider-mocked.test.ts'
       - 'tests/unit/helpers/auth.ts'
       - 'scripts/with-test-db.js'
+      - 'scripts/test-db-safety.js'
+      - 'scripts/shopify-reconnect-prerequisites.js'
+      - 'tests/setup/backend-integration.runtime-db-guard.js'
+      - 'tests/contract/shopify-reconnect-provisioning.contract.test.ts'
+      - 'tests/integration/lifecycle/gh1068-*.test.ts'
+      - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
+      - 'tests/integration/auth/auth-tenant-01.db.test.ts'
   push:
     branches: [main]
     paths:
@@ -32,6 +39,13 @@ on:
       - 'tests/integration/oauth-callback-provider-mocked.test.ts'
       - 'tests/unit/helpers/auth.ts'
       - 'scripts/with-test-db.js'
+      - 'scripts/test-db-safety.js'
+      - 'scripts/shopify-reconnect-prerequisites.js'
+      - 'tests/setup/backend-integration.runtime-db-guard.js'
+      - 'tests/contract/shopify-reconnect-provisioning.contract.test.ts'
+      - 'tests/integration/lifecycle/gh1068-*.test.ts'
+      - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
+      - 'tests/integration/auth/auth-tenant-01.db.test.ts'
 
 jobs:
   rls-security:
@@ -45,7 +59,12 @@ jobs:
           POSTGRES_DB: synchroflow_db
         ports:
           - 5432:5432
+        # GH-1068 T3: the disposable harness independently verifies this exact
+        # container (image, label, tmpfs-only data directory) before any
+        # provisioning or destructive DB operation.
         options: >-
+          --tmpfs /var/lib/postgresql/data
+          --label synchroflow.disposable-test=1
           --health-cmd "pg_isready -U sf_user -d synchroflow_db"
           --health-interval 5s
           --health-timeout 5s
@@ -107,68 +126,16 @@ jobs:
           npm run check:rls -w apps/backend
           npm run test:rls-boundary -w apps/backend
 
-      - name: Apply migrations and release assertions
-        run: npm run migrate -w apps/backend
+      - name: Run reconnect provisioning contracts
+        run: npx --no-install jest --selectProjects contract --testPathPatterns 'shopify-reconnect-provisioning|test-db-safety'
 
-      - name: Run live RLS and endpoint regressions
-        env:
-          NODE_ENV: production
-          DATABASE_URL: ''
-          MIGRATION_DATABASE_URL: postgresql://sf_user:sf_pass@127.0.0.1:5432/synchroflow_db
-          APP_DATABASE_URL: postgresql://sf_app:sf_app_pass@127.0.0.1:5432/synchroflow_db
-        run: npm run test:rls-live -w apps/backend
-
-      # FRESH-INSTALL-04 — functional Shopify-review regression, not an RLS/
-      # security test.
-      #
-      # Walks the reviewer's path: HMAC install -> seed -> lifecycle ladder ->
-      # POST /wms/batch/release, asserting 201 and reservation_hold movements at
-      # WH-{shopId}-ROOT. This is the endpoint that regressed during Shopify
-      # review (SHOP-REV-02).
-      #
-      # The preceding RLS checks, migration/release assertions, and live endpoint
-      # regressions use the job's normal CI database context where applicable.
-      # This functional regression is deliberately different: it runs through
-      # scripts/with-test-db.js (via `npm run test:integration`), which generates
-      # its own independent synchroflow_test_* database, migrates it, verifies it,
-      # and drops it. The functional test itself never uses synchroflow_db.
-      #
-      # Step-scoped roles: sf_app is the restricted runtime role (non-superuser,
-      # non-bypassrls) the harness verifies; sf_user is the migration/admin role
-      # that creates and drops the disposable DB. No db:reset / dev_seed /
-      # bin-rich tenant rebuild runs — the root-only fresh-install fixture stays
-      # owned by tests/integration/fresh-install-release-path.test.ts.
-      - name: Run fresh-install release path
-        env:
-          PGUSER: sf_app
-          PGPASSWORD: sf_app_pass
-          PGMIGRATION_USER: sf_user
-          PGMIGRATION_PASSWORD: sf_pass
-        run: npm run test:integration -- --testPathPatterns fresh-install-release-path
-
-      - name: Run GH-1242 locked-action runtime regression
-        env:
-          PGUSER: sf_app
-          PGPASSWORD: sf_app_pass
-          PGMIGRATION_USER: sf_user
-          PGMIGRATION_PASSWORD: sf_pass
-        run: npm run test:integration -- --testPathPatterns locked-action-runtime-gh1242.test.ts
-
-      - name: Run OAuth callback regression with external egress blocked
+      # GH-1068 T3: block external egress BEFORE the first migration. Every
+      # later disposable-harness step independently re-verifies this policy;
+      # restoration is a dedicated always() step at the end of the job.
+      - name: Block external egress for database work
         shell: bash
-        timeout-minutes: 20
         env:
           POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
-          PGHOST: 127.0.0.1
-          PGPORT: 5432
-          PGUSER: sf_app
-          PGPASSWORD: sf_app_pass
-          PGMIGRATION_USER: sf_user
-          PGMIGRATION_PASSWORD: sf_pass
-          SHOPIFY_API_KEY: ci-shopify-key
-          SHOPIFY_API_SECRET: ci-shopify-secret
-          RESEND_API_KEY: re_ci_placeholder_not_used
-          STRIPE_SECRET_KEY: sk_test_ci_placeholder_not_used
         run: |
           set -euo pipefail
           # Filter before Docker's localhost PostgreSQL DNAT. No established-
@@ -234,30 +201,10 @@ jobs:
           echo "OAUTH_POSTGRES_FORWARDING=VERIFIED ip=$PG_SERVICE_IP bridge=$PG_SERVICE_BRIDGE port=5432"
           table="auth_oauth_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           export OAUTH_ISOLATION_TABLE="$table"
+          # Later harness steps re-verify this exact installed policy.
+          echo "OAUTH_ISOLATION_TABLE=$table" >> "$GITHUB_ENV"
+          echo "SYNCHROFLOW_TEST_POSTGRES_CONTAINER_ID=$POSTGRES_SERVICE_ID" >> "$GITHUB_ENV"
           sudo -n nft -j list tables | python3 -I -c 'import json,os,sys; assert not any(x.get("table", {}).get("name") == os.environ["OAUTH_ISOLATION_TABLE"] for x in json.load(sys.stdin)["nftables"])'
-          installed=0
-          probe_route=0
-          restore_network() {
-            result=$?
-            trap - EXIT INT TERM
-            restored=1
-            if [ "$probe_route" = 1 ]; then
-              sudo -n ip -6 route del 2001:db8::1/128 dev lo || { result=1; restored=0; }
-            fi
-            if [ "$installed" = 1 ]; then
-              sudo -n nft delete table inet "$table" || { result=1; restored=0; }
-              # Confirm removal without treating an inspection error as success.
-              if ! sudo -n nft -j list tables | python3 -I -c 'import json,os,sys; assert not any(x.get("table", {}).get("name") == os.environ["OAUTH_ISOLATION_TABLE"] for x in json.load(sys.stdin)["nftables"])'; then
-                result=1
-                restored=0
-              fi
-              echo "OAUTH_NETWORK_RESTORED=$([ "$restored" = 1 ] && echo PASS || echo FAIL)"
-            fi
-            exit "$result"
-          }
-          trap restore_network EXIT
-          trap 'exit 130' INT
-          trap 'exit 143' TERM
           # Atomic transaction; never flush or replace existing runner rules.
           sudo -n nft -f - <<RULES
           add table inet $table
@@ -268,11 +215,9 @@ jobs:
           add rule inet $table output meta nfproto ipv4 counter drop
           add rule inet $table output meta nfproto ipv6 counter drop
           RULES
-          installed=1
           # Ensure an IPv6 documentation-address probe reaches the output hook
           # even when the hosted runner has no external IPv6 route.
           sudo -n ip -6 route add 2001:db8::1/128 dev lo
-          probe_route=1
           python3 -I - <<'PY'
           import errno, json, os, socket, subprocess, sys
           table = os.environ["OAUTH_ISOLATION_TABLE"]
@@ -353,6 +298,90 @@ jobs:
           print("OAUTH_EGRESS_IPV6=BLOCKED")
           print("OAUTH_LOOPBACK=PASS")
           PY
+
+      - name: Provision reconnect executor/owner roles before migrations
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: node scripts/with-test-db.js --provision-only
+
+      - name: Apply migrations and release assertions
+        run: npm run migrate -w apps/backend
+
+      - name: Run live RLS and endpoint regressions
+        env:
+          NODE_ENV: production
+          DATABASE_URL: ''
+          MIGRATION_DATABASE_URL: postgresql://sf_user:sf_pass@127.0.0.1:5432/synchroflow_db
+          APP_DATABASE_URL: postgresql://sf_app:sf_app_pass@127.0.0.1:5432/synchroflow_db
+        run: npm run test:rls-live -w apps/backend
+
+      # FRESH-INSTALL-04 — functional Shopify-review regression, not an RLS/
+      # security test.
+      #
+      # Walks the reviewer's path: HMAC install -> seed -> lifecycle ladder ->
+      # POST /wms/batch/release, asserting 201 and reservation_hold movements at
+      # WH-{shopId}-ROOT. This is the endpoint that regressed during Shopify
+      # review (SHOP-REV-02).
+      #
+      # The preceding RLS checks, migration/release assertions, and live endpoint
+      # regressions use the job's normal CI database context where applicable.
+      # This functional regression is deliberately different: it runs through
+      # scripts/with-test-db.js (via `npm run test:integration`), which generates
+      # its own independent synchroflow_test_* database, migrates it, verifies it,
+      # and drops it. The functional test itself never uses synchroflow_db.
+      #
+      # Step-scoped roles: sf_app is the restricted runtime role (non-superuser,
+      # non-bypassrls) the harness verifies; sf_user is the migration/admin role
+      # that creates and drops the disposable DB. No db:reset / dev_seed /
+      # bin-rich tenant rebuild runs — the root-only fresh-install fixture stays
+      # owned by tests/integration/fresh-install-release-path.test.ts.
+      - name: Run fresh-install release path
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns fresh-install-release-path
+
+      - name: Run GH-1242 locked-action runtime regression
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns locked-action-runtime-gh1242.test.ts
+
+      - name: Run OAuth callback regression with external egress blocked
+        shell: bash
+        timeout-minutes: 20
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+          SHOPIFY_API_KEY: ci-shopify-key
+          SHOPIFY_API_SECRET: ci-shopify-secret
+          RESEND_API_KEY: re_ci_placeholder_not_used
+          STRIPE_SECRET_KEY: sk_test_ci_placeholder_not_used
+        run: |
+          set -euo pipefail
           # Real protocol/authentication proof after installing the restriction.
           # Explicit connection fields match the canonical harness's roles/DBs.
           node <<'JS'
@@ -397,7 +426,36 @@ jobs:
           });
           JS
           # Authenticated sessions must actually traverse the narrow exception.
-          sudo -n nft -j list table inet "$table" | python3 -I -c 'import json,sys; rules=[x["rule"] for x in json.load(sys.stdin)["nftables"] if "rule" in x]; assert rules[2]["expr"][-2]["counter"]["packets"] > 0'
+          sudo -n nft -j list table inet "$OAUTH_ISOLATION_TABLE" | python3 -I -c 'import json,sys; rules=[x["rule"] for x in json.load(sys.stdin)["nftables"] if "rule" in x]; assert rules[2]["expr"][-2]["counter"]["packets"] > 0'
           echo "OAUTH_POSTGRES_BRIDGE_FORWARDING=PASS"
           echo "OAUTH_ISOLATION_PREFLIGHT=PASS"
           npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
+
+      - name: Run GH-1068 reconnect executor regressions with real principals
+        timeout-minutes: 20
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t2-sync-status-races|auth-tenant-01\.db'
+
+      - name: Restore runner network
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          table="auth_oauth_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          result=0
+          if sudo -n ip -6 route show 2001:db8::1/128 dev lo | grep -q .; then
+            sudo -n ip -6 route del 2001:db8::1/128 dev lo || result=1
+          fi
+          if sudo -n nft list table inet "$table" >/dev/null 2>&1; then
+            sudo -n nft delete table inet "$table" || result=1
+            if sudo -n nft list table inet "$table" >/dev/null 2>&1; then result=1; fi
+            echo "OAUTH_NETWORK_RESTORED=$([ "$result" = 0 ] && echo PASS || echo FAIL)"
+          fi
+          exit "$result"

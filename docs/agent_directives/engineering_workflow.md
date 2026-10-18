@@ -1,8 +1,8 @@
-ENGINEERING WORKFLOW v3.4
+ENGINEERING WORKFLOW v3.5
 
 Mode: Solo-developer, main-first execution
 
-Effective: 2026-10-16
+Effective: 2026-10-18
 
 Primary repository: SynchroFlow
 
@@ -54,9 +54,11 @@ MAIN SYNC + CLEANLINESS GATE
 
 → NEXT ISSUE
 
+The canonical flow is the complete gate inventory. The issue risk tier (RISK-TIER-01) selects which gates an issue actually runs; it does not create a second workflow.
+
 One issue at a time.
 
-One phase at a time.
+One phase at a time. A brief may combine phases only where the selected risk tier allows it.
 
 Tests belong to the issue they protect.
 
@@ -69,6 +71,98 @@ Prefer executable invariants over manual memory.
 Zero assumptions.
 
 Evidence before conclusions.
+
+MANDATORY ROADMAP POSITION
+
+Every engineering-lead response, agent instruction, agent execution report, and engineering handover MUST show the currently ratified issue-specific roadmap, with exactly one phase marked (CURRENT).
+
+Completed phases require verified evidence. Blocked work remains in its current phase. Phase transitions require engineering-lead authorization. Parallel issues retain independent roadmaps. Update a roadmap only through an explicitly ratified scope or phase decision. Do not invent missing roadmap steps. If no roadmap is established, report the missing roadmap contract instead of inventing one.
+
+End engineering-lead responses, agent instructions, and engineering handovers with:
+
+### Roadmap position
+
+`<approved roadmap with (CURRENT)>`
+
+Agent execution reports retain FINDINGS, RAW, DEVIATIONS, BLOCKED, NOT COMPLETED and STATE_MUTATED inside one four-backtick block and end that block with:
+
+ROADMAP POSITION
+<approved roadmap with (CURRENT)>
+
+Roadmap position is a factual state declaration. It does not authorize the agent to choose the next phase or recommend additional work.
+
+⸻
+
+RISK-TIER-01 — RISK-ADAPTIVE EXECUTION
+
+At issue intake the engineering lead selects exactly one risk tier, states a one-line justification, and builds the issue roadmap from that tier's gates.
+
+LOW — isolated, reversible, low-consequence change.
+
+IMPLEMENT → TARGETED VERIFY → SHIP
+
+MEDIUM — ordinary application / business-logic / API change.
+
+FOCUSED AUDIT or EXISTING CONTRACT → IMPLEMENT + TARGETED VERIFY → SHIP
+
+HIGH — authentication, authorization, tenant isolation, credential security, payments, inventory truth, data migrations, concurrency, or any other consequential irreversible change.
+
+SECURITY / BUSINESS CONTRACT → IMPLEMENT + TARGETED VERIFY → RISK-BASED REVIEW → CERTIFY → SHIP
+
+Gate meanings:
+
+- SHIP = WORKFLOW DOCUMENTATION DECISION → DOC where required → final ship-lineage verification (SHIP-TREE-01) → COMMIT PRE-FLIGHT → COMMIT ON MAIN → PUSH + SHA CONFIRMATION → CI / DEPLOY where required → production certification at the selected level.
+- EXISTING CONTRACT = a contract, invariant set, or prior certified audit that already answers the AUDIT exit condition (8.9); cite it instead of re-auditing.
+- IMPLEMENT + TARGETED VERIFY = one brief covering implementation and its targeted verification, issued as a CLOSED_LOOP_IMPLEMENT_AND_VERIFY brief (13.10.1) when delegated to an agent.
+- RISK-BASED REVIEW = the engineering lead reviews the evidence against the security/business contract. Independent review (a separate reviewer or agent, or Milad) is required when a material security/authorization boundary, migration authority, or irreversible data invariant cannot be adequately certified by the implementing agent's evidence alone.
+- CERTIFY = engineering-lead acceptance of the complete HIGH evidence set, approved by Milad, before SHIP.
+
+Selection rules:
+
+- Use the LOWEST tier adequately supported by actual consequence, reversibility, and uncertainty.
+- Selection must be explicit and justified; an unclassified issue has no ratified roadmap.
+- Escalate the tier as soon as evidence reveals higher risk; the roadmap changes through the normal ratified roadmap update.
+- Never downgrade risk merely to save time. A downgrade requires new evidence and an explicit lead decision.
+- When an issue touches any HIGH category, it is HIGH unless the lead records why that category is not materially affected.
+
+Every tier retains:
+
+- MAIN SYNC + CLEANLINESS GATE and protection of all unrelated WIP;
+- the MANDATORY ROADMAP POSITION;
+- an explicit test-strategy decision and test completion state (10.4), stated inline for LOW/MEDIUM;
+- all security, tenant-isolation, RLS, migration, database, test-integrity, and external-side-effect safety rules;
+- the disposable integration DB rule; the development DB is never an integration scratchpad;
+- final ship-lineage verification before commit;
+- lead-owned phase transitions and Milad-owned staging, commit, push, and deployment.
+
+Gate economy — require a separate gate only when it establishes a material missing contract, security boundary, irreversible operation, or necessary evidence:
+
+- no separate AUDIT when the contract is already known;
+- no WORKSHOP unless material decisions remain unresolved;
+- no standalone agent round for trivial findings;
+- no mandatory independent review for LOW/MEDIUM work;
+- no separate implementation and verification rounds when both are safely executable under one brief;
+- no splitting related changes into arbitrary slices;
+- no full repository test suite for every correction;
+- no repeated verification that already proves the unchanged contract;
+- no standalone documentation-only ship when the update can ride with the next authorized ship.
+
+Evidence efficiency:
+
+- establish the Git/WIP baseline once per stable work period and reuse it until state changes;
+- recheck relevant file collisions after source changes;
+- prefer targeted tests first; broaden only when risk or affected neighbouring contracts require it;
+- do not repeat successful expensive tests without a relevant source, environment, or contract change;
+- automate repetitive checks where appropriate;
+- run a final ship-lineage verification before commit.
+
+Reporting efficiency: agent reports keep every required section but stay concise — decisive findings, relevant raw evidence, actual deviations, blockers and unfinished obligations, mutated state, and the ROADMAP POSITION. Do not repeat unchanged background, full roadmap explanations, or irrelevant logs.
+
+Phase ownership: the engineering lead chooses the risk tier, required evidence, and phase transitions. Agents execute the approved scope. A passing test does not authorize commit, push, deployment, or the next issue.
+
+Transition (effective v3.5): apply prospectively. Already certified work stays certified, and an in-flight issue is not restarted merely to classify it; the lead records its tier and applies the tier to remaining phases. Active agent briefs run to completion under the rules they were issued with.
+
+GH-1068: Risk = HIGH. Its existing security and migration contracts remain in force; future related implementation and verification may be combined into IMPLEMENT + TARGETED VERIFY briefs where safe.
 
 ⸻
 
@@ -920,6 +1014,8 @@ Tiny approved copy/style corrections may skip full workshop after a narrow factu
 
 This is a required decision for every issue.
 
+For LOW and MEDIUM issues it may be stated inline with the risk classification or in the implementation brief; it does not require a separate round.
+
 Automated tests are not automatically required.
 
 10.1 Classify relevant layers
@@ -1269,6 +1365,8 @@ Slice C
 
 Do not create a separate later testing sprint.
 
+Slice only at real dependency, risk, or release boundaries. Do not split related changes into arbitrary slices; one brief may implement and verify a slice together (RISK-TIER-01).
+
 12.2 Implementation scope
 
 Every implementation brief states:
@@ -1496,8 +1594,16 @@ Prerequisites:
 - Identified protected WIP and neighboring regression requirements.
 - No material unresolved product or architecture decision.
 
+This brief is the vehicle for the IMPLEMENT + TARGETED VERIFY gate of
+every risk tier (RISK-TIER-01). Within its allowlist the agent may
+inspect relevant neighbouring code, resolve mechanical path/import
+errors, fix self-introduced implementation defects, correct disposable
+test-harness errors, and rerun affected targeted tests, reporting every
+correction with evidence.
+
 Execution:
-1. Verify Git baseline, allowed files and protected WIP.
+1. Verify Git baseline, allowed files and protected WIP (reuse a proven
+   baseline when state has not changed since it was established).
 2. Inspect canonical implementation, fixtures and test infrastructure.
 3. Implement the approved change.
 4. Execute the approved targeted test commands in the VS Code terminal.
@@ -1526,7 +1632,12 @@ authorizes the corresponding implementation.
 
 Stop immediately when:
 - A change needs files or privileges outside the approved boundary.
-- Architecture, product semantics or acceptance criteria are disputed.
+- Architecture, business contract, product semantics or acceptance
+  criteria would change or are disputed.
+- A security invariant or migration history would change.
+- A destructive or production operation would be required.
+- An unexpected unrelated failure would require source edits.
+- A commit, push or deployment would be required.
 - Passing would require weakening, skipping or replacing assertions.
 - Tenant isolation, authorization, RLS or data safety would be bypassed.
 - The database/provider/runtime safety target cannot be confirmed.
@@ -1543,6 +1654,10 @@ window or teardown requirement is evidenced and bounded.
 Agent-owned verification is preliminary evidence. Independent final
 terminal verification, documentation acceptance, stage/commit/push,
 CI, release and production certification remain lead/user-owned.
+Final terminal verification is the ship-lineage verification
+(SHIP-TREE-01): it must confirm the exact tree being shipped, but it
+need not repeat expensive tests whose source, environment and contract
+are unchanged since they passed.
 
 13.11 Exit to WORKFLOW DOCUMENTATION DECISION
 
@@ -2077,7 +2192,7 @@ Do not use only migrate:latest as proof of independent shippability.
 21. STANDING RULES
 
 1. One issue at a time.
-2. One phase at a time.
+2. One phase at a time; combined phases only when the engineering lead explicitly authorizes them under the selected risk tier (RISK-TIER-01).
 3. Phase separation is mandatory for material decisions.
 4. Normal solo-development work happens directly on main.
 5. No branch/worktree/PR by default.
@@ -2159,6 +2274,11 @@ Do not use only migrate:latest as proof of independent shippability.
 81. Every issue must make an explicit WORKFLOW DOCUMENTATION DECISION before DOC: determine whether `docs/agent_directives/engineering_workflow.md` and/or `docs/agent_directives/agent_operation_guidelines.md` require updates, and record the decision.
 
 82. Prefer screenshots from an already-running localhost for visual-only acceptance when it faithfully exposes the target state; do not provision accounts, fixtures, or disposable runtimes solely to reproduce visual evidence that is already available.
+83. Every issue receives an explicit, justified LOW / MEDIUM / HIGH risk tier at intake (RISK-TIER-01); the tier selects the gates.
+84. Use the lowest tier supported by consequence, reversibility, and uncertainty; escalate on evidence; never downgrade to save time.
+85. A separate gate exists only to establish a missing contract, security boundary, irreversible operation, or necessary evidence.
+86. Independent review is not mandatory for LOW/MEDIUM; for HIGH it is required when the implementing agent's evidence alone cannot certify a material security/authorization boundary, migration authority, or irreversible data invariant.
+87. Final ship-lineage verification confirms the exact tree to ship; it does not automatically repeat unchanged, previously successful expensive tests.
 
 ⸻
 
@@ -2172,6 +2292,7 @@ Do not use only migrate:latest as proof of independent shippability.
 6. State one-paragraph problem statement.
 7. Run ELI5.
 8. Run the small environment preflight relevant to the issue.
+8a. Select and justify the risk tier (RISK-TIER-01) and ratify the issue roadmap from that tier's gates. Steps 9–41 apply only where the selected tier includes the corresponding gate.
 9. Enter AUDIT.
 10. Use GitHub reconnaissance first when it can cheaply narrow source/issue/commit ownership.
 11. Confirm consequential findings with targeted local terminal probes.
@@ -2216,8 +2337,10 @@ Before an issue may be marked CLOSED:
 - main cleanliness/start gate was satisfied;
 - ELI5 complete;
 - environment preflight completed where relevant;
-- AUDIT complete;
+- risk tier selected and justified; escalations recorded;
+- AUDIT complete, or an existing contract cited, or not required by the risk tier;
 - WORKSHOP complete or explicitly unnecessary;
+- RISK-BASED REVIEW and CERTIFY complete for HIGH, including independent review where required;
 - stable invariants identified;
 - TEST STRATEGY decided;
 - certification level selected;

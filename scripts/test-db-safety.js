@@ -169,10 +169,59 @@ function createTestDatabaseName() {
   return name;
 }
 
+/** Pure complete-connection guard; the original seven public IDs stay intact. */
+function assertTestConnections(env, expectedDatabase = env.PGDATABASE) {
+  const fail = () => { throw new Error('UNSAFE_TEST_CONNECTION_CONFIGURATION'); };
+  if (env.NODE_ENV !== 'test' || env.PGUSER !== 'sf_app'
+    || !isNonEmptyString(env.PGHOST) || !/^[0-9]+$/.test(env.PGPORT || '')
+    || Number(env.PGPORT) < 1 || Number(env.PGPORT) > 65535
+    || !isNonEmptyString(expectedDatabase) || env.PGDATABASE !== expectedDatabase
+    || !isNonEmptyString(env.PGPASSWORD) || !isNonEmptyString(env.PGMIGRATION_PASSWORD)
+    || !isNonEmptyString(env.PGMIGRATION_USER)
+    || ['sf_app','sf_shopify_reconnect_executor','sf_shopify_reconnect_owner'].includes(env.PGMIGRATION_USER)) fail();
+  for (const key of ['PGSERVICE','PGSERVICEFILE','PGPASSFILE','PGOPTIONS','PGHOSTADDR',
+    'PGSSLCERT','PGSSLKEY','PGSSLROOTCERT','PGSSLCRL']) if (env[key] !== undefined) fail();
+  if (env.PGSSLMODE !== undefined && env.PGSSLMODE !== 'disable') fail();
+  const users = { DATABASE_URL: 'sf_app', APP_DATABASE_URL: 'sf_app',
+    MIGRATION_DATABASE_URL: env.PGMIGRATION_USER,
+    SHOPIFY_RECONNECT_DATABASE_URL: 'sf_shopify_reconnect_executor' };
+  for (const [key,user] of Object.entries(users)) {
+    if (env[key] === undefined) continue;
+    let u; try { u = new URL(env[key]); } catch { fail(); }
+    if (!['postgres:','postgresql:'].includes(u.protocol) || u.hostname !== env.PGHOST
+      || Number(u.port || 5432) !== Number(env.PGPORT)
+      || decodeURIComponent(u.pathname.slice(1)) !== expectedDatabase
+      || decodeURIComponent(u.username) !== user || !u.password || u.hash
+      || [...u.searchParams].some(([k,v]) => k !== 'sslmode' || v !== 'disable')) fail();
+    const password = user === 'sf_app' ? env.PGPASSWORD : user === env.PGMIGRATION_USER
+      ? env.PGMIGRATION_PASSWORD : env.SYNCHROFLOW_TEST_EXECUTOR_PASSWORD;
+    if (!password || decodeURIComponent(u.password) !== password) fail();
+  }
+}
+
+/** Connection URLs the disposable harness generates itself for each run. */
+const HARNESS_DATABASE_URL_KEYS = Object.freeze(['DATABASE_URL', 'APP_DATABASE_URL',
+  'MIGRATION_DATABASE_URL', 'SHOPIFY_RECONNECT_DATABASE_URL']);
+
+/**
+ * Pure inherited-configuration guard for the harness ORCHESTRATOR environment.
+ * Every harness URL targets a database name generated at runtime, so no
+ * inherited value (including an empty string) can be compatible with it.
+ * Refuse rather than rely on the child environment replacing it later.
+ */
+function assertNoInheritedDatabaseUrls(env) {
+  for (const key of HARNESS_DATABASE_URL_KEYS) {
+    if (env[key] !== undefined) throw new Error('UNSAFE_TEST_CONNECTION_CONFIGURATION');
+  }
+}
+
 module.exports = {
   assertSafeTestDatabase,
   createTestDatabaseName,
   TestDbSafetyError,
   ERROR_CODES,
   TEST_DB_NAME_PATTERN,
+  assertTestConnections,
+  assertNoInheritedDatabaseUrls,
+  HARNESS_DATABASE_URL_KEYS,
 };

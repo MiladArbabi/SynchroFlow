@@ -1,15 +1,13 @@
 import crypto from 'crypto';
+import pg from 'pg';
+import { encrypt } from 'api-src/security/encryption.service';
+import { closeShopifyReconnectExecutor } from 'api-src/services/shopify/shopifyReconnectExecutor.db';
 import knexFactory, { type Knex } from 'knex';
 import db, { systemTransaction, withTenant } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { updateIntegrationStatus, type ShopifySyncExecutionAuthority } from
   'api-src/services/shopify/shopifyIntegrationStatus.service';
-import {
-  lockShopifyAdminCredentialRotation,
-  readShopifyAdminReconnectAuthority,
-  replaceOwnedShopifyAdminReconnectCredentials,
-} from 'api-src/services/shopify/shopifyAdminCredential.repository';
 import { prepareShopifyAdminCredentialReconnect } from
   'api-src/services/shopify/shopifyAdminCredentialLifecycle.service';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from
@@ -161,9 +159,12 @@ async function waitForExactAuthorityWaiter(
     if (waiters.length === 1) {
       const waiter = waiters[0];
       expect(waiter.usename).toBe('sf_app');
-      expect(waiter.state).toBe('active');
-      expect(waiter.wait_event_type).toBe('Lock');
+      // pg_stat_activity session state (state, wait_event_type) is sampled apart
+      // from the lock table: it can read 'idle in transaction' or a null wait
+      // event while pg_locks already shows this ungranted request. The lock-manager
+      // facts below (ungranted row, exact holder, blockers) are the contention proof.
       expect(waiter.blockers.map(Number)).toContain(holderPid);
+      if (waiterSettled()) throw new Error('STATUS_WRITER_SETTLED_DURING_CONTENTION_PROOF');
       return Number(waiter.pid);
     }
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -195,7 +196,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const results = await Promise.allSettled([observer?.destroy(), db.destroy()]);
+  const results = await Promise.allSettled([observer?.destroy(), db.destroy(), closeShopifyReconnectExecutor()]);
   expect(results.every(result => result.status === 'fulfilled')).toBe(true);
 }, 10_000);
 
@@ -286,38 +287,27 @@ describe('GH-1068 T2 — sync status authority races', () => {
     let statusOutcome: Outcome<void> | undefined;
     let status: Promise<Outcome<void>> | undefined;
 
-    const reconnect = settle(withTenant(f.shopId, async trx => {
-      await lockShopifyAdminCredentialRotation(trx, f.shopId);
-      const { installation, credential } = await readShopifyAdminReconnectAuthority(
-        trx, f.shopId, f.domain, f.authority.installationId,
-      );
-      if (!installation || !credential) throw new Error('RECONNECT_AUTHORITY_NOT_FOUND');
-      const result = await replaceOwnedShopifyAdminReconnectCredentials(
-        trx,
-        credential,
-        prepared,
-        {
-          accessToken: 'reconnected-test-token',
-          refreshToken: 'reconnected-test-refresh-token',
-          accessExpiresAt: new Date(now.getTime() + 86_400_000),
-          refreshExpiresAt: new Date(now.getTime() + 604_800_000),
-          grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
-          shopIdentity: {
-            gid: `gid://shopify/Shop/${f.shopId}`,
-            currencyCode: 'USD',
-            name: null,
-            contactEmail: null,
-            ianaTimezone: null,
-          },
-        },
-        now,
-      );
-      if (!result) throw new Error('RECONNECT_REPLACEMENT_REJECTED');
-      reconnectHolderPid = await backendPid(trx);
-      reconnectReady.resolve();
-      await releaseReconnect.promise;
-      return { generation: result.generation };
-    }));
+    const reconnect = settle((async () => {
+      const client = new pg.Client({connectionString:process.env.SHOPIFY_RECONNECT_DATABASE_URL});
+      try {
+        await client.connect();
+        expect((await client.query('SELECT session_user,current_user')).rows[0])
+          .toEqual({session_user:'sf_shopify_reconnect_executor',current_user:'sf_shopify_reconnect_executor'});
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1),$2::integer)',[LOCK_NAMESPACE,f.shopId]);
+        const result = await client.query(`SELECT * FROM shopify_reconnect_private.finalize_reconnect(
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [f.shopId,f.authority.installationId,f.domain,prepared.installationState,prepared.generation,prepared.leaseToken,
+            encrypt('reconnected-test-token'),encrypt('reconnected-test-refresh-token'),
+            new Date(now.getTime()+86400000),new Date(now.getTime()+604800000),SHOPIFY_REQUIRED_SCOPE_STRING,
+            `gid://shopify/Shop/${f.shopId}`,'USD',null]);
+        expect(result.rows[0].generation).toBe(prepared.generation);
+        reconnectHolderPid = Number((await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
+        reconnectReady.resolve(); await releaseReconnect.promise;
+        await client.query('COMMIT');
+        return {generation:result.rows[0].generation};
+      } finally { await client.end(); }
+    })());
 
     try {
       await timeout(reconnectReady.promise, 'reconnect authority transaction did not reach gate');
@@ -347,7 +337,11 @@ describe('GH-1068 T2 — sync status authority races', () => {
     expect(statusOutcome?.ok).toBe(false);
     expect((statusOutcome as { ok: false; error: Error }).error.message)
       .toBe('SHOPIFY_SYNC_STALE_AUTHORITY');
-    expect(await integrationState(f)).toEqual(before);
+    // T3 contract: the winning reconnect starts a fresh cycle (PENDING/0/0/NULL);
+    // the losing old-generation write (SYNCING_ORDERS/7/9) must not have landed.
+    expect(await integrationState(f)).toEqual({
+      ...before, status: 'PENDING', progressCurrent: 0, progressTotal: 0, lastError: null,
+    });
     expect(await authorityState(f)).toEqual({
       uninstalledAt: null,
       credentialState: 'ACTIVE',

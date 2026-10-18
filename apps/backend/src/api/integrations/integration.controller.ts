@@ -46,6 +46,7 @@ import {
   type ShopifyOAuthAcquisition,
 } from '../../services/shopify/shopifyOAuthAcquisition.service.js';
 import { persistShopifyAdminCredentials } from '../../services/shopify/shopifyAdminCredential.repository.js';
+import { assertShopifyReconnectExecutorReady } from '../../services/shopify/shopifyReconnectExecutor.db.js';
 import {
   prepareShopifyAdminCredentialReconnect,
   finalizeShopifyAdminCredentialReconnect,
@@ -451,7 +452,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     if (preparation.kind === 'REFRESH_IN_PROGRESS' || preparation.kind === 'RETRYABLE') {
       return res.status(409).json({ error: 'SHOPIFY_RECONNECT_IN_PROGRESS', retryable: true });
     }
-    if (preparation.kind === 'RECONNECT_PREPARED') reconnect = preparation;
+    if (preparation.kind === 'RECONNECT_PREPARED') {
+      reconnect = preparation;
+      try {
+        await assertShopifyReconnectExecutorReady();
+      } catch {
+        // No acquisition has started: release only this prepared owner's lease.
+        await settleShopifyAdminCredentialReconnect({
+          ...reconnect, outcome: { kind: 'DEFINITIVE_NO_ISSUANCE' },
+        });
+        throw new Error('SHOPIFY_RECONNECT_EXECUTOR_REJECTED');
+      }
+    }
   } catch (err) {
     console.error('[OAuth] Credential preparation failed', { message: 'Shopify credential preparation failed' });
     return res.status(500).json({ error: 'Failed to prepare Shopify integration' });
@@ -519,9 +531,10 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     let result: { integration: { id: number }; shopId: number };
     if (reconnect) {
       const completion = await finalizeShopifyAdminCredentialReconnect({ ...reconnect, credentials: acquisition });
-      if (completion.kind !== 'RECONNECTED') {
+      if (completion.kind === 'STALE_RESULT') {
         return res.status(409).json({ error: 'SHOPIFY_RECONNECT_STALE', retryable: true });
       }
+      if (completion.kind !== 'RECONNECTED') throw new Error('SHOPIFY_RECONNECT_EXECUTOR_REJECTED');
       result = { integration: completion.integration, shopId };
       reconnectFinalized = true;
     } else {

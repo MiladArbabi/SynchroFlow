@@ -20,3 +20,12 @@ assertDisposableBackendIntegrationDb(
   process.env.PGDATABASE,
   'REFUSING_BACKEND_INTEGRATION_RUNTIME_NON_DISPOSABLE_DB'
 );
+
+require('../../scripts/test-db-safety').assertTestConnections(process.env);
+for (const key of ['DATABASE_URL','APP_DATABASE_URL','MIGRATION_DATABASE_URL',
+  'SHOPIFY_RECONNECT_DATABASE_URL']) {
+  if (!process.env[key]) throw new Error('REFUSING_BACKEND_INTEGRATION_MISSING_CONNECTION_CONFIGURATION');
+}
+if (process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB !== '1') {
+  throw new Error('REFUSING_BACKEND_INTEGRATION_MISSING_DISPOSABLE_CONTEXT');
+}
