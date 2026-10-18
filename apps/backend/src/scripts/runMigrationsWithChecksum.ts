@@ -40,6 +40,11 @@ function quoteIdentifier(identifier: string): string {
 
 const RECONNECT_BOUNDARY = '20261016120000_0212_authorize_shopify_reconnect_sync_reset.js';
 const RECONNECT_CORRECTION = '20261016150000_0215_harden_reconnect_and_priority_function_authority.js';
+// GH-1068 T3-B evolves the 0215 finalizer; once applied, its own postconditions replace 0215's.
+const SYNC_DISPATCH_EVOLUTION = '20261018120000_0216_durable_shopify_sync_dispatch.js';
+
+type SecurityAssertion = (connection: Knex) => Promise<void>;
+type SecurityFor = (completed: string[]) => SecurityAssertion;
 
 async function validateChecksums(connection: Knex): Promise<void> {
   if (!(await connection.schema.withSchema('public').hasTable('migration_checksums'))) return;
@@ -125,6 +130,22 @@ async function migrateWithProtectedTail(files: string[]): Promise<void> {
   if (typeof assertSecurity !== 'function') {
     throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] missing security postconditions');
   }
+  let assertEvolvedSecurity: SecurityAssertion | undefined;
+  if (files.includes(SYNC_DISPATCH_EVOLUTION)) {
+    const evolution = await import(pathToFileURL(path.join(MIGRATIONS_DIR, SYNC_DISPATCH_EVOLUTION)).href);
+    if (typeof evolution.assertSecurityPostconditions !== 'function') {
+      throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] missing evolved security postconditions');
+    }
+    assertEvolvedSecurity = evolution.assertSecurityPostconditions;
+  }
+  // Exactly one independently defined contract applies to each ledger state.
+  const securityFor: SecurityFor = completed => {
+    if (!completed.includes(SYNC_DISPATCH_EVOLUTION)) return assertSecurity;
+    if (!assertEvolvedSecurity) {
+      throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] evolved security postconditions unavailable');
+    }
+    return assertEvolvedSecurity;
+  };
 
   await db.transaction(async trx => {
     // Same lock row and ledger shape as installed Knex Migrator._runBatch /
@@ -169,13 +190,15 @@ async function migrateWithProtectedTail(files: string[]): Promise<void> {
 
     // Never merge/overwrite a historical checksum. A conflict must match the
     // stored value and is checked again before the enclosing COMMIT.
-    for (const { name } of await trx('public.knex_migrations').select('name').orderBy('id')) {
+    const ledger = (await trx('public.knex_migrations').select('name').orderBy('id'))
+      .map(row => row.name as string);
+    for (const name of ledger) {
       await trx('public.migration_checksums').insert({
         name, checksum: hashFile(path.join(MIGRATIONS_DIR, name)),
       }).onConflict('name').ignore();
     }
     await validateChecksums(trx);
-    await assertSecurity(migrationConnection);
+    await securityFor(ledger)(migrationConnection);
     const registered = await trx('public.knex_migrations')
       .whereIn('name', [RECONNECT_BOUNDARY, RECONNECT_CORRECTION]).count('* as count');
     if (Number(registered[0].count) !== 2) {
@@ -186,7 +209,7 @@ async function migrateWithProtectedTail(files: string[]): Promise<void> {
   });
   console.info('[migration-runner] protected tail/checksums committed');
   // This call is deliberately outside/after the awaited protected transaction.
-  await migrateAfterCorrection(files, assertSecurity);
+  await migrateAfterCorrection(files, securityFor);
 }
 
 async function reconnectCatalogSnapshot(connection: Knex): Promise<string> {
@@ -218,7 +241,7 @@ async function reconnectCatalogSnapshot(connection: Knex): Promise<string> {
 }
 
 async function migrateAfterCorrection(
-  files: string[], assertSecurity: (connection: Knex) => Promise<void>
+  files: string[], securityFor: SecurityFor
 ): Promise<void> {
   for (const name of files.filter(file => file > RECONNECT_CORRECTION)) {
     await db.transaction(async trx => {
@@ -234,7 +257,8 @@ async function migrateAfterCorrection(
         throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] correction must commit first');
       }
       await validateChecksums(trx);
-      await assertSecurity(trx);
+      // Before 0216 this is the original 0215 contract, including for 0216 itself.
+      await securityFor(completed)(trx);
       if (!completed.includes(name)) {
         const migration = await import(pathToFileURL(path.join(MIGRATIONS_DIR, name)).href);
         if ((migration.config?.transaction !== undefined && migration.config.transaction !== true) ||
@@ -264,7 +288,7 @@ async function migrateAfterCorrection(
         try { await migration.up(migrationConnection); }
         finally { trx.client.removeListener('query', guardQuery); }
         if (transactionViolation) throw transactionViolation;
-        await assertSecurity(trx);
+        await securityFor([...completed, name])(trx);
         if (await reconnectCatalogSnapshot(trx) !== authorityBefore) {
           throw new Error(`[RECONNECT_SECURITY_BOUNDARY_CHANGED] ${name} requires contract review`);
         }

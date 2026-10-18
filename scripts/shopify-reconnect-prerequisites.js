@@ -13,12 +13,14 @@ const vm = require('node:vm');
 
 const E = 'sf_shopify_reconnect_executor';
 const O = 'sf_shopify_reconnect_owner';
+// GH-1068 T3-B: 0216 evolves the 0215 finalizer; its postconditions carry every
+// 0215 invariant and are the current authoritative reconnect contract.
 const MIGRATION = path.resolve(__dirname,
-  '../apps/backend/migrations/20261016150000_0215_harden_reconnect_and_priority_function_authority.ts');
+  '../apps/backend/migrations/20261018120000_0216_durable_shopify_sync_dispatch.ts');
 const reject = () => new Error('SHOPIFY_RECONNECT_PREREQUISITES_REJECTED');
 
 // Narrow provisioning facts only. Full migration security/body/ACL validation
-// is owned by 0215 and delegated below, never reimplemented here.
+// is owned by the current reconnect migration and delegated below, never reimplemented here.
 const ROLE_FACTS = `
   SELECT r.rolname, r.rolcanlogin, r.rolsuper, r.rolbypassrls,
     r.rolcreatedb, r.rolcreaterole, r.rolreplication,

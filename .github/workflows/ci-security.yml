@@ -22,6 +22,8 @@ on:
       - 'tests/setup/backend-integration.runtime-db-guard.js'
       - 'tests/contract/shopify-reconnect-provisioning.contract.test.ts'
       - 'tests/integration/lifecycle/gh1068-*.test.ts'
+      - 'tests/unit/backend/shopify/gh1068-*.test.ts'
+      - 'tests/unit/backend/workers/b4-s1-sync-consumer-shutdown.test.ts'
       - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
   push:
@@ -44,6 +46,8 @@ on:
       - 'tests/setup/backend-integration.runtime-db-guard.js'
       - 'tests/contract/shopify-reconnect-provisioning.contract.test.ts'
       - 'tests/integration/lifecycle/gh1068-*.test.ts'
+      - 'tests/unit/backend/shopify/gh1068-*.test.ts'
+      - 'tests/unit/backend/workers/b4-s1-sync-consumer-shutdown.test.ts'
       - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
 
@@ -128,6 +132,11 @@ jobs:
 
       - name: Run reconnect provisioning contracts
         run: npx --no-install jest --selectProjects contract --testPathPatterns 'shopify-reconnect-provisioning|test-db-safety'
+
+      # GH-1068 T3-B: DB-free sync worker intent gate and dispatcher publish
+      # ordering, plus the T2 fence and B4 shutdown contracts they extend.
+      - name: Run GH-1068 sync worker and dispatch unit regressions
+        run: npx --no-install jest --selectProjects backend-legacy --testPathPatterns 'tests/unit/backend/shopify/gh1068-t3b-sync-worker-dispatch|tests/unit/backend/shopify/gh1068-t2-sync-worker-fence|tests/unit/backend/workers/b4-s1-sync-consumer-shutdown'
 
       # GH-1068 T3: block external egress BEFORE the first migration. Every
       # later disposable-harness step independently re-verifies this policy;
@@ -441,7 +450,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t2-sync-status-races|auth-tenant-01\.db'
+        run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t3b-durable-sync-dispatch|gh1068-t2-sync-status-races|auth-tenant-01\.db'
 
       - name: Restore runner network
         if: always()

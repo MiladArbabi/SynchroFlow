@@ -33,7 +33,8 @@ import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
-import { getQueueChannel, connection } from '../../queue.js';
+import { connection } from '../../queue.js';
+import { recordShopifySyncDispatchIntent } from '../../services/shopify/shopifyIntegrationStatus.service.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
 import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
@@ -596,6 +597,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
         await persistShopifyAdminCredentials(trx, installation.id, shopId, acquisition);
 
+        // GH-1068 T3-B: the durable sync intent commits with the integration.
+        await recordShopifySyncDispatchIntent(trx, {
+          shopId, integrationId: Number(integration.id), installationId: Number(installation.id),
+        });
+
         return {
           integration,
           shopId,
@@ -640,36 +646,19 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     }
 
     /**
-     * SYNC JOB ENQUEUE (REQUIRED)
+     * SYNC DISPATCH (GH-1068 T3-B)
      * ----------------------------
-     * integration/sync_requested emits durability fact.
-     * Sync worker still requires explicit queue job.
-     *
-     * Removing this breaks ingestion + lifecycle chain.
+     * The durable integration/sync_dispatch_requested intent has already
+     * committed: inside the 0216 reconnect finalizer, or inside the first-install
+     * persistence transaction above. The domain-event outbox dispatcher alone
+     * publishes it to sync_jobs with broker confirmation. No post-commit step
+     * here, including a failure below, can lose or duplicate that intent.
      */
-    const syncChannel = getQueueChannel('sync_jobs');
-
-    syncChannel.sendToQueue(
-      'sync_jobs',
-      Buffer.from(
-        JSON.stringify({
-          integrationId: result.integration.id,
-        })
-      ),
-      { persistent: true }
-    );
-
-    console.info('[SYNC_JOB_ENQUEUED]', {
-      integrationId: result.integration.id,
-      shopId: result.shopId,
-    });
 
     /**
-     * DOMAIN EVENT EMISSION — SYNC REQUESTED
-     * --------------------------------------
-     * No direct queue publishing allowed.
-     * Sync must originate from immutable domain event.
-     * Projection or downstream worker is responsible for execution.
+     * DOMAIN EVENT EMISSION — SYNC REQUESTED (OBSERVABILITY)
+     * ------------------------------------------------------
+     * Lifecycle visibility only; it does not dispatch sync.
      */
     await withTenant(result.shopId, async trx => {
       /**

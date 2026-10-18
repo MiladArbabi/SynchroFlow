@@ -9,6 +9,7 @@ const mockSystemQuery = jest.fn();
 const mockCredential = jest.fn();
 const mockSmartSync = jest.fn();
 const mockWriteStatus = jest.fn();
+const mockClaimCycle = jest.fn();
 
 const mockChannel = {
   consume: jest.fn().mockResolvedValue({ consumerTag: 't2-test' }),
@@ -62,6 +63,8 @@ jest.mock(
   () => ({
     updateIntegrationStatus: (...args: any[]) =>
       mockWriteStatus(...args),
+    // GH-1068 T3-B: the fenced single-flight cycle claim precedes sync.
+    claimShopifySyncCycle: (...args: any[]) => mockClaimCycle(...args),
   }),
 );
 
@@ -81,8 +84,9 @@ describe('GH-1068 T2 — sync worker generation fence', () => {
     generation: '4',
   };
 
+  // GH-1068 T3-B: every sync_jobs message names its exact durable intent.
   const delivery = () => ({
-    content: Buffer.from(JSON.stringify({ integrationId })),
+    content: Buffer.from(JSON.stringify({ integrationId, intentDomainEventId: 37 })),
   });
 
   beforeAll(async () => {
@@ -113,6 +117,7 @@ describe('GH-1068 T2 — sync worker generation fence', () => {
 
     mockSmartSync.mockResolvedValue(undefined);
     mockWriteStatus.mockResolvedValue(undefined);
+    mockClaimCycle.mockResolvedValue({ kind: 'CLAIMED' });
   });
 
   it('dispatches the original credential generation', async () => {

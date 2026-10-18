@@ -4,6 +4,7 @@ import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { resolveShopifyAdminCredentialForConsumer } from './services/shopify/shopifyAdminCredentialConsumer.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
 import {
+  claimShopifySyncCycle,
   updateIntegrationStatus,
   type ShopifySyncExecutionAuthority,
 } from './services/shopify/shopifyIntegrationStatus.service.js';
@@ -43,6 +44,9 @@ const staleSyncError = (error: unknown): boolean =>
   error instanceof Error &&
   error.message === 'SHOPIFY_SYNC_STALE_AUTHORITY';
 
+const isPositiveId = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) > 0;
+
 const SYNC_QUEUE_NAME = 'sync_jobs';
 let syncChannel: ReturnType<typeof getQueueChannel>;
 let syncConsumerTag: string | null = null;
@@ -75,6 +79,15 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     integrationId = parsedContent.integrationId;
     if (!integrationId) {
       console.error('[sync.worker] Message is missing integrationId');
+      syncChannel.ack(msg as any);
+      return;
+    }
+
+    // GH-1068 T3-B: only an exact durable intent may start a cycle. Without
+    // one, nothing is resolved or written; the intent itself stays in the outbox.
+    const intentDomainEventId = parsedContent.intentDomainEventId;
+    if (!isPositiveId(integrationId) || !isPositiveId(intentDomainEventId)) {
+      console.warn('[sync.worker] Message lacks an exact sync intent identity');
       syncChannel.ack(msg as any);
       return;
     }
@@ -149,6 +162,29 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
     ) {
       console.error('[sync.worker] Missing or mismatched sync authority');
       syncChannel.nack(msg as any, false, false);
+      return;
+    }
+
+    // Single-flight: atomically claim PENDING for the current intent, or write nothing.
+    let cycle;
+    try {
+      cycle = await claimShopifySyncCycle({
+        integrationId: integration!.id,
+        shopId: integration!.shop_id,
+        intentDomainEventId,
+        executionAuthority,
+      });
+    } catch (error) {
+      if (staleSyncError(error)) {
+        console.warn('[sync.worker] Sync intent claim rejected by generation fence');
+        syncChannel.ack(msg as any);
+        return;
+      }
+      throw error;
+    }
+    if (cycle.kind !== 'CLAIMED') {
+      console.warn('[sync.worker] Sync intent not eligible to start a cycle:', cycle.reason);
+      syncChannel.ack(msg as any);
       return;
     }
 

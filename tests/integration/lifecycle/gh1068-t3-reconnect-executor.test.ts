@@ -31,8 +31,9 @@ import {
 } from 'api-src/services/shopify/shopifyAdminCredentialLifecycle.service';
 import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
+// GH-1068 T3-B: 0216 evolves the finalizer; its postconditions carry every 0215 invariant.
 import { assertSecurityPostconditions, FINALIZER_SIGNATURE } from
-  '../../../apps/backend/migrations/20261016150000_0215_harden_reconnect_and_priority_function_authority';
+  '../../../apps/backend/migrations/20261018120000_0216_durable_shopify_sync_dispatch';
 
 const E = 'sf_shopify_reconnect_executor';
 const O = 'sf_shopify_reconnect_owner';
@@ -234,7 +235,7 @@ afterAll(async () => {
 
 describe('GH-1068 T3-A — real reconnect executor', () => {
   it('provisioned principals keep the 0215 authority boundary', async () => {
-    // Authoritative 0215 postconditions, evaluated by the migration's own SQL.
+    // Authoritative current (0216) postconditions, evaluated by the migration's own SQL.
     await expect(assertSecurityPostconditions(admin!)).resolves.toBeUndefined();
     const finalizer = await observer!.raw(`
       SELECT p.prosecdef, pg_get_userbyid(p.proowner) AS owner,

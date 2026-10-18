@@ -12,6 +12,8 @@ import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
 import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first_insight_delivered.js';
 import { handleIntegrationSyncRequested } from './handlers/integration.sync_requested.js';
+import { handleIntegrationSyncDispatchRequested } from './handlers/integration.sync_dispatch_requested.js';
+import { handleIntegrationSyncCycleStarted } from './handlers/integration.sync_cycle_started.js';
 import { handleIntegrationSyncCompleted } from './handlers/integration.sync_completed.js';
 import { handleReconciliationIntentCaptured } from './handlers/reconciliation.intentCaptured.js';
 import { handleOrdersSyncStarted } from './handlers/orders.sync_started.js';
@@ -50,6 +52,16 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/sync': handleOrdersCreate,
   'orders/sync_started': handleOrdersSyncStarted,
   'integration/sync_requested': handleIntegrationSyncRequested,
+  /**
+   * GH-1068 T3-B durable sync dispatch intent. Inert: only the outbox
+   * dispatcher delivers it; rebuild/replay must never launch Shopify sync.
+   */
+  'integration/sync_dispatch_requested': handleIntegrationSyncDispatchRequested,
+  /**
+   * GH-1068 T3-B one-time cycle-start fact, written with the fenced claim.
+   * Inert: replay/rebuild never dispatches, schedules or mutates.
+   */
+  'integration/sync_cycle_started': handleIntegrationSyncCycleStarted,
   /**
    * ZERO-ORDER FT0 ENTRY (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02)
    * -----------------------------------------------------------

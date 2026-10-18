@@ -76,6 +76,7 @@ import { SHOPIFY_REQUIRED_SCOPES } from 'api-src/services/shopify/shopifyScopes'
 import { decrypt } from 'api-src/security/encryption.service';
 import { invalidatePermissionCache, isActionAllowed } from 'api-src/services/permissions/permissionCache.service';
 import { closeShopifyReconnectExecutor } from 'api-src/services/shopify/shopifyReconnectExecutor.db';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { issueTestToken } from '../unit/helpers/auth';
 
 const app = createApp();
@@ -424,6 +425,17 @@ async function outboxRowsForEvent(shopId: number, domainEventId: number) {
   );
 }
 
+/** GH-1068 T3-B durable sync intents with their owned outbox delivery state. */
+async function syncDispatchIntents(shopId: number) {
+  return withTenant(shopId, (trx) =>
+    trx('domain_events as event')
+      .join('domain_event_outbox as outbox', 'outbox.domain_event_id', 'event.id')
+      .where({ 'event.shop_id': shopId, 'event.event_type': 'integration/sync_dispatch_requested' })
+      .select('event.id', 'event.event_payload', 'outbox.published_at', 'outbox.processing_at')
+      .orderBy('event.id', 'asc'),
+  );
+}
+
 jest.setTimeout(120_000);
 
 describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, disposable DB)', () => {
@@ -674,6 +686,12 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(events).toHaveLength(1);
     expect(Number(events[0].event_payload.integration_id)).toBe(Number(authority.integrations[0].id));
     expect(await outboxRowsForEvent(fixture.shopId, Number(events[0].id))).toHaveLength(1);
+    // GH-1068 T3-B: first install commits exactly one durable, undispatched sync intent.
+    const intents = await syncDispatchIntents(fixture.shopId);
+    expect(intents).toHaveLength(1);
+    expect(intents[0].event_payload).toEqual({ integration_id: Number(authority.integrations[0].id),
+      installation_id: Number(authority.installations[0].id), source: 'install' });
+    expect(intents[0]).toMatchObject({ published_at: null, processing_at: null });
     expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
   });
 
@@ -704,7 +722,55 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     const events = await syncRequestedEvents(fixture.shopId);
     expect(events).toHaveLength(eventsBefore.length + 1);
     expect(await outboxRowsForEvent(fixture.shopId, Number(events[events.length - 1].id))).toHaveLength(1);
+    // GH-1068 T3-B: the reconnect intent is the finalizer's and supersedes the install intent.
+    const intents = await syncDispatchIntents(fixture.shopId);
+    expect(intents.map(intent => intent.event_payload.source)).toEqual(['install', 'reconnect']);
+    expect(intents[1]).toMatchObject({ published_at: null, processing_at: null });
     expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  it('GH-1068 T3-B: a failure after reconnect finalization cannot lose the committed durable sync intent', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('t3b-post-final-initial', FULL_GRANT_STRING, 't3b-post-final-initial-r'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    const token = issueTestToken({ userId: fixture.userId, shopId: fixture.shopId, roles: ['owner'] });
+    const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+      .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+    expect(initiated.status).toBe(200);
+    const state = await readOAuthState(fixture.userId);
+    const eventsBefore = await syncRequestedEvents(fixture.shopId);
+    const intentsBefore = await syncDispatchIntents(fixture.shopId);
+    expect(intentsBefore).toHaveLength(1);
+    // The first post-commit side effect fails after the finalizer transaction committed.
+    const postCommit = jest.spyOn(EntitlementsService, 'grantDefaultFreeTierForShop')
+      .mockRejectedValueOnce(new Error('T3B_SYNTHETIC_POST_FINALIZATION_FAILURE'));
+    let res: request.Response;
+    try {
+      programAxios({ token: tokenOk('t3b-post-final-access', FULL_GRANT_STRING, 't3b-post-final-refresh'),
+        graphql: graphqlOk(fixture.shopDomain) });
+      res = await d07Callback(d07SignedQuery({ code: 't3b-post-final-code', state,
+        shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+    } finally { postCommit.mockRestore(); }
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to finalize integration' });
+    const authority = await d07Authority(fixture.shopId);
+    expect(decrypt(authority.credentials[0].access_token_encrypted, 'shopify.dev')).toBe('t3b-post-final-access');
+    expect(authority.credentials[0]).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
+    const integration = await withTenant(fixture.shopId, (trx) =>
+      trx('integrations').where({ shop_id: fixture.shopId, platform: 'shopify' })
+        .first('id', 'sync_status', 'sync_progress_current', 'sync_progress_total', 'sync_last_error'));
+    expect(integration).toEqual({ id: authority.integrations[0].id, sync_status: 'PENDING',
+      sync_progress_current: 0, sync_progress_total: 0, sync_last_error: null });
+    // Observability emission never ran; the durable intent did not depend on it.
+    expect(await syncRequestedEvents(fixture.shopId)).toHaveLength(eventsBefore.length);
+    const intents = await syncDispatchIntents(fixture.shopId);
+    expect(intents).toHaveLength(2);
+    expect(intents[1].event_payload).toMatchObject({ integration_id: Number(authority.integrations[0].id),
+      installation_id: Number(authority.installations[0].id), source: 'reconnect',
+      generation: String(authority.credentials[0].credential_generation) });
+    expect(intents[1]).toMatchObject({ published_at: null, processing_at: null });
+    expect(d07SessionEffects(res).refreshCookies).toHaveLength(0);
   });
 
   it('GH-1068 T3: executor readiness gates Shopify acquisition; a real readiness failure releases the lease without fallback', async () => {
@@ -1020,6 +1086,14 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     );
     expect(await outboxRowsForEvent(shopId, Number(events[0].id))).toHaveLength(1);
 
+    // --- GH-1068 T3-B: durable intent committed with the PENDING integration ---
+    expect(integration.sync_status).toBe('PENDING');
+    const intents = await syncDispatchIntents(shopId);
+    expect(intents).toHaveLength(1);
+    expect(intents[0].event_payload).toEqual({ integration_id: Number(integration.id),
+      installation_id: Number(install.id), source: 'install' });
+    expect(intents[0]).toMatchObject({ published_at: null, processing_at: null });
+
     // --- S1 lock: root-only, no bins, no operational data ---
     const after = await counts(shopId);
     expect(after.shops).toBe(1);
@@ -1084,8 +1158,12 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       expect(events).toHaveLength(1);
       expect(Number(events[0].event_payload.integration_id)).toBe(Number(integration.id));
       expect(await outboxRowsForEvent(shopId, Number(events[0].id))).toHaveLength(1);
-      expect(logs.some(args => args[0] === '[SYNC_JOB_ENQUEUED]' &&
-        (args[1] as { integrationId?: number })?.integrationId === integration.id)).toBe(true);
+      // GH-1068 T3-B: sync dispatch survives the webhook failure as the committed durable intent.
+      const intents = await syncDispatchIntents(shopId);
+      expect(intents).toHaveLength(1);
+      expect(intents[0].event_payload).toEqual({ integration_id: Number(integration.id),
+        installation_id: Number(installation.id), source: 'install' });
+      expect(intents[0]).toMatchObject({ published_at: null, processing_at: null });
       expect(billingFetch.mock.calls.some(call => String(call[0]) === PARTNER_GRAPHQL_URL)).toBe(true);
       expect(billingFetch.mock.calls.filter(call => String(call[0]) === adminUrl(shopDomain))).toHaveLength(1);
       expect(adminObservations).toHaveLength(1);
@@ -1400,6 +1478,11 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     for (const ev of events) {
       expect(await outboxRowsForEvent(shopId, Number(ev.id))).toHaveLength(1);
     }
+    // --- GH-1068 T3-B: the reinstall's finalizer intent supersedes the install intent ---
+    const intents = await syncDispatchIntents(shopId);
+    expect(intents.map(intent => intent.event_payload.source)).toEqual(['install', 'reconnect']);
+    expect(intents.every(intent => Number(intent.event_payload.integration_id)
+      === Number(intents[0].event_payload.integration_id))).toBe(true);
 
     expect(await oauthStateRows(state1)).toBe(0);
     expect(await oauthStateRows(state2)).toBe(0);

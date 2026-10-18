@@ -6,6 +6,7 @@ const mockRaw = jest.fn();
 const mockWithTenant = jest.fn();
 const mockResolveCredential = jest.fn();
 const mockPerformSmartSync = jest.fn();
+const mockClaimCycle = jest.fn();
 
 const mockChannel = {
   consume: mockConsume,
@@ -29,6 +30,11 @@ jest.mock('api-src/services/shopify/shopifyAdminCredentialConsumer.service', () 
 jest.mock('api-src/services/shopify-sync-orchestrator.service', () => ({
   performSmartSync: mockPerformSmartSync,
 }));
+// GH-1068 T3-B: the fenced single-flight cycle claim precedes sync.
+jest.mock('api-src/services/shopify/shopifyIntegrationStatus.service', () => ({
+  claimShopifySyncCycle: mockClaimCycle,
+  updateIntegrationStatus: jest.fn(),
+}));
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -48,7 +54,7 @@ function loadLifecycle(): Required<SyncModule> {
 }
 
 function message() {
-  return { content: Buffer.from(JSON.stringify({ integrationId: 41 })) };
+  return { content: Buffer.from(JSON.stringify({ integrationId: 41, intentDomainEventId: 43 })) };
 }
 
 describe('B4-S1 sync consumer shutdown', () => {
@@ -83,6 +89,7 @@ describe('B4-S1 sync consumer shutdown', () => {
       generation: '4',
     });
     mockPerformSmartSync.mockResolvedValue(undefined);
+    mockClaimCycle.mockResolvedValue({ kind: 'CLAIMED' });
   });
 
   afterEach(() => jest.restoreAllMocks());
