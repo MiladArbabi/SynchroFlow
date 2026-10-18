@@ -1,0 +1,324 @@
+name: Migration principal diagnostic (read only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Full SHA of the reviewed main commit containing this diagnostic
+        required: true
+        type: string
+
+# No checkout or GitHub API calls; this token cannot dispatch another workflow.
+permissions: {}
+
+concurrency:
+  group: migration-principal-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  inspect-principal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require manual dispatch from the reviewed main SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ||
+                "$GITHUB_REF" != refs/heads/main ||
+                ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ||
+                "$GITHUB_SHA" != "$EXPECTED_SHA" ]]; then
+            echo 'Refusing: manual main dispatch must match the reviewed full SHA.' >&2
+            exit 1
+          fi
+          echo "DIAGNOSTIC_SHA=$GITHUB_SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.0
+
+      # Isolated dependency only: no repository scripts, builds or migrations.
+      - name: Install fixed diagnostic PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/migration-principal-client" \
+            --ignore-scripts --no-audit --no-fund --package-lock=false pg@8.22.0
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Inspect fixed catalog facts through the approved PostgreSQL proxy
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_POSTGRES_APP: ${{ secrets.FLY_POSTGRES_APP }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          NODE_PATH: ${{ runner.temp }}/migration-principal-client/node_modules
+        run: |
+          set -euo pipefail
+          set +x
+          node <<'NODE'
+          'use strict';
+          const net = require('node:net');
+          const { spawn } = require('node:child_process');
+          const { Client } = require('pg');
+          const { parse } = require('pg-connection-string');
+          let client, proxy, proxyExit, cleanupPromise;
+          let proxyExited = false;
+          let stopping = false;
+          const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const fail = code => { const e = new Error(); e.code = code; throw e; };
+          // Never log error messages/stacks, proxy output, URLs, client config,
+          // authentication parameters or the complete environment.
+          const safeCode = e => /^[A-Z0-9_]{2,64}$/.test(e?.code ?? '') ? e.code : 'DIAGNOSTIC_FAILED';
+          const emit = (label, rows) => console.log(JSON.stringify({ label, rows }));
+
+          async function bounded(promise, ms, code) {
+            let timer;
+            try {
+              return await Promise.race([promise, new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                  const e = new Error(); e.code = code; reject(e);
+                }, ms);
+              })]);
+            } finally { clearTimeout(timer); }
+          }
+          function cleanup() {
+            if (cleanupPromise) return cleanupPromise;
+            cleanupPromise = (async () => {
+              if (client) {
+                try { await bounded(client.end(), 2_000, 'CLIENT_CLOSE_TIMEOUT'); }
+                catch { client.connection?.stream?.destroy(); }
+                // Disconnect also rolls back an open transaction on failure.
+              }
+              if (proxy && !proxyExited) {
+                proxy.kill('SIGTERM');
+                try { await bounded(proxyExit, 2_000, 'PROXY_CLOSE_TIMEOUT'); }
+                catch {
+                  proxy.kill('SIGKILL');
+                  await bounded(proxyExit, 2_000, 'PROXY_KILL_TIMEOUT');
+                }
+              }
+            })();
+            return cleanupPromise;
+          }
+          async function stop(code) {
+            if (stopping) return;
+            stopping = true;
+            console.error('DIAGNOSTIC_ERROR=' + code);
+            try { await cleanup(); } catch { console.error('CLEANUP_ERROR=FAILED'); }
+            process.exit(1);
+          }
+          process.once('SIGINT', () => { void stop('INTERRUPTED'); });
+          process.once('SIGTERM', () => { void stop('TERMINATED'); });
+          const deadline = setTimeout(() => { void stop('DEADLINE_EXCEEDED'); }, 90_000);
+
+          async function main() {
+            if (!process.env.FLY_API_TOKEN || !process.env.MIGRATION_DATABASE_URL ||
+                !/^[a-z0-9][a-z0-9-]*$/.test(process.env.FLY_POSTGRES_APP ?? '')) {
+              fail('REQUIRED_SECRET_MISSING_OR_INVALID');
+            }
+            const url = new URL(process.env.MIGRATION_DATABASE_URL);
+            if (!['postgres:', 'postgresql:'].includes(url.protocol)) fail('INVALID_DATABASE_PROTOCOL');
+            const original = parse(process.env.MIGRATION_DATABASE_URL);
+            if (!original.database || !original.user || !original.password) fail('INCOMPLETE_DATABASE_CREDENTIAL');
+
+            const proxyEnv = { ...process.env };
+            delete proxyEnv.MIGRATION_DATABASE_URL;
+            proxy = spawn('flyctl', ['proxy', '15432:5432', '-a', process.env.FLY_POSTGRES_APP], {
+              env: proxyEnv, stdio: 'ignore',
+            });
+            proxyExit = new Promise(resolve => {
+              proxy.once('exit', () => { proxyExited = true; resolve(); });
+              proxy.once('error', () => { proxyExited = true; resolve(); });
+            });
+            const readyDeadline = Date.now() + 30_000;
+            for (;;) {
+              if (proxyExited) fail('PROXY_EXITED');
+              const ready = await new Promise(resolve => {
+                const socket = net.createConnection({ host: '127.0.0.1', port: 15432 });
+                let settled = false;
+                const finish = value => {
+                  if (settled) return;
+                  settled = true; socket.destroy(); resolve(value);
+                };
+                socket.once('connect', () => finish(true));
+                socket.once('error', () => finish(false));
+                socket.setTimeout(500, () => finish(false));
+              });
+              if (ready && !proxyExited) break;
+              if (Date.now() >= readyDeadline) fail('PROXY_READY_TIMEOUT');
+              await delay(250);
+            }
+            // Approved loopback proxy; preserve credential/database/TLS fields
+            // in memory without constructing a rewritten URL. Ignore arbitrary
+            // URL startup options and keep all client defaults read-only.
+            client = new Client({
+              host: '127.0.0.1', port: 15432,
+              database: original.database, user: original.user,
+              password: original.password, ssl: original.ssl,
+              application_name: 'migration-principal-readonly-diagnostic',
+              options: '-c default_transaction_read_only=on',
+              connectionTimeoutMillis: 5_000, statement_timeout: 10_000,
+              query_timeout: 15_000, idle_in_transaction_session_timeout: 15_000,
+            });
+            client.on('error', () => { void stop('DATABASE_CONNECTION_ERROR'); });
+            await client.connect();
+            await client.query('BEGIN READ ONLY');
+            const identity = (await client.query([
+              'SELECT current_database() AS database, current_user AS "current_user",',
+              'session_user AS "session_user", current_setting(\'server_version\') AS server_version,',
+              'current_setting(\'server_version_num\')::integer AS server_version_num,',
+              'current_setting(\'transaction_read_only\') AS transaction_read_only,',
+              'r.rolsuper, r.rolcreaterole, r.rolbypassrls, r.rolinherit',
+              'FROM pg_catalog.pg_roles r WHERE r.rolname = current_user',
+            ].join('\n'))).rows[0];
+            if (!identity || identity.transaction_read_only !== 'on' ||
+                identity.database !== original.database ||
+                identity.session_user !== original.user) fail('DATABASE_IDENTITY_MISMATCH');
+            emit('IDENTITY', [identity]);
+            if (identity.server_version_num < 160000) fail('POSTGRESQL_16_OR_NEWER_REQUIRED');
+
+            // Fixed catalog SELECT statements only. No SET ROLE or application
+            // function invocation; SET eligibility is queried, never exercised.
+            const queries = [
+              ['ROLE_MEMBERSHIPS', [
+                'SELECT member.rolname AS member, parent.rolname AS granted_role,',
+                'grantor.rolname AS grantor, m.admin_option, m.inherit_option, m.set_option',
+                'FROM pg_catalog.pg_auth_members m',
+                'JOIN pg_catalog.pg_roles member ON member.oid = m.member',
+                'JOIN pg_catalog.pg_roles parent ON parent.oid = m.roleid',
+                'JOIN pg_catalog.pg_roles grantor ON grantor.oid = m.grantor',
+                'WHERE pg_catalog.pg_has_role(current_user, m.member, \'MEMBER\')',
+                'ORDER BY member.rolname, parent.rolname',
+              ]],
+              ['ROLE_ELIGIBILITY', [
+                'SELECT r.rolname, r.rolcanlogin, r.rolsuper, r.rolcreaterole, r.rolbypassrls,',
+                'pg_catalog.pg_has_role(current_user, r.oid, \'MEMBER\') AS member,',
+                'pg_catalog.pg_has_role(current_user, r.oid, \'USAGE\') AS inherited_role,',
+                'pg_catalog.pg_has_role(current_user, r.oid, \'SET\') AS can_set_role',
+                'FROM pg_catalog.pg_roles r',
+                'WHERE pg_catalog.pg_has_role(current_user, r.oid, \'MEMBER\')',
+                'OR r.rolname IN (\'sf_app\', \'sf_shopify_reconnect_executor\', \'sf_shopify_reconnect_owner\')',
+                'ORDER BY r.rolname',
+              ]],
+              ['EXECUTOR_OWNER_EXISTENCE', [
+                'SELECT v.role_name, r.oid IS NOT NULL AS exists, r.rolcanlogin,',
+                'r.rolsuper, r.rolbypassrls, r.rolcreaterole',
+                'FROM (VALUES (\'sf_shopify_reconnect_executor\'),',
+                '(\'sf_shopify_reconnect_owner\')) v(role_name)',
+                'LEFT JOIN pg_catalog.pg_roles r ON r.rolname = v.role_name ORDER BY v.role_name',
+              ]],
+              ['DATABASE_AND_SCHEMA_AUTHORITY', [
+                'SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) AS database_owner, d.datacl::text AS database_acl,',
+                'pg_catalog.has_database_privilege(current_user, d.oid, \'CONNECT\') AS can_connect,',
+                'pg_catalog.has_database_privilege(current_user, d.oid, \'CREATE\') AS can_create_schema,',
+                'required.schema_name, n.oid IS NOT NULL AS schema_exists,',
+                'pg_catalog.pg_get_userbyid(n.nspowner) AS schema_owner, n.nspacl::text AS schema_acl,',
+                'pg_catalog.has_schema_privilege(current_user, n.oid, \'USAGE\') AS schema_usage,',
+                'pg_catalog.has_schema_privilege(current_user, n.oid, \'CREATE\') AS can_create_function,',
+                'pg_catalog.pg_has_role(current_user, n.nspowner, \'USAGE\') AS inherited_schema_ownership,',
+                'CASE WHEN o.oid IS NOT NULL THEN',
+                'pg_catalog.has_schema_privilege(o.oid, n.oid, \'CREATE\') END AS proposed_owner_schema_create',
+                'FROM pg_catalog.pg_database d',
+                'CROSS JOIN (VALUES (\'public\'), (\'shopify_reconnect_private\')) required(schema_name)',
+                'LEFT JOIN pg_catalog.pg_namespace n ON n.nspname = required.schema_name',
+                'LEFT JOIN pg_catalog.pg_roles o ON o.rolname = \'sf_shopify_reconnect_owner\'',
+                'WHERE d.datname = current_database() ORDER BY required.schema_name',
+              ]],
+              ['TARGET_TABLE_GRANT_AUTHORITY', [
+                'SELECT c.relname, pg_catalog.pg_get_userbyid(c.relowner) AS owner,',
+                'c.relrowsecurity, c.relforcerowsecurity, c.relacl::text AS acl,',
+                'pg_catalog.pg_has_role(current_user, c.relowner, \'USAGE\') AS inherited_ownership,',
+                'pg_catalog.pg_has_role(current_user, c.relowner, \'SET\') AS can_set_owner_role,',
+                'pg_catalog.has_table_privilege(current_user, c.oid, \'SELECT WITH GRANT OPTION\') AS can_grant_select,',
+                'pg_catalog.has_table_privilege(current_user, c.oid, \'INSERT WITH GRANT OPTION\') AS can_grant_insert,',
+                'pg_catalog.has_table_privilege(current_user, c.oid, \'UPDATE WITH GRANT OPTION\') AS can_grant_update,',
+                'pg_catalog.has_table_privilege(current_user, c.oid, \'DELETE WITH GRANT OPTION\') AS can_grant_delete',
+                'FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace',
+                'WHERE n.nspname = \'public\' AND c.relname IN',
+                '(\'shops\', \'integrations\', \'shopify_app_installations\', \'shopify_admin_credentials\')',
+                'ORDER BY c.relname',
+              ]],
+              ['COLUMN_GRANT_AUTHORITY', [
+                'SELECT c.relname, a.attname, a.attacl::text AS column_acl,',
+                'pg_catalog.has_column_privilege(current_user, c.oid, a.attnum,',
+                '\'SELECT WITH GRANT OPTION\') AS can_grant_select,',
+                'pg_catalog.has_column_privilege(current_user, c.oid, a.attnum,',
+                '\'UPDATE WITH GRANT OPTION\') AS can_grant_update',
+                'FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace',
+                'JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid',
+                'WHERE n.nspname = \'public\' AND c.relname IN',
+                '(\'shops\', \'integrations\', \'shopify_app_installations\', \'shopify_admin_credentials\')',
+                'AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum',
+              ]],
+              ['FUNCTION_REPLACEMENT_AND_ACL_AUTHORITY', [
+                'SELECT n.nspname, p.proname,',
+                'pg_catalog.pg_get_function_identity_arguments(p.oid) AS arguments,',
+                'pg_catalog.pg_get_userbyid(p.proowner) AS owner, p.prosecdef, p.proacl::text AS acl,',
+                'ARRAY(SELECT setting FROM unnest(p.proconfig) setting',
+                'WHERE setting LIKE \'search_path=%\') AS fixed_search_path,',
+                'pg_catalog.pg_has_role(current_user, p.proowner, \'USAGE\') AS inherited_ownership,',
+                'pg_catalog.pg_has_role(current_user, p.proowner, \'SET\') AS can_set_owner_role,',
+                'pg_catalog.has_function_privilege(current_user, p.oid, \'EXECUTE WITH GRANT OPTION\') AS can_grant_execute,',
+                'pg_catalog.has_schema_privilege(current_user, n.oid, \'CREATE\') AS schema_create',
+                'FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace',
+                'WHERE (n.nspname = \'public\' AND p.proname IN',
+                '(\'set_order_priority_flag\', \'clear_priority_flag_on_batch\', \'enforce_sync_status_transition\'))',
+                'OR n.nspname = \'shopify_reconnect_private\'',
+                'ORDER BY n.nspname, p.proname, arguments',
+              ]],
+              ['DEFAULT_PRIVILEGES', [
+                'SELECT pg_catalog.pg_get_userbyid(d.defaclrole) AS owner,',
+                'n.nspname AS schema, d.defaclobjtype, d.defaclacl::text AS acl',
+                'FROM pg_catalog.pg_default_acl d',
+                'LEFT JOIN pg_catalog.pg_namespace n ON n.oid = d.defaclnamespace',
+                'WHERE n.nspname IN (\'public\', \'shopify_reconnect_private\') OR d.defaclnamespace = 0',
+                'ORDER BY owner, schema, d.defaclobjtype',
+              ]],
+              ['INTEGRATION_SEQUENCE_GRANT_AUTHORITY', [
+                'SELECT c.relname, pg_catalog.pg_get_userbyid(c.relowner) AS owner, c.relacl::text AS acl,',
+                'pg_catalog.pg_has_role(current_user, c.relowner, \'USAGE\') AS inherited_ownership,',
+                'pg_catalog.pg_has_role(current_user, c.relowner, \'SET\') AS can_set_owner_role,',
+                'pg_catalog.has_sequence_privilege(current_user, c.oid,',
+                '\'USAGE WITH GRANT OPTION\') AS can_grant_usage',
+                'FROM pg_catalog.pg_class c WHERE c.oid =',
+                'pg_catalog.pg_get_serial_sequence(\'public.integrations\', \'id\')::regclass',
+              ]],
+            ];
+            for (const [label, lines] of queries) {
+              if (proxyExited || stopping) fail('DIAGNOSTIC_INTERRUPTED');
+              emit(label, (await client.query(lines.join('\n'))).rows);
+            }
+            emit('CAPABILITY_INTERPRETATION', [{
+              provision_new_non_superuser_non_bypass_roles_by_attribute:
+                identity.rolsuper || identity.rolcreaterole,
+              superuser_can_assign_ownership_and_manage_acls: identity.rolsuper,
+              existing_role_management:
+                'If not superuser, inspect CREATEROLE and target-role ADMIN OPTION; no role mutation was attempted.',
+              alter_function_owner:
+                'If not superuser, requires function ownership (or authorized SET ROLE), SET eligibility for the new owner, and new-owner CREATE privilege on the containing schema.',
+              grant_revoke:
+                'Inspect ownership, ACL grantors and grant-option rows. Grant option alone does not authorize revoking another grantor\'s grants. CREATEROLE confers no object ownership.',
+              missing_objects:
+                'Absent E/O or private schema require provisioning; no future grants are presumed.',
+            }]);
+            await client.query('ROLLBACK');
+            console.log('READ_ONLY_DIAGNOSTIC_COMPLETE');
+          }
+          main().catch(error => {
+            console.error('DIAGNOSTIC_ERROR=' + safeCode(error));
+            process.exitCode = 1;
+          }).finally(async () => {
+            clearTimeout(deadline);
+            try {
+              await cleanup();
+              console.log('DIAGNOSTIC_CONNECTION_AND_PROXY_CLOSED');
+            } catch {
+              console.error('CLEANUP_ERROR=FAILED');
+              process.exitCode = 1;
+            }
+          });
+          NODE
