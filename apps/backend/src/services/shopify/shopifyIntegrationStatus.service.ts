@@ -42,6 +42,42 @@ const syncCycleStartedExternalId = (intentDomainEventId: number) =>
  */
 const FAILED_RECOVERABLE_SOURCES = new Set(['install', 'recovery']);
 
+async function hasOutstandingShopifyRecoveryIntent(
+  trx: Knex.Transaction,
+  { shopId, integrationId, status }: { shopId: number; integrationId: number; status: string },
+): Promise<boolean> {
+  const latest = await trx('domain_events')
+    .where({ shop_id: shopId, event_type: SHOPIFY_SYNC_DISPATCH_EVENT })
+    .whereRaw("event_payload->>'integration_id' = ?", [String(integrationId)])
+    .orderBy('id', 'desc')
+    .first('id', 'event_payload');
+  if (!latest) return false;
+
+  const started = await trx('domain_events')
+    .where({ shop_id: shopId, external_event_id: syncCycleStartedExternalId(Number(latest.id)) })
+    .first('id');
+  return !started && (status === 'PENDING'
+    || (status === 'FAILED' && FAILED_RECOVERABLE_SOURCES.has(latest.event_payload?.source)));
+}
+
+export async function readShopifyRecoveryRequestOutstanding({
+  shopId,
+  integrationId,
+  status,
+}: {
+  shopId: number;
+  integrationId: number;
+  status: string;
+}): Promise<boolean> {
+  if (!isPositiveId(shopId) || !isPositiveId(integrationId)) {
+    throw new Error('SHOPIFY_RECOVERY_IDENTITY_REQUIRED');
+  }
+  return withTenant(shopId, trx => hasOutstandingShopifyRecoveryIntent(
+    trx,
+    { shopId, integrationId, status },
+  ));
+}
+
 export type ShopifyManualRecoveryRefusal =
   | 'INTEGRATION_NOT_FOUND'
   | 'SHOPIFY_NOT_INSTALLED'
@@ -104,18 +140,8 @@ export async function requestShopifyManualRecovery({
       return { kind: 'REFUSED', code: 'SYNC_IN_PROGRESS' } as const;
     }
 
-    const latest = await trx('domain_events')
-      .where({ shop_id: shopId, event_type: SHOPIFY_SYNC_DISPATCH_EVENT })
-      .whereRaw("event_payload->>'integration_id' = ?", [String(integrationId)])
-      .orderBy('id', 'desc')
-      .first('id', 'event_payload');
-    if (latest) {
-      const started = await trx('domain_events')
-        .where({ shop_id: shopId, external_event_id: syncCycleStartedExternalId(Number(latest.id)) })
-        .first('id');
-      const outstanding = !started && (status === 'PENDING'
-        || FAILED_RECOVERABLE_SOURCES.has(latest.event_payload?.source));
-      if (outstanding) return { kind: 'REFUSED', code: 'SYNC_ALREADY_REQUESTED' } as const;
+    if (await hasOutstandingShopifyRecoveryIntent(trx, { shopId, integrationId, status })) {
+      return { kind: 'REFUSED', code: 'SYNC_ALREADY_REQUESTED' } as const;
     }
 
     const [intent] = await trx('domain_events').insert({

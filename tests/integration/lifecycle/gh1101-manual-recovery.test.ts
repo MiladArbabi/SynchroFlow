@@ -108,6 +108,11 @@ function post(f: Fixture, path: string, body: unknown = {}, shopId = f.shopId) {
   const token = issueTestToken({ userId: f.owner, shopId, roles: ['owner'] });
   return request(app).post(`/api/v1/integrations/${path}`).set('Authorization', `Bearer ${token}`).send(body);
 }
+function getSyncStatus(f: Fixture) {
+  const token = issueTestToken({ userId: f.owner, shopId: f.shopId, roles: ['owner'] });
+  return request(app).get('/api/v1/integrations/sync-status')
+    .set('Authorization', `Bearer ${token}`);
+}
 const resync = (f: Fixture, id: number | string = f.integrationId) => post(f, `sync/${id}`);
 const legacy = (f: Fixture) => post(f, 'manual-initial-sync', { shopId: f.shopId, integrationId: f.integrationId });
 
@@ -247,6 +252,23 @@ describe('GH-1101 — manual recovery admission is durable and truthful', () => 
     expect(await intents(g)).toHaveLength(1);
   });
 
+  it('reports the tenant-scoped latest eligible intent as outstanding until its cycle starts', async () => {
+    const f = await fixture('outstanding-read');
+    await moveTo(f, 'FAILED');
+    expect((await getSyncStatus(f)).body.recoveryRequestOutstanding).toBe(false);
+    expect((await resync(f)).status).toBe(202);
+    expect((await getSyncStatus(f)).body.recoveryRequestOutstanding).toBe(true);
+
+    const other = await fixture('outstanding-other-tenant');
+    await moveTo(other, 'FAILED');
+    expect((await getSyncStatus(other)).body.recoveryRequestOutstanding).toBe(false);
+
+    const [intent] = await intents(f);
+    await processSyncJob(delivery({ integrationId: f.integrationId,
+      intentDomainEventId: Number(intent.id) }));
+    expect((await getSyncStatus(f)).body.recoveryRequestOutstanding).toBe(false);
+  });
+
   it('an unusable connection is refused specifically, with no intent and no provider call', async () => {
     const cases: Array<[string, Parameters<typeof fixture>[1], Record<string, unknown> | null, string]> = [
       ['not-installed', { installation: 'none' }, null, 'SHOPIFY_NOT_INSTALLED'],
@@ -313,6 +335,7 @@ describe('GH-1101 — explicit FAILED recovery through the durable pipeline', ()
     // The recovered cycle fails again: neither redelivery nor redispatch restarts it.
     await updateIntegrationStatus({ integrationId: f.integrationId, shopId: f.shopId, status: 'FAILED',
       executionAuthority: f.authority, error: 'synthetic-recovery-failure' });
+    expect((await getSyncStatus(f)).body.recoveryRequestOutstanding).toBe(false);
     await processSyncJob(delivery(message));
     expect(await dispatchedEver(firstIntent, f)).toBe(false);
     expect(mockSmartSync).toHaveBeenCalledTimes(1);

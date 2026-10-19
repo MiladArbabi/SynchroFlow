@@ -12,6 +12,7 @@ import {
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import { triggerManualInitialSync } from './manualSync.controller.js';
+import type { NextFunction, Request, Response } from 'express';
 
 const router = Router();
 
@@ -26,6 +27,21 @@ router.get('/oauth/callback/:platform', handleOAuthCallback);
 
 // Wires GET /api/v1/integrations/sync-status
 router.get('/sync-status', authenticateToken, getSyncStatus);
+
+// Same current-user authority as connection writes; no WMS settings grant.
+// Route-local boundary keeps authority lookup failures fail-closed on Express 4.
+const requireConnectionWrite = requireAction('integrations:write');
+const requireConnectionWriteSafely = (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(requireConnectionWrite(req, res, next)).catch((error: unknown) => {
+    console.error('[integration.routes] Connection permission authority unavailable', {
+      message: error instanceof Error ? error.message : 'unknown',
+    });
+    if (res.headersSent) return next(error);
+    return res.status(503).json({ error: 'PERMISSION_AUTHORITY_UNAVAILABLE', retryable: true });
+  });
+};
+router.get('/capabilities', authenticateToken, requireConnectionWriteSafely,
+  (_req, res) => res.json({ canManageConnection: true }));
 
 // Wires GET /api/v1/integrations/pre-flight
 router.get('/pre-flight', authenticateToken, preFlightCheck);
