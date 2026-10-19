@@ -31,6 +31,7 @@ import LocalizationSettings         from '../account-settings/LocalizationSettin
 import AlertsSettingsPanel          from '../alerts/AlertsSettingsPanel';
 import { SettingsPageWrapper }      from './ShopSettingsShared';
 import { SettingsShellHeader } from './SettingsShellHeader';
+import ShopifyConnectionsSettings from './ShopifyConnectionsSettings';
 
 export default function ShopSettingsPage() {
   return (
@@ -48,6 +49,7 @@ export default function ShopSettingsPage() {
             <AlertsSettingsPanel />
           </SettingsPageWrapper>
         } />
+        <Route path="/connections"   element={<ShopifyConnectionsSettings />} />
         <Route path="/notifications" element={<Navigate to="/settings/alerts" replace />} />
         <Route path="/integrations"  element={<Navigate to="/settings/alerts" replace />} />
         {/* Billing — plan, usage meters, upgrade/downgrade (UX-02) */}

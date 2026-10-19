@@ -36,6 +36,7 @@ import { isActionAllowed } from '../../services/permissions/permissionCache.serv
 import { connection } from '../../queue.js';
 import {
   recordShopifySyncDispatchIntent,
+  readShopifyRecoveryRequestOutstanding,
   requestShopifyManualRecovery,
 } from '../../services/shopify/shopifyIntegrationStatus.service.js';
 import { readShopifyConnection } from '../../services/shopify/shopifyConnectionState.service.js';
@@ -1307,11 +1308,20 @@ export const getSyncStatus = async (req: Request, res: Response) => {
       ({ shopId } = await requireShopContextForUser(userId));
     } catch {
       return res.status(200).json({
+        integrationId: null,
         status: 'NOT_FOUND',
+        connectionState: 'NOT_INSTALLED',
+        shopDomain: null,
+        recoveryRequestOutstanding: null,
+        lastSyncedAt: null,
         progress: { current: 0, total: 0, percentage: 0 },
         lastError: null,
       });
     }
+
+    // GH-1101 is the sole connection authority. Read it independently of the
+    // historical integration row so installation-only tenants remain visible.
+    const connection = await readShopifyConnection(shopId);
 
     // Find the primary Shopify integration for this shop
     // In the future, we might support multiple, but for MVP, we take the first.
@@ -1330,40 +1340,43 @@ export const getSyncStatus = async (req: Request, res: Response) => {
     );
 
     if (!integration) {
-      // This user has no integration, which is fine, but not what this endpoint is for.
       return res.status(200).json({
-        "status": "NOT_FOUND",
-        "progress": { "current": 0, "total": 0, "percentage": 0 },
-        "lastError": null
+        integrationId: null,
+        status: 'NOT_FOUND',
+        ...(connection.state === 'UNINSTALLED' && { connectionStatus: 'UNINSTALLED' }),
+        connectionState: connection.state,
+        shopDomain: connection.shopDomain,
+        recoveryRequestOutstanding: false,
+        lastSyncedAt: null,
+        progress: { current: 0, total: 0, percentage: 0 },
+        lastError: null,
       });
     }
-
-    // GH-1068 T1: installation lifecycle is independent of historical
-    // sync completion. Report only a verified uninstall in this slice.
-    // Remaining connection states require separate credential-authority tests.
-    const installation = integration.platform_shop_name
-      ? await withTenant(shopId, (trx) =>
-          trx('shopify_app_installations')
-            .where({
-              shop_id: shopId,
-              shop_domain: integration.platform_shop_name,
-            })
-            .orderBy('id', 'desc')
-            .first('uninstalled_at'))
-      : undefined;
-
-    const isUninstalled = Boolean(installation?.uninstalled_at);
 
     // GH-1101: precise canonical connection (pure read) and freshness from the
     // latest authoritative integration-scoped completion fact. No fact → null;
     // integrations.updated_at is never a sync time.
-    const connection = await readShopifyConnection(shopId);
     const lastCompletion = await withTenant(shopId, (trx) =>
       trx('domain_events')
         .where({ shop_id: shopId, event_type: 'integration/sync_completed' })
         .whereRaw("event_payload->>'integration_id' = ?", [String(integration.id)])
         .max('event_time as last_synced_at')
         .first());
+
+    let recoveryRequestOutstanding: boolean | null = null;
+    try {
+      recoveryRequestOutstanding = await readShopifyRecoveryRequestOutstanding({
+        shopId,
+        integrationId: Number(integration.id),
+        status: integration.sync_status,
+      });
+    } catch (error) {
+      console.error('[integration.controller] Recovery request state unavailable', {
+        shopId,
+        integrationId: integration.id,
+        message: error instanceof Error ? error.message : 'unknown',
+      });
+    }
 
     // Calculate percentage
     let percentage = 0;
@@ -1403,8 +1416,10 @@ export const getSyncStatus = async (req: Request, res: Response) => {
     res.json({
       integrationId: integration.id,
       status: integration.sync_status,
-      ...(isUninstalled && { connectionStatus: 'UNINSTALLED' }),
+      ...(connection.state === 'UNINSTALLED' && { connectionStatus: 'UNINSTALLED' }),
       connectionState: connection.state,
+      shopDomain: connection.shopDomain,
+      recoveryRequestOutstanding,
       lastSyncedAt: lastCompletion?.last_synced_at ?? null,
       progress: {
         current: integration.sync_progress_current,

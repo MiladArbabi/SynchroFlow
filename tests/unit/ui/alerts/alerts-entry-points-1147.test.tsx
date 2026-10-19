@@ -86,6 +86,7 @@ jest.mock('pages/ft2-pages/ShopSettingsCarriersPage', () => () => <div>Carriers 
 jest.mock('pages/ft2-pages/ShopSettingsWarehousePage', () => () => <div>Warehouse settings</div>);
 jest.mock('pages/ft2-pages/ShopSettingsFinancePage', () => () => <div>Finance settings</div>);
 jest.mock('pages/ft2-pages/ShopSettingsReportsPage', () => () => <div>Reports settings</div>);
+jest.mock('pages/ft2-pages/ShopifyConnectionsSettings', () => () => <div>Shopify connections settings</div>);
 jest.mock('pages/account-settings/BillingSettings', () => () => <div>Billing settings</div>);
 jest.mock('pages/account-settings/LocalizationSettings', () => () => <div>Localization settings</div>);
 jest.mock('pages/ft2-pages/SettingsShellHeader', () => ({
@@ -284,6 +285,13 @@ describe('GH-1147 — legacy settings URLs', () => {
 
     expect(currentPath()).toBe('/settings/alerts');
     expect(screen.getByText('Shared Alerts settings panel')).toBeInTheDocument();
+  });
+
+  it('renders Connections as an ordinary Settings route', () => {
+    renderSettings('/settings/connections');
+
+    expect(currentPath()).toBe('/settings/connections');
+    expect(screen.getByText('Shopify connections settings')).toBeInTheDocument();
   });
 
   it('canonicalizes /settings/notifications to /settings/alerts', () => {

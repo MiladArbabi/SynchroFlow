@@ -10,6 +10,7 @@
 // /alerts/settings, so there is one preferences implementation.
 export const SETTINGS_TABS = [
   { id: 'general',       label: 'General',       path: '/settings'      },
+  { id: 'connections',   label: 'Connections',    path: '/settings/connections'   },
   { id: 'carriers',      label: 'Carriers',       path: '/settings/carriers'      },
   { id: 'warehouse',     label: 'Warehouse',      path: '/settings/warehouse'     },
   { id: 'finance',       label: 'Finance',        path: '/settings/finance'       },

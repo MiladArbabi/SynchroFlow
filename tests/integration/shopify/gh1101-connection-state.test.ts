@@ -230,6 +230,90 @@ describe('GH-1101 — canonical connection truth on every surface', () => {
 });
 
 describe('GH-1101 — compatibility responses and freshness', () => {
+
+  it('returns null when authoritative recovery lookup fails', async () => {
+    const f = await fixture('recovery-lookup-unavailable');
+    const service = jest.requireActual(
+      'api-src/services/shopify/shopifyIntegrationStatus.service'
+    ) as typeof import('api-src/services/shopify/shopifyIntegrationStatus.service');
+
+    const lookup = jest.spyOn(service, 'readShopifyRecoveryRequestOutstanding')
+      .mockRejectedValueOnce(new Error('SYNTHETIC_RECOVERY_LOOKUP_FAILURE'));
+    const logger = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const response = await get(f, '/api/v1/integrations/sync-status');
+
+      expect(lookup).toHaveBeenCalledWith({
+        shopId: f.shopId,
+        integrationId: f.integrationId,
+        status: 'PENDING',
+      });
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        integrationId: f.integrationId,
+        connectionState: 'CONNECTED',
+        recoveryRequestOutstanding: null,
+      });
+      expect(JSON.stringify(response.body))
+        .not.toContain('SYNTHETIC_RECOVERY_LOOKUP_FAILURE');
+    } finally {
+      lookup.mockRestore();
+      logger.mockRestore();
+    }
+  });
+
+  it('sync status exposes additive connection metadata with and without historical integrations', async () => {
+    const historical = await fixture('historical-no-installation', { installation: 'none' });
+    const historicalResponse = await get(historical, '/api/v1/integrations/sync-status');
+    expect(historicalResponse.body).toMatchObject({
+      integrationId: historical.integrationId,
+      status: 'PENDING',
+      connectionState: 'NOT_INSTALLED',
+      shopDomain: null,
+      recoveryRequestOutstanding: false,
+      lastSyncedAt: null,
+      progress: { current: 0, total: 0, percentage: 0 },
+      lastError: null,
+    });
+
+    const noInstallation = await fixture('no-integration-no-installation', { installation: 'none' });
+    await withTenant(noInstallation.shopId, trx => trx('integrations')
+      .where({ shop_id: noInstallation.shopId, id: noInstallation.integrationId }).delete());
+    expect((await get(noInstallation, '/api/v1/integrations/sync-status')).body).toEqual({
+      integrationId: null,
+      status: 'NOT_FOUND',
+      connectionState: 'NOT_INSTALLED',
+      shopDomain: null,
+      lastSyncedAt: null,
+      progress: { current: 0, total: 0, percentage: 0 },
+      recoveryRequestOutstanding: false,
+      lastError: null,
+    });
+
+    const installationOnly = await fixture('installation-only');
+    await withTenant(installationOnly.shopId, trx => trx('integrations')
+      .where({ shop_id: installationOnly.shopId, id: installationOnly.integrationId }).delete());
+    expect((await get(installationOnly, '/api/v1/integrations/sync-status')).body).toEqual({
+      integrationId: null,
+      status: 'NOT_FOUND',
+      connectionState: 'CONNECTED',
+      shopDomain: installationOnly.domain,
+      recoveryRequestOutstanding: false,
+      lastSyncedAt: null,
+      progress: { current: 0, total: 0, percentage: 0 },
+      lastError: null,
+    });
+  });
+
+  it('sync status fails closed when authenticated identity has no tenant context', async () => {
+    const token = issueTestToken({ userId: 2_000_000_001, shopId: 2_000_000_001, roles: ['owner'] });
+    const response = await request(app).get('/api/v1/integrations/sync-status')
+      .set('Authorization', `Bearer ${token}`);
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'User shop not found.' });
+  });
+
   it('login returns the unchanged public shape with a derived shopify_connected', async () => {
     const f = await fixture('login', { ownerFlag: false });
     const response = await request(app).post('/api/v1/auth/login')
@@ -278,5 +362,32 @@ describe('GH-1101 — compatibility responses and freshness', () => {
     expect(sync.body.lastSyncedAt).toBe(new Date(fact.event_time).toISOString());
     expect(sync.body.status).toBe('COMPLETED');
     expect(sync.body.connectionState).toBe('CONNECTED');
+    expect(sync.body.shopDomain).toBe(f.domain);
+  });
+
+  it('keeps historical completed synchronization separate after uninstall', async () => {
+    const f = await fixture('completed-then-uninstalled');
+    const authority = await withTenant(f.shopId, async trx => {
+      const credential = await trx('shopify_admin_credentials').where({ shop_id: f.shopId })
+        .first('credential_generation');
+      return { installationId: f.installationId!, shopDomain: f.domain,
+        generation: String(credential.credential_generation) };
+    });
+    for (const status of ['SYNCING_PRODUCTS', 'SYNCING_ORDERS', 'COMPLETED'] as const) {
+      await updateIntegrationStatus({ integrationId: f.integrationId, shopId: f.shopId, status,
+        executionAuthority: authority, error: null });
+    }
+    await withTenant(f.shopId, trx => ShopifyAppService.hardFenceAppUninstalled(
+      f.shopId, trx, new Date(), f.domain));
+
+    const response = await get(f, '/api/v1/integrations/sync-status');
+    expect(response.body).toMatchObject({
+      integrationId: f.integrationId,
+      status: 'COMPLETED',
+      connectionStatus: 'UNINSTALLED',
+      connectionState: 'UNINSTALLED',
+      shopDomain: f.domain,
+    });
+    expect(response.body.lastSyncedAt).not.toBeNull();
   });
 });

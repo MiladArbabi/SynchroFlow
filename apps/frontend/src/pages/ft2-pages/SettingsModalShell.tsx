@@ -19,6 +19,7 @@ import { Box, Dialog, IconButton, Typography } from '@mui/material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
+  Cable,
   CreditCard,
   DollarSign,
   FileText,
@@ -59,6 +60,7 @@ const SETTINGS_ICONS: Record<string, LucideIcon> = {
   finance: DollarSign,
   localization: Languages,
   alerts: Bell,
+  connections: Cable,
   billing: CreditCard,
   reports: FileText,
   team: Users,
@@ -305,6 +307,7 @@ function SettingsModalSurface({
                   component="button"
                   type="button"
                   title={item.label}
+                  aria-label={item.label}
                   aria-current={active ? 'page' : undefined}
                   onClick={() => handleNavigate(item.path)}
                   sx={{
