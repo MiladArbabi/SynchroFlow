@@ -7,7 +7,7 @@ const POLL_INTERVAL_MS = 500;
 const BATCH_SIZE = 20;
 const SYNC_QUEUE_NAME = 'sync_jobs';
 // Bounded wait for the broker confirm; an unconfirmed publish is a retryable failure.
-const SYNC_PUBLISH_CONFIRM_TIMEOUT_MS = 10_000;
+const SYNC_PUBLISH_CONFIRM_TIMEOUT_MS = 5_000;
 
 let running = false;
 
@@ -243,6 +243,53 @@ export async function dispatchShopifySyncIntentOnce(
   }
   console.info('[domain-event-outbox] sync dispatch published', claim);
   return { kind: 'PUBLISHED', ...claim };
+}
+
+// The HTTP runtime owns only Shopify intent delivery. The standalone worker
+// owns the combined dispatcher below; bootstrap never starts both loops.
+let shopifySyncStopped = true;
+let shopifySyncTimer: ReturnType<typeof setTimeout> | null = null;
+let shopifySyncCycle: Promise<void> | null = null;
+let shopifySyncStop: Promise<void> | null = null;
+
+function scheduleShopifySyncDispatch(delay: number): void {
+  if (shopifySyncStopped) return;
+  shopifySyncTimer = setTimeout(() => {
+    shopifySyncTimer = null;
+    if (shopifySyncStopped) return;
+
+    // Schedule the next iteration only after claim/publish/mark has settled.
+    shopifySyncCycle = dispatchShopifySyncIntentOnce()
+      .then(() => undefined)
+      .catch((error) => {
+        console.error('[shopify-sync-dispatch] iteration failed:', error);
+      })
+      .finally(() => {
+        shopifySyncCycle = null;
+        scheduleShopifySyncDispatch(POLL_INTERVAL_MS);
+      });
+  }, delay);
+}
+
+export function startShopifySyncIntentDispatcher(): void {
+  if (!shopifySyncStopped || shopifySyncStop) return;
+  shopifySyncStopped = false;
+  scheduleShopifySyncDispatch(0);
+  console.info('[shopify-sync-dispatch] Dispatcher started');
+}
+
+export function stopShopifySyncIntentDispatcher(): Promise<void> {
+  shopifySyncStopped = true;
+  if (shopifySyncTimer) clearTimeout(shopifySyncTimer);
+  shopifySyncTimer = null;
+  if (shopifySyncStop) return shopifySyncStop;
+
+  // Queue infrastructure remains available until the owned operation drains.
+  const activeCycle = shopifySyncCycle;
+  shopifySyncStop = Promise.resolve(activeCycle).then(() => undefined).finally(() => {
+    shopifySyncStop = null;
+  });
+  return shopifySyncStop;
 }
 
 export async function startDomainEventOutboxDispatcher() {

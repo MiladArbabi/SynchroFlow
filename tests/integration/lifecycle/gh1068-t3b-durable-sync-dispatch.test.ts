@@ -334,6 +334,50 @@ describe('GH-1068 T3-B — atomic durable sync intent', () => {
 });
 
 describe('GH-1068 T3-B — durable dispatch', () => {
+  it('two Machine dispatchers claim one intent while historical generic and billing rows stay unchanged', async () => {
+    await drainEligible();
+    const f = await fixture('a22-two-machines');
+    await reconnect(f, 'a22-two-machines');
+    const [intent] = await intents(f.shopId);
+    const historicalIds = await withTenant(f.shopId, async trx => {
+      const events = await trx('domain_events').insert([
+        { shop_id: f.shopId, event_type: 'integration/sync_requested',
+          event_payload: { integration_id: f.integrationId },
+          event_time: new Date('2026-06-01T00:00:00Z'), event_version: 1 },
+        { shop_id: f.shopId, event_type: 'billing/overage',
+          event_payload: { billing_provider: 'shopify', overage_units: 1,
+            idempotency_key: `a22-${crypto.randomUUID()}`, shop_gid: `gid://shopify/Shop/${f.shopId}` },
+          event_time: new Date('2026-06-01T00:00:00Z'), event_version: 1 },
+      ]).returning('id');
+      return events.map(event => Number(event.id));
+    });
+    const history = () => observer!('domain_event_outbox')
+      .whereIn('domain_event_id', historicalIds).orderBy('id').select('*');
+    const before = await history();
+    expect(before).toHaveLength(2);
+    expect(before.every(row => row.published_at === null && row.processing_at === null)).toBe(true);
+    const entered = deferred();
+    const confirmation = deferred();
+    const sent: Message[] = [];
+    const machineA = dispatchShopifySyncIntentOnce(async message => {
+      sent.push(message);
+      entered.resolve();
+      await confirmation.promise;
+    });
+    try {
+      await timeout(entered.promise, 'Machine A claim');
+      expect(await timeout(dispatchShopifySyncIntentOnce(async message => { sent.push(message); }),
+        'Machine B claim')).toEqual({ kind: 'IDLE' });
+      expect(sent).toEqual([{ integrationId: f.integrationId, intentDomainEventId: Number(intent.id) }]);
+      expect((await outboxRow(Number(intent.outbox_id))).published_at).toBeNull();
+    } finally {
+      confirmation.resolve();
+      await timeout(machineA, 'Machine A publish');
+    }
+    expect((await outboxRow(Number(intent.outbox_id))).published_at).not.toBeNull();
+    expect(await history()).toEqual(before);
+  });
+
   it('marks an intent published only after broker confirmation; the message names the exact intent', async () => {
     await drainEligible();
     const f = await fixture('confirmed-publish');
