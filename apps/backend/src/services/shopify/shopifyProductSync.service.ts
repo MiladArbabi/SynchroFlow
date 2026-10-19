@@ -1,5 +1,6 @@
 import { Knex } from 'knex';
 import { syncProducts } from './shopifyProducts.core.js';
+import { catalogFreshnessBaselineOf } from './shopifyCatalogPagination.service.js';
 
 /**
  * SHOPIFY PRODUCT SYNC SERVICE
@@ -32,8 +33,11 @@ export const syncShopifyProducts = async ({
     count: products.length,
   });
 
-  // Existing logic preserved
-  await syncProducts(trx, shopId, products);
+  // GH-1262 A2.2 C4a: a complete catalog collection carries its pre-fetch
+  // freshness baseline; any other input keeps the untrusted-input rules.
+  await syncProducts(trx, shopId, products, {
+    freshnessBaseline: catalogFreshnessBaselineOf(products),
+  });
 
   console.info('[SHOPIFY_PRODUCT_SYNC_COMPLETED]', {
     shopId,

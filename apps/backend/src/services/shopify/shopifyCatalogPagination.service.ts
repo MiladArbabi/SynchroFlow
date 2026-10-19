@@ -16,6 +16,10 @@
  * Missing pageInfo is NOT a terminal page. No partial collection is returned.
  */
 
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { GET_PRODUCTS_QUERY } from './shopify.queries.js';
+import type { CatalogFreshnessBaseline, CatalogFreshnessBaselineRow } from './shopifyProducts.core.js';
+
 type ShopifyGraphqlLike = {
   request: (query: string, opts?: any) => Promise<{ data?: any }>;
 };
@@ -81,12 +85,14 @@ async function collectRemainingVariants({
   shopId,
   productId,
   firstPage,
+  signal,
 }: {
   client: ShopifyGraphqlLike;
   variantsQuery: string;
   shopId: number;
   productId: string;
   firstPage: ConnectionPage;
+  signal?: AbortSignal;
 }): Promise<any[]> {
   const label = `product ${productId} variants`;
   const variantEdges = [...firstPage.edges];
@@ -97,8 +103,11 @@ async function collectRemainingVariants({
     const cursor = page.endCursor as string;
     advanceCursor(seen, cursor, label, shopId);
 
+    // Never start another provider request once cancelled or past the deadline.
+    signal?.throwIfAborted();
     const response = await client.request(variantsQuery, {
       variables: { id: productId, cursor },
+      ...(signal ? { signal } : {}),
     });
 
     const product = response?.data?.product;
@@ -112,6 +121,121 @@ async function collectRemainingVariants({
   }
 
   return variantEdges;
+}
+
+/**
+ * One product by identity (GH-1262 A2.2 B1), with its COMPLETE variants
+ * connection, in the same edge shape collectShopifyCatalogProducts returns.
+ * Returns null only when Shopify answers `product: null`; a response without a
+ * product field, a mismatched id or any malformed connection fails closed.
+ *
+ * `signal` (A2.2 shutdown cancellation) reaches EVERY request, the first page
+ * and each variant continuation, and is checked before each new request. One
+ * signal spans the whole collection, so a caller's deadline never restarts per
+ * page. An abort surfaces as a thrown error; the caller classifies it from the
+ * signal state, never from the error name.
+ */
+export async function collectShopifyCatalogProduct({
+  client,
+  productQuery,
+  variantsQuery,
+  shopId,
+  productId,
+  signal,
+}: {
+  client: ShopifyGraphqlLike;
+  productQuery: string;
+  variantsQuery: string;
+  shopId: number;
+  productId: string;
+  signal?: AbortSignal;
+}): Promise<any | null> {
+  signal?.throwIfAborted();
+  const response = await client.request(productQuery, {
+    variables: { id: productId },
+    ...(signal ? { signal } : {}),
+  });
+  const data = response?.data;
+
+  if (!data || typeof data !== 'object' || !('product' in data)) {
+    throw new Error(`${FATAL} product ${productId}: product missing from response`);
+  }
+
+  const node = data.product;
+  if (node === null) return null;
+
+  if (!node || typeof node !== 'object' || node.id !== productId) {
+    throw new Error(`${FATAL} product ${productId}: response product does not match`);
+  }
+
+  const variantsPage = readConnection(node.variants, `product ${productId} variants`);
+  if (!variantsPage.hasNextPage) return { node };
+
+  const variantEdges = await collectRemainingVariants({
+    client,
+    variantsQuery,
+    shopId,
+    productId,
+    firstPage: variantsPage,
+    signal,
+  });
+
+  return {
+    node: {
+      ...node,
+      variants: {
+        ...node.variants,
+        edges: variantEdges,
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    },
+  };
+}
+
+/**
+ * FRESHNESS BASELINE (GH-1262 A2.2 C4a)
+ * -------------------------------------
+ * A full catalog sync re-reads products whose watermark already holds the
+ * same source timestamp. The shop's watermark rows are read BEFORE the first
+ * provider request and registered against the returned edges, so the catalog
+ * write can prove a row is unchanged since the snapshot began
+ * (shopifyProducts.core.ts). Only the catalog-sync query captures one: other
+ * collections (the opening-inventory snapshot) are never written by
+ * syncProducts and make no extra read. The read runs in its own short tenant
+ * transaction, never during provider I/O and never inside a caller's
+ * transaction.
+ */
+const catalogFreshnessBaselines = new WeakMap<object, CatalogFreshnessBaseline>();
+
+async function readCatalogFreshnessBaseline(shopId: number): Promise<CatalogFreshnessBaseline> {
+  const result = await withTenant(shopId, (trx) =>
+    trx.raw(
+      `SELECT external_product_id,
+              to_char(source_updated_at AT TIME ZONE 'UTC',
+                      'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS source_updated_at,
+              reconcile_generation,
+              is_deleted
+         FROM shopify_product_source_watermarks
+        WHERE shop_id = ? AND platform = 'shopify'`,
+      [shopId]
+    )
+  );
+  const rows = new Map<string, CatalogFreshnessBaselineRow>();
+  for (const row of result.rows ?? []) {
+    rows.set(String(row.external_product_id), {
+      sourceUpdatedAt: row.source_updated_at ?? null,
+      reconcileGeneration: Number(row.reconcile_generation),
+      isDeleted: row.is_deleted === true,
+    });
+  }
+  return { shopId, rows };
+}
+
+/** The baseline captured for exactly this collection result, if any. */
+export function catalogFreshnessBaselineOf(productEdges: unknown): CatalogFreshnessBaseline | undefined {
+  return typeof productEdges === 'object' && productEdges !== null
+    ? catalogFreshnessBaselines.get(productEdges)
+    : undefined;
 }
 
 /**
@@ -133,6 +257,9 @@ export async function collectShopifyCatalogProducts({
   const productEdges: any[] = [];
   const seen = new Set<string>();
   let cursor: string | null = null;
+  const freshnessBaseline = productsQuery === GET_PRODUCTS_QUERY
+    ? await readCatalogFreshnessBaseline(shopId)
+    : undefined;
 
   while (true) {
     const variables = cursor ? { cursor } : {};
@@ -181,6 +308,7 @@ export async function collectShopifyCatalogProducts({
     });
 
     if (!page.hasNextPage) {
+      if (freshnessBaseline) catalogFreshnessBaselines.set(productEdges, freshnessBaseline);
       return productEdges;
     }
 

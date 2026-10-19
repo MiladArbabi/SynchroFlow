@@ -56,6 +56,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     case 'products/create':
     case 'products/update':
+    case 'products/delete':
       return shopifyWebhookHandler(req, res);
 
     // Mandatory compliance webhooks (GDPR / privacy law)

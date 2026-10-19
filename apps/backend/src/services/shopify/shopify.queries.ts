@@ -56,6 +56,7 @@ query getProducts($cursor: String) {
         vendor
         productType
         status
+        updatedAt
         featuredImage {
           url
         }
@@ -87,6 +88,36 @@ query getProductVariants($id: ID!, $cursor: String) {
   product(id: $id) {
     id
     variants(first: 100, after: $cursor) {
+      edges {
+        node {
+          ${CATALOG_VARIANT_FIELDS}
+        }
+      }
+      ${PAGE_INFO_FIELDS}
+    }
+  }
+}
+`;
+
+/**
+ * One product by identity, with the same product and variant fields as
+ * GET_PRODUCTS_QUERY (GH-1262 A2.2 B1 reconciliation). Further variant pages
+ * continue through GET_PRODUCT_VARIANTS_QUERY.
+ */
+export const GET_PRODUCT_QUERY = `
+query getProduct($id: ID!) {
+  product(id: $id) {
+    id
+    title
+    vendor
+    productType
+    status
+    updatedAt
+    featuredImage {
+      url
+    }
+    totalInventory
+    variants(first: 100) {
       edges {
         node {
           ${CATALOG_VARIANT_FIELDS}

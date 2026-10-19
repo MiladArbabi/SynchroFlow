@@ -43,6 +43,9 @@ export async function registerShopifyWebhooks(
     // Eliminates manual resync requirement for new Shopify products
     'products/create',
     'products/update',
+    // products/delete is NOT registered here (GH-1262 A2.2 B2): it is an
+    // app-specific subscription in shopify.app.toml, so it reaches existing
+    // installations too. Registering it per shop would double-subscribe.
 
     // App lifecycle
     'app/uninstalled',

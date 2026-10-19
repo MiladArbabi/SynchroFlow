@@ -24,6 +24,7 @@ import { handleRefundCreated } from './handlers/handleRefundCreated.js';
 import { handleInventoryLevelUpdate } from './handlers/handleInventoryLevelUpdate.js';
 import { handleProductCreated } from './handlers/handleProductCreated.js';
 import { handleProductUpdated } from './handlers/handleProductUpdated.js';
+import { handleProductDeleted } from './handlers/handleProductDeleted.js';
 import { handleAppSubscriptionUpdate } from './handlers/handleAppSubscriptionUpdate.js';
 
 /**
@@ -173,6 +174,13 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'products/update',
   handle: handleProductUpdated,
+});
+
+// GH-1262 A2.2: commercial soft-delete of mapped product parents.
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'products/delete',
+  handle: handleProductDeleted,
 });
 
 export async function shopifyWebhookHandler(

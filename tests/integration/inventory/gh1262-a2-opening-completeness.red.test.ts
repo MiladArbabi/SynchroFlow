@@ -34,6 +34,11 @@ import {
   seedShopifyOpeningBalances,
 } from 'api-src/services/inventory/seedShopifyOpeningBalances';
 import { performInitialSync } from 'api-src/services/shopify.service';
+import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
+import { GET_PRODUCTS_QUERY } from 'api-src/services/shopify/shopify.queries';
+import { handleProductUpdated } from 'api-src/api/shopify/handlers/handleProductUpdated';
+import type { WebhookEnvelope } from 'api-src/api/webhooks/types';
+import { seedOfflineShopifySyncAuthority } from '../lifecycle/shopify-sync-authority.fixture';
 
 jest.setTimeout(120000);
 
@@ -534,6 +539,9 @@ async function initialSyncFixture(failSecondPage: boolean) {
 
   const items = makeItems(51);
   const client = makeInitialSyncClient(items, failSecondPage);
+  // GH-1068 T2: performInitialSync requires the current installation and
+  // credential generation (canonical offline fixture; no provider call).
+  const executionAuthority = await seedOfflineShopifySyncAuthority(shopId, shopDomain);
 
   return {
     shopId,
@@ -541,6 +549,7 @@ async function initialSyncFixture(failSecondPage: boolean) {
     integrationId: integration.id as number,
     client,
     items,
+    executionAuthority,
   };
 }
 
@@ -588,7 +597,7 @@ describe('GH-1262 A2.1 — initial sync completion RED', () => {
       f.shopDomain,
       f.shopId,
       f.integrationId,
-      { shopifyClient: f.client }
+      { shopifyClient: f.client, executionAuthority: f.executionAuthority }
     );
 
     const state = await initialSyncState(f.shopId, f.integrationId);
@@ -615,7 +624,7 @@ describe('GH-1262 A2.1 — initial sync completion RED', () => {
         f.shopDomain,
         f.shopId,
         f.integrationId,
-        { shopifyClient: f.client }
+        { shopifyClient: f.client, executionAuthority: f.executionAuthority }
       );
     } catch (error) {
       observedError = (error as Error).message;
@@ -637,4 +646,187 @@ describe('GH-1262 A2.1 — initial sync completion RED', () => {
       completionEvents: 0,
     });
   }, 120000);
+});
+
+/**
+ * GH-1262 A2.2 C4a — fenced full-sync snapshot apply.
+ * A reconnect / recovery sync re-runs the real performInitialSync over a
+ * catalog already ingested with watermarks (the post-reset state: catalog kept,
+ * integration PENDING). Shopify, webhook registration and refund backfill are
+ * mocked; the product webhook handler is the real one.
+ */
+describe('GH-1262 A2.2 — full-sync freshness baseline (C4a)', () => {
+  const T1 = '2026-09-01T10:00:00Z';
+
+  function catalogNode(item: Item, title: string) {
+    return {
+      id: item.externalProductId,
+      title,
+      status: 'ACTIVE',
+      productType: 'physical',
+      featuredImage: null,
+      updatedAt: T1,
+      variants: {
+        edges: [{
+          node: {
+            id: item.externalVariantId,
+            title: 'A2 initial variant',
+            sku: item.externalVariantId.split('/').pop(),
+            barcode: null,
+            image: null,
+            inventoryQuantity: item.quantity,
+            inventoryItem: {
+              id: `gid://shopify/InventoryItem/${item.externalVariantId.split('/').pop()}`,
+              unitCost: { amount: '5.00' },
+            },
+          },
+        }],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    };
+  }
+
+  /** One-page Shopify stub; `onCatalogFetch` runs inside the first catalog-sync request. */
+  function resyncClient(nodes: any[], onCatalogFetch?: () => Promise<void>) {
+    let catalogFetches = 0;
+    return {
+      request: jest.fn(async (query: string) => {
+        if (query.includes('orders(')) {
+          return { data: { orders: { edges: [], pageInfo: { hasNextPage: false, endCursor: null } } } };
+        }
+        if (query === GET_PRODUCTS_QUERY && catalogFetches++ === 0 && onCatalogFetch) {
+          await onCatalogFetch();
+        }
+        return {
+          data: {
+            products: {
+              edges: nodes.map(node => ({ node })),
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        };
+      }),
+    };
+  }
+
+  /** Catalog previously ingested at T1, integration PENDING after a reset, canonical authority. */
+  async function ingestedCatalog(count: number) {
+    const shopId = await createShop();
+    const shopDomain = `gh1262-a2c4a-${shopId}.myshopify.com`;
+    const [integration] = await withTenant(shopId, trx =>
+      trx('integrations')
+        .insert({
+          shop_id: shopId,
+          platform: 'shopify',
+          platform_shop_name: shopDomain,
+          sync_status: 'PENDING',
+          updated_at: new Date(),
+        })
+        .returning(['id'])
+    );
+    const executionAuthority = await seedOfflineShopifySyncAuthority(shopId, shopDomain);
+    const items = makeItems(count);
+    const ingest = await withTenant(shopId, trx =>
+      syncProducts(trx, shopId, items.map(item => ({ node: catalogNode(item, `ingested ${item.externalProductId}`) }))));
+    expect(ingest.map(r => r.outcome)).toEqual(items.map(() => 'applied'));
+    return { shopId, shopDomain, integrationId: integration.id as number, executionAuthority, items };
+  }
+
+  async function catalogFacts(shopId: number) {
+    return withTenant(shopId, async trx => ({
+      watermarks: await trx('shopify_product_source_watermarks')
+        .where({ shop_id: shopId, platform: 'shopify' })
+        .orderBy('external_product_id')
+        .select(
+          'external_product_id',
+          'reconcile_generation',
+          'reconcile_attempts',
+          trx.raw('reconcile_requested_at IS NOT NULL AS pending'),
+          trx.raw(`to_char(source_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS source_updated_at`)
+        ),
+      products: await trx('external_product_identity_map as m')
+        .join('variants as v', 'v.lasyncro_variant_id', 'm.lasyncro_variant_id')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .where({ 'm.shop_id': shopId, 'm.platform': 'shopify' })
+        .orderBy('m.external_product_id')
+        .select('m.external_product_id', 'm.id as mapping_id', 'v.lasyncro_variant_id',
+          'p.lasyncro_product_id', 'p.title', 'p.status'),
+    }));
+  }
+
+  const resync = (f: Awaited<ReturnType<typeof ingestedCatalog>>, client: unknown) =>
+    performInitialSync('unused-synthetic-token', f.shopDomain, f.shopId, f.integrationId,
+      { shopifyClient: client as any, executionAuthority: f.executionAuthority });
+
+  it('M2a — an unchanged reconnect sync over an ingested catalog records zero obligations and changes no identity', async () => {
+    const f = await ingestedCatalog(3);
+    const before = await catalogFacts(f.shopId);
+    expect(before.watermarks.map(w => [w.pending, w.reconcile_generation, w.source_updated_at]))
+      .toEqual(f.items.map(() => [false, 0, '2026-09-01T10:00:00.000000Z']));
+
+    await resync(f, resyncClient(f.items.map(item => catalogNode(item, `ingested ${item.externalProductId}`))));
+
+    const after = await catalogFacts(f.shopId);
+    expect((await initialSyncState(f.shopId, f.integrationId)).status).toBe('COMPLETED');
+    expect(after.watermarks).toEqual(before.watermarks);
+    expect(after.products).toEqual(before.products);
+
+    // Control: the same equal-timestamp input WITHOUT a pre-fetch baseline is
+    // untrusted and still queues exactly one obligation (no unfenced fast path).
+    const control = await withTenant(f.shopId, trx =>
+      syncProducts(trx, f.shopId, [{ node: catalogNode(f.items[0], `ingested ${f.items[0].externalProductId}`) }]));
+    expect(control.map(r => r.outcome)).toEqual(['reconcile_requested']);
+  });
+
+  it('M2b — an equal-timestamp webhook committed between the baseline and the apply prevents the snapshot overwrite and stays pending', async () => {
+    const f = await ingestedCatalog(3);
+    const [target, ...unchanged] = f.items;
+    const numeric = (gid: string) => Number(gid.split('/').pop());
+
+    const envelope: WebhookEnvelope = {
+      integration: 'shopify',
+      eventId: crypto.randomUUID(),
+      eventType: 'products/update',
+      verified: true,
+      receivedAt: new Date(),
+      shopDomain: f.shopDomain,
+      rawPayload: {
+        id: numeric(target.externalProductId),
+        title: `webhook ${target.externalProductId}`,
+        status: 'archived',
+        product_type: 'physical',
+        image: null,
+        updated_at: T1,
+        variants: [{
+          id: numeric(target.externalVariantId),
+          title: 'A2 initial variant',
+          sku: target.externalVariantId.split('/').pop(),
+          barcode: null,
+          inventory_item_id: numeric(target.externalVariantId),
+        }],
+      },
+    };
+
+    // Shopify serves the target with different content at the SAME timestamp.
+    const client = resyncClient(
+      [catalogNode(target, `snapshot ${target.externalProductId}`),
+        ...unchanged.map(item => catalogNode(item, `ingested ${item.externalProductId}`))],
+      () => withTenant(f.shopId, trx => handleProductUpdated(envelope, trx)));
+
+    const before = await catalogFacts(f.shopId);
+    await resync(f, client);
+    const after = await catalogFacts(f.shopId);
+
+    expect((await initialSyncState(f.shopId, f.integrationId)).status).toBe('COMPLETED');
+    // Target: neither the snapshot nor the webhook state was applied; one
+    // coalesced obligation remains pending (webhook + snapshot generations).
+    expect(after.products.filter(p => p.external_product_id === target.externalProductId))
+      .toEqual(before.products.filter(p => p.external_product_id === target.externalProductId));
+    expect(after.watermarks.find(w => w.external_product_id === target.externalProductId))
+      .toMatchObject({ pending: true, reconcile_attempts: 0, reconcile_generation: 2,
+        source_updated_at: '2026-09-01T10:00:00.000000Z' });
+    // The untouched products took the fenced fast path: no obligation.
+    expect(after.watermarks.filter(w => w.external_product_id !== target.externalProductId))
+      .toEqual(before.watermarks.filter(w => w.external_product_id !== target.externalProductId));
+  });
 });

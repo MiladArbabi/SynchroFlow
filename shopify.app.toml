@@ -12,6 +12,12 @@ api_version = "2026-04"
   uri = "/api/v1/shopify/webhooks"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
+  # GH-1262 A2.2 B2: products/delete is app-owned so it reaches every
+  # installation, existing and new. It is never registered per shop.
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/api/v1/shopify/webhooks"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_products,read_orders,read_customers,read_inventory,write_inventory,read_locations,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders"

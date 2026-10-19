@@ -22,6 +22,7 @@ type RestProduct = {
   id: number | string;
   title: string;
   status?: string | null;
+  updated_at?: unknown;
   product_type?: string | null;
   image?: { src?: string | null } | null;
   variants?: RestVariant[];
@@ -39,6 +40,9 @@ export function normalizeRestProductToEdge(product: RestProduct) {
       // Absent status stays absent: syncProducts treats it as unknown and never
       // reactivates an archived/draft product from it (GH-1262).
       status: product.status ?? null,
+      // Source freshness timestamp, passed through as received: syncProducts
+      // validates it and fails closed on a malformed value (GH-1262 A2.2).
+      updatedAt: product.updated_at ?? null,
       productType: product.product_type ?? null,
       featuredImage: product.image?.src ? { url: product.image.src } : null,
       variants: {

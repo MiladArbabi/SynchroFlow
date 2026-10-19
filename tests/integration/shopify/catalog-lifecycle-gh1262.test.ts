@@ -112,7 +112,15 @@ import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
 import { handleProductCreated } from 'api-src/api/shopify/handlers/handleProductCreated';
 import { handleProductUpdated } from 'api-src/api/shopify/handlers/handleProductUpdated';
 import type { WebhookEnvelope } from 'api-src/api/webhooks/types';
+import { persistShopifyAdminCredentials } from 'api-src/services/shopify/shopifyAdminCredential.repository';
+import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
+import fs from 'fs';
+import path from 'path';
+import knex, { type Knex } from 'knex';
+// GH-1101: the latest protected security evolution; 0218 must leave it intact.
+import { assertSecurityPostconditions } from
+  '../../../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery';
 
 const app = createApp();
 jest.setTimeout(180000);
@@ -1094,6 +1102,1571 @@ it('R14 — reversed concurrent multi-product syncs do not deadlock', async () =
 
   expect(after.total - before.total).toBe(2);
   expect(after.orphans - before.orphans).toBe(0);
+});
+
+// ── R15: products/delete INGRESS (A2.2) ────────────────────────────────────
+
+/**
+ * A verified products/delete delivery must be processed — not acknowledged as
+ * "ignored" — and must leave the mapped product no longer commercially active,
+ * while every internal identity (product / variant ids, mappings, LSP barcodes)
+ * is preserved. The tombstone representation is deliberately not prescribed;
+ * variant status / warehouse accessibility is deliberately not asserted.
+ */
+it('R15 — a verified products/delete webhook is processed and leaves the mapped product not commercially active, identity intact', async () => {
+  const savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  // verifyShopifySignature requires both secrets configured; the delivery is
+  // signed with the app secret, as Shopify signs app-registered topics.
+  process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  try {
+    const { shopId, shopDomain } = await provisionCatalogShop('r15');
+    const productId = numericId();
+    const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+
+    await initialSync(shopId, [graphqlEdge(productId, 'ACTIVE', variants)]);
+    const before = await catalogState(shopId, productId);
+    expect(before.mappings).toHaveLength(2);
+    expect(before.parents.map((p: any) => p.status)).toEqual(before.parentIds.map(() => 'active'));
+    const identity = identitySnapshot(before);
+    for (const row of identity) expect(row.lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    // Shopify products/delete payload carries only the product id.
+    const webhookId = `gh1262-r15-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ id: Number(productId) });
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', 'products/delete')
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+
+    const ledger = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .pluck('processing_status'));
+    const after = await catalogState(shopId, productId);
+
+    // Processed, not silently acknowledged; parent no longer commercially active.
+    expect({
+      httpStatus: res.status,
+      body: res.body,
+      ledger,
+      activeParents: after.parents.filter((p: any) => p.status === 'active').map((p: any) => p.lasyncro_product_id),
+    }).toEqual({
+      httpStatus: 200,
+      body: { status: 'ok' },
+      ledger: ['processed'],
+      activeParents: [],
+    });
+
+    // Internal identity is preserved: same parents, variants, mappings, LSP barcodes.
+    expect(after.parentIds).toEqual(before.parentIds);
+    expect(identitySnapshot(after)).toEqual(identity);
+  } finally {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  }
+});
+
+// ── R16: DELETION TOMBSTONE PERMANENCE (A2.2 RED-2A) ───────────────────────
+
+/**
+ * A genuine Shopify deletion is terminal for its original external product id:
+ * a delayed products/update or a stale GraphQL full-sync snapshot must never
+ * reactivate it. Identity (parents, variants, mappings, LSP barcodes) stays
+ * intact and no parent / variant is created. variants.status is not asserted.
+ */
+describe('R16 — a deleted Shopify product is never reactivated by stale catalog input', () => {
+  let savedWebhookSecret: string | undefined;
+
+  beforeAll(() => {
+    savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  });
+
+  afterAll(() => {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  });
+
+  /** Verified products/delete through the real HTTP endpoint — R15 pattern. */
+  async function deliverProductsDelete(shopId: number, shopDomain: string, productId: string) {
+    const webhookId = `gh1262-r16-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ id: Number(productId) });
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', 'products/delete')
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+    const ledger = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .pluck('processing_status'));
+    expect({ httpStatus: res.status, body: res.body, ledger })
+      .toEqual({ httpStatus: 200, body: { status: 'ok' }, ledger: ['processed'] });
+  }
+
+  const shopVariantCount = (shopId: number) =>
+    withTenant(shopId, async (trx) =>
+      Number((await trx('variants').where({ shop_id: shopId }).count('* as c').first())?.c ?? 0));
+
+  /** ACTIVE ingest → identity capture → verified deletion, returning the deleted baseline. */
+  async function deletedProduct(label: string) {
+    const { shopId, shopDomain } = await provisionCatalogShop(label);
+    const productId = numericId();
+    const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+    const activeSnapshot = graphqlEdge(productId, 'ACTIVE', variants);
+
+    await initialSync(shopId, [activeSnapshot]);
+    const active = await catalogState(shopId, productId);
+    expect(active.mappings).toHaveLength(2);
+    expect(active.parents.map((p: any) => p.status)).toEqual(active.parentIds.map(() => 'active'));
+    const identity = identitySnapshot(active);
+    for (const row of identity) expect(row.lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    await deliverProductsDelete(shopId, shopDomain, productId);
+    const deleted = await catalogState(shopId, productId);
+    expect(deleted.parents.map((p: any) => p.status)).toEqual(deleted.parentIds.map(() => 'deleted'));
+    expect(deleted.parentIds).toEqual(active.parentIds);
+    expect(identitySnapshot(deleted)).toEqual(identity);
+
+    return {
+      shopId, shopDomain, productId, variants, activeSnapshot,
+      parentIds: active.parentIds,
+      identity,
+      counts: await productCounts(shopId),
+      variantCount: await shopVariantCount(shopId),
+    };
+  }
+
+  async function expectTombstoneIntact(base: Awaited<ReturnType<typeof deletedProduct>>, replay: string) {
+    const after = await catalogState(base.shopId, base.productId);
+    expect({ replay, parentStatuses: after.parents.map((p: any) => p.status) })
+      .toEqual({ replay, parentStatuses: base.parentIds.map(() => 'deleted') });
+    expect(after.parentIds).toEqual(base.parentIds);
+    expect(identitySnapshot(after)).toEqual(base.identity);
+
+    const counts = await productCounts(base.shopId);
+    expect(counts.total - base.counts.total).toBe(0);
+    expect(counts.orphans - base.counts.orphans).toBe(0);
+    expect((await shopVariantCount(base.shopId)) - base.variantCount).toBe(0);
+  }
+
+  it('R16a — a stale products/update carrying the earlier ACTIVE state does not reactivate the deleted product', async () => {
+    const base = await deletedProduct('r16a');
+
+    // Distinct event (fresh envelope eventId) with the pre-deletion ACTIVE payload.
+    await productsUpdateWebhook(base.shopId, base.shopDomain, restProduct(base.productId, 'active', base.variants));
+
+    await expectTombstoneIntact(base, 'stale products/update');
+  });
+
+  it('R16b — a stale ACTIVE GraphQL full-sync snapshot does not reactivate the deleted product', async () => {
+    const base = await deletedProduct('r16b');
+
+    // Replay the snapshot captured before deletion through the initial-sync writer.
+    await initialSync(base.shopId, [base.activeSnapshot]);
+
+    await expectTombstoneIntact(base, 'stale graphql snapshot');
+  });
+});
+
+// ── R17: CHRONOLOGICAL FRESHNESS (A2.2 RED-2B) ─────────────────────────────
+
+/**
+ * Shopify delivers products/* webhooks at-least-once and out of order, and a
+ * full-sync snapshot may be older than a webhook already applied. Catalog input
+ * whose Shopify source timestamp (REST updated_at / GraphQL updatedAt) is older
+ * than the state already applied must never overwrite it. Identity (parents,
+ * variants, mappings, LSP barcodes) stays intact and no parent is created.
+ *
+ * Source timestamps are fixed literals; persistence time is not mocked. Stale
+ * deliveries are only required to be accepted and recorded once — how a stale
+ * event is classified in the ledger is deliberately not prescribed.
+ */
+describe('R17 — out-of-order Shopify product input never overwrites newer lifecycle state', () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const T2 = '2026-09-02T10:00:00Z';
+  const T3 = '2026-09-03T10:00:00Z';
+
+  let savedWebhookSecret: string | undefined;
+
+  beforeAll(() => {
+    savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  });
+
+  afterAll(() => {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  });
+
+  /** GraphQL edge carrying the product-level Shopify updatedAt. */
+  const graphqlEdgeAt = (productId: string, status: ShopifyStatus, variants: VariantSpec[], updatedAt: string) => {
+    const edge = graphqlEdge(productId, status, variants);
+    return { node: { ...edge.node, updatedAt } };
+  };
+
+  /**
+   * Verified products/update through the real HTTP endpoint (R15 pattern) with
+   * a distinct Shopify webhook id and the REST source updated_at in the body.
+   */
+  async function deliverProductsUpdate(
+    shopId: number,
+    shopDomain: string,
+    productId: string,
+    status: 'active' | 'draft' | 'archived',
+    variants: VariantSpec[],
+    updatedAt: string,
+  ) {
+    const webhookId = `gh1262-r17-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ ...restProduct(productId, status, variants), updated_at: updatedAt });
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', 'products/update')
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+    const ledger = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .pluck('processing_status'));
+    expect({ webhook: `${status}@${updatedAt}`, httpStatus: res.status, recorded: ledger.length })
+      .toEqual({ webhook: `${status}@${updatedAt}`, httpStatus: 200, recorded: 1 });
+    return { ledger };
+  }
+
+  /** Mapped product captured after its first ingest, as the stable identity baseline. */
+  async function ingested(label: string, status: ShopifyStatus, updatedAt: string) {
+    const { shopId, shopDomain } = await provisionCatalogShop(label);
+    const productId = numericId();
+    const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+    const snapshot = graphqlEdgeAt(productId, status, variants, updatedAt);
+
+    await initialSync(shopId, [snapshot]);
+    const state = await catalogState(shopId, productId);
+    expect(state.mappings).toHaveLength(2);
+    expect(state.parents.map((p: any) => p.status)).toEqual(state.parentIds.map(() => status.toLowerCase()));
+    const identity = identitySnapshot(state);
+    for (const row of identity) expect(row.lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    return {
+      shopId, shopDomain, productId, variants, snapshot,
+      parentIds: state.parentIds,
+      identity,
+      counts: await productCounts(shopId),
+    };
+  }
+
+  async function expectAuthoritative(
+    base: Awaited<ReturnType<typeof ingested>>,
+    replay: string,
+    expected: 'active' | 'draft' | 'archived',
+  ) {
+    const after = await catalogState(base.shopId, base.productId);
+    expect({ replay, parentStatuses: after.parents.map((p: any) => p.status) })
+      .toEqual({ replay, parentStatuses: base.parentIds.map(() => expected) });
+    expect(after.parentIds).toEqual(base.parentIds);
+    expect(identitySnapshot(after)).toEqual(base.identity);
+
+    const counts = await productCounts(base.shopId);
+    expect(counts.total - base.counts.total).toBe(0);
+    expect(counts.orphans - base.counts.orphans).toBe(0);
+  }
+
+  it('R17a — an older ACTIVE products/update delivered after a newer ARCHIVED update does not reactivate the product', async () => {
+    const base = await ingested('r17a', 'ACTIVE', T1);
+
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'archived', base.variants, T3);
+    await expectAuthoritative(base, `archived@${T3} applied`, 'archived');
+
+    // Distinct, delayed delivery carrying an older source timestamp.
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'active', base.variants, T2);
+    await expectAuthoritative(base, `stale active@${T2} after archived@${T3}`, 'archived');
+  });
+
+  it('R17b — a newer ACTIVE update legitimately reactivates an ARCHIVED product and an older DRAFT update cannot displace it', async () => {
+    const base = await ingested('r17b', 'ARCHIVED', T1);
+
+    // Legitimate reactivation from ARCHIVED: never confused with a deletion tombstone.
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'active', base.variants, T3);
+    await expectAuthoritative(base, `active@${T3} reactivates archived@${T1}`, 'active');
+
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'draft', base.variants, T2);
+    await expectAuthoritative(base, `stale draft@${T2} after active@${T3}`, 'active');
+  });
+
+  it('R17c — an older ACTIVE GraphQL snapshot replayed after a newer ARCHIVED webhook does not reactivate the product', async () => {
+    const base = await ingested('r17c', 'ACTIVE', T1);
+
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'archived', base.variants, T3);
+    await expectAuthoritative(base, `archived@${T3} applied`, 'archived');
+
+    // Replay the snapshot captured at T1 through the initial-sync writer.
+    await initialSync(base.shopId, [base.snapshot]);
+    await expectAuthoritative(base, `stale graphql snapshot@${T1} after archived@${T3}`, 'archived');
+  });
+});
+
+// ── R18: CHRONOLOGICAL ORDERING BOUNDARIES (A2.2 RED-2B) ───────────────────
+
+/**
+ * Once a source-timestamped version is applied, input that cannot be proven
+ * newer must not overwrite it: a conflicting event carrying the SAME source
+ * timestamp, or an update carrying NO source timestamp. A strictly newer
+ * update still applies. Identity (parents, variants, mappings, LSP barcodes)
+ * stays intact and nothing is created. Timestamp-free R1–R16 contracts, which
+ * never follow a timestamped version, are untouched.
+ */
+describe('R18 — equal or missing source timestamps never overwrite a known newer version', () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const T3 = '2026-09-03T10:00:00Z';
+  const T3_PLUS_1M = '2026-09-03T10:01:00Z';
+
+  let savedWebhookSecret: string | undefined;
+
+  beforeAll(() => {
+    savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  });
+
+  afterAll(() => {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  });
+
+  /**
+   * Verified products/update through the real HTTP endpoint (R15 pattern),
+   * distinct Shopify webhook id per delivery. `updatedAt: null` sends a body
+   * with no updated_at key at all.
+   */
+  async function deliverProductsUpdate(
+    shopId: number,
+    shopDomain: string,
+    productId: string,
+    status: 'active' | 'draft' | 'archived',
+    variants: VariantSpec[],
+    updatedAt: string | null,
+  ) {
+    const webhookId = `gh1262-r18-${crypto.randomUUID()}`;
+    const payload = restProduct(productId, status, variants);
+    const rawBody = JSON.stringify(updatedAt === null ? payload : { ...payload, updated_at: updatedAt });
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', 'products/update')
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+    const ledger = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .pluck('processing_status'));
+    const label = `${status}@${updatedAt ?? 'no-timestamp'}`;
+    expect({ webhook: label, httpStatus: res.status, recorded: ledger.length })
+      .toEqual({ webhook: label, httpStatus: 200, recorded: 1 });
+  }
+
+  const shopVariantCount = (shopId: number) =>
+    withTenant(shopId, async (trx) =>
+      Number((await trx('variants').where({ shop_id: shopId }).count('* as c').first())?.c ?? 0));
+
+  /** ACTIVE@T1 ingest, then ARCHIVED@T3 applied via verified webhook; returns that baseline. */
+  async function archivedAtT3(label: string) {
+    const { shopId, shopDomain } = await provisionCatalogShop(label);
+    const productId = numericId();
+    const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+    const edge = graphqlEdge(productId, 'ACTIVE', variants);
+
+    await initialSync(shopId, [{ node: { ...edge.node, updatedAt: T1 } }]);
+    const active = await catalogState(shopId, productId);
+    expect(active.mappings).toHaveLength(2);
+    expect(active.parents.map((p: any) => p.status)).toEqual(active.parentIds.map(() => 'active'));
+    const identity = identitySnapshot(active);
+    for (const row of identity) expect(row.lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    await deliverProductsUpdate(shopId, shopDomain, productId, 'archived', variants, T3);
+    const archived = await catalogState(shopId, productId);
+    expect(archived.parents.map((p: any) => p.status)).toEqual(archived.parentIds.map(() => 'archived'));
+    expect(archived.parentIds).toEqual(active.parentIds);
+    expect(identitySnapshot(archived)).toEqual(identity);
+
+    return {
+      shopId, shopDomain, productId, variants,
+      parentIds: active.parentIds,
+      identity,
+      counts: await productCounts(shopId),
+      variantCount: await shopVariantCount(shopId),
+    };
+  }
+
+  async function expectAuthoritative(
+    base: Awaited<ReturnType<typeof archivedAtT3>>,
+    replay: string,
+    expected: 'active' | 'draft' | 'archived',
+  ) {
+    const after = await catalogState(base.shopId, base.productId);
+    expect({ replay, parentStatuses: after.parents.map((p: any) => p.status) })
+      .toEqual({ replay, parentStatuses: base.parentIds.map(() => expected) });
+    expect(after.parentIds).toEqual(base.parentIds);
+    expect(identitySnapshot(after)).toEqual(base.identity);
+
+    const counts = await productCounts(base.shopId);
+    expect(counts.total - base.counts.total).toBe(0);
+    expect(counts.orphans - base.counts.orphans).toBe(0);
+    expect((await shopVariantCount(base.shopId)) - base.variantCount).toBe(0);
+  }
+
+  it('R18a — a conflicting ACTIVE update with an equal source timestamp does not displace ARCHIVED; a strictly newer ACTIVE does', async () => {
+    const base = await archivedAtT3('r18a');
+
+    // Different event (distinct webhook id), same source timestamp, conflicting state.
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'active', base.variants, T3);
+    await expectAuthoritative(base, `equal-timestamp active@${T3} after archived@${T3}`, 'archived');
+
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'active', base.variants, T3_PLUS_1M);
+    await expectAuthoritative(base, `newer active@${T3_PLUS_1M} after archived@${T3}`, 'active');
+  });
+
+  it('R18b — a DRAFT update without any source timestamp does not displace a known ARCHIVED@T3 version', async () => {
+    const base = await archivedAtT3('r18b');
+
+    await deliverProductsUpdate(base.shopId, base.shopDomain, base.productId, 'draft', base.variants, null);
+    await expectAuthoritative(base, `timestamp-free draft after archived@${T3}`, 'archived');
+  });
+});
+
+// ── R19: TENANT-SCOPED FRESHNESS WATERMARK (A2.2) ──────────────────────────
+
+/**
+ * Two independently provisioned tenants carry the SAME external Shopify
+ * product id with different source timestamps. One tenant's watermark must
+ * neither suppress nor overwrite the other's product state; each tenant sees
+ * only its own watermark (forced RLS, restricted runtime role).
+ */
+it('R19 — a freshness watermark is tenant-scoped: one shop never suppresses or overwrites another shop with the same Shopify product id', async () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const T2 = '2026-09-02T10:00:00Z';
+  const T3 = '2026-09-03T10:00:00Z';
+  const productId = numericId();
+  const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+  const edgeAt = (status: ShopifyStatus, updatedAt: string) => {
+    const edge = graphqlEdge(productId, status, variants);
+    return { node: { ...edge.node, updatedAt } };
+  };
+  const shopA = await provisionCatalogShop('r19a');
+  const shopB = await provisionCatalogShop('r19b');
+
+  // Shop A holds the newer watermark (T3) for the shared external id.
+  await initialSync(shopA.shopId, [edgeAt('ACTIVE', T3)]);
+  const aActive = await catalogState(shopA.shopId, productId);
+  expect(aActive.parents.map((p: any) => p.status)).toEqual(['active']);
+
+  // Shop B's older T1 ingest is not suppressed by A's T3 watermark.
+  await initialSync(shopB.shopId, [edgeAt('ACTIVE', T1)]);
+  const bActive = await catalogState(shopB.shopId, productId);
+  expect(bActive.mappings).toHaveLength(2);
+  expect(bActive.parents.map((p: any) => p.status)).toEqual(['active']);
+  expect(bActive.parentIds.filter((id: string) => aActive.parentIds.includes(id))).toEqual([]);
+
+  // B@T2 applies for B (newer than B's own T1); the same T2 is stale for A.
+  await productsUpdateWebhook(shopB.shopId, shopB.shopDomain, { ...restProduct(productId, 'archived', variants), updated_at: T2 });
+  await productsUpdateWebhook(shopA.shopId, shopA.shopDomain, { ...restProduct(productId, 'archived', variants), updated_at: T2 });
+
+  const aAfter = await catalogState(shopA.shopId, productId);
+  const bAfter = await catalogState(shopB.shopId, productId);
+  expect({ a: aAfter.parents.map((p: any) => p.status), b: bAfter.parents.map((p: any) => p.status) })
+    .toEqual({ a: ['active'], b: ['archived'] });
+  expect(identitySnapshot(aAfter)).toEqual(identitySnapshot(aActive));
+  expect(identitySnapshot(bAfter)).toEqual(identitySnapshot(bActive));
+
+  // Unfiltered by shop: forced RLS alone scopes each tenant to its own watermark.
+  const visibleWatermarks = (shopId: number) =>
+    withTenant(shopId, (trx) =>
+      trx('shopify_product_source_watermarks')
+        .where({ platform: 'shopify', external_product_id: productGid(productId) })
+        .select('shop_id', 'source_updated_at'))
+      .then((rows: any[]) => rows.map((r) => ({ shop_id: Number(r.shop_id), at: new Date(r.source_updated_at).toISOString() })));
+
+  expect(await visibleWatermarks(shopA.shopId)).toEqual([{ shop_id: shopA.shopId, at: '2026-09-03T10:00:00.000Z' }]);
+  expect(await visibleWatermarks(shopB.shopId)).toEqual([{ shop_id: shopB.shopId, at: '2026-09-02T10:00:00.000Z' }]);
+});
+
+// ── R20: DELETE-BEFORE-CREATE (A2.2) ───────────────────────────────────────
+
+/**
+ * Shopify may deliver products/delete before a delayed products/create for the
+ * same product. A verified deletion of a never-ingested external id must still
+ * be terminal for that id in its own shop: the later, older create must not
+ * invent a commercially active product, nor any variant, mapping, LSP barcode
+ * or orphan parent for the deleted identity. The deletion is invisible to
+ * another tenant carrying the same external id. The tombstone representation
+ * is deliberately not prescribed.
+ */
+it('R20 — a products/delete delivered before a delayed products/create keeps the never-ingested Shopify product deleted', async () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  try {
+    /** Verified delivery through the real HTTP endpoint — R15 pattern. */
+    const deliver = async (shopId: number, shopDomain: string, topic: string, payload: unknown) => {
+      const webhookId = `gh1262-r20-${crypto.randomUUID()}`;
+      const rawBody = JSON.stringify(payload);
+      const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+        .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+      const res = await request(app)
+        .post('/api/v1/shopify/webhooks')
+        .set('Content-Type', 'application/json')
+        .set('X-Shopify-Topic', topic)
+        .set('X-Shopify-Shop-Domain', shopDomain)
+        .set('X-Shopify-Webhook-Id', webhookId)
+        .set('X-Shopify-Hmac-Sha256', hmac)
+        .send(rawBody);
+      const ledger = await withTenant(shopId, (trx) =>
+        trx('integration_webhook_events')
+          .where({ integration: 'shopify', external_event_id: webhookId })
+          .pluck('processing_status'));
+      return { httpStatus: res.status, body: res.body, ledger };
+    };
+
+    /** Shop-wide parent / orphan / variant / LSP barcode counts. */
+    const shopCounts = async (shopId: number) => {
+      const products = await productCounts(shopId);
+      return withTenant(shopId, async (trx) => {
+        const variants = await trx('variants').where({ shop_id: shopId }).count('* as c').first();
+        const barcodes = await trx('variants').where({ shop_id: shopId })
+          .whereNotNull('lasyncro_barcode').count('* as c').first();
+        return { ...products, variants: Number(variants?.c ?? 0), lspBarcodes: Number(barcodes?.c ?? 0) };
+      });
+    };
+
+    const shopA = await provisionCatalogShop('r20a');
+    const shopB = await provisionCatalogShop('r20b');
+    const productId = numericId();
+    const variants: VariantSpec[] = [{ variantId: numericId() }, { variantId: numericId() }];
+    const delayedCreate = { ...restProduct(productId, 'active', variants), updated_at: T1 };
+
+    // Previously unseen in both tenants.
+    expect((await catalogState(shopA.shopId, productId)).mappings).toEqual([]);
+    expect((await catalogState(shopB.shopId, productId)).mappings).toEqual([]);
+    const baseA = await shopCounts(shopA.shopId);
+    const baseB = await shopCounts(shopB.shopId);
+
+    // 1. Verified products/delete for the unseen product: processed, nothing invented.
+    const deletion = await deliver(shopA.shopId, shopA.shopDomain, 'products/delete', { id: Number(productId) });
+    const afterDelete = await catalogState(shopA.shopId, productId);
+    expect({
+      deletion,
+      mappings: afterDelete.mappings,
+      variants: afterDelete.variants,
+      parents: afterDelete.parents,
+      counts: await shopCounts(shopA.shopId),
+    }).toEqual({
+      deletion: { httpStatus: 200, body: { status: 'ok' }, ledger: ['processed'] },
+      mappings: [],
+      variants: [],
+      parents: [],
+      counts: baseA,
+    });
+
+    // 2. Tenant isolation: shop A's deletion does not reach shop B, whose
+    //    products/create for the same external id ingests normally.
+    const createB = await deliver(shopB.shopId, shopB.shopDomain, 'products/create', delayedCreate);
+    const stateB = await catalogState(shopB.shopId, productId);
+    expect({
+      httpStatus: createB.httpStatus,
+      recorded: createB.ledger.length,
+      mappings: stateB.mappings.length,
+      parentStatuses: stateB.parents.map((p: any) => p.status),
+    }).toEqual({ httpStatus: 200, recorded: 1, mappings: 2, parentStatuses: ['active'] });
+    for (const v of stateB.variants) expect(v.lasyncro_barcode).toMatch(LSP_PATTERN);
+    expect((await shopCounts(shopB.shopId)).orphans - baseB.orphans).toBe(0);
+
+    // 3. Distinct, older, delayed products/create for the deleted id in shop A.
+    const createA = await deliver(shopA.shopId, shopA.shopDomain, 'products/create', delayedCreate);
+    const stateA = await catalogState(shopA.shopId, productId);
+    const countsA = await shopCounts(shopA.shopId);
+    expect({
+      httpStatus: createA.httpStatus,
+      recorded: createA.ledger.length,
+      activeParents: stateA.parents.filter((p: any) => p.status === 'active').map((p: any) => p.lasyncro_product_id),
+      mappings: stateA.mappings.length,
+      lspBarcodes: stateA.variants.map((v: any) => v.lasyncro_barcode).filter(Boolean),
+      parentDelta: countsA.total - baseA.total,
+      orphanDelta: countsA.orphans - baseA.orphans,
+      variantDelta: countsA.variants - baseA.variants,
+      lspBarcodeDelta: countsA.lspBarcodes - baseA.lspBarcodes,
+    }).toEqual({
+      httpStatus: 200,
+      recorded: 1,
+      activeParents: [],
+      mappings: 0,
+      lspBarcodes: [],
+      parentDelta: 0,
+      orphanDelta: 0,
+      variantDelta: 0,
+      lspBarcodeDelta: 0,
+    });
+  } finally {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  }
+});
+
+// ── R21: EQUAL-TIMESTAMP RECONCILIATION (A2.2 B1) ──────────────────────────
+
+/**
+ * Two distinct Shopify product states can carry the same source timestamp,
+ * and webhook arrival order is not source order. An equal-timestamp conflict
+ * must therefore never be applied, and never be silently dropped: it records
+ * one durable, coalesced reconciliation obligation for the product. A worker
+ * claims it per tenant (unique claim token, generation, DB-time lease),
+ * fetches the authoritative current product from Shopify OUTSIDE any catalog
+ * transaction, and applies it only while token, generation and live lease all
+ * still hold, through the existing freshness / tombstone rules.
+ *
+ * Ratified service contract (api-src/services/shopify/shopifyProductReconciliation.service):
+ *   listProductReconciliationTenants({ limit, ...options })   shop ids only
+ *   claimProductReconciliation({ shopId, ...options })         one tenant, FORCE RLS
+ *   processProductReconciliationClaim(claim, deps, options)    fetch → fenced apply | fenced failure
+ *   readProductReconciliationState(shopId, gid, options)       tenant-scoped observability
+ *   PRODUCT_RECONCILIATION_LEASE_MS / _MAX_ATTEMPTS / _BACKOFF_BASE_MS / _BACKOFF_CAP_MS
+ * Lease and backoff run on database time. Test-only option values shorten the
+ * windows; waits are bounded polls against database state, never mocked time.
+ * Provider access is only through injected deps (resolveCredential,
+ * createClient); the ISOLATION case proves no real provider call.
+ */
+type ReconciliationOptions = {
+  leaseMs?: number;
+  maxAttempts?: number;
+  backoffBaseMs?: number;
+  backoffCapMs?: number;
+};
+type ReconciliationClaim = {
+  shopId: number;
+  externalProductId: string;
+  generation: number;
+  claimToken: string;
+  attempts: number;
+};
+type ReconciliationState = {
+  pending: boolean;
+  generation: number;
+  attempts: number;
+  lastError: string | null;
+  claimed: boolean;
+  exhausted: boolean;
+};
+type ReconciliationOutcome = {
+  kind: 'APPLIED' | 'STALE_SKIPPED' | 'TOMBSTONED' | 'SUPERSEDED' | 'AUTHORITY_LOST' | 'FAILED';
+  errorCode?: string;
+};
+type ShopifyGraphqlStub = { request: (query: string, opts?: any) => Promise<{ data?: any }> };
+type ReconciliationDeps = {
+  now?: Date;
+  resolveCredential: (input: { shopId: number; now: Date }) => Promise<any>;
+  createClient: (input: { accessToken: string; shopDomain: string; shopId: number }) => ShopifyGraphqlStub;
+};
+type ReconciliationService = {
+  PRODUCT_RECONCILIATION_LEASE_MS: number;
+  PRODUCT_RECONCILIATION_MAX_ATTEMPTS: number;
+  PRODUCT_RECONCILIATION_BACKOFF_BASE_MS: number;
+  PRODUCT_RECONCILIATION_BACKOFF_CAP_MS: number;
+  listProductReconciliationTenants: (input: { limit?: number } & ReconciliationOptions) => Promise<number[]>;
+  claimProductReconciliation: (input: { shopId: number } & ReconciliationOptions) => Promise<ReconciliationClaim | null>;
+  processProductReconciliationClaim: (
+    claim: ReconciliationClaim, deps: ReconciliationDeps, options?: ReconciliationOptions) => Promise<ReconciliationOutcome>;
+  readProductReconciliationState: (
+    shopId: number, externalProductId: string, options?: ReconciliationOptions) => Promise<ReconciliationState | null>;
+};
+
+const RECONCILIATION_SERVICE_MODULE = 'api-src/services/shopify/shopifyProductReconciliation.service';
+
+async function loadReconciliationService(): Promise<ReconciliationService> {
+  try {
+    return (await import(RECONCILIATION_SERVICE_MODULE)) as ReconciliationService;
+  } catch (err) {
+    throw new Error(
+      `MISSING_PREREQUISITE: ${RECONCILIATION_SERVICE_MODULE} — ${String((err as Error)?.message ?? err).replace(/\s+/g, ' ').trim()}`);
+  }
+}
+
+describe('R21 — equal-timestamp conflicts are reconciled from an authoritative Shopify snapshot', () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const T3 = '2026-09-03T10:00:00Z';
+  const T4 = '2026-09-04T10:00:00Z';
+  /** Test-only windows (approved): 1s backoff, 1.5s lease for claims meant to expire. */
+  const FAST_RETRY: ReconciliationOptions = { backoffBaseMs: 1_000, backoffCapMs: 1_000 };
+  const SHORT_LEASE: ReconciliationOptions = { leaseMs: 1_500 };
+
+  let savedWebhookSecret: string | undefined;
+
+  beforeAll(() => {
+    savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  });
+
+  afterAll(() => {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  });
+
+  /** Verified delivery through the real HTTP endpoint (R15 pattern); webhookId reusable for redelivery. */
+  async function deliver(shopId: number, shopDomain: string, topic: string, payload: unknown, webhookId = `gh1262-r21-${crypto.randomUUID()}`) {
+    const rawBody = JSON.stringify(payload);
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', topic)
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+    const ledger = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .pluck('processing_status'));
+    expect({ topic, httpStatus: res.status, recorded: ledger.length })
+      .toEqual({ topic, httpStatus: 200, recorded: 1 });
+    return webhookId;
+  }
+
+  const productsUpdate = (base: { shopId: number; shopDomain: string; productId: string; variants: VariantSpec[] },
+    status: 'active' | 'draft' | 'archived', updatedAt: string, webhookId?: string) =>
+    deliver(base.shopId, base.shopDomain, 'products/update',
+      { ...restProduct(base.productId, status, base.variants), updated_at: updatedAt }, webhookId);
+
+  const shopVariantCount = (shopId: number) =>
+    withTenant(shopId, async (trx) =>
+      Number((await trx('variants').where({ shop_id: shopId }).count('* as c').first())?.c ?? 0));
+
+  /** Real installation authority per shop domain (C3: every apply re-verifies it). */
+  const authorityByDomain = new Map<string, { installationId: number; generation: string }>();
+
+  /**
+   * ACTIVE offline credential for the shop's existing installation (canonical
+   * shopify-sync-authority.fixture pattern; synthetic material, no provider call).
+   */
+  async function seedInstallationAuthority(shopId: number, shopDomain: string) {
+    process.env.ENCRYPTION_KEY ||= 'offline-lifecycle-fixture-encryption-key-2026';
+    const authority = await withTenant(shopId, async (trx) => {
+      const installation = await trx('shopify_app_installations')
+        .where({ shop_id: shopId, shop_domain: shopDomain }).first('id');
+      const now = Date.now();
+      await persistShopifyAdminCredentials(trx, Number(installation.id), shopId, {
+        accessToken: 'test-token',
+        refreshToken: 'test-refresh-token',
+        accessExpiresAt: new Date(now + 86400000),
+        refreshExpiresAt: new Date(now + 604800000),
+        grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
+      });
+      const credential = await trx('shopify_admin_credentials')
+        .where({ shop_id: shopId, installation_id: installation.id })
+        .first('credential_generation', 'credential_state');
+      expect(credential?.credential_state).toBe('ACTIVE');
+      return { installationId: Number(installation.id), generation: String(credential.credential_generation) };
+    });
+    authorityByDomain.set(shopDomain, authority);
+    return authority;
+  }
+
+  /** ACTIVE@T1 ingest, then ARCHIVED@T3 applied via verified webhook (R18 baseline shape). */
+  async function archivedAtT3(label: string, productId = numericId()) {
+    const { shopId, shopDomain } = await provisionCatalogShop(label);
+    const authority = await seedInstallationAuthority(shopId, shopDomain);
+    const variants: VariantSpec[] = [{ variantId: numericId(), cost: '5.00' }, { variantId: numericId(), cost: '6.00' }];
+    const edge = graphqlEdge(productId, 'ACTIVE', variants);
+    await initialSync(shopId, [{ node: { ...edge.node, updatedAt: T1 } }]);
+    const base = { shopId, shopDomain, productId, variants };
+    await productsUpdate(base, 'archived', T3);
+
+    const state = await catalogState(shopId, productId);
+    expect(state.parents.map((p: any) => p.status)).toEqual(state.parentIds.map(() => 'archived'));
+    const identity = identitySnapshot(state);
+    for (const row of identity) expect(row.lasyncro_barcode).toMatch(LSP_PATTERN);
+    return {
+      ...base,
+      authority,
+      gid: productGid(productId),
+      parentIds: state.parentIds,
+      identity,
+      counts: await productCounts(shopId),
+      variantCount: await shopVariantCount(shopId),
+    };
+  }
+  type Base = Awaited<ReturnType<typeof archivedAtT3>>;
+
+  /** Base with one committed equal-timestamp conflict (ACTIVE@T3 against ARCHIVED@T3). */
+  async function conflicted(label: string, productId?: string) {
+    const base = await archivedAtT3(label, productId);
+    await productsUpdate(base, 'active', T3);
+    return base;
+  }
+
+  /** Parent statuses + identity + no new parent / orphan / variant. */
+  async function expectCatalog(base: Base, step: string, status: 'active' | 'archived' | 'deleted') {
+    const after = await catalogState(base.shopId, base.productId);
+    expect({ step, parentStatuses: after.parents.map((p: any) => p.status) })
+      .toEqual({ step, parentStatuses: base.parentIds.map(() => status) });
+    expect(after.parentIds).toEqual(base.parentIds);
+    expect(identitySnapshot(after)).toEqual(base.identity);
+    const counts = await productCounts(base.shopId);
+    expect({ step, parentDelta: counts.total - base.counts.total, orphanDelta: counts.orphans - base.counts.orphans,
+      variantDelta: (await shopVariantCount(base.shopId)) - base.variantCount })
+      .toEqual({ step, parentDelta: 0, orphanDelta: 0, variantDelta: 0 });
+  }
+
+  /** Authoritative GraphQL product node, as Shopify's product(id:) returns it. */
+  function snapshotNode(productId: string, status: ShopifyStatus, variants: VariantSpec[], updatedAt: string,
+    pageInfo: unknown = { hasNextPage: false, endCursor: null }) {
+    const { node } = graphqlEdge(productId, status, variants);
+    return { ...node, updatedAt, variants: { ...node.variants, pageInfo } };
+  }
+
+  /** Injected Shopify client: records every request; `respond` decides the response. */
+  function stubShopify(respond: (variables: any, call: number) => unknown) {
+    const calls: any[] = [];
+    const client: ShopifyGraphqlStub = {
+      request: async (_query: string, opts?: any) => {
+        calls.push(opts?.variables ?? {});
+        return (await respond(opts?.variables ?? {}, calls.length)) as { data?: any };
+      },
+    };
+    return { calls, client };
+  }
+
+  const ready = (shopDomain: string) => async () => {
+    const authority = authorityByDomain.get(shopDomain);
+    if (!authority) throw new Error(`GH1262_R21_NO_AUTHORITY ${shopDomain}`);
+    return {
+      kind: 'READY', accessToken: 'gh1262-test-access-token', shopDomain,
+      installationId: authority.installationId, generation: authority.generation,
+    };
+  };
+
+  function deps(shopDomain: string, client: ShopifyGraphqlStub): ReconciliationDeps {
+    return { resolveCredential: ready(shopDomain), createClient: () => client };
+  }
+
+  /** Bounded poll of database-backed state; never a fixed sleep. */
+  async function waitUntil<T>(probe: () => Promise<T | null | false>, label: string, timeoutMs = 10_000): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const value = await probe();
+      if (value) return value as T;
+      if (Date.now() >= deadline) throw new Error(`GH1262_R21_WAIT_TIMEOUT: ${label}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /** Negative window on database time (proves something does NOT become claimable). */
+  const dbSleep = (ms: number) => systemQuery(db.raw('SELECT pg_sleep(?)', [ms / 1000]));
+
+  /** Concurrency barrier: holds the product advisory lock until released. */
+  function holdProductLock(shopId: number, gid: string) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let markHeld!: () => void;
+    const held = new Promise<void>((resolve) => { markHeld = resolve; });
+    const done = withTenant(shopId, async (trx) => {
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'shopify_catalog_product', `${shopId}:${gid}`,
+      ]);
+      markHeld();
+      await released;
+    });
+    return { held, release, done };
+  }
+
+  const advisoryWaiters = async () => {
+    const result = await systemQuery(db.raw(
+      "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"));
+    return Number(result.rows?.[0]?.waiting ?? 0);
+  };
+
+  it('R21a — an equal-timestamp conflict records one durable, coalesced obligation without catalog writes; a duplicate delivery adds no work', async () => {
+    const base = await archivedAtT3('r21a');
+
+    // Distinct event, same source timestamp, conflicting state: never applied.
+    const webhookId = await productsUpdate(base, 'active', T3);
+    await expectCatalog(base, `equal-timestamp active@${T3}`, 'archived');
+
+    const svc = await loadReconciliationService();
+    const first = await svc.readProductReconciliationState(base.shopId, base.gid);
+    expect(first).toMatchObject({ pending: true, attempts: 0, claimed: false, exhausted: false });
+
+    // Shopify redelivery of the SAME webhook id: ledger duplicate, no new work.
+    await productsUpdate(base, 'active', T3, webhookId);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid)).toEqual(first);
+
+    // A further distinct equal conflict coalesces into the same obligation.
+    await productsUpdate(base, 'draft', T3);
+    const coalesced = await svc.readProductReconciliationState(base.shopId, base.gid);
+    expect(coalesced).toMatchObject({ pending: true, attempts: 0, claimed: false });
+    expect(coalesced!.generation).toBeGreaterThan(first!.generation);
+    await expectCatalog(base, `coalesced draft@${T3}`, 'archived');
+
+    // Discovery returns shop ids only, and includes this tenant.
+    const tenants = await svc.listProductReconciliationTenants({ limit: 100 });
+    expect(tenants.every((id) => Number.isInteger(id) && id > 0)).toBe(true);
+    expect(tenants).toContain(base.shopId);
+
+    // Exactly one claimable unit of work for the product.
+    const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(claim).toMatchObject({ shopId: base.shopId, externalProductId: base.gid, generation: coalesced!.generation });
+    expect(claim!.claimToken).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId })).toBeNull();
+  });
+
+  it('R21b — an authoritative equal-timestamp Shopify snapshot resolves the conflict without changing product or variant identity', async () => {
+    const base = await conflicted('r21b');
+    const svc = await loadReconciliationService();
+    const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(claim).not.toBeNull();
+
+    const shopify = stubShopify(() => ({ data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } }));
+    const outcome = await svc.processProductReconciliationClaim(claim!, deps(base.shopDomain, shopify.client));
+
+    expect(outcome.kind).toBe('APPLIED');
+    expect(shopify.calls[0]).toMatchObject({ id: base.gid });
+    await expectCatalog(base, `authoritative active@${T3}`, 'active');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: false, claimed: false });
+  });
+
+  it('R21c — a snapshot older than a watermark committed during the fetch cannot overwrite the newer state', async () => {
+    const base = await conflicted('r21c');
+    const svc = await loadReconciliationService();
+    const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(claim).not.toBeNull();
+
+    // A strictly newer ARCHIVED@T4 commits while the provider fetch is in flight
+    // (this also requires that no catalog transaction or product lock is held).
+    const shopify = stubShopify(async (_v, call) => {
+      if (call === 1) await productsUpdate(base, 'archived', T4);
+      return { data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } };
+    });
+    const outcome = await svc.processProductReconciliationClaim(claim!, deps(base.shopDomain, shopify.client));
+
+    expect(outcome.kind).toBe('STALE_SKIPPED');
+    await expectCatalog(base, `snapshot active@${T3} after archived@${T4}`, 'archived');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: false, claimed: false });
+  });
+
+  it('R21d — a deletion tombstone committed during the fetch prevents every reconciliation write', async () => {
+    const base = await conflicted('r21d');
+    const svc = await loadReconciliationService();
+    const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(claim).not.toBeNull();
+
+    const shopify = stubShopify(async (_v, call) => {
+      if (call === 1) await deliver(base.shopId, base.shopDomain, 'products/delete', { id: Number(base.productId) });
+      return { data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } };
+    });
+    const outcome = await svc.processProductReconciliationClaim(claim!, deps(base.shopDomain, shopify.client));
+
+    expect(outcome.kind).toBe('TOMBSTONED');
+    await expectCatalog(base, `snapshot active@${T3} after products/delete`, 'deleted');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: false, claimed: false });
+  });
+
+  it('R21e — a new generation during the fetch invalidates the old claim before any catalog write; lock order holds under real overlap', async () => {
+    const base = await conflicted('r21e');
+    const svc = await loadReconciliationService();
+    const first = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(first).not.toBeNull();
+
+    // Another equal-timestamp conflict commits while generation N is being fetched.
+    const inFlight = stubShopify(async (_v, call) => {
+      if (call === 1) await productsUpdate(base, 'draft', T3);
+      return { data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } };
+    });
+    expect((await svc.processProductReconciliationClaim(first!, deps(base.shopDomain, inFlight.client))).kind)
+      .toBe('SUPERSEDED');
+
+    // The old snapshot was NOT applied; the newer generation stays pending, unclaimed.
+    await expectCatalog(base, `superseded generation ${first!.generation}`, 'archived');
+    const afterFirst = await svc.readProductReconciliationState(base.shopId, base.gid);
+    expect(afterFirst).toMatchObject({ pending: true, claimed: false, attempts: 0 });
+    expect(afterFirst!.generation).toBe(first!.generation + 1);
+
+    // Another worker fetches again for the newer generation, with a new token.
+    const second = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(second).toMatchObject({ generation: afterFirst!.generation });
+    expect(second!.claimToken).not.toBe(first!.claimToken);
+    const latest = stubShopify(() => ({ data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } }));
+    expect((await svc.processProductReconciliationClaim(second!, deps(base.shopDomain, latest.client))).kind).toBe('APPLIED');
+    await expectCatalog(base, `authoritative active@${T3} for generation ${second!.generation}`, 'active');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: false, claimed: false });
+
+    // REAL OVERLAP: an apply and an equal-timestamp webhook for the same product
+    // both queue behind a held product lock, then race. Shared lock order means
+    // both finish (no 40P01) and the newer generation is never lost.
+    await productsUpdate(base, 'archived', T3);
+    const third = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(third).not.toBeNull();
+    const barrier = holdProductLock(base.shopId, base.gid);
+    await barrier.held;
+    const waitersBefore = await advisoryWaiters();
+    const racing = Promise.allSettled([
+      svc.processProductReconciliationClaim(third!, deps(base.shopDomain,
+        stubShopify(() => ({ data: { product: snapshotNode(base.productId, 'ARCHIVED', base.variants, T3) } })).client)),
+      productsUpdate(base, 'draft', T3),
+    ]);
+    await waitUntil(async () => (await advisoryWaiters()) >= waitersBefore + 2, 'apply and webhook both waiting on the product lock');
+    barrier.release();
+    await barrier.done;
+    const [applyResult, webhookResult] = await racing;
+    expect({ apply: applyResult.status, webhook: webhookResult.status }).toEqual({ apply: 'fulfilled', webhook: 'fulfilled' });
+    expect(['APPLIED', 'SUPERSEDED']).toContain((applyResult as PromiseFulfilledResult<ReconciliationOutcome>).value.kind);
+    const raced = await svc.readProductReconciliationState(base.shopId, base.gid);
+    expect(raced).toMatchObject({ pending: true, claimed: false, generation: third!.generation + 1 });
+    const racedCatalog = await catalogState(base.shopId, base.productId);
+    expect(identitySnapshot(racedCatalog)).toEqual(base.identity);
+  });
+
+  it('R21f — one winner under concurrent claims; an expired lease is reclaimed with a new token; the old token can neither apply, complete nor fail; newer pending work survives the interruption', async () => {
+    const base = await conflicted('r21f');
+    const svc = await loadReconciliationService();
+
+    // Four concurrent claims for the same tenant: exactly one owner.
+    const contenders = await Promise.all(
+      [0, 1, 2, 3].map(() => svc.claimProductReconciliation({ shopId: base.shopId, ...SHORT_LEASE })));
+    const winners = contenders.filter((c): c is ReconciliationClaim => c !== null);
+    expect(winners).toHaveLength(1);
+    const stale = winners[0];
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId })).toBeNull();
+
+    // The owner is interrupted (never processes); a newer conflict arrives meanwhile.
+    await productsUpdate(base, 'draft', T3);
+
+    // Lease expires on DB time; the work is reclaimed with a NEW token at the NEWER generation.
+    await waitUntil(async () => !(await svc.readProductReconciliationState(base.shopId, base.gid))!.claimed,
+      'short lease expiry');
+    const fresh = await svc.claimProductReconciliation({ shopId: base.shopId });
+    expect(fresh).toMatchObject({ shopId: base.shopId, externalProductId: base.gid, generation: stale.generation + 1 });
+    expect(fresh!.claimToken).not.toBe(stale.claimToken);
+    const owned = await svc.readProductReconciliationState(base.shopId, base.gid);
+    expect(owned).toMatchObject({ pending: true, claimed: true, attempts: 0 });
+
+    // The superseded token cannot apply / complete…
+    const success = stubShopify(() => ({ data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } }));
+    expect((await svc.processProductReconciliationClaim(stale, deps(base.shopDomain, success.client))).kind).toBe('SUPERSEDED');
+    await expectCatalog(base, 'superseded token apply', 'archived');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid)).toEqual(owned);
+
+    // …nor fail the newer claim through a provider or credential failure.
+    const failing = stubShopify(() => { throw new Error('GH1262_R21F_PROVIDER_DOWN'); });
+    expect((await svc.processProductReconciliationClaim(stale, deps(base.shopDomain, failing.client))).kind).toBe('SUPERSEDED');
+    expect((await svc.processProductReconciliationClaim(stale, {
+      resolveCredential: async () => ({ kind: 'RETRYABLE' }), createClient: () => failing.client,
+    })).kind).toBe('SUPERSEDED');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid)).toEqual(owned);
+
+    // The current owner completes the newer generation.
+    expect((await svc.processProductReconciliationClaim(fresh!, deps(base.shopDomain, success.client))).kind).toBe('APPLIED');
+    await expectCatalog(base, 'current owner completion', 'active');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: false, claimed: false });
+  });
+
+  it('R21g — provider failure, credential RETRYABLE and a null product stay durable and observable, retry with backoff, and exhaust at the bound without a tombstone', async () => {
+    const base = await conflicted('r21g');
+    const svc = await loadReconciliationService();
+    expect({
+      lease: svc.PRODUCT_RECONCILIATION_LEASE_MS,
+      max: svc.PRODUCT_RECONCILIATION_MAX_ATTEMPTS,
+      base: svc.PRODUCT_RECONCILIATION_BACKOFF_BASE_MS,
+      cap: svc.PRODUCT_RECONCILIATION_BACKOFF_CAP_MS,
+    }).toEqual({ lease: 300_000, max: 8, base: 5_000, cap: 300_000 });
+    const max = svc.PRODUCT_RECONCILIATION_MAX_ATTEMPTS;
+    const claimWhenDue = () => waitUntil(
+      () => svc.claimProductReconciliation({ shopId: base.shopId, ...FAST_RETRY }), 'claim after backoff');
+
+    // 1. Provider error: durable, sanitized, and not immediately reclaimable.
+    const c1 = await svc.claimProductReconciliation({ shopId: base.shopId, ...FAST_RETRY });
+    const providerDown = stubShopify(() => { throw new Error('GH1262_R21G_PROVIDER_DOWN secret-ish detail'); });
+    expect((await svc.processProductReconciliationClaim(c1!, deps(base.shopDomain, providerDown.client), FAST_RETRY)).kind)
+      .toBe('FAILED');
+    const s1 = await svc.readProductReconciliationState(base.shopId, base.gid, FAST_RETRY);
+    expect(s1).toMatchObject({ pending: true, attempts: 1, claimed: false, exhausted: false, lastError: 'SHOPIFY_PROVIDER_ERROR' });
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId, ...FAST_RETRY })).toBeNull();
+    expect(await svc.listProductReconciliationTenants({ limit: 100, ...FAST_RETRY })).not.toContain(base.shopId);
+
+    // 2. Credential RETRYABLE: no provider request is attempted.
+    const c2 = await claimWhenDue();
+    const untouched = stubShopify(() => { throw new Error('GH1262_R21G_MUST_NOT_FETCH'); });
+    expect((await svc.processProductReconciliationClaim(c2, {
+      resolveCredential: async () => ({ kind: 'RETRYABLE' }), createClient: () => untouched.client,
+    }, FAST_RETRY)).kind).toBe('FAILED');
+    expect(untouched.calls).toEqual([]);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid, FAST_RETRY))
+      .toMatchObject({ pending: true, attempts: 2, lastError: 'SHOPIFY_CREDENTIAL_RETRYABLE', exhausted: false });
+
+    // 3. product(id:) returns null: a bounded failure, never a deletion tombstone.
+    const missing = stubShopify(() => ({ data: { product: null } }));
+    for (let attempts = 3; attempts <= max; attempts++) {
+      const claim = await claimWhenDue();
+      expect((await svc.processProductReconciliationClaim(claim, deps(base.shopDomain, missing.client), FAST_RETRY)).kind)
+        .toBe('FAILED');
+      expect(await svc.readProductReconciliationState(base.shopId, base.gid, FAST_RETRY))
+        .toMatchObject({ pending: true, attempts, lastError: 'SHOPIFY_PRODUCT_NOT_FOUND', exhausted: attempts >= max });
+    }
+
+    // Exhausted: still pending and visible, never claimable or discoverable again.
+    await dbSleep(1_500);
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId, ...FAST_RETRY })).toBeNull();
+    expect(await svc.listProductReconciliationTenants({ limit: 100, ...FAST_RETRY })).not.toContain(base.shopId);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid, FAST_RETRY))
+      .toMatchObject({ pending: true, attempts: max, exhausted: true, claimed: false });
+
+    await expectCatalog(base, 'after bounded failures', 'archived');
+    const tombstones = await withTenant(base.shopId, (trx) =>
+      trx('shopify_product_source_watermarks')
+        .where({ shop_id: base.shopId, platform: 'shopify', external_product_id: base.gid })
+        .pluck('is_deleted'));
+    expect(tombstones).toEqual([false]);
+  });
+
+  it('R21h — one tenant cannot discover, claim, read, complete or fail another tenant\'s reconciliation', async () => {
+    const productId = numericId();
+    const shopB = await conflicted('r21h-b', productId);
+    const shopA = await archivedAtT3('r21h-a', productId);
+    const svc = await loadReconciliationService();
+
+    // Only B has work: A's claim and state never see it.
+    expect(await svc.claimProductReconciliation({ shopId: shopA.shopId })).toBeNull();
+    expect(await svc.readProductReconciliationState(shopA.shopId, shopA.gid)).toMatchObject({ pending: false });
+    expect(await svc.readProductReconciliationState(shopB.shopId, shopB.gid)).toMatchObject({ pending: true });
+    const tenants = await svc.listProductReconciliationTenants({ limit: 100 });
+    expect(tenants).toContain(shopB.shopId);
+    expect(tenants).not.toContain(shopA.shopId);
+
+    // Forced RLS: tenant A's context sees none of B's watermark / obligation rows.
+    const crossTenantRows = await withTenant(shopA.shopId, (trx) =>
+      trx('shopify_product_source_watermarks').where({ shop_id: shopB.shopId }).count('* as c').first());
+    expect(Number(crossTenantRows?.c ?? 0)).toBe(0);
+
+    await productsUpdate(shopA, 'active', T3);
+    const claimB = await svc.claimProductReconciliation({ shopId: shopB.shopId });
+    expect(claimB).toMatchObject({ shopId: shopB.shopId, externalProductId: shopB.gid });
+    const stateA = await svc.readProductReconciliationState(shopA.shopId, shopA.gid);
+    const stateB = await svc.readProductReconciliationState(shopB.shopId, shopB.gid);
+    expect(stateA).toMatchObject({ pending: true, claimed: false });
+    expect(stateB).toMatchObject({ pending: true, claimed: true });
+
+    // B's claim token presented for tenant A applies, completes and fails nothing anywhere.
+    const forged = { ...claimB!, shopId: shopA.shopId };
+    const success = stubShopify(() => ({ data: { product: snapshotNode(productId, 'ACTIVE', shopB.variants, T3) } }));
+    expect((await svc.processProductReconciliationClaim(forged, deps(shopA.shopDomain, success.client))).kind).toBe('SUPERSEDED');
+    const failing = stubShopify(() => { throw new Error('GH1262_R21H_PROVIDER_DOWN'); });
+    expect((await svc.processProductReconciliationClaim(forged, deps(shopA.shopDomain, failing.client))).kind).toBe('SUPERSEDED');
+    expect(await svc.readProductReconciliationState(shopA.shopId, shopA.gid)).toEqual(stateA);
+    expect(await svc.readProductReconciliationState(shopB.shopId, shopB.gid)).toEqual(stateB);
+    await expectCatalog(shopA, 'forged claim against tenant A', 'archived');
+
+    // The legitimate claim resolves B only.
+    expect((await svc.processProductReconciliationClaim(claimB!, deps(shopB.shopDomain, success.client))).kind).toBe('APPLIED');
+    await expectCatalog(shopB, 'tenant B resolved', 'active');
+    await expectCatalog(shopA, 'tenant A untouched by B', 'archived');
+    expect(await svc.readProductReconciliationState(shopA.shopId, shopA.gid)).toEqual(stateA);
+  });
+
+  it('R21i — the authoritative fetch paginates every variant and fails closed on a malformed response', async () => {
+    const base = await conflicted('r21i');
+    const svc = await loadReconciliationService();
+    const extra: VariantSpec = { variantId: numericId(), cost: '7.00' };
+
+    // First page: the two known variants, hasNextPage; continuation: the third.
+    const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    const paged = stubShopify((variables) => (variables.cursor
+      ? { data: { product: { id: base.gid, variants: {
+          edges: graphqlEdge(base.productId, 'ACTIVE', [extra]).node.variants.edges,
+          pageInfo: { hasNextPage: false, endCursor: null } } } } }
+      : { data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3,
+          { hasNextPage: true, endCursor: 'gh1262-r21i-cursor-1' }) } }));
+    expect((await svc.processProductReconciliationClaim(claim!, deps(base.shopDomain, paged.client))).kind).toBe('APPLIED');
+    expect(paged.calls).toEqual([
+      expect.objectContaining({ id: base.gid }),
+      expect.objectContaining({ id: base.gid, cursor: 'gh1262-r21i-cursor-1' }),
+    ]);
+    const paginated = await catalogState(base.shopId, base.productId);
+    expect(paginated.mappings).toHaveLength(3);
+    expect(paginated.parents.map((p: any) => p.status)).toEqual(base.parentIds.map(() => 'active'));
+    expect(identitySnapshot(paginated).filter((r: any) => base.identity.some((b: any) => b.mapping_id === r.mapping_id)))
+      .toEqual(base.identity);
+    for (const v of paginated.variants) expect(v.lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    // A new equal conflict, then a response whose variants connection lacks pageInfo.
+    await productsUpdate({ ...base, variants: [...base.variants, extra] }, 'archived', T3);
+    const malformedClaim = await svc.claimProductReconciliation({ shopId: base.shopId });
+    const malformedNode = snapshotNode(base.productId, 'ARCHIVED', [...base.variants, extra], T3);
+    delete (malformedNode.variants as { pageInfo?: unknown }).pageInfo;
+    const malformed = stubShopify(() => ({ data: { product: malformedNode } }));
+    const before = await catalogState(base.shopId, base.productId);
+    const outcome = await svc.processProductReconciliationClaim(malformedClaim!, deps(base.shopDomain, malformed.client));
+    expect(outcome.kind).toBe('FAILED');
+    const after = await catalogState(base.shopId, base.productId);
+    expect(identitySnapshot(after)).toEqual(identitySnapshot(before));
+    expect(after.parents).toEqual(before.parents);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid))
+      .toMatchObject({ pending: true, attempts: 1, lastError: 'SHOPIFY_CATALOG_PAGINATION_FATAL' });
+  });
+
+  // ── GH-1262 A2.2 compatibility contract (SF-GH1262-COMPAT-IMPLEMENT-001) ──
+
+  /** Exact persisted watermark facts for one product (timestamp at microsecond precision). */
+  const watermarkFacts = (base: Base) =>
+    withTenant(base.shopId, (trx) =>
+      trx('shopify_product_source_watermarks')
+        .where({ shop_id: base.shopId, platform: 'shopify', external_product_id: base.gid })
+        .first(
+          'reconcile_generation', 'reconcile_attempts', 'is_deleted',
+          trx.raw('reconcile_requested_at IS NOT NULL AS pending'),
+          trx.raw(`to_char(source_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS source_updated_at`)));
+
+  const pendingObligations = (shopId: number) =>
+    withTenant(shopId, (trx) =>
+      trx('shopify_product_source_watermarks')
+        .where({ shop_id: shopId, platform: 'shopify' })
+        .whereNotNull('reconcile_requested_at')
+        .pluck('external_product_id'));
+
+  it('M2c — an equal-timestamp webhook alone records exactly one obligation and writes nothing', async () => {
+    const base = await archivedAtT3('m2c');
+    const before = await watermarkFacts(base);
+    expect(await pendingObligations(base.shopId)).toEqual([]);
+
+    await productsUpdate(base, 'active', T3);
+
+    expect(await pendingObligations(base.shopId)).toEqual([base.gid]);
+    expect(await watermarkFacts(base)).toEqual({
+      ...before, pending: true, reconcile_attempts: 0,
+      reconcile_generation: before.reconcile_generation + 1,
+    });
+    await expectCatalog(base, `equal-timestamp active@${T3} alone`, 'archived');
+  });
+
+  it('M3 — a tombstoned obligation is never claimed, fetched or counted, never resurfaces, and a tombstoned null fetch settles uncounted', async () => {
+    const svc = await loadReconciliationService();
+
+    // Tombstone committed while the obligation is pending.
+    const base = await conflicted('m3');
+    await deliver(base.shopId, base.shopDomain, 'products/delete', { id: Number(base.productId) });
+    const tombstoned = await watermarkFacts(base);
+    expect(tombstoned).toMatchObject({ is_deleted: true, pending: true, reconcile_attempts: 0 });
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId })).toBeNull();
+    expect(await svc.listProductReconciliationTenants({ limit: 100 })).not.toContain(base.shopId);
+
+    // Later equal and newer inputs for the deleted product resurface nothing.
+    await productsUpdate(base, 'active', T3);
+    await productsUpdate(base, 'active', T4);
+    expect(await watermarkFacts(base)).toEqual(tombstoned);
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId })).toBeNull();
+    expect(await svc.listProductReconciliationTenants({ limit: 100 })).not.toContain(base.shopId);
+    await expectCatalog(base, 'tombstoned obligation after later inputs', 'deleted');
+
+    // Tombstone committed during the fetch, provider returns no product: one
+    // request, settled as TOMBSTONED, attempt not counted, never claimed again.
+    const racing = await conflicted('m3-null');
+    const claim = await svc.claimProductReconciliation({ shopId: racing.shopId });
+    expect(claim).not.toBeNull();
+    const shopify = stubShopify(async (_v, call) => {
+      if (call === 1) await deliver(racing.shopId, racing.shopDomain, 'products/delete', { id: Number(racing.productId) });
+      return { data: { product: null } };
+    });
+    expect((await svc.processProductReconciliationClaim(claim!, deps(racing.shopDomain, shopify.client))).kind)
+      .toBe('TOMBSTONED');
+    expect(shopify.calls).toHaveLength(1);
+    expect(await watermarkFacts(racing)).toMatchObject({ is_deleted: true, pending: false, reconcile_attempts: 0 });
+    expect(await svc.readProductReconciliationState(racing.shopId, racing.gid))
+      .toMatchObject({ pending: false, claimed: false, attempts: 0, lastError: null });
+    expect(await svc.claimProductReconciliation({ shopId: racing.shopId })).toBeNull();
+    await expectCatalog(racing, 'tombstoned during a null fetch', 'deleted');
+  });
+
+  it('M4 — repeated equal-timestamp events while pending never reset attempts or revive exhaustion; a completed episode restarts at zero', async () => {
+    const svc = await loadReconciliationService();
+    const BOUND: ReconciliationOptions = { ...FAST_RETRY, maxAttempts: 2 };
+    const base = await conflicted('m4');
+    const claimWhenDue = () => waitUntil(
+      () => svc.claimProductReconciliation({ shopId: base.shopId, ...BOUND }), 'claim after backoff');
+    const providerDown = stubShopify(() => { throw new Error('GH1262_M4_PROVIDER_DOWN'); });
+
+    // Attempt 1 fails.
+    const first = await svc.claimProductReconciliation({ shopId: base.shopId, ...BOUND });
+    expect((await svc.processProductReconciliationClaim(first!, deps(base.shopDomain, providerDown.client), BOUND)).kind)
+      .toBe('FAILED');
+    const failedOnce = await svc.readProductReconciliationState(base.shopId, base.gid, BOUND);
+    expect(failedOnce).toMatchObject({ pending: true, attempts: 1, exhausted: false });
+
+    // Distinct equal-timestamp events while pending: generation advances, attempts do not reset.
+    for (const status of ['draft', 'active', 'draft'] as const) await productsUpdate(base, status, T3);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid, BOUND)).toMatchObject({
+      pending: true, attempts: 1, exhausted: false, generation: failedOnce!.generation + 3,
+    });
+
+    // Attempt 2 exhausts the bound.
+    const second = await claimWhenDue();
+    expect((await svc.processProductReconciliationClaim(second, deps(base.shopDomain, providerDown.client), BOUND)).kind)
+      .toBe('FAILED');
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid, BOUND))
+      .toMatchObject({ pending: true, attempts: 2, exhausted: true });
+
+    // Further equal events cannot revive the exhausted obligation.
+    await productsUpdate(base, 'active', T3);
+    await productsUpdate(base, 'draft', T3);
+    await dbSleep(1_500);
+    expect(await svc.readProductReconciliationState(base.shopId, base.gid, BOUND))
+      .toMatchObject({ pending: true, attempts: 2, exhausted: true, claimed: false });
+    expect(await svc.claimProductReconciliation({ shopId: base.shopId, ...BOUND })).toBeNull();
+    expect(await svc.listProductReconciliationTenants({ limit: 100, ...BOUND })).not.toContain(base.shopId);
+    await expectCatalog(base, 'exhausted obligation', 'archived');
+
+    // A completed episode: the next equal event starts a NEW episode at zero attempts.
+    const fresh = await conflicted('m4-episode');
+    const failClaim = await svc.claimProductReconciliation({ shopId: fresh.shopId, ...BOUND });
+    expect((await svc.processProductReconciliationClaim(failClaim!, deps(fresh.shopDomain, providerDown.client), BOUND)).kind)
+      .toBe('FAILED');
+    const applyClaim = await waitUntil(
+      () => svc.claimProductReconciliation({ shopId: fresh.shopId, ...BOUND }), 'claim after backoff');
+    const success = stubShopify(() => ({ data: { product: snapshotNode(fresh.productId, 'ACTIVE', fresh.variants, T3) } }));
+    expect((await svc.processProductReconciliationClaim(applyClaim, deps(fresh.shopDomain, success.client), BOUND)).kind)
+      .toBe('APPLIED');
+    const completed = await svc.readProductReconciliationState(fresh.shopId, fresh.gid, BOUND);
+    expect(completed).toMatchObject({ pending: false, attempts: 0, lastError: null });
+    await productsUpdate(fresh, 'archived', T3);
+    expect(await svc.readProductReconciliationState(fresh.shopId, fresh.gid, BOUND)).toMatchObject({
+      pending: true, attempts: 0, exhausted: false, generation: completed!.generation + 1,
+    });
+  });
+
+  it('M5 — uninstall, re-authentication or a replaced installation between fetch and apply writes nothing and releases uncounted; a routine refresh still applies', async () => {
+    const svc = await loadReconciliationService();
+
+    async function lostBetweenFetchAndApply(label: string, change: (base: Base) => Promise<void>) {
+      const base = await conflicted(label);
+      const claim = await svc.claimProductReconciliation({ shopId: base.shopId });
+      expect(claim).not.toBeNull();
+      const before = await watermarkFacts(base);
+      const shopify = stubShopify(async (_v, call) => {
+        if (call === 1) await change(base);
+        return { data: { product: snapshotNode(base.productId, 'ACTIVE', base.variants, T3) } };
+      });
+      const outcome = await svc.processProductReconciliationClaim(claim!, deps(base.shopDomain, shopify.client));
+      expect({ label, kind: outcome.kind }).toEqual({ label, kind: 'AUTHORITY_LOST' });
+      await expectCatalog(base, `${label}: no catalog write`, 'archived');
+      expect({ label, watermark: await watermarkFacts(base) }).toEqual({ label, watermark: before });
+      expect({ label, state: await svc.readProductReconciliationState(base.shopId, base.gid) })
+        .toMatchObject({ label, state: { pending: true, claimed: false, attempts: 0, lastError: null } });
+      return base;
+    }
+
+    // Uninstall.
+    await lostBetweenFetchAndApply('m5-uninstall', (base) => withTenant(base.shopId, (trx) =>
+      trx('shopify_app_installations').where({ id: base.authority.installationId })
+        .update({ uninstalled_at: trx.fn.now() })).then(() => undefined));
+
+    // Re-authentication / reconnect start: the credential leaves ACTIVE.
+    await lostBetweenFetchAndApply('m5-reauth', (base) => withTenant(base.shopId, (trx) =>
+      trx('shopify_admin_credentials').where({ shop_id: base.shopId, installation_id: base.authority.installationId })
+        .update({ credential_state: 'REAUTH_REQUIRED',
+          credential_generation: trx.raw('credential_generation + 1') })).then(() => undefined));
+
+    // Replaced installation: the fetched-under installation is retired and the
+    // shop gets a new active installation with its own ACTIVE credential.
+    await lostBetweenFetchAndApply('m5-replaced', async (base) => {
+      await withTenant(base.shopId, (trx) =>
+        trx('shopify_app_installations').where({ id: base.authority.installationId })
+          .update({ uninstalled_at: trx.fn.now() }));
+      const replacementDomain = base.shopDomain.replace('.myshopify.com', '-replacement.myshopify.com');
+      await withTenant(base.shopId, (trx) =>
+        trx('shopify_app_installations').insert({ shop_id: base.shopId, shop_domain: replacementDomain, scopes: 'read_products' }));
+      await seedInstallationAuthority(base.shopId, replacementDomain);
+    });
+
+    // Routine token refresh: generation advances, same ACTIVE installation → applies.
+    const refreshed = await conflicted('m5-refresh');
+    const claim = await svc.claimProductReconciliation({ shopId: refreshed.shopId });
+    const shopify = stubShopify(async (_v, call) => {
+      if (call === 1) {
+        await withTenant(refreshed.shopId, (trx) =>
+          trx('shopify_admin_credentials')
+            .where({ shop_id: refreshed.shopId, installation_id: refreshed.authority.installationId })
+            .update({ credential_generation: trx.raw('credential_generation + 1') }));
+      }
+      return { data: { product: snapshotNode(refreshed.productId, 'ACTIVE', refreshed.variants, T3) } };
+    });
+    expect((await svc.processProductReconciliationClaim(claim!, deps(refreshed.shopDomain, shopify.client))).kind)
+      .toBe('APPLIED');
+    await expectCatalog(refreshed, 'apply after a routine refresh', 'active');
+    const refreshedCredential = await withTenant(refreshed.shopId, (trx) =>
+      trx('shopify_admin_credentials')
+        .where({ shop_id: refreshed.shopId, installation_id: refreshed.authority.installationId })
+        .first('credential_generation', 'credential_state'));
+    expect({ state: refreshedCredential.credential_state, advanced: String(refreshedCredential.credential_generation) !== refreshed.authority.generation })
+      .toEqual({ state: 'ACTIVE', advanced: true });
+  });
+});
+
+// ── M1: combined migration ordering, checksums, security and RLS ───────────
+
+describe('M1 — 0218 follows the protected reconnect tail and keeps every security boundary', () => {
+  const PROTECTED_TAIL = [
+    '20261016120000_0212_authorize_shopify_reconnect_sync_reset.js',
+    '20261016150000_0215_harden_reconnect_and_priority_function_authority.js',
+    '20261018120000_0216_durable_shopify_sync_dispatch.js',
+    '20261019120000_0217_shopify_manual_recovery.js',
+    '20261020120000_0218_create_shopify_product_source_watermarks.js',
+  ];
+  const DISCOVERY = 'public.list_shopify_product_reconciliation_tenants(integer,integer,integer,integer)';
+  let admin: Knex | undefined;
+  let runtime: Knex | undefined;
+
+  /** Read-only connections to the disposable DB only (gh1068-t3b pattern). */
+  function disposableConnection(user: string | undefined, password: string | undefined) {
+    const database = process.env.PGDATABASE ?? '';
+    if (process.env.NODE_ENV !== 'test' || process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB !== '1'
+      || !/^synchroflow_test_[A-Za-z0-9_]+$/.test(database) || process.env.PGUSER !== 'sf_app'
+      || !process.env.PGMIGRATION_USER || process.env.PGMIGRATION_USER === 'sf_app') {
+      throw new Error('GH1262_M1_REFUSING_UNSAFE_DB');
+    }
+    return knex({
+      client: 'pg',
+      connection: { host: process.env.PGHOST, port: Number(process.env.PGPORT), database,
+        user, password: String(password || ''), connectionTimeoutMillis: 3_000 },
+      pool: { min: 0, max: 1 },
+    });
+  }
+
+  beforeAll(() => {
+    admin = disposableConnection(process.env.PGMIGRATION_USER, process.env.PGMIGRATION_PASSWORD);
+    runtime = disposableConnection(process.env.PGUSER, process.env.PGPASSWORD);
+  });
+
+  afterAll(async () => {
+    await admin?.destroy();
+    await runtime?.destroy();
+  });
+
+  it('M1a — the protected runner applied 0212 → 0215 → 0216 → 0217 → 0218 in order, with recorded checksums', async () => {
+    const ledger: string[] = await admin!('knex_migrations').orderBy('id', 'asc').pluck('name');
+    expect(ledger.filter((name) => /^2026101[6-9]|^2026102/.test(name))).toEqual(PROTECTED_TAIL);
+    expect(ledger.slice(-PROTECTED_TAIL.length)).toEqual(PROTECTED_TAIL);
+    expect(ledger.some((name) => name.includes('_0214_'))).toBe(false);
+
+    const checksums = await admin!('migration_checksums').whereIn('name', PROTECTED_TAIL).select('name', 'checksum');
+    expect(checksums.map((row: any) => row.name).sort()).toEqual([...PROTECTED_TAIL].sort());
+    const compiled = path.join(process.cwd(), 'apps/backend/dist/migrations', PROTECTED_TAIL[4]);
+    expect(fs.existsSync(compiled)).toBe(true);
+    expect(checksums.find((row: any) => row.name === PROTECTED_TAIL[4]).checksum)
+      .toBe(crypto.createHash('sha256').update(fs.readFileSync(compiled)).digest('hex'));
+  });
+
+  it('M1b — the 0217 security postconditions still hold and no reconnect-authority table gained a watermark dependency', async () => {
+    await expect(assertSecurityPostconditions(admin!)).resolves.toBeUndefined();
+    const authorityRefs = await admin!.raw(`
+      SELECT count(*)::int AS refs
+        FROM pg_catalog.pg_constraint k
+       WHERE k.conrelid IN ('public.shops'::regclass, 'public.shopify_app_installations'::regclass,
+                            'public.shopify_admin_credentials'::regclass, 'public.integrations'::regclass)
+         AND pg_catalog.pg_get_constraintdef(k.oid) ILIKE '%source_watermarks%'`);
+    expect(authorityRefs.rows[0].refs).toBe(0);
+    const authorityTriggers = await admin!.raw(`
+      SELECT count(*)::int AS triggers
+        FROM pg_catalog.pg_trigger t
+       WHERE NOT t.tgisinternal
+         AND t.tgrelid IN ('public.shops'::regclass, 'public.shopify_app_installations'::regclass,
+                           'public.shopify_admin_credentials'::regclass, 'public.integrations'::regclass)
+         AND pg_catalog.pg_get_functiondef(t.tgfoid) ILIKE '%source_watermarks%'`);
+    expect(authorityTriggers.rows[0].triggers).toBe(0);
+  });
+
+  it('M1c — forced RLS, least privilege and the restricted runtime role hold for the watermark table and discovery function', async () => {
+    const table = await admin!.raw(`
+      SELECT c.relrowsecurity, c.relforcerowsecurity,
+             array(SELECT p.polcmd::text FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid ORDER BY 1) AS commands
+        FROM pg_catalog.pg_class c WHERE c.oid = 'public.shopify_product_source_watermarks'::regclass`);
+    expect(table.rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true, commands: ['a', 'r', 'w'] });
+
+    const roles = await admin!.raw(`
+      SELECT rolname, rolsuper, rolbypassrls FROM pg_catalog.pg_roles
+       WHERE rolname IN ('sf_app', 'sf_shopify_reconnect_executor', 'sf_shopify_reconnect_owner') ORDER BY rolname`);
+    expect(roles.rows).toEqual([
+      { rolname: 'sf_app', rolsuper: false, rolbypassrls: false },
+      { rolname: 'sf_shopify_reconnect_executor', rolsuper: false, rolbypassrls: false },
+      { rolname: 'sf_shopify_reconnect_owner', rolsuper: false, rolbypassrls: false },
+    ]);
+
+    const privileges = await admin!.raw(`
+      SELECT r.rolname,
+             has_table_privilege(r.rolname, 'public.shopify_product_source_watermarks', 'SELECT') AS can_select,
+             has_table_privilege(r.rolname, 'public.shopify_product_source_watermarks', 'INSERT') AS can_insert,
+             has_table_privilege(r.rolname, 'public.shopify_product_source_watermarks', 'UPDATE') AS can_update,
+             has_table_privilege(r.rolname, 'public.shopify_product_source_watermarks', 'DELETE') AS can_delete,
+             has_table_privilege(r.rolname, 'public.shopify_product_source_watermarks', 'TRUNCATE') AS can_truncate,
+             has_function_privilege(r.rolname, '${DISCOVERY}', 'EXECUTE') AS can_discover
+        FROM pg_catalog.pg_roles r
+       WHERE r.rolname IN ('sf_app', 'sf_shopify_reconnect_executor', 'sf_shopify_reconnect_owner')
+       ORDER BY r.rolname`);
+    expect(privileges.rows).toEqual([
+      { rolname: 'sf_app', can_select: true, can_insert: true, can_update: true,
+        can_delete: false, can_truncate: false, can_discover: true },
+      { rolname: 'sf_shopify_reconnect_executor', can_select: false, can_insert: false, can_update: false,
+        can_delete: false, can_truncate: false, can_discover: false },
+      { rolname: 'sf_shopify_reconnect_owner', can_select: false, can_insert: false, can_update: false,
+        can_delete: false, can_truncate: false, can_discover: false },
+    ]);
+
+    const discovery = await admin!.raw(`
+      SELECT p.prosecdef, p.proconfig,
+             EXISTS (SELECT 1 FROM pg_catalog.aclexplode(p.proacl) a WHERE a.grantee = 0) AS public_grant
+        FROM pg_catalog.pg_proc p WHERE p.oid = '${DISCOVERY}'::regprocedure`);
+    expect(discovery.rows[0]).toEqual({
+      prosecdef: true, proconfig: ['search_path=pg_catalog, public'], public_grant: false,
+    });
+
+    // Restricted runtime role without a tenant: rows exist, none are visible or writable.
+    const total = await admin!('shopify_product_source_watermarks').count('* as c').first();
+    expect(Number(total?.c ?? 0)).toBeGreaterThan(0);
+    const identity = await runtime!.raw('SELECT current_user AS role');
+    expect(identity.rows[0].role).toBe('sf_app');
+    const visible = await runtime!.transaction(async (trx) => {
+      await trx.raw(`SELECT set_config('app.current_tenant', '', true)`);
+      return trx('shopify_product_source_watermarks').count('* as c').first();
+    });
+    expect(Number(visible?.c ?? 0)).toBe(0);
+    const anyShop = await admin!('shops').min('id as id').first();
+    await expect(runtime!.transaction(async (trx) => {
+      await trx.raw(`SELECT set_config('app.current_tenant', '', true)`);
+      await trx('shopify_product_source_watermarks').insert({
+        shop_id: anyShop.id, platform: 'shopify', external_product_id: 'gid://shopify/Product/1262000000001',
+        source_updated_at: '2026-09-01T10:00:00Z',
+      });
+    })).rejects.toThrow(/row-level security/);
+  });
 });
 
 // ── ISOLATION ───────────────────────────────────────────────────────────────

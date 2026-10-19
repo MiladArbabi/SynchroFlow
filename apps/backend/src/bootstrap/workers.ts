@@ -336,6 +336,27 @@ async function startWorkersInternal(): Promise<void> {
     );
   }
 
+  // start Shopify product reconciliation worker (GH-1262 A2.2 B1)
+  try {
+    const productReconciliation = await import('../workers/shopifyProductReconciliation.worker.js');
+    if (stopRequested) return;
+    if (typeof productReconciliation.startShopifyProductReconciliationWorker === 'function') {
+      superviseWorker(
+        'shopify-product-reconciliation',
+        () => productReconciliation.startShopifyProductReconciliationWorker()
+      );
+      if (typeof productReconciliation.stopShopifyProductReconciliationWorker === 'function') {
+        workerStopFns.push(async () => await productReconciliation.stopShopifyProductReconciliationWorker());
+      }
+      console.log('[bootstrap/workers] Shopify product reconciliation worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Shopify product reconciliation worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+
   // start WMS idle alert worker
   try {
     const wmsIdleAlert = await import('../workers/wms.idle.alert.worker.js');
