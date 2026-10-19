@@ -67,7 +67,12 @@ import { processSyncJob, startSyncWorker } from 'api-src/sync.worker';
 import {
   dispatchShopifySyncIntentOnce,
   publishShopifySyncJob,
+  startShopifySyncIntentDispatcher,
+  stopShopifySyncIntentDispatcher,
 } from 'api-src/workers/domain-event-outbox.dispatcher';
+import { createProcessShutdown } from 'api-src/bootstrap/processShutdown';
+import { deliverStripeOverageEvent } from 'api-src/api/billing/stripe.meter.service';
+import { deliverShopifyOverageEvent } from 'api-src/api/billing/shopify.events.service';
 
 function deferred() {
   let resolve!: (value?: unknown) => void;
@@ -238,7 +243,7 @@ describe('GH-1068 T3-B — dispatcher publish ordering', () => {
     const [queue, content, options] = mockSendToQueue.mock.calls[0];
     expect(queue).toBe('sync_jobs');
     expect(JSON.parse(content.toString())).toEqual({ integrationId: 53, intentDomainEventId: 43 });
-    expect(options).toMatchObject({ persistent: true });
+    expect(options).toMatchObject({ persistent: true, timeout: 5000 });
     expect(Number.isSafeInteger(options.timeout) && options.timeout > 0).toBe(true);
     expect(settled).toBe(false);
     confirmation.resolve(true);
@@ -250,6 +255,254 @@ describe('GH-1068 T3-B — dispatcher publish ordering', () => {
     mockSendToQueue.mockImplementationOnce(() => Promise.reject(new Error('Channel closed')));
     await expect(publishShopifySyncJob({ integrationId: 53, intentDomainEventId: 43 }))
       .rejects.toThrow('Channel closed');
+  });
+});
+
+describe('GH-1262 A2.2 — Shopify-only dispatcher lifecycle', () => {
+  const row = { outbox_id: '41', domain_event_id: '43', shop_id: 47,
+    integration_id: 53, retry_count: 0, recovery: false };
+  const statements = () => mockSystemQuery.mock.calls.map(([query]) => String(query.sql));
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockSystemQuery.mockImplementation(async (query: { sql: string }) => ({
+      rows: query.sql.includes('claim_shopify_sync_dispatch_outbox') ? [] : [{ ok: true }],
+    }));
+  });
+
+  afterEach(async () => {
+    await stopShopifySyncIntentDispatcher();
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('starts once, polls every 500ms, interrupts idle stop and can restart', async () => {
+    await stopShopifySyncIntentDispatcher();
+    startShopifySyncIntentDispatcher();
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(statements()).toEqual(['SELECT * FROM public.claim_shopify_sync_dispatch_outbox()']);
+    await jest.advanceTimersByTimeAsync(499);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(2);
+    const a = stopShopifySyncIntentDispatcher();
+    const b = stopShopifySyncIntentDispatcher();
+    expect(a).toBe(b);
+    await a;
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(2);
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(3);
+    expect(deliverStripeOverageEvent).not.toHaveBeenCalled();
+    expect(deliverShopifyOverageEvent).not.toHaveBeenCalled();
+    expect(statements().every(sql => sql.includes('claim_shopify_sync_dispatch_outbox'))).toBe(true);
+  });
+
+  it('never overlaps iterations and drains publish plus marking before stop settles', async () => {
+    const confirmation = deferred();
+    const marking = deferred();
+    mockSendToQueue.mockReturnValueOnce(confirmation.promise);
+    mockSystemQuery.mockImplementation((query: { sql: string }) => {
+      if (query.sql.includes('claim_shopify_sync_dispatch_outbox')) return Promise.resolve({ rows: [row] });
+      return marking.promise;
+    });
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(1500);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(1);
+    let stopped = false;
+    const stopping = stopShopifySyncIntentDispatcher().then(() => { stopped = true; });
+    startShopifySyncIntentDispatcher();
+    await flush();
+    expect(stopped).toBe(false);
+    confirmation.resolve();
+    await flush();
+    expect(stopped).toBe(false);
+    expect(statements()[1]).toContain('mark_shopify_sync_dispatch_outbox_published');
+    marking.resolve({ rows: [{ ok: true }] });
+    await stopping;
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(mockSystemQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('survives claim failure and records a rejected publish before polling again', async () => {
+    mockSystemQuery.mockRejectedValueOnce(new Error('temporary DB failure'));
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    mockSystemQuery.mockResolvedValueOnce({ rows: [row] });
+    mockSendToQueue.mockRejectedValueOnce(new Error('broker unavailable'));
+    await jest.advanceTimersByTimeAsync(500);
+    expect(statements().some(sql => sql.includes('record_shopify_sync_dispatch_outbox_failure'))).toBe(true);
+    expect(statements().some(sql => sql.includes('mark_shopify_sync_dispatch_outbox_published'))).toBe(false);
+    await jest.advanceTimersByTimeAsync(500);
+    expect(statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox'))).toHaveLength(3);
+    expect(statements().some(sql => sql.includes('dispatch_domain_event_outbox_batch') || sql.includes('billing'))).toBe(false);
+  });
+
+  it('drains a 5000ms broker timeout and queue cleanup within the global 10000ms deadline', async () => {
+    const startedAt = Date.now();
+    const order: string[] = [];
+    mockSystemQuery.mockImplementation(async (query: { sql: string }) => {
+      if (query.sql.includes('claim_shopify_sync_dispatch_outbox')) return { rows: [row] };
+      // Bounded persistence latency exercises the remaining shutdown margin.
+      await new Promise(resolve => setTimeout(resolve, 250));
+      order.push('failure recorded');
+      return { rows: [{ ok: true }] };
+    });
+    mockSendToQueue.mockImplementation((_q, _body, options) => new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error('broker confirm timeout')), options.timeout);
+    }));
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    const terminate = jest.fn();
+    const shutdown = createProcessShutdown({
+      processName: 'shopify-dispatch-test',
+      startDrain: () => [stopShopifySyncIntentDispatcher()],
+      cleanup: [{ name: 'queue', run: async () => {
+        order.push('queue cleanup started');
+        await new Promise(resolve => setTimeout(resolve, 250));
+        order.push('queue cleanup finished');
+      } }],
+      terminate,
+    });
+    const stopping = shutdown('SIGTERM');
+    await jest.advanceTimersByTimeAsync(4999);
+    expect(order).toEqual([]);
+    expect(terminate).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(501);
+    await stopping;
+    expect(order).toEqual(['failure recorded', 'queue cleanup started', 'queue cleanup finished']);
+    expect(Date.now() - startedAt).toBe(5500);
+    expect(terminate).toHaveBeenCalledWith(0);
+    expect(statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox'))).toHaveLength(1);
+  });
+
+  it('drains the real disconnected AMQP wrapper timeout and closes its queue within the shutdown deadline', async () => {
+    jest.useRealTimers();
+    const { AmqpConnectionManagerClass } = jest.requireActual('amqp-connection-manager');
+    // Construct without connect(): exercise real buffering/confirmation timeout
+    // and close() while making no network request to any broker.
+    const connection = new AmqpConnectionManagerClass(['amqp://127.0.0.1:9']);
+    const channel = connection.createChannel({ json: false, setup: async () => undefined });
+    const entered = deferred();
+    const order: string[] = [];
+    mockSendToQueue.mockImplementation((...args: any[]) => {
+      entered.resolve();
+      return channel.sendToQueue(...args);
+    });
+    mockSystemQuery.mockImplementation(async (query: { sql: string }) => {
+      if (query.sql.includes('claim_shopify_sync_dispatch_outbox')) return { rows: [row] };
+      order.push('failure recorded');
+      return { rows: [{ ok: true }] };
+    });
+    const terminate = jest.fn();
+    const shutdown = createProcessShutdown({
+      processName: 'shopify-real-wrapper-test',
+      startDrain: () => [stopShopifySyncIntentDispatcher()],
+      cleanup: [{ name: 'queue', run: async () => {
+        expect(order).toEqual(['failure recorded']);
+        await channel.close();
+        await connection.close();
+        order.push('queue closed');
+      } }],
+      terminate,
+    });
+    try {
+      startShopifySyncIntentDispatcher();
+      await entered.promise;
+      const startedAt = Date.now();
+      await shutdown('SIGTERM');
+      const elapsedMs = Date.now() - startedAt;
+      expect(elapsedMs).toBeGreaterThanOrEqual(4900);
+      expect(elapsedMs).toBeLessThan(7500);
+      expect(order).toEqual(['failure recorded', 'queue closed']);
+      expect(terminate).toHaveBeenCalledWith(0);
+      expect(statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox'))).toHaveLength(1);
+    } finally {
+      await stopShopifySyncIntentDispatcher();
+      await connection.close();
+      jest.useFakeTimers();
+    }
+  }, 10000);
+
+  // These are simulated DB stalls. A deadline requests process exit; it does
+  // not complete/cancel the pending write or report a successful drain.
+  async function assertDatabaseStallCrash(phase: 'claim' | 'mark' | 'failure') {
+    const database = deferred();
+    let phaseEntered = false;
+    mockSystemQuery.mockImplementation((query: { sql: string }) => {
+      const operation = query.sql.includes('claim_shopify_sync_dispatch_outbox') ? 'claim'
+        : query.sql.includes('record_shopify_sync_dispatch_outbox_failure') ? 'failure' : 'mark';
+      if (operation === phase) {
+        phaseEntered = true;
+        return database.promise;
+      }
+      return Promise.resolve({ rows: operation === 'claim' ? [row] : [{ ok: true }] });
+    });
+    if (phase === 'failure') mockSendToQueue.mockRejectedValueOnce(new Error('broker rejected'));
+    else mockSendToQueue.mockResolvedValue(undefined);
+    startShopifySyncIntentDispatcher();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(phaseEntered).toBe(true);
+    const claimsBeforeStop = statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox')).length;
+    const cleanupQueue = jest.fn();
+    const terminate = jest.fn();
+    let drained = false;
+    let activeDrain!: Promise<void>;
+    const shutdown = createProcessShutdown({
+      processName: `shopify-${phase}-stall`,
+      startDrain: () => {
+        activeDrain = stopShopifySyncIntentDispatcher().then(() => { drained = true; });
+        return [activeDrain];
+      },
+      cleanup: [{ name: 'queue', run: cleanupQueue }],
+      terminate,
+    });
+    const stopping = shutdown('SIGTERM');
+    expect(shutdown('SIGTERM')).toBe(stopping);
+    try {
+      await jest.advanceTimersByTimeAsync(9999);
+      expect(terminate).not.toHaveBeenCalled();
+      expect(cleanupQueue).not.toHaveBeenCalled();
+      expect(drained).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      await stopping;
+      expect(terminate).toHaveBeenCalledTimes(1);
+      expect(terminate).toHaveBeenCalledWith(1);
+      expect(terminate).not.toHaveBeenCalledWith(0);
+      expect(cleanupQueue).not.toHaveBeenCalled();
+      expect(drained).toBe(false);
+      expect(statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox')))
+        .toHaveLength(claimsBeforeStop);
+    } finally {
+      // Release only for test teardown. The mocked process exit did not drain
+      // the database operation; a real process would have terminated instead.
+      database.resolve({ rows: phase === 'claim' ? [] : [{ ok: true }] });
+      await activeDrain;
+    }
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(drained).toBe(true);
+    expect(cleanupQueue).not.toHaveBeenCalled();
+    expect(statements().filter(sql => sql.includes('claim_shopify_sync_dispatch_outbox')))
+      .toHaveLength(claimsBeforeStop);
+  }
+
+  it('uses deadline-driven exit(1), without false drain or new claims, for a stalled claim', async () => {
+    await assertDatabaseStallCrash('claim');
+  });
+
+  it('uses deadline-driven exit(1), without false drain or new claims, for a stalled publication mark', async () => {
+    await assertDatabaseStallCrash('mark');
+  });
+
+  it('uses deadline-driven exit(1), without false drain or new claims, for a stalled failure write', async () => {
+    await assertDatabaseStallCrash('failure');
   });
 });
 

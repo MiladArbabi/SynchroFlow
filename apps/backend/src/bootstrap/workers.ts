@@ -10,6 +10,7 @@ let workerStartPromise: Promise<void> | null = null;
 let workerStopPromise: Promise<void> | null = null;
 let workerStartInFlight = false;
 let stopRequested = false;
+let stopShopifySyncDispatcher: (() => Promise<void>) | null = null;
 
 /**
  * startWorkers
@@ -32,6 +33,22 @@ function superviseWorker(name: string, start: () => unknown): void {
 }
 
 async function startWorkersInternal(): Promise<void> {
+  // worker-entry owns the combined outbox loop. HTTP app processes must own
+  // only Shopify delivery, leaving historical generic/billing rows untouched.
+  if (process.env.WORKER_RUNTIME !== 'true') {
+    const dispatcher = await import('../workers/domain-event-outbox.dispatcher.js');
+    if (stopRequested) return;
+    // The same drain is owned by both immediate shutdown fencing and the
+    // registered stop inventory, even if other worker startup is still pending.
+    let drain: Promise<void> | null = null;
+    stopShopifySyncDispatcher = () => {
+      if (!drain) drain = Promise.resolve(dispatcher.stopShopifySyncIntentDispatcher());
+      return drain;
+    };
+    workerStopFns.push(stopShopifySyncDispatcher);
+    superviseWorker('shopify-sync-dispatch', () => dispatcher.startShopifySyncIntentDispatcher());
+  }
+
   // start api worker
   try {
     const w = await import('../worker.js');
@@ -617,6 +634,12 @@ export function stopWorkers(): Promise<void> {
   }
 
   stopRequested = true;
+  if (stopShopifySyncDispatcher) {
+    // Fence new claims synchronously, before awaiting an unrelated finite
+    // start. Keep a rejection handled now and propagate it via its registered
+    // hook below, where the original drain promise remains awaited.
+    void stopShopifySyncDispatcher().catch(() => undefined);
+  }
   const activeStart = workerStartInFlight
     ? workerStartPromise
     : null;
@@ -664,6 +687,7 @@ export function stopWorkers(): Promise<void> {
     workerStartPromise = null;
     workerStartInFlight = false;
     workerStopFns = [];
+    stopShopifySyncDispatcher = null;
     stopRequested = false;
     started = false;
   });
