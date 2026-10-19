@@ -1,4 +1,22 @@
 AGENT OPERATING INSTRUCTIONS — laSyncro
+Aligned with ENGINEERING WORKFLOW v3.6, effective 2026-10-19; changes apply prospectively.
+
+RUN-IDENTITY-01 — EXECUTION IDENTITY
+Every execution prompt, agent report and handoff starts on its first content line with:
+RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
+ATTEMPT: <attempt number>
+Preserve the invoking RUN_ID in reports. Use unique execution IDs; never reuse a completed ID. Keep the same ID across retries/corrections, increment ATTEMPT for each execution retry, and use a new ID for a new phase. Record parent RUN_ID where applicable. Evidence artifacts include RUN_ID and ATTEMPT. Identity does not imply authorization.
+
+ISSUE-CONTRACT-01 / TERMINAL-ROUTING-01
+Reference the approved substantial-issue contract by identity/revision; the lead approves contract changes. Trivial tasks need no new contract document. Terminal owns Git/WIP truth, environment checks, deterministic commands, test/DB proofs, artifact capture and ship-lineage verification. Agents handle bounded multi-file reasoning, complex implementation, approved corrections and cross-file regression analysis. The lead retains contracts, architecture, scope, security decisions, risk tier, phase transitions and certification decisions. Use the cheapest reliable route; do not expand scope or add tooling merely to automate terminal commands.
+
+EVIDENCE-PERSISTENCE-01 / EVIDENCE-REUSE-01
+Before removing temporary test resources, persist redacted certification evidence outside the repository and outside exclusively disposable /tmp storage. Include execution identity, base SHA, approved source manifest/hashes, command identifiers, exit codes, test totals/failures, applicable migration/security/isolation proofs, known baseline failures and manifest SHA-256. Preserve pre-cleanup evidence first, then append and verify cleanup proof. Never persist secrets or plaintext tokens. Verify artifacts exist; report the evidence path and manifest checksum after certification. Failed or missing evidence is never complete: use EVIDENCE_NOT_PERSISTED when appropriate. A path alone is not accessible to ChatGPT; provide a compact redacted handoff and upload artifacts when independent inspection is needed.
+Reuse expensive GREEN evidence only when relevant source hashes and test contracts are unchanged, the environment remains applicable, and attributable evidence is available. Invalidate only affected layers. Documentation-only changes do not normally invalidate PostgreSQL/migration/concurrency proofs; security/migration changes require renewed affected authority proofs. Never rely on timestamps alone.
+
+PARALLEL-OWNERSHIP-01
+Allow only one active writer per overlapping file set in a shared worktree. Parallel read-only analysis is allowed; parallel mutation requires disjoint, explicitly owned files and isolated runtime resources. Preserve all protected and other agents' WIP.
+
 YOUR ROLE
 You execute.
 You do not decide.
@@ -121,8 +139,11 @@ A single successful request producing a delta of exactly +1 proves only that sin
 It does not prove duplicate-request safety.
 Retry, replay, uniqueness, or concurrency semantics require their own explicit contract and evidence.
 REPORT FORMAT — EVERY RESPONSE
+HANDOFF-01: Keep reports compact and reference persistent artifacts. Prioritize execution identity, verdict, baseline, source manifest, evidence path/checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Keep full raw logs in the artifacts; expand material failures or decisions in the report.
 Return the complete report inside one four-backtick block so it can be copied in one action.
-Use exactly:
+The first content line inside that block is RUN_ID, followed by ATTEMPT, then the existing sections exactly:
+RUN_ID: <invoking RUN_ID>
+ATTEMPT: <attempt number>
 FINDINGS
 1. One answer per numbered question.
 2. State the observed result and minimum evidence that proves it.
@@ -131,7 +152,7 @@ RAW
 * Keep relevant command/test output verbatim.
 * Do not paraphrase errors.
 * Do not dump unrelated logs or giant files.
-* If a command or test fails, include the complete relevant failure.
+* If a command or test fails, include the decisive failure verbatim and reference the persistent artifact containing the complete relevant failure.
 DEVIATIONS
 * Every command changed from the brief.
 * Every mechanical fixture correction.
@@ -335,10 +356,12 @@ When the brief explicitly states this:
 A RED/GREEN cycle is mandatory only when the brief requires it for an active defect/fix sequence.
 AGENT-EXECUTION-AUTONOMY-01 — Explicit closed-loop delegation
 
-Default operating restrictions remain unchanged. Only a brief
+Default implementation restrictions remain unchanged. Only a brief
 explicitly marked MODE: CLOSED_LOOP_IMPLEMENT_AND_VERIFY grants
 the bounded execution permissions described here. The lead issues
 this mode for the IMPLEMENT + TARGETED VERIFY gate of any risk tier.
+SHIP-DELEGATION-01 is a separate, exact-manifest exception for shipping;
+closed-loop implementation alone does not grant that permission.
 
 Within that brief the execution agent MAY:
 * inspect relevant neighboring code;
@@ -378,7 +401,8 @@ The agent MUST NOT:
 * substitute mocked tests for required real DB/API/runtime proofs;
 * use privileged access to bypass tenant isolation or forced RLS;
 * touch unrelated source, fixtures, processes or generated artifacts;
-* perform stage/commit/push/deploy or production mutations.
+* stage/commit/push without separate SHIP-DELEGATION-01 authorization;
+* deploy or perform production mutations under closed-loop or ship delegation.
 
 The agent MUST STOP and report for:
 * architecture or business-contract changes;
@@ -418,7 +442,8 @@ Each report must include:
 * unresolved blockers and incomplete directives.
 
 Independent final terminal certification remains mandatory and
-lead/user-owned. It is the final ship-lineage verification
+lead/user-owned. Ship execution may be separately delegated only under
+SHIP-DELEGATION-01 after that certification. It is the final ship-lineage verification
 (engineering_workflow.md 13.10.1, SHIP-TREE-01): it confirms the exact
 tree to ship and does not automatically repeat unchanged, previously
 successful expensive tests. HIGH-risk work additionally requires
@@ -866,7 +891,7 @@ For a newly created untracked documentation/test file:
 * verify final newline/trailing whitespace directly when requested;
 * use git status --short to prove it exists in scope;
 * do not claim it was covered by tracked diff output before it is staged.
-The execution agent still must not stage it.
+The execution agent must not stage it unless that exact file is authorized under SHIP-DELEGATION-01.
 PROTECTED STATE
 Named protected fixtures remain untouched.
 Do not:
@@ -947,13 +972,15 @@ AUTOMATED_TESTS_SKIPPEDReason: ...Verification replacement: ...
 The agent does not choose which state is appropriate unless the brief explicitly specifies it.
 Claude judges final test-strategy completion.
 GIT / COMMIT / PUSH
-The execution agent must NOT stage, commit, or push.
-Never run:
+SHIP-DELEGATION-01 — EXPLICIT EXACT-MANIFEST EXCEPTION
+Default: Milad owns staging, commit and push through the normal terminal.
+Without the exception below, the execution agent must not run:
 * git add;
 * git commit;
 * git push;
 * GitHub write actions.
-Milad performs COMMIT & PUSH through the normal terminal.
+Milad may explicitly authorize staging/commit/push for one named RUN_ID and a fixed, independently certified file manifest. Require an exact file allowlist, certified source hashes, a clean index before staging, explicit-path staging only, staged manifest equality and matching staged hashes, zero unauthorized files, no force push, exact-SHA CI verification and a persistent audit trail. Stop on remote divergence; do not merge, rebase or reset automatically. A RED CI result stops the execution; no automatic correction commit is authorized.
+This exception never authorizes production deployment, production migrations, secret/credential mutation, GH-1262 integration, other issues or later executions. HIGH-risk certification and user approval remain required. The RUN_ID or a passing test alone grants no ship authority. GitHub write actions outside the explicitly delegated ship actions remain prohibited.
 Read-only git commands are allowed when requested:
 * git status;
 * git diff;
@@ -963,6 +990,7 @@ Read-only git commands are allowed when requested:
 * git rev-parse.
 Never run:
 git add -A
+git add .
 Never clean/reset/stash unrelated work.
 DIRTY WORKTREE RULE
 Assume unrelated changes are legitimate.
@@ -1040,7 +1068,7 @@ Confirm that you will:
 * preserve regression evidence;
 * report contradictions;
 * stop at phase/slice boundaries;
-* never stage/commit/push;
+* stage/commit/push only under the explicit, independently certified, exact-manifest SHIP-DELEGATION-01 exception;
 * protect consequential contracts rather than incidental copy/shape;
 * never use the normal development DB as an automated integration scratchpad;
 * use the disposable integration harness when instructed;

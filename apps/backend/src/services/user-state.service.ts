@@ -4,6 +4,10 @@ import { User, UserMilestone } from '../types.js';
 import { LifecycleService } from '../services/lifecycle.service.js';
 import { OnboardingReadinessService } from '../onboarding/readiness.service.js';
 import { OnboardingReadinessSnapshot } from '@lasyncro/shared';
+import {
+  readShopifyConnection,
+  type ShopifyConnection,
+} from './shopify/shopifyConnectionState.service.js';
 
 import { ConflictTypes, ResolutionStrategies } from '../conflict-resolution/conflict.types.js';
 import { logConflictIgnored, logConflictResolved } from '../conflict-resolution/conflict.logger.js';
@@ -24,9 +28,21 @@ export type OrdersPerMonthSegment =
 export class UserStateService {
 
   /**
+   * GH-1101: Shopify connection is a tenant fact from installation and
+   * credential metadata. users.shopify_connected is never read for truth.
+   */
+  static async getShopifyConnectionForUser(
+    user: Pick<User, 'shop_id'> | undefined,
+  ): Promise<ShopifyConnection | null> {
+    const shopId = Number(user?.shop_id);
+    if (!Number.isSafeInteger(shopId) || shopId <= 0) return null;
+    return readShopifyConnection(shopId);
+  }
+
+  /**
     * Detect user's onboarding tier based on PCD status and platform connections
     */
-   static async detectOnboardingTier(userId: number): Promise<OnboardingTier> {
+   static async detectOnboardingTier(userId: number, shopifyConnected?: boolean): Promise<OnboardingTier> {
      const user = await db<User>('users').where({ id: userId }).first();
      
      if (!user) {
@@ -41,7 +57,7 @@ export class UserStateService {
      }
  
      // Check if user has attempted PCD access but is pending
-     const hasPendingPCD = await this.hasPendingPCDAccess(userId);
+     const hasPendingPCD = await this.hasPendingPCDAccess(userId, shopifyConnected);
      
      if (hasPendingPCD) {
        return 'PCD_PENDING';
@@ -62,20 +78,23 @@ export class UserStateService {
    /**
     * Check if user has pending PCD access
     */
-   private static async hasPendingPCDAccess(userId: number): Promise<boolean> {
+   private static async hasPendingPCDAccess(userId: number, shopifyConnected?: boolean): Promise<boolean> {
      // Check if user has Shopify connected but no PCD access yet
+     if (shopifyConnected !== undefined) return shopifyConnected;
      const user = await db<User>('users').where({ id: userId }).first();
-     return user?.shopify_connected === true;
+     return (await this.getShopifyConnectionForUser(user))?.connected === true;
    }
  
    /**
     * Get user's connected platforms
     */
-   static async getConnectedPlatforms(userId: number): Promise<PlatformConnection[]> {
+   static async getConnectedPlatforms(userId: number, shopifyConnected?: boolean): Promise<PlatformConnection[]> {
      const user = await db<User>('users').where({ id: userId }).first();
      const connected: PlatformConnection[] = [];
+     const shopify = shopifyConnected
+       ?? (await this.getShopifyConnectionForUser(user))?.connected === true;
  
-     if (user?.shopify_connected) {
+     if (shopify) {
        connected.push('shopify');
      }
      if (user?.stripe_connected) {
@@ -167,7 +186,10 @@ export class UserStateService {
   /**
    * Detect the appropriate mode for a user based on their current state
    */
-  static async detectUserMode(userId: number): Promise<'survival' | 'growth' | 'architect'> {
+  static async detectUserMode(
+    userId: number,
+    shopifyConnected?: boolean,
+  ): Promise<'survival' | 'growth' | 'architect'> {
     const user = await db<User>('users')
       .where({ id: userId })
       .first();
@@ -182,7 +204,9 @@ export class UserStateService {
     }
 
     // 2. Basic rules based on integration and data maturity
-    if (!user.shopify_connected) {
+    const shopify = shopifyConnected
+      ?? (await this.getShopifyConnectionForUser(user))?.connected === true;
+    if (!shopify) {
       return 'survival';
     }
 
@@ -213,6 +237,7 @@ export class UserStateService {
           onboarding_tier: 'BASIC_ACCESS',
           connected_platforms: [],
           shopify_connected: false,
+          shopify_connection_state: 'NOT_INSTALLED',
           stripe_connected: false,
           orders_per_month_segment: null,
         },
@@ -225,15 +250,18 @@ export class UserStateService {
       .where({ user_id: userId })
       .orderBy('achieved_at', 'desc');
 
-    const detectedMode = await this.detectUserMode(userId);
-    const onboardingTier = await this.detectOnboardingTier(userId);
-    const connectedPlatforms = await this.getConnectedPlatforms(userId);
+    const connection = await this.getShopifyConnectionForUser(user);
+    const shopifyConnected = connection?.connected === true;
+    const detectedMode = await this.detectUserMode(userId, shopifyConnected);
+    const onboardingTier = await this.detectOnboardingTier(userId, shopifyConnected);
+    const connectedPlatforms = await this.getConnectedPlatforms(userId, shopifyConnected);
     const ordersPerMonthSegment = await this.getOrdersPerMonthSegment(userId);
 
 
     return {
       user: {
         id: user.id,
+        shop_id: user.shop_id,
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
@@ -243,7 +271,9 @@ export class UserStateService {
         detected_mode: detectedMode,
         onboarding_tier: onboardingTier,
         connected_platforms: connectedPlatforms,
-        shopify_connected: user.shopify_connected,
+        // GH-1101 compatibility projection: derived, never the stored flag.
+        shopify_connected: shopifyConnected,
+        shopify_connection_state: connection?.state ?? 'NOT_INSTALLED',
         stripe_connected: user.stripe_connected,
         orders_per_month_segment: ordersPerMonthSegment,
       },

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { Knex } from 'knex';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { lockShopifyAdminCredentialRotation } from './shopifyAdminCredential.repository.js';
+import { classifyShopifyConnection } from './shopifyConnectionState.service.js';
 
 export interface ShopifySyncExecutionAuthority {
   installationId: number;
@@ -33,6 +34,105 @@ export const SHOPIFY_SYNC_CYCLE_STARTED_EVENT = 'integration/sync_cycle_started'
 
 const syncCycleStartedExternalId = (intentDomainEventId: number) =>
   `internal:integration/sync_cycle_started:${intentDomainEventId}`;
+
+/**
+ * Intent sources that may start a cycle from FAILED (one time each):
+ * first-install / legacy bootstrap, and GH-1101 explicit merchant recovery.
+ * Mirrors the 0217 dispatcher claim eligibility.
+ */
+const FAILED_RECOVERABLE_SOURCES = new Set(['install', 'recovery']);
+
+export type ShopifyManualRecoveryRefusal =
+  | 'INTEGRATION_NOT_FOUND'
+  | 'SHOPIFY_NOT_INSTALLED'
+  | 'SHOPIFY_UNINSTALLED'
+  | 'SHOPIFY_REAUTH_REQUIRED'
+  | 'SHOPIFY_RECONNECT_IN_PROGRESS'
+  | 'SYNC_ALREADY_COMPLETED'
+  | 'SYNC_IN_PROGRESS'
+  | 'SYNC_ALREADY_REQUESTED';
+
+export type ShopifyManualRecoveryResult =
+  | { kind: 'ACCEPTED'; intentDomainEventId: number }
+  | { kind: 'REFUSED'; code: ShopifyManualRecoveryRefusal };
+
+const CONNECTION_REFUSALS: Record<string, ShopifyManualRecoveryRefusal> = {
+  NOT_INSTALLED: 'SHOPIFY_NOT_INSTALLED',
+  UNINSTALLED: 'SHOPIFY_UNINSTALLED',
+  REAUTH_REQUIRED: 'SHOPIFY_REAUTH_REQUIRED',
+  RECONNECT_IN_PROGRESS: 'SHOPIFY_RECONNECT_IN_PROGRESS',
+};
+
+/**
+ * GH-1101 DURABLE MANUAL RECOVERY REQUEST
+ * ---------------------------------------
+ * Admission only: never runs sync inline and never calls the provider. Under
+ * the canonical T2 lock it classifies the tenant's connection (pure read),
+ * refuses truthfully, and otherwise commits exactly one recovery-source intent
+ * for the dispatcher. COMPLETED is never re-synced; an in-progress cycle or an
+ * outstanding eligible intent is refused, so duplicates and races start at
+ * most one cycle (the 0216 one-time start fact still governs execution).
+ */
+export async function requestShopifyManualRecovery({
+  shopId,
+  integrationId,
+}: {
+  shopId: number;
+  integrationId: number;
+}): Promise<ShopifyManualRecoveryResult> {
+  if (!isPositiveId(shopId) || !isPositiveId(integrationId)) {
+    throw new Error('SHOPIFY_RECOVERY_IDENTITY_REQUIRED');
+  }
+  return withTenant(shopId, async (trx) => {
+    await lockShopifyAdminCredentialRotation(trx, shopId);
+
+    const integration = await trx('integrations')
+      .where({ id: integrationId, shop_id: shopId, platform: 'shopify' })
+      .first('id', 'platform_shop_name', 'sync_status');
+    if (!integration) return { kind: 'REFUSED', code: 'INTEGRATION_NOT_FOUND' } as const;
+
+    const connection = await classifyShopifyConnection(trx, shopId);
+    const refusal = CONNECTION_REFUSALS[connection.state];
+    if (refusal) return { kind: 'REFUSED', code: refusal } as const;
+    if (connection.shopDomain !== integration.platform_shop_name || connection.installationId === null) {
+      return { kind: 'REFUSED', code: 'SHOPIFY_REAUTH_REQUIRED' } as const;
+    }
+
+    const status = integration.sync_status;
+    if (status === 'COMPLETED') return { kind: 'REFUSED', code: 'SYNC_ALREADY_COMPLETED' } as const;
+    if (status !== 'PENDING' && status !== 'FAILED') {
+      return { kind: 'REFUSED', code: 'SYNC_IN_PROGRESS' } as const;
+    }
+
+    const latest = await trx('domain_events')
+      .where({ shop_id: shopId, event_type: SHOPIFY_SYNC_DISPATCH_EVENT })
+      .whereRaw("event_payload->>'integration_id' = ?", [String(integrationId)])
+      .orderBy('id', 'desc')
+      .first('id', 'event_payload');
+    if (latest) {
+      const started = await trx('domain_events')
+        .where({ shop_id: shopId, external_event_id: syncCycleStartedExternalId(Number(latest.id)) })
+        .first('id');
+      const outstanding = !started && (status === 'PENDING'
+        || FAILED_RECOVERABLE_SOURCES.has(latest.event_payload?.source));
+      if (outstanding) return { kind: 'REFUSED', code: 'SYNC_ALREADY_REQUESTED' } as const;
+    }
+
+    const [intent] = await trx('domain_events').insert({
+      shop_id: shopId,
+      event_type: SHOPIFY_SYNC_DISPATCH_EVENT,
+      event_payload: {
+        integration_id: integrationId,
+        installation_id: connection.installationId,
+        source: 'recovery',
+      },
+      event_time: trx.fn.now(),
+      event_version: 1,
+      external_event_id: `internal:${SHOPIFY_SYNC_DISPATCH_EVENT}:${integrationId}:recovery:${crypto.randomUUID()}`,
+    }).returning('id');
+    return { kind: 'ACCEPTED', intentDomainEventId: Number(intent.id) } as const;
+  });
+}
 
 const isPositiveId = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) > 0;
@@ -160,7 +260,7 @@ export const claimShopifySyncCycle = async ({
       return { kind: 'REJECTED', reason: 'INTENT_CONSUMED' } as const;
     }
 
-    const eligibleStatuses = intent.event_payload?.source === 'install'
+    const eligibleStatuses = FAILED_RECOVERABLE_SOURCES.has(intent.event_payload?.source)
       ? ['PENDING', 'FAILED']
       : ['PENDING'];
     const claimed = await trx('integrations')

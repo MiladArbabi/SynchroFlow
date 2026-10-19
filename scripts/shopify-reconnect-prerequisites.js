@@ -15,8 +15,10 @@ const E = 'sf_shopify_reconnect_executor';
 const O = 'sf_shopify_reconnect_owner';
 // GH-1068 T3-B: 0216 evolves the 0215 finalizer; its postconditions carry every
 // 0215 invariant and are the current authoritative reconnect contract.
+// GH-1101: 0217 evolves the 0216 dispatch claim; its postconditions carry every
+// 0215/0216 invariant and are the current authoritative reconnect contract.
 const MIGRATION = path.resolve(__dirname,
-  '../apps/backend/migrations/20261018120000_0216_durable_shopify_sync_dispatch.ts');
+  '../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery.ts');
 const reject = () => new Error('SHOPIFY_RECONNECT_PREREQUISITES_REJECTED');
 
 // Narrow provisioning facts only. Full migration security/body/ACL validation

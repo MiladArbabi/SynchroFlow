@@ -22,6 +22,10 @@ import {
 import { buildActivationSurface } from './activation.surface.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { resolveShopIdForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import {
+  readShopifyConnection,
+  type ShopifyConnection,
+} from '../../services/shopify/shopifyConnectionState.service.js';
 
 export const getActivationVerdict = async (req: Request, res: Response) => {
   const userId: number | null = (req as any).user?.userId ?? null;
@@ -47,17 +51,24 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
   const identity: IdentitySnapshot = { userId, shopId, entryChannel };
 
   // --- Integrations ---
+  // GH-1101: a Shopify integration row counts only while the tenant's canonical
+  // connection is ready. Reason codes are unchanged; the precise state is
+  // exposed separately below.
   let integrations: IntegrationSnapshot[] = [];
+  let connection: ShopifyConnection | null = null;
 
   if (shopId) {
+    connection = await readShopifyConnection(shopId);
     const rows = await db('integrations')
       .where({ shop_id: shopId })
       .select('platform', 'sync_status');
 
-    integrations = rows.map((row: any) => ({
-      platform: row.platform,
-      syncStatus: row.sync_status,
-    }));
+    integrations = rows
+      .filter((row: any) => row.platform !== 'shopify' || connection?.connected === true)
+      .map((row: any) => ({
+        platform: row.platform,
+        syncStatus: row.sync_status,
+      }));
   }
 
   // --- Entitlements ---
@@ -119,5 +130,10 @@ export const getActivationVerdict = async (req: Request, res: Response) => {
     },
     verdict,            // kept temporarily
     activationSurface,  // ✅ frontend must consume this
+    connection: {
+      state: connection?.state ?? 'NOT_INSTALLED',
+      installed: connection?.installed === true,
+      connected: connection?.connected === true,
+    },
   });
 };

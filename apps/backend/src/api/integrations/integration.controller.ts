@@ -34,7 +34,11 @@ import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 import { connection } from '../../queue.js';
-import { recordShopifySyncDispatchIntent } from '../../services/shopify/shopifyIntegrationStatus.service.js';
+import {
+  recordShopifySyncDispatchIntent,
+  requestShopifyManualRecovery,
+} from '../../services/shopify/shopifyIntegrationStatus.service.js';
+import { readShopifyConnection } from '../../services/shopify/shopifyConnectionState.service.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
 import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
@@ -1350,6 +1354,17 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 
     const isUninstalled = Boolean(installation?.uninstalled_at);
 
+    // GH-1101: precise canonical connection (pure read) and freshness from the
+    // latest authoritative integration-scoped completion fact. No fact → null;
+    // integrations.updated_at is never a sync time.
+    const connection = await readShopifyConnection(shopId);
+    const lastCompletion = await withTenant(shopId, (trx) =>
+      trx('domain_events')
+        .where({ shop_id: shopId, event_type: 'integration/sync_completed' })
+        .whereRaw("event_payload->>'integration_id' = ?", [String(integration.id)])
+        .max('event_time as last_synced_at')
+        .first());
+
     // Calculate percentage
     let percentage = 0;
     if (integration.sync_progress_total > 0) {
@@ -1389,7 +1404,8 @@ export const getSyncStatus = async (req: Request, res: Response) => {
       integrationId: integration.id,
       status: integration.sync_status,
       ...(isUninstalled && { connectionStatus: 'UNINSTALLED' }),
-      lastSyncedAt: integration.updated_at ?? null,
+      connectionState: connection.state,
+      lastSyncedAt: lastCompletion?.last_synced_at ?? null,
       progress: {
         current: integration.sync_progress_current,
         total: integration.sync_progress_total,
@@ -1451,14 +1467,52 @@ export const preFlightCheck = async (req: Request, res: Response) => {
   }
 };
 
+/** Positive safe integer from a route/body identifier, else undefined. */
+export function parsePositiveIntegrationId(raw: unknown): number | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+/**
+ * GH-1101 — durable manual recovery response, shared by POST /sync/:id and the
+ * legacy POST /manual-initial-sync alias. Never runs sync inline and never
+ * exposes internal errors.
+ */
+export async function respondWithManualRecovery(
+  res: Response,
+  shopId: number,
+  integrationId: number,
+) {
+  try {
+    const result = await requestShopifyManualRecovery({ shopId, integrationId });
+    if (result.kind === 'ACCEPTED') {
+      return res.status(202).json({
+        status: 'SYNC_RECOVERY_REQUESTED',
+        shopId,
+        integrationId,
+        intentDomainEventId: result.intentDomainEventId,
+      });
+    }
+    return res.status(result.code === 'INTEGRATION_NOT_FOUND' ? 404 : 409).json({
+      error: result.code,
+      integrationId,
+    });
+  } catch (error) {
+    console.error('[integration.controller] Manual recovery request failed', {
+      shopId,
+      integrationId,
+      message: error instanceof Error ? error.message : 'unknown',
+    });
+    return res.status(500).json({ error: 'Failed to request sync.' });
+  }
+}
+
 export const triggerManualSync = async (req: Request, res: Response) => {
   try {
     const { userId, shopId: authenticatedShopId } = requireAuthStrict(req);
-
-    const rawIntegrationId = req.params.integrationId;
-    const integrationId = Array.isArray(rawIntegrationId)
-      ? rawIntegrationId[0]
-      : rawIntegrationId;
 
     let shopId: number;
     try {
@@ -1471,68 +1525,16 @@ export const triggerManualSync = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Shop context mismatch.' });
     }
 
-    // Verify the integration belongs to the user's shop
-    const integration = await withTenant(shopId, (trx) =>
-      trx('integrations')
-        .where({ id: integrationId, shop_id: shopId })
-        .first()
-    );
-
-    if (!integration) {
-      return res.status(404).json({ error: 'Integration not found.' });
+    const integrationId = parsePositiveIntegrationId(req.params.integrationId);
+    if (integrationId === undefined) {
+      return res.status(400).json({ error: 'INVALID_INTEGRATION_ID' });
     }
 
-    /**
-     * DOMAIN EVENT EMISSION — MANUAL SYNC REQUESTED
-     * ---------------------------------------------
-     * Direct queue publishing is forbidden.
-     * Manual sync must originate from immutable domain event.
-     */
-    await withTenant(shopId, async trx => {
-      const externalEventId = `internal:integration/manual_sync_requested:${integrationId}:${Date.now()}`;
-
-      const [event] = await trx('domain_events')
-        .insert({
-          shop_id: shopId,
-          event_type: 'integration/manual_sync_requested',
-          event_payload: {
-            integration_id: parseInt(integrationId),
-          },
-          event_time: trx.fn.now(),
-          event_version: 1,
-          external_event_id: externalEventId,
-        })
-        .returning(['id']);
-
-      console.info('[OUTBOX_TRIGGER_EXPECTED]', {
-        domainEventId: event.id,
-        eventType: 'integration/manual_sync_requested',
-      });
-
-      /**
-       * OUTBOX HANDLED BY DB TRIGGER
-       * ----------------------------
-       * domain_event_auto_outbox AFTER INSERT trigger
-       * guarantees exactly one outbox row.
-       *
-       * Manual inserts are forbidden and will cause
-       * domain_event_outbox_domain_event_unique violations.
-       */
-    });
-
-    console.info('[integration][manual_sync_requested]', {
-      integrationId: parseInt(integrationId),
-    });
-    
-    console.log(`Manually queued sync job for integration ID: ${integrationId}`);
-    
-    res.json({ 
-      message: 'Sync job queued successfully',
-      integrationId: integrationId
-    });
+    // GH-1101: a durable recovery request, never an inert event or inline sync.
+    return respondWithManualRecovery(res, shopId, integrationId);
   } catch (error) {
     console.error('[integration.controller] Error triggering manual sync:', error);
-    res.status(500).json({ error: 'Failed to trigger sync.' });
+    return res.status(500).json({ error: 'Failed to trigger sync.' });
   }
 };
 

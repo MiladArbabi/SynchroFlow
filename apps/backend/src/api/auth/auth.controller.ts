@@ -28,11 +28,25 @@ import { User } from '../../types.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../../services/email/email.service.js';
 import { captureEvent } from '../../utils/analytics.js';
 import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
+import { readShopifyConnection } from '../../services/shopify/shopifyConnectionState.service.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
 const hashRefreshToken = (token: string) =>
   crypto.createHash('sha256').update(token).digest('hex');
+
+/**
+ * GH-1101 compatibility: shopify_connected in auth responses is derived from
+ * the tenant's canonical connection, never the stored flag. A failed read
+ * reports not connected and never blocks authentication.
+ */
+async function derivedShopifyConnected(shopId: number): Promise<boolean> {
+  try {
+    return (await readShopifyConnection(shopId)).connected;
+  } catch {
+    return false;
+  }
+}
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, firstName, lastName } = req.body;
@@ -231,7 +245,8 @@ export const registerUser = async (req: Request, res: Response) => {
     return { user: createdUser, shopId };
   });
 
-    const { password_hash, ...publicUser } = newUser;
+    const { password_hash, ...storedUser } = newUser;
+    const publicUser = { ...storedUser, shopify_connected: await derivedShopifyConnected(shopId) };
 
     // AUTH-006: issue tokens immediately after registration so frontend
     // can auto-login and proceed to connect-store step without a second login call.
@@ -362,7 +377,11 @@ export const loginUser = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const { password_hash, ...publicUser } = user;
+    const { password_hash, ...storedUser } = user;
+    const publicUser = {
+      ...storedUser,
+      shopify_connected: await derivedShopifyConnected(shopContext.shopId),
+    };
     return res.status(200).json({
       accessToken,
       refreshToken,

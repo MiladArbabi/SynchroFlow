@@ -40,8 +40,13 @@ function quoteIdentifier(identifier: string): string {
 
 const RECONNECT_BOUNDARY = '20261016120000_0212_authorize_shopify_reconnect_sync_reset.js';
 const RECONNECT_CORRECTION = '20261016150000_0215_harden_reconnect_and_priority_function_authority.js';
-// GH-1068 T3-B evolves the 0215 finalizer; once applied, its own postconditions replace 0215's.
-const SYNC_DISPATCH_EVOLUTION = '20261018120000_0216_durable_shopify_sync_dispatch.js';
+// Ordered security evolutions after 0215. Once applied, each one's own
+// independently defined postconditions replace its predecessor's:
+// GH-1068 T3-B (0216) evolves the finalizer; GH-1101 (0217) the dispatch claim.
+const SECURITY_EVOLUTIONS = [
+  '20261018120000_0216_durable_shopify_sync_dispatch.js',
+  '20261019120000_0217_shopify_manual_recovery.js',
+] as const;
 
 type SecurityAssertion = (connection: Knex) => Promise<void>;
 type SecurityFor = (completed: string[]) => SecurityAssertion;
@@ -107,6 +112,22 @@ async function migrateWithProtectedTail(files: string[]): Promise<void> {
     ? (await db('public.knex_migrations').select('name').orderBy('id')).map(row => row.name as string)
     : [];
   assertProtectedOrder(files, completed);
+  // An evolution may never be applied without its predecessor. Checked before
+  // any migration (including the historic pre-0212 batch) can run.
+  for (const [index, name] of SECURITY_EVOLUTIONS.entries()) {
+    if (index > 0 && files.includes(name) && !files.includes(SECURITY_EVOLUTIONS[index - 1])) {
+      throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] security evolution out of order');
+    }
+  }
+  const evolvedSecurity = new Map<string, SecurityAssertion>();
+  for (const name of SECURITY_EVOLUTIONS) {
+    if (!files.includes(name)) continue;
+    const evolution = await import(pathToFileURL(path.join(MIGRATIONS_DIR, name)).href);
+    if (typeof evolution.assertSecurityPostconditions !== 'function') {
+      throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] missing evolved security postconditions');
+    }
+    evolvedSecurity.set(name, evolution.assertSecurityPostconditions);
+  }
   await validateChecksums(db);
 
   // Knex 3.3.0 Migrator.before() bounds the historic batch strictly before 0212.
@@ -130,21 +151,16 @@ async function migrateWithProtectedTail(files: string[]): Promise<void> {
   if (typeof assertSecurity !== 'function') {
     throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] missing security postconditions');
   }
-  let assertEvolvedSecurity: SecurityAssertion | undefined;
-  if (files.includes(SYNC_DISPATCH_EVOLUTION)) {
-    const evolution = await import(pathToFileURL(path.join(MIGRATIONS_DIR, SYNC_DISPATCH_EVOLUTION)).href);
-    if (typeof evolution.assertSecurityPostconditions !== 'function') {
-      throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] missing evolved security postconditions');
-    }
-    assertEvolvedSecurity = evolution.assertSecurityPostconditions;
-  }
-  // Exactly one independently defined contract applies to each ledger state.
+  // Exactly one independently defined contract applies to each ledger state:
+  // that of the latest applied evolution, else the original 0215 contract.
   const securityFor: SecurityFor = completed => {
-    if (!completed.includes(SYNC_DISPATCH_EVOLUTION)) return assertSecurity;
-    if (!assertEvolvedSecurity) {
+    const latest = [...SECURITY_EVOLUTIONS].reverse().find(name => completed.includes(name));
+    if (!latest) return assertSecurity;
+    const assertion = evolvedSecurity.get(latest);
+    if (!assertion) {
       throw new Error('[PROTECTED_MIGRATION_TAIL_INVALID] evolved security postconditions unavailable');
     }
-    return assertEvolvedSecurity;
+    return assertion;
   };
 
   await db.transaction(async trx => {

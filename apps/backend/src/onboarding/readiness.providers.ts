@@ -15,6 +15,8 @@ import { UserStateService } from '../services/user-state.service.js';
 import { getShopOpeningInventoryProgress } from '../services/wms/inventoryRecount.service.js';
 import { deriveKnownCount } from './utils/deriveKnownCount.js';
 import { devReadinessOverrideProvider } from './providers/dev-readiness.provider.js';
+import { readShopifyConnection } from '../services/shopify/shopifyConnectionState.service.js';
+
 
 const makeSignal = (
   name: ReadinessSignalName,
@@ -46,7 +48,11 @@ export const platformOnboardingSignalProvider: OnboardingSignalProvider = {
       .where({ shop_id: shopId })
       .first();
 
-    const integrationConnected = !!integration;
+    // GH-1101: connected follows the canonical tenant connection; sync
+    // completion below stays a separate fact from the integration row.
+    const connection = await readShopifyConnection(shopId);
+    const integrationConnected = !!integration
+      && (integration.platform !== 'shopify' || connection.connected);
     const integrationSyncCompleted = integration?.sync_status === 'COMPLETED';
 
     let ordersPerMonthSegment: string | null = null;

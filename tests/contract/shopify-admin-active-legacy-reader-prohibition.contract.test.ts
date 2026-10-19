@@ -8,6 +8,7 @@ const app = 'apps/backend/src/';
 const core = 'packages/backend-core/src/';
 const compatibility = `${core}services/shopify-app.service.ts`;
 const canonicalConsumer = 'resolveShopifyAdminCredentialForConsumer';
+const connectionClassifier = `${app}services/shopify/shopifyConnectionState.service.ts`;
 const legacyMethods = [
   'getDecryptedAccessToken', 'getDecryptedAccessTokenByShopId',
   'completePostInstallation', 'registerAppUninstallWebhook', 'registerRefundsCreateWebhook',
@@ -17,6 +18,7 @@ const retiredExecutors = [
   'executeOpeningInventoryCutoverBatch',
 ];
 const tokenFields = ['access_token', 'access_token_encrypted'];
+const metadataOnlyCredentialSql = /SELECT\s+credential\.credential_state,\s*\(credential\.access_token_encrypted IS NOT NULL\s*AND credential\.access_expires_at > pg_catalog\.now\(\)\) AS access_usable,\s*\(credential\.refresh_token_encrypted IS NOT NULL\s*AND credential\.refresh_expires_at > pg_catalog\.now\(\)\) AS refresh_usable,\s*\(credential\.rotation_lease_token IS NOT NULL\s*AND credential\.rotation_lease_expires_at > pg_catalog\.now\(\)\) AS lease_live\s+FROM public\.shopify_admin_credentials AS credential\s+WHERE credential\.shop_id = \? AND credential\.installation_id = \?/;
 function files(directory: string): string[] {
   return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap(entry => {
     const file = `${directory}/${entry.name}`;
@@ -93,6 +95,8 @@ function shadowReads(file: string): ts.Node[] {
     if (ts.isCallExpression(node) && ['select', 'first', 'returning', 'pluck', 'raw'].includes(name(node.expression) ?? '')) {
       return node.arguments.some(arg => {
         const value = literal(arg);
+        if (file === connectionClassifier && name(node.expression) === 'raw'
+          && value !== undefined && metadataOnlyCredentialSql.test(value)) return false;
         return value !== undefined && tokenFields.some(field =>
           new RegExp(`\\b${field}\\b`).test(value));
       });
@@ -229,8 +233,11 @@ describe('CERT-4J — active Shopify Admin legacy-reader prohibition', () => {
   });
   it('C4J-02 manual sync uses canonical authority and operational integration identity', () => {
     const file = `${app}api/integrations/manualSync.controller.ts`;
-    canonical(file);
-    canonicalArguments(file, 'performInitialSync', ['accessToken', 'shopDomain']);
+    noLegacy(file);
+    expect(calls(file, [canonicalConsumer, 'performInitialSync', 'performSmartSync'])).toHaveLength(0);
+    expect(calls(file, ['respondWithManualRecovery'])).toHaveLength(1);
+    expect(calls(file, ['recordShopifySyncDispatchIntent', 'updateIntegrationStatus', 'sendToQueue', 'publish']))
+      .toHaveLength(0);
   });
   it('C4J-03 bulk webhook registration uses canonical access/domain', () => {
     const file = `${app}services/shopify/shopifyWebhook.service.ts`;
@@ -360,6 +367,17 @@ describe('CERT-4J — active Shopify Admin legacy-reader prohibition', () => {
     expect(calls(lifecycle, legacyMethods)).toHaveLength(0);
   });
   it('C4J-18 classified active legacy-reader inventory is empty', () => {
+    const classifier = source(connectionClassifier);
+    const raw = calls(connectionClassifier, ['raw']);
+    expect(raw).toHaveLength(1);
+    expect(literal(raw[0].arguments[0])).toMatch(metadataOnlyCredentialSql);
+    expect(calls(connectionClassifier, [canonicalConsumer, ...legacyMethods, 'decrypt', 'decryptToken']))
+      .toHaveLength(0);
+    expect(nodes(classifier).filter(ts.isPropertyAccessExpression)
+      .filter(node => ['access_token', 'access_token_encrypted', 'refresh_token_encrypted']
+        .includes(node.name.text))).toHaveLength(0);
+    expect(nodes(classifier).filter(ts.isBindingElement)
+      .filter(node => /(?:access|refresh)_token(?:_encrypted)?/.test(node.name.getText()))).toHaveLength(0);
     const classified = inventory();
     console.info('CERT4J_CLASSIFIED_INVENTORY=' + JSON.stringify(classified, null, 2));
     expect(classified.ACTIVE_LEGACY_ADMIN_CREDENTIAL_READERS).toEqual([]);

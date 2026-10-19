@@ -48,13 +48,15 @@ import { requireShopContextForUser, resolveShopContextForUser } from '@lasyncro/
 import { resolveShopifyAdminCredentialForConsumer } from 'api-src/services/shopify/shopifyAdminCredentialConsumer.service';
 import { performInitialSync } from 'api-src/services/shopify.service';
 import { backfillShopifyRefunds } from 'api-src/services/shopify/shopifyRefundBackfill.service';
+import { persistShopifyAdminCredentials } from 'api-src/services/shopify/shopifyAdminCredential.repository';
+import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 const originalSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = 'auth-admission-db-synthetic-jwt-secret';
 const app = createApp();
 type Role = 'owner' | 'admin' | 'operator';
-type Shop = { shopId: number; integrationId: number; users: Record<Role, number> };
+type Shop = { shopId: number; integrationId: number; installationId: number; users: Record<Role, number> };
 let shopA: Shop;
 let shopB: Shop;
 const queries: string[] = [];
@@ -81,13 +83,23 @@ async function fixture(label: string): Promise<Shop> {
       shop_id: shopId, platform: 'shopify', platform_shop_name: `auth-admission-${unique}.invalid`,
       sync_status: 'FAILED', updated_at: new Date(),
     }).returning('id');
+    // GH-1101: manual recovery admits only a canonically connected tenant.
+    const [installation] = await trx('shopify_app_installations').insert({
+      shop_id: shopId, shop_domain: `auth-admission-${unique}.invalid`,
+      shop_gid: `gid://shopify/Shop/${shopId}`, scopes: SHOPIFY_REQUIRED_SCOPE_STRING, uninstalled_at: null,
+    }).returning('id');
+    await persistShopifyAdminCredentials(trx, Number(installation.id), shopId, {
+      accessToken: `auth-admission-access-${unique}`, refreshToken: `auth-admission-refresh-${unique}`,
+      accessExpiresAt: new Date(Date.now() + 86_400_000), refreshExpiresAt: new Date(Date.now() + 604_800_000),
+      grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
+    });
     await trx('domain_events').insert({
       shop_id: shopId, event_type: 'auth-admission/protected-fixture',
       event_payload: { integration_id: Number(integration.id) },
       event_time: trx.fn.now(), event_version: 1,
       external_event_id: `internal:auth-admission-fixture:${unique}`,
     });
-    return { shopId, integrationId: Number(integration.id), users };
+    return { shopId, integrationId: Number(integration.id), installationId: Number(installation.id), users };
   });
 }
 
@@ -275,28 +287,29 @@ describe('AUTH-ADMISSION-01 D03 shop_user real PostgreSQL admission', () => {
       assertLiveToken(token, role);
       expect(await requireShopContextForUser(shopA.users[role])).toMatchObject({ shopId: shopA.shopId, role });
       const responses = await protectedOperations(token);
-      expect(responses.map(response => response.status)).toEqual([200, 200, 200, 200]);
+      // GH-1101: the first durable recovery request is accepted; later ones see it outstanding.
+      expect(responses.map(response => response.status))
+        .toEqual(role === 'owner' ? [200, 202, 409, 200] : [200, 409, 409, 200]);
       expect(responses[0].body.integrationId).toBe(shopA.integrationId);
-      expect(responses[1].body).toMatchObject({ shopId: shopA.shopId, integrationId: shopA.integrationId });
+      expect(responses[1].body).toMatchObject(role === 'owner'
+        ? { status: 'SYNC_RECOVERY_REQUESTED', shopId: shopA.shopId, integrationId: shopA.integrationId }
+        : { error: 'SYNC_ALREADY_REQUESTED', integrationId: shopA.integrationId });
     }
-    expect((resolveShopifyAdminCredentialForConsumer as jest.Mock).mock.calls).toEqual([
-      [expect.objectContaining({ shopId: shopA.shopId })], [expect.objectContaining({ shopId: shopA.shopId })],
-    ]);
-    expect((performInitialSync as jest.Mock).mock.calls).toEqual([
-      ['synthetic-auth-admission-token', 'auth-admission.invalid', shopA.shopId, shopA.integrationId],
-      ['synthetic-auth-admission-token', 'auth-admission.invalid', shopA.shopId, shopA.integrationId],
-    ]);
+    // Admission is a pure read: no credential resolution and no inline initial sync.
+    expect((resolveShopifyAdminCredentialForConsumer as jest.Mock).mock.calls).toEqual([]);
+    expect((performInitialSync as jest.Mock).mock.calls).toEqual([]);
     expect((backfillShopifyRefunds as jest.Mock).mock.calls).toEqual([[shopA.shopId], [shopA.shopId]]);
     const after = await bothStates();
     expect(after.B).toEqual(before.B);
     const added = after.A.domain_events.filter(event => !before.A.domain_events.some(old => old.id === event.id));
-    expect(added).toHaveLength(2);
+    expect(added).toHaveLength(1);
     for (const event of added) {
-      expect(event).toMatchObject({ shop_id: shopA.shopId, event_type: 'integration/manual_sync_requested',
-        event_payload: { integration_id: shopA.integrationId } });
+      expect(event).toMatchObject({ shop_id: shopA.shopId, event_type: 'integration/sync_dispatch_requested',
+        event_payload: { integration_id: shopA.integrationId, installation_id: shopA.installationId,
+          source: 'recovery' } });
       expect(after.A.outbox.filter(row => String(row.domain_event_id) === String(event.id))).toHaveLength(1);
     }
-    expect(after.A.outbox.length).toBe(before.A.outbox.length + 2);
+    expect(after.A.outbox.length).toBe(before.A.outbox.length + 1);
     expect(after.A.integrations).toEqual(before.A.integrations);
   });
   it('VALID OPERATOR GREEN: unchanged membership retains read access, privileged actions remain 403 without effects', async () => {

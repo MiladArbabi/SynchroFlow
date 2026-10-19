@@ -1,8 +1,8 @@
-ENGINEERING WORKFLOW v3.5
+ENGINEERING WORKFLOW v3.6
 
 Mode: Solo-developer, main-first execution
 
-Effective: 2026-10-18
+Effective: 2026-10-19
 
 Primary repository: SynchroFlow
 
@@ -133,7 +133,7 @@ Every tier retains:
 - all security, tenant-isolation, RLS, migration, database, test-integrity, and external-side-effect safety rules;
 - the disposable integration DB rule; the development DB is never an integration scratchpad;
 - final ship-lineage verification before commit;
-- lead-owned phase transitions and Milad-owned staging, commit, push, and deployment.
+- lead-owned phase transitions and Milad-owned staging, commit, push, and deployment, with only staging/commit/push delegable under SHIP-DELEGATION-01.
 
 Gate economy — require a separate gate only when it establishes a material missing contract, security boundary, irreversible operation, or necessary evidence:
 
@@ -163,6 +163,82 @@ Phase ownership: the engineering lead chooses the risk tier, required evidence, 
 Transition (effective v3.5): apply prospectively. Already certified work stays certified, and an in-flight issue is not restarted merely to classify it; the lead records its tier and applies the tier to remaining phases. Active agent briefs run to completion under the rules they were issued with.
 
 GH-1068: Risk = HIGH. Its existing security and migration contracts remain in force; future related implementation and verification may be combined into IMPLEMENT + TARGETED VERIFY briefs where safe.
+
+⸻
+
+EXECUTION CONTRACTS — v3.6
+
+These rules apply prospectively. Existing certification remains valid where EVIDENCE-REUSE-01 is satisfied; documentation-only updates do not restart certified implementation or PostgreSQL verification. HIGH-risk certification and Milad's approval remain required.
+
+RUN-IDENTITY-01 — Execution identity
+
+Every VS Code execution prompt and agent handoff starts on its first line with:
+
+RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
+ATTEMPT: <attempt number>
+
+Examples: SF-GH1101-SHIP-001 and SF-GH1101-VERIFY-002.
+
+Use a unique execution identity and never reuse a completed RUN_ID. Retain the same ID across retries/corrections, increment ATTEMPT for each execution retry, and assign a new ID to a new phase. Reports preserve the invoking RUN_ID on their first content line and state ATTEMPT explicitly. Evidence artifacts record RUN_ID and ATTEMPT; record parent RUN_ID where applicable. Run identity does not imply authorization.
+
+ISSUE-CONTRACT-01 — Persistent issue contract
+
+For substantial issues, maintain one authoritative, approved contract in a GitHub issue or approved repository document. Record scope, architecture decisions, invariants, acceptance criteria, test strategy, exclusions, risk tier, roadmap and open decisions. Prompts reference its identity/revision instead of repeating history. Changes require engineering-lead approval. Trivial tasks do not require a new contract document.
+
+TERMINAL-ROUTING-01 — Cheapest reliable execution route
+
+- Terminal owns Git/WIP truth, environment preflight, deterministic commands, test execution, database proofs, artifact capture and ship-lineage verification.
+- VS Code agents own bounded multi-file reasoning, complex implementation, approved corrections and cross-file regression analysis.
+- The engineering lead owns contracts, architecture, scope, security decisions, risk tier, phase transitions and certification decisions.
+
+Use the cheapest reliable route; simple deterministic terminal tasks do not require an agent.
+
+EVIDENCE-PERSISTENCE-01 — Durable certification evidence
+
+Before removing temporary test resources, persist certification evidence outside the working repository. Capture, where applicable:
+
+- RUN_ID, ATTEMPT and parent RUN_ID;
+- base Git SHA, approved file manifest and exact source-file hashes;
+- executed command identifiers, exit codes and test totals/failures;
+- migration/security proofs and runtime-isolation attestation;
+- known baseline-owned failures, resource-cleanup proof and manifest SHA-256.
+
+Persist pre-cleanup evidence before teardown, then append and verify cleanup proof. Never persist secrets or plaintext tokens. Temporary diagnostic logs may use /tmp; certification-critical evidence must not depend exclusively on disposable /tmp files. Verify artifacts actually exist. Record EVIDENCE_NOT_PERSISTED when evidence was not preserved; never invent its existence.
+
+A local filesystem path alone is not accessible to ChatGPT. Supply a compact redacted handoff and upload artifacts when independent inspection is needed.
+
+EVIDENCE-REUSE-01 — Selective evidence reuse
+
+Reuse successful expensive verification only when relevant file hashes are unchanged, the runtime/test environment remains applicable, the test contract is unchanged, and evidence is available and attributable. Invalidate only affected layers. Documentation-only changes do not normally invalidate certified PostgreSQL execution, migration or concurrency proofs. Security/migration changes require renewed affected authority proofs. Timestamps alone never establish same-source certification.
+
+Bounded agent autonomy
+
+Preserve AGENT-CLOSED-LOOP-01 (13.10.1): explicit file/permission allowlists, at most three correction cycles, unchanged semantics/security/migration contracts and no unrelated fixes. Predictable mechanical corrections already authorized by the brief may proceed within that boundary. Stop for material decisions, unsafe conditions, scope violations or exhausted correction authority; routine authorized corrections do not add approval rounds. Closed-loop implementation does not itself authorize shipping.
+
+PARALLEL-OWNERSHIP-01 — One writer per overlapping file set
+
+At most one active writer owns a given file set in a shared worktree. Parallel read-only analysis is allowed. Parallel mutation requires disjoint, explicitly owned file sets and isolated runtime resources. Preserve other agents' WIP; never overwrite it.
+
+HANDOFF-01 — Compact, attributable handoffs
+
+Keep the required report sections and one four-backtick copyable structure for agent reports. Start the report content with RUN_ID, then ATTEMPT. Prioritize verdict, baseline, source manifest, evidence location/checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Raw logs belong in persistent evidence artifacts; expand only material failures or decisions in the handoff.
+
+SHIP-DELEGATION-01 — Explicit exact-manifest ship delegation
+
+Default: Milad owns staging, commit and push. Exception: Milad may explicitly delegate those actions for one named execution and a fixed, independently certified file manifest. Require all of:
+
+- exact RUN_ID and explicit authorization for that execution;
+- exact file allowlist and certified source hashes;
+- clean index before explicit-path staging;
+- staged manifest equality and staged content hashes matching the approved manifest, with no unauthorized files;
+- no force push; stop on remote divergence without automatic merge, rebase or reset;
+- exact-SHA CI verification and a complete persistent audit trail.
+
+This exception never extends to production deployment, production migrations, secret/credential mutation, GH-1262 integration, other issues or later executions. HIGH-risk independent certification and user approval requirements remain intact. Approval of a passing test or a RUN_ID alone does not delegate shipping. A RED CI result is reported and stops the delegated execution; a correction commit requires separate authorization.
+
+Future terminal automation
+
+Prefer reusable, audited wrappers for repetitive preflight, verification, evidence collection and ship checks. Proposed wrappers are not existing tooling. Documentation-only workflow expansion does not authorize implementation tooling or expand implementation scope to automate terminal commands.
 
 ⸻
 
@@ -421,7 +497,7 @@ Milad:
 - performs or supervises live browser verification by default;
 - runs normal-terminal commands;
 - performs documentation mutation where requested;
-- performs staging, commit, and push;
+- owns staging, commit, and push, delegating execution only under SHIP-DELEGATION-01;
 - approves movement to the next issue.
 
 ⸻
@@ -556,6 +632,10 @@ Screenshots are visual evidence, not behavioural proof. They may satisfy the vis
 4.4 Agent brief format
 
 Keep briefs small:
+
+RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
+
+ATTEMPT: <attempt number>
 
 CONSTRAINTS
 
@@ -746,9 +826,11 @@ A test failure caused by missing workspace dependencies is an environment failur
 
 6.1 Output budget
 
-Long-running or noisy commands should write to a temporary log:
+Temporary diagnostic output from long-running or noisy commands may use:
 
 command > /tmp/<issue>-<purpose>.log 2>&1
+
+Certification evidence must be persisted and verified under EVIDENCE-PERSISTENCE-01 before disposable resources are removed; /tmp alone is insufficient.
 
 Surface only:
 
@@ -1637,7 +1719,7 @@ Stop immediately when:
 - A security invariant or migration history would change.
 - A destructive or production operation would be required.
 - An unexpected unrelated failure would require source edits.
-- A commit, push or deployment would be required.
+- Staging, commit or push would be required without SHIP-DELEGATION-01 authorization, or a deployment would be required.
 - Passing would require weakening, skipping or replacing assertions.
 - Tenant isolation, authorization, RLS or data safety would be bypassed.
 - The database/provider/runtime safety target cannot be confirmed.
@@ -1652,8 +1734,9 @@ timeout may be corrected only when an approved longer contention
 window or teardown requirement is evidenced and bounded.
 
 Agent-owned verification is preliminary evidence. Independent final
-terminal verification, documentation acceptance, stage/commit/push,
-CI, release and production certification remain lead/user-owned.
+terminal verification, documentation acceptance, CI, release and production
+certification remain lead/user-owned decisions. Staging/commit/push execution
+may be delegated only under SHIP-DELEGATION-01 after independent certification.
 Final terminal verification is the ship-lineage verification
 (SHIP-TREE-01): it must confirm the exact tree being shipped, but it
 need not repeat expensive tests whose source, environment and contract
@@ -1787,7 +1870,7 @@ Prefer one authoritative playbook over redundant updates across many docs.
 
 16. PHASE 9 — COMMIT & PUSH ON MAIN
 
-Agent involvement ends before staging/commit/push.
+By default, agent involvement ends before staging/commit/push. Only an explicit SHIP-DELEGATION-01 brief authorizes exact-manifest ship execution for its named RUN_ID; it never authorizes production deployment.
 
 16.1 Commit preflight
 
@@ -1937,6 +2020,8 @@ For a failing historical contract:
 17.3 Mainline CI blocker rule
 
 If CI discovers an unrelated active blocker after a direct-main push:
+
+The lead owns the following remediation decision. A SHIP-DELEGATION-01 execution stops and reports RED; it does not authorize an automatic correction commit.
 
 classify blocker
 
@@ -2220,7 +2305,7 @@ Do not use only migrate:latest as proof of independent shippability.
 27. A failed verification returns to the smallest necessary correction loop.
 28. Do not rerun the entire repository after every small correction.
 29. Use targeted issue gate first; broader release/CI gate second.
-30. Write noisy command output to /tmp and surface only decisive evidence.
+30. Temporary diagnostics may use /tmp; persist certification evidence under EVIDENCE-PERSISTENCE-01 and surface only decisive evidence.
 31. Avoid terminal-killing diagnostic guards.
 32. All supplied SQL is heredoc-based with pager off and explicit quit.
 33. Production SQL is read-only before repair and mutations are narrow/fail-closed.

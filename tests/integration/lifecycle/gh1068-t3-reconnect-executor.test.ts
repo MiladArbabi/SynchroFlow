@@ -31,9 +31,9 @@ import {
 } from 'api-src/services/shopify/shopifyAdminCredentialLifecycle.service';
 import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
-// GH-1068 T3-B: 0216 evolves the finalizer; its postconditions carry every 0215 invariant.
+// GH-1068 T3-B / GH-1101: the latest evolution (0217) carries every 0215/0216 invariant.
 import { assertSecurityPostconditions, FINALIZER_SIGNATURE } from
-  '../../../apps/backend/migrations/20261018120000_0216_durable_shopify_sync_dispatch';
+  '../../../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery';
 
 const E = 'sf_shopify_reconnect_executor';
 const O = 'sf_shopify_reconnect_owner';

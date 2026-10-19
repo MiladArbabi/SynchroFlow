@@ -2,18 +2,16 @@
 //
 // SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07 — source/static contract.
 //
-// The manual recovery controller previously imported `performInitialSync` from
-// @lasyncro/backend-core/services/shopify.service.js — a stub that wrote
-// integrations.sync_status='COMPLETED' directly, bypassing the canonical status
-// progression and the integration/sync_completed emission, causing
-// "Illegal sync_status transition: FAILED -> COMPLETED".
+// HTTP manual recovery must never execute Shopify sync inline. The legacy
+// route is a compatibility alias for the durable T3-B recovery admission path;
+// the worker remains the single owner of Shopify sync execution.
 //
 // Canonical (single) owner of Shopify initial sync:
 //   apps/backend/src/services/shopify.service.ts::performInitialSync
 //
 // This contract fails if a second independently-importable initial-sync
-// implementation is reintroduced, or if the manual controller is rewired back
-// to the backend-core stub.
+// implementation is reintroduced, if HTTP regains direct execution/status
+// authority, or if the legacy route bypasses durable recovery admission.
 
 import fs from 'fs';
 import path from 'path';
@@ -34,8 +32,11 @@ const FORBIDDEN_DUPLICATE_PATHS = [
 
 const BACKEND_CORE_SHOPIFY_SERVICE_IMPORT =
   /@lasyncro\/backend-core\/services\/shopify\.service/;
-const CANONICAL_IMPORT =
-  /import\s*\{[^}]*\bperformInitialSync\b[^}]*\}\s*from\s*['"]\.\.\/\.\.\/services\/shopify\.service\.js['"]/;
+const DURABLE_RECOVERY_IMPORT =
+  /import\s*\{[^}]*\brespondWithManualRecovery\b[^}]*\}\s*from\s*['"]\.\/integration\.controller\.js['"]/;
+const INLINE_SYNC = /\bperform(?:Initial|Smart)Sync\s*\(/;
+const ALTERNATE_QUEUE = /\b(?:getQueueChannel|sendToQueue|publish|recordShopifySyncDispatchIntent)\b/;
+const DIRECT_STATUS_MUTATION = /\b(?:updateIntegrationStatus|sync_status|sync_progress_current|sync_progress_total)\b/;
 
 function read(file: string) {
   return fs.readFileSync(path.join(process.cwd(), file), 'utf8');
@@ -47,9 +48,13 @@ describe('CONTRACT SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07 — single Shopify 
     expect(BACKEND_CORE_SHOPIFY_SERVICE_IMPORT.test(source)).toBe(false);
   });
 
-  it('manualSync.controller.ts imports performInitialSync from the canonical app-local service', () => {
+  it('legacy manual route delegates to durable recovery and has no execution, queue, or status authority', () => {
     const source = read(MANUAL_SYNC_CONTROLLER);
-    expect(CANONICAL_IMPORT.test(source)).toBe(true);
+    expect(DURABLE_RECOVERY_IMPORT.test(source)).toBe(true);
+    expect((source.match(/\brespondWithManualRecovery\s*\(/g) ?? [])).toHaveLength(1);
+    expect(INLINE_SYNC.test(source)).toBe(false);
+    expect(ALTERNATE_QUEUE.test(source)).toBe(false);
+    expect(DIRECT_STATUS_MUTATION.test(source)).toBe(false);
   });
 
   it.each(FORBIDDEN_DUPLICATE_PATHS)(

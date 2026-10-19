@@ -33,13 +33,15 @@ import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-
 import { resolveShopifyAdminCredentialForConsumer } from 'api-src/services/shopify/shopifyAdminCredentialConsumer.service';
 import { performInitialSync } from 'api-src/services/shopify.service';
 import { backfillShopifyRefunds } from 'api-src/services/shopify/shopifyRefundBackfill.service';
+import { persistShopifyAdminCredentials } from 'api-src/services/shopify/shopifyAdminCredential.repository';
+import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 const originalSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = 'auth-tenant-db-synthetic-jwt-secret';
 const app = createApp(); // Never server.ts: no worker/server bootstrap.
 type Role = 'owner' | 'admin' | 'operator';
-type Shop = { shopId: number; integrationId: number; users: Record<Role, number> };
+type Shop = { shopId: number; integrationId: number; installationId: number; users: Record<Role, number> };
 let shopA: Shop;
 let shopB: Shop;
 const queries: string[] = [];
@@ -65,6 +67,16 @@ async function fixture(label: string): Promise<Shop> {
       platform_shop_name: `auth-tenant-${unique}.invalid`,
       sync_status: 'FAILED', updated_at: new Date(),
     }).returning('id');
+    // GH-1101: manual recovery admits only a canonically connected tenant.
+    const [installation] = await trx('shopify_app_installations').insert({
+      shop_id: shopId, shop_domain: `auth-tenant-${unique}.invalid`,
+      shop_gid: `gid://shopify/Shop/${shopId}`, scopes: SHOPIFY_REQUIRED_SCOPE_STRING, uninstalled_at: null,
+    }).returning('id');
+    await persistShopifyAdminCredentials(trx, Number(installation.id), shopId, {
+      accessToken: `auth-tenant-access-${unique}`, refreshToken: `auth-tenant-refresh-${unique}`,
+      accessExpiresAt: new Date(Date.now() + 86_400_000), refreshExpiresAt: new Date(Date.now() + 604_800_000),
+      grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
+    });
     // Nonempty protected event/outbox rows make unchanged-state proof meaningful.
     await trx('domain_events').insert({
       shop_id: shopId, event_type: 'auth-tenant/protected-fixture',
@@ -72,7 +84,7 @@ async function fixture(label: string): Promise<Shop> {
       event_time: trx.fn.now(), event_version: 1,
       external_event_id: `internal:auth-tenant-fixture:${unique}`,
     });
-    return { shopId, integrationId: Number(integration.id), users };
+    return { shopId, integrationId: Number(integration.id), installationId: Number(installation.id), users };
   });
 }
 
@@ -197,28 +209,25 @@ describe('AUTH-TENANT-01 real PostgreSQL certification', () => {
     noProviderEffects();
     expect(await bothStates()).toEqual(before);
   });
-  it('same-tenant owner/admin admission delegates providers and persists one manual-sync event/outbox only in A', async () => {
+  it('same-tenant owner/admin admission persists one durable recovery intent/outbox only in A, never inline sync', async () => {
     const before = await bothStates();
     const initial = await post('manual-initial-sync', { shopId: shopA.shopId, integrationId: shopA.integrationId });
     const manual = await post(`sync/${shopA.integrationId}`, {}, 'admin');
     const refund = await post('refund-backfill', { shopId: shopB.shopId }, 'admin');
-    expect([initial.status, manual.status, refund.status]).toEqual([200, 200, 200]);
-    expect(resolveShopifyAdminCredentialForConsumer).toHaveBeenCalledWith(expect.objectContaining({ shopId: shopA.shopId }));
-    // GH-1068 T2: the controller forwards the resolved credential's authority as the
-    // fifth argument. This suite's resolver mock supplies neither installationId nor
-    // generation, so both are forwarded as undefined; strict equality pins the exact
-    // shape and the shop-domain/tenant association without inventing fixture values.
-    expect((performInitialSync as jest.Mock).mock.calls).toStrictEqual([[
-      'synthetic-auth-tenant-token', 'auth-tenant.invalid', shopA.shopId, shopA.integrationId,
-      { executionAuthority: { installationId: undefined, shopDomain: 'auth-tenant.invalid', generation: undefined } },
-    ]]);
+    // GH-1101: the first request is accepted durably; the second sees the outstanding intent.
+    expect([initial.status, manual.status, refund.status]).toEqual([202, 409, 200]);
+    expect(manual.body).toEqual({ error: 'SYNC_ALREADY_REQUESTED', integrationId: shopA.integrationId });
+    // Admission is a pure read: no credential resolution and no inline initial sync.
+    expect(resolveShopifyAdminCredentialForConsumer).not.toHaveBeenCalled();
+    expect(performInitialSync).not.toHaveBeenCalled();
     expect((backfillShopifyRefunds as jest.Mock).mock.calls).toEqual([[shopA.shopId]]);
     const after = await bothStates();
     expect(after.B).toEqual(before.B);
     const events = after.A.domain_events as any[];
     const added = events.filter(event => !(before.A.domain_events as any[]).some(old => old.id === event.id));
     expect(added).toEqual([expect.objectContaining({ shop_id: shopA.shopId,
-      event_type: 'integration/manual_sync_requested', event_payload: { integration_id: shopA.integrationId } })]);
+      event_type: 'integration/sync_dispatch_requested', event_payload: { integration_id: shopA.integrationId,
+        installation_id: shopA.installationId, source: 'recovery' } })]);
     expect((after.A.outbox as any[]).filter(row => String(row.domain_event_id) === String(added[0].id))).toHaveLength(1);
     expect((after.A.outbox as any[]).length).toBe((before.A.outbox as any[]).length + 1);
     expect(after.A.integrations).toEqual(before.A.integrations);
@@ -237,11 +246,12 @@ describe('AUTH-TENANT-01 real PostgreSQL certification', () => {
     await permission('operator', true);
     const beforeB = await protectedState(shopB);
     const responses = await allOperations('operator');
-    expect(responses.map(response => response.status)).toEqual([200, 200, 200]);
-    expect(performInitialSync).toHaveBeenCalledTimes(1);
+    // GH-1101: durable acceptance, then the outstanding intent is reported truthfully.
+    expect(responses.map(response => response.status)).toEqual([202, 409, 200]);
+    expect(performInitialSync).not.toHaveBeenCalled();
     expect((backfillShopifyRefunds as jest.Mock).mock.calls).toEqual([[shopA.shopId]]);
     expect(await protectedState(shopB)).toEqual(beforeB);
     expect(await withTenant(shopA.shopId, trx => trx('domain_events')
-      .where({ shop_id: shopA.shopId, event_type: 'integration/manual_sync_requested' }))).toHaveLength(1);
+      .where({ shop_id: shopA.shopId, event_type: 'integration/sync_dispatch_requested' }))).toHaveLength(1);
   });
 });
