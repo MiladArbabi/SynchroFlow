@@ -15,6 +15,10 @@ import { normalizeRestProductToEdge } from './normalizeShopifyRestProduct.js';
 // Previously opened its own inner db.transaction() with SET LOCAL —
 // redundant now that the router's trx already has tenant context set
 // for this same shop. Uses the router's trx directly instead.
+//
+// Failure policy (GH-1262 A2.3): malformed identity, an unknown status or an
+// unattributable shop THROWS, so the ledger records the event as failed. A
+// valid partial update may omit title — the persisted title is preserved.
 export async function handleProductUpdated(
   envelope: WebhookEnvelope,
   trx: Knex.Transaction
@@ -25,23 +29,23 @@ export async function handleProductUpdated(
     eventId: envelope.eventId,
     productId: raw?.id,
   });
-  if (!raw?.id || !raw?.title || !envelope.shopDomain) {
-    console.error('[PRODUCT_UPDATED_GUARD_FAILED]', {
-      hasId: !!raw?.id,
-      hasTitle: !!raw?.title,
-      shopDomain: envelope.shopDomain,
-    });
-    return;
+  const edge = normalizeRestProductToEdge(raw);
+  if (!envelope.shopDomain) {
+    throw new Error('PRODUCT_UPDATE_SHOP_UNRESOLVED');
   }
+  // Shop ownership: the tenant-scoped installation for this domain must exist
+  // and, when the router resolved one, be the shop set as tenant context.
   const installation = await trx('shopify_app_installations')
     .where({ shop_domain: envelope.shopDomain })
     .select('shop_id')
     .first();
   if (!installation) {
-    console.error('[PRODUCT_UPDATED_INSTALLATION_NOT_FOUND]', { shopDomain: envelope.shopDomain });
-    return;
+    throw new Error('PRODUCT_UPDATE_INSTALLATION_NOT_FOUND');
   }
-  await syncProducts(trx, installation.shop_id, [normalizeRestProductToEdge(raw)]);
+  if (envelope.shopId !== undefined && Number(installation.shop_id) !== envelope.shopId) {
+    throw new Error('PRODUCT_UPDATE_SHOP_OWNERSHIP_MISMATCH');
+  }
+  await syncProducts(trx, installation.shop_id, [edge]);
   console.info('[PRODUCT_UPDATED_SYNC_COMPLETE]', {
     shopDomain: envelope.shopDomain,
     productId: raw.id,

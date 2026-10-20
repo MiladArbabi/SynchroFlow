@@ -379,6 +379,17 @@ export async function syncProducts(
       results.push({ externalProductId: node.id, outcome: 'skipped' });
       continue;
     } else {
+      // A new product is never created from incomplete lifecycle input: an
+      // absent status is unknown, not 'active' (GH-1262 A2.3 O3). Fail closed
+      // so the caller's transaction rolls back and the webhook is not acked.
+      if (!shopifyStatus) {
+        throw new Error(`SHOPIFY_PRODUCT_STATUS_REQUIRED: new product ${node.id}`);
+      }
+      // Only an EXISTING product may be updated without a title; a first write
+      // (products/create or products/update alike) must carry a real one.
+      if (typeof node.title !== 'string' || node.title.trim() === '') {
+        throw new Error(`SHOPIFY_PRODUCT_TITLE_REQUIRED: new product ${node.id}`);
+      }
       productId = crypto.randomUUID();
 
       // Insert product container
@@ -386,7 +397,7 @@ export async function syncProducts(
         lasyncro_product_id: productId,
         shop_id: shopId,
         title: node.title,
-        status: shopifyStatus ?? 'active',
+        status: shopifyStatus,
         // product_type sourced from Shopify productType field.
         // Maps to canonical values: physical, digital, gift_card, service.
         // Defaults to 'physical' — most products are physical.
@@ -422,7 +433,23 @@ export async function syncProducts(
       } else {
         unitCost = Number(unitCostAmount);
       }
-      
+
+      /**
+       * FIELD PRESENCE (GH-1262 A2.3 O1)
+       * --------------------------------
+       * undefined = the source did not carry the field (a partial REST
+       * payload): the persisted value is preserved on resync. null or '' is
+       * an explicit clear. GraphQL catalog queries always select sku, barcode
+       * and inventoryItem, so their behaviour is unchanged.
+       */
+      const skuPresent = variant.sku !== undefined;
+      const barcodePresent = variant.barcode !== undefined;
+      const inventoryItemId: string | null | undefined =
+        variant.inventoryItem === undefined ? undefined
+        : variant.inventoryItem === null ? null
+        : variant.inventoryItem.id === undefined ? undefined
+        : variant.inventoryItem.id || null;
+
       // Look up existing lasyncro_variant_id by Shopify variant ID to ensure
       // resync updates the same row (image_url, sku, barcode etc) rather than
       // inserting a duplicate with a new UUID.
@@ -452,13 +479,14 @@ export async function syncProducts(
         .merge({
           // Update mutable variant fields on resync. lasyncro_product_id is
           // deliberately absent — an existing variant is never reparented.
-          sku: variant.sku || null,
+          ...(skuPresent ? { sku: variant.sku || null } : {}),
           title: variant.title,
           // Absent provider cost (REST webhooks never carry it) keeps the stored
           // cost; the 0 placeholder applies to first insert only.
           ...(unitCostAmount != null ? { unit_cost: unitCost } : {}),
           status: 'active',
-          barcode: variant.barcode || null, // merchant may add EAN after initial sync
+          // merchant may add EAN after initial sync
+          ...(barcodePresent ? { barcode: variant.barcode || null } : {}),
           image_url: variant.image?.url || node.featuredImage?.url || null, // merchant may add image after initial sync
           updated_at: new Date().toISOString(),
         });
@@ -497,8 +525,26 @@ export async function syncProducts(
         );
       }
 
+      /**
+       * RESYNC UPDATE POLICY
+       * --------------------
+       * These fields may change in Shopify after initial sync:
+       * - barcode: merchant adds/updates barcode on variant
+       * - external_sku: merchant updates SKU
+       * - external_inventory_item_id: platform internal update
+       *
+       * lasyncro_variant_id is NOT merged — it is immutable once assigned.
+       * A field absent from the source is preserved (A2.3 O1); when none is
+       * present the existing mapping is left exactly as it is.
+       */
+      const mappingUpdate = {
+        ...(barcodePresent ? { barcode: variant.barcode || null } : {}),
+        ...(skuPresent ? { external_sku: variant.sku || null } : {}),
+        ...(inventoryItemId !== undefined ? { external_inventory_item_id: inventoryItemId } : {}),
+      };
+
       // 3. Insert external identity mapping (variant-level)
-      await trx('external_product_identity_map')
+      const mappingUpsert = trx('external_product_identity_map')
         .insert({
           id: crypto.randomUUID(),
           shop_id: shopId,
@@ -506,7 +552,7 @@ export async function syncProducts(
           platform: 'shopify',
           external_product_id: node.id,
           external_variant_id: variant.id,
-          external_inventory_item_id: variant.inventoryItem?.id || null,
+          external_inventory_item_id: inventoryItemId ?? null,
           external_sku: variant.sku || null,
           barcode: variant.barcode || null,
         })
@@ -515,22 +561,10 @@ export async function syncProducts(
           'platform',
           'external_product_id',
           'external_variant_id',
-        ])
-        .merge({
-          /**
-           * RESYNC UPDATE POLICY
-           * --------------------
-           * These fields may change in Shopify after initial sync:
-           * - barcode: merchant adds/updates barcode on variant
-           * - external_sku: merchant updates SKU
-           * - external_inventory_item_id: platform internal update
-           *
-           * lasyncro_variant_id is NOT merged — it is immutable once assigned.
-           */
-          barcode: variant.barcode || null,
-          external_sku: variant.sku || null,
-          external_inventory_item_id: variant.inventoryItem?.id || null,
-        });
+        ]);
+      await (Object.keys(mappingUpdate).length > 0
+        ? mappingUpsert.merge(mappingUpdate)
+        : mappingUpsert.ignore());
     }
 
     // Advance the watermark in the same tenant transaction as the catalog

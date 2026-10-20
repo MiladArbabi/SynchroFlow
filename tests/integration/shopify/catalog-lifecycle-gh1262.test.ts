@@ -2669,6 +2669,649 @@ describe('M1 — 0218 follows the protected reconnect tail and keeps every secur
   });
 });
 
+// ── A2.3: SHOPIFY PARTIAL-PAYLOAD SAFETY (SF-GH1262-A23-PAYLOAD-RED-002) ────
+
+/**
+ * Ratified owner decisions O1–O6 (parent audit SF-GH1262-A23-PAYLOAD-AUDIT-001):
+ *   RC1  absent sku / barcode / inventory_item_id preserve persisted values;
+ *        an explicit null or '' clears only the field it names (O1)
+ *   RC2  malformed product / variant identity fails the webhook and persists
+ *        nothing — no synthetic identity, no cross-product association (O6)
+ *   RC3  a never-seen product without status is rejected; an existing product
+ *        keeps its status; active / draft / archived stay supported (O2, O3)
+ *   RC4  duplicate Shopify SKU: characterization of current behaviour only (O4)
+ *   RC5  unknown status, unresolved / foreign shop ownership and an invalid
+ *        creation payload fail; a valid update may omit title (O2, O6);
+ *        a first write of an unknown product needs a real title whatever the
+ *        topic (RC5g); Shopify 2026-04 'unlisted' is a recognized status that
+ *        is persisted as-is (RC5h — SF-GH1262-A23-CORRECT-005)
+ *
+ * Every delivery is signed and goes through the real HTTP endpoint and
+ * WebhookRouter (R15 pattern) so the ledger outcome is observed, except the
+ * handler-level shop-ownership cases, which the router cannot reach (it
+ * resolves the tenant from the same installation row the handler re-reads).
+ * Rejected events must be recorded as failed and answered with HTTP 500.
+ */
+describe('A2.3 — Shopify partial-payload safety', () => {
+  const T1 = '2026-09-01T10:00:00Z';
+  const T2 = '2026-09-02T10:00:00Z';
+  const T3 = '2026-09-03T10:00:00Z';
+
+  let savedWebhookSecret: string | undefined;
+
+  beforeAll(() => {
+    savedWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret || 'gh1262-test-webhook-secret';
+  });
+
+  afterAll(() => {
+    if (savedWebhookSecret === undefined) delete process.env.SHOPIFY_WEBHOOK_SECRET;
+    else process.env.SHOPIFY_WEBHOOK_SECRET = savedWebhookSecret;
+  });
+
+  type SeedVariant = { variantId: string; sku: string | null; barcode: string | null; inventoryItemId: string | null };
+
+  const seedVariant = (): SeedVariant => {
+    const variantId = numericId();
+    return { variantId, sku: `A23-SKU-${variantId}`, barcode: `GTIN${variantId}`, inventoryItemId: numericId() };
+  };
+
+  const inventoryItemGid = (id: string) => `gid://shopify/InventoryItem/${id}`;
+
+  /** GraphQL full-sync edge with populated Shopify-owned identifiers and a source timestamp. */
+  const seedEdge = (productId: string, status: ShopifyStatus, variants: SeedVariant[], updatedAt: string) => ({
+    node: {
+      id: productGid(productId),
+      title: `A23 product ${productId}`,
+      status,
+      productType: 'Widgets',
+      updatedAt,
+      featuredImage: null,
+      variants: {
+        edges: variants.map((v) => ({
+          node: {
+            id: variantGid(v.variantId),
+            title: `Variant ${v.variantId}`,
+            sku: v.sku,
+            barcode: v.barcode,
+            image: null,
+            inventoryItem: {
+              id: v.inventoryItemId ? inventoryItemGid(v.inventoryItemId) : null,
+              unitCost: { amount: '5.00' },
+            },
+          },
+        })),
+      },
+    },
+  });
+
+  /** Complete REST variant as Shopify sends it. */
+  const restVariant = (v: SeedVariant) => ({
+    id: Number(v.variantId),
+    title: `Variant ${v.variantId}`,
+    sku: v.sku,
+    barcode: v.barcode,
+    inventory_item_id: v.inventoryItemId ? Number(v.inventoryItemId) : null,
+  });
+
+  /**
+   * Signed delivery of an arbitrary raw payload through the real endpoint.
+   * JSON.stringify drops undefined keys, so an omitted field is genuinely
+   * absent from the raw body while an explicit null is preserved.
+   */
+  async function deliver(shopId: number, shopDomain: string, topic: string, payload: unknown) {
+    const webhookId = `gh1262-a23-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify(payload);
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', topic)
+      .set('X-Shopify-Shop-Domain', shopDomain)
+      .set('X-Shopify-Webhook-Id', webhookId)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+    const rows = await withTenant(shopId, (trx) =>
+      trx('integration_webhook_events')
+        .where({ integration: 'shopify', external_event_id: webhookId })
+        .select('processing_status', 'processing_error'));
+    return {
+      httpStatus: res.status,
+      ledger: rows.map((r: any) => r.processing_status),
+      errors: rows.map((r: any) => r.processing_error),
+    };
+  }
+
+  const REJECTED = { httpStatus: 500, ledger: ['failed'] };
+  const PROCESSED = { httpStatus: 200, ledger: ['processed'] };
+  const outcome = (d: Awaited<ReturnType<typeof deliver>>) => ({ httpStatus: d.httpStatus, ledger: d.ledger });
+
+  /** Shopify-owned identifiers and internal identity of every mapped variant of one product. */
+  async function fieldState(shopId: number, productId: string) {
+    return withTenant(shopId, (trx) =>
+      trx('external_product_identity_map as m')
+        .join('variants as v', 'v.lasyncro_variant_id', 'm.lasyncro_variant_id')
+        .where({ 'm.shop_id': shopId, 'm.platform': 'shopify', 'm.external_product_id': productGid(productId) })
+        .orderBy('m.external_variant_id')
+        .select(
+          'm.id as mapping_id', 'm.external_variant_id', 'm.lasyncro_variant_id', 'v.lasyncro_product_id',
+          'v.lasyncro_barcode', 'v.sku', 'v.barcode', 'm.external_sku', 'm.barcode as map_barcode',
+          'm.external_inventory_item_id',
+        ));
+  }
+
+  /** Shop-wide catalog row counts: any write by a rejected event shows up here. */
+  async function footprint(shopId: number) {
+    return withTenant(shopId, async (trx) => {
+      const count = async (table: string) =>
+        Number((await trx(table).where({ shop_id: shopId }).count('* as c').first())?.c ?? 0);
+      return {
+        products: await count('products'),
+        variants: await count('variants'),
+        mappings: await count('external_product_identity_map'),
+        watermarks: await count('shopify_product_source_watermarks'),
+      };
+    });
+  }
+
+  async function watermarkOf(shopId: number, productId: string) {
+    return withTenant(shopId, async (trx) => {
+      const r = await trx.raw(
+        `SELECT is_deleted,
+                to_char(source_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS source_updated_at
+           FROM shopify_product_source_watermarks
+          WHERE shop_id = ? AND platform = 'shopify' AND external_product_id = ?`,
+        [shopId, productGid(productId)]);
+      return r.rows[0] ?? null;
+    });
+  }
+
+  async function parentRows(shopId: number, productId: string) {
+    const state = await catalogState(shopId, productId);
+    return withTenant(shopId, (trx) =>
+      trx('products').whereIn('lasyncro_product_id', state.parentIds)
+        .orderBy('lasyncro_product_id').select('lasyncro_product_id', 'title', 'status'));
+  }
+
+  /** Identity rows that only a malformed id can produce. */
+  async function syntheticIdentities(shopId: number) {
+    return withTenant(shopId, (trx) =>
+      trx('external_product_identity_map')
+        .where({ shop_id: shopId, platform: 'shopify' })
+        .andWhere(function () {
+          this.where('external_variant_id', 'like', '%/undefined')
+            .orWhere('external_variant_id', 'like', '%/null')
+            .orWhere('external_product_id', 'like', 'gid://shopify/Product/gid:%')
+            .orWhereRaw(`external_product_id !~ '^gid://shopify/Product/[1-9][0-9]*$'`)
+            .orWhereRaw(`external_variant_id !~ '^gid://shopify/ProductVariant/[1-9][0-9]*$'`);
+        })
+        .select('external_product_id', 'external_variant_id', 'lasyncro_variant_id'));
+  }
+
+  /** lasyncro variants mapped from more than one Shopify product. */
+  async function crossProductVariants(shopId: number) {
+    const r = await withTenant(shopId, (trx) => trx.raw(
+      `SELECT lasyncro_variant_id, array_agg(DISTINCT external_product_id ORDER BY external_product_id) AS products
+         FROM external_product_identity_map
+        WHERE shop_id = ? AND platform = 'shopify'
+        GROUP BY lasyncro_variant_id
+       HAVING count(DISTINCT external_product_id) > 1`, [shopId]));
+    return r.rows;
+  }
+
+  // ── RC1: presence-aware field updates (O1) ──
+
+  it('RC1a — a newer products/update omitting sku, barcode and inventory_item_id preserves every persisted value and identity', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc1a');
+    const productId = numericId();
+    const v = seedVariant();
+
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = await fieldState(shopId, productId);
+    expect(before).toEqual([expect.objectContaining({
+      sku: v.sku, barcode: v.barcode, external_sku: v.sku, map_barcode: v.barcode,
+      external_inventory_item_id: inventoryItemGid(v.inventoryItemId!),
+    })]);
+    expect(before[0].lasyncro_barcode).toMatch(LSP_PATTERN);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId),
+      title: `A23 product ${productId}`,
+      status: 'active',
+      updated_at: T2,
+      // sku, barcode and inventory_item_id are absent from the raw payload.
+      variants: [{ id: Number(v.variantId), title: `Variant ${v.variantId}` }],
+    });
+
+    expect(outcome(delivery)).toEqual(PROCESSED);
+    expect(await fieldState(shopId, productId)).toEqual(before);
+  });
+
+  it('RC1b — an explicit null / empty value clears only the fields it names; identity is unchanged', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc1b');
+    const productId = numericId();
+    const v = seedVariant();
+
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = await fieldState(shopId, productId);
+    expect(before).toHaveLength(1);
+
+    // Step 1: clear sku ('') and barcode (null); inventory_item_id is sent unchanged.
+    const clearSkuBarcode = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'active', updated_at: T2,
+      variants: [{ ...restVariant(v), sku: '', barcode: null }],
+    });
+    expect(outcome(clearSkuBarcode)).toEqual(PROCESSED);
+    expect(await fieldState(shopId, productId)).toEqual([{
+      ...before[0], sku: null, barcode: null, external_sku: null, map_barcode: null,
+    }]);
+
+    // Step 2: explicit null inventory_item_id clears only the inventory item.
+    const clearInventoryItem = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'active', updated_at: T3,
+      variants: [{ ...restVariant(v), sku: '', barcode: null, inventory_item_id: null }],
+    });
+    expect(outcome(clearInventoryItem)).toEqual(PROCESSED);
+    expect(await fieldState(shopId, productId)).toEqual([{
+      ...before[0], sku: null, barcode: null, external_sku: null, map_barcode: null,
+      external_inventory_item_id: null,
+    }]);
+  });
+
+  // ── RC2: malformed identities (O6) ──
+
+  it('RC2a — products/create with an invalid Shopify product id fails and persists nothing', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc2a');
+    const before = await footprint(shopId);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/create', {
+      id: 'not-a-product-id', title: 'A23 invalid product id', status: 'active', updated_at: T1,
+      variants: [restVariant(seedVariant())],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await footprint(shopId)).toEqual(before);
+    expect(await syntheticIdentities(shopId)).toEqual([]);
+  });
+
+  it('RC2b — products/create with a non-canonical (GID-form) product id fails and persists no doubled identity', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc2b');
+    const before = await footprint(shopId);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/create', {
+      id: productGid(numericId()), title: 'A23 non-canonical product id', status: 'active', updated_at: T1,
+      variants: [restVariant(seedVariant())],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await footprint(shopId)).toEqual(before);
+    expect(await syntheticIdentities(shopId)).toEqual([]);
+  });
+
+  it('RC2c — a products/update containing a variant with no id fails; the valid product identity is unchanged', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc2c');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = { fields: await fieldState(shopId, productId), counts: await footprint(shopId) };
+
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'active', updated_at: T2,
+      variants: [restVariant(v), { title: 'A23 variant without id', sku: `A23-NOID-${numericId()}` }],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await fieldState(shopId, productId)).toEqual(before.fields);
+    expect(await footprint(shopId)).toEqual(before.counts);
+    expect(await syntheticIdentities(shopId)).toEqual([]);
+    expect(await watermarkOf(shopId, productId)).toEqual({ is_deleted: false, source_updated_at: T1 });
+  });
+
+  it('RC2d — a products/update containing a malformed variant id fails; the valid product identity is unchanged', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc2d');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = { fields: await fieldState(shopId, productId), counts: await footprint(shopId) };
+
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'active', updated_at: T2,
+      variants: [restVariant(v), { id: 'abc-variant', title: 'A23 malformed variant', sku: `A23-BADID-${numericId()}` }],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await fieldState(shopId, productId)).toEqual(before.fields);
+    expect(await footprint(shopId)).toEqual(before.counts);
+    expect(await syntheticIdentities(shopId)).toEqual([]);
+    expect(await watermarkOf(shopId, productId)).toEqual({ is_deleted: false, source_updated_at: T1 });
+  });
+
+  it('RC2e — two different products each carrying an id-less variant never share a variant identity', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc2e');
+    const before = await footprint(shopId);
+    const productA = numericId();
+    const productB = numericId();
+
+    const deliveryA = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(productA), title: `A23 product ${productA}`, status: 'active', updated_at: T1,
+      variants: [{ title: 'A23 id-less variant A', sku: `A23-NOID-A-${productA}` }],
+    });
+    const deliveryB = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(productB), title: `A23 product ${productB}`, status: 'active', updated_at: T1,
+      variants: [{ title: 'A23 id-less variant B', sku: `A23-NOID-B-${productB}` }],
+    });
+
+    const evidence = {
+      deliveries: [outcome(deliveryA), outcome(deliveryB)],
+      synthetic: await syntheticIdentities(shopId),
+      crossProduct: await crossProductVariants(shopId),
+      footprint: await footprint(shopId),
+    };
+    console.info('RC2E_EVIDENCE', JSON.stringify(evidence));
+    expect(evidence).toEqual({
+      deliveries: [REJECTED, REJECTED],
+      synthetic: [],
+      crossProduct: [],
+      footprint: before,
+    });
+  });
+
+  // ── RC3: first-time status safety (O2, O3) ──
+
+  it('RC3a — a never-seen product delivered without status is rejected and no active product is created', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc3a');
+    const productId = numericId();
+    const before = await footprint(shopId);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(productId), title: `A23 product ${productId}`, updated_at: T1,
+      variants: [restVariant(seedVariant())],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect((await catalogState(shopId, productId)).parents).toEqual([]);
+    expect(await footprint(shopId)).toEqual(before);
+  });
+
+  it('RC3b — an existing product updated without status keeps its status', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc3b');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ARCHIVED', [v], T1)]);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, updated_at: T2, variants: [restVariant(v)],
+    });
+
+    expect(outcome(delivery)).toEqual(PROCESSED);
+    const parents = await parentRows(shopId, productId);
+    expect(parents.map((p: any) => p.status)).toEqual(parents.map(() => 'archived'));
+    expect(parents).toHaveLength(1);
+  });
+
+  it('RC3c — recognized statuses draft → archived → active remain supported', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc3c');
+    const productId = numericId();
+    const v = seedVariant();
+    const statuses: string[][] = [];
+
+    for (const [status, updatedAt, topic] of [
+      ['draft', T1, 'products/create'], ['archived', T2, 'products/update'], ['active', T3, 'products/update'],
+    ] as const) {
+      const delivery = await deliver(shopId, shopDomain, topic, {
+        id: Number(productId), title: `A23 product ${productId}`, status, updated_at: updatedAt,
+        variants: [restVariant(v)],
+      });
+      expect({ status, outcome: outcome(delivery) }).toEqual({ status, outcome: PROCESSED });
+      statuses.push((await parentRows(shopId, productId)).map((p: any) => p.status));
+    }
+
+    expect(statuses).toEqual([['draft'], ['archived'], ['active']]);
+  });
+
+  // ── RC4: duplicate Shopify SKU characterization (O4 — evidence only) ──
+
+  /**
+   * Shopify permits two variants to share a SKU; variants carries
+   * UNIQUE(shop_id, sku) (migration 0027). This pins the CURRENT behaviour as
+   * evidence. It authorizes no duplicate-SKU policy.
+   */
+  it('RC4 — CHARACTERIZATION: a second Shopify variant sharing a persisted SKU fails the webhook and rolls back the whole product', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc4');
+    const productOne = numericId();
+    const duplicateSku = `A23-DUP-${numericId()}`;
+    const existing: SeedVariant = { ...seedVariant(), sku: duplicateSku };
+    await initialSync(shopId, [seedEdge(productOne, 'ACTIVE', [existing], T1)]);
+    const before = { productOne: await fieldState(shopId, productOne), counts: await footprint(shopId) };
+
+    const productTwo = numericId();
+    const delivery = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(productTwo), title: `A23 product ${productTwo}`, status: 'active', updated_at: T1,
+      // The unique, otherwise valid variant is written FIRST; the second reuses the
+      // persisted SKU — so a full rollback must also undo the first variant's writes.
+      variants: [restVariant(seedVariant()), restVariant({ ...seedVariant(), sku: duplicateSku })],
+    });
+
+    const evidence = {
+      outcome: outcome(delivery),
+      error: delivery.errors[0],
+      productTwoMappings: (await catalogState(shopId, productTwo)).mappings.length,
+      productTwoWatermark: await watermarkOf(shopId, productTwo),
+      counts: await footprint(shopId),
+      productOne: await fieldState(shopId, productOne),
+    };
+    console.info('RC4_EVIDENCE', JSON.stringify(evidence));
+
+    expect(evidence.outcome).toEqual(REJECTED);
+    expect(evidence.error).toMatch(/duplicate key value violates unique constraint "variants_shop_id_sku_unique"/);
+    expect(evidence.productTwoMappings).toBe(0);
+    expect(evidence.productTwoWatermark).toBeNull();
+    expect(evidence.counts).toEqual(before.counts);
+    expect(evidence.productOne).toEqual(before.productOne);
+  });
+
+  // ── RC5: status and guard failures (O2, O6) ──
+
+  it('RC5a — an unknown Shopify status fails the webhook and leaves the product unchanged', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5a');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = { parents: await parentRows(shopId, productId), fields: await fieldState(shopId, productId) };
+
+    // CORRECT-005: this case originally used 'unlisted', which the owner has
+    // since confirmed is a recognized Shopify 2026-04 product status (see
+    // RC5h). 'suspended' is not a Shopify product status, so the
+    // unknown-status rejection contract is preserved unchanged.
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'suspended', updated_at: T2,
+      variants: [restVariant(v)],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await parentRows(shopId, productId)).toEqual(before.parents);
+    expect(await fieldState(shopId, productId)).toEqual(before.fields);
+    expect(await watermarkOf(shopId, productId)).toEqual({ is_deleted: false, source_updated_at: T1 });
+  });
+
+  it('RC5b — a status value of "deleted" is unknown, fails, and is never treated as a deletion', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5b');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+
+    const forged = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'deleted', updated_at: T2,
+      variants: [restVariant(v)],
+    });
+    expect(outcome(forged)).toEqual(REJECTED);
+    expect((await parentRows(shopId, productId)).map((p: any) => p.status)).toEqual(['active']);
+    expect(await watermarkOf(shopId, productId)).toEqual({ is_deleted: false, source_updated_at: T1 });
+
+    // Not tombstoned: a later recognized update still applies.
+    const later = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), title: `A23 product ${productId}`, status: 'archived', updated_at: T3,
+      variants: [restVariant(v)],
+    });
+    expect(outcome(later)).toEqual(PROCESSED);
+    expect((await parentRows(shopId, productId)).map((p: any) => p.status)).toEqual(['archived']);
+  });
+
+  it('RC5c — a delivery for a shop domain with no installation is not acknowledged (router)', async () => {
+    const unknownDomain = `a23-noinstall-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.myshopify.com`;
+    const rawBody = JSON.stringify({
+      id: Number(numericId()), title: 'A23 unknown shop', status: 'active', updated_at: T1,
+      variants: [restVariant(seedVariant())],
+    });
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(Buffer.from(rawBody, 'utf8')).digest('base64');
+    const res = await request(app)
+      .post('/api/v1/shopify/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Shopify-Topic', 'products/update')
+      .set('X-Shopify-Shop-Domain', unknownDomain)
+      .set('X-Shopify-Webhook-Id', `gh1262-a23-${crypto.randomUUID()}`)
+      .set('X-Shopify-Hmac-Sha256', hmac)
+      .send(rawBody);
+
+    // No tenant can be resolved, so no tenant-scoped ledger row can exist.
+    expect(res.status).toBe(500);
+  });
+
+  it('RC5d — handler-level missing installation or foreign shop ownership fails and writes nothing', async () => {
+    const shopA = await provisionCatalogShop('a23-rc5d-a');
+    const shopB = await provisionCatalogShop('a23-rc5d-b');
+    const before = { a: await footprint(shopA.shopId), b: await footprint(shopB.shopId) };
+    const payload = {
+      id: Number(numericId()), title: 'A23 ownership', status: 'active', updated_at: T1,
+      variants: [restVariant(seedVariant())],
+    };
+    const resolvedEnvelope = (shopDomain: string): WebhookEnvelope => ({
+      ...envelope(shopDomain, 'products/update', payload), shopId: shopA.shopId,
+    });
+    const settle = (p: Promise<unknown>) => p.then(() => 'resolved', (e: Error) => `rejected: ${e.message}`);
+
+    const missingInstallation = await settle(withTenant(shopA.shopId, (trx) =>
+      handleProductUpdated(resolvedEnvelope(`a23-missing-${numericId()}.myshopify.com`), trx)));
+    const foreignOwnership = await settle(withTenant(shopA.shopId, (trx) =>
+      handleProductUpdated(resolvedEnvelope(shopB.shopDomain), trx)));
+    console.info('RC5D_EVIDENCE', JSON.stringify({ missingInstallation, foreignOwnership }));
+
+    expect({ missingInstallation, foreignOwnership }).toEqual({
+      missingInstallation: expect.stringMatching(/^rejected: /),
+      foreignOwnership: expect.stringMatching(/^rejected: /),
+    });
+    expect(await footprint(shopA.shopId)).toEqual(before.a);
+    expect(await footprint(shopB.shopId)).toEqual(before.b);
+  });
+
+  it('RC5e — a valid existing-product update without title is applied and preserves the title', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5e');
+    const productId = numericId();
+    const v = seedVariant();
+    await initialSync(shopId, [seedEdge(productId, 'ACTIVE', [v], T1)]);
+    const before = await parentRows(shopId, productId);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(productId), status: 'archived', updated_at: T2, variants: [restVariant(v)],
+    });
+
+    expect(outcome(delivery)).toEqual(PROCESSED);
+    expect(await parentRows(shopId, productId)).toEqual(before.map((p: any) => ({ ...p, status: 'archived' })));
+    expect(await watermarkOf(shopId, productId)).toEqual({ is_deleted: false, source_updated_at: T2 });
+  });
+
+  it('RC5f — a products/create without title (invalid creation payload) fails and persists nothing', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5f');
+    const productId = numericId();
+    const before = await footprint(shopId);
+
+    const delivery = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(productId), status: 'active', updated_at: T1, variants: [restVariant(seedVariant())],
+    });
+
+    expect(outcome(delivery)).toEqual(REJECTED);
+    expect(await footprint(shopId)).toEqual(before);
+  });
+
+  it('RC5g — a products/update for a never-seen product without a real title is rejected and writes nothing', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5g');
+    const stock = () => withTenant(shopId, async (trx) => {
+      const count = async (table: string) =>
+        Number((await trx(table).where({ shop_id: shopId }).count('* as c').first())?.c ?? 0);
+      return {
+        movements: await count('inventory_movements'),
+        truth: await count('inventory_truth'),
+        units: await count('inventory_units'),
+      };
+    });
+    const before = { catalog: await footprint(shopId), stock: await stock() };
+
+    // Absent (the ratified RC5g case), then null / empty / whitespace-only (R1).
+    const titles: Array<{ label: string; title?: unknown }> = [
+      { label: 'absent' }, { label: 'null', title: null }, { label: 'empty', title: '' }, { label: 'whitespace', title: '   ' },
+    ];
+    for (const { label, title } of titles) {
+      const productId = numericId();
+      const delivery = await deliver(shopId, shopDomain, 'products/update', {
+        id: Number(productId), ...(label === 'absent' ? {} : { title }), status: 'active', updated_at: T1,
+        variants: [restVariant(seedVariant())],
+      });
+      expect({ label, outcome: outcome(delivery) }).toEqual({ label, outcome: REJECTED });
+      expect({ label, error: delivery.errors[0] }).toEqual({
+        label, error: expect.stringMatching(/SHOPIFY_(PRODUCT_TITLE_REQUIRED|REST_PRODUCT_TITLE_INVALID)/),
+      });
+      expect({ label, mappings: (await catalogState(shopId, productId)).mappings })
+        .toEqual({ label, mappings: [] });
+      expect({ label, watermark: await watermarkOf(shopId, productId) }).toEqual({ label, watermark: null });
+    }
+
+    // No product, variant, mapping, watermark or stock row was written.
+    expect({ catalog: await footprint(shopId), stock: await stock() }).toEqual(before);
+  });
+
+  it('RC5h — Shopify 2026-04 status unlisted is persisted as-is on first creation and on update; unknown statuses still fail', async () => {
+    const { shopId, shopDomain } = await provisionCatalogShop('a23-rc5h');
+
+    // First-time creation with unlisted.
+    const created = numericId();
+    const createdVariant = seedVariant();
+    const create = await deliver(shopId, shopDomain, 'products/create', {
+      id: Number(created), title: `A23 product ${created}`, status: 'unlisted', updated_at: T1,
+      variants: [restVariant(createdVariant)],
+    });
+    expect(outcome(create)).toEqual(PROCESSED);
+    expect((await parentRows(shopId, created)).map((p: any) => p.status)).toEqual(['unlisted']);
+    expect((await fieldState(shopId, created))[0].lasyncro_barcode).toMatch(LSP_PATTERN);
+    expect(await watermarkOf(shopId, created)).toEqual({ is_deleted: false, source_updated_at: T1 });
+
+    // Existing product updated to unlisted: identities unchanged, no tombstone.
+    const existing = numericId();
+    const existingVariant = seedVariant();
+    await initialSync(shopId, [seedEdge(existing, 'ACTIVE', [existingVariant], T1)]);
+    const before = { parents: await parentRows(shopId, existing), fields: await fieldState(shopId, existing) };
+
+    const update = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(existing), title: `A23 product ${existing}`, status: 'unlisted', updated_at: T2,
+      variants: [restVariant(existingVariant)],
+    });
+    expect(outcome(update)).toEqual(PROCESSED);
+    expect(await parentRows(shopId, existing)).toEqual(before.parents.map((p: any) => ({ ...p, status: 'unlisted' })));
+    expect(await fieldState(shopId, existing)).toEqual(before.fields);
+    expect(await watermarkOf(shopId, existing)).toEqual({ is_deleted: false, source_updated_at: T2 });
+
+    // An unsupported status still fails closed and leaves unlisted in place.
+    const unknown = await deliver(shopId, shopDomain, 'products/update', {
+      id: Number(existing), title: `A23 product ${existing}`, status: 'suspended', updated_at: T3,
+      variants: [restVariant(existingVariant)],
+    });
+    expect(outcome(unknown)).toEqual(REJECTED);
+    expect((await parentRows(shopId, existing)).map((p: any) => p.status)).toEqual(['unlisted']);
+    expect(await watermarkOf(shopId, existing)).toEqual({ is_deleted: false, source_updated_at: T2 });
+  });
+});
+
 // ── ISOLATION ───────────────────────────────────────────────────────────────
 
 it('ISOLATION — no provider call was attempted by any contract above', () => {
