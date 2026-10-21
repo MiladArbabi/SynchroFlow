@@ -431,6 +431,22 @@ async function startWorkersInternal(): Promise<void> {
   }
   // start Shopify uninstall grace-period worker (SHB-08)
   try {
+    const uninstallVerification = await import('../workers/shopifyUninstallVerification.worker.js');
+    if (stopRequested) return;
+    if (typeof uninstallVerification.startShopifyUninstallVerificationWorker === 'function') {
+      superviseWorker('shopify-uninstall-verification',
+        () => uninstallVerification.startShopifyUninstallVerificationWorker());
+      if (typeof uninstallVerification.stopShopifyUninstallVerificationWorker === 'function') {
+        workerStopFns.push(async () => uninstallVerification.stopShopifyUninstallVerificationWorker());
+      }
+      console.log('[bootstrap/workers] Shopify uninstall verification worker started');
+    }
+  } catch (err) {
+    console.warn('[bootstrap/workers] Shopify uninstall verification worker not available:',
+      err && (err as Error).message ? (err as Error).message : err);
+  }
+
+  try {
     const shopifyGrace = await import('../workers/shopifyUninstallGrace.worker.js');
     if (stopRequested) return;
     if (typeof shopifyGrace.startShopifyUninstallGraceWorker === 'function') {

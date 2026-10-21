@@ -1,5 +1,7 @@
 import type { Knex } from 'knex';
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import { hasUnresolvedShopifyDisconnect } from './shopifyDisconnectAttempt.repository.js';
+import { hasUnresolvedShopifyUninstallVerification } from './shopifyUninstallVerification.repository.js';
 
 /**
  * GH-1101 — CANONICAL SHOPIFY CONNECTION STATE
@@ -21,6 +23,7 @@ export type ShopifyConnectionState =
   | 'CONNECTED'
   | 'REFRESHING'
   | 'REAUTH_REQUIRED'
+  | 'UNINSTALL_VERIFICATION_UNRESOLVED'
   | 'RECONNECT_IN_PROGRESS';
 
 export interface ShopifyConnection {
@@ -65,6 +68,9 @@ export async function classifyShopifyConnection(
   if (active.length > 1) return connection('REAUTH_REQUIRED', active[0]);
 
   const installation = active[0];
+  if (await hasUnresolvedShopifyUninstallVerification(trx, shopId, Number(installation.id))) {
+    return connection('UNINSTALL_VERIFICATION_UNRESOLVED', installation);
+  }
   const credentials = await trx.raw(`
     SELECT credential.credential_state,
       (credential.access_token_encrypted IS NOT NULL
@@ -82,10 +88,16 @@ export async function classifyShopifyConnection(
   const credential = credentials.rows[0];
 
   if (credential.credential_state === 'ACTIVE') {
-    if (credential.access_usable === true) return connection('CONNECTED', installation);
-    if (credential.lease_live === true) return connection('REFRESHING', installation);
-    if (credential.refresh_usable === true) return connection('CONNECTED', installation);
-    return connection('REAUTH_REQUIRED', installation);
+    const ready: ShopifyConnectionState | null = credential.access_usable === true ? 'CONNECTED'
+      : credential.lease_live === true ? 'REFRESHING'
+        : credential.refresh_usable === true ? 'CONNECTED' : null;
+    if (ready === null) return connection('REAUTH_REQUIRED', installation);
+    // GH-979 C: an unresolved owner disconnect may already have uninstalled the
+    // app at Shopify. Readiness is unverified until it resolves: fail closed.
+    if (await hasUnresolvedShopifyDisconnect(trx, shopId, Number(installation.id))) {
+      return connection('REAUTH_REQUIRED', installation);
+    }
+    return connection(ready, installation);
   }
   if (credential.credential_state === 'REAUTH_REQUIRED' && credential.lease_live === true) {
     return connection('RECONNECT_IN_PROGRESS', installation);

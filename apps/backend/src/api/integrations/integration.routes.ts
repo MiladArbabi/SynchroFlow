@@ -12,6 +12,7 @@ import {
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import { triggerManualInitialSync } from './manualSync.controller.js';
+import { disconnectShopify, getShopifyDisconnectCapability, reconcileShopifyDisconnect } from './shopifyDisconnect.controller.js';
 import type { NextFunction, Request, Response } from 'express';
 
 const router = Router();
@@ -60,4 +61,9 @@ router.post('/sync-notify', authenticateToken, requestSyncNotification);
  */
 
 router.post('/sync/:integrationId', authenticateToken, requireAction('integrations:write'), triggerManualSync);
+
+// GH-979 C: owner-only (current DB membership), deliberately not integrations:write.
+router.get('/shopify/disconnect/capability', authenticateToken, getShopifyDisconnectCapability);
+router.post('/shopify/disconnect', authenticateToken, disconnectShopify);
+router.post('/shopify/disconnect/reconcile', authenticateToken, reconcileShopifyDisconnect);
 export default router;

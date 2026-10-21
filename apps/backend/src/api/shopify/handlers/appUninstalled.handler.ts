@@ -3,27 +3,32 @@
 // Handler: app/uninstalled
 //
 // RESPONSIBILITIES:
-// - Execute domain mutation for Shopify app uninstall
+// - Persist the durable verification intent for an authenticated receipt
 //
 // CONTRACT:
 // - Called only AFTER ledger write + idempotency check
 // - Throws on failure
 // - Does NOT perform transport concerns
 //
-// ISS-RLS2: trx accepted for signature consistency with WebhookHandler
-// type, though this handler currently delegates to a stub
-// (handleAppUninstalled) with no DB access of its own.
 import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
-import { handleAppUninstalled } from './handleAppUninstalled.js';
+import { recordShopifyUninstallVerification } from '../../../services/shopify/shopifyUninstallVerification.repository.js';
+
 export async function onShopifyAppUninstalled(
   envelope: WebhookEnvelope,
-  trx: Knex.Transaction
+  trx: Knex.Transaction,
 ): Promise<void> {
   // SHB-16: envelope.shopId is now populated by WebhookRouter after
   // shopDomain resolution — trusted here rather than re-deriving.
   if (!envelope.shopId) {
     throw new Error('[shopify][app_uninstalled] shopId required');
   }
-  await handleAppUninstalled(envelope.shopId, trx);
+  if (!envelope.verified || !envelope.shopDomain) {
+    throw new Error('SHOPIFY_UNINSTALL_VERIFIED_IDENTITY_REQUIRED');
+  }
+  await recordShopifyUninstallVerification(trx, {
+    shopId: envelope.shopId,
+    eventId: envelope.eventId,
+    shopDomain: envelope.shopDomain,
+  });
 }

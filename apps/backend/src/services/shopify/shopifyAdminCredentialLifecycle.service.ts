@@ -6,6 +6,7 @@ import { normalizeAndValidateShopifyGrantedScopes } from './shopifyScopes.js';
 import type { ShopifyOAuthAcquisition } from './shopifyOAuthAcquisition.service.js';
 import { refreshShopifyAdminCredential } from './shopifyAdminCredentialRefreshProvider.service.js';
 import { executeShopifyReconnectFinalizer } from './shopifyReconnectExecutor.db.js';
+import { hasUnresolvedShopifyDisconnect } from './shopifyDisconnectAttempt.repository.js';
 import {
   readShopifyAdminCredential,
   lockShopifyAdminCredentialRotation,
@@ -92,6 +93,12 @@ export async function claimShopifyAdminCredentialRotation(
       .first<ShopifyAdminCredentialRow & { shop_domain: string }>();
     const current = resolveCurrent(credential, now);
     if (current) return current;
+    // GH-979 C: under this lock, an unresolved disconnect intent forbids any
+    // refresh: it would issue new material for an authority Shopify may
+    // already have uninstalled, and must not end the fail-closed state.
+    if (await hasUnresolvedShopifyDisconnect(trx, shopId, credential!.installation_id)) {
+      return { kind: 'REAUTH_REQUIRED' };
+    }
     const leaseToken = crypto.randomUUID();
     await writeShopifyAdminCredentialRotationLease(trx, credential!, leaseToken, now);
     return {
@@ -312,10 +319,11 @@ export type ShopifyAdminCredentialReconnectCompletion =
 
 /** Owner success replaces authority atomically without advancing the pre-fenced epoch again. */
 export async function finalizeShopifyAdminCredentialReconnect(
-  input: ReconnectInput & { credentials: ShopifyOAuthAcquisition },
+  input: ReconnectInput & { credentials: ShopifyOAuthAcquisition; recoveryStateHash?: string },
 ): Promise<ShopifyAdminCredentialReconnectCompletion> {
   // E owns the entire finalization transaction and canonical T2 lock. No sf_app fallback.
-  const result = await executeShopifyReconnectFinalizer(input, input.credentials);
+  const result = await executeShopifyReconnectFinalizer(
+    input, input.credentials, input.recoveryStateHash ?? null);
   if (result.kind === 'STALE_RESULT') {
     return withTenant(input.shopId, trx => staleRotationResult(trx, input));
   }

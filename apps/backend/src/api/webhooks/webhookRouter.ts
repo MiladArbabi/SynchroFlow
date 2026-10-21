@@ -25,12 +25,21 @@ import { buildExternalEventId } from './buildExternalEventId.js';
 // ISS-RLS2: handlers now receive the router's tenant-scoped transaction
 // instead of importing the bare `db` singleton internally. Every handler
 // MUST use this trx for all queries — see RLS_blueprint.md §3.
-type WebhookHandler = (envelope: WebhookEnvelope, trx: Knex.Transaction) => Promise<void>;
+type WebhookHandler = (envelope: WebhookEnvelope, trx: Knex.Transaction, attribution?: unknown) => Promise<void>;
 
 interface RouteRegistration {
   integration: string;
   eventType: string;
   handle: WebhookHandler;
+  /**
+   * GH-979 C / D1: optional pre-transaction attribution. Runs after shop
+   * resolution and BEFORE the ledger transaction, so any provider I/O stays
+   * outside every database transaction. Its result is passed to `handle`;
+   * it is recomputed on every delivery/replay and never persisted.
+   */
+  attribute?: (envelope: WebhookEnvelope) => Promise<unknown>;
+  /** Handler durably records deferred work; ledger remains received. */
+  receiptOnly?: boolean;
   afterFailure?: (envelope: WebhookEnvelope, error: unknown) => Promise<void>;
 }
 
@@ -156,6 +165,18 @@ export class WebhookRouter {
       // SET LOCAL/ledger calls within this function; this line just
       // propagates it forward for handlers dispatched below.
       envelope.shopId = resolvedShopId;
+
+      // GH-979 C / D1: route-scoped attribution, outside the ledger transaction.
+      const attributedRoute = WebhookRouter.routes.get(
+        WebhookRouter.key(envelope.integration, normalizedEventType));
+      let attribution: unknown;
+      if (attributedRoute?.attribute) {
+        try {
+          attribution = await attributedRoute.attribute(envelope);
+        } catch {
+          attribution = undefined; // The handler fails closed on missing attribution.
+        }
+      }
 
       /**
        * ISS-RLS2 FIX
@@ -345,7 +366,7 @@ export class WebhookRouter {
 
         await trx.raw('SAVEPOINT webhook_handler_execution');
         try {
-          await route.handle(envelope, trx);
+          await route.handle(envelope, trx, route === attributedRoute ? attribution : undefined);
           await trx.raw('RELEASE SAVEPOINT webhook_handler_execution');
         } catch (err: any) {
           await trx.raw('ROLLBACK TO SAVEPOINT webhook_handler_execution');
@@ -370,7 +391,7 @@ export class WebhookRouter {
           // Captured, not thrown here — see comment above this transaction.
           capturedError = handlerError;
           capturedAfterFailure = route.afterFailure;
-        } else {
+        } else if (!route.receiptOnly) {
           await WebhookLedgerService.markProcessed(
             envelope.eventId,
             resolvedShopId,

@@ -31,9 +31,9 @@ import {
 } from 'api-src/services/shopify/shopifyAdminCredentialLifecycle.service';
 import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
-// GH-1068 T3-B / GH-1101: the latest evolution (0217) carries every 0215/0216 invariant.
-import { assertSecurityPostconditions, FINALIZER_SIGNATURE } from
-  '../../../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery';
+// GH-979 Section C: the latest evolution (0220) carries every prior reconnect-security invariant.
+import { assertSecurityPostconditions, LEGACY_FINALIZER_SIGNATURE as FINALIZER_SIGNATURE } from
+  '../../../apps/backend/migrations/20261021130000_0220_add_state_bound_shopify_reconnect_proof';
 
 const E = 'sf_shopify_reconnect_executor';
 const O = 'sf_shopify_reconnect_owner';
@@ -296,7 +296,7 @@ describe('GH-1068 T3-A — real reconnect executor', () => {
     const prepared = await prepare(f);
     const result = await finalizeShopifyAdminCredentialReconnect({
       ...prepared, credentials: credentials(f, 'finalize-completed') });
-    expect(result).toEqual({ kind: 'RECONNECTED', generation: prepared.generation,
+    expect(result).toEqual({ kind: 'RECONNECTED', generation: prepared.generation, recoveryProof: false,
       integration: { id: f.integrationId } });
     // COMPLETED -> PENDING is only legal for O acting for an E session.
     expect(await integration(f.shopId)).toEqual({ id: f.integrationId, platform_shop_name: f.domain,
