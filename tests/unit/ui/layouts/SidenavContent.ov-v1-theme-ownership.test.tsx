@@ -179,6 +179,15 @@ describe('OV-V1-0 (G): Sidenav owns the colour-mode control and Settings', () =>
     expect(mockNavigate.mock.calls[0][0]).toBe('/settings');
   });
 
+  it.each(['EXPANDED', 'COMPACT'] as const)('%s: keeps the Settings glyph decorative and the control accessibly named', (sidenavState) => {
+    renderSidenav(sidenavState);
+
+    const settings = screen.getByRole('button', { name: /^settings$/i });
+    expect(settings).toBeInTheDocument();
+    expect(screen.getByTestId('settings-glyph')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-glyph').querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('expanded: Settings is permanent shell navigation and is NOT duplicated inside the account menu', () => {
     renderSidenav('EXPANDED');
 

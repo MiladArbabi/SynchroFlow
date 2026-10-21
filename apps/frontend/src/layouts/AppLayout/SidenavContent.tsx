@@ -554,7 +554,18 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                   '&.Mui-focusVisible': { boxShadow: 'inset 0 0 0 2px var(--accent)' },
                 }}
               >
-                <Settings size={20} strokeWidth={isSettingsActive ? 2.5 : 1.75} />
+                <Box
+                  component="span"
+                  data-testid="settings-glyph"
+                  sx={{
+                    display: 'inline-flex',
+                    transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    '.MuiButtonBase-root:hover &': { transform: 'rotate(24deg)' },
+                    '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                  }}
+                >
+                  <Settings size={20} strokeWidth={isSettingsActive ? 2.5 : 1.75} aria-hidden="true" />
+                </Box>
               </ButtonBase>
             </Tooltip>
           ) : (
@@ -579,7 +590,18 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                 '&.Mui-focusVisible': { boxShadow: 'inset 0 0 0 2px var(--accent)' },
               }}
             >
-              <Settings size={18} strokeWidth={isSettingsActive ? 2.5 : 1.75} />
+              <Box
+                component="span"
+                data-testid="settings-glyph"
+                sx={{
+                  display: 'inline-flex',
+                  transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  '.MuiButtonBase-root:hover &': { transform: 'rotate(24deg)' },
+                  '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                }}
+              >
+                <Settings size={18} strokeWidth={isSettingsActive ? 2.5 : 1.75} aria-hidden="true" />
+              </Box>
               <span style={{ fontSize: 13, lineHeight: 1.4, color: 'inherit', fontWeight: isSettingsActive ? 600 : 400 }}>
                 Settings
               </span>

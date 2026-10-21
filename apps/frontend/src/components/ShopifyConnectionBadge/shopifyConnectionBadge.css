@@ -1,0 +1,148 @@
+.shopify-connection-badge {
+  --shopify-status-color: #3fa26e;
+  --shopify-status-ink: #2b7a51;
+  --shopify-status-bg: rgba(76, 175, 122, 0.1);
+  --shopify-status-border: rgba(76, 175, 122, 0.34);
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--shopify-status-border);
+  border-radius: 999px;
+  background: var(--shopify-status-bg);
+  color: var(--shopify-status-ink);
+  font: 500 12px/1 var(--font-family, Inter, system-ui, sans-serif);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 150ms ease;
+}
+
+.shopify-connection-badge[data-state='reconnecting'] {
+  --shopify-status-color: #d99023;
+  --shopify-status-ink: #8f5a07;
+  --shopify-status-bg: rgba(233, 162, 59, 0.12);
+  --shopify-status-border: rgba(217, 144, 35, 0.4);
+}
+
+.shopify-connection-badge[data-state='disconnected'] {
+  --shopify-status-color: #dc3d3d;
+  --shopify-status-ink: #b42f2f;
+  --shopify-status-bg: rgba(229, 72, 77, 0.08);
+  --shopify-status-border: rgba(220, 61, 61, 0.34);
+}
+
+[data-mui-color-scheme='dark'] .shopify-connection-badge,
+:root[data-theme='dark'] .shopify-connection-badge {
+  --shopify-status-color: #4caf7a;
+  --shopify-status-ink: #5fc08c;
+  --shopify-status-bg: rgba(76, 175, 122, 0.1);
+  --shopify-status-border: rgba(76, 175, 122, 0.3);
+}
+
+[data-mui-color-scheme='dark'] .shopify-connection-badge[data-state='reconnecting'],
+:root[data-theme='dark'] .shopify-connection-badge[data-state='reconnecting'] {
+  --shopify-status-color: #f2b544;
+  --shopify-status-ink: #f2b544;
+  --shopify-status-bg: rgba(242, 181, 68, 0.1);
+  --shopify-status-border: rgba(242, 181, 68, 0.32);
+}
+
+[data-mui-color-scheme='dark'] .shopify-connection-badge[data-state='disconnected'],
+:root[data-theme='dark'] .shopify-connection-badge[data-state='disconnected'] {
+  --shopify-status-color: #f07272;
+  --shopify-status-ink: #f58a8a;
+  --shopify-status-bg: rgba(240, 114, 114, 0.1);
+  --shopify-status-border: rgba(240, 114, 114, 0.34);
+}
+
+.shopify-connection-badge:hover {
+  filter: brightness(0.96);
+}
+
+.shopify-connection-badge:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ghost);
+}
+
+.shopify-connection-badge__glyph {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  flex: none;
+  color: var(--shopify-status-color);
+}
+
+.shopify-connection-badge__glyph * {
+  transform-box: view-box;
+  transform-origin: 8px 8px;
+}
+
+.shopify-connection-badge__core {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  transition: transform 450ms cubic-bezier(0.16, 1, 0.3, 1), fill-opacity 180ms ease;
+}
+
+.shopify-connection-badge__arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 30 100;
+  opacity: 0;
+}
+
+.shopify-connection-badge__slash {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shopify-connection-badge[data-state='reconnecting'] .shopify-connection-badge__core {
+  transform: scale(0.55);
+}
+
+.shopify-connection-badge[data-state='reconnecting'] .shopify-connection-badge__arc {
+  opacity: 1;
+  animation: shopify-connection-spin 1s linear infinite;
+}
+
+.shopify-connection-badge[data-state='disconnected'] .shopify-connection-badge__core {
+  fill-opacity: 0;
+  transform: scale(0.92);
+}
+
+.shopify-connection-badge[data-state='disconnected'] .shopify-connection-badge__slash {
+  stroke-dashoffset: 0;
+}
+
+.shopify-connection-badge strong {
+  font-weight: 500;
+}
+
+@keyframes shopify-connection-spin {
+  to { rotate: 360deg; }
+}
+
+@media (max-width: 720px) {
+  .shopify-connection-badge strong {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shopify-connection-badge,
+  .shopify-connection-badge * {
+    animation: none !important;
+    transition-duration: 0s !important;
+  }
+}

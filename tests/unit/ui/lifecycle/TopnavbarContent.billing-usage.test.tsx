@@ -45,6 +45,10 @@ jest.mock('components/OpsConsole', () => ({
   OpsConsoleButton: () => <div data-testid="ops-console" />,
 }));
 
+jest.mock('components/ShopifyConnectionBadge/ShopifyConnectionBadge', () => ({
+  ShopifyConnectionBadge: () => <div data-testid="shopify-connection-badge" />,
+}));
+
 jest.mock('components/TrialCountdownChip', () => ({
   TrialCountdownChip: () => <div data-testid="trial-chip" />,
 }));
