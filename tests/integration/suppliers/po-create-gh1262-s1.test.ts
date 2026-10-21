@@ -1198,3 +1198,178 @@ describe('GH-1262 S1 R9 — PO creation has no inventory side effects', () => {
     expect(mockRequest).not.toHaveBeenCalled();
   });
 });
+
+// ── H1 — VARIANT PICKER OFFERS ONLY PO-ELIGIBLE VARIANTS ───────────────────
+
+const SEARCH_PATH = '/api/v1/suppliers/variants/search';
+
+function searchVariants(token: string, q?: string) {
+  const req = request(app).get(SEARCH_PATH).set({ Authorization: `Bearer ${token}` });
+  return q === undefined ? req : req.query({ q });
+}
+
+async function searchIds(token: string, q?: string): Promise<string[]> {
+  const res = await searchVariants(token, q);
+  expect(res.status).toBe(200);
+  expect(Array.isArray(res.body.variants)).toBe(true);
+  return res.body.variants.map((v: any) => v.lasyncro_variant_id);
+}
+
+/** Overrides the searchable catalog text of a fixture variant. */
+async function relabelVariant(
+  shopId: number,
+  variantId: string,
+  fields: { sku?: string; title?: string; productTitle?: string },
+): Promise<void> {
+  await withTenant(shopId, async (trx) => {
+    const patch: Record<string, string> = {};
+    if (fields.sku !== undefined) patch.sku = fields.sku;
+    if (fields.title !== undefined) patch.title = fields.title;
+    if (Object.keys(patch).length) {
+      await trx('variants').where({ shop_id: shopId, lasyncro_variant_id: variantId }).update(patch);
+    }
+    if (fields.productTitle !== undefined) {
+      const { lasyncro_product_id } = await trx('variants')
+        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+        .first('lasyncro_product_id');
+      await trx('products')
+        .where({ shop_id: shopId, lasyncro_product_id })
+        .update({ title: fields.productTitle });
+    }
+  });
+}
+
+describe('GH-1262 S1 H1 — PO variant picker eligibility', () => {
+  it('R-H1-01: variants of active, draft and unlisted products appear', async () => {
+    const tenant = await createTenant('s1-h1-eligible');
+    const ids = await Promise.all(
+      (['active', 'draft', 'unlisted'] as const).map((s) => createShopifyVariant(tenant.shopId, s)),
+    );
+
+    expect((await searchIds(tenant.ownerToken)).sort()).toEqual([...ids].sort());
+  });
+
+  it('R-H1-02: variants of archived and deleted products are excluded', async () => {
+    const tenant = await createTenant('s1-h1-lifecycle');
+    const eligible = await createShopifyVariant(tenant.shopId, 'active');
+    await createShopifyVariant(tenant.shopId, 'archived');
+    await createShopifyVariant(tenant.shopId, 'deleted');
+
+    expect(await searchIds(tenant.ownerToken)).toEqual([eligible]);
+  });
+
+  it('R-H1-03: a variant without a Shopify identity mapping is excluded', async () => {
+    const tenant = await createTenant('s1-h1-unmapped');
+    const eligible = await createShopifyVariant(tenant.shopId);
+    const unmapped = await createShopifyVariant(tenant.shopId);
+    const otherPlatform = await createShopifyVariant(tenant.shopId);
+    await withTenant(tenant.shopId, async (trx) => {
+      await trx('external_product_identity_map')
+        .where({ shop_id: tenant.shopId, lasyncro_variant_id: unmapped })
+        .del();
+      await trx('external_product_identity_map')
+        .where({ shop_id: tenant.shopId, lasyncro_variant_id: otherPlatform })
+        .update({ platform: 'amazon' });
+    });
+
+    expect(await searchIds(tenant.ownerToken)).toEqual([eligible]);
+  });
+
+  it('R-H1-04: malformed Shopify variant or product identities are excluded; multiple mappings yield one row', async () => {
+    const tenant = await createTenant('s1-h1-malformed');
+    const eligible = await createShopifyVariant(tenant.shopId);
+    await createShopifyVariant(tenant.shopId, 'active', { externalVariantId: null });
+    await createShopifyVariant(tenant.shopId, 'active', { externalVariantId: '' });
+    await createShopifyVariant(tenant.shopId, 'active', { externalVariantId: '12345' });
+    await createShopifyVariant(tenant.shopId, 'active', { externalVariantId: 'gid://shopify/ProductVariant/0' });
+    const badProduct = await createShopifyVariant(tenant.shopId);
+    await withTenant(tenant.shopId, async (trx) => {
+      await trx('external_product_identity_map')
+        .where({ shop_id: tenant.shopId, lasyncro_variant_id: badProduct })
+        .update({ external_product_id: '987654' });
+      // A second valid mapping for the eligible variant must not duplicate it.
+      await trx('external_product_identity_map').insert({
+        id: crypto.randomUUID(),
+        shop_id: tenant.shopId,
+        lasyncro_variant_id: eligible,
+        platform: 'shopify',
+        external_product_id: `gid://shopify/Product/${crypto.randomInt(1_000_000, 9_999_999)}`,
+        external_variant_id: `gid://shopify/ProductVariant/${crypto.randomInt(1_000_000, 9_999_999)}`,
+        external_inventory_item_id: null,
+      });
+    });
+
+    expect(await searchIds(tenant.ownerToken)).toEqual([eligible]);
+  });
+
+  it('R-H1-05: another tenant\'s eligible variants are excluded', async () => {
+    const tenant = await createTenant('s1-h1-tenant');
+    const other = await createTenant('s1-h1-tenant-other');
+    const own = await createShopifyVariant(tenant.shopId);
+    const foreign = await createShopifyVariant(other.shopId);
+    await relabelVariant(other.shopId, foreign, { sku: 'H1-SHARED-FOREIGN' });
+    await relabelVariant(tenant.shopId, own, { sku: 'H1-SHARED-OWN' });
+
+    expect(await searchIds(tenant.ownerToken, 'H1-SHARED')).toEqual([own]);
+    expect(await searchIds(other.ownerToken, 'H1-SHARED')).toEqual([foreign]);
+  });
+
+  it('R-H1-06: SKU/title/product-title search, nonempty SKU, ordering and the 30 limit survive, with eligibility before LIMIT', async () => {
+    const tenant = await createTenant('s1-h1-search');
+
+    const bySku = await createShopifyVariant(tenant.shopId);
+    const byTitle = await createShopifyVariant(tenant.shopId);
+    const byProduct = await createShopifyVariant(tenant.shopId);
+    const emptySku = await createShopifyVariant(tenant.shopId);
+    await relabelVariant(tenant.shopId, bySku, { sku: 'H1-C-NEEDLE-SKU' });
+    await relabelVariant(tenant.shopId, byTitle, { sku: 'H1-B', title: 'Blue needle variant' });
+    await relabelVariant(tenant.shopId, byProduct, { sku: 'H1-A', productTitle: 'Needle Product' });
+    await relabelVariant(tenant.shopId, emptySku, { sku: '', title: 'needle without sku' });
+
+    expect(await searchIds(tenant.ownerToken, 'needle')).toEqual([byProduct, byTitle, bySku]);
+
+    // 31 ineligible variants sort ahead of 31 eligible ones; a LIMIT applied
+    // before eligibility would return none of the eligible variants.
+    for (let i = 0; i < 31; i += 1) {
+      const archived = await createShopifyVariant(tenant.shopId, 'archived');
+      await relabelVariant(tenant.shopId, archived, { sku: `H1-LIM-0-${String(i).padStart(2, '0')}` });
+    }
+    const eligible: string[] = [];
+    for (let i = 0; i < 31; i += 1) {
+      const id = await createShopifyVariant(tenant.shopId);
+      await relabelVariant(tenant.shopId, id, { sku: `H1-LIM-1-${String(i).padStart(2, '0')}` });
+      eligible.push(id);
+    }
+
+    const res = await searchVariants(tenant.ownerToken, 'H1-LIM');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(['variants']);
+    expect(res.body.variants.map((v: any) => v.lasyncro_variant_id)).toEqual(eligible.slice(0, 30));
+    const skus = res.body.variants.map((v: any) => v.sku);
+    expect(skus).toEqual([...skus].sort());
+    expect(Object.keys(res.body.variants[0]).sort()).toEqual(
+      ['image_url', 'lasyncro_variant_id', 'product_title', 'sku', 'title', 'unit_cost'],
+    );
+  });
+
+  it('R-H1-07: every search result is accepted by the canonical PO creation endpoint', async () => {
+    const tenant = await createTenant('s1-h1-roundtrip');
+    const supplierId = await createSupplier(tenant.shopId);
+    for (const status of ['active', 'draft', 'unlisted', 'archived', 'deleted'] as const) {
+      await createShopifyVariant(tenant.shopId, status);
+    }
+    await createShopifyVariant(tenant.shopId, 'active', { externalVariantId: null });
+    const unmapped = await createShopifyVariant(tenant.shopId);
+    await withTenant(tenant.shopId, (trx) =>
+      trx('external_product_identity_map').where({ shop_id: tenant.shopId, lasyncro_variant_id: unmapped }).del(),
+    );
+
+    const ids = await searchIds(tenant.ownerToken);
+    expect(ids).toHaveLength(3);
+
+    for (const id of ids) {
+      const res = await postPo(tenant.ownerToken, { supplier_id: supplierId, line_items: [line(id)] });
+      expect(res.status).toBe(201);
+    }
+  });
+});

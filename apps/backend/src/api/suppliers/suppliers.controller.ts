@@ -484,7 +484,16 @@ export async function httpPatchPurchaseOrder(req: Request, res: Response) {
 // GET /api/v1/suppliers/variants/search?q=...
 // ─────────────────────────────────────────────────────────────────────────────
 // Lightweight variant search for PO line item autocomplete.
-// Returns id, sku, title, unit_cost for all variants matching the query.
+// Returns id, sku, title, unit_cost for PO-eligible variants matching the query.
+//
+// GH-1262 S1 H1: offers only variants the canonical PO creation service
+// accepts. This predicate mirrors loadEligibleVariantIds in
+// services/purchasing/purchaseOrderCreation.service.ts and must stay identical
+// to it. Eligibility is applied before LIMIT; EXISTS keeps one row per variant.
+const PO_ELIGIBLE_PRODUCT_STATUSES = ['active', 'draft', 'unlisted'];
+const PO_SHOPIFY_VARIANT_GID_PATTERN = '^gid://shopify/ProductVariant/[1-9][0-9]*$';
+const PO_SHOPIFY_PRODUCT_GID_PATTERN = '^gid://shopify/Product/[1-9][0-9]*$';
+
 export async function httpSearchVariants(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
@@ -493,8 +502,20 @@ export async function httpSearchVariants(req: Request, res: Response) {
     const variants = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       let query = trx('variants as v')
-        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .join('products as p', function () {
+          this.on('p.lasyncro_product_id', 'v.lasyncro_product_id').andOn('p.shop_id', 'v.shop_id');
+        })
         .where({ 'v.shop_id': shopId })
+        .whereIn('p.status', PO_ELIGIBLE_PRODUCT_STATUSES)
+        .whereExists(function () {
+          this.select(trx.raw('1'))
+            .from('external_product_identity_map as m')
+            .whereRaw('m.shop_id = v.shop_id')
+            .andWhereRaw('m.lasyncro_variant_id = v.lasyncro_variant_id')
+            .andWhere('m.platform', 'shopify')
+            .andWhereRaw('m.external_variant_id ~ ?', [PO_SHOPIFY_VARIANT_GID_PATTERN])
+            .andWhereRaw('m.external_product_id ~ ?', [PO_SHOPIFY_PRODUCT_GID_PATTERN]);
+        })
         .whereNotNull('v.sku')
         .whereNot('v.sku', '')
         .select('v.lasyncro_variant_id', 'v.sku', 'v.title', 'v.unit_cost', 'v.image_url', 'p.title as product_title')
