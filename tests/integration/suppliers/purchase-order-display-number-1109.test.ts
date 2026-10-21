@@ -114,6 +114,35 @@ async function createVariant(shopId: number): Promise<string> {
   return variantId;
 }
 
+/**
+ * GH-1262 S1: manual PO lines must name a canonical Shopify variant of an
+ * installed store. A live installation without credentials classifies as
+ * REAUTH_REQUIRED, which still permits draft PO creation; no provider call.
+ */
+async function installShopify(shopId: number): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    trx('shopify_app_installations').insert({
+      shop_id: shopId,
+      shop_domain: `po-number-${crypto.randomBytes(5).toString('hex')}.myshopify.com`,
+      scopes: 'read_products',
+    }),
+  );
+}
+
+async function linkShopifyIdentity(shopId: number, variantId: string): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    trx('external_product_identity_map').insert({
+      id: crypto.randomUUID(),
+      shop_id: shopId,
+      lasyncro_variant_id: variantId,
+      platform: 'shopify',
+      external_product_id: `gid://shopify/Product/${crypto.randomInt(1_000_000, 9_999_999)}`,
+      external_variant_id: `gid://shopify/ProductVariant/${crypto.randomInt(1_000_000, 9_999_999)}`,
+      external_inventory_item_id: null,
+    }),
+  );
+}
+
 async function insertPo(
   trx: Knex.Transaction,
   shopId: number,
@@ -266,14 +295,17 @@ describe('GH-1109 — PO number API projection', () => {
     const supplierId = await createSupplier(shopId);
     const userId = await createUser(shopId);
     await activateGrowthShop(shopId, userId);
+    await installShopify(shopId);
+    const variantId = await createVariant(shopId);
+    await linkShopifyIdentity(shopId, variantId);
     const token = issueTestToken({ userId, shopId, tier: 'growth', roles: ['owner'] });
 
     const createResponse = await request(app)
       .post('/api/v1/suppliers/purchase-orders')
-      .set({ Authorization: `Bearer ${token}` })
+      .set({ Authorization: `Bearer ${token}`, 'Idempotency-Key': `po-number-${crypto.randomUUID()}` })
       .send({
         supplier_id: supplierId,
-        line_items: [{ description: 'Manual PO line', quantity_ordered: 2 }],
+        line_items: [{ description: 'Manual PO line', quantity_ordered: 2, lasyncro_variant_id: variantId }],
       });
 
     expect(createResponse.status).toBe(201);
@@ -322,7 +354,8 @@ describe('GH-1109 — PO number API projection', () => {
     expect(convertResponse.body.po_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
-    expect(convertResponse.body.po_number).toBe(1001);
+    // E2 keeps its established { po_id } response; po_number is read from
+    // the canonical PO list projection below.
 
     const listResponse = await request(app)
       .get('/api/v1/suppliers/purchase-orders')

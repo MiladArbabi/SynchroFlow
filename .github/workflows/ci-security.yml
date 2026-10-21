@@ -29,6 +29,8 @@ on:
       - 'tests/unit/backend/workers/b4-s1-sync-consumer-shutdown.test.ts'
       - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
+      - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
+      - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
   push:
     branches: [main]
     paths:
@@ -56,6 +58,8 @@ on:
       - 'tests/unit/backend/workers/b4-s1-sync-consumer-shutdown.test.ts'
       - 'tests/integration/lifecycle/shopify-sync-authority.fixture.ts'
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
+      - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
+      - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
 
 jobs:
   rls-security:
@@ -458,7 +462,10 @@ jobs:
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t3b-durable-sync-dispatch|gh1068-t2-sync-status-races|auth-tenant-01\.db'
 
-      - name: Run GH-1101 connection truth and manual recovery regressions
+      # GH-1262 S1 purchasing regressions share this disposable-DB lifecycle
+      # (INFRASTRUCTURE-REUSE-FIRST): PO creation depends on GH-1101 connection
+      # truth, and GH-1109 guards the DB-owned po_number on the same writers.
+      - name: Run GH-1101 connection truth, manual recovery and GH-1262 S1 purchasing regressions
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -468,7 +475,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109'
 
       - name: Restore runner network
         if: always()

@@ -428,8 +428,12 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // GH-1262 S1: lock the supplier row before reading its pending requests,
+      // so overlapping conversions for one supplier serialize here and the
+      // loser sees nothing pending instead of creating a second PO.
       const supplier = await trx('suppliers')
         .where({ id: supplier_id, shop_id: shopId })
+        .forUpdate()
         .first();
       if (!supplier) {
         gateFailure = 'Supplier not found';
@@ -525,16 +529,22 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
         }))
       );
 
-      // Mark all pending requests as converted
+      // Conditionally claim the pending requests. Every selected request must
+      // still be pending; otherwise the transaction (and its PO) rolls back.
       const now = new Date();
-      await trx('reorder_requests')
+      const claimed = await trx('reorder_requests')
         .whereIn('id', pending.map((r: any) => r.id))
+        .andWhere({ shop_id: shopId, status: 'pending' })
         .update({
           status:          'converted',
           converted_po_id: poId,
           converted_at:    now,
           updated_at:      now,
-        });
+        })
+        .returning('id');
+      if (claimed.length !== pending.length) {
+        throw Object.assign(new Error('REORDER_REQUESTS_ALREADY_CLAIMED'), { statusCode: 409 });
+      }
       await enqueueShopSnapshotJob(trx, shopId);
     });
 
@@ -542,7 +552,10 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
     if (gateFailure) return res.status(422).json({ error: gateFailure });
     if (!poId) return res.status(400).json({ error: 'No pending requests found for this supplier' });
     return res.status(201).json({ po_id: poId });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.statusCode === 409) {
+      return res.status(409).json({ error: 'These reorder requests were already converted' });
+    }
     console.error('[reorder-requests] httpConvertReorderRequests failed', err);
     return res.status(500).json({ error: 'Failed to convert reorder requests' });
   }

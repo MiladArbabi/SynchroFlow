@@ -5,6 +5,12 @@ import db from '@lasyncro/backend-core/db.js';
 import { fireReceiveArrivedAlert } from '../../services/wms/wmsAlerts.service.js';
 import { recomputeSupplierRating } from '../../services/suppliers/supplierRating.service.js';
 import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
+import {
+  PurchaseOrderCreationError,
+  createPurchaseOrderIdempotently,
+  parsePurchaseOrderCreateInput,
+  readIdempotencyKey,
+} from '../../services/purchasing/purchaseOrderCreation.service.js';
 
 /**
  * SUPPLIERS PORTAL CONTROLLERS
@@ -272,61 +278,23 @@ export async function httpCreatePurchaseOrder(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { supplier_id, expected_delivery_date, notes, document_url, line_items } = req.body;
-
-  if (!supplier_id) return res.status(400).json({ error: 'supplier_id is required' });
-  if (!Array.isArray(line_items) || line_items.length === 0) {
-    return res.status(400).json({ error: 'line_items must be a non-empty array' });
-  }
-  for (const item of line_items) {
-    if (!item.description || !item.quantity_ordered || item.quantity_ordered < 1) {
-      return res.status(400).json({ error: 'Each line item requires description and quantity_ordered >= 1' });
-    }
-  }
-
+  // GH-1262 S1: validation, idempotency and the atomic write live in
+  // purchaseOrderCreation.service.ts. A replay returns the original PO.
   try {
-    const po = await db.transaction(async (trx) => {
+    const idempotencyKey = readIdempotencyKey(req.get('Idempotency-Key'));
+    const input = parsePurchaseOrderCreateInput(req.body);
+    const { purchaseOrder } = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-      const supplier = await trx('suppliers')
-        .where({ id: supplier_id, shop_id: shopId })
-        .first();
-
-      if (!supplier) {
-        res.status(404).json({ error: 'Supplier not found' });
-        return null;
-      }
-
-      const [newPo] = await trx('purchase_orders')
-        .insert({
-          shop_id: shopId,
-          supplier_id,
-          status: 'draft',
-          expected_delivery_date: expected_delivery_date ?? null,
-          notes: notes ?? null,
-          document_url: document_url ?? null,
-        })
-        .returning('*');
-
-      await trx('purchase_order_line_items').insert(
-        line_items.map((item: any) => ({
-          po_id: newPo.id,
-          shop_id: shopId,
-          lasyncro_variant_id: item.lasyncro_variant_id ?? null,
-          description: item.description,
-          quantity_ordered: item.quantity_ordered,
-          quantity_received: 0,
-          unit_cost_cents: item.unit_cost_cents ?? null,
-        }))
-      );
-
-      await enqueueShopSnapshotJob(trx, shopId);
-      return newPo;
+      const result = await createPurchaseOrderIdempotently(trx, shopId, idempotencyKey, input);
+      // A replay writes nothing, so it does not re-schedule the snapshot.
+      if (!result.replayed) await enqueueShopSnapshotJob(trx, shopId);
+      return result;
     });
-
-    if (!po) return;
-    return res.status(201).json({ purchase_order: po });
+    return res.status(201).json({ purchase_order: purchaseOrder });
   } catch (err) {
+    if (err instanceof PurchaseOrderCreationError) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
     console.error('[suppliers] httpCreatePurchaseOrder failed', err);
     return res.status(500).json({ error: 'Failed to create purchase order' });
   }
