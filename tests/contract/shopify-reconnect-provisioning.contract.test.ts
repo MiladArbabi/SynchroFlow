@@ -30,7 +30,9 @@ function harness(initialRoles = [role(E), role(O)]) {
   const state = { wrongDatabase: false, wrongCluster: false, wrongPrincipal: false,
     superuser: true, publicWrite: false, publicCreate: false, privateSchema: false,
     failOwnerCreate: false, failCommit: false, failPostcheck: false,
-    failRollback: false, connections: 0, closed: 0, postchecks: 0 };
+    failRollback: false, connections: 0, closed: 0, postchecks: 0,
+    // Applied migration ledger: null = no knex_migrations table.
+    ledger: null as string[] | null };
   const createClient = jest.fn((connection: any) => {
     options.push(connection);
     return {
@@ -47,6 +49,11 @@ function harness(initialRoles = [role(E), role(O)]) {
         if (sql === 'BEGIN' || sql === 'BEGIN READ ONLY') {
           if (connection.database !== 'postgres') pending = committed.map(r => ({ ...r }));
           return { rows: [] };
+        }
+        if (sql.includes("to_regclass('public.knex_migrations')")) return { rows: [{ ledger: state.ledger !== null }] };
+        if (sql.includes('FROM public.knex_migrations')) {
+          const wanted = (values?.[0] ?? []) as string[];
+          return { rows: (state.ledger ?? []).filter(name => wanted.includes(name)).map(name => ({ name })) };
         }
         if (sql.includes('FROM pg_catalog.pg_roles r WHERE r.rolname IN')) return { rows: pending.map(r => ({ ...r })) };
         if (sql.includes('AS private_schema')) return { rows: [{ public_write: state.publicWrite,
@@ -289,5 +296,66 @@ it('refuses authoritative postcondition failures without repair or leaked SQL de
   const h = harness(); h.state.privateSchema = true; h.state.failPostcheck = true;
   await refused(provisioning(), h, { verifyDisposableContext: h.verifyDisposableContext });
   expect(h.state.postchecks).toBe(1);
+  expect(writes(h)).toEqual([]);
+});
+
+// GH-979 C — the applied ledger selects the reconnect security epoch.
+const M0217 = '20261019120000_0217_shopify_manual_recovery.js';
+const M0220 = '20261021130000_0220_add_state_bound_shopify_reconnect_proof.js';
+const OVERLOAD = 'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text,text)';
+
+function ownedAllowlist(h: ReturnType<typeof harness>) {
+  return h.calls.filter(c => c.sql.includes('FROM pg_catalog.pg_roles r WHERE r.rolname IN'))
+    .map(c => (c.values as unknown[])[2] as string[]);
+}
+function delegated(h: ReturnType<typeof harness>) {
+  return h.calls.filter(c => /DO \$(boundary|postconditions)\$/.test(c.sql)).map(c => c.sql).join('\n');
+}
+
+it('before 0220 is applied, the 0217 contract is delegated even though the 0220 file exists', async () => {
+  const h = harness(); h.state.ledger = [M0217];
+  expect((await run({ ...config(), phase: 'POST' }, h)).security).toBe('0215_VALIDATED');
+  expect(ownedAllowlist(h).every(list => !list.includes(OVERLOAD))).toBe(true);
+  const sql = delegated(h);
+  expect(sql).toContain('RECONNECT_FINALIZER_ACL_INVALID');
+  expect(sql).not.toContain('STATE_BOUND_FINALIZER_AUTHORITY_INVALID');
+  expect(sql).not.toContain('RECONNECT_RECOVERY_PROOF_AUTHORITY_INVALID');
+  expect(writes(h)).toEqual([]);
+});
+
+it('a fresh target without a ledger keeps the 0217 role allowlist', async () => {
+  const h = harness();
+  expect((await run(config(), h)).security).toBe('ROLE_PREREQUISITES_ONLY');
+  expect(ownedAllowlist(h)).toEqual([[expect.stringContaining('text,text,text,text)')]]);
+});
+
+it('after 0220 is applied, its independently defined evolved contract is delegated', async () => {
+  const h = harness(); h.state.ledger = [M0217, M0220];
+  expect((await run({ ...config(), phase: 'POST' }, h)).security).toBe('0220_VALIDATED');
+  expect(ownedAllowlist(h)).toEqual([[expect.stringContaining('text,text,text,text)'), OVERLOAD]]);
+  const sql = delegated(h);
+  for (const guard of ['RECONNECT_ROLE_OWNERSHIP_OR_MEMBERSHIP_INVALID', 'RECONNECT_FINALIZER_ACL_INVALID',
+    'RECONNECT_PRIVATE_SCHEMA_CONTENTS_INVALID', 'RECONNECT_INTENT_AUTHORITY_INVALID',
+    'BILLING_OUTBOX_AUTHORITY_INVALID', 'STATE_BOUND_FINALIZER_AUTHORITY_INVALID',
+    'RECONNECT_RECOVERY_PROOF_AUTHORITY_INVALID', 'RECOVERY_DISCOVERY_AUTHORITY_INVALID']) {
+    expect(sql).toContain(guard);
+  }
+  expect(writes(h)).toEqual([]);
+});
+
+it('an applied 0220 without its 0217 predecessor is refused before any role facts', async () => {
+  const h = harness(); h.state.ledger = [M0220];
+  await refused({ ...config(), phase: 'POST' }, h);
+  expect(ownedAllowlist(h)).toEqual([]);
+  expect(h.state.postchecks).toBe(0);
+});
+
+it('the 0220 epoch still refuses extra ownership, memberships and postcondition drift', async () => {
+  for (const drift of [{ unexpected_ownership: true }, { membership: true }, { rolbypassrls: true }]) {
+    const h = harness([role(E), { ...role(O), ...drift }]); h.state.ledger = [M0217, M0220];
+    await refused({ ...config(), phase: 'POST' }, h);
+  }
+  const h = harness(); h.state.ledger = [M0217, M0220]; h.state.failPostcheck = true;
+  await refused({ ...config(), phase: 'POST' }, h);
   expect(writes(h)).toEqual([]);
 });

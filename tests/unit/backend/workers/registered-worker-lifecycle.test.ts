@@ -9,6 +9,7 @@ const inactive = [
   'workers/projections/shopSnapshotJob.dispatcher', 'workers/stockProtectionReconciliation.worker',
   'workers/wms.idle.alert.worker', 'workers/reviewer-activity-refresh.worker',
   'workers/trial-expiry.worker', 'workers/shopifyUninstallGrace.worker',
+  'workers/shopifyUninstallVerification.worker',
   'workers/shopifyBillingReconciliation.worker', 'workers/margin-snapshot-integrity.worker',
   'workers/carrier-stall-detection.worker', 'workers/carrier-tracking-reconciliation.worker',
   'workers/morning-brief.worker', 'workers/exchange-rate.worker',
@@ -187,6 +188,29 @@ describe('registered worker lifecycle', () => {
     await stopping;
 
     expect(settled).toBe(true);
+  });
+
+  it('owns and drains the Shopify uninstall verification worker', async () => {
+    const startVerification = jest.fn();
+    const stopVerification = jest.fn();
+    jest.doMock('api-src/workers/shopifyUninstallVerification.worker', () => ({
+      startShopifyUninstallVerificationWorker: startVerification,
+      stopShopifyUninstallVerificationWorker: stopVerification,
+    }));
+    const workers = await import('api-src/bootstrap/workers');
+    await workers.startWorkers();
+    expect(startVerification).toHaveBeenCalledTimes(1);
+    const gate = deferred();
+    stopVerification.mockReturnValue(gate.promise);
+    let drained = false;
+    const stopping = workers.stopWorkers().then(() => { drained = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stopVerification).toHaveBeenCalledTimes(1);
+    expect(drained).toBe(false);
+    gate.resolve();
+    await stopping;
+    expect(drained).toBe(true);
   });
 
   it('waits for an owned finite start and blocks later starts during shutdown', async () => {

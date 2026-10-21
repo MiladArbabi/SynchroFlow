@@ -29,14 +29,48 @@ import type { Knex } from 'knex';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { forceDowngradeShopToStarter } from '../../../services/shopify/forceDowngradeToStarter.service.js';
 
+/**
+ * GH-979 C owner disconnect: the exact authority Shopify confirmed uninstalled.
+ * The webhook passes no pin and keeps its tenant-wide GH-1068 semantics.
+ */
+export interface AppUninstalledPin {
+  installationId: number;
+  shopDomain: string;
+  /** null pins an installation that has no canonical credential row (legacy bootstrap). */
+  credentialGeneration: string | null;
+}
+
+/** Returns false only for a pinned call whose authority has moved: nothing is fenced. */
 export async function handleAppUninstalled(
   shopId: number,
-  trx: Knex.Transaction
-): Promise<void> {
+  trx: Knex.Transaction,
+  pin?: AppUninstalledPin,
+): Promise<boolean> {
   const now = new Date();
 
   // 1. Join the webhook transaction/savepoint; do not open an independent transaction.
-  await ShopifyAppService.hardFenceAppUninstalled(shopId, trx, now);
+  if (pin) {
+    // Same T2 authority lock as the canonical fence (re-entrant), held through it.
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), ?)',
+      ['shopify_admin_credential_rotation', shopId]);
+    const current = await trx('shopify_app_installations as installation')
+      .leftJoin('shopify_admin_credentials as credential', function joinCredential() {
+        this.on('credential.installation_id', '=', 'installation.id')
+          .andOn('credential.shop_id', '=', 'installation.shop_id');
+      })
+      .where('installation.shop_id', shopId)
+      .andWhere('installation.id', pin.installationId)
+      .andWhere('installation.shop_domain', pin.shopDomain)
+      .whereNull('installation.uninstalled_at')
+      .first('credential.credential_generation');
+    // Never fence a newer installation epoch or credential generation.
+    const generation = current?.credential_generation == null ? null : String(current.credential_generation);
+    if (!current || generation !== pin.credentialGeneration) return false;
+    // shop_domain is globally unique: this fences exactly the pinned installation.
+    await ShopifyAppService.hardFenceAppUninstalled(shopId, trx, now, pin.shopDomain);
+  } else {
+    await ShopifyAppService.hardFenceAppUninstalled(shopId, trx, now);
+  }
 
   // 2. DB-only safety-net downgrade check
   const subRow = await trx('shop_subscriptions')
@@ -58,4 +92,5 @@ export async function handleAppUninstalled(
   }
 
   console.log('[shopify][app_uninstalled] complete', { shopId, uninstalledAt: now });
+  return true;
 }

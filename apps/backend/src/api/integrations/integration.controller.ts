@@ -59,6 +59,10 @@ import {
   settleShopifyAdminCredentialReconnect,
   type ShopifyAdminCredentialReconnectPrepared,
 } from '../../services/shopify/shopifyAdminCredentialLifecycle.service.js';
+import {
+  issueShopifyOAuthStateWithRecoveryBinding,
+  settleShopifyUninstallRecovery,
+} from '../../services/shopify/shopifyUninstallVerification.repository.js';
 
 /**
  * SHOP-REVIEW-OAUTH-REGRESSION-162 (Slice 162C) — recognise the two
@@ -160,6 +164,16 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     const shopId = req.user?.shopId;
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
+    // GH-979 C: only an owner may reconnect while an uninstall is unverified;
+    // only an owner's OAuth state binds ORDER_UNPROVEN receipts (at issuance).
+    const connectionState = await readShopifyConnection(shopId);
+    if (connectionState.state === 'UNINSTALL_VERIFICATION_UNRESOLVED') {
+      const context = await requireShopContextForUser(userId);
+      if (context.shopId !== shopId || context.role !== 'owner') {
+        return res.status(403).json({ error: 'OWNER_REQUIRED' });
+      }
+    }
+
     const ownedInstallation = await withTenant(shopId, (trx) =>
       trx('shopify_app_installations')
         .join('shop_memberships', 'shop_memberships.shop_id', 'shopify_app_installations.shop_id')
@@ -188,16 +202,29 @@ export const initiateOAuth = async (req: Request, res: Response) => {
   );
 
   // --- Persist OAuth intent (stateless) ---
-  await systemQuery(
-    db('integration_oauth_states').insert({
+  if (platform === 'shopify') {
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!shopDomain) return res.status(400).json({ error: 'Invalid shop domain' });
+    // One statement snapshot chooses eligible receipts and inserts the durable
+    // state. A receipt committed after that snapshot cannot bind to this state;
+    // transaction commit makes the state and bindings visible atomically.
+    await systemTransaction(async trx => {
+      await setTenantContext(trx, shopId);
+      await issueShopifyOAuthStateWithRecoveryBinding(trx, {
+        shopId, userId, state, shopDomain, expiresAt,
+      });
+    });
+  } else {
+    await systemQuery(db('integration_oauth_states').insert({
       user_id: userId,
       platform,
       state,
       shop_domain: shopDomain,
       expires_at: expiresAt,
-      install_source: platform === 'shopify' ? 'reconnect' : null,
-    })
-  );
+      install_source: null,
+    }));
+  }
 
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
 
@@ -536,13 +563,23 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   try {
     let result: { integration: { id: number }; shopId: number };
     if (reconnect) {
-      const completion = await finalizeShopifyAdminCredentialReconnect({ ...reconnect, credentials: acquisition });
+      const recoveryStateHash = crypto.createHash('sha256').update(state).digest('hex');
+      const completion = await finalizeShopifyAdminCredentialReconnect({
+        ...reconnect, credentials: acquisition, recoveryStateHash,
+      });
       if (completion.kind === 'STALE_RESULT') {
         return res.status(409).json({ error: 'SHOPIFY_RECONNECT_STALE', retryable: true });
       }
       if (completion.kind !== 'RECONNECTED') throw new Error('SHOPIFY_RECONNECT_EXECUTOR_REJECTED');
       result = { integration: completion.integration, shopId };
       reconnectFinalized = true;
+      // Best effort only: the proof (if any) committed with the credentials, so
+      // a crash or failure here is recovered by the uninstall-verification worker.
+      try {
+        await settleShopifyUninstallRecovery(shopId);
+      } catch {
+        console.error('[OAuth] Uninstall recovery deferred to worker', { shopId });
+      }
     } else {
       // First install and legacy bootstrap preserve GREEN-2 persistence/generation zero.
       result = await withTenant(shopId, async trx => {

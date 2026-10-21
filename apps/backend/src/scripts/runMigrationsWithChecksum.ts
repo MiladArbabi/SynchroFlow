@@ -42,10 +42,12 @@ const RECONNECT_BOUNDARY = '20261016120000_0212_authorize_shopify_reconnect_sync
 const RECONNECT_CORRECTION = '20261016150000_0215_harden_reconnect_and_priority_function_authority.js';
 // Ordered security evolutions after 0215. Once applied, each one's own
 // independently defined postconditions replace its predecessor's:
-// GH-1068 T3-B (0216) evolves the finalizer; GH-1101 (0217) the dispatch claim.
+// GH-1068 T3-B (0216) evolves the finalizer; GH-1101 (0217) the dispatch claim;
+// GH-979 C (0220) adds the state-bound finalizer overload and recovery proof.
 const SECURITY_EVOLUTIONS = [
   '20261018120000_0216_durable_shopify_sync_dispatch.js',
   '20261019120000_0217_shopify_manual_recovery.js',
+  '20261021130000_0220_add_state_bound_shopify_reconnect_proof.js',
 ] as const;
 
 type SecurityAssertion = (connection: Knex) => Promise<void>;

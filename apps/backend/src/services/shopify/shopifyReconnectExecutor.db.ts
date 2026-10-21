@@ -6,6 +6,13 @@ import type { ShopifyOAuthAcquisition } from './shopifyOAuthAcquisition.service.
 import type { ShopifyAdminCredentialReconnectOwner } from './shopifyAdminCredential.repository.js';
 
 const EXECUTOR = 'sf_shopify_reconnect_executor';
+// Every epoch: the protected 0217 finalizer. After migration 0220 only: the
+// state-bound overload. Staged rollout is migration first, runtime second, so
+// ordinary reconnects never depend on the overload.
+const FINALIZER_SIGNATURE =
+  'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text)';
+const STATE_BOUND_FINALIZER_SIGNATURE =
+  'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text,text)';
 const failure = () => new Error('SHOPIFY_RECONNECT_EXECUTOR_REJECTED');
 let pool: pg.Pool | undefined;
 let closed = false;
@@ -48,15 +55,19 @@ function executorPool(): pg.Pool {
   return pool;
 }
 
-async function attest(client: PoolClient): Promise<void> {
+/** Returns whether the 0220 state-bound overload is executable in this epoch. */
+async function attest(client: PoolClient): Promise<boolean> {
   const result = await client.query(`
     SELECT session_user::text AS session_role, current_user::text AS current_role,
       r.rolcanlogin, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb,
       r.rolreplication,
       pg_catalog.has_schema_privilege(current_user, 'shopify_reconnect_private', 'USAGE') AS schema_usage,
       pg_catalog.has_function_privilege(current_user,
-        'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text)',
+        '${FINALIZER_SIGNATURE}',
         'EXECUTE') AS finalizer_execute,
+      COALESCE(pg_catalog.has_function_privilege(current_user,
+        pg_catalog.to_regprocedure('${STATE_BOUND_FINALIZER_SIGNATURE}'),
+        'EXECUTE'), false) AS state_bound_execute,
       EXISTS (SELECT 1 FROM pg_catalog.pg_roles other
               WHERE other.oid <> r.oid
                 AND pg_catalog.pg_has_role(r.oid, other.oid, 'MEMBER')) AS has_membership
@@ -68,7 +79,9 @@ async function attest(client: PoolClient): Promise<void> {
     || role.rolsuper !== false || role.rolbypassrls !== false
     || role.rolcreaterole !== false || role.rolcreatedb !== false
     || role.rolreplication !== false || role.has_membership !== false
-    || role.schema_usage !== true || role.finalizer_execute !== true) throw failure();
+    || role.schema_usage !== true || role.finalizer_execute !== true
+    || typeof role.state_bound_execute !== 'boolean') throw failure();
+  return role.state_bound_execute;
 }
 
 /** Authenticate and attest a real E session before any reconnect provider acquisition. */
@@ -90,33 +103,48 @@ const FINALIZE = `SELECT generation::text AS generation, integration_id
     $1::integer, $2::integer, $3::text, $4::text, $5::bigint, $6::uuid,
     $7::text, $8::text, $9::timestamptz, $10::timestamptz,
     $11::text, $12::text, $13::text, $14::text)`;
+const FINALIZE_STATE_BOUND = `SELECT generation::text AS generation, integration_id
+  FROM shopify_reconnect_private.finalize_reconnect(
+    $1::integer, $2::integer, $3::text, $4::text, $5::bigint, $6::uuid,
+    $7::text, $8::text, $9::timestamptz, $10::timestamptz,
+    $11::text, $12::text, $13::text, $14::text, $15::text)`;
 
-/** Only this driver's finalizer rejection can produce STALE_RESULT; no caller error seam. */
+/**
+ * Only this driver's finalizer rejection can produce STALE_RESULT; no caller error seam.
+ * recoveryProof is true only when the state-bound overload committed the proof
+ * atomically with the credentials. Without it (no hash, or a pre-0220 epoch)
+ * the reconnect still completes but can never clear ORDER_UNPROVEN.
+ */
 export async function executeShopifyReconnectFinalizer(
   owner: ShopifyAdminCredentialReconnectOwner,
   credentials: ShopifyOAuthAcquisition,
-): Promise<{ kind: 'RECONNECTED'; generation: string; integration: { id: number } }
+  recoveryStateHash: string | null = null,
+): Promise<{ kind: 'RECONNECTED'; generation: string; integration: { id: number }; recoveryProof: boolean }
   | { kind: 'STALE_RESULT' }> {
   let client: PoolClient | undefined;
   try {
     // Keep bigint exact at both boundaries, independent of global pg type parsers.
     if (typeof owner.generation !== 'string' || !/^(0|[1-9][0-9]*)$/.test(owner.generation)
       || BigInt(owner.generation) > 9223372036854775807n) throw failure();
+    if (recoveryStateHash !== null && !/^[a-f0-9]{64}$/.test(recoveryStateHash)) throw failure();
     const scopes = normalizeAndValidateShopifyGrantedScopes(credentials.grantedScopes);
     const access = encrypt(credentials.accessToken);
     const refresh = encrypt(credentials.refreshToken);
     client = await executorPool().connect();
-    await attest(client);
+    const stateBound = await attest(client) && recoveryStateHash !== null;
+    const parameters: unknown[] = [
+      owner.shopId, owner.installationId, owner.shopDomain, owner.installationState,
+      owner.generation, owner.leaseToken, access, refresh,
+      credentials.accessExpiresAt, credentials.refreshExpiresAt, scopes,
+      credentials.shopIdentity.gid, credentials.shopIdentity.currencyCode,
+      credentials.shopIdentity.ianaTimezone,
+    ];
     await client.query('BEGIN');
     let result;
     try {
-      result = await client.query(FINALIZE, [
-        owner.shopId, owner.installationId, owner.shopDomain, owner.installationState,
-        owner.generation, owner.leaseToken, access, refresh,
-        credentials.accessExpiresAt, credentials.refreshExpiresAt, scopes,
-        credentials.shopIdentity.gid, credentials.shopIdentity.currencyCode,
-        credentials.shopIdentity.ianaTimezone,
-      ]);
+      result = stateBound
+        ? await client.query(FINALIZE_STATE_BOUND, [...parameters, recoveryStateHash])
+        : await client.query(FINALIZE, parameters);
     } catch (error: unknown) {
       // Classify exclusively errors from the actual invocation, never attestation/COMMIT.
       if (error instanceof pg.DatabaseError
@@ -131,7 +159,8 @@ export async function executeShopifyReconnectFinalizer(
     if (result.rows.length !== 1 || row.generation !== owner.generation
       || !Number.isSafeInteger(row.integration_id) || row.integration_id <= 0) throw failure();
     await client.query('COMMIT');
-    return { kind: 'RECONNECTED', generation: row.generation, integration: { id: row.integration_id } };
+    return { kind: 'RECONNECTED', generation: row.generation, integration: { id: row.integration_id },
+      recoveryProof: stateBound };
   } catch {
     // Destroy rather than reuse an uncertain/failed transaction; disconnect rolls it back.
     if (client) { client.release(true); client = undefined; }

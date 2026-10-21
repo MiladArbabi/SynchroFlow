@@ -26,6 +26,7 @@ import { handleProductCreated } from './handlers/handleProductCreated.js';
 import { handleProductUpdated } from './handlers/handleProductUpdated.js';
 import { handleProductDeleted } from './handlers/handleProductDeleted.js';
 import { handleAppSubscriptionUpdate } from './handlers/handleAppSubscriptionUpdate.js';
+import { dispatchShopifyUninstallIngress } from './shopifyUninstallIngress.js';
 
 /**
  * Shopify Webhook Route Registration
@@ -67,6 +68,9 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'app/uninstalled',
   handle: onShopifyAppUninstalled,
+  // GH-979 C: receipt and durable verification intent commit together; the
+  // Shopify-only worker performs all provider I/O after acknowledgement.
+  receiptOnly: true,
 });
 
 // Billing (SHB-01, SHB-07) — Managed Pricing plan approvals/changes/cancellations
@@ -189,7 +193,11 @@ export async function shopifyWebhookHandler(
 ) {
   const envelope = ShopifyWebhookAdapter.toEnvelope(req);
   try {
-    await WebhookRouter.dispatch(envelope);
+    if (envelope.eventType === 'app/uninstalled') {
+      await dispatchShopifyUninstallIngress(envelope);
+    } else {
+      await WebhookRouter.dispatch(envelope);
+    }
     return res.status(200).json({ status: 'ok' });
   } catch (err: any) {
     /**

@@ -16,9 +16,21 @@ const O = 'sf_shopify_reconnect_owner';
 // GH-1068 T3-B: 0216 evolves the 0215 finalizer; its postconditions carry every
 // 0215 invariant and are the current authoritative reconnect contract.
 // GH-1101: 0217 evolves the 0216 dispatch claim; its postconditions carry every
-// 0215/0216 invariant and are the current authoritative reconnect contract.
-const MIGRATION = path.resolve(__dirname,
-  '../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery.ts');
+// 0215/0216 invariant.
+// GH-979 C: 0220 adds exactly the state-bound finalizer overload and recovery
+// proof. The APPLIED migration ledger, never an on-disk file, selects the epoch:
+// before 0220 the 0217 contract applies unchanged; after it, 0220's.
+const MIGRATIONS_DIR = path.resolve(__dirname, '../apps/backend/migrations');
+const LEGACY_FINALIZER =
+  'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text)';
+const STATE_BOUND_FINALIZER =
+  'shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text,text)';
+const EPOCHS = Object.freeze({
+  '0217': Object.freeze({ migration: '20261019120000_0217_shopify_manual_recovery',
+    security: '0215_VALIDATED', ownedFunctions: Object.freeze([LEGACY_FINALIZER]) }),
+  '0220': Object.freeze({ migration: '20261021130000_0220_add_state_bound_shopify_reconnect_proof',
+    security: '0220_VALIDATED', ownedFunctions: Object.freeze([LEGACY_FINALIZER, STATE_BOUND_FINALIZER]) }),
+});
 const reject = () => new Error('SHOPIFY_RECONNECT_PREREQUISITES_REJECTED');
 
 // Narrow provisioning facts only. Full migration security/body/ACL validation
@@ -32,8 +44,9 @@ const ROLE_FACTS = `
       OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspowner=r.oid)
       OR EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relowner=r.oid)
       OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=r.oid
-        AND NOT (r.rolname='sf_shopify_reconnect_owner' AND oid=COALESCE(
-          pg_catalog.to_regprocedure('shopify_reconnect_private.finalize_reconnect(integer,integer,text,text,bigint,uuid,text,text,timestamptz,timestamptz,text,text,text,text)')::oid,0))))
+        AND NOT (r.rolname='sf_shopify_reconnect_owner' AND oid IN (
+          SELECT COALESCE(pg_catalog.to_regprocedure(allowed)::oid,0)
+          FROM pg_catalog.unnest($3::text[]) allowed))))
       AS unexpected_ownership,
     pg_catalog.has_schema_privilege(r.oid,'public','CREATE') AS public_create,
     EXISTS (SELECT 1 FROM pg_catalog.pg_class c
@@ -70,6 +83,27 @@ const PUBLIC_FACTS = `
     EXISTS (SELECT 1 FROM pg_catalog.pg_namespace
       WHERE nspname='shopify_reconnect_private') AS private_schema
 `;
+
+// Read-only: which reconnect security evolutions the target has APPLIED.
+const LEDGER_FACTS = `
+  SELECT pg_catalog.to_regclass('public.knex_migrations') IS NOT NULL AS ledger
+`;
+const APPLIED_EVOLUTIONS = `
+  SELECT name FROM public.knex_migrations WHERE name = ANY($1::text[])
+`;
+
+async function securityEpoch(client) {
+  const ledger = (await client.query(LEDGER_FACTS)).rows;
+  if (ledger.length !== 1 || typeof ledger[0].ledger !== 'boolean') throw reject();
+  if (!ledger[0].ledger) return '0217';
+  const names = Object.values(EPOCHS).flatMap(e => [`${e.migration}.js`, `${e.migration}.ts`]);
+  const applied = (await client.query(APPLIED_EVOLUTIONS, [names])).rows.map(r => r.name);
+  if (applied.some(name => !names.includes(name))) throw reject();
+  const has = epoch => applied.some(name => name.startsWith(`${EPOCHS[epoch].migration}.`));
+  // An evolution is never valid without its predecessor.
+  if (has('0220') && !has('0217')) throw reject();
+  return has('0220') ? '0220' : '0217';
+}
 
 function configuration(input) {
   const c = { ...input, target: { ...input?.target }, administrator: { ...input?.administrator },
@@ -129,8 +163,8 @@ function validateRoles(rows, allowMissing) {
   if (rows.some(r => ![E, O].includes(r.rolname))) throw reject();
 }
 
-async function facts(client, allowMissing) {
-  const roles = (await client.query(ROLE_FACTS, [E, O])).rows;
+async function facts(client, allowMissing, epoch) {
+  const roles = (await client.query(ROLE_FACTS, [E, O, [...EPOCHS[epoch].ownedFunctions]])).rows;
   const result = await client.query(PUBLIC_FACTS);
   const p = result.rows[0];
   if (result.rows.length !== 1 || p.public_create !== false || p.public_write !== false
@@ -139,17 +173,18 @@ async function facts(client, allowMissing) {
   return { roles, privateSchema: p.private_schema };
 }
 
-async function authoritativePostcheck(client) {
-  // Compile ONLY the fixed, current migration in memory. Its imports are type
-  // only; evaluating definitions does not run UP/DOWN or load application code.
-  // No stale dist fallback and no generated file. TypeScript is an explicit
-  // operator-tool dependency, already installed by this repository's npm ci.
+async function authoritativePostcheck(client, epoch) {
+  // Compile ONLY the fixed migration of the applied epoch in memory. Its imports
+  // are type only; evaluating definitions does not run UP/DOWN or load
+  // application code. No stale dist fallback and no generated file. TypeScript
+  // is an explicit operator-tool dependency, already installed by npm ci.
+  const migration = path.join(MIGRATIONS_DIR, `${EPOCHS[epoch].migration}.ts`);
   const ts = require('typescript');
-  const output = ts.transpileModule(fs.readFileSync(MIGRATION, 'utf8'), {
+  const output = ts.transpileModule(fs.readFileSync(migration, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const sandbox = { exports: /** @type {Record<string, Function>} */ ({}) };
-  vm.runInNewContext(output, sandbox, { filename: MIGRATION, timeout: 1000 });
+  vm.runInNewContext(output, sandbox, { filename: migration, timeout: 1000 });
   if (typeof sandbox.exports.assertSecurityPostconditions !== 'function') throw reject();
   await sandbox.exports.assertSecurityPostconditions({ raw: sql => client.query(sql) });
 }
@@ -168,7 +203,7 @@ function verifier(password) {
 }
 
 async function run(input, dependencies = {}) {
-  let client, lockClient, transaction = false, result, failed = false;
+  let client, lockClient, transaction = false, result, failed = false, epoch;
   try {
     const c = configuration(input);
     if (c.mode === 'PROVISION') {
@@ -194,9 +229,10 @@ async function run(input, dependencies = {}) {
     }
     await client.query(c.mode === 'CHECK' ? 'BEGIN READ ONLY' : 'BEGIN');
     transaction = true;
-    const before = await facts(client, c.mode === 'PROVISION');
-    // Existing private authority must already satisfy 0215, even in PRE mode.
-    if (c.phase === 'POST' || before.privateSchema) await authoritativePostcheck(client);
+    epoch = await securityEpoch(client);
+    const before = await facts(client, c.mode === 'PROVISION', epoch);
+    // Existing private authority must already satisfy its applied epoch, even in PRE mode.
+    if (c.phase === 'POST' || before.privateSchema) await authoritativePostcheck(client, epoch);
     const created = [];
     if (c.mode === 'PROVISION') {
       if (!before.roles.some(r => r.rolname === E)) {
@@ -209,12 +245,13 @@ async function run(input, dependencies = {}) {
           NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION`);
         created.push(O);
       }
-      await facts(client, false);
+      await facts(client, false, epoch);
     }
     await client.query('COMMIT');
     transaction = false;
     result = { mode: c.mode, phase: c.phase, created,
-      security: c.phase === 'POST' || before.privateSchema ? '0215_VALIDATED' : 'ROLE_PREREQUISITES_ONLY' };
+      security: c.phase === 'POST' || before.privateSchema
+        ? EPOCHS[epoch].security : 'ROLE_PREREQUISITES_ONLY' };
   } catch {
     failed = true;
     if (transaction) { try { await client.query('ROLLBACK'); } catch { /* close below */ } }
