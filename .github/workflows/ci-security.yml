@@ -460,7 +460,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t3b-durable-sync-dispatch|gh1068-t2-sync-status-races|auth-tenant-01\.db'
+        run: npm run test:integration -- --testPathPatterns 'gh1068-t3-reconnect-executor|gh1068-t3-reconnect-fresh-sync|gh1068-t3-reconnect-reset-auth-boundary|gh1068-t3b-durable-sync-dispatch|gh1068-t2-sync-status-races|gh979-shopify-disconnect|auth-tenant-01\.db'
 
       # GH-1262 S1 purchasing regressions share this disposable-DB lifecycle
       # (INFRASTRUCTURE-REUSE-FIRST): PO creation depends on GH-1101 connection
