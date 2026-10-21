@@ -67,9 +67,9 @@ import { handleIntegrationSyncRequested } from
   'api-src/projection/handlers/integration.sync_requested';
 import { projectionRegistry } from 'api-src/projection/projection.registry';
 import { SHOPIFY_REQUIRED_SCOPE_STRING } from 'api-src/services/shopify/shopifyScopes';
-// GH-1101: the latest evolution (0217) carries every 0216 invariant plus its evolved claim.
+// GH-979 Section C: the latest evolution (0220) carries every prior invariant plus its evolved claims.
 import { assertSecurityPostconditions } from
-  '../../../apps/backend/migrations/20261019120000_0217_shopify_manual_recovery';
+  '../../../apps/backend/migrations/20261021130000_0220_add_state_bound_shopify_reconnect_proof';
 
 const SYNC_EVENT = 'integration/sync_dispatch_requested';
 const E = 'sf_shopify_reconnect_executor';
