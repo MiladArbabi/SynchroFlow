@@ -129,13 +129,16 @@ async function createMember(shopId: number, role: Role): Promise<number> {
       .returning('id');
 
     await trx('shop_memberships').insert({ shop_id: shopId, user_id: row.id, role });
-    await trx('user_lifecycle_snapshot').insert({
-      shop_id: shopId,
-      user_id: row.id,
-      phase: 'FT2',
-      since: new Date(),
-      last_event_id: crypto.randomUUID(),
-    });
+    // Lifecycle state is shop-scoped, not member-scoped.
+    if (role === 'owner') {
+      await trx('user_lifecycle_snapshot').insert({
+        shop_id: shopId,
+        user_id: row.id,
+        phase: 'FT2',
+        since: new Date(),
+        last_event_id: crypto.randomUUID(),
+      });
+    }
     return row.id as number;
   });
 }
