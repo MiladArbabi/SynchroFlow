@@ -636,6 +636,18 @@ If authorised, fixture helpers should:
 * avoid hidden side effects;
 * default to safe/no-provider behaviour;
 * support reliable cleanup.
+INFRASTRUCTURE-REUSE-FIRST (engineering_workflow.md)
+Before proposing new test/runtime infrastructure:
+1. Inspect and reuse existing capabilities.
+2. Prefer safe, lightweight local verification.
+3. Where safe local integration execution is unavailable, reuse established CI infrastructure (extend an existing step/DB lifecycle first).
+4. Provision new local runners/databases/dependencies only when required proof cannot be obtained through existing resources and the owner approves.
+5. Never substitute shared development databases for disposable integration databases.
+6. Never bypass RLS, migration, isolation, cleanup or external-side-effect safety.
+7. Preserve required HIGH-risk verification.
+8. CI evidence must be attributable to the exact reviewed source revision before certification.
+9. If verification requires an approved branch push, stop for the ship/review authorization first.
+CI-dependent results remain PENDING, not GREEN, until the approved revision is actually tested.
 TEST DATABASE RULES
 Use disposable scratch DBs for integration tests when instructed.
 Scratch DB administration:

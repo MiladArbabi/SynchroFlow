@@ -211,6 +211,22 @@ EVIDENCE-REUSE-01 — Selective evidence reuse
 
 Reuse successful expensive verification only when relevant file hashes are unchanged, the runtime/test environment remains applicable, the test contract is unchanged, and evidence is available and attributable. Invalidate only affected layers. Documentation-only changes do not normally invalidate certified PostgreSQL execution, migration or concurrency proofs. Security/migration changes require renewed affected authority proofs. Timestamps alone never establish same-source certification.
 
+INFRASTRUCTURE-REUSE-FIRST — Reuse verification infrastructure before adding any
+
+Before proposing new test/runtime infrastructure:
+
+1. Inspect and reuse existing capabilities (Section 11 harnesses, existing CI jobs and steps).
+2. Prefer safe, lightweight local verification.
+3. Where safe local integration execution is unavailable, reuse established CI infrastructure, extending an existing step and database lifecycle before adding another.
+4. Provision new local runners, databases or dependencies only when required proof cannot be obtained through existing resources and Milad approves.
+5. Never substitute shared development databases for disposable integration databases.
+6. Never bypass RLS, migration, isolation, cleanup or external-side-effect safety.
+7. Preserve required HIGH-risk verification; reuse changes the route, not the proof.
+8. CI evidence must be attributable to the exact reviewed source revision before certification.
+9. If verification requires an approved branch push, stop for ship/review authorization (SHIP-DELEGATION-01) first.
+
+This is a standing rule, not a workflow gate. Until CI has actually tested the reviewed revision, CI-dependent results are PENDING, not GREEN.
+
 Bounded agent autonomy
 
 Preserve AGENT-CLOSED-LOOP-01 (13.10.1): explicit file/permission allowlists, at most three correction cycles, unchanged semantics/security/migration contracts and no unrelated fixes. Predictable mechanical corrections already authorized by the brief may proceed within that boundary. Stop for material decisions, unsafe conditions, scope violations or exhausted correction authority; routine authorized corrections do not add approval rounds. Closed-loop implementation does not itself authorize shipping.
@@ -2082,6 +2098,8 @@ Fast gates should prioritize:
 - other high-value targeted contracts.
 
 Deep suites belong on main/nightly/release candidate/pre-submission according to cost and risk.
+
+New coverage joins an existing job/step and its disposable-database lifecycle where practical (INFRASTRUCTURE-REUSE-FIRST).
 
 ⸻
 

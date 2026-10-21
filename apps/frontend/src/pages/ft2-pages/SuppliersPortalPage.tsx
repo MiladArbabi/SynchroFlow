@@ -157,8 +157,18 @@ export default function SuppliersPortalPage() {
     refetch();
   }, [refetch]);
 
-  const handleCreatePo = useCallback(async (input: CreatePoInput): Promise<void> => {
-    await axiosInstance.post('/api/v1/suppliers/purchase-orders', input);
+  // GH-1262 S1 R10-C: the dialog owns the operation key; it travels only as
+  // the required Idempotency-Key header. Fail closed rather than send a
+  // create the server cannot deduplicate.
+  const handleCreatePo = useCallback(async (
+    input: CreatePoInput,
+    options: { idempotencyKey: string },
+  ): Promise<void> => {
+    const idempotencyKey = options?.idempotencyKey?.trim();
+    if (!idempotencyKey) throw new Error('Idempotency-Key is required to create a purchase order');
+    await axiosInstance.post('/api/v1/suppliers/purchase-orders', input, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
     refetch();
   }, [refetch]);
 

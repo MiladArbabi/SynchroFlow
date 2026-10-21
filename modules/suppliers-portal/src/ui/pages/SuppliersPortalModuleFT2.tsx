@@ -123,8 +123,7 @@ export type CreateSupplierInput = {
   lead_time_days?: number;
 };
 
-export type CreatePoInput = {
-  supplier_id: number;
+type CreatePoFields = {
   expected_delivery_date?: string;
   notes?: string;
   line_items: {
@@ -134,6 +133,14 @@ export type CreatePoInput = {
     lasyncro_variant_id?: string | null;
   }[];
 };
+
+/**
+ * GH-1262 S1 R10-A: an existing supplier_id XOR inline new_supplier details.
+ * Inline details travel with the PO so the server creates both atomically.
+ */
+export type CreatePoInput =
+  | (CreatePoFields & { supplier_id: number; new_supplier?: never })
+  | (CreatePoFields & { new_supplier: CreateSupplierInput; supplier_id?: never });
 
 export type SourcingRecommendation = {
   id: number;
@@ -372,7 +379,12 @@ export type SuppliersPortalPageProps = {
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onUpdateSupplier: (id: number, input: CreateSupplierInput) => Promise<Supplier>;
   onDeleteSupplier: (id: number) => Promise<void>;
-  onCreatePo: (input: CreatePoInput) => Promise<void>;
+  /**
+   * GH-1262 S1 R10-B/C: `idempotencyKey` identifies one logical create
+   * operation (owned by CreatePoDialog) and travels as the Idempotency-Key
+   * header — never in the request body.
+   */
+  onCreatePo: (input: CreatePoInput, options: { idempotencyKey: string }) => Promise<void>;
   /** Creates dispatched Receive work for a shipped PO. */
   onCreateReceiveJob: (
     poId: string,
@@ -469,6 +481,70 @@ const OPEN_STATUSES: PurchaseOrderStatus[] = [
 
 const NEW_SUPPLIER_SENTINEL = '__new__';
 
+/**
+ * GH-1262 S1 R10-B: a cryptographically strong, unique operation key.
+ * Fails closed when no secure random source exists — never Math.random or a
+ * timestamp.
+ */
+function createIdempotencyKey(): string {
+  const source = globalThis.crypto;
+  if (typeof source?.randomUUID === 'function') return source.randomUUID();
+  if (typeof source?.getRandomValues === 'function') {
+    const bytes = source.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // RFC 4122 version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  throw new Error('Secure random source unavailable');
+}
+
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
+const MONEY_AMOUNT = /^\d+(\.\d{1,2})?$/;
+const WHOLE_NUMBER = /^-?\d+$/;
+// PostgreSQL `integer` bound shared by unit_cost_cents, suppliers.moq and
+// suppliers.lead_time_days (migrations 0094 / 0096).
+const PG_INTEGER_MAX = 2147483647;
+const PG_INTEGER_MIN = -2147483648;
+
+/**
+ * GH-1262 S1 R10 C1: a selected variant's cost replaces the line's cost.
+ * null/undefined = unknown (blank); 0 = a known zero ("0"). A previous
+ * variant's cost is never carried over.
+ */
+function variantCostText(unitCost: number | string | null | undefined): string {
+  return unitCost === null || unitCost === undefined ? '' : String(unitCost);
+}
+
+/**
+ * GH-1262 S1 R10 C2: blank → undefined (unknown); otherwise a non-negative
+ * amount with at most two decimals whose cents are a safe integer within the
+ * unit_cost_cents column. `null` = invalid.
+ */
+function parseUnitCostCents(text: string): number | undefined | null {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  if (!MONEY_AMOUNT.test(trimmed)) return null;
+  const cents = Math.round(Number(trimmed) * 100);
+  if (!Number.isSafeInteger(cents) || cents < 0 || cents > PG_INTEGER_MAX) return null;
+  return cents;
+}
+
+/**
+ * GH-1262 S1 R10 C2: optional supplier integer (moq, lead_time_days).
+ * Blank → undefined (no minimum / unknown). Otherwise only the rule the
+ * schema establishes: a whole number within PostgreSQL `integer`.
+ * `null` = invalid.
+ */
+function parseOptionalSupplierInteger(text: string): number | undefined | null {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  if (!WHOLE_NUMBER.test(trimmed)) return null;
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value) || value < PG_INTEGER_MIN || value > PG_INTEGER_MAX) return null;
+  return value;
+}
+
 // ─────────────────────────────────────────────
 // CREATE PO DIALOG
 // ─────────────────────────────────────────────
@@ -496,7 +572,6 @@ function CreatePoDialog({
   open,
   suppliers,
   onClose,
-  onCreateSupplier,
   onCreatePo,
   onSearchVariants,
   prefilledLineItem,
@@ -505,8 +580,7 @@ function CreatePoDialog({
   open: boolean;
   suppliers: Supplier[];
   onClose: () => void;
-  onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
-  onCreatePo: (input: CreatePoInput) => Promise<void>;
+  onCreatePo: (input: CreatePoInput, options: { idempotencyKey: string }) => Promise<void>;
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
   prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
@@ -546,6 +620,13 @@ function CreatePoDialog({
     }]);
   }, [prefilledLineItem]);
   const [submitting, setSubmitting] = useState(false);
+  // R10-B: synchronous guard — a second click can land before the
+  // `submitting` re-render disables the button.
+  const submittingRef = useRef(false);
+  // R10-B: the in-flight logical operation. An unchanged retry reuses its key;
+  // a changed normalized request, a confirmed success or an explicit close
+  // starts a new one.
+  const operationRef = useRef<{ key: string; fingerprint: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [variantOptions, setVariantOptions] = useState<VariantOption[]>([]);
   const [variantSearch, setVariantSearch] = useState<Record<number, string>>({});
@@ -580,64 +661,92 @@ function CreatePoDialog({
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     setError(null);
 
     // Validate supplier
     if (!supplierId) return setError('Please select a supplier.');
     if (isNewSupplier && !newSupplier.name.trim()) return setError('New supplier name is required.');
+    const newSupplierMoq = parseOptionalSupplierInteger(newSupplier.moq);
+    const newSupplierLeadTime = parseOptionalSupplierInteger(newSupplier.lead_time_days);
+    if (isNewSupplier && newSupplierMoq === null) return setError('MOQ must be a whole number.');
+    if (isNewSupplier && newSupplierLeadTime === null) return setError('Lead time must be a whole number of days.');
 
-    // Validate line items
+    // Validate line items. Quantities must be written as whole positive
+    // numbers: parseInt would silently turn "1.5" into 1 and "2abc" into 2.
     for (const item of lineItems) {
       if (!item.description.trim()) return setError('All line items need a description.');
-      const qty = parseInt(item.quantity_ordered, 10);
-      if (isNaN(qty) || qty < 1) return setError('All line items need a valid quantity (≥ 1).');
+      const qtyText = item.quantity_ordered.trim();
+      if (!POSITIVE_INTEGER.test(qtyText) || !Number.isSafeInteger(Number(qtyText))) {
+        return setError('All line items need a whole-number quantity (≥ 1).');
+      }
+      if (parseUnitCostCents(item.unit_cost_cents) === null) {
+        return setError('Unit cost must be a non-negative amount with at most two decimals.');
+      }
       if (!item.lasyncro_variant_id) return setError(
         `"${item.description.trim()}" is not linked to a Shopify product. Search and select it from the dropdown, or create it in Shopify first then search here.`
       );
     }
 
+    const fields = {
+      expected_delivery_date: expectedDate || undefined,
+      notes: notes.trim() || undefined,
+      line_items: lineItems.map((item) => ({
+        description: (item.product_title ?? item.description).trim(),
+        quantity_ordered: Number(item.quantity_ordered.trim()),
+        // Validated above: blank stays unknown (undefined); "0" is a known zero.
+        unit_cost_cents: parseUnitCostCents(item.unit_cost_cents) ?? undefined,
+        lasyncro_variant_id: item.lasyncro_variant_id?.trim() || null,
+      })),
+    };
+
+    // R10-A: inline supplier details travel with the PO in ONE create call.
+    const input: CreatePoInput = isNewSupplier
+      ? {
+          ...fields,
+          new_supplier: {
+            name: newSupplier.name.trim(),
+            contact_name: newSupplier.contact_name.trim() || undefined,
+            contact_email: newSupplier.contact_email.trim() || undefined,
+            contact_phone: newSupplier.contact_phone.trim() || undefined,
+            moq: newSupplierMoq ?? undefined,
+            lead_time_days: newSupplierLeadTime ?? undefined,
+          },
+        }
+      : { ...fields, supplier_id: parseInt(supplierId, 10) };
+
+    // R10-B: reuse the key only for an unchanged retry of the same request.
+    const fingerprint = JSON.stringify(input);
+    if (!operationRef.current || operationRef.current.fingerprint !== fingerprint) {
+      try {
+        operationRef.current = { key: createIdempotencyKey(), fingerprint };
+      } catch {
+        operationRef.current = null;
+        return setError('Cannot create a purchase order safely in this browser.');
+      }
+    }
+    const { key } = operationRef.current;
+
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      let resolvedSupplierId: number;
-
-      if (isNewSupplier) {
-        const created = await onCreateSupplier({
-          name: newSupplier.name.trim(),
-          contact_name: newSupplier.contact_name.trim() || undefined,
-          contact_email: newSupplier.contact_email.trim() || undefined,
-          contact_phone: newSupplier.contact_phone.trim() || undefined,
-          moq: newSupplier.moq.trim() ? Number(newSupplier.moq) : undefined,
-          lead_time_days: newSupplier.lead_time_days.trim() ? Number(newSupplier.lead_time_days) : undefined,
-        });
-        resolvedSupplierId = created.id;
-      } else {
-        resolvedSupplierId = parseInt(supplierId, 10);
-      }
-
-      await onCreatePo({
-        supplier_id: resolvedSupplierId,
-        expected_delivery_date: expectedDate || undefined,
-        notes: notes.trim() || undefined,
-        line_items: lineItems.map((item) => ({
-          description: (item.product_title ?? item.description).trim(),
-          quantity_ordered: parseInt(item.quantity_ordered, 10),
-          unit_cost_cents: item.unit_cost_cents
-            ? Math.round(parseFloat(item.unit_cost_cents) * 100)
-            : undefined,
-          lasyncro_variant_id: item.lasyncro_variant_id?.trim() || null,
-        })),
-      });
-
+      await onCreatePo(input, { idempotencyKey: key });
+      // Confirmed completion: the next submit is a new logical operation.
+      operationRef.current = null;
       onClose();
     } catch (err: any) {
+      // Failure keeps the operation (and the merchant's input) for a retry.
       setError(err?.response?.data?.error ?? 'Failed to create purchase order.');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleClose = () => {
     if (submitting) return;
+    // Explicit abandonment ends the logical operation.
+    operationRef.current = null;
     setSupplierId('');
     setNewSupplier({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
     setExpectedDate('');
@@ -824,7 +933,7 @@ function CreatePoDialog({
                           sku: v.sku,
                           product_title: v.product_title,
                           image_url: v.image_url,
-                          unit_cost_cents: v.unit_cost ? String(v.unit_cost) : i.unit_cost_cents,
+                          unit_cost_cents: variantCostText(v.unit_cost),
                         } : i));
                         setVariantSearch((p) => ({ ...p, [item.key]: '' }));
                         setVariantOptions([]);
@@ -884,7 +993,7 @@ function CreatePoDialog({
                               sku: v.sku,
                               product_title: v.product_title,
                               image_url: v.image_url,
-                              unit_cost_cents: v.unit_cost ? String(v.unit_cost) : i.unit_cost_cents,
+                              unit_cost_cents: variantCostText(v.unit_cost),
                             } : i));
                             setVariantSearch((p) => ({ ...p, [item.key]: '' }));
                             setVariantOptions([]);
@@ -2109,7 +2218,7 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
 
 function PurchasingPosView({
   data, isLoading, isError, onRefresh,
-  onFetchLineItems, onUpdatePoStatus, onCreateSupplier, onCreatePo,
+  onFetchLineItems, onUpdatePoStatus, onCreatePo,
   onCreateReceiveJob, onReassignReceiveJob, onSearchVariants, autoOpenCreatePo = false,
   autoOpenReceivePoId, prefilledLineItem,
   teamAssignableOperators = [], currentUserId = null,
@@ -2252,7 +2361,6 @@ function PurchasingPosView({
         suppliers={suppliers}
         prefilledLineItem={prefilledLineItem}
         onClose={handlePoCreated}
-        onCreateSupplier={onCreateSupplier}
         onCreatePo={onCreatePo}
         onSearchVariants={onSearchVariants}
       />
@@ -2461,7 +2569,6 @@ function AssignSupplierDialog({
 function PurchasingSourcingView({
   data,
   onCreatePo,
-  onCreateSupplier,
   onSearchVariants,
   onFetchSourcingRecommendations,
   onFetchSourcingWorklist,
@@ -4146,7 +4253,6 @@ function PurchasingSourcingView({
         open={createPoOpen}
         suppliers={suppliers}
         onClose={() => setCreatePoOpen(false)}
-        onCreateSupplier={onCreateSupplier}
         onCreatePo={onCreatePo}
         onSearchVariants={onSearchVariants}
         prefilledLineItem={targetedPoLineItem}
