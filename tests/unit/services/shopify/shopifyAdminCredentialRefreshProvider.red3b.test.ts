@@ -101,17 +101,37 @@ describe('RED-3B refresh provider boundary — mocked transport, no persistence'
     expect(() => normalizeAndValidateShopifyGrantedScopes('')).toThrow('SHOPIFY_GRANTED_SCOPES_MISSING');
   });
 
-  it('R3B-K: refresh sends exact refresh-grant inputs and a 10-second timeout', async () => {
+  it('R3B-K: refresh sends exact form-encoded refresh-grant inputs and a 10-second timeout', async () => {
+    process.env.SHOPIFY_API_KEY = 'red3b provider&client=id';
     expect((await refresh()).kind).toBe('SUCCESS');
     expect(post).toHaveBeenCalledTimes(1);
-    const [url, body, options] = post.mock.calls[0];
+    const [url, encoded, options] = post.mock.calls[0];
     expect(url).toBe(URL);
-    expect(Object.keys(body).sort()).toEqual(['client_id', 'client_secret', 'grant_type', 'refresh_token']);
+    expect(typeof encoded).toBe('string');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded' });
+    expect(encoded.includes('red3b+provider%26client%3Did')).toBe(true);
+    const params = new URLSearchParams(encoded);
+    expect([...params.keys()].sort()).toEqual(['client_id', 'client_secret', 'grant_type', 'refresh_token']);
+    const body = Object.fromEntries(params);
     expect(body.client_id === process.env.SHOPIFY_API_KEY).toBe(true);
     expect(body.client_secret === SECRET).toBe(true);
     expect(body.refresh_token === OLD_REFRESH).toBe(true);
     expect(body.grant_type).toBe('refresh_token');
     expect(options.timeout).toBe(10000);
+  });
+
+  it.each([
+    ['missing client id', 'SHOPIFY_API_KEY', undefined],
+    ['blank client id', 'SHOPIFY_API_KEY', '   '],
+    ['missing client secret', 'SHOPIFY_API_SECRET', undefined],
+    ['empty client secret', 'SHOPIFY_API_SECRET', ''],
+  ])('GH1046-C1: %s fails closed before any provider call', async (_label, key, value) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+    const result = await refresh();
+    expect(post).not.toHaveBeenCalled();
+    expect(result).toEqual({ kind: 'RETRYABLE', diagnostics: { code: 'SHOPIFY_CLIENT_CREDENTIALS_MISSING' } });
+    expect(SENTINELS.some(secret => JSON.stringify(result).includes(secret))).toBe(false);
   });
 
   it('R3B-L: valid success returns complete normalized replacement and one expiry base', async () => {
