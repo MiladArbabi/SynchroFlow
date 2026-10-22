@@ -3,7 +3,9 @@ jest.mock('axios', () => {
   const blocked = jest.fn(() => { throw new Error('PROVIDER_NETWORK_ESCAPE_BLOCKED'); });
   const client = { post: jest.fn(() => { throw new Error('UNPROGRAMMED_REFRESH'); }),
     get: blocked, request: blocked, put: blocked, patch: blocked, delete: blocked,
-    create: () => client, isAxiosError: () => false };
+    create: () => client,
+    isAxiosError: (error: unknown) => !!error && typeof error === 'object'
+      && (error as { isAxiosError?: boolean }).isAxiosError === true };
   return { __esModule: true, default: client };
 });
 import { getSyncStatus } from 'api-src/api/integrations/integration.controller';
@@ -426,5 +428,105 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(await metadata(f)).toEqual(metadataBefore);
     expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW })).toEqual(ready);
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('GH-1046 — lost successful refresh response preserves authority and falls back to reauthorization when the old refresh token is invalid', async () => {
+    const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
+    const [before] = await credentials(f);
+    let providerRotated = false;
+    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+      expect(body.refresh_token).toBe(REFRESH_A);
+      providerRotated = true;
+      throw Object.assign(new Error('simulated lost response'), {
+        isAxiosError: true,
+        code: 'ECONNRESET',
+      });
+    });
+
+    expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW }))
+      .toEqual({ kind: 'RETRYABLE' });
+    expect(providerRotated).toBe(true);
+    const [afterLoss] = await credentials(f);
+    expect(String(afterLoss.credential_generation)).toBe(String(before.credential_generation));
+    expect(afterLoss.access_token_encrypted).toBe(before.access_token_encrypted);
+    expect(afterLoss.refresh_token_encrypted).toBe(before.refresh_token_encrypted);
+    expect(afterLoss.rotation_lease_token).toBeNull();
+    expect(afterLoss.rotation_lease_expires_at).toBeNull();
+
+    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+      expect(body.refresh_token).toBe(REFRESH_A);
+      throw Object.assign(new Error('old refresh authority invalid after provider rotation'), {
+        isAxiosError: true,
+        code: 'ERR_BAD_REQUEST',
+        response: { status: 401, data: { error: 'invalid_request' } },
+      });
+    });
+    expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW }))
+      .toEqual({ kind: 'REAUTH_REQUIRED' });
+    const [afterRetry] = await credentials(f);
+    expect(afterRetry.credential_state).toBe('REAUTH_REQUIRED');
+    expect(String(afterRetry.credential_generation))
+      .toBe((BigInt(before.credential_generation) + 1n).toString());
+    expect(afterRetry.access_token_encrypted).toBe(before.access_token_encrypted);
+    expect(afterRetry.refresh_token_encrypted).toBe(before.refresh_token_encrypted);
+    expect(afterRetry.rotation_lease_token).toBeNull();
+    expect(afterRetry.rotation_lease_expires_at).toBeNull();
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('GH-1046 — replacement persistence failure rolls back material and generation, retains lease ownership, and safely reauthorizes after lease expiry', async () => {
+    const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
+    const [before] = await credentials(f);
+    const suffix = crypto.randomUUID().replace(/-/g, '');
+    const functionName = `gh1046_refresh_persist_fail_${suffix}`;
+    const triggerName = `gh1046_refresh_persist_fail_trigger_${suffix}`;
+    await systemTransaction(async trx => {
+      await trx.raw(`CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE'; END; $$`);
+      await trx.raw(`CREATE TRIGGER ${triggerName} BEFORE UPDATE ON shopify_admin_credentials
+        FOR EACH ROW WHEN (NEW.access_token_encrypted IS DISTINCT FROM OLD.access_token_encrypted)
+        EXECUTE FUNCTION ${functionName}()`);
+    });
+    post.mockResolvedValueOnce({ data: {
+      access_token: ACCESS_B,
+      refresh_token: REFRESH_B,
+      expires_in: 3600,
+      refresh_token_expires_in: 86400,
+      scope: SHOPIFY_REQUIRED_SCOPE_STRING,
+    } });
+
+    await expect(resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW }))
+      .rejects.toThrow('GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE');
+    const [afterFailure] = await credentials(f);
+    expect(String(afterFailure.credential_generation)).toBe(String(before.credential_generation));
+    expect(afterFailure.access_token_encrypted).toBe(before.access_token_encrypted);
+    expect(afterFailure.refresh_token_encrypted).toBe(before.refresh_token_encrypted);
+    expect(afterFailure.credential_state).toBe('ACTIVE');
+    expect(afterFailure.rotation_lease_token).toEqual(expect.any(String));
+    expect(afterFailure.rotation_lease_expires_at).toEqual(later(30));
+
+    await systemTransaction(async trx => {
+      await trx.raw(`DROP TRIGGER ${triggerName} ON shopify_admin_credentials`);
+      await trx.raw(`DROP FUNCTION ${functionName}()`);
+    });
+    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+      expect(body.refresh_token).toBe(REFRESH_A);
+      throw Object.assign(new Error('old refresh authority invalid after provider rotation'), {
+        isAxiosError: true,
+        code: 'ERR_BAD_REQUEST',
+        response: { status: 401, data: { error: 'invalid_request' } },
+      });
+    });
+    expect(await resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: later(31) }))
+      .toEqual({ kind: 'REAUTH_REQUIRED' });
+    const [afterRecovery] = await credentials(f);
+    expect(afterRecovery.credential_state).toBe('REAUTH_REQUIRED');
+    expect(String(afterRecovery.credential_generation))
+      .toBe((BigInt(before.credential_generation) + 1n).toString());
+    expect(afterRecovery.access_token_encrypted).toBe(before.access_token_encrypted);
+    expect(afterRecovery.refresh_token_encrypted).toBe(before.refresh_token_encrypted);
+    expect(afterRecovery.rotation_lease_token).toBeNull();
+    expect(afterRecovery.rotation_lease_expires_at).toBeNull();
+    expect(post).toHaveBeenCalledTimes(2);
   });
 });
