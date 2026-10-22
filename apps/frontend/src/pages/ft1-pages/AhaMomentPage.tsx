@@ -85,9 +85,9 @@ interface AhaSignalResponse {
 function getPriorityVisual(priority: AhaSignal['priority']) {
   switch (priority) {
     case 0: return { icon: CheckCircle,   color: ACCENT,    bg: ACCENT_GHOST,             border: ACCENT_BORDER,           label: 'Connected' };
-    case 1: return { icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.20)', label: 'Needs attention' };
-    case 2: return { icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.20)', label: 'Urgent' };
-    case 3: return { icon: Users,         color: '#8B5CF6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.20)', label: 'Strategic' };
+    case 1: return { icon: AlertTriangle, color: 'var(--critical-text)', bg: 'var(--critical-ghost)', border: 'var(--critical-border)', label: 'Needs attention' };
+    case 2: return { icon: Clock,         color: 'var(--warning-text)', bg: 'var(--warning-ghost)', border: 'var(--warning-border)', label: 'Urgent' };
+    case 3: return { icon: Users,         color: 'var(--accent-text)', bg: 'var(--accent-ghost)', border: 'var(--accent-border)', label: 'Strategic' };
     case 4: return { icon: TrendingUp,    color: ACCENT,    bg: ACCENT_GHOST,             border: ACCENT_BORDER,           label: 'Operational' };
     case 6: return { icon: CheckCircle,   color: GREEN,     bg: GREEN_GHOST,              border: GREEN_BORDER,            label: 'Healthy' };
   }

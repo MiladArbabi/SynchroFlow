@@ -888,7 +888,7 @@ function WebhookIntegrationSection({
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {revealedUrl && (
             <Box sx={{ p: 1.25, bgcolor: 'rgba(34,197,94,0.06)', border: '0.5px solid rgba(34,197,94,0.3)', borderRadius: '6px' }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#22C55E', mb: 0.5 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--good-ink)', mb: 0.5 }}>
                 Copy this URL now — it won't be shown again.
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -901,7 +901,7 @@ function WebhookIntegrationSection({
           )}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: token.last_seen_at ? '#22C55E' : 'var(--ink-4)' }} />
+              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: token.last_seen_at ? 'var(--good-ink)' : 'var(--ink-4)' }} />
               <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
                 {token.last_seen_at ? `Last event received ${new Date(token.last_seen_at).toLocaleString()}` : 'Configured — no events received yet'}
               </Typography>

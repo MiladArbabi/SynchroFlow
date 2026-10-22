@@ -7,7 +7,7 @@ type ListItemButtonComponentConfig = Components<Theme>['MuiListItemButton'];
 
 // ==============================|| OVERRIDES - LIST ITEM BUTTON ||============================== //
 
-export default function ListItemButton(_theme: Theme): ListItemButtonComponentConfig {
+export default function ListItemButton(): ListItemButtonComponentConfig {
     // CSS vars (themes/tokens.ts) so both colour schemes resolve correctly —
     // overrides are built once, so palette.mode branches never see dark.
     return {

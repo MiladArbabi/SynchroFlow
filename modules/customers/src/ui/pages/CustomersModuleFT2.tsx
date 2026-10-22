@@ -55,12 +55,13 @@ export interface CustomersModuleFT2Props {
   currency?: CurrencyContext;
 }
 
-const TIER_COLORS: Record<string, string> = {
-  VIP: '#7C3AED',
-  CORE: '#2563EB',
-  NEW: '#16A34A',
-  AT_RISK: '#CA8A04',
-  LOST: '#DC2626',
+// Tinted tier chips: text-safe ink on a ghost fill (themes/tokens.ts).
+const TIER_COLORS: Record<string, { fg: string; bg: string }> = {
+  VIP: { fg: 'var(--accent-text)', bg: 'var(--accent-ghost)' },
+  CORE: { fg: 'var(--ink-2)', bg: 'var(--bg-3)' },
+  NEW: { fg: 'var(--good-ink)', bg: 'var(--good-ghost)' },
+  AT_RISK: { fg: 'var(--warning-text)', bg: 'var(--warning-ghost)' },
+  LOST: { fg: 'var(--critical-text)', bg: 'var(--critical-ghost)' },
 };
 
 const CHURN_LABELS: Record<string, string> = {
@@ -134,9 +135,9 @@ const CustomerRow = memo(function CustomerRow({ customer, currency }: { customer
           label={customer.customer_tier}
           size="small"
           sx={{
-            bgcolor: TIER_COLORS[customer.customer_tier] ?? theme.palette.primary.main,
-            color: '#fff',
-            fontWeight: 700,
+            bgcolor: TIER_COLORS[customer.customer_tier]?.bg ?? 'var(--bg-3)',
+            color: TIER_COLORS[customer.customer_tier]?.fg ?? 'var(--ink-2)',
+            fontWeight: 600,
             fontSize: 10,
             height: 20,
           }}
@@ -205,7 +206,7 @@ function CustomersModuleFT2Inner({ ltv, currency }: CustomersModuleFT2Props) {
               label="VIP Customers"
               value={String(summary.vip_count)}
               icon={<Star size={14} />}
-              color="#7C3AED"
+              color="var(--accent-text)"
             />
             <StatBox
               label="At Risk"

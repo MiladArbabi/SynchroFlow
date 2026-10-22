@@ -1823,3 +1823,29 @@ local palettes in `AhaMomentPage`, `FinancesIntelligencePage` and
 (mode-invariant accent), categorical printer-role colours in
 `ShopSettingsWarehousePage`, `activationMotionTokens.completion` (animated
 value), and `_themes-vars.module.scss` (password-strength colours).
+
+## 24. Design-system consistency follow-up — 2026-10-22
+
+Closes the gaps left by §23:
+
+- **Suppliers portal** now follows the token conventions (accent-coloured
+  text → `--accent-text`, current page → `--accent-ink`, undefined
+  `--bg-1` / `--danger` / `--surface-2` replaced).
+- **One status palette.** The second Tailwind-style set (`#22C55E`,
+  `#F59E0B`, `#EF4444`, `#3B82F6`, `#8B5CF6`) and the old MUI blues are
+  replaced by the severity tokens across Returns, Finances Intelligence,
+  Inbound, Problem Center, Customers, Cash Flow, settings and auth.
+  Problem Center workflow stages reuse the `--zone-*` channels.
+- **Tints of a token** use `color-mix(in srgb, var(--token) N%, transparent)`;
+  MUI `alpha()` cannot parse `var()`.
+- **No undefined CSS variables.** Every `var(--x)` must resolve to a token in
+  `themes/tokens.ts` (or a documented local scope such as `--film-*`).
+- **Overrides are token-driven.** Chip, DataGrid, TableCell, Tabs and
+  PickersTextField no longer branch on `palette.mode` (overrides are built
+  once, so those branches never saw dark). Chips default to the neutral
+  `color="default"`; pass `color="primary"` only for an accent chip.
+
+**Intentional exceptions:** printer-role category colours
+(`ShopSettingsWarehousePage` `ROLE_COLORS`), FT2 trust tones (`trust-*`),
+third-party brand marks (OAuth buttons) and mode-invariant accent strokes
+in SVG/charts.

@@ -57,7 +57,7 @@ export default function ConnectStorePage() {
                 <>
                   <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
                   <Box sx={{ bgcolor: 'rgba(74,222,128,0.10)', border:'1px solid rgba(74,222,128,0.3)', borderRadius: 99, px: 1, py: 0.25, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <Typography sx={{ color: '#4ADE80', fontSize: '0.65rem', fontWeight: 600 }}>✓ Email verified</Typography>
+                    <Typography sx={{ color: 'var(--good-ink)', fontSize: '0.65rem', fontWeight: 600 }}>✓ Email verified</Typography>
                   </Box>
                   <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
                 </>

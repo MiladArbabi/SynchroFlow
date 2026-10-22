@@ -177,7 +177,7 @@ export default function BlockedOrdersPage() {
             <Box sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', bgcolor: 'transparent', border: '1px solid var(--rule)', borderRadius: '8px', px: 1.75, py: 0.75, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}>
               Notify customers
             </Box>
-            <Box sx={{ fontSize: 12, fontWeight: 500, color: '#F2555A', bgcolor: 'transparent', border: '1px solid rgba(229,72,77,0.3)', borderRadius: '8px', px: 1.75, py: 0.75, cursor: 'pointer', '&:hover': { bgcolor: 'rgba(229,72,77,0.07)' } }}>
+            <Box sx={{ fontSize: 12, fontWeight: 500, color: 'var(--critical-text)', bgcolor: 'transparent', border: '1px solid var(--critical-border)', borderRadius: '8px', px: 1.75, py: 0.75, cursor: 'pointer', '&:hover': { bgcolor: 'rgba(229,72,77,0.07)' } }}>
               Refund &amp; cancel
             </Box>
             <Box onClick={() => setSelected(new Set())} sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-4)', px: 1, py: 0.75, cursor: 'pointer', '&:hover': { color: 'var(--ink)' } }}>

@@ -92,15 +92,15 @@ const DECISIONS: {
   icon: React.ElementType;
   color: string;
 }[] = [
-  { value: 'reship', label: 'Reship', description: 'Send replacement to customer', icon: RotateCcw, color: '#3B82F6' },
-  { value: 'contact_customer', label: 'Contact customer', description: 'Reach out before deciding', icon: Phone, color: '#8B5CF6' },
-  { value: 'initiate_refund', label: 'Initiate refund', description: 'Issue refund to customer', icon: DollarSign, color: '#F59E0B' },
-  { value: 'write_off', label: 'Write off', description: 'Mark as loss, discard item', icon: Trash2, color: '#EF4444' },
+  { value: 'reship', label: 'Reship', description: 'Send replacement to customer', icon: RotateCcw, color: 'var(--accent-text)' },
+  { value: 'contact_customer', label: 'Contact customer', description: 'Reach out before deciding', icon: Phone, color: 'var(--ink-2)' },
+  { value: 'initiate_refund', label: 'Initiate refund', description: 'Issue refund to customer', icon: DollarSign, color: 'var(--warning-text)' },
+  { value: 'write_off', label: 'Write off', description: 'Mark as loss, discard item', icon: Trash2, color: 'var(--critical-text)' },
 ];
 
 const CONDITION_CONFIG: Record<ItemCondition, { label: string; color: string }> = {
-  damaged:    { label: 'Damaged',    color: '#F59E0B' },
-  unsellable: { label: 'Unsellable', color: '#EF4444' },
+  damaged:    { label: 'Damaged',    color: 'var(--warning-text)' },
+  unsellable: { label: 'Unsellable', color: 'var(--critical-text)' },
 };
 
 const fmt = (n: number) =>
@@ -155,8 +155,8 @@ function LineDecisionRow({ line, isRefunded }: { line: ReturnDecisionLine; isRef
             </Typography>
             <Box sx={{
               px: 0.75, py: 0.25, borderRadius: '20px',
-              bgcolor: alpha(conditionCfg.color, 0.12),
-              border: `0.5px solid ${alpha(conditionCfg.color, 0.35)}`,
+              bgcolor: `color-mix(in srgb, ${conditionCfg.color} 12%, transparent)`,
+              border: `0.5px solid color-mix(in srgb, ${conditionCfg.color} 35%, transparent)`,
             }}>
               <Typography sx={{ fontSize: 10, fontWeight: 500, color: conditionCfg.color }}>
                 {conditionCfg.label}
@@ -176,8 +176,8 @@ function LineDecisionRow({ line, isRefunded }: { line: ReturnDecisionLine; isRef
           <Box sx={{
             display: 'flex', alignItems: 'center', gap: 0.75,
             px: 1.25, py: 0.5, borderRadius: '6px',
-            bgcolor: alpha(decidedCfg.color, 0.1),
-            border: `0.5px solid ${alpha(decidedCfg.color, 0.3)}`,
+            bgcolor: `color-mix(in srgb, ${decidedCfg.color} 10%, transparent)`,
+            border: `0.5px solid color-mix(in srgb, ${decidedCfg.color} 30%, transparent)`,
           }}>
             <CheckCircle size={12} color={decidedCfg.color} />
             <Typography sx={{ fontSize: 11, fontWeight: 500, color: decidedCfg.color }}>
@@ -199,10 +199,10 @@ function LineDecisionRow({ line, isRefunded }: { line: ReturnDecisionLine; isRef
                 sx={{
                   display: 'flex', alignItems: 'center', gap: 0.75,
                   px: 1.25, py: 0.625, borderRadius: '6px', cursor: 'pointer',
-                  bgcolor: pendingDecision === d.value ? alpha(d.color, 0.12) : 'var(--bg-2)',
-                  border: `0.5px solid ${pendingDecision === d.value ? alpha(d.color, 0.4) : 'var(--rule)'}`,
+                  bgcolor: pendingDecision === d.value ? `color-mix(in srgb, ${d.color} 12%, transparent)` : 'var(--bg-2)',
+                  border: `0.5px solid ${pendingDecision === d.value ? `color-mix(in srgb, ${d.color} 40%, transparent)` : 'var(--rule)'}`,
                   transition: 'all 0.12s ease',
-                  '&:hover': { bgcolor: alpha(d.color, 0.08), borderColor: alpha(d.color, 0.3) },
+                  '&:hover': { bgcolor: `color-mix(in srgb, ${d.color} 8%, transparent)`, borderColor: `color-mix(in srgb, ${d.color} 30%, transparent)` },
                 }}
               >
                 <d.icon size={12} color={pendingDecision === d.value ? d.color : 'var(--ink-4)'} />
@@ -293,18 +293,18 @@ function OrderCard({ group, onClick }: { group: ReturnDecisionGroup; onClick: ()
         {pendingCount > 0 ? (
           <Box sx={{
             px: 1, py: 0.375, borderRadius: '20px',
-            bgcolor: alpha('#F59E0B', 0.12), border: '0.5px solid rgba(245,158,11,0.35)',
+            bgcolor: 'var(--warning-ghost)', border: '0.5px solid var(--warning-border)',
           }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#F59E0B' }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--warning-text)' }}>
               {pendingCount} pending
             </Typography>
           </Box>
         ) : (
           <Box sx={{
             px: 1, py: 0.375, borderRadius: '20px',
-            bgcolor: alpha('#22C55E', 0.12), border: '0.5px solid rgba(34,197,94,0.35)',
+            bgcolor: 'var(--good-ghost)', border: '0.5px solid var(--good-border)',
           }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#22C55E' }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--good-ink)' }}>
               All decided
             </Typography>
           </Box>

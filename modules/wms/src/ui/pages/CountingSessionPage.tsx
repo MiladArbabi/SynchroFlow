@@ -1208,7 +1208,7 @@ export default function CountingSessionPage({
             height: 32,
             flexShrink: 0,
             borderRadius: '4px',
-            bgcolor: 'var(--surface-2, var(--surface))',
+            bgcolor: 'var(--surface)',
             border: '1px solid var(--rule)',
             overflow: 'hidden',
             display: 'flex',

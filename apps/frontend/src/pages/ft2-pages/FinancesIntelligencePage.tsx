@@ -59,8 +59,8 @@ function PulseRow({ label, value, delta, sub, valueColor }: {
   const pal = useIntelligenceTheme();
   const deltaColor =
     delta == null ? pal.textSecond :
-    delta > 0     ? '#22C55E' :
-    delta < 0     ? '#EF4444' : pal.textSecond;
+    delta > 0     ? 'var(--good-ink)' :
+    delta < 0     ? 'var(--critical-text)' : pal.textSecond;
   const deltaText =
     delta == null ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
   return (
@@ -94,9 +94,9 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
 }) {
   const pal = useIntelligenceTheme();
   const sevColor =
-    severity === 'critical' ? '#EF4444' :
-    severity === 'warning'  ? '#F59E0B' :
-                              '#22C55E';
+    severity === 'critical' ? 'var(--critical-text)' :
+    severity === 'warning'  ? 'var(--warning-text)' :
+                              'var(--good-ink)';
   return (
     <Box sx={{
       display: 'flex', alignItems: 'flex-start', gap: 2,
@@ -268,10 +268,10 @@ export default function FinancesIntelligencePage() {
               Profit pulse
             </Typography>
             <PulseRow label="Gross Revenue"   value={fmt(d.totalRevenue)} delta={revenueDelta} />
-            <PulseRow label={marginLabel}     value={fmt(marginValue ?? 0)} delta={marginDelta} sub={`${marginPct}%`} valueColor={marginPct >= 40 ? '#22C55E' : marginPct >= 20 ? '#F59E0B' : '#EF4444'} />
-            <PulseRow label="Refund Leakage"  value={fmt(d.totalRefunds)} delta={refundsDelta} valueColor={d.totalRefunds > 0 ? '#F59E0B' : undefined} />
+            <PulseRow label={marginLabel}     value={fmt(marginValue ?? 0)} delta={marginDelta} sub={`${marginPct}%`} valueColor={marginPct >= 40 ? 'var(--good-ink)' : marginPct >= 20 ? 'var(--warning-text)' : 'var(--critical-text)'} />
+            <PulseRow label="Refund Leakage"  value={fmt(d.totalRefunds)} delta={refundsDelta} valueColor={d.totalRefunds > 0 ? 'var(--warning-text)' : undefined} />
             <PulseRow label="Avg Gross Margin" value={`${d.avgMarginPct}%`} delta={c?.delta?.avgMarginPtDelta ?? null} />
-            <PulseRow label="Cost Coverage"   value={`${coveragePct}%`} sub={`${d.costCoverage.totalVariants - missingCosts}/${d.costCoverage.totalVariants} SKUs costed`} valueColor={coveragePct === 100 ? '#22C55E' : coveragePct >= 70 ? '#F59E0B' : '#EF4444'} />
+            <PulseRow label="Cost Coverage"   value={`${coveragePct}%`} sub={`${d.costCoverage.totalVariants - missingCosts}/${d.costCoverage.totalVariants} SKUs costed`} valueColor={coveragePct === 100 ? 'var(--good-ink)' : coveragePct >= 70 ? 'var(--warning-text)' : 'var(--critical-text)'} />
             <Box
               onClick={() => navigate('/finances/margin')}
               sx={{

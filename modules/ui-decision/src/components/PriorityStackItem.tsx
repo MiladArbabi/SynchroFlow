@@ -22,14 +22,14 @@ export const PriorityStackItem: React.FC<{
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: '12px 16px',
-        borderBottom: '1px solid var(--border-subtle, #E0E0E0)',
+        borderBottom: '1px solid var(--rule)',
       }}
     >
       <div>
         <div
           style={{
             fontSize: 13,
-            color: 'var(--text-secondary, #666)',
+            color: 'var(--ink-3)',
           }}
         >
           Order

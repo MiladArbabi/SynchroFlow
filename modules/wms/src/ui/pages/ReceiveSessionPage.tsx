@@ -431,11 +431,11 @@ const reconciliationChoiceSx = (selected: boolean) => ({
   fontWeight: selected ? 700 : 600,
   cursor: 'pointer',
   '&:hover': {
-    bgcolor: selected ? 'var(--surface)' : 'var(--surface-2, var(--surface))',
+    bgcolor: selected ? 'var(--surface)' : 'var(--surface)',
     borderColor: 'var(--rule-2)',
   },
   '&.Mui-focusVisible': {
-    outline: '2px solid var(--focus-ring, var(--rule-2))',
+    outline: '2px solid var(--rule-2)',
     outlineOffset: 2,
   },
   '&.Mui-disabled': {
@@ -457,7 +457,7 @@ const reconciliationCommitActionSx = {
     opacity: 0.88,
   },
   '&.Mui-focusVisible': {
-    outline: '2px solid var(--focus-ring, var(--rule-2))',
+    outline: '2px solid var(--rule-2)',
     outlineOffset: 2,
   },
   '&.Mui-disabled': {

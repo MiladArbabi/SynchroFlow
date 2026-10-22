@@ -638,7 +638,7 @@ export default function OverviewPageFT2() {
           border: '1px solid rgba(229,72,77,0.35)', bgcolor: 'rgba(229,72,77,0.08)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#F2555A" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--critical-ink)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" />
           </svg>
         </Box>

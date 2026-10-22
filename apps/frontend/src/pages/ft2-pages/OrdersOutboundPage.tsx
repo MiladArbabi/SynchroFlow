@@ -775,7 +775,7 @@ export default function OrdersOutboundPage() {
                     component="button"
                     type="button"
                     onClick={handleReviewMissingTracking}
-                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}
                   >
                     Review missing tracking →
                   </Box>

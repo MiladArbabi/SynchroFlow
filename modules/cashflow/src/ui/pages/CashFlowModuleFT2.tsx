@@ -168,8 +168,8 @@ function PulseRow({ label, value, delta, sub, valueColor }: {
 }) {
   const deltaColor =
     delta == null ? 'var(--ink-4)' :
-    delta > 0     ? '#22C55E' :
-    delta < 0     ? '#EF4444' : 'var(--ink-4)';
+    delta > 0     ? 'var(--good-ink)' :
+    delta < 0     ? 'var(--critical-text)' : 'var(--ink-4)';
   const deltaText = delta == null ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', py: 1.25 }}>
@@ -426,9 +426,9 @@ function CashFlowModuleFT2Inner({
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ display: 'flex', gap: 1.5 }}>
                   {[
-                    { stroke: '#DC2626', label: 'Conservative' },
-                    { stroke: '#2563EB', label: 'Base' },
-                    { stroke: '#16A34A', label: 'Optimistic' },
+                    { stroke: 'var(--critical-ink)', label: 'Conservative' },
+                    { stroke: 'var(--accent)', label: 'Base' },
+                    { stroke: 'var(--good-ink)', label: 'Optimistic' },
                   ].map(({ stroke, label }) => (
                     <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Box sx={{ width: 12, height: 2, background: stroke, borderRadius: 1 }} />
@@ -457,9 +457,9 @@ function CashFlowModuleFT2Inner({
                   <YAxis tick={{ fontSize: 10, fill: theme.palette.text.secondary }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v)} />
                   <Tooltip content={<ProjectionTooltip fmt={fmt} />} />
                   <ReferenceLine y={0} stroke={theme.palette.divider} strokeDasharray="4 2" />
-                  <Line type="monotone" dataKey="conservative" name="Conservative" stroke="#DC2626" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-                  <Line type="monotone" dataKey="base"         name="Base"         stroke="#2563EB" strokeWidth={2}   dot={false} />
-                  <Line type="monotone" dataKey="optimistic"   name="Optimistic"   stroke="#16A34A" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  <Line type="monotone" dataKey="conservative" name="Conservative" stroke="var(--critical-ink)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  <Line type="monotone" dataKey="base"         name="Base"         stroke="var(--accent)" strokeWidth={2}   dot={false} />
+                  <Line type="monotone" dataKey="optimistic"   name="Optimistic"   stroke="var(--good-ink)" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
                   {whatIfImpact > 0 && (
                     <Line type="monotone" dataKey="base" name="Base (with PO)" stroke="#FF6B2B" strokeWidth={2} dot={false} strokeDasharray="6 3" />
                   )}

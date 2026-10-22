@@ -164,7 +164,7 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
               <Box sx={{
                 fontSize: 9, fontWeight: 600, letterSpacing: '0.07em',
                 textTransform: 'uppercase',
-                color: '#FFF', background: theme.palette.primary.main,
+                color: 'var(--accent-ink)', background: theme.palette.primary.main,
                 px: '8px', py: '3px', borderRadius: '100px',
                 whiteSpace: 'nowrap',
               }}>
@@ -191,8 +191,8 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               height: 44, mt: '14px',
               background: theme.palette.primary.main,
-              color: '#FFF',
-              borderRadius: '8px',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
               fontSize: 13.5, fontWeight: 600,
               cursor: 'pointer',
               '&:hover': { background: alpha(theme.palette.primary.main, 0.85) },

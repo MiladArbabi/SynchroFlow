@@ -30,7 +30,7 @@ export default function OutlinedInput(_theme: Theme, borderRadius: number, outli
 
                 [`&.${outlinedInputClasses.error}`]: {
                     [`& .${outlinedInputClasses.notchedOutline}`]: {
-                        borderColor: 'var(--danger, #EF4444)'
+                        borderColor: 'var(--critical-ink)'
                     }
                 },
 

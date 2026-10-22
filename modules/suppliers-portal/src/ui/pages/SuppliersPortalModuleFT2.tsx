@@ -2693,7 +2693,7 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
             </Typography>
             {supplier.moq == null && (
               <Box component="span" onClick={() => onEdit(supplier)}
-                sx={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                sx={{ fontSize: 11, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                 Set minimum order →
               </Box>
             )}
@@ -2704,7 +2704,7 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
             </Typography>
             {supplier.lead_time_days == null && (
               <Box component="span" onClick={() => onEdit(supplier)}
-                sx={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                sx={{ fontSize: 11, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                 Set delivery time →
               </Box>
             )}
@@ -3613,7 +3613,7 @@ function PurchasingSourcingView({
       '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88, boxShadow: 'none' },
     };
     const tier2Sx = {
-      color: 'var(--accent)',
+      color: 'var(--accent-text)',
       border: '0.5px solid var(--accent)',
       bgcolor: 'transparent',
       fontWeight: 500,
@@ -3927,7 +3927,7 @@ function PurchasingSourcingView({
               {item.image_url ? (
                 <Box component="img" src={item.image_url} alt={item.variant_title ?? item.product_title ?? ''} sx={{ width: 36, height: 36, objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--rule)' }} />
               ) : (
-                <Box data-testid="sourcing-worklist-image-placeholder" sx={{ width: 36, height: 36, borderRadius: '6px', border: '1px solid var(--rule)', bgcolor: 'var(--surface-2)' }} />
+                <Box data-testid="sourcing-worklist-image-placeholder" sx={{ width: 36, height: 36, borderRadius: '6px', border: '1px solid var(--rule)', bgcolor: 'var(--bg-3)' }} />
               )}
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{item.product_title}</Typography>
@@ -4012,7 +4012,7 @@ function PurchasingSourcingView({
                     borderColor: i + 1 === currentPage ? 'var(--accent)' : 'var(--rule)',
                     borderRadius: '6px',
                     bgcolor: i + 1 === currentPage ? 'var(--accent)' : 'var(--surface)',
-                    color: i + 1 === currentPage ? '#fff' : 'var(--ink-3)',
+                    color: i + 1 === currentPage ? 'var(--accent-ink)' : 'var(--ink-3)',
                     cursor: 'pointer', fontWeight: i + 1 === currentPage ? 600 : 400,
                   }}
                 >
@@ -4262,7 +4262,7 @@ function PurchasingSourcingView({
                             <Box
                               component="span"
                               onClick={() => sourcingNavigate('/suppliers-portal/suppliers')}
-                              sx={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', '&:hover': { opacity: 0.75 } }}
+                              sx={{ color: 'var(--accent-text)', cursor: 'pointer', textDecoration: 'underline', '&:hover': { opacity: 0.75 } }}
                             >
                               set one
                             </Box>
@@ -4297,12 +4297,12 @@ function PurchasingSourcingView({
                             const next = parseInt(e.target.value, 10);
                             setQueueQty(Number.isNaN(next) || next < 0 ? 0 : next);
                           }}
-                          sx={{ width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } }}
+                          sx={{ width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } }}
                         />
                         <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>units</Typography>
                         {queueQty !== prefillQty && (
                           <Box component="button" onClick={() => setQueueQty(prefillQty)}
-                            sx={{ fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }}>
+                            sx={{ fontSize: 11, color: 'var(--accent-text)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }}>
                             Reset
                           </Box>
                         )}
@@ -4447,7 +4447,7 @@ function PurchasingSourcingView({
                   <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
                   {rec.is_preferred && (
                     <Chip label="★ Preferred" size="small"
-                      sx={{ fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' }} />
+                      sx={{ fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent-text)' }} />
                   )}
                 </Box>
                 <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
@@ -4508,11 +4508,11 @@ function PurchasingSourcingView({
           {/* §8 post-convert confirmation — state lives at page level to survive refetch */}
           {lastConvertedPoId && (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', bgcolor: 'var(--accent-ghost)' }}>
-              <Typography sx={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500 }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--accent-text)', fontWeight: 500 }}>
                 Draft PO created — check Open POs to review and send.
               </Typography>
               <Box component="button" onClick={() => onDismissConvertedPo?.()}
-                sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                 Dismiss
               </Box>
             </Box>
@@ -4603,7 +4603,7 @@ function PurchasingSourcingView({
                         </Box>
                       ) : (
                         <Box component="button" onClick={() => !converting && handleConvertClick(group)}
-                          sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 }, flexShrink: 0 }}>
+                          sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 }, flexShrink: 0 }}>
                           {converting ? 'Creating…' : 'Create PO anyway →'}
                         </Box>
                       )}
@@ -4627,7 +4627,7 @@ function PurchasingSourcingView({
                       </Typography>
                     )}
                     {convertError && (
-                      <Typography sx={{ fontSize: 10, color: 'var(--danger)', mt: 0.5 }}>
+                      <Typography sx={{ fontSize: 10, color: 'var(--critical-text)', mt: 0.5 }}>
                         {convertError}
                       </Typography>
                     )}
@@ -4705,7 +4705,7 @@ function PurchasingSourcingView({
                   </Box>
                   {/* §7.6 ISS-SR-03: wired — opens AssignSupplierDialog */}
                   <Box component="button" onClick={() => handleAssignOpen(v)}
-                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                     Assign a supplier →
                   </Box>
                 </Box>

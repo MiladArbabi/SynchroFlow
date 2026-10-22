@@ -328,10 +328,10 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                           height: 6,
                           borderRadius: '3px',
                           bgcolor: strength >= seg
-                            ? strength <= 1 ? '#EF4444'
-                            : strength <= 2 ? '#F59E0B'
-                            : strength <= 3 ? '#3B82F6'
-                            : '#22C55E'
+                            ? strength <= 1 ? 'var(--critical-ink)'
+                            : strength <= 2 ? 'var(--warning-ink)'
+                            : strength <= 3 ? 'var(--space-azure)'
+                            : 'var(--good-ink)'
                             : 'var(--rule-2)',
                           transition: 'background-color 0.2s',
                         }}

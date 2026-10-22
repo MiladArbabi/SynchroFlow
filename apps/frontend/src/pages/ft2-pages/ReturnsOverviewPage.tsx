@@ -45,11 +45,11 @@ function useReturnsTheme() {
     textPrimary: 'var(--ink)',
     textSecond:  'var(--ink-3)',
     tileBg:      'var(--bg-3)',
-    errorBg:     'rgba(239,68,68,0.08)',
-    errorBorder: '#EF4444',
-    rateHigh:    '#DC2626',
-    rateMid:     '#F59E0B',
-    rateOk:      '#22C55E',
+    errorBg:     'var(--critical-ghost)',
+    errorBorder: 'var(--critical-border)',
+    rateHigh:    'var(--critical-text)',
+    rateMid:     'var(--warning-text)',
+    rateOk:      'var(--good-ink)',
   };
 }
 

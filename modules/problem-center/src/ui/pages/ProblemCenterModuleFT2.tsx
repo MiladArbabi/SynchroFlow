@@ -68,10 +68,11 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const STAGE_COLORS: Record<string, string> = {
-  pick:    '#14B8A6',
-  pack:    '#3B82F6',
-  stow:    '#8B5CF6',
-  receive: '#F59E0B',
+  // Workflow stages reuse the warehouse zone channels (themes/tokens.ts)
+  pick:    'rgb(var(--zone-pick))',
+  pack:    'rgb(var(--zone-pack))',
+  stow:    'rgb(var(--zone-storage))',
+  receive: 'rgb(var(--zone-receive))',
 };
 
 const PER_PAGE_DEFAULT = 10;
@@ -335,7 +336,7 @@ function ProblemCenterModuleFT2Inner({
                       )}
                     </Box>
                     {/* Stage */}
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', bgcolor: `${stageColor}22`, border: `0.5px solid ${stageColor}55`, width: 'fit-content' }}>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', bgcolor: `color-mix(in srgb, ${stageColor} 13%, transparent)`, border: `0.5px solid color-mix(in srgb, ${stageColor} 33%, transparent)`, width: 'fit-content' }}>
                       <Typography sx={{ fontSize: 11, fontWeight: 500, color: stageColor }}>{STAGE_LABELS[t.source] ?? t.source}</Typography>
                     </Box>
                     {/* Type */}
@@ -426,7 +427,7 @@ function ProblemCenterModuleFT2Inner({
                       ? '0.5px solid var(--accent)'
                       : '0.5px solid var(--rule)',
                     bgcolor: resolutionAction === opt.action
-                      ? 'var(--accent-subtle, rgba(99,102,241,0.06))'
+                      ? 'var(--accent-ghost)'
                       : 'transparent',
                     transition: 'border-color 0.15s, background-color 0.15s',
                   }}

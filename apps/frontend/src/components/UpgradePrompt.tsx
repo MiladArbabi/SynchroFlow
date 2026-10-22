@@ -229,7 +229,7 @@ function TeasedOverlay({
             onClick={handleUpgrade}
             sx={{
               borderRadius: '8px', fontWeight: 600, fontSize: 13, px: 2.5, py: 1,
-              bgcolor: 'primary.main', color: '#fff',
+              bgcolor: 'primary.main', color: 'primary.contrastText',
               '&:hover': { bgcolor: 'primary.light', transform: 'translateY(-1px)' },
               transition: 'background-color 0.15s, transform 0.15s',
             }}
@@ -301,7 +301,7 @@ function LockedGate({
             onClick={handleUpgrade}
             sx={{
               borderRadius: '8px', fontWeight: 600, fontSize: 14, px: 2.75, height: 44,
-              bgcolor: 'primary.main', color: '#fff',
+              bgcolor: 'primary.main', color: 'primary.contrastText',
               '&:hover': { bgcolor: 'primary.light', transform: 'translateY(-1px)' },
               transition: 'background-color 0.15s, transform 0.15s',
             }}
@@ -466,7 +466,7 @@ function UpgradeModal({
           onClick={handleUpgrade}
           sx={{
             height: 46, borderRadius: '8px', fontWeight: 600, fontSize: 14, mb: 1.5,
-            bgcolor: 'primary.main', color: '#fff',
+            bgcolor: 'primary.main', color: 'primary.contrastText',
             '&:hover': { bgcolor: 'primary.light' },
           }}
         >
@@ -549,7 +549,7 @@ function ModuleDenialModal({
           fullWidth
           variant="contained"
           onClick={handleSeePlans}
-          sx={{ height: 46, borderRadius: '8px', fontWeight: 600, fontSize: 14, bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.light' } }}
+          sx={{ height: 46, borderRadius: '6px', fontWeight: 600, fontSize: 14, bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.light' } }}
         >
           See plan options
         </Button>

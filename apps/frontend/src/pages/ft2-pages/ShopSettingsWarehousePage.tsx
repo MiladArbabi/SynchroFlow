@@ -182,7 +182,7 @@ function FloorDisplaySection() {
 
       {revealedToken && (
         <Box sx={{ mb: 1.5, p: 1.25, bgcolor: 'rgba(34,197,94,0.06)', border: '0.5px solid rgba(34,197,94,0.3)', borderRadius: '6px' }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#22C55E', mb: 0.5 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--good-ink)', mb: 0.5 }}>
             Copy this URL now — it won't be shown again.
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -346,8 +346,8 @@ function UnitLabelCoverageSection() {
           {pct === 100 ? (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22C55E' }} />
-                <Typography sx={{ fontSize: 12, color: '#22C55E', fontWeight: 500 }}>
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--good-ink)' }} />
+                <Typography sx={{ fontSize: 12, color: 'var(--good-ink)', fontWeight: 500 }}>
                   Full coverage — legacy barcode fallback can be disabled.
                 </Typography>
               </Box>
@@ -690,7 +690,7 @@ function PrintersSection() {
               />
               {p.is_default ? (
                 <Tooltip title="Default for this role">
-                  <Box sx={{ color: '#22C55E', flexShrink: 0 }}>
+                  <Box sx={{ color: 'var(--good-ink)', flexShrink: 0 }}>
                     <CheckCircle size={13} />
                   </Box>
                 </Tooltip>

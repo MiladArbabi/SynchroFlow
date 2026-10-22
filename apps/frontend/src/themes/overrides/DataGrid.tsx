@@ -8,11 +8,10 @@ import { DataGridProps } from '@mui/x-data-grid';
 type DataGridComponentConfig = Components<Theme>['MuiDataGrid'];
 // --- End DataGrid Type Imports ---
 
-import { withAlpha } from 'utils/colorUtils';
 
 // ==============================|| OVERRIDES - DATA GRID ||============================== //
 
-export default function DataGrid(theme: Theme): DataGridComponentConfig {
+export default function DataGrid(_theme: Theme): DataGridComponentConfig {
     // const schemeTheme = theme.colorSchemes; // Not standard, avoid if possible
 
     return {
@@ -37,17 +36,12 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
                 },
                 // Styles for input fields within the grid (e.g., filters)
                 '& .MuiFormControl-root > .MuiInputBase-root': {
-                    backgroundColor: `${theme.palette.background.default} !important`, // Use !important carefully
-                    borderColor: `${theme.palette.divider} !important`,
-                    ...(theme.palette.mode === 'dark' && {
-                        borderColor: `${withAlpha(theme.palette.divider, 0.05)} !important`
-                    })
+                    backgroundColor: 'var(--bg) !important',
+                    borderColor: 'var(--rule) !important',
                 }
             },
             withBorderColor: { // Style for bordered variant
-                borderColor: theme.palette.mode === 'dark'
-                    ? withAlpha(theme.palette.divider, 0.15) // Use calculated dark border
-                    : theme.palette.divider, // Standard divider color
+                borderColor: 'var(--rule)',
             },
             toolbarContainer: {
                 // Padding adjustment for toolbar buttons
@@ -60,14 +54,14 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
                 color: 'var(--ink-3)', // Header text color with fallback
                 paddingLeft: '24px', // Consistent padding
                 paddingRight: '24px',
-                borderBottom: `1px solid ${theme.palette.divider}`, // Add a subtle bottom border
+                borderBottom: '1px solid var(--rule)',
             },
             footerContainer: {
                 // Remove double border at the bottom when bordered
                 '&.MuiDataGrid-withBorderColor': {
                     borderBottom: 'none'
                 },
-                borderTop: `1px solid ${theme.palette.divider}`, // Ensure top border exists
+                borderTop: '1px solid var(--rule)',
             },
             // Remove extra padding around checkboxes
             columnHeaderCheckbox: {
@@ -81,9 +75,7 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
             cell: {
                 paddingLeft: '24px', // Consistent padding
                 paddingRight: '24px',
-                borderColor: theme.palette.mode === 'dark'
-                    ? withAlpha(theme.palette.divider, 0.15) // Dark mode cell border
-                    : theme.palette.divider, // Light mode cell border
+                borderColor: 'var(--rule)',
                 // Styles for custom rendered cells with status indicators
                 '&.MuiDataGrid-cell--withRenderer > div': {
                     // Base styles (can be adjusted)
@@ -93,19 +85,17 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
 
                     // Status background colors
                     '& > .high': {
-                        background: theme.palette.mode === 'dark' ? theme.palette.success.dark : theme.palette.success.light
+                        background: 'var(--good-ghost)'
                     },
                     '& > .medium': {
-                        background: theme.palette.mode === 'dark' ? theme.palette.warning.dark : theme.palette.warning.light
+                        background: 'var(--warning-ghost)'
                     },
                     '& > .low': {
-                        background: theme.palette.mode === 'dark' ? theme.palette.error.dark : theme.palette.error.light
+                        background: 'var(--critical-ghost)'
                     },
                 },
                  // Ensure cell has bottom border (DataGrid defaults might vary)
-                 borderBottom: `1px solid ${theme.palette.mode === 'dark'
-                    ? withAlpha(theme.palette.divider, 0.15)
-                    : theme.palette.divider}`,
+                 borderBottom: '1px solid var(--rule)',
 
             },
             // Ensure the last row doesn't have a bottom border if not needed

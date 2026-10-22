@@ -110,7 +110,7 @@ export default function ResetPasswordPage() {
               {submitState === 'success' ? (
                 <Stack spacing={2}>
                   <Box sx={{ bgcolor: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 2, p: 2 }}>
-                    <Typography variant="body2" sx={{ color: '#4ADE80', fontWeight: 600 }}>
+                    <Typography variant="body2" sx={{ color: 'var(--good-ink)', fontWeight: 600 }}>
                       ✓ Password reset successfully.
                     </Typography>
                   </Box>

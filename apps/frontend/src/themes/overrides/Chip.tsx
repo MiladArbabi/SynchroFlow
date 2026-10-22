@@ -2,57 +2,47 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/themes/overrides/Chip.tsx
 import { Theme } from '@mui/material/styles';
-import { ChipProps, chipClasses, ChipClassKey } from '@mui/material/Chip';
-import { ComponentsOverrides, ComponentsVariants, Components } from '@mui/material/styles';
-import { withAlpha } from 'utils/colorUtils';
+import { chipClasses } from '@mui/material/Chip';
+import { Components } from '@mui/material/styles';
 
 // --- Type Definitions ---
 // --- FIX: Use the correct type for the component's config ---
 type ChipComponentConfig = Components<Theme>['MuiChip'];
 
-type ChipOwnerState = { ownerState: ChipProps; theme: Theme };
 
 // ===============================||  OVERRIDES - CHIP  ||=============================== //
 
-export default function Chip(theme: Theme): ChipComponentConfig { // Use the correct return type
+export default function Chip(_theme: Theme): ChipComponentConfig { // Use the correct return type
 
-    const getPaletteColor = (color: ChipProps['color']) => {
-        if (!color || color === 'default') { return undefined; }
-        return (theme.palette as any)[color] as import('@mui/material/styles').PaletteColor | undefined;
+    // Token-driven tones (themes/tokens.ts). Overrides are built once, so the
+    // previous palette.mode branches never saw dark; CSS vars resolve per scheme.
+    const TONES: Record<string, { fg: string; bg: string; border: string }> = {
+        primary: { fg: 'var(--accent-text)', bg: 'var(--accent-ghost)', border: 'var(--accent-border)' },
+        secondary: { fg: 'var(--ink-2)', bg: 'var(--bg-3)', border: 'var(--rule-2)' },
+        info: { fg: 'var(--ink-2)', bg: 'var(--bg-3)', border: 'var(--rule-2)' },
+        success: { fg: 'var(--good-ink)', bg: 'var(--good-ghost)', border: 'var(--good-border)' },
+        warning: { fg: 'var(--warning-text)', bg: 'var(--warning-ghost)', border: 'var(--warning-border)' },
+        error: { fg: 'var(--critical-text)', bg: 'var(--critical-ghost)', border: 'var(--critical-border)' },
     };
 
-    const lightVariantStyle = ({ ownerState, theme }: ChipOwnerState) => {
-        const paletteColor = getPaletteColor(ownerState.color);
-        if (!paletteColor) return {};
-        const isDark = theme.palette.mode === 'dark';
-        const isWarningOrSuccess = ownerState.color === 'warning' || ownerState.color === 'success';
-        let styles = {
-            color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main,
-            backgroundColor: ownerState.color === 'error' ? withAlpha(paletteColor.light || '#ef9a9a', 0.25) :
-                             ownerState.color === 'success' ? withAlpha(paletteColor.light || '#b9f6ca', 0.5) :
-                             paletteColor.light || theme.palette.grey[100],
+    const lightVariantStyle = ({ ownerState }: any) => {
+        const tone = ownerState.color ? TONES[ownerState.color] : undefined;
+        if (!tone) return {};
+        return {
+            color: tone.fg,
+            backgroundColor: tone.bg,
             [`&.${chipClasses.clickable}:hover`]: {
-                color: paletteColor.light || theme.palette.common.white,
-                backgroundColor: paletteColor.dark || paletteColor.main,
-            }
+                color: tone.fg,
+                backgroundColor: tone.bg,
+                filter: 'brightness(0.97)',
+            },
         };
-        if (isDark) {
-            styles = {
-                ...styles,
-                color: isWarningOrSuccess ? paletteColor.main : paletteColor.light,
-                backgroundColor: withAlpha(paletteColor.dark || paletteColor.main, 0.15),
-                [`&.${chipClasses.clickable}:hover`]: {
-                    color: paletteColor.dark || paletteColor.main,
-                    backgroundColor: paletteColor.light || theme.palette.common.white,
-                }
-            };
-        }
-        return styles;
     };
 
     return {
+        // Neutral by default: primary is the action accent and must be opted into.
         defaultProps: {
-            color: 'primary',
+            color: 'default',
         },
         // --- FIX: Restore the styleOverrides key ---
         styleOverrides: {
@@ -77,15 +67,15 @@ export default function Chip(theme: Theme): ChipComponentConfig { // Use the cor
             {
                 props: { variant: 'outlined', color: 'warning' },
                 style: {
-                    borderColor: theme.palette.warning.dark,
-                    color: theme.palette.warning.dark,
+                    borderColor: 'var(--warning-border)',
+                    color: 'var(--warning-text)',
                 }
             },
             {
                 props: { variant: 'outlined', color: 'success' },
                 style: {
-                    borderColor: theme.palette.success.dark,
-                    color: theme.palette.success.dark,
+                    borderColor: 'var(--good-border)',
+                    color: 'var(--good-ink)',
                 }
             },
         ]

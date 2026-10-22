@@ -8,17 +8,16 @@ import { outlinedInputClasses } from '@mui/material/OutlinedInput'; // Import cl
 // Use 'any' or augment mui.d.ts
 type PickersTextFieldComponentConfig = any;
 
-export default function PickersTextField(theme: Theme, borderRadius: number, outlinedFilled: boolean): PickersTextFieldComponentConfig {
-    const isDark = theme.palette.mode === 'dark';
-    const lightBg = outlinedFilled ? theme.palette.grey[50] || '#f8fafc' : 'transparent';
-    const darkBg = outlinedFilled ? theme.palette.dark?.[800] || '#1a223f' : 'transparent';
+export default function PickersTextField(_theme: Theme, borderRadius: number, outlinedFilled: boolean): PickersTextFieldComponentConfig {
+    // CSS var (themes/tokens.ts) so the filled background follows the scheme.
+    const filledBg = outlinedFilled ? 'var(--bg-2)' : 'transparent';
 
     return {
         // Key might need verification, check DatePicker internals
         MuiPickersTextField: {
             styleOverrides: {
                 root: {
-                    background: isDark ? darkBg : lightBg,
+                    background: filledBg,
                     borderRadius: `${borderRadius}px`,
                     // Target underlying OutlinedInput root
                     [`& .${outlinedInputClasses.root}`]: {

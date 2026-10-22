@@ -923,7 +923,7 @@ try {
               />
             ) : (
               <Box sx={{ width: 56, height: 56, borderRadius: 1, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Package size={22} color="var(--ink3, #9ca3af)" />
+                <Package size={22} color="var(--ink-4)" />
               </Box>
             )}
             {/* Details */}

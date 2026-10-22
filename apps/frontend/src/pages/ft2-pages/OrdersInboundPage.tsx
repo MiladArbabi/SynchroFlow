@@ -106,10 +106,10 @@ function useStowTasks() {
 // ─── STATUS CONFIG — hex baked in to avoid alpha() (file convention) ──────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; bdColor: string }> = {
-  shipped:            { label: 'Arrived',            color: '#3B82F6', bgColor: 'rgba(59,130,246,0.1)',  bdColor: 'rgba(59,130,246,0.35)'  },
-  partially_received: { label: 'Receiving',          color: '#F59E0B', bgColor: 'rgba(245,158,11,0.1)',  bdColor: 'rgba(245,158,11,0.35)'  },
+  shipped:            { label: 'Arrived',            color: 'var(--accent-text)', bgColor: 'var(--accent-ghost)', bdColor: 'var(--accent-border)'  },
+  partially_received: { label: 'Receiving',          color: 'var(--warning-text)', bgColor: 'var(--warning-ghost)', bdColor: 'var(--warning-border)'  },
   confirmed:          { label: 'On the way',         color: '#10B981', bgColor: 'rgba(16,185,129,0.1)',  bdColor: 'rgba(16,185,129,0.35)'  },
-  in_production:      { label: 'On the way',         color: '#8B5CF6', bgColor: 'rgba(139,92,246,0.1)',  bdColor: 'rgba(139,92,246,0.35)'  },
+  in_production:      { label: 'On the way',         color: 'var(--ink-2)', bgColor: 'var(--bg-3)', bdColor: 'var(--rule-2)'  },
   ordered:            { label: 'Sent',               color: 'var(--ink-3)', bgColor: 'rgba(107,114,128,0.1)', bdColor: 'rgba(107,114,128,0.35)' },
   draft:              { label: 'Draft',              color: 'var(--ink-4)', bgColor: 'rgba(156,163,175,0.1)', bdColor: 'rgba(156,163,175,0.35)' },
   received:           { label: 'Received',           color: 'var(--good-ink)', bgColor: 'var(--good-ghost)',  bdColor: 'var(--good-border)'  },

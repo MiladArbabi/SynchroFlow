@@ -440,7 +440,7 @@ function WarehouseStatusPanel({
   tone: 'danger' | 'success' | 'accent' | 'neutral';
 }) {
   const statusColor =
-    tone === 'danger' ? '#A32D2D' : tone === 'success' ? 'var(--confirm-ink)' : tone === 'accent' ? 'var(--accent)' : 'var(--ink-2)';
+    tone === 'danger' ? 'var(--critical-text)' : tone === 'success' ? 'var(--confirm-ink)' : tone === 'accent' ? 'var(--accent)' : 'var(--ink-2)';
 
   return (
     <Box
@@ -1230,7 +1230,7 @@ export function OrderDetailModalBody({
 
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5 }}>
               <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Payment status</Typography>
-              <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'rgba(99,153,34,0.12)', color: '#3B6D11' }}>
+              <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'var(--confirm-ghost)', color: 'var(--confirm-ink)' }}>
                 {order.paymentState.replace(/_/g, ' ')}
               </Box>
             </Box>
@@ -1347,7 +1347,7 @@ export function OrderDetailModalBody({
 
           {showInventoryResolvedBanner && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(99,153,34,0.12)', borderRadius: '10px', p: 1.25 }}>
-              <Typography sx={{ fontSize: 12.5, color: '#3B6D11' }}>Stock confirmed — inventory block resolved</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--confirm-ink)' }}>Stock confirmed — inventory block resolved</Typography>
             </Box>
           )}
 
