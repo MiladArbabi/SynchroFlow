@@ -143,6 +143,9 @@ jobs:
       - name: Run reconnect provisioning contracts
         run: npx --no-install jest --selectProjects contract --testPathPatterns 'shopify-reconnect-provisioning|test-db-safety'
 
+      - name: Run GH-1046 credential contracts and refresh-provider regressions
+        run: npx --no-install jest --selectProjects contract backend-legacy --testPathPatterns 'shopify-admin-credential-architecture|shopifyAdminCredentialRefreshProvider\.red3b'
+
       # GH-1068 T3-B: DB-free sync worker intent gate and dispatcher publish
       # ordering, plus the T2 fence and B4 shutdown contracts they extend.
       - name: Run GH-1068 sync worker and dispatch unit regressions
@@ -449,6 +452,16 @@ jobs:
           echo "OAUTH_POSTGRES_BRIDGE_FORWARDING=PASS"
           echo "OAUTH_ISOLATION_PREFLIGHT=PASS"
           npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
+
+      - name: Run GH-1046 credential lifecycle regressions
+        timeout-minutes: 20
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns 'shopify-admin-credential-(lifecycle-state-red3|resolution-red3b|final-architecture)'
 
       - name: Run GH-1068 reconnect executor regressions with real principals
         timeout-minutes: 20
