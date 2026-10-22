@@ -845,28 +845,42 @@ the API, then cleared it and verified the restored null state.
 
 ---
 
-### GH-1068 — Uninstall connection projection (T1)
+### GH-1068 / GH-1101 — Shopify connection lifecycle
 
-Local regression verified 2026-10-16; production acceptance pending.
+Connection state is a tenant-level fact derived from the active Shopify
+installation and canonical credential metadata. The persisted
+`users.shopify_connected` field is retained only for legacy storage
+compatibility and is not connection authority; public compatibility responses
+derive its value from the canonical state.
 
-`GET /api/v1/integrations/sync-status` additionally returns
-`connectionStatus: 'UNINSTALLED'` when the integration's matching
-Shopify installation has a non-null `uninstalled_at`.
+A verified `app/uninstalled` receipt is persisted idempotently before
+processing. When its installation epoch is current, the canonical credential
+lock fences that authority: `uninstalled_at` is set, credential generation
+advances, credential state becomes `REAUTH_REQUIRED`, and access, refresh and
+lease material is cleared. Ambiguous or out-of-order receipts remain
+fail-closed as `UNINSTALL_VERIFICATION_UNRESOLVED`; they do not fence a newer
+reinstall authority.
 
-Connection lifecycle is independent of historical synchronization.
-A previously completed sync remains `COMPLETED` after uninstall;
-the database completion-transition invariant is unchanged.
+Connection lifecycle and synchronization history are separate. The connection
+projection exposes `NOT_INSTALLED`, `UNINSTALLED`, `CONNECTED`, `REFRESHING`,
+`REAUTH_REQUIRED`, `UNINSTALL_VERIFICATION_UNRESOLVED`, or
+`RECONNECT_IN_PROGRESS`. Historical sync status, progress, errors and completed
+data remain available after uninstall. `lastSyncedAt` is the latest
+integration-scoped `integration/sync_completed` event, never
+`integrations.updated_at`.
 
-This slice does not establish connected, authorization-health,
-provider-reachability, or unknown-state classification.
-An absent `connectionStatus` must not imply connected.
+An authenticated reconnect is generation- and lease-fenced. Successful
+finalization atomically restores the installation and fresh credentials,
+resets the integration to `PENDING` with zero progress and no error, and
+commits one durable fresh-sync dispatch intent. Stale callbacks and
+old-generation in-flight sync writers cannot restore or complete superseded
+authority.
 
-`lastSyncedAt` remains based on `integrations.updated_at`;
-last-successful-sync accuracy is outside T1 scope.
-
-Local verification: 7/7 credential architecture integration tests
-passed on disposable PostgreSQL; backend TypeScript passed.
-No production uninstall/reinstall test or repair performed.
+Exact-SHA security CI passed for
+`d176632c4df62663e18589c184452abdcb38d527` in GitHub Actions run
+`39662797517`, including real-Postgres reconnect, uninstall-ordering,
+sync-fencing, durable-dispatch and canonical connection-state regressions.
+No production uninstall/reinstall was performed.
 
 ## Remaining Known Issues (Non-blocking)
 
