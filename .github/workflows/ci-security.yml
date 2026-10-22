@@ -489,7 +489,7 @@ jobs:
           PGMIGRATION_PASSWORD: sf_pass
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           npm run test:integration -- --testPathPatterns receive-outstanding-gh1245 -t WS-UX-01
           targeted=$?
           echo "WSUX01_TARGETED_EXIT=$targeted"
