@@ -43,17 +43,28 @@ function classifyFailure(error: unknown): ShopifyAdminCredentialRefreshResult {
 export async function refreshShopifyAdminCredential(
   { shopDomain, refreshToken, now }: Input,
 ): Promise<ShopifyAdminCredentialRefreshResult> {
+  const clientId = process.env.SHOPIFY_API_KEY;
+  const clientSecret = process.env.SHOPIFY_API_SECRET;
+  // Misconfiguration never reaches Shopify; RETRYABLE releases the lease unchanged.
+  if (typeof clientId !== 'string' || !clientId.trim()
+    || typeof clientSecret !== 'string' || !clientSecret.trim()) {
+    return { kind: 'RETRYABLE', diagnostics: { code: 'SHOPIFY_CLIENT_CREDENTIALS_MISSING' } };
+  }
   let data;
   try {
     const response = await axios.post(
       `https://${shopDomain}/admin/oauth/access_token`,
-      {
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
+      // Shopify documents the refresh grant as form-encoded (GH-1046 C1).
+      new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
+      }).toString(),
+      {
+        timeout: 10_000,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       },
-      { timeout: 10_000 },
     );
     data = response.data;
   } catch (error) {
