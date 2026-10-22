@@ -44,7 +44,7 @@ describe('SUPPLIERS-UX-POLISH-01 — canonical Receive assignment modal', () => 
     expect(start).toBeGreaterThan(-1);
 
     const end = src.indexOf(
-      '{/* §Gap2: PO send preview modal',
+      '{/* WS-UX-01 S1 — named, explicit Cancel PO confirmation. */}',
       start
     );
 
@@ -63,7 +63,7 @@ describe('SUPPLIERS-UX-POLISH-01 — canonical PO creation modal', () => {
   it('uses EntityDetailModal and a Tier-1 Create PO commit CTA', () => {
     const functionStart = src.indexOf('function CreatePoDialog(');
     const functionEnd = src.indexOf(
-      '// ─────────────────────────────────────────────\n// SEND PO MODAL',
+      '// ─────────────────────────────────────────────\n// PO ACCORDION',
       functionStart
     );
 
@@ -99,5 +99,25 @@ describe('SUPPLIERS-UX-POLISH-01 — stable PO lifecycle action rail', () => {
     expect(block).not.toMatch(/color=["']success["']/);
     expect(block).toMatch(/var\(--accent\)/);
     expect(block).toMatch(/var\(--accent-ink\)/);
+  });
+
+  // WS-UX-01 S1 — Mark as sent replaces "Prepare to send" as the Draft
+  // primary; Copy for supplier is removed from the product.
+  it('Draft Mark as sent is a Tier-1 accent CTA and Prepare to send is gone', () => {
+    const start = src.indexOf("{nextAction.kind === 'mark_sent' && (");
+    expect(start).toBeGreaterThan(-1);
+    const block = src.slice(start, src.indexOf('Mark as sent', start));
+
+    expect(block).toMatch(/<Button/);
+    expect(block).toMatch(/var\(--accent\)/);
+    expect(block).toMatch(/var\(--accent-ink\)/);
+    expect(block).toMatch(/handleStatusUpdate\('ordered'\)/);
+    expect(src).not.toMatch(/Prepare to send/);
+  });
+
+  it('Copy for supplier, its preview modal and clipboard handling are removed', () => {
+    expect(src).not.toMatch(/Copy for supplier/);
+    expect(src).not.toMatch(/SendPoModal/);
+    expect(src).not.toMatch(/navigator\.clipboard/);
   });
 });

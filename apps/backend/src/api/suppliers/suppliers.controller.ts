@@ -371,6 +371,14 @@ export async function httpUpdatePoStatus(req: Request, res: Response) {
       if (active || (status !== po.status && !(allowedNext[po.status] ?? []).includes(status)) || ['received', 'partially_received'].includes(status)) {
         throw Object.assign(new Error('PO status is protected by the Receive lifecycle'), { statusCode: 409 });
       }
+      // WS-UX-01 S1: any Receive job (any status, incl. legacy/cancelled) or received quantity retains the PO.
+      if (status === 'cancelled' && po.status !== 'cancelled') {
+        const receiveHistory = await trx('receive_jobs').where({ shop_id: shopId, po_id: poId }).first('receive_job_id');
+        const receivedLine = await trx('purchase_order_line_items').where({ shop_id: shopId, po_id: poId }).where('quantity_received', '>', 0).first('id');
+        if (['partially_received', 'received'].includes(po.status) || receiveHistory || receivedLine) {
+          throw Object.assign(new Error('PO has Receive history and cannot be cancelled'), { statusCode: 409 });
+        }
+      }
       if (status === po.status) return; // no repeated alerts or supplier count
 
       await trx('purchase_orders')

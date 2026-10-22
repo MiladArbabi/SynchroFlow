@@ -475,7 +475,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245'
 
       - name: Restore runner network
         if: always()

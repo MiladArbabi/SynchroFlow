@@ -7,7 +7,6 @@ import {
   Typography,
   Alert,
   Chip,
-  useTheme,
   Divider,
   Accordion,
   AccordionSummary,
@@ -24,11 +23,12 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Menu,
   MenuItem,
   IconButton,
   Radio,
 } from '@mui/material';
-import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
+import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2, MoreHorizontal } from 'lucide-react';
 import { 
   ModuleErrorBoundary, 
   ModuleLoadingSkeleton, 
@@ -1089,90 +1089,6 @@ function CreatePoDialog({
 }
 
 // ─────────────────────────────────────────────
-// SEND PO MODAL (Gap 2 — sourcing-recommendation-playbook.md §9.2)
-// Preview PO before sending. Status only transitions after merchant confirms.
-// Two channels: email (mailto) and copy as message (clipboard).
-// ─────────────────────────────────────────────
-function SendPoModal({
-  po, lineItems, onClose,
-}: {
-  po: PurchaseOrder;
-  lineItems: PoLineItem[];
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const [copying, setCopying] = useState(false);
-
-  const buildPoText = () => {
-    const eta = po.expected_delivery_date
-      ? new Date(po.expected_delivery_date).toLocaleDateString() : 'TBD';
-    const lines = lineItems.map((i) =>
-      `  - ${i.product_title ?? i.description}${i.sku ? ` (${i.sku})` : ''}: ${i.quantity_ordered} units`
-    ).join('\n');
-    return [
-      `Purchase Order — ${po.supplier_name}`, '',
-      'Items:', lines, '',
-      `Expected delivery: ${eta}`,
-      po.notes ? `Notes: ${po.notes}` : null,
-      '', 'Sent via LaSyncro',
-    ].filter((l) => l !== null).join('\n');
-  };
-
-  const handleCopy = async () => {
-    setCopying(true);
-    try {
-      await navigator.clipboard.writeText(buildPoText());
-      setCopied(true);
-      // Close after flash so merchant can go paste it
-      setTimeout(() => { setCopied(false); onClose(); }, 1500);
-    } finally { setCopying(false); }
-  };
-
-  return (
-    <EntityDetailModal
-      entityId={po.id}
-      onClose={onClose}
-      title="Copy and send to supplier"
-      subtitle={po.supplier_name}
-      maxWidth="md"
-      footerActions={
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Box component="button" onClick={() => void handleCopy()} disabled={copying}
-            sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600,
-              color: copied ? 'var(--confirm-ink)' : 'var(--accent-ink)',
-              bgcolor: copied ? 'var(--confirm-ghost)' : copying ? 'var(--bg-3)' : 'var(--accent)',
-              border: copied ? '1px solid var(--confirm-border)' : 'none',
-              borderRadius: '6px', px: 1.5, py: 0.875,
-              cursor: copying ? 'wait' : 'pointer',
-              transition: 'all 0.2s',
-              '&:hover': { opacity: copying ? 1 : 0.88 } }}>
-            {copied ? 'Copied ✓' : copying ? 'Copying…' : 'Copy order →'}
-          </Box>
-          <Box component="button" onClick={onClose} disabled={copying}
-            sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', bgcolor: 'transparent', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1.5, py: 0.875, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-            Cancel
-          </Box>
-        </Box>
-      }
-    >
-      <Box sx={{ p: 2.5 }}>
-        <Box component="pre" sx={{ fontFamily: 'monospace', fontSize: 12.5, lineHeight: 1.7, color: 'var(--ink)', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', borderRadius: '8px', p: '14px 16px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', m: 0 }}>
-          {buildPoText()}
-        </Box>
-        <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-            Click <strong>Copy order →</strong> to copy this text, then paste it into your email, WhatsApp, WeChat, or any app you use to contact this supplier.
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.5 }}>
-            Once you've sent it, come back and click <strong>Mark as sent</strong> on the PO card to update its status.
-          </Typography>
-        </Box>
-      </Box>
-    </EntityDetailModal>
-  );
-}
-
-// ─────────────────────────────────────────────
 // PO ACCORDION
 // ─────────────────────────────────────────────
 
@@ -1280,95 +1196,6 @@ function ReceiveShipmentDialog({
 // ─────────────────────────────────────────────
 // PO PROGRESS TRACK
 // ─────────────────────────────────────────────
-type NodeState = 'pending' | 'active' | 'confirmed';
-
-function PoProgressTrack({ status }: { status: PurchaseOrderStatus }) {
-  const theme = useTheme();
-
-  const nodeState = (
-    activeStatuses: PurchaseOrderStatus[],
-    confirmedStatuses: PurchaseOrderStatus[],
-  ): NodeState => {
-    if (confirmedStatuses.includes(status)) return 'confirmed';
-    if (activeStatuses.includes(status)) return 'active';
-    return 'pending';
-  };
-
-  const nodes: { label: string; icon: React.ReactNode; state: NodeState }[] = [
-    {
-      label: 'Created',
-      icon: <Plus size={16} />,
-      state: 'confirmed',
-    },
-    {
-      label: 'On the Way',
-      icon: <Truck size={16} />,
-      state: nodeState(
-        ['ordered', 'confirmed', 'in_production'],
-        ['shipped', 'partially_received', 'received'],
-      ),
-    },
-    {
-      label: 'Arrived',
-      icon: <Package size={16} />,
-      state: nodeState(
-        ['shipped', 'partially_received'],
-        ['received'],
-      ),
-    },
-  ];
-
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-      {nodes.map((node, i) => (
-        <Box key={i} sx={{ display: 'flex', alignItems: 'center', flex: i < nodes.length - 1 ? 1 : 'none' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 72 }}>
-            <Box sx={{
-              width: 40, height: 40, borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              bgcolor: node.state === 'confirmed'
-                    ? theme.palette.success.main
-                    : node.state === 'active'
-                      ? 'var(--accent)'
-                      : 'var(--bg-3)',
-                  color: node.state === 'pending' ? 'var(--ink-3)' : '#fff',
-              ...(node.state === 'active' && {
-                '@keyframes poNodePulse': {
-                  '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
-                  '70%':  { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
-                  '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
-                },
-                animation: 'poNodePulse 1.3s ease-out infinite',
-              }),
-              transition: 'all 0.2s',
-            }}>
-              {node.state === 'confirmed' ? <CheckCircle size={18} /> : node.icon}
-            </Box>
-            <Typography variant="caption" sx={{
-              mt: 0.5, fontWeight: 600, fontSize: 10, textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: node.state === 'pending' ? 'text.disabled'
-                : node.state === 'active' ? 'var(--accent)'
-                  : 'success.main',
-            }}>
-              {node.state === 'confirmed' ? '✓ ' : ''}{node.label}
-            </Typography>
-          </Box>
-          {i < nodes.length - 1 && (
-            <Box sx={{
-              flex: 1, height: 2, mx: 0.5, mb: 3,
-              bgcolor: node.state === 'confirmed'
-                ? theme.palette.success.main
-                : theme.palette.divider,
-              transition: 'background-color 0.2s',
-            }} />
-          )}
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 /**
  * GH-1245 — canonical job-first, ownership-aware Receive decision shared by
  * the PO accordion CTA and the action=receive deep-link. The PO projection
@@ -1376,7 +1203,7 @@ function PoProgressTrack({ status }: { status: PurchaseOrderStatus }) {
  * status means the job has started. Inconsistent or unknown state fails
  * closed ('none') so no duplicate Receive job can be dispatched.
  */
-type ReceiveAction = 'assign' | 'open_own' | 'resume_own' | 'reassign' | 'none';
+export type ReceiveAction = 'assign' | 'open_own' | 'resume_own' | 'reassign' | 'none';
 
 function resolveReceiveAction(
   po: PurchaseOrder,
@@ -1398,6 +1225,69 @@ function resolveReceiveAction(
   // GH-1143 — pending work assigned to another operator is managed only via
   // explicit Reassign. Started work owned by another operator: no action.
   return status === 'pending' ? 'reassign' : 'none';
+}
+
+/**
+ * WS-UX-01 S1 — the single contextual next step for a PO. Pure function of
+ * the canonical stored status plus the existing Receive decision; it never
+ * maps to new stored statuses. Receive-eligible POs keep the GH-1245
+ * resolveReceiveAction() decision unchanged (including its fail-closed
+ * 'none'), so S1 introduces no new Receive affordance.
+ */
+export type PoNextAction =
+  | { kind: 'mark_sent' }
+  | { kind: 'mark_arrived' }
+  | { kind: 'receive'; receiveAction: ReceiveAction }
+  | { kind: 'none' };
+
+export function resolvePoNextAction(
+  po: PurchaseOrder,
+  currentUserId: number | null
+): PoNextAction {
+  switch (po.status) {
+    case 'draft':
+      return { kind: 'mark_sent' };
+    case 'ordered':
+    case 'confirmed':
+    case 'in_production':
+      return { kind: 'mark_arrived' };
+    case 'shipped':
+    case 'partially_received':
+      return { kind: 'receive', receiveAction: resolveReceiveAction(po, currentUserId) };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/**
+ * WS-UX-01 S1 — Cancel is offered only for open POs with no known Receive
+ * job. Any job reference (even pending) fails closed, matching the backend
+ * rule that rejects every status change while a job is active. The backend
+ * remains authoritative: a stale projection only ever hides the action.
+ * Once physical counting has started, Cancel stays unavailable even when the
+ * job-reference projection is absent or stale.
+ */
+export function canCancelPo(po: PurchaseOrder): boolean {
+  return (
+    OPEN_STATUSES.includes(po.status) &&
+    po.receive_job_id == null &&
+    po.receive_status == null &&
+    po.receive_assigned_operator_id == null &&
+    !isReceiveCountingStarted(po)
+  );
+}
+
+/**
+ * WS-UX-01 S1 — whether physical Receive counting has started for this PO.
+ * Before that, a received quantity of 0 is not a count and renders as "—".
+ */
+export function isReceiveCountingStarted(po: PurchaseOrder): boolean {
+  return (
+    po.status === 'partially_received' ||
+    po.status === 'received' ||
+    (po.receive_status != null && po.receive_status !== 'pending') ||
+    Number(po.total_units_received) > 0
+  );
 }
 
 function PoAccordion({
@@ -1431,9 +1321,6 @@ function PoAccordion({
   const [loadingItems, setLoadingItems] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // §Gap2: controls PO send preview modal — status only transitions after merchant confirms
-  const [sendPreviewOpen, setSendPreviewOpen] = useState(false);
-  const [loadingSend, setLoadingSend] = useState(false);
 
   // GH-1109: dispatch happens before execution. Assignment does not claim work.
   const [assignReceiveOpen, setAssignReceiveOpen] = useState(false);
@@ -1448,20 +1335,11 @@ function PoAccordion({
   // states: initial assignment (create) vs reassignment of an existing
   // pending/unstarted job. Never confused with each other (see J).
   const [reassignReceiveMode, setReassignReceiveMode] = useState(false);
-
-  // §Gap2: load line items if not yet fetched, then open preview modal
-  const handleOpenSendPreview = async () => {
-    if (!lineItems) {
-      setLoadingSend(true);
-      try {
-        const items = await onFetchLineItems(po.id);
-        setLineItems(items);
-      } finally {
-        setLoadingSend(false);
-      }
-    }
-    setSendPreviewOpen(true);
-  };
+  // WS-UX-01 S1 — Cancel PO lives under More and requires a named confirmation.
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<HTMLElement | null>(null);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancellingPo, setCancellingPo] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -1492,6 +1370,9 @@ function PoAccordion({
   }, [po.receive_assigned_operator_id]);
 
   const receiveAction = resolveReceiveAction(po, currentUserId);
+  const nextAction = resolvePoNextAction(po, currentUserId);
+  const cancelAllowed = canCancelPo(po);
+  const countingStarted = isReceiveCountingStarted(po);
   const existingReceiveJobId = po.receive_job_id ?? null;
 
   // GH-1245 — the current user's own job opens (pending) or resumes
@@ -1652,6 +1533,37 @@ function PoAccordion({
     }
   };
 
+  const handleOpenCancelConfirm = () => {
+    setMoreMenuAnchor(null);
+    if (!cancelAllowed) return;
+    setCancelError(null);
+    setCancelConfirmOpen(true);
+  };
+
+  const handleCloseCancelConfirm = () => {
+    if (cancellingPo) return;
+    setCancelConfirmOpen(false);
+    setCancelError(null);
+  };
+
+  // WS-UX-01 S1 — one explicit cancel request. A backend rejection (e.g. the
+  // Receive-lifecycle 409) is surfaced as-is: no retry, no alternate path.
+  const handleConfirmCancelPo = async () => {
+    if (!cancelAllowed || cancellingPo) return;
+    setCancellingPo(true);
+    setCancelError(null);
+    try {
+      await onUpdatePoStatus(po.id, 'cancelled');
+      setCancelConfirmOpen(false);
+    } catch {
+      setCancelError(
+        "This PO couldn't be cancelled. It may have Receive work in progress — refresh to see its current state."
+      );
+    } finally {
+      setCancellingPo(false);
+    }
+  };
+
   return (
     <Accordion
       expanded={expanded}
@@ -1701,7 +1613,6 @@ function PoAccordion({
 
       <AccordionDetails sx={{ pt: 0 }}>
         <Divider sx={{ mb: 2 }} />
-        <PoProgressTrack status={po.status} />
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {receiveAssignmentConfirmation && (
           <Alert severity="success" sx={{ mb: 2 }}>
@@ -1741,7 +1652,10 @@ function PoAccordion({
                     </TableCell>
                     <TableCell align="right" sx={{ fontSize: 12 }}>{item.quantity_ordered}</TableCell>
                     <TableCell align="right" sx={{ fontSize: 12, fontWeight: item.quantity_received > 0 ? 700 : 400 }}>
-                      {item.quantity_received}
+                      {/* WS-UX-01 S1 — no physical count exists before Receive starts. */}
+                      {countingStarted || Number(item.quantity_received) > 0
+                        ? item.quantity_received
+                        : '—'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1760,29 +1674,32 @@ function PoAccordion({
               minHeight: 32,
             }}
           >
-            {/* Draft: copy PO content, then manually confirm sent */}
-            {po.status === 'draft' && (
-              <>
-                {/* Tier 1 — opens copy preview */}
-                <Box component="button" onClick={() => void handleOpenSendPreview()} disabled={updatingStatus || loadingSend}
-                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: updatingStatus || loadingSend ? 'var(--bg-3)' : 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: updatingStatus || loadingSend ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 } }}>
-                  {loadingSend ? 'Loading…' : 'Prepare to send →'}
-                </Box>
-                {/* Tier 2 — merchant confirms after actually sending it */}
-                <Box component="button" onClick={() => void handleStatusUpdate('ordered')} disabled={updatingStatus}
-                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: updatingStatus ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 } }}>
-                  Mark as sent
-                </Box>
-              </>
+            {/* WS-UX-01 S1 — Draft: the merchant confirms they sent it externally (draft → ordered). */}
+            {nextAction.kind === 'mark_sent' && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('ordered')}
+                sx={{
+                  textTransform: 'none',
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                }}
+              >
+                Mark as sent
+              </Button>
             )}
             {/* On the way → mark as arrived at dock */}
-            {(po.status === 'ordered' || po.status === 'confirmed' || po.status === 'in_production') && (
+            {nextAction.kind === 'mark_arrived' && (
               <Button
                 size="small"
                 variant="contained"
                 disabled={updatingStatus}
                 onClick={() => void handleStatusUpdate('shipped')}
                 sx={{
+                  textTransform: 'none',
                   bgcolor: 'var(--accent)',
                   color: 'var(--accent-ink)',
                   '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
@@ -1830,9 +1747,37 @@ function PoAccordion({
                 Receive via WMS
               </Button>
             )}
-            <Button size="small" variant="outlined" color="error" disabled={updatingStatus}
-              startIcon={<XCircle size={14} />}
-              onClick={() => void handleStatusUpdate('cancelled')}>Cancel PO</Button>
+            {/* WS-UX-01 S1 — destructive actions sit apart from the next step. */}
+            <IconButton
+              size="small"
+              aria-label={`More actions for ${poDisplay}`}
+              aria-haspopup="menu"
+              aria-expanded={moreMenuAnchor ? 'true' : undefined}
+              onClick={(e) => setMoreMenuAnchor(e.currentTarget)}
+              sx={{ ml: 'auto', color: 'var(--ink-3)' }}
+            >
+              <MoreHorizontal size={16} />
+            </IconButton>
+            <Menu
+              anchorEl={moreMenuAnchor}
+              open={moreMenuAnchor != null}
+              onClose={() => setMoreMenuAnchor(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              <MenuItem
+                disabled={!cancelAllowed || updatingStatus}
+                onClick={handleOpenCancelConfirm}
+                sx={{ color: 'error.main', fontSize: 13, display: 'block' }}
+              >
+                Cancel PO…
+                {!cancelAllowed && (
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Unavailable while this PO has Receive work
+                  </Typography>
+                )}
+              </MenuItem>
+            </Menu>
           </Box>
         )}
 
@@ -2042,14 +1987,47 @@ function PoAccordion({
             )}
         </EntityDetailModal>
 
-        {/* §Gap2: PO send preview modal — copy-only, no status transition inside */}
-        {sendPreviewOpen && lineItems && (
-          <SendPoModal
-            po={po}
-            lineItems={lineItems}
-            onClose={() => setSendPreviewOpen(false)}
-          />
-        )}
+        {/* WS-UX-01 S1 — named, explicit Cancel PO confirmation. */}
+        <EntityDetailModal
+          entityId={cancelConfirmOpen ? po.id : null}
+          onClose={handleCloseCancelConfirm}
+          title={`Cancel ${poDisplay}?`}
+          subtitle={po.supplier_name}
+          maxWidth="md"
+          footerActions={
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                onClick={handleCloseCancelConfirm}
+                disabled={cancellingPo}
+                sx={{ textTransform: 'none', color: 'var(--ink-3)', borderColor: 'var(--rule)' }}
+              >
+                Keep PO
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                disableElevation
+                disabled={!cancelAllowed || cancellingPo}
+                onClick={() => void handleConfirmCancelPo()}
+                sx={{ textTransform: 'none' }}
+              >
+                {cancellingPo ? 'Cancelling…' : 'Cancel PO'}
+              </Button>
+            </Box>
+          }
+        >
+          <Box sx={{ p: 2.5 }}>
+            <Typography variant="body2">
+              Your supplier isn't notified, and you can't undo this.
+            </Typography>
+            {cancelError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {cancelError}
+              </Alert>
+            )}
+          </Box>
+        </EntityDetailModal>
       </AccordionDetails>
     </Accordion>
   );
@@ -2277,19 +2255,6 @@ function PurchasingPosView({
               <Typography variant="subtitle1" fontWeight={700}>Open Purchase Orders</Typography>
               <Chip label={openPos.length} size="small" color={openPos.length > 0 ? 'primary' : 'default'} />
             </Box>
-            {/* §Gap2 spotlight — fires once when a draft PO exists; nudges merchant to use "Prepare to send →" */}
-            {openPos.some((po) => po.status === 'draft') && spotlights && !spotlights.poSendFlow.isDismissed && (
-              <Box sx={{ mb: 2 }}>
-                <SpotlightCoachMark
-                  title="Ready to order? Copy and send to your supplier"
-                   body={'Open any draft PO, click "Prepare to send \u2192" to copy the order details, then paste into email, WhatsApp, or however you contact this supplier. Once sent, click "Mark as sent" to update the status.'}
-                  isDismissed={spotlights.poSendFlow.isDismissed}
-                  onDismiss={spotlights.poSendFlow.dismiss}
-                  step={1}
-                  totalSteps={1}
-                />
-              </Box>
-            )}
             {openPos.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <Truck size={36} style={{ opacity: 0.3 }} />

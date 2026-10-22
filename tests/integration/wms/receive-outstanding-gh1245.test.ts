@@ -1229,3 +1229,175 @@ describe('GH-1245 Receive delivery-scoped accounting (S2)', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WS-UX-01 S1 — PO cancellation authority. Once Receive activity exists
+// (any job, any status, or any received quantity) an ordinary cancel must be
+// refused with zero consequential writes; legacy ambiguous history fails closed.
+
+describe('WS-UX-01 S1 PO cancellation authority', () => {
+  function httpCancel(po: PoFixture, token: string = po.shop.token) {
+    return request(app)
+      .patch(`/api/v1/suppliers/purchase-orders/${po.poId}/status`)
+      .set(auth(token))
+      .send({ status: 'cancelled' });
+  }
+
+  /** Every write a cancel may make, plus the Receive history it must not destroy. */
+  async function cancelState(po: PoFixture) {
+    const s = await poState(po);
+    const { shopId } = po.shop;
+    return withTenant(shopId, async (trx) => {
+      const poRow = await trx('purchase_orders').where({ shop_id: shopId, id: po.poId })
+        .first('status', 'updated_at', 'actual_delivery_date');
+      const snapshot = await trx('shop_snapshot_jobs').where({ shop_id: shopId }).first('scheduled_at');
+      return {
+        poStatus: poRow?.status ?? null,
+        poUpdatedAt: poRow?.updated_at ? new Date(poRow.updated_at).toISOString() : null,
+        actualDeliveryDate: dateOnly(poRow?.actual_delivery_date),
+        snapshotScheduledAt: snapshot?.scheduled_at ? new Date(snapshot.scheduled_at).toISOString() : null,
+        quantityReceived: s.quantityReceived,
+        supplierTotalPos: s.supplierTotalPos,
+        inboundQuantity: s.inboundQuantity,
+        jobs: s.jobs.map((job: any) => ({ id: job.receive_job_id, status: job.status })),
+      };
+    });
+  }
+
+  /** Legacy history written before the S2 accounting path (fixture-only insert). */
+  async function insertLegacyJob(po: PoFixture, row: Record<string, unknown>) {
+    await withTenant(po.shop.shopId, (trx) =>
+      trx('receive_jobs').insert({ shop_id: po.shop.shopId, po_id: po.poId, ...row }));
+  }
+
+  it('C1–C6/C10 — cancel is refused (409, zero writes) once any Receive history or received quantity exists', async () => {
+    const shop = await provisionFt2Shop('cancelauth');
+
+    // C1 active Receive job.
+    const active = await shippedPo(shop, 5);
+    await openJob(active);
+
+    // C2 partial Receive: closed delivery with a deferred remainder.
+    const partial = await shippedPo(shop, 10);
+    const partialJob = await openJob(partial);
+    expect((await httpInspect(partialJob, { accepted: 4, rejected: 0, missing: 0, deferred: 6 })).status).toBe(200);
+    expect((await httpClose(partialJob)).status).toBe(200);
+
+    // C3 closed Receive with accepted units (final delivery).
+    const accepted = await shippedPo(shop, 5);
+    const acceptedJob = await openJob(accepted);
+    expect((await httpInspect(acceptedJob, { accepted: 5, rejected: 0, missing: 0, deferred: 0 })).status).toBe(200);
+    expect((await httpClose(acceptedJob)).status).toBe(200);
+
+    // C4 closed legacy v1 job, zero accepted.
+    const legacyClosed = await shippedPo(shop, 5);
+    await insertLegacyJob(legacyClosed, {
+      status: 'closed', delivery_accounting_version: 1, units_accepted: 0,
+      started_at: new Date(), closed_at: new Date(),
+    });
+
+    // C5 historical cancelled job that never started.
+    const historicalCancelled = await shippedPo(shop, 5);
+    await insertLegacyJob(historicalCancelled, {
+      status: 'cancelled', delivery_accounting_version: 1, started_at: null,
+    });
+
+    // C6 positive received quantity without any Receive job.
+    const receivedNoJob = await shippedPo(shop, 5);
+    await withTenant(shop.shopId, (trx) =>
+      trx('purchase_order_line_items')
+        .where({ shop_id: shop.shopId, id: receivedNoJob.poLineItemId })
+        .update({ quantity_received: 2 }));
+
+    const cases = { active, partial, accepted, legacyClosed, historicalCancelled, receivedNoJob };
+    const observed: Record<string, unknown> = {};
+    const expected: Record<string, unknown> = {};
+    for (const [name, po] of Object.entries(cases)) {
+      const before = await cancelState(po);
+      const res = await httpCancel(po);
+      const after = await cancelState(po);
+      console.info('[WSUX01_S1_CANCEL]', name, res.status, JSON.stringify(res.body));
+      observed[name] = { status: res.status, state: after };
+      expected[name] = { status: 409, state: before };
+    }
+
+    expect(observed).toEqual(expected);
+  });
+
+  it('C7–C8 — draft and shipped POs without Receive history remain cancellable', async () => {
+    const shop = await provisionFt2Shop('cancelok');
+    const draft = await shippedPo(shop, 5);
+    await withTenant(shop.shopId, (trx) =>
+      trx('purchase_orders').where({ shop_id: shop.shopId, id: draft.poId }).update({ status: 'draft' }));
+    const shipped = await shippedPo(shop, 5);
+
+    const draftRes = await httpCancel(draft);
+    const shippedRes = await httpCancel(shipped);
+    const [draftAfter, shippedAfter] = [await cancelState(draft), await cancelState(shipped)];
+
+    expect({
+      draft: { status: draftRes.status, poStatus: draftAfter.poStatus, jobs: draftAfter.jobs },
+      shipped: { status: shippedRes.status, poStatus: shippedAfter.poStatus, jobs: shippedAfter.jobs },
+    }).toEqual({
+      draft: { status: 200, poStatus: 'cancelled', jobs: [] },
+      shipped: { status: 200, poStatus: 'cancelled', jobs: [] },
+    });
+  });
+
+  it('C9 — overlapping Receive create and cancel never yield a cancelled PO with Receive history', async () => {
+    const shop = await provisionFt2Shop('cancelrace');
+    const po = await shippedPo(shop, 5);
+
+    const gate = holdRowLock(shop.shopId, 'purchase_orders', { shop_id: shop.shopId, id: po.poId });
+    const gatePid = await gate.pidKnown;
+
+    let settled = 0;
+    const track = (r: request.Response) => { settled += 1; return r; };
+    const create = httpCreateJob(po).then(track);
+    const cancel = httpCancel(po).then(track);
+
+    let waiters: LockWaiter[];
+    try {
+      waiters = await waitForGateWaiters(shop.shopId, gatePid, 2, () => settled > 0);
+    } finally {
+      gate.release();
+    }
+    await gate.done;
+    const [created, cancelled] = await Promise.all([create, cancel]);
+    const after = await cancelState(po);
+
+    console.info('[WSUX01_S1_RACE]', JSON.stringify({
+      gatePid, waiters,
+      create: { status: created.status, body: created.body },
+      cancel: { status: cancelled.status, body: cancelled.body },
+      after,
+    }));
+
+    expect(waiters.length).toBe(2);
+    const createWon = created.status === 201;
+    expect({
+      successes: [created.status, cancelled.status].filter((s) => s >= 200 && s < 300).length,
+      loserStatus: createWon ? cancelled.status : created.status,
+      poStatus: after.poStatus,
+      jobCount: after.jobs.length,
+    }).toEqual({
+      successes: 1,
+      loserStatus: 409,
+      poStatus: createWon ? 'shipped' : 'cancelled',
+      jobCount: createWon ? 1 : 0,
+    });
+  });
+
+  it('C11 — another shop cannot cancel this PO (404, zero writes)', async () => {
+    const shop = await provisionFt2Shop('cancelowner');
+    const po = await shippedPo(shop, 5);
+    const foreign = await provisionFt2Shop('cancelforeign');
+    expect(foreign.shopId).not.toBe(shop.shopId);
+    const before = await cancelState(po);
+
+    const res = await httpCancel(po, foreign.token);
+    const after = await cancelState(po);
+
+    expect({ status: res.status, state: after }).toEqual({ status: 404, state: before });
+  });
+});
