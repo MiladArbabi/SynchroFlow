@@ -29,6 +29,18 @@ const ACCESS_A = 'certification-access-a', REFRESH_A = 'certification-refresh-a'
 const ACCESS_B = 'certification-access-b', REFRESH_B = 'certification-refresh-b';
 const post = axios.post as jest.Mock;
 const later = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
+const CLIENT_ID = 'certification-client-id', CLIENT_SECRET = 'certification-client-secret';
+/** GH-1046 C1: decode the documented form-encoded refresh grant; booleans keep secrets out of failures. */
+function refreshGrant(body: unknown, options: { headers?: Record<string, string>; timeout?: number }) {
+  expect(typeof body).toBe('string');
+  expect(options.headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded' });
+  expect(options.timeout).toBe(10000);
+  const params = new URLSearchParams(body as string);
+  expect([...params.keys()].sort()).toEqual(['client_id', 'client_secret', 'grant_type', 'refresh_token']);
+  expect(params.get('client_id') === CLIENT_ID).toBe(true);
+  expect(params.get('client_secret') === CLIENT_SECRET).toBe(true);
+  return { grant_type: params.get('grant_type'), refresh_token: params.get('refresh_token') };
+}
 type Fixture = { shopId: number; installationId: number; domain: string };
 function pair(accessToken = ACCESS_A, refreshToken = REFRESH_A, accessSeconds = 3600): CredentialPair {
   return { accessToken, refreshToken, accessExpiresAt: later(accessSeconds),
@@ -61,7 +73,10 @@ async function metadata(f: Fixture) {
   }));
 }
 let fetchSpy: jest.SpyInstance;
+const originalClient = { key: process.env.SHOPIFY_API_KEY, secret: process.env.SHOPIFY_API_SECRET };
 beforeAll(() => {
+  process.env.SHOPIFY_API_KEY = CLIENT_ID;
+  process.env.SHOPIFY_API_SECRET = CLIENT_SECRET;
   process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'certification-encryption-key-0123456789';
   fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async () => {
     throw new Error('PROVIDER_NETWORK_ESCAPE_BLOCKED');
@@ -72,7 +87,14 @@ beforeEach(() => {
   post.mockImplementation(() => { throw new Error('UNPROGRAMMED_REFRESH'); });
 });
 afterEach(() => { expect(fetchSpy).not.toHaveBeenCalled(); });
-afterAll(async () => { fetchSpy.mockRestore(); await db.destroy(); });
+afterAll(async () => {
+  fetchSpy.mockRestore();
+  if (originalClient.key === undefined) delete process.env.SHOPIFY_API_KEY;
+  else process.env.SHOPIFY_API_KEY = originalClient.key;
+  if (originalClient.secret === undefined) delete process.env.SHOPIFY_API_SECRET;
+  else process.env.SHOPIFY_API_SECRET = originalClient.secret;
+  await db.destroy();
+});
 
 describe('Final Shopify Admin credential architecture', () => {
   it('C1 — physical schema has canonical authority and metadata-only tables', async () => {
@@ -407,8 +429,9 @@ describe('Final Shopify Admin credential architecture', () => {
   it('C6 — expired access refreshes through the canonical provider and lifecycle', async () => {
     const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
     const [before] = await credentials(f), metadataBefore = await metadata(f);
-    post.mockImplementation(async (url: string, body: { grant_type: string; refresh_token: string }) => {
+    post.mockImplementation(async (url: string, encoded: unknown, options: { headers?: Record<string, string> }) => {
       expect(url).toBe('https://' + f.domain + '/admin/oauth/access_token');
+      const body = refreshGrant(encoded, options);
       expect(body.grant_type).toBe('refresh_token');
       expect(body.refresh_token).toBe(REFRESH_A);
       return { data: { access_token: ACCESS_B, refresh_token: REFRESH_B,
@@ -435,7 +458,9 @@ describe('Final Shopify Admin credential architecture', () => {
     const f = await fixture(pair(ACCESS_A, REFRESH_A, -1));
     const [before] = await credentials(f);
     let providerRotated = false;
-    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+    post.mockImplementationOnce(async (_url: string, encoded: unknown, options: { headers?: Record<string, string> }) => {
+      const body = refreshGrant(encoded, options);
+      expect(body.grant_type).toBe('refresh_token');
       expect(body.refresh_token).toBe(REFRESH_A);
       providerRotated = true;
       throw Object.assign(new Error('simulated lost response'), {
@@ -454,7 +479,9 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(afterLoss.rotation_lease_token).toBeNull();
     expect(afterLoss.rotation_lease_expires_at).toBeNull();
 
-    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+    post.mockImplementationOnce(async (_url: string, encoded: unknown, options: { headers?: Record<string, string> }) => {
+      const body = refreshGrant(encoded, options);
+      expect(body.grant_type).toBe('refresh_token');
       expect(body.refresh_token).toBe(REFRESH_A);
       throw Object.assign(new Error('old refresh authority invalid after provider rotation'), {
         isAxiosError: true,
@@ -527,7 +554,9 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(afterFailure.rotation_lease_token).toEqual(expect.any(String));
     expect(afterFailure.rotation_lease_expires_at).toEqual(later(30));
 
-    post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
+    post.mockImplementationOnce(async (_url: string, encoded: unknown, options: { headers?: Record<string, string> }) => {
+      const body = refreshGrant(encoded, options);
+      expect(body.grant_type).toBe('refresh_token');
       expect(body.refresh_token).toBe(REFRESH_A);
       throw Object.assign(new Error('old refresh authority invalid after provider rotation'), {
         isAxiosError: true,
