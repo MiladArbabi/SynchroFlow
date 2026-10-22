@@ -12,6 +12,7 @@ import { getSyncStatus } from 'api-src/api/integrations/integration.controller';
 import { updateIntegrationStatus } from 'api-src/services/shopify/shopifyIntegrationStatus.service';
 import crypto from 'crypto';
 import axios from 'axios';
+import knexFactory from 'knex';
 import db, { systemTransaction, withTenant } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
@@ -480,13 +481,28 @@ describe('Final Shopify Admin credential architecture', () => {
     const suffix = crypto.randomUUID().replace(/-/g, '');
     const functionName = `gh1046_refresh_persist_fail_${suffix}`;
     const triggerName = `gh1046_refresh_persist_fail_trigger_${suffix}`;
-    await systemTransaction(async trx => {
-      await trx.raw(`CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN RAISE EXCEPTION 'GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE'; END; $$`);
-      await trx.raw(`CREATE TRIGGER ${triggerName} BEFORE UPDATE ON shopify_admin_credentials
-        FOR EACH ROW WHEN (NEW.access_token_encrypted IS DISTINCT FROM OLD.access_token_encrypted)
-        EXECUTE FUNCTION ${functionName}()`);
+    const database = process.env.PGDATABASE ?? '';
+    if (process.env.NODE_ENV !== 'test' || process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB !== '1'
+      || !/^synchroflow_test_[A-Za-z0-9_]+$/.test(database)
+      || !process.env.PGMIGRATION_USER || process.env.PGMIGRATION_USER === 'sf_app') {
+      throw new Error('GH1046_REFUSING_UNSAFE_FAULT_INJECTION');
+    }
+    const admin = knexFactory({
+      client: 'pg',
+      connection: {
+        host: process.env.PGHOST,
+        port: Number(process.env.PGPORT ?? 5432),
+        user: process.env.PGMIGRATION_USER,
+        password: String(process.env.PGMIGRATION_PASSWORD || ''),
+        database,
+      },
+      pool: { min: 0, max: 1 },
     });
+    await admin.raw(`CREATE FUNCTION public.${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE'; END; $$`);
+    await admin.raw(`CREATE TRIGGER ${triggerName} BEFORE UPDATE ON public.shopify_admin_credentials
+        FOR EACH ROW WHEN (NEW.access_token_encrypted IS DISTINCT FROM OLD.access_token_encrypted)
+        EXECUTE FUNCTION public.${functionName}()`);
     post.mockResolvedValueOnce({ data: {
       access_token: ACCESS_B,
       refresh_token: REFRESH_B,
@@ -495,8 +511,14 @@ describe('Final Shopify Admin credential architecture', () => {
       scope: SHOPIFY_REQUIRED_SCOPE_STRING,
     } });
 
-    await expect(resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW }))
-      .rejects.toThrow('GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE');
+    try {
+      await expect(resolveShopifyAdminCredentialForConsumer({ shopId: f.shopId, now: NOW }))
+        .rejects.toThrow('GH1046_INJECTED_REFRESH_PERSISTENCE_FAILURE');
+    } finally {
+      await admin.raw(`DROP TRIGGER IF EXISTS ${triggerName} ON public.shopify_admin_credentials`);
+      await admin.raw(`DROP FUNCTION IF EXISTS public.${functionName}()`);
+      await admin.destroy();
+    }
     const [afterFailure] = await credentials(f);
     expect(String(afterFailure.credential_generation)).toBe(String(before.credential_generation));
     expect(afterFailure.access_token_encrypted).toBe(before.access_token_encrypted);
@@ -505,10 +527,6 @@ describe('Final Shopify Admin credential architecture', () => {
     expect(afterFailure.rotation_lease_token).toEqual(expect.any(String));
     expect(afterFailure.rotation_lease_expires_at).toEqual(later(30));
 
-    await systemTransaction(async trx => {
-      await trx.raw(`DROP TRIGGER ${triggerName} ON shopify_admin_credentials`);
-      await trx.raw(`DROP FUNCTION ${functionName}()`);
-    });
     post.mockImplementationOnce(async (_url: string, body: { refresh_token: string }) => {
       expect(body.refresh_token).toBe(REFRESH_A);
       throw Object.assign(new Error('old refresh authority invalid after provider rotation'), {
