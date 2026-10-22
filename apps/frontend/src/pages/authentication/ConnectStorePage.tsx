@@ -67,7 +67,7 @@ export default function ConnectStorePage() {
 
               <Stack direction="row" alignItems="center" spacing={0.75}>
                 <Box sx={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Typography sx={{ color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 700 }}>2</Typography>
+                  <Typography sx={{ color: 'var(--accent-text)', fontSize: '0.7rem', fontWeight: 700 }}>2</Typography>
                 </Box>
                 <Typography variant="caption" sx={{ color: 'var(--ink)', fontWeight: 600 }}>Connect store</Typography>
               </Stack>

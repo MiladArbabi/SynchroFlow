@@ -453,7 +453,7 @@ describe('GH-1058 — BatchDetailModalBody', () => {
       ).toMatch(new RegExp(`^${label}`));
 
       // Tier 2: navigation ghost treatment, never the Tier-1 filled accent.
-      expect(control).toHaveStyle({ color: 'var(--accent)' });
+      expect(control).toHaveStyle({ color: 'var(--accent-text)' });
       expect(control).not.toHaveStyle({ backgroundColor: 'var(--accent)' });
 
       // WMS Operations is the mounted execution surface. Pick work deep-links

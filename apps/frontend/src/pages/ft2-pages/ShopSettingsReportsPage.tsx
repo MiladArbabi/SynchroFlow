@@ -117,7 +117,7 @@ function QuickReportCard({
           {report.description}
         </Typography>
         {error && (
-          <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
+          <Typography sx={{ fontSize: 11, color: 'var(--critical-text)', mt: '3px' }}>
             {error}
           </Typography>
         )}
@@ -146,7 +146,7 @@ function QuickReportCard({
           }}
         >
           {loading
-            ? <CircularProgress size={12} sx={{ color: 'var(--accent)' }} />
+            ? <CircularProgress size={12} sx={{ color: 'var(--accent-text)' }} />
             : <Download size={13} strokeWidth={1.6} />}
           <span>{loading ? 'Exporting…' : 'Download'}</span>
         </Box>

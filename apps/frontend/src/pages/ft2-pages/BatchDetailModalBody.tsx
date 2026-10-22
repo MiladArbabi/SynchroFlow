@@ -475,7 +475,7 @@ export function BatchDetailModalBody({
               fontFamily: 'inherit',
               fontSize: 11,
               fontWeight: 500,
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               bgcolor: 'transparent',
               border: '0.5px solid var(--accent)',
               borderRadius: '6px',
@@ -526,7 +526,7 @@ export function BatchDetailModalBody({
         )}
         {hasSpatialAccess && spatialLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-            <CircularProgress size={22} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={22} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
         {hasSpatialAccess && !spatialLoading && floorPlanning.isError && (
@@ -614,7 +614,7 @@ export function BatchDetailModalBody({
         <Section title="Items to pick">
           {lineItemsQuery.isLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-              <CircularProgress size={22} sx={{ color: 'var(--accent)' }} />
+              <CircularProgress size={22} sx={{ color: 'var(--accent-text)' }} />
             </Box>
           )}
 
@@ -746,7 +746,7 @@ export function BatchDetailModalBody({
           >
             <CircularProgress
               size={22}
-              sx={{ color: 'var(--accent)' }}
+              sx={{ color: 'var(--accent-text)' }}
             />
           </Box>
         )}
@@ -839,7 +839,7 @@ export function BatchDetailModalBody({
                     fontFamily: 'inherit',
                     fontSize: 11,
                     fontWeight: 500,
-                    color: 'var(--accent)',
+                    color: 'var(--accent-text)',
                     bgcolor: 'var(--surface)',
                     border: '0.5px solid var(--accent-border)',
                     borderRadius: '6px',
@@ -870,7 +870,7 @@ export function BatchDetailModalBody({
                 border: '1px solid var(--rule)',
                 borderRadius: '6px',
                 bgcolor: 'transparent',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 cursor: 'pointer',
                 fontSize: 11,
                 fontWeight: 500,

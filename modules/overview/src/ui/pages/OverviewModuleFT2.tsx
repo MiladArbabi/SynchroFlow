@@ -186,7 +186,7 @@ function PulseRow({ text, tone = 'default' }: { text: string; tone?: 'default' |
         fontSize: 12.5,
         lineHeight: 1.45,
         fontWeight: tone === 'default' ? 500 : 400,
-        color: tone === 'clear' ? '#4CAF7A' : tone === 'muted' ? 'var(--ink-3)' : 'var(--ink)',
+        color: tone === 'clear' ? 'var(--good-ink)' : tone === 'muted' ? 'var(--ink-3)' : 'var(--ink)',
       }}
     >
       {text}
@@ -369,7 +369,7 @@ function OverviewModuleV1({
             sx={{
               display: 'inline-flex', alignItems: 'center', flexShrink: 0, mt: 0.5,
               px: '12px', py: '6px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-              color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent-border)',
+              color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent-border)',
               borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 },
               '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
             }}

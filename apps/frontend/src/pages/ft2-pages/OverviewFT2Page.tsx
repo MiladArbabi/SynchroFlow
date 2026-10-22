@@ -642,7 +642,7 @@ export default function OverviewPageFT2() {
             <path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" />
           </svg>
         </Box>
-        <Typography sx={{ fontSize: 21, fontFamily: 'Instrument Serif', color: 'var(--ink)' }}>
+        <Typography sx={{ fontSize: 21, color: 'var(--ink)' }}>
           We couldn't load your floor.
         </Typography>
         <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', lineHeight: 1.6, maxWidth: 340 }}>
@@ -652,8 +652,8 @@ export default function OverviewPageFT2() {
           onClick={() => floorPlanning.refetch()}
           sx={{
             display: 'flex', alignItems: 'center', gap: '8px', fontSize: 12.5,
-            fontWeight: 500, color: '#10151E', bgcolor: 'var(--accent)',
-            borderRadius: '8px', px: '20px', py: '10px', cursor: 'pointer',
+            fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+            borderRadius: '6px', px: '20px', py: '10px', cursor: 'pointer',
             '&:hover': { opacity: 0.85 },
           }}
         >
@@ -685,7 +685,7 @@ export default function OverviewPageFT2() {
               '@keyframes ov03Blink': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
               animation: 'ov03Blink 2.4s ease-in-out infinite',
             }} />
-            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Next step · {activeStepIndex + 1} of {activationSteps.length}
             </Typography>
           </Box>}
@@ -713,7 +713,7 @@ export default function OverviewPageFT2() {
             // end two clicks from the tool the button promises. Matches the
             // idle-rail CTA below (same file, live-map branch).
             onClick={() => navigate(needsShopifyLocation ? '/settings/warehouse?guide=shopify-location' : '/floor-planning?tab=setup&view=canvas')}
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', mt: '6px', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', mt: '6px', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
           >
             {needsShopifyLocation ? 'Choose Shopify location →' : 'Set up floor planning →'}
           </Box>
@@ -937,7 +937,7 @@ export default function OverviewPageFT2() {
                     onClick={handleCloseAddressSession}
                     sx={{
                       px: 1.5, py: 0.5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                      bgcolor: 'transparent', color: 'var(--accent)',
+                      bgcolor: 'transparent', color: 'var(--accent-text)',
                       border: '0.5px solid var(--accent)', borderRadius: '6px',
                     }}
                   >

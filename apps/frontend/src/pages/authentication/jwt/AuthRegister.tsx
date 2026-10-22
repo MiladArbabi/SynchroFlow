@@ -351,11 +351,11 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                 <Typography variant="subtitle1">
                   {/* AUTH-011: split links matching target A2 */}
                   I agree to the{' '}
-                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/terms" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent)', textDecoration: 'none' }}>
+                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/terms" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent-text)', textDecoration: 'none' }}>
                     Terms
                   </Typography>
                   {' '}and{' '}
-                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent)', textDecoration: 'none' }}>
+                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent-text)', textDecoration: 'none' }}>
                     Privacy policy.
                   </Typography>
                 </Typography>

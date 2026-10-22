@@ -379,7 +379,7 @@ describe('GH-1147 7B2 — Alerts UX playbook parity', () => {
       src.indexOf('function NotificationRow'),
       src.indexOf('function RecentPanel'),
     );
-    expect(row).toContain("color: 'var(--accent)'");
+    expect(row).toContain("color: 'var(--accent-text)'");
     expect(row).toContain("border: '0.5px solid var(--accent)'");
     expect(row).toContain("borderRadius: '6px'");
     expect(row).toContain('fontWeight: 500');

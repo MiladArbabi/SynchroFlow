@@ -107,7 +107,6 @@ export const SyncProgressPanel: React.FC<SyncProgressPanelProps> = ({
         sx={{
           m: 0,
           color: ACTIVATION_COLORS.textPrimary,
-          fontFamily: 'var(--serif)',
           fontSize: { xs: 34, sm: 42, lg: 52 },
           lineHeight: 1.04,
           fontWeight: 500,
@@ -167,7 +166,7 @@ export const SyncProgressPanel: React.FC<SyncProgressPanelProps> = ({
           >
             Sync progress
           </Typography>
-          <Typography sx={{ color: ACTIVATION_COLORS.workflowAction, fontFamily: 'var(--serif)', fontSize: 18 }}>
+          <Typography sx={{ color: ACTIVATION_COLORS.workflowAction, fontSize: 18 }}>
             {percent}%
           </Typography>
         </Box>

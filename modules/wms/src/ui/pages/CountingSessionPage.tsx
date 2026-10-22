@@ -1249,7 +1249,7 @@ export default function CountingSessionPage({
             sx={{
               fontSize: 11,
               lineHeight: 1.35,
-              fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+              fontFamily: 'monospace',
               color: 'var(--ink-4)',
             }}
           >
@@ -1374,7 +1374,7 @@ export default function CountingSessionPage({
     <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
       <Box sx={{ mb: 3 }}>
         <Typography
-          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}
+          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-text)', mb: 0.5 }}
         >
           {task.label}
         </Typography>

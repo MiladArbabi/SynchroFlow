@@ -77,7 +77,7 @@ export const CoachTrigger: React.FC<CoachTriggerProps> = ({
             <Chip 
               label={successMetrics.join(', ')}
               size="small"
-              color="secondary"
+              color="default"
               variant="outlined"
               data-testid="coach-success-metrics"
               aria-label={`Success metrics: ${successMetrics.join(', ')}`}

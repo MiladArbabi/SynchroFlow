@@ -118,7 +118,7 @@ function InlineConfirm({
           sx={{
             px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, border: 'none', borderRadius: '6px', cursor: 'pointer',
             bgcolor: destructive ? 'error.main' : 'var(--accent)',
-            color: destructive ? 'white' : 'var(--accent-ink)',
+            color: destructive ? 'error.contrastText' : 'var(--accent-ink)',
           }}
         >
           {confirmLabel}

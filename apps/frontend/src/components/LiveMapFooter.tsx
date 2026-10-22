@@ -18,7 +18,7 @@ export const EDIT_FLOOR_MAP_ROUTE = '/floor-planning?tab=setup&view=canvas';
 
 const FOOTER_ACTION_SX = {
   appearance: 'none', border: 'none', bgcolor: 'transparent', p: 0, fontFamily: 'inherit',
-  fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0,
+  fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', cursor: 'pointer', flexShrink: 0,
   '&:hover': { opacity: 0.75 },
   '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
 } as const;

@@ -16,7 +16,7 @@ import { buildPalette } from './palette';
 import Typography from './typography';
 import CustomShadows from './custom-shadows';
 import componentsOverrides from './overrides';
-import { withAlpha } from 'utils/colorUtils';
+import { tokenCssVars } from './tokens';
 
 // ==============================|| DEFAULT THEME - MAIN ||============================== //
 
@@ -84,206 +84,26 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
   theme.components = useMemo(() => {
     const base = componentsOverrides(theme, borderRadius, outlinedFilled);
 
-    const lightPalette = buildPalette(ThemeMode.LIGHT);
-    const darkPalette = buildPalette(ThemeMode.DARK);
-
     return {
       ...base,
 
-    MuiCssBaseline: {
-      styleOverrides: {
-        '[data-color-scheme="light"]': {
-          /**
-           * FT2 Page Background
-           * -------------------
-           * Ensures dashboard page background is
-           * visually distinct from panel surfaces.
-           */
-          backgroundColor: 'var(--ft2-page-bg)',
-          /**
-           * FT2 Panel Surface
-           * -----------------
-           * Panels must visually lift from the page background.
-           */
-          /**
-           * Panel surface
-           * Must be brighter than page background
-           * to create surface lift.
-           */
-          '--ft2-surface-bg': '#FFFFFF',
-
-          /**
-           * Panel header zone
-           * Slight inset to separate header from panel body.
-           */
-          '--ft2-surface-inset-bg': lightPalette.action.hover,
-          '--ft2-surface-divider': lightPalette.divider,
-
-          '--ft2-page-bg': lightPalette.background.default,
-
-          '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#000000', 0.12)}, 
-                         0 2px 4px ${withAlpha('#000000', 0.08)}`,
-
-          '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#000000', 0.16)}`,
-
-          '--ft2-infoblock-bg': '#FAFAFA',
-          '--ft2-infoblock-border': '#EAE7E7',
-
-          '--ft2-infoblock-header-bg': '#F4F2F2',
-          '--ft2-infoblock-header-text': '#000000',
-
-          '--ft2-infoblock-row-text': '#353535',
-
-          '--ft2-infoblock-footer-bg': '#D9D9D9',
-          '--ft2-infoblock-footer-text': '#000000',
-
-          '--ft2-infoblock-diff-neutral': '#6B6B6B',
-          '--ft2-infoblock-diff-up': '#2E7D32',    // green
-          '--ft2-infoblock-diff-down': '#C62828',  // red
-
-          // ── LaSyncro design tokens (light) ──────────────────
-          '--accent':        '#FF6B2B',
-          '--accent-hover':  '#FF8C5A',
-          '--accent-ghost':  '#FFF0E8',
-          '--accent-border': '#FFDCCA',
-          '--accent-ink':    '#10151E',
-          // Confirmed/success state ONLY (Thread B, 2026-06-30) — exception
-          // to the orange-only CTA system, documented in modules-ux-playbook.md.
-          // Not for general use. Anchored to --ft2-infoblock-diff-up (#2E7D32).
-          '--confirm-ghost':  '#E8F5E9',
-          '--confirm-border': '#A5D6A7',
-          '--confirm-ink':    '#2E7D32',
-          // Warning/idle-state indicator ONLY — same scoped-use pattern as
-          // --confirm-*. Anchored to #EAB308, the amber already used ad hoc
-          // in ShopSettingsWarehousePage.tsx (unlabeled coverage, printer
-          // detection). Formalized here so future warning states reference
-          // a token instead of repeating the hardcoded hex.
-          '--warning-ghost':  '#FEF9E7',
-          '--warning-border': '#FDE68A',
-          '--warning-ink':    '#EAB308',
-          // Pulse severity — live risk/status metrics only (modules-ux-playbook.md §18).
-          // Distinct from --confirm-* (persisted state) and --ft2-infoblock-diff-up (deltas).
-          '--critical-ghost': '#FDEDEE',
-          '--critical-border':'#F5C2C4',
-          '--critical-ink':   '#E5484D',
-          '--good-ghost':     '#E8F5E9',
-          '--good-border':    '#A5D6A7',
-          '--good-ink':       '#2E7D32',
-          '--bg':            '#FAFAF8',
-          '--bg-2':          '#F3F2EF',
-          '--bg-3':          '#E8E6E0',
-          '--surface':       '#FFFFFF',
-          '--ink':           '#0F0E0D',
-          '--ink-2':         '#3A3835',
-          '--ink-3':         '#6B7280',
-          '--ink-4':         '#9CA3AF',
-          '--rule':          '#E8E6E0',
-          '--rule-2':        '#D1CFC8',
-          '--space-azure':   '#1FA8FF',
-          // Every zone-* below is mode-invariant on purpose: --zone-storage is
-          // the one neutral "physical zone" base fill (ZONE_COLORS in
-          // IsometricCanvas.tsx maps every colorKey to this single RGB triple
-          // regardless of zone type), while the rest are vivid operational-
-          // state overlay colours that must read the same in both schemes,
-          // same rule as --accent. See the dark-mode block below for why
-          // --zone-storage alone gets a lightened dark-mode value.
-          '--zone-lane':       '217,179,83',
-          '--zone-shelf':      '217,179,83',
-          '--zone-warehouse':  '217,179,83',
-          '--zone-storage':    '36,48,80',
-          '--zone-pick':       '31,168,255',
-          '--zone-pack':       '255,107,43',
-          '--zone-receive':    '76,175,122',
-          '--zone-ship':       '31,168,255',
-          '--zone-returns':    '251,113,133',
-          '--zone-problem':    '245,158,11',
-          '--zone-quarantine': '239,68,68',
-          '--zone-kitting':    '139,92,246',
+      /**
+       * LaSyncro CSS custom properties, scheme-scoped (not :root).
+       * Every value comes from ./tokens.ts — the single source of truth
+       * shared with buildPalette(). Do not add literal colours here.
+       */
+      MuiCssBaseline: {
+        styleOverrides: {
+          '[data-color-scheme="light"]': {
+            backgroundColor: 'var(--bg)',
+            ...tokenCssVars('light'),
           },
-
-        '[data-color-scheme="dark"]': {
-          backgroundColor: 'var(--ft2-page-bg)',
-
-          /**
-           * Panel surface
-           * Slight lift above dark page background.
-           */
-          '--ft2-surface-bg': '#171A21',
-          '--ft2-surface-inset-bg': darkPalette.action.hover,
-          '--ft2-surface-divider': darkPalette.divider,
-
-          '--ft2-page-bg': darkPalette.background.default,
-
-          '--ft2-surface-shadow': `0 1px 2px ${withAlpha('#FFFFFF', 0.10)}, 
-                         0 2px 4px ${withAlpha('#FFFFFF', 0.06)}`,
-
-          '--ft2-surface-shadow-hover': `0 2px 4px ${withAlpha('#FFFFFF', 0.14)}`,
-
-          '--ft2-infoblock-bg': '#1E1E1E',
-          '--ft2-infoblock-border': '#2A2A2A',
-
-          '--ft2-infoblock-header-bg': '#242424',
-          '--ft2-infoblock-header-text': '#E6E6E6',
-
-          '--ft2-infoblock-row-text': '#D0D0D0',
-
-          '--ft2-infoblock-footer-bg': '#181818',
-          '--ft2-infoblock-footer-text': '#CFCFCF',
-
-          '--ft2-infoblock-diff-neutral': '#9A9A9A',
-          '--ft2-infoblock-diff-up': '#6FCF97',    // softer green
-          '--ft2-infoblock-diff-down': '#EF5350',  // softer red
-
-          // ── LaSyncro design tokens (dark) ───────────────────
-          '--accent':        '#FF6B2B',
-          '--accent-hover':  '#FF8C5A',
-          '--accent-ghost':  'rgba(255,107,43,0.12)',
-          '--accent-border': 'rgba(255,107,43,0.25)',
-          '--accent-ink':    '#10151E',
-          '--confirm-ghost':  'rgba(76,175,80,0.12)',
-          '--confirm-border': 'rgba(76,175,80,0.35)',
-          '--confirm-ink':    '#66BB6A',
-          '--warning-ghost':  'rgba(234,179,8,0.12)',
-          '--warning-border': 'rgba(234,179,8,0.35)',
-          '--warning-ink':    '#EAB308',
-          '--critical-ghost': 'rgba(229,72,77,0.12)',
-          '--critical-border':'rgba(229,72,77,0.35)',
-          '--critical-ink':   '#E5484D',
-          '--good-ghost':     'rgba(76,175,80,0.12)',
-          '--good-border':    'rgba(76,175,80,0.35)',
-          '--good-ink':       '#4CAF7A',
-          '--bg':            '#151D29',
-          '--bg-2':          '#1C2740',
-          '--bg-3':          '#243050',
-          '--surface':       '#1C2740',
-          '--ink':           '#F0EEE8',
-          '--ink-2':         '#C8C4BB',
-          '--ink-3':         '#8B8F9A',
-          '--ink-4':         '#5A5F6E',
-          '--rule':          'rgba(255,255,255,0.08)',
-          '--rule-2':        'rgba(255,255,255,0.14)',
-          '--space-azure':   '#1FA8FF',
-          '--zone-lane':       '217,179,83',
-          '--zone-shelf':      '217,179,83',
-          '--zone-warehouse':  '217,179,83',
-          // RECOUNT-CTA-33b: light-mode value (36,48,80) is ~H221° S38% L23%,
-          // essentially the same hue/sat as --bg-2 dark (28,39,64, ~H221°
-          // S39% L18%) — only 5pt of lightness apart, which is why unselected/
-          // dimmed bins nearly disappeared into the dark canvas. Lightened to
-          // ~L48% at the same hue/sat so it stays visually the same "neutral
-          // navy" family while reading clearly against the dark background.
-          '--zone-storage':    '76,105,169',
-          '--zone-pick':       '31,168,255',
-          '--zone-pack':       '255,107,43',
-          '--zone-receive':    '76,175,122',
-          '--zone-ship':       '31,168,255',
-          '--zone-returns':    '251,113,133',
-          '--zone-problem':    '245,158,11',
-          '--zone-quarantine': '239,68,68',
-          '--zone-kitting':    '139,92,246',
+          '[data-color-scheme="dark"]': {
+            backgroundColor: 'var(--bg)',
+            ...tokenCssVars('dark'),
+          },
         },
       },
-    },
     };
   }, [theme, borderRadius, outlinedFilled]);
 

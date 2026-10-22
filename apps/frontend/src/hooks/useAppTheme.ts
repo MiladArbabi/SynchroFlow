@@ -11,13 +11,14 @@
 //
 // RULES:
 // - Always use CSS vars — never hardcode hex in components
+// - Values live in themes/tokens.ts (single source of truth)
 // - accent (#FF6B2B) is identical in both modes — never branch on it
-// - For alpha operations use pal.isDark to derive rgba values
-// - rowHover and shadow cannot be CSS vars (require alpha) — computed here
+// - Accent-coloured TEXT uses accentText; text ON an accent fill uses accentInk
+// - Severity colours: *Ink for dots/bars/fills, *Text for text
 //
 // TYPOGRAPHY:
-//   font-family: var(--serif)  → Plus Jakarta Sans (headers, hero numbers)
-//   font-family: var(--sans)   → sans-serif (body, UI, captions)
+//   Plus Jakarta Sans everywhere, inherited from the theme — never set
+//   fontFamily in components (no --serif / --sans / DM Sans).
 //   font-variant-numeric: tabular-nums → always on data numbers
 
 import { useColorScheme } from '@mui/material/styles';
@@ -51,21 +52,14 @@ export function useAppTheme() {
     accentHover:  'var(--accent-hover)',  // #FF8C5A
     accentGhost:  'var(--accent-ghost)',  // bg tint for accent areas
     accentBorder: 'var(--accent-border)',// border for accent areas
+    accentInk:    'var(--accent-ink)',   // text ON an accent fill
+    accentText:   'var(--accent-text)',  // accent-coloured text on bg/surface
 
-    // ── Computed (require alpha — cannot be pure CSS vars) ────────
-    // Use these for sx props that need rgba values
-    rowHover: isDark
-      ? 'rgba(255,255,255,0.03)'
-      : 'rgba(0,0,0,0.02)',
-    tileHover: isDark
-      ? 'rgba(255,255,255,0.06)'
-      : 'rgba(0,0,0,0.04)',
-    shadow: isDark
-      ? '0 1px 3px rgba(0,0,0,0.4)'
-      : '0 1px 3px rgba(0,0,0,0.06)',
-    shadowMd: isDark
-      ? '0 4px 16px rgba(0,0,0,0.5)'
-      : '0 4px 16px rgba(0,0,0,0.10)',
+    // ── Alpha helpers (mode-aware CSS vars from themes/tokens.ts) ──
+    rowHover:  'var(--row-hover)',
+    tileHover: 'var(--tile-hover)',
+    shadow:    'var(--shadow-sm)',
+    shadowMd:  'var(--shadow-md)',
   } as const;
 }
 

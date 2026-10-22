@@ -122,7 +122,7 @@ export default function BlockedOrdersPage() {
                 URL.revokeObjectURL(url);
               } catch { console.error('[BlockedOrders] export failed'); }
             }}
-            sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: '6px', '&:hover': { opacity: 0.75 } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: '6px', '&:hover': { opacity: 0.75 } }}
           >
             Export →
           </Box>
@@ -136,7 +136,7 @@ export default function BlockedOrdersPage() {
 
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
 
@@ -152,7 +152,7 @@ export default function BlockedOrdersPage() {
         {/* ALERT BANNER */}
         {orders.length > 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.375, mb: 2, bgcolor: 'rgba(229,72,77,0.07)', border: '1px solid rgba(229,72,77,0.2)', borderRadius: '12px' }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 }} />
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--critical-ink)', flexShrink: 0 }} />
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
               <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{orders.length} orders blocked</Box>
               {' · '}{fmt$(String(totalRevenue))} in paid revenue held
@@ -209,7 +209,7 @@ export default function BlockedOrdersPage() {
             {orders.map(order => {
               const hours = ageHours(order.age_since_creation_seconds);
               const isBreached = !!order.is_shipping_sla_breached;
-              const ageColor = hours > 168 ? '#E5484D' : hours > 48 ? '#D9A23B' : 'var(--ink-3)';
+              const ageColor = hours > 168 ? 'var(--critical-text)' : hours > 48 ? 'var(--warning-text)' : 'var(--ink-3)';
 
               return (
                 <Box
@@ -228,7 +228,7 @@ export default function BlockedOrdersPage() {
                       {order.external_order_id ? `#${order.external_order_id}` : order.order_id.slice(0, 8).toUpperCase()}
                     </Typography>
                     {isBreached && (
-                      <Typography sx={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', color: '#E5484D', textTransform: 'uppercase', mt: 0.25 }}>
+                      <Typography sx={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.08em', color: 'var(--critical-text)', textTransform: 'uppercase', mt: 0.25 }}>
                         SLA breached
                       </Typography>
                     )}
@@ -250,7 +250,7 @@ export default function BlockedOrdersPage() {
                     <Box
                       component="a"
                       href={`${RESOLVE_HREF[order.constraint_type]}?order=${order.order_id}`}
-                      sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-hover)', cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'var(--accent)' } }}
+                      sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-hover)', cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'var(--accent-text)' } }}
                     >
                       Resolve →
                     </Box>

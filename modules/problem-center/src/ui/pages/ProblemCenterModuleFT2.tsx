@@ -214,7 +214,7 @@ function ProblemCenterModuleFT2Inner({
         {label}
       </Typography>
       {field && sortField === field && (
-        <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>{sortDir === 'asc' ? '↑' : '↓'}</Typography>
+        <Typography sx={{ fontSize: 9, color: 'var(--accent-text)' }}>{sortDir === 'asc' ? '↑' : '↓'}</Typography>
       )}
     </Box>
   );
@@ -360,7 +360,7 @@ function ProblemCenterModuleFT2Inner({
                     ) : (
                       <Box
                         onClick={() => { setResolveDialog({ id: t.problem_task_id, options }); setResolutionNote(''); setResolutionAction(options[0].action); setResolveError(null); }}
-                        sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                        sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                       >
                         Resolve →
                       </Box>
@@ -390,7 +390,7 @@ function ProblemCenterModuleFT2Inner({
                   {totalPages > 1 && <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>}
                   {totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (
                     <Box key={i} onClick={() => setPage(i + 1)}
-                      sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
+                      sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
                       {i + 1}
                     </Box>
                   ))}

@@ -15,6 +15,15 @@ const TONE_COLOR: Record<PulseTone, string> = {
   neutral: 'var(--ink-2)',
 };
 
+// Text-safe variants (≥ 4.5:1) for values and subtext; TONE_COLOR is for
+// dots and bars, where amber/red fills fail as small text on white.
+const TONE_TEXT: Record<PulseTone, string> = {
+  critical: 'var(--critical-text)',
+  warning: 'var(--warning-text)',
+  good: 'var(--good-ink)',
+  neutral: 'var(--ink-2)',
+};
+
 export interface PulseCardRowData {
   id: string;
   label: string;
@@ -79,7 +88,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
         </Box>
 
         {row.subtext && (
-          <Typography sx={{ fontSize: 11, fontWeight: 300, color: row.subtextTone ? TONE_COLOR[row.subtextTone] : 'var(--ink-4)', pl: '14px' }}>{row.subtext}</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 300, color: row.subtextTone ? TONE_TEXT[row.subtextTone] : 'var(--ink-4)', pl: '14px' }}>{row.subtext}</Typography>
         )}
 
         {row.progress && (
@@ -94,7 +103,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
           component="button"
           onClick={(e: React.MouseEvent) => { e.stopPropagation(); row.action!.onClick(); }}
           sx={{
-            fontSize: 11, fontWeight: 500, color: 'var(--accent)',
+            fontSize: 11, fontWeight: 500, color: 'var(--accent-text)',
             bgcolor: 'transparent', border: '0.5px solid var(--accent)',
             borderRadius: '6px', px: 1.25, py: 0.5, cursor: 'pointer',
             whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.75 },
@@ -103,7 +112,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
           {row.action.label}
         </Box>
       ) : (
-        <Typography sx={{ fontSize: 15, fontWeight: 600, color: row.colorOverride ?? (tone === 'neutral' ? 'var(--ink)' : TONE_COLOR[tone]), flexShrink: 0, pl: 1 }}>
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: row.colorOverride ?? (tone === 'neutral' ? 'var(--ink)' : TONE_TEXT[tone]), flexShrink: 0, pl: 1 }}>
           {row.value}
         </Typography>
       )}
@@ -153,7 +162,7 @@ export function PulseCard({
 
       {headline && (
         <Box sx={{ pb: 1, mb: 0.5, borderBottom: '1px solid var(--rule)' }}>
-          <Typography sx={{ fontSize: 28, fontWeight: 600, color: headline.colorOverride ?? TONE_COLOR[headline.tone], lineHeight: 1.1 }}>
+          <Typography sx={{ fontSize: 28, fontWeight: 600, color: headline.colorOverride ?? TONE_TEXT[headline.tone], lineHeight: 1.1 }}>
             {headline.value}
           </Typography>
           {headline.subtext && (
@@ -180,7 +189,7 @@ export function PulseCard({
               component="button" onClick={footerCta.onClick}
               sx={{
                 fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase',
-                color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)',
+                color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent)',
                 borderRadius: '6px', px: 1.25, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 },
                 width: footerCta && !updatedAt ? '100%' : 'auto', textAlign: 'center',
               }}

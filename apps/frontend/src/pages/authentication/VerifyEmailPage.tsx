@@ -90,7 +90,7 @@ export default function VerifyEmailPage() {
             <Box sx={{ textAlign: 'center' }}>
               {state === 'verifying' && (
                 <Stack spacing={2} alignItems="center">
-                  <CircularProgress sx={{ color: 'var(--accent)' }} />
+                  <CircularProgress sx={{ color: 'var(--accent-text)' }} />
                   <Typography variant="body1" sx={{ color: 'var(--ink-2)' }}>
                     Verifying your email...
                   </Typography>
@@ -108,7 +108,7 @@ export default function VerifyEmailPage() {
                   <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
                     Taking you to connect your store...
                   </Typography>
-                  <CircularProgress size={20} sx={{ color: 'var(--accent)' }} />
+                  <CircularProgress size={20} sx={{ color: 'var(--accent-text)' }} />
                 </Stack>
               )}
 

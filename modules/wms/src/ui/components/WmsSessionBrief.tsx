@@ -49,7 +49,7 @@ export function WmsSessionBrief({
     <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
       <Box sx={{ mb: 3 }}>
         <Typography
-          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}
+          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-text)', mb: 0.5 }}
         >
           {eyebrow}
         </Typography>

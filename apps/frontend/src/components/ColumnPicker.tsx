@@ -153,13 +153,13 @@ export function ColumnPicker({ endpoint, open, onToggle, onSelectionChange }: Co
             {entitled && (
               <Box sx={{ display: 'flex', gap: '10px' }}>
                 <Box component="button" type="button" onClick={handleSelectAll} sx={{
-                  fontSize: 11, fontWeight: 500, color: 'var(--accent)',
+                  fontSize: 11, fontWeight: 500, color: 'var(--accent-text)',
                   background: 'none', border: 'none', p: 0, cursor: 'pointer',
                 }}>
                   Select all
                 </Box>
                 <Box component="button" type="button" onClick={handleClear} sx={{
-                  fontSize: 11, fontWeight: 500, color: 'var(--accent)',
+                  fontSize: 11, fontWeight: 500, color: 'var(--accent-text)',
                   background: 'none', border: 'none', p: 0, cursor: 'pointer',
                 }}>
                   Clear

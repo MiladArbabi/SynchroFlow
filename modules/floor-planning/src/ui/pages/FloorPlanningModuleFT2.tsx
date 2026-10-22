@@ -457,7 +457,7 @@ function WorkspaceHeader({ title, badge, subline, actions }: {
             {title}
           </Typography>
           {badge && (
-            <Box component="span" sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', px: 0.875, py: 0.25, borderRadius: '100px' }}>
+            <Box component="span" sx={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-text)', bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', px: 0.875, py: 0.25, borderRadius: '100px' }}>
               {badge}
             </Box>
           )}
@@ -616,7 +616,7 @@ function FloorPlanningModuleFT2Inner({
               disableElevation
               startIcon={<Check size={14} />}
               onClick={() => changeMode('inspect')}
-              sx={{ height: 32, textTransform: 'none', fontSize: 13, fontWeight: 600, borderRadius: '7px', bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+              sx={{ height: 32, textTransform: 'none', fontSize: 13, fontWeight: 600, borderRadius: '6px', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
             >
               Done editing
             </Button>

@@ -464,7 +464,7 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
             />
           {error && <Typography role="alert" sx={{ fontSize: 10, color: 'var(--critical-ink)', mt: 0.5 }}>{error}</Typography>}
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.75, mt: 1 }}>
-            <Button size="small" variant="outlined" disabled={creating} onClick={cancelCreate} sx={{ minWidth: 0, px: 1, py: 0.25, fontSize: 10, textTransform: 'none', color: 'var(--accent)', borderColor: 'var(--accent-border)', borderRadius: '6px' }}>Cancel</Button>
+            <Button size="small" variant="outlined" disabled={creating} onClick={cancelCreate} sx={{ minWidth: 0, px: 1, py: 0.25, fontSize: 10, textTransform: 'none', color: 'var(--accent-text)', borderColor: 'var(--accent-border)', borderRadius: '6px' }}>Cancel</Button>
             <Button size="small" variant="contained" disabled={creating || !locationCode.trim()} onClick={() => void handleCreate(activeComponent)} sx={{ flexShrink: 0, minWidth: 0, px: 1, py: 0.25, fontSize: 10, whiteSpace: 'nowrap' }}>{creating ? 'Adding…' : 'Add'}</Button>
           </Box>
         </Box>
@@ -818,7 +818,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               variant="outlined"
               disabled={saving || !onUpdateZone}
               onClick={() => void toggleActive()}
-              sx={{ ml: 'auto', height: 22, minWidth: 0, px: 1, fontSize: 10, textTransform: 'none', color: 'var(--ink-3)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}
+              sx={{ ml: 'auto', height: 22, minWidth: 0, px: 1, fontSize: 10, textTransform: 'none', color: 'var(--ink-3)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}
             >
               {isActive ? 'Deactivate' : 'Activate'}
             </Button>
@@ -941,7 +941,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
               fontWeight: 500,
               color: 'var(--ink-3)',
               cursor: 'pointer',
-              '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+              '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' },
               transition: 'all 0.15s',
             }}
           >
@@ -957,9 +957,9 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
                 justifyContent: 'center',
                 gap: 0.5,
                 py: 0.65,
-                borderRadius: 1,
+                borderRadius: '6px',
                 bgcolor: 'var(--accent)',
-                color: '#fff',
+                color: 'var(--accent-ink)',
                 fontSize: 10,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -2258,7 +2258,7 @@ export function CanvasEditor({
               sx={{ display: 'flex', whiteSpace: 'nowrap', flexShrink: 0, alignItems: 'center', gap: 0.5, px: 1.25, py: 0.4, mr: 1,
                 border: '1px solid var(--rule)', borderRadius: 1.5, cursor: 'pointer',
                 fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-3)',
-                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
               View in 3D
             </Box>
           )}
@@ -2358,7 +2358,7 @@ export function CanvasEditor({
             </Box>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
               <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, z), z + delta)))}
-                sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+                sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
                 {label}
               </Box>
             ))}
@@ -2366,7 +2366,7 @@ export function CanvasEditor({
               {Math.round(zoom * 100)}%
             </Box>
             <Box onClick={fitCurrentWarehouse}
-              sx={{ px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+              sx={{ px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
               Reset
             </Box>
           </Box>
@@ -2548,7 +2548,7 @@ export function CanvasEditor({
                   fontWeight: selected.has(z.location_code) ? 700 : 400,
                   color: selected.has(z.location_code) ? 'var(--accent)' : 'var(--ink-3)',
                   bgcolor: selected.has(z.location_code) ? 'var(--accent-ghost)' : 'transparent',
-                  '&:hover': { color: 'var(--accent)' } }}>
+                  '&:hover': { color: 'var(--accent-text)' } }}>
                 {z.location_code}
               </Box>
               {i < arr.length - 1 && <Typography sx={{ fontSize: 10, color: 'var(--rule)', mx: 0.25 }}>/</Typography>}

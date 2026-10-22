@@ -6,7 +6,6 @@ import { Theme } from '@mui/material/styles';
 // Import the specific types needed
 import { ComponentsOverrides } from '@mui/material/styles';
 import { SliderClassKey } from '@mui/material/Slider'; // Import the specific class keys
-import { withAlpha } from 'utils/colorUtils';
 
 // ==============================|| OVERRIDES - SLIDER (in Button.tsx) ||============================== //
 
@@ -24,9 +23,7 @@ export default function SliderOverrides(theme: Theme): SliderComponentOverrides 
     const sliderStyleOverrides: MuiSliderOverride = {
         root: { // Class key 'root'
             '&.Mui-disabled': {
-                color: theme.palette.mode === 'dark'
-                    ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.5)
-                    : theme.palette.grey[300] || '#cdd5df',
+                color: 'var(--ink-4)',
             }
         },
         mark: { // Class key 'mark'
@@ -34,9 +31,7 @@ export default function SliderOverrides(theme: Theme): SliderComponentOverrides 
             width: '4px'
         },
         valueLabel: { // Class key 'valueLabel'
-            color: theme.palette.mode === 'dark'
-                ? theme.palette.primary.main
-                : theme.palette.primary.light,
+            color: 'var(--accent)',
         }
         // Add other SliderClassKey overrides here if needed
     };

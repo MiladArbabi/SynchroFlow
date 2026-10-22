@@ -103,7 +103,7 @@ function ExportRow({
           {report.description}
         </Typography>
         {error && (
-          <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
+          <Typography sx={{ fontSize: 11, color: 'var(--critical-text)', mt: '3px' }}>
             {error}
           </Typography>
         )}
@@ -125,7 +125,7 @@ function ExportRow({
           }}
         >
           {loading
-            ? <CircularProgress size={14} sx={{ color: 'var(--accent)' }} />
+            ? <CircularProgress size={14} sx={{ color: 'var(--accent-text)' }} />
             : <Download size={14} strokeWidth={1.6} color={downloadDisabled ? 'var(--ink-4)' : 'var(--accent)'} />}
         </Box>
       </Box>

@@ -1340,7 +1340,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
           left: '10px',
           top: '8px',
           margin: 0,
-          fontFamily: 'var(--sans)',
           fontSize: '10px',
           lineHeight: 1.3,
           fontWeight: 500,
@@ -1360,7 +1359,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
           position: 'absolute',
           right: '13px',
           top: '10px',
-          fontFamily: 'var(--sans)',
           fontSize: '9px',
           lineHeight: 1.3,
           fontWeight: 600,
@@ -1589,7 +1587,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
         },
         '& .scene5-order-text': {
           fill: 'var(--film-ink-2)',
-          fontFamily: 'var(--sans)',
           fontSize: 8,
           fontWeight: 700,
           letterSpacing: '0.06em',
@@ -1660,7 +1657,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
         },
         '& .scene6-order-text': {
           fill: 'var(--film-ink-2)',
-          fontFamily: 'var(--sans)',
           fontSize: 8,
           fontWeight: 700,
           letterSpacing: '0.06em',
@@ -1867,7 +1863,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
         '& .zone-label': {
           fill: 'var(--film-ink-3)',
           fontSize: 11,
-          fontFamily: 'var(--sans)',
           fontWeight: 700,
         },
         '& .iso-top': {
@@ -2185,7 +2180,6 @@ export const WorkflowFilm: React.FC<WorkflowFilmProps> = ({
             key={line}
             sx={{
               color: ACTIVATION_COLORS.textPrimary,
-              fontFamily: 'var(--serif)',
               fontSize: { xs: 20, md: 28 },
               lineHeight: 1.12,
             }}

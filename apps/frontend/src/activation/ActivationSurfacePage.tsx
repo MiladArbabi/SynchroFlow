@@ -359,10 +359,10 @@ export default function ActivationSurfacePage({
             {primaryCTA?.label && (
               <Button
                 variant="contained"
-                color="secondary"
+                color="primary"
                 fullWidth
                 onClick={onActivate}
-                sx={{ fontWeight: 800, mb: 1, borderRadius: 2 }}
+                sx={{ fontWeight: 600, mb: 1, borderRadius: '6px' }}
                 data-testid="activation-primary-cta"
               >
                 {primaryCTA.label}

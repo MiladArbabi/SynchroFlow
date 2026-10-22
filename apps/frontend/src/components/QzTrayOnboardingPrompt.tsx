@@ -62,7 +62,7 @@ export function QzTrayOnboardingPrompt({ onDismiss }: Props) {
           sx={{
             display: 'inline-flex', alignItems: 'center',
             px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600,
-            bgcolor: 'var(--accent)', color: '#fff',
+            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
             borderRadius: '6px', cursor: 'pointer', textDecoration: 'none',
             '&:hover': { opacity: 0.88 },
           }}

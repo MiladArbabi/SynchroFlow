@@ -179,7 +179,7 @@ function SessionRow({
             sx={{
               px: 1.5, py: 0.5, flexShrink: 0, cursor: 'pointer',
               fontSize: 12, fontWeight: 600, textAlign: 'center',
-              bgcolor: 'transparent', color: 'var(--accent)',
+              bgcolor: 'transparent', color: 'var(--accent-text)',
               border: '0.5px solid var(--accent)', borderRadius: '6px',
               '&:hover': { bgcolor: 'var(--accent-ghost)' },
             }}

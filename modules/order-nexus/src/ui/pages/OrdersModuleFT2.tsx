@@ -767,7 +767,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           {onExport && (
             <Box
               onClick={onExport}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Export →
             </Box>
@@ -860,7 +860,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                     onClick={() => setShowAllRailGroups(true)}
                     sx={HEALTH_ROW_INTERACTIVE_SX}
                   >
-                    <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--accent)' }}>
+                    <Typography component="span" sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--accent-text)' }}>
                       See {hiddenRailGroupCount} more
                     </Typography>
                   </Box>
@@ -905,10 +905,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 onClick={() => navigate('/orders/flow')}
                 sx={HEALTH_ROW_INTERACTIVE_SX}
               >
-                <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+                <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-text)' }}>
                   View order flow
                 </Typography>
-                <Typography component="span" aria-hidden="true" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', ml: '4px' }}>
+                <Typography component="span" aria-hidden="true" sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', ml: '4px' }}>
                   →
                 </Typography>
               </Box>

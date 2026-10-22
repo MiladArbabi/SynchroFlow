@@ -53,7 +53,7 @@ export default function ResetPasswordPage() {
             <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
               <AuthCardWrapper>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
+                  <Typography sx={{ color: 'var(--accent-text)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
                     Reset link problem
                   </Typography>
 
@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
                     This link is missing its reset token. Request a new password reset email to continue.
                   </Typography>
 
-                  <Box component={Link} to="/forgot-password" sx={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                  <Box component={Link} to="/forgot-password" sx={{ color: 'var(--accent-text)', fontWeight: 700, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
                     Request a new link →
                   </Box>
                 </Box>
@@ -96,7 +96,7 @@ export default function ResetPasswordPage() {
           <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
             <AuthCardWrapper>
 
-              <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
+              <Typography sx={{ color: 'var(--accent-text)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
                 Reset password
               </Typography>
 

@@ -270,7 +270,7 @@ function StatCard({ label, value, valueColor, sub, cta, ctaHref }: {
       {cta && ctaHref && (
         <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
         >
           {cta} →
         </Box>
@@ -350,7 +350,7 @@ function ActionRow({ dot, label, meta, impact, cta, ctaHref }: ActionRowProps) {
         {/* Filled row action — width is shared across operational lists. */}
         <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
         >
           {cta} →
         </Box>
@@ -414,7 +414,7 @@ function InboundRow({ po, isOverdue }: {
         {isOverdue && (
           <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Chase →
           </Box>
@@ -422,7 +422,7 @@ function InboundRow({ po, isOverdue }: {
         {!isOverdue && po.status === 'shipped' && (
           <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Receive →
           </Box>
@@ -551,7 +551,7 @@ function InventoryStateRail({
                 type="button"
                 onClick={onRetry}
                 sx={{
-                  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)',
+                  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-text)',
                   bgcolor: 'transparent', border: '0.5px solid var(--accent-border)', borderRadius: '6px',
                   px: '10px', py: '4px', cursor: 'pointer', flexShrink: 0, '&:hover': { opacity: 0.75 },
                 }}
@@ -694,7 +694,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
           {onExport && (
             <Box
               onClick={onExport}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Export →
             </Box>
@@ -791,7 +791,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                 </Box>
                 <Box
                   onClick={() => navigate('/wms/readiness')}
-                  sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { opacity: 0.75 } }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { opacity: 0.75 } }}
                 >
                   {/* ISS-084/DEC-02: was "Fix in WMS" — module renamed to Warehouse */}
                   Fix in Warehouse →
@@ -811,7 +811,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   )}
                   <Box
                     onClick={() => navigate('/inventory/replenishment')}
-                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
                     See all in Replenishment →
                   </Box>
@@ -1001,7 +1001,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                           </Typography>
                            <Box
                             onClick={() => navigate('/returns')}
-                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
                           >
                             Restock →
                           </Box>

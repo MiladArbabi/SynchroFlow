@@ -89,7 +89,7 @@ const ProblemCenterPage = lazy(() => import('pages/ft2-pages/ProblemCenterPage')
 function PageLoader() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-      <CircularProgress sx={{ color: 'var(--accent)' }} />
+      <CircularProgress sx={{ color: 'var(--accent-text)' }} />
     </Box>
   );
 }

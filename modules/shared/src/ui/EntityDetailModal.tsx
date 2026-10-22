@@ -149,7 +149,7 @@ export function EntityDetailModal({
                 fontWeight: 500,
                 color: 'var(--ink-3)',
                 cursor: 'pointer',
-                '&:hover': { color: 'var(--accent)' },
+                '&:hover': { color: 'var(--accent-text)' },
                 '&:focus-visible': {
                   outline: '2px solid var(--accent)',
                   outlineOffset: '2px',
@@ -185,7 +185,7 @@ export function EntityDetailModal({
       <DialogContent sx={{ p: 3 }}>
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-            <CircularProgress size={28} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={28} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
 

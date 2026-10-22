@@ -309,7 +309,6 @@ function RecommendedUpgrade({
 
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.375, mb: 2 }}>
           <Typography sx={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
             fontSize: 30, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.02em', color: 'text.primary',
           }}>
             {displayPrice}
@@ -342,7 +341,7 @@ function RecommendedUpgrade({
           endIcon={upgrading === tierId ? <CircularProgress size={12} color="inherit" /> : undefined}
           sx={{
             height: 40, borderRadius: '8px', fontWeight: 600, fontSize: 13,
-            bgcolor: 'var(--accent)', color: theme.palette.common.white,
+            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
             '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
           }}
         >
@@ -406,7 +405,7 @@ function TierCard({
         <Box sx={{
           position: 'absolute', top: -10, left: 20,
           fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: theme.palette.common.white, background: 'var(--accent)',
+          color: 'var(--accent-ink)', background: 'var(--accent)',
           px: 1.25, py: 0.5, borderRadius: '100px', whiteSpace: 'nowrap',
         }}>
           Most popular
@@ -423,7 +422,6 @@ function TierCard({
       {/* Price */}
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.375, mt: 0.75 }}>
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 38, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.02em', color: 'text.primary',
         }}>
           {priceDisplay}
@@ -477,7 +475,7 @@ function TierCard({
             sx={{
               height: 40, borderRadius: '8px', fontWeight: 600, fontSize: 13,
               ...(isFeatured
-                ? { bgcolor: 'var(--accent)', color: theme.palette.common.white, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }
+                ? { bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }
                 : { borderColor: 'var(--rule)', color: 'text.primary', '&:hover': { borderColor: 'text.disabled' } }),
             }}
           >
@@ -547,7 +545,6 @@ function PlanHeader({
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.375, mt: 0.875 }}>
             <Typography sx={{
-              fontFamily: "'Instrument Serif', Georgia, serif",
               fontSize: 26, fontWeight: 400, color: 'text.primary',
             }}>
               {tierLabel}
@@ -592,7 +589,6 @@ function PlanHeader({
             borderRadius: '10px',
           }}>
             <Typography sx={{
-              fontFamily: "'Instrument Serif', Georgia, serif",
               fontSize: 22, color: 'text.primary',
             }}>
               {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
@@ -604,7 +600,7 @@ function PlanHeader({
               variant="contained" size="small" onClick={() => onUpgrade(currentTier)} disabled={openingPortal}
               sx={{
                 mt: 1.5, height: 34, borderRadius: '8px', fontWeight: 600, fontSize: 12,
-                bgcolor: 'var(--accent)', color: theme.palette.common.white, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
               }}
             >
               Add payment method
@@ -1084,7 +1080,7 @@ const BillingSettings: React.FC = () => {
             href={manageBillingUrl.replace(/\/charges\/.*$/, '/settings/apps')}
             target="_blank"
             rel="noopener"
-            sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+            sx={{ color: 'var(--accent-text)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
           >
             store's app settings
           </Box>

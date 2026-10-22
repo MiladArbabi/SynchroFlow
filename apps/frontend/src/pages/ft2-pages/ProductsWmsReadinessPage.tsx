@@ -136,7 +136,7 @@ export default function ProductsWmsReadinessPage() {
                     {notPickable ?? '—'}
                   </Typography>
                   {(notPickable ?? 0) > 0 && (
-                    <Box onClick={() => navigate('/inventory/items')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                    <Box onClick={() => navigate('/inventory/items')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                       Edit Item cost →
                     </Box>
                   )}
@@ -160,7 +160,7 @@ export default function ProductsWmsReadinessPage() {
                     {noBin ?? '—'}
                   </Typography>
                   {(noBin ?? 0) > 0 && (
-                    <Box onClick={() => navigate('/floor-planning')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                    <Box onClick={() => navigate('/floor-planning')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                       Stow in Warehouse →
                     </Box>
                   )}

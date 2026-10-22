@@ -240,7 +240,7 @@ export default function ReturnSessionPage({
             value={scanValue} onChange={(e) => setScanValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleAddLine(); }} />
           <Button variant="outlined" onClick={handleAddLine} disabled={!scanValue.trim()}
-            sx={{ color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+            sx={{ color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', fontWeight: 500, whiteSpace: 'nowrap' }}>
             Add line
           </Button>
         </Box>

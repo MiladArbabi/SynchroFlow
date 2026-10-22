@@ -282,7 +282,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
             borderRadius: '4px', px: '4px', py: '1px', flexShrink: 0,
           }}>
             <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
-            <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
+            <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent-text)', lineHeight: 1.6 }}>
               {(child.requiredTier ?? child.decision?.requiredTier)!.charAt(0).toUpperCase() + (child.requiredTier ?? child.decision?.requiredTier)!.slice(1)}
             </Typography>
           </Box>
@@ -375,7 +375,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
             {isLocked && (item.requiredTier ?? item.decision?.requiredTier) && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', borderRadius: '4px', px: '5px', py: '1px', flexShrink: 0 }}>
                 <ArrowUp size={9} color="var(--accent)" strokeWidth={2.5} />
-                <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
+                <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent-text)', lineHeight: 1.6 }}>
                   {(item.requiredTier ?? item.decision?.requiredTier)!.charAt(0).toUpperCase() + (item.requiredTier ?? item.decision?.requiredTier)!.slice(1)}
                 </Typography>
               </Box>
@@ -504,7 +504,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                 fontWeight: 500,
                 color: 'var(--ink-3)',
                 '.MuiButtonBase-root:hover &': {
-                  color: 'var(--accent)',
+                  color: 'var(--accent-text)',
                 },
               }}
             >

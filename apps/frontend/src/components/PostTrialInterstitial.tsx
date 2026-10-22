@@ -104,7 +104,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
           Trial ended
         </Typography>
         <Typography sx={{
-          fontFamily: '"Instrument Serif", serif',
           fontSize: 28, lineHeight: 1.15, letterSpacing: '-0.01em',
           color: ON_SPACE, mt: '14px',
         }}>
@@ -143,7 +142,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
         {/* Header: title + billing toggle */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography sx={{
-            fontFamily: '"Instrument Serif", serif',
             fontSize: 20, color: 'text.primary',
           }}>
             Keep your momentum
@@ -175,7 +173,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
             </Box>
             <Box sx={{ textAlign: 'right' }}>
               <Box component="span" sx={{
-                fontFamily: '"Instrument Serif", serif',
                 fontSize: 24, color: 'text.primary',
               }}>
                 {growthPrice}
@@ -229,7 +226,6 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Box sx={{ textAlign: 'right' }}>
               <Box component="span" sx={{
-                fontFamily: '"Instrument Serif", serif',
                 fontSize: 18, color: 'text.primary',
               }}>
                 {scalePrice}

@@ -1739,7 +1739,7 @@ export function IsometricCanvas({
                       dominantBaseline="middle"
                       fontSize={Math.round(6 * zoom)}
                       fontWeight="600"
-                      fill={allStale ? '#D9A23B' : 'var(--ink-2)'}
+                      fill={allStale ? 'var(--warning-ink)' : 'var(--ink-2)'}
                       fontFamily="monospace"
                     >
                       {`${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}`}
@@ -1901,7 +1901,7 @@ export function IsometricCanvas({
                       <rect
                         x={packPt.sx - 5 * zoom} y={packPt.sy - 5 * zoom}
                         width={10 * zoom} height={9 * zoom} rx={1 * zoom}
-                        fill="#D9A23B" stroke="var(--bg)" strokeWidth={0.75} opacity={0.92}
+                        fill="var(--warning-ink)" stroke="var(--bg)" strokeWidth={0.75} opacity={0.92}
                       />
                       <line
                         x1={packPt.sx} y1={packPt.sy - 5 * zoom}
@@ -2130,7 +2130,7 @@ export function IsometricCanvas({
           <Box key={label} onClick={() => setZoom(z => Math.min(2.5, Math.max(0.3, z + delta)))}
             sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 16,
-              color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+              color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
             {label}
           </Box>
         ))}
@@ -2138,7 +2138,7 @@ export function IsometricCanvas({
           sx={{ px: 0.5, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '1px solid var(--rule)', borderRadius: 1, fontSize: 9, color: 'var(--ink-4)',
             bgcolor: 'var(--bg)', cursor: 'pointer', fontFamily: 'monospace',
-            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
           Reset
         </Box>
         {/* Angle preset toggle */}
@@ -2149,7 +2149,7 @@ export function IsometricCanvas({
             color: flipped ? 'var(--accent)' : 'var(--ink-4)',
             borderColor: flipped ? 'var(--accent)' : 'var(--rule)',
             bgcolor: 'var(--bg)', cursor: 'pointer', fontFamily: 'monospace',
-            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
           {flipped ? '↙' : '↗'}
         </Box>
         {/* FP-CTRL1: manual refresh — only rendered if the page provides onRefresh */}
@@ -2158,7 +2158,7 @@ export function IsometricCanvas({
            sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
              border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14,
              color: 'var(--ink-3)', bgcolor: 'var(--bg)',
-             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
            ↻
          </Box>
        )}
@@ -2284,7 +2284,7 @@ export function IsometricCanvas({
                   mt: 0.9,
                   border: 'none',
                   bgcolor: 'transparent',
-                  color: 'var(--accent)',
+                  color: 'var(--accent-text)',
                   cursor: 'pointer',
                   fontSize: 11,
                   fontWeight: 600,

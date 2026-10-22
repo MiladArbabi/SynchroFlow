@@ -90,7 +90,7 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
             display: 'inline-flex', alignItems: 'center',
             px: 1.25, py: 0.5,
             fontSize: 11, fontWeight: 600,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             border: '0.5px solid var(--accent)',
             borderRadius: '6px',
             cursor: 'pointer', flexShrink: 0,
@@ -251,7 +251,7 @@ export default function ReturnsOverviewPage() {
               display: 'inline-flex', alignItems: 'center',
               px: 1.25, py: 0.5,
               fontSize: 11, fontWeight: 500,
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               border: '0.5px solid var(--accent)',
               borderRadius: '6px',
               cursor: 'pointer',
@@ -416,7 +416,7 @@ export default function ReturnsOverviewPage() {
                   sx={{
                     mt: 1.5, display: 'inline-flex', alignItems: 'center',
                     px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600,
-                    color: 'var(--accent)', border: '0.5px solid var(--accent)',
+                    color: 'var(--accent-text)', border: '0.5px solid var(--accent)',
                     borderRadius: '6px', cursor: 'pointer',
                     '&:hover': { opacity: 0.75 },
                   }}

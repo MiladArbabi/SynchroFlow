@@ -1004,7 +1004,7 @@ export default function StowSessionPage({
         <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
           Next
         </Typography>
-        <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: 'var(--accent)' }}>
+        <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: 'var(--accent-text)' }}>
           {nextAction}
         </Typography>
       </Box>
@@ -1249,7 +1249,7 @@ export default function StowSessionPage({
                       <Chip label={`${t.quantity} units`} size="small" />
                       {t.location_code
                         ? <Chip label={t.location_code} size="small" color="success" />
-                        : <Chip label="No location" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />}
+                        : <Chip label="No location" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />}
                     </Box>
                   </Box>
                 </Paper>
@@ -1410,7 +1410,7 @@ if (phase === 'item_scan') {
           <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'var(--accent-ghost)', borderColor: 'var(--accent-border)'}}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <MapPin size={16} color='var(--accent)' />
-              <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--accent)' }}>
+              <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--accent-text)' }}>
                 Suggested bin: {currentTask.location_code}
               </Typography>
             </Box>

@@ -3,7 +3,6 @@
 import { Theme } from '@mui/material/styles';
 import { AutocompleteProps, autocompleteClasses, AutocompleteClassKey } from '@mui/material/Autocomplete'; // Import props type
 import { Components } from '@mui/material/styles';
-import { withAlpha } from 'utils/colorUtils';
 import { chipClasses } from '@mui/material/Chip';
 
 // Define the component override object structure for merging
@@ -21,27 +20,17 @@ export default function Autocomplete(theme: Theme, borderRadius: number): Autoco
                 // padding: '...'
             },
             tag: { // Override styles for the tag class key
-                background: theme.palette.mode === 'dark'
-                     ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.2) // Dark mode background
-                     : theme.palette.secondary.light, // Light mode background
+                background: 'var(--bg-3)',
                 borderRadius: 4, // Keep border radius
                 color: theme.palette.text.primary, // Use primary text color in both modes? Adjust if needed.
                 // Target delete icon within the tag
                 [`.${autocompleteClasses.popupIndicator}, .${autocompleteClasses.clearIndicator}`]: { // Targeting internal classes might be brittle
-                     color: theme.palette.mode === 'dark'
-                          ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.8)
-                          : theme.palette.secondary[200] || '#b39ddb', // Light mode icon color
+                     color: 'var(--ink-3)',
                 },
                 // Specific class for delete icon
                  [`.${chipClasses.deleteIcon}`]: { // Targeting Chip's class is more stable
-                       color: theme.palette.mode === 'dark'
-                           ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.8)
-                           : theme.palette.secondary[200] || '#b39ddb',
-                       '&:hover': {
-                           color: theme.palette.mode === 'dark'
-                              ? theme.palette.text.primary // Dark hover
-                              : theme.palette.secondary.main // Light hover
-                       }
+                       color: 'var(--ink-3)',
+                       '&:hover': { color: 'var(--ink)' }
                  }
             },
             popper: { // Override styles for the popper class key

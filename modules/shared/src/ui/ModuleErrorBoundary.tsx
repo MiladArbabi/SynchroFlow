@@ -40,7 +40,7 @@ export class ModuleErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: 32, fontFamily: 'sans-serif' }}>
+        <div style={{ padding: 32, fontFamily: 'inherit' }}>
           <strong>[{this.props.moduleName}] Something went wrong.</strong>
           <pre style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
             {this.state.error?.message}

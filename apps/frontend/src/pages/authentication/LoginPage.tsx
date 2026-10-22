@@ -94,7 +94,7 @@ export default function Login() {
                     <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
                       Hello.{' '}
                       {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
-                      <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
+                      <Box component="span" sx={{ color: 'var(--accent-text)', fontStyle: 'italic', fontWeight: 600 }}>
                         Let's sync up.
                       </Box>
                     </Typography>
@@ -113,7 +113,7 @@ export default function Login() {
                       <Box
                         component={Link}
                         to={authParam ? `/register?auth=${authParam}` : '/register'}
-                        sx={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                        sx={{ color: 'var(--accent-text)', textDecoration: 'none', fontWeight: 600 }}
                       >
                         Create an account
                       </Box>

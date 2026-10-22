@@ -60,7 +60,7 @@ const MAP_SLOT_SX = {
 const RETRY_BUTTON_SX = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   px: '12px', py: '5px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-  color: 'var(--accent)', bgcolor: 'transparent',
+  color: 'var(--accent-text)', bgcolor: 'transparent',
   border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer',
   '&:hover': { opacity: 0.75 },
 } as const;

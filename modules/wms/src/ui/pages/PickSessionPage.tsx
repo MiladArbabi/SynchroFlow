@@ -715,7 +715,7 @@ try {
             variant="outlined"
             onClick={() => onComplete()}
             sx={{
-              color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+              color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)',
               borderRadius: '6px', fontWeight: 500,
               '&:hover': { borderColor: 'var(--accent)', bgcolor: 'var(--accent-ghost)' },
             }}
@@ -868,7 +868,7 @@ try {
               </Typography>
                {(currentItem.unit_ids ?? []).length > 0 && (
                 <Box sx={{ mt: 0.5, display: 'flex', justifyContent: 'center' }}>
-                  <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'var(--accent)', borderRadius: '3px', fontFamily: 'monospace', color: 'var(--accent)', bgcolor: 'background.paper' }}>
+                  <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'var(--accent)', borderRadius: '3px', fontFamily: 'monospace', color: 'var(--accent-text)', bgcolor: 'background.paper' }}>
                     {currentItem.unit_ids![0]}
                   </Box>
                 </Box>
@@ -939,7 +939,7 @@ try {
               {/* Location */}
               <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <MapPin size={11} color="var(--accent)" />
-                <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 500 }}>
+                <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-text)', fontWeight: 500 }}>
                   {currentItem.location_code}
                 </Typography>
               </Box>
@@ -1183,7 +1183,7 @@ try {
           onClick={openExceptionDialog}
           sx={{
             borderRadius: '6px', fontWeight: 600,
-            borderColor: 'var(--accent-border)', color: 'var(--accent)',
+            borderColor: 'var(--accent-border)', color: 'var(--accent-text)',
             '&:hover': { borderColor: 'var(--accent)', bgcolor: 'var(--accent-ghost)' },
           }}
         >
@@ -1216,7 +1216,7 @@ try {
                   fontSize: 12,
                   bgcolor:     exceptionType === type ? 'var(--accent)' : 'transparent',
                   borderColor: exceptionType === type ? 'var(--accent)' : 'divider',
-                  color:       exceptionType === type ? 'white' : 'text.primary',
+                  color:       exceptionType === type ? 'var(--accent-ink)' : 'text.primary',
                   '&:hover': {
                     bgcolor:     exceptionType === type ? 'var(--accent)' : 'action.hover',
                     opacity:     exceptionType === type ? 0.88 : 1,

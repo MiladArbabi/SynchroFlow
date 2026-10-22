@@ -9,20 +9,15 @@ type AvatarComponentConfig = Components<Theme>['MuiAvatar'];
 
 // ==============================|| OVERRIDES - AVATAR ||============================== //
 
-export default function Avatar(theme: Theme): AvatarComponentConfig {
+export default function Avatar(_theme: Theme): AvatarComponentConfig {
     return {
         styleOverrides: {
             root: {
                 // Define CSS variables for default colors using standard palette
                 // Light Mode Defaults
-                '--avatar-default-color': theme.palette.primary.dark || '#1e88e5',
-                '--avatar-default-bg': theme.palette.primary[200] || '#90caf9',
-
-                // Apply dark mode variables directly using theme mode check
-                ...(theme.palette.mode === 'dark' && {
-                    '--avatar-default-color': theme.palette.dark?.main || '#212946', // Use augmented dark color or fallback
-                    '--avatar-default-bg': theme.palette.text.primary || '#bdc8f0'
-                }),
+                // Token-driven so both colour schemes resolve (themes/tokens.ts)
+                '--avatar-default-color': 'var(--accent-text)',
+                '--avatar-default-bg': 'var(--accent-ghost)',
 
                 // Use the variables
                 color: 'var(--avatar-default-color)',

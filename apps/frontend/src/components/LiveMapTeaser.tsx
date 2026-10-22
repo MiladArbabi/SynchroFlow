@@ -173,7 +173,7 @@ export function LiveMapTeaser({
               fontWeight: 600,
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               mb: 0.75,
             }}
           >

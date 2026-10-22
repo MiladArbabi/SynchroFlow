@@ -86,7 +86,7 @@ export function BinLogDrawer({ locationCode, events, isLoading, open, onClose }:
       <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2 }}>
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
 

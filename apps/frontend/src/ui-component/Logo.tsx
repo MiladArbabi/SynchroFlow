@@ -1,37 +1,17 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react';
-// material-ui
-import { useColorScheme, useTheme } from '@mui/material/styles';
-
-// project imports
-// import { ThemeMode } from 'config'; // <-- COMMENT OUT for now
-
-/**
- * if you want to use image instead of <svg> uncomment following.
- *
- * import logoDark from 'assets/images/logo-dark.svg';
- * import logo from 'assets/images/logo.svg';
- *
- */
 
 // ==============================|| LOGO SVG ||============================== //
 
-// Define props interface
 interface LogoProps {
+  /** Force the white wordmark (e.g. on an always-dark surface). */
   dark?: boolean;
   isCollapsed?: boolean;
 }
 
-// Assuming 'light' and 'dark' are the valid color scheme values
-const ThemeMode = { DARK: 'dark', LIGHT: 'light' }; // <-- Placeholder
-
-export default function Logo({ dark = false, isCollapsed = false }: LogoProps) {
-  const theme = useTheme();
-  const { colorScheme } = useColorScheme();
-  const fillColor =
-    colorScheme === ThemeMode.DARK || dark
-      ? (theme as any).vars?.palette?.common?.white ?? '#FFFFFF'
-      : (theme as any).vars?.palette?.grey?.[900] ?? '#111111';
+// The wordmark follows the scheme via --ink (themes/tokens.ts):
+// near-black in light mode, warm white in dark mode.
+export default function Logo({ dark = false }: LogoProps) {
+  const fillColor = dark ? '#FFFFFF' : 'var(--ink)';
 
   return (
     <svg width="275" height="102" viewBox="0 0 275 102" fill="none" xmlns="http://www.w3.org/2000/svg">

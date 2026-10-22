@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
               {/* Label */}
               <Typography
                 variant="caption"
-                sx={{ color: 'var(--accent)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '0.7rem' }}
+                sx={{ color: 'var(--accent-text)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '0.7rem' }}
               >
                 Reset password
               </Typography>
@@ -71,7 +71,7 @@ export default function ForgotPasswordPage() {
               {/* Headline — matches A4: "Forgot it? It happens." */}
               <Typography variant="h2" sx={{ color: 'var(--ink)', fontWeight: 700, lineHeight: 1.2 }}>
                 Forgot it?{' '}
-                <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400 }}>
+                <Box component="span" sx={{ color: 'var(--accent-text)', fontStyle: 'italic', fontWeight: 400 }}>
                   It happens.
                 </Box>
               </Typography>

@@ -467,7 +467,7 @@ function SenderAddressSection() {
               }}>
                 <Box>
                   <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                    {addr.name} {addr.is_default && <Box component="span" sx={{ fontSize: 10, color: 'var(--accent)', ml: 0.5 }}>DEFAULT</Box>}
+                    {addr.name} {addr.is_default && <Box component="span" sx={{ fontSize: 10, color: 'var(--accent-text)', ml: 0.5 }}>DEFAULT</Box>}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: '2px' }}>
                     {addr.street1}, {addr.city} {addr.postal_code}, {addr.country_code}
@@ -475,7 +475,7 @@ function SenderAddressSection() {
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   {!addr.is_default && (
-                    <Box onClick={() => setDefault(addr.id)} sx={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                    <Box onClick={() => setDefault(addr.id)} sx={{ fontSize: 11, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                       Make default
                     </Box>
                   )}
@@ -498,7 +498,7 @@ function SenderAddressSection() {
           {!showForm ? (
             <Box
               onClick={() => setShowForm(true)}
-              sx={{ display: 'inline-flex', alignSelf: 'flex-start', px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              sx={{ display: 'inline-flex', alignSelf: 'flex-start', px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               + Add sender address
             </Box>
@@ -895,7 +895,7 @@ function WebhookIntegrationSection({
                 <Typography sx={{ fontSize: 11, color: 'var(--ink)', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {revealedUrl}
                 </Typography>
-                <Box onClick={() => handleCopy(revealedUrl)} sx={{ cursor: 'pointer', color: 'var(--accent)', flexShrink: 0 }}>Copy</Box>
+                <Box onClick={() => handleCopy(revealedUrl)} sx={{ cursor: 'pointer', color: 'var(--accent-text)', flexShrink: 0 }}>Copy</Box>
               </Box>
             </Box>
           )}
@@ -907,7 +907,7 @@ function WebhookIntegrationSection({
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1 }}>
-              <Box onClick={() => setConfirmingRotate(true)} sx={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>
+              <Box onClick={() => setConfirmingRotate(true)} sx={{ fontSize: 12, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>
                 {rotating ? 'Rotating…' : 'Rotate'}
               </Box>
               <Box onClick={() => setConfirmingRevoke(true)} sx={{ fontSize: 12, color: 'error.main', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>

@@ -108,7 +108,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
               {crumb.parentLabel}
             </Typography>
           )}
-          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent)' }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-text)' }}>
             {crumb?.label ?? capitalize(fallbackLabel.replace(/-/g, " "))}
           </Typography>
         </MuiBreadcrumbs>
@@ -136,7 +136,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
                       bgcolor: 'rgba(99,102,241,0.08)',
                       border: '0.5px solid rgba(99,102,241,0.28)',
                       cursor: 'pointer',
-                      color: 'var(--accent)',
+                      color: 'var(--accent-text)',
                     }}
                   >
                     <Typography sx={{ fontSize: 12, lineHeight: 1 }}>◔</Typography>
@@ -194,7 +194,7 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
                         setUsageAnchor(null);
                         navigate('/settings/billing');
                       }}
-                      sx={{ mt: 0.5, fontSize: 12, fontWeight: 700, color: 'var(--accent)', cursor: 'pointer' }}
+                      sx={{ mt: 0.5, fontSize: 12, fontWeight: 700, color: 'var(--accent-text)', cursor: 'pointer' }}
                     >
                       Go to billing →
                     </Box>

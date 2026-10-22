@@ -226,7 +226,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
                   px: '4px', py: '1px',
                 }}>
                   <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
-                  <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
+                  <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent-text)', lineHeight: 1.6 }}>
                     {(() => {
                       const label = (tab.requiredTier ?? decisionFor(tab)?.requiredTier)!;
                       return label.charAt(0).toUpperCase() + label.slice(1);

@@ -27,13 +27,14 @@ import { ThemeMode } from 'config';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 
-const ACCENT       = '#FF6B2B';
-const ACCENT_HOVER = '#FF8C5A';
-const ACCENT_GHOST = 'rgba(255, 107, 43, 0.10)';
-const ACCENT_BORDER= 'rgba(255, 107, 43, 0.25)';
-const GREEN        = '#22C55E';
-const GREEN_GHOST  = 'rgba(34, 197, 94, 0.10)';
-const GREEN_BORDER = 'rgba(34, 197, 94, 0.25)';
+// Values come from themes/tokens.ts via CSS vars — no local hex.
+const ACCENT       = 'var(--accent)';
+const ACCENT_HOVER = 'var(--accent-hover)';
+const ACCENT_GHOST = 'rgba(255, 107, 43, 0.10)'; // used inside box-shadow; accent is mode-invariant
+const ACCENT_BORDER= 'var(--accent-border)';
+const GREEN        = 'var(--good-ink)';
+const GREEN_GHOST  = 'var(--good-ghost)';
+const GREEN_BORDER = 'var(--good-border)';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -42,14 +43,14 @@ function useAhaTheme() {
   const isDark = colorScheme === ThemeMode.DARK;
   return {
     isDark,
-    bg:          isDark ? '#0F1520' : '#F3F2EF',
-    surface:     isDark ? '#1A2236' : '#FFFFFF',
-    surfaceAlt:  isDark ? '#212D45' : '#F8F7F4',
-    border:      isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)',
-    borderStrong:isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.14)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#7A8090' : '#6B7280',
-    textHint:    isDark ? '#4A5060' : '#9CA3AF',
+    bg:          'var(--bg-2)',
+    surface:     'var(--surface)',
+    surfaceAlt:  'var(--bg)',
+    border:      'var(--rule)',
+    borderStrong:'var(--rule-2)',
+    textPrimary: 'var(--ink)',
+    textSecond:  'var(--ink-3)',
+    textHint:    'var(--ink-4)',
     shadow:      isDark
       ? '0 0 0 1px rgba(255,255,255,0.06), 0 24px 64px rgba(0,0,0,0.5)'
       : '0 0 0 1px rgba(0,0,0,0.06), 0 8px 40px rgba(0,0,0,0.08)',

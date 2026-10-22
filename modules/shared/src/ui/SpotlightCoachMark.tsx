@@ -144,7 +144,7 @@ export function SpotlightCoachMark({
           display: 'inline-flex', alignItems: 'center',
           px: 1.25, py: 0.375,
           fontSize: 11, fontWeight: 500,
-          color: 'var(--accent)',
+          color: 'var(--accent-text)',
           border: '0.5px solid var(--accent-border)',
           borderRadius: '6px',
           cursor: 'pointer',

@@ -57,7 +57,7 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
                 }
             },
             columnHeader: {
-                color: theme.palette.grey[600] || '#4b5565', // Header text color with fallback
+                color: 'var(--ink-3)', // Header text color with fallback
                 paddingLeft: '24px', // Consistent padding
                 paddingRight: '24px',
                 borderBottom: `1px solid ${theme.palette.divider}`, // Add a subtle bottom border
@@ -89,7 +89,7 @@ export default function DataGrid(theme: Theme): DataGridComponentConfig {
                     // Base styles (can be adjusted)
                     borderRadius: '4px',
                     padding: '2px 8px',
-                    color: theme.palette.mode === 'dark' ? theme.palette.grey[50] : theme.palette.text.primary, // Adjust text color for dark
+                    color: 'var(--ink)', // Adjust text color for dark
 
                     // Status background colors
                     '& > .high': {

@@ -198,7 +198,6 @@ function TeasedOverlay({
           </Box>
 
           <Typography sx={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
             fontSize: 22, fontWeight: 400, lineHeight: 1.2,
             color: 'text.primary', mb: 1.25,
           }}>
@@ -286,7 +285,6 @@ function LockedGate({
         </Box>
 
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mb: 1.25,
         }}>
@@ -403,7 +401,6 @@ function UpgradeModal({
 
         {/* Headline */}
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 24, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mt: 1.75, mb: 0.875,
         }}>
@@ -538,7 +535,6 @@ function ModuleDenialModal({
         <LockTile size={42} />
 
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 24, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mt: 1.75, mb: 0.875,
         }}>
@@ -582,7 +578,6 @@ function ModuleDenialLocked({ featureName, featureBlurb }: Pick<UpgradePromptPro
           <LockTile size={54} />
         </Box>
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mb: 1.25,
         }}>
@@ -616,7 +611,6 @@ function RoleForbiddenLocked() {
           <LockTile size={54} />
         </Box>
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mb: 1.25,
         }}>
@@ -657,7 +651,6 @@ function RoleForbiddenModal({
         <LockTile size={42} />
 
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mt: 1.75, mb: 0.875,
         }}>

@@ -458,7 +458,7 @@ function OpsConsoleRow({
               // Never shrink, never wrap: a shrinking CTA is how the label got
               // clipped, and a wrapping one is how it grew the card.
               flexShrink: 0, whiteSpace: 'nowrap',
-              bgcolor: 'transparent', color: 'var(--accent)',
+              bgcolor: 'transparent', color: 'var(--accent-text)',
               border: '0.5px solid var(--accent-border)', borderRadius: '4px',
               cursor: 'pointer',
               '&:hover': { bgcolor: 'var(--accent-ghost)' },
@@ -548,7 +548,7 @@ function SearchResultTypeLabel({ type }: { type: GlobalSearchResult['type'] }) {
         fontSize: 9,
         lineHeight: 1,
         letterSpacing: '0.12em',
-        color: 'var(--accent)',
+        color: 'var(--accent-text)',
         minWidth: 46,
       }}
     >

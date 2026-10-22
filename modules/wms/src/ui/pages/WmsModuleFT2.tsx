@@ -640,7 +640,7 @@ const OVERVIEW_WORK_CTA_SX = {
 type OverviewWorkCtaEmphasis = 'primary' | 'secondary';
 const OVERVIEW_WORK_CTA_EMPHASIS_SX = {
   primary: { ...WMS_TIER1_ACTION_SX, border: '1px solid var(--accent)' },
-  secondary: { bgcolor: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-border)' },
+  secondary: { bgcolor: 'transparent', color: 'var(--accent-text)', border: '1px solid var(--accent-border)' },
 } as const;
 
 /**
@@ -1039,7 +1039,7 @@ const StowTaskCard = memo(function StowTaskCard({
           sx={{
             width: '100%', fontSize: 12, fontWeight: 600,
             color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
-            border: 'none', borderRadius: '8px',
+            border: 'none', borderRadius: '6px',
             py: 1.25, cursor: 'pointer',
             '&:hover': { opacity: 0.88 },
             transition: 'opacity 0.15s ease',
@@ -1194,7 +1194,7 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
                 ...OVERVIEW_WORK_CTA_SX,
                 ...(started
                   ? OVERVIEW_WORK_CTA_EMPHASIS_SX.primary
-                  : { borderColor: 'var(--rule)', color: 'var(--accent)' }),
+                  : { borderColor: 'var(--rule)', color: 'var(--accent-text)' }),
                 borderRadius: '6px',
                 fontWeight: 600,
               }}
@@ -1271,7 +1271,7 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
               sx={{
                 flexShrink: 0,
                 borderColor: 'var(--rule)',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 borderRadius: '6px',
                 fontWeight: 600,
               }}
@@ -1622,7 +1622,7 @@ const VISUALLY_HIDDEN_SX = {
 const STAGE_TEXT_ACTION_SX = {
   border: 0,
   bgcolor: 'transparent',
-  color: 'var(--accent)',
+  color: 'var(--accent-text)',
   font: 'inherit',
   fontSize: 12,
   fontWeight: 600,
@@ -1801,7 +1801,7 @@ function NeedsAttentionStrip({
         <Typography
           id={headingId}
           component="h2"
-          sx={{ fontSize: 11, fontWeight: 500, lineHeight: 1, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', whiteSpace: 'nowrap' }}
+          sx={{ fontSize: 11, fontWeight: 500, lineHeight: 1, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent-text)', whiteSpace: 'nowrap' }}
         >
           Needs attention
         </Typography>
@@ -3176,7 +3176,7 @@ function WmsModuleFT2Inner({
           variant="text"
           size="small"
           onClick={() => exitSession()}
-          sx={{ minWidth: 'auto', px: 0, mb: 1.5, fontSize: 12, textTransform: 'none', color: 'var(--accent)' }}
+          sx={{ minWidth: 'auto', px: 0, mb: 1.5, fontSize: 12, textTransform: 'none', color: 'var(--accent-text)' }}
         >
           Return to Operations
         </Button>
@@ -3197,7 +3197,7 @@ function WmsModuleFT2Inner({
           borderRadius: '10px', px: 1.5, py: 1,
         }}>
           {packScanLoading
-            ? <CircularProgress size={16} sx={{ color: 'var(--accent)' }} />
+            ? <CircularProgress size={16} sx={{ color: 'var(--accent-text)' }} />
             : <ScanBarcode size={18} color={packScanError ? 'var(--critical-ink)' : 'var(--accent)'} />}
           <TextField
             inputRef={packEntryInputRef}
@@ -3606,11 +3606,11 @@ function WmsModuleFT2Inner({
               borderRadius: '100px', px: 1.375, py: 0.625,
             }}>
               <Box sx={{
-                width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A',
+                width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--good-ink)',
                 '@keyframes wmsOnlinePulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
                 animation: 'wmsOnlinePulse 2.4s ease-in-out infinite',
               }} />
-              <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#4CAF7A' }}>Online</Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--good-ink)' }}>Online</Typography>
             </Box>
           )} */}
         </Box>
@@ -3806,7 +3806,7 @@ function WmsModuleFT2Inner({
           <Button
             onClick={() => setCountDialogOpen(false)}
             disabled={countCreating}
-            sx={{ color: 'var(--accent)' }}
+            sx={{ color: 'var(--accent-text)' }}
           >
             Cancel
           </Button>
@@ -3913,7 +3913,7 @@ function WmsModuleFT2Inner({
           <Button
             onClick={closeReassignDialog}
             disabled={reassignSubmitting}
-            sx={{ color: 'var(--accent)' }}
+            sx={{ color: 'var(--accent-text)' }}
           >
             Cancel
           </Button>
@@ -3990,7 +3990,7 @@ function WmsModuleFT2Inner({
           <Button
             onClick={closeStowAssignDialog}
             disabled={stowAssignSubmitting}
-            sx={{ color: 'var(--accent)' }}
+            sx={{ color: 'var(--accent-text)' }}
           >
             Cancel
           </Button>
@@ -4089,7 +4089,7 @@ function WmsModuleFT2Inner({
           <Button
             onClick={closeReceiveReassignDialog}
             disabled={receiveReassignSubmitting}
-            sx={{ color: 'var(--accent)' }}
+            sx={{ color: 'var(--accent-text)' }}
           >
             Cancel
           </Button>
@@ -4235,7 +4235,7 @@ function WmsModuleFT2Inner({
             flexShrink: 0,
           }}>
             {quickScanLoading
-              ? <CircularProgress size={16} sx={{ color: 'var(--accent)' }} />
+              ? <CircularProgress size={16} sx={{ color: 'var(--accent-text)' }} />
               : <ScanBarcode size={18} color={quickScanError ? 'var(--critical-ink)' : 'var(--accent)'} />}
           </Box>
           <Typography
@@ -4384,7 +4384,7 @@ function WmsModuleFT2Inner({
                 sx={{
                   fontSize: 9,
                   fontWeight: 700,
-                  color: 'var(--accent)',
+                  color: 'var(--accent-text)',
                   lineHeight: 1.6,
                 }}
               >
@@ -4435,7 +4435,7 @@ function WmsModuleFT2Inner({
                 px: 2.5,
                 py: 1.125,
                 borderTop: '1px solid var(--rule)',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 cursor: 'pointer',
                 '&:hover': { opacity: 0.75 },
               }}

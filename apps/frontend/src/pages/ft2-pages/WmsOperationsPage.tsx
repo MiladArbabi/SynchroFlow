@@ -1255,7 +1255,7 @@ export default function WmsOperationsPage() {
               <Button
                 size="small"
                 onClick={() => handleNeedsAttentionAction(row.id)}
-                sx={{ flexShrink: 0, color: 'var(--accent)', fontWeight: 500, textTransform: 'none' }}
+                sx={{ flexShrink: 0, color: 'var(--accent-text)', fontWeight: 500, textTransform: 'none' }}
               >
                 {row.action.label} <span aria-hidden="true">→</span>
               </Button>

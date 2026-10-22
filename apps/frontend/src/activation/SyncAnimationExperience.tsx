@@ -188,7 +188,6 @@ export const SyncAnimationExperience: React.FC<SyncAnimationExperienceProps> = (
         bgcolor: 'var(--bg)',
         background: pageBackground,
         color: 'var(--ink)',
-        fontFamily: 'var(--sans)',
         display: 'flex',
       }}
     >

@@ -774,7 +774,7 @@ export default function OrderFlowPage() {
                   borderRadius: '999px',
                   cursor: 'pointer',
                   fontSize: 12,
-                  color: 'var(--accent)',
+                  color: 'var(--accent-text)',
                   textTransform: 'capitalize',
                 }}
               >
@@ -899,7 +899,7 @@ export default function OrderFlowPage() {
 
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
 
@@ -1077,7 +1077,7 @@ export default function OrderFlowPage() {
                               userSelect: 'none',
                             }}
                           >
-                            <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)' }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent-text)' }}>
                               {getConstraintLabel(key)} · {blockedByReason[key].length}
                             </Typography>
                             <ChevronDown
@@ -1208,7 +1208,7 @@ export default function OrderFlowPage() {
                             {blockedByReason[key].length > TRIAGE_PREVIEW_LIMIT && (
                               <Box
                                 onClick={() => toggleRevealed(key)}
-                                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}
                               >
                                 <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
                                   {revealedGroups.has(key) ? 'Show less' : `See ${blockedByReason[key].length - TRIAGE_PREVIEW_LIMIT} more`}
@@ -1308,7 +1308,7 @@ export default function OrderFlowPage() {
                                 bgcolor: active ? 'var(--accent-ghost)' : 'var(--surface)',
                                 color: active ? 'var(--accent)' : 'var(--ink-2)',
                                 transition: 'border-color 0.12s, color 0.12s',
-                                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+                                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' },
                               }}
                             >
                               <Box sx={{
@@ -1448,7 +1448,7 @@ export default function OrderFlowPage() {
                           {label}
                         </Typography>
                         {sortField === field && (
-                          <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>
+                          <Typography sx={{ fontSize: 9, color: 'var(--accent-text)' }}>
                             {sortDir === 'asc' ? '↑' : '↓'}
                           </Typography>
                         )}
@@ -1565,12 +1565,12 @@ export default function OrderFlowPage() {
                             <Typography sx={{ fontSize: 11.5, fontWeight:500, color: 'var(--ink-3)', mt: 0.125 }}>
                               {fmtOrderValue(Number(order.total_price), order.currency)}
                               {order.is_priority_flagged && (
-                                <Box component="span" sx={{ color: 'var(--accent)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                                <Box component="span" sx={{ color: 'var(--accent-text)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
                                   Priority
                                 </Box>
                               )}
                               {order.is_shipping_sla_breached && (
-                                <Box component="span" sx={{ color: 'var(--accent)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                                <Box component="span" sx={{ color: 'var(--accent-text)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
                                   SLA breached
                                 </Box>
                               )}
@@ -1746,7 +1746,7 @@ export default function OrderFlowPage() {
                             </Typography>
 
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                              <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
+                              <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-text)' }}>
                                 {batch.status === 'pending' ? 'Pending' : stages[stageIndex]?.label ?? batch.status}
                               </Typography>
 

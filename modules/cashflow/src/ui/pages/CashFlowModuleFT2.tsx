@@ -381,7 +381,7 @@ function CashFlowModuleFT2Inner({
                     </Collapse>
                     <Box
                       onClick={() => setPoExpanded(v => !v)}
-                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 1.125, mt: 0.5, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 1.125, mt: 0.5, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}
                     >
                       <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
                         {poExpanded ? 'Show less' : `See ${hiddenPos.length} more`}
@@ -493,7 +493,7 @@ function CashFlowModuleFT2Inner({
             {/* Inline Adjust toggle — reveals accent-tinted overhead/balance fields. */}
             <Box
               onClick={() => setSettingsOpen(v => !v)}
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, alignSelf: 'flex-start', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, alignSelf: 'flex-start', cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}
             >
               <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
                 {settingsOpen ? '− Hide fixed costs & balance' : '+ Adjust fixed costs & balance'}
@@ -508,7 +508,7 @@ function CashFlowModuleFT2Inner({
                 border: '0.5px solid var(--accent-border)',
                 borderRadius: '8px',
               }}>
-                <Typography sx={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500 }}>
+                <Typography sx={{ fontSize: 11, color: 'var(--accent-text)', fontWeight: 500 }}>
                   Make projection more accurate
                 </Typography>
                 <TextField
@@ -533,7 +533,7 @@ function CashFlowModuleFT2Inner({
                       });
                     } finally { setSettingsSaving(false); }
                   }}
-                  sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' }, borderRadius: '8px', alignSelf: 'flex-start' }}
+                  sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' }, borderRadius: '6px', alignSelf: 'flex-start' }}
                 >
                   {settingsSaving ? 'Saving…' : 'Save'}
                 </Button>

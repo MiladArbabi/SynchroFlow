@@ -253,7 +253,7 @@ function ProfitTrustRow({
               display: 'inline-flex', alignItems: 'center',
               px: 1.25, py: 0.5,
               fontSize: 11, fontWeight: 600,
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               border: '0.5px solid var(--accent)',
               borderRadius: '6px',
               cursor: 'pointer',
@@ -670,7 +670,7 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                       }
                       {pageCount > 1 && Array.from({ length: pageCount }, (_, i) => (
                         <Box key={i} component="button" onClick={() => setPage(i)}
-                          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i === page ? 'var(--accent)' : 'divider', borderRadius: '6px', bgcolor: i === page ? 'var(--accent)' : 'background.paper', color: i === page ? '#fff' : 'text.secondary', cursor: 'pointer', fontWeight: i === page ? 600 : 400 }}>
+                          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i === page ? 'var(--accent)' : 'divider', borderRadius: '6px', bgcolor: i === page ? 'var(--accent)' : 'background.paper', color: i === page ? 'var(--accent-ink)' : 'text.secondary', cursor: 'pointer', fontWeight: i === page ? 600 : 400 }}>
                           {i + 1}
                         </Box>
                       ))}

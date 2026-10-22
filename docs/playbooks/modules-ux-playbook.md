@@ -363,17 +363,24 @@ Canonical reveal control:
 
 ### Color Tokens
 
+Single source of truth: `apps/frontend/src/themes/tokens.ts` (mirrored in
+`docs/color-pallet/index.md`). The MUI palette is generated from the same file,
+so `theme.palette.primary` **is** `--accent`.
+
 ```css
 --accent:        #FF6B2B   /* primary CTA fill — NEVER changes between modes */
 --accent-hover:  #FF8C5A
---accent-ghost:  rgba(255,107,43,0.12)
---accent-border: rgba(255,107,43,0.25)
+--accent-ink:    #10151E   /* text ON an accent fill */
+--accent-text:   #B93D0A   /* light */ / #FF6B2B /* dark — accent-coloured text */
+--accent-ghost:  #FFF0E8   /* light */ / rgba(255,107,43,0.12) /* dark */
+--accent-border: #FFDCCA   /* light */ / rgba(255,107,43,0.25) /* dark */
 --bg:            #FAFAF8   /* light */ / #151D29 /* dark */
---bg-2:          #F3F2EF   /* light */ / #1C2740 /* dark — WARNING: identical to --surface in dark mode, see §11 */
+--bg-2:          #F3F2EF   /* light */ / #18202F /* dark — distinct from --surface since §23 */
 --bg-3:          #E8E6E0   /* light */ / #243050 /* dark */
 --surface:       #FFFFFF   /* light */ / #1C2740 /* dark */
 --ink:           #0F0E0D   /* light */ / #F0EEE8 /* dark */
---ink-3:         #6B7280   /* light */ / #8B8F9A /* dark */
+--ink-3:         #545A66   /* light */ / #A8ACB5 /* dark */
+--ink-4:         #656B78   /* light */ / #979CA7 /* dark */
 --rule:          #E8E6E0   /* light */ / rgba(255,255,255,0.08) /* dark */
 ```
 
@@ -408,7 +415,7 @@ Used for: resolving issues, triggering workflows, committing actions.
     display: 'inline-flex', alignItems: 'center',
     px: 1.25, py: 0.5,
     fontSize: 11, fontWeight: 600,
-    bgcolor: 'var(--accent)', color: theme.palette.common.white,
+    bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
     borderRadius: '6px', cursor: 'pointer',
     '&:hover': { opacity: 0.88 },
   }}
@@ -444,7 +451,7 @@ Used for: navigating to related surfaces, secondary contextual links, toggles.
     display: 'inline-flex', alignItems: 'center',
     px: 1.25, py: 0.5,
     fontSize: 11, fontWeight: 500,
-    color: 'var(--accent)', border: '0.5px solid var(--accent)',
+    color: 'var(--accent-text)', border: '0.5px solid var(--accent)',
     borderRadius: '6px', cursor: 'pointer',
     '&:hover': { opacity: 0.75 },
   }}
@@ -599,7 +606,7 @@ const paged = items.slice((page - 1) * perPage, page * perPage);
             borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)',
             borderRadius: '6px',
             bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)',
-            color: i + 1 === page ? '#fff' : 'var(--ink-3)',
+            color: i + 1 === page ? 'var(--accent-ink)' : 'var(--ink-3)',
             cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
           {i + 1}
         </Box>
@@ -674,7 +681,7 @@ const handleSort = (field: SortField) => {
 1. Identify tier: primary action → filled accent, navigation → ghost pill.
 2. Use `<Box>` — never `<Typography>` for clickable elements.
 3. For MUI `<Button>`, always add `sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}`.
-4. Never hardcode colors. Use `var(--accent)` or `theme.palette.common.white`.
+4. Never hardcode colors. Use tokens: `var(--accent)` fill + `var(--accent-ink)` text, `var(--accent-text)` for accent-coloured text.
 5. CTA `borderRadius` is always `'6px'`. Use `fontWeight: 600` for CTA emphasis. Page/module headlines may use `700`.
 6. Run `npm run build -w <module>` after every change to confirm type safety.
 
@@ -1779,3 +1786,40 @@ Approved 2026-09-14 after:
 The broader `apps/frontend` TypeScript project remains blocked by unrelated
 pre-existing repository errors outside this Receive/WMS change. No reported
 TypeScript error from that run was in the touched Receive/WMS files.
+
+## 23. Design-system consistency pass — 2026-10-22
+
+**One source of truth.** `apps/frontend/src/themes/tokens.ts` now holds every
+colour. `themes/index.tsx` emits the CSS variables from it and
+`themes/palette.ts` builds the MUI palette from it, so the old split — MUI blue
+primary vs orange CTAs, slate `#F1F5F9` vs paper `#FAFAF8`, three different
+dark navies — is gone. `theme.palette.primary` is the accent (with
+`--accent-ink` contrast text); `secondary` is neutral ink, so a stray
+`color="secondary"` can no longer render amber. FT2 `--ft2-*` variables and
+`AuthWrapper1`'s forced-dark block are generated from the same tokens.
+
+**Contrast.** New text-safe tokens, each ≥ 4.5:1 on bg / bg-2 / surface in
+both modes:
+
+- `--accent-text` — accent-coloured text (Tier 2 ghost pills, links). The
+  pill *border* stays `--accent`.
+- `--critical-text`, `--warning-text` — severity text; `--critical-ink` /
+  `--warning-ink` remain for dots, bars and fills.
+- `--ink-3` and `--ink-4` re-valued (light `#545A66` / `#656B78`, dark
+  `#A8ACB5` / `#979CA7`); `--ink-4` previously failed AA in both modes.
+
+**§11 resolved.** Dark `--bg-2` is now `#18202F` (between `--bg` and
+`--surface`), so `bg-2` panels no longer vanish on `surface` in dark mode.
+
+**Sweeps.** White-on-accent → `--accent-ink` (20 sites, incl. pagination and
+filter pills); `color: 'var(--accent)'` text → `--accent-text` (174 sites);
+hardcoded `#E5484D` / `#D9A23B` / `#EAB308` / `#4CAF7A` → severity tokens;
+`color="secondary"` buttons → correct tier; Instrument Serif / `var(--serif)` /
+`var(--sans)` / DM Mono overrides removed; non-6px accent CTAs → `6px`;
+local palettes in `AhaMomentPage`, `FinancesIntelligencePage` and
+`AuthWrapper1` now reference tokens; `decisionTokens` resolve to CSS vars.
+
+**Known exceptions left in place:** SVG/Recharts `fill`/`stroke="#FF6B2B"`
+(mode-invariant accent), categorical printer-role colours in
+`ShopSettingsWarehousePage`, `activationMotionTokens.completion` (animated
+value), and `_themes-vars.module.scss` (password-strength colours).

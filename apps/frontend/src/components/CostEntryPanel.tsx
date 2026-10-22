@@ -256,7 +256,7 @@ export default function CostEntryPanel() {
               px: 1.5, py: 0.375, borderRadius: '20px', cursor: 'pointer',
               fontSize: 11, fontWeight: 500,
               bgcolor: filter === f ? 'var(--accent)' : 'transparent',
-              color: filter === f ? '#fff' : 'var(--ink-4)',
+              color: filter === f ? 'var(--accent-ink)' : 'var(--ink-4)',
               border: `0.5px solid ${filter === f ? 'var(--accent)' : 'var(--rule)'}`,
               '&:hover': { borderColor: 'var(--accent)' },
             }}

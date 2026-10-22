@@ -161,7 +161,7 @@ export function ShippedOrderCapBanner() {
             justifyContent: 'center',
             height: 36,
             px: '16px',
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             border: '0.5px solid var(--accent)',
             borderRadius: '8px',
             fontSize: 12,

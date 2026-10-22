@@ -108,11 +108,11 @@ export default function ReleaseQueuePage() {
         {/* SUCCESS BANNER */}
         {releaseSuccess && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.375, mb: 2, bgcolor: 'rgba(76,175,122,0.07)', border: '1px solid rgba(76,175,122,0.2)', borderRadius: '12px' }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--good-ink)', flexShrink: 0 }} />
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
               <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{releaseSuccess.orderCount} orders released</Box>
               {' · '}
-              <Box component="a" href="/fulfillment" sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+              <Box component="a" href="/fulfillment" sx={{ color: 'var(--accent-text)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
                 Batch {releaseSuccess.batchId.slice(0, 8).toUpperCase()} in Fulfillment →
               </Box>
             </Typography>
@@ -149,7 +149,7 @@ export default function ReleaseQueuePage() {
 
             {isLoading && (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-                <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+                <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
               </Box>
             )}
 
@@ -165,7 +165,7 @@ export default function ReleaseQueuePage() {
               const isSelected = selected.has(order.lasyncro_order_id);
               const zones = Array.isArray(order.zone_distribution) ? order.zone_distribution : [];
               const hours = ageHoursFrom(order.order_created_at);
-              const ageColor = hours > 48 ? '#E5484D' : 'var(--ink-3)';
+              const ageColor = hours > 48 ? 'var(--critical-text)' : 'var(--ink-3)';
 
               return (
                 <Box
@@ -200,8 +200,8 @@ export default function ReleaseQueuePage() {
                   >
                     <Flag
                       size={13}
-                      color={order.is_priority_flagged ? '#E5484D' : 'var(--ink-4)'}
-                      fill={order.is_priority_flagged ? '#E5484D' : 'none'}
+                      color={order.is_priority_flagged ? 'var(--critical-ink)' : 'var(--ink-4)'}
+                      fill={order.is_priority_flagged ? 'var(--critical-ink)' : 'none'}
                     />
                   </Box>
 
@@ -211,7 +211,7 @@ export default function ReleaseQueuePage() {
                       {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                     </Typography>
                     {order.is_priority_flagged && (
-                      <Typography sx={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#E5484D', mt: 0.125 }}>Priority</Typography>
+                      <Typography sx={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--critical-text)', mt: 0.125 }}>Priority</Typography>
                     )}
                   </Box>
 
@@ -263,7 +263,7 @@ export default function ReleaseQueuePage() {
             </Typography>
 
             {selected.size > 0 && (
-              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mt: 0.375 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', mt: 0.375 }}>
                 {selected.size} handpicked · unselected orders fill ceiling automatically
               </Typography>
             )}
@@ -286,12 +286,12 @@ export default function ReleaseQueuePage() {
                 <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
                   Floor capacity
                 </Typography>
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: ceilingPct > 90 ? '#E5484D' : 'var(--ink-4)' }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: ceilingPct > 90 ? 'var(--critical-text)' : 'var(--ink-4)' }}>
                   {ceilingPct}%
                 </Typography>
               </Box>
               <Box sx={{ height: 6, borderRadius: '3px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
-                <Box sx={{ height: '100%', width: `${ceilingPct}%`, bgcolor: ceilingPct > 90 ? '#E5484D' : '#4CAF7A', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+                <Box sx={{ height: '100%', width: `${ceilingPct}%`, bgcolor: ceilingPct > 90 ? 'var(--critical-ink)' : 'var(--good-ink)', borderRadius: '3px', transition: 'width 0.3s ease' }} />
               </Box>
               <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.75 }}>
                 {waveLineItems} of {maxLineItems} line item ceiling
@@ -322,7 +322,7 @@ export default function ReleaseQueuePage() {
             </Box>
 
             {releaseBatch.isError && (
-              <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: '#E5484D', mt: 1.25 }}>
+              <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--critical-text)', mt: 1.25 }}>
                 Release failed — please retry.
               </Typography>
             )}

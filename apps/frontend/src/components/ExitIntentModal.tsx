@@ -114,7 +114,7 @@ export const ExitIntentModal: React.FC<ExitIntentModalProps> = ({
         <Button 
           onClick={handleClose} 
           variant="outlined" 
-          color="secondary"
+          color="inherit"
           size="large"
         >
           No, thanks

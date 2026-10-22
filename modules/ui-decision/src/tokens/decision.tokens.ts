@@ -16,14 +16,17 @@ export const decisionTokens = {
     stackGap: 12,
   },
 
+  // Resolved by the host theme (apps/frontend/src/themes/tokens.ts) so the
+  // decision layer follows light/dark like every other surface.
   surface: {
-    background: '#111111',
-    border: '#2A2A2A',
+    background: 'var(--surface)',
+    border: 'var(--rule)',
   },
 
+  // Urgency reuses the pulse severity scale; *-text variants hold 4.5:1.
   urgency: {
-    high: '#B00020',
-    medium: '#FF6F00',
-    low: '#2E7D32',
+    high: 'var(--critical-text)',
+    medium: 'var(--warning-text)',
+    low: 'var(--good-ink)',
   },
 } as const;

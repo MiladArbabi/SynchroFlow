@@ -307,7 +307,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
                 variant="subtitle1"
                 component={Link}
                 to={authParam ? `/forgot-password?auth=${authParam}` : '/forgot-password'}
-                sx={{ textDecoration: 'none', color: 'var(--accent)' }}
+                sx={{ textDecoration: 'none', color: 'var(--accent-text)' }}
               >
                 Forgot password?
               </Typography>

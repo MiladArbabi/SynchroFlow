@@ -26,12 +26,13 @@ function useIntelligenceTheme() {
   const isDark = colorScheme === 'dark';
   return {
     isDark,
-    pageBg:      isDark ? '#151D29' : '#F8F9FA',
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+    // Values come from themes/tokens.ts via CSS vars — no local hex.
+    pageBg:      'var(--bg)',
+    cardBg:      'var(--surface)',
+    border:      'var(--rule)',
+    textPrimary: 'var(--ink)',
+    textSecond:  'var(--ink-3)',
+    tileBg:      'var(--tile-hover)',
   };
 }
 
@@ -114,7 +115,7 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
             display: 'inline-flex', alignItems: 'center',
             px: 1.25, py: 0.5,
             fontSize: 11, fontWeight: 600,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             border: '0.5px solid var(--accent)',
             borderRadius: '6px',
             cursor: 'pointer', flexShrink: 0,
@@ -277,7 +278,7 @@ export default function FinancesIntelligencePage() {
                 display: 'inline-flex', alignItems: 'center',
                 mt: 1.5, px: 1.25, py: 0.5,
                 fontSize: 11, fontWeight: 500,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 border: '0.5px solid var(--accent)',
                 borderRadius: '6px',
                 cursor: 'pointer',

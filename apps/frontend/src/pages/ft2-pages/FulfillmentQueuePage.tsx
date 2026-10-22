@@ -60,7 +60,7 @@ function LineItemRow({ item }: { item: PickBatchLineItem }) {
       '&:last-child': { borderBottom: 'none' },
       '&:hover': { bgcolor: 'var(--bg-2)' },
     }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-text)' }}>
         {item.quantity}/{item.quantity}
       </Typography>
 
@@ -105,7 +105,7 @@ function BatchLineItemsPanel({ batchId }: { batchId: string }) {
 
       {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={20} sx={{ color: 'var(--accent)' }} />
+          <CircularProgress size={20} sx={{ color: 'var(--accent-text)' }} />
         </Box>
       )}
 
@@ -196,7 +196,7 @@ function BatchCard({ batch }: { batch: PickBatch }) {
               </Typography>
             </Box>
             <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
-              <Box sx={{ width: `${pickPct}%`, height: '100%', bgcolor: '#FF6B2B', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+              <Box sx={{ width: `${pickPct}%`, height: '100%', bgcolor: 'var(--accent)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
             </Box>
           </Box>
           <Box>
@@ -267,7 +267,7 @@ export default function FulfillmentQueuePage() {
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>View manifests</Typography>
             </Box>
             <PlanGate feature="wms.pick_batches" mode="locked">
-              <Box sx={{ px: 2, py: 1, bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', '&:hover': { opacity: 0.9 } }}>
+              <Box sx={{ px: 2, py: 1, bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.9 } }}>
                 <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)' }}>Merge batches</Typography>
               </Box>
             </PlanGate>
@@ -286,7 +286,7 @@ export default function FulfillmentQueuePage() {
         {/* LOADING */}
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         )}
 

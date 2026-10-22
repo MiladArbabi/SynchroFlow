@@ -110,10 +110,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
   partially_received: { label: 'Receiving',          color: '#F59E0B', bgColor: 'rgba(245,158,11,0.1)',  bdColor: 'rgba(245,158,11,0.35)'  },
   confirmed:          { label: 'On the way',         color: '#10B981', bgColor: 'rgba(16,185,129,0.1)',  bdColor: 'rgba(16,185,129,0.35)'  },
   in_production:      { label: 'On the way',         color: '#8B5CF6', bgColor: 'rgba(139,92,246,0.1)',  bdColor: 'rgba(139,92,246,0.35)'  },
-  ordered:            { label: 'Sent',               color: '#6B7280', bgColor: 'rgba(107,114,128,0.1)', bdColor: 'rgba(107,114,128,0.35)' },
-  draft:              { label: 'Draft',              color: '#9CA3AF', bgColor: 'rgba(156,163,175,0.1)', bdColor: 'rgba(156,163,175,0.35)' },
-  received:           { label: 'Received',           color: '#4CAF7A', bgColor: 'rgba(76,175,122,0.1)',  bdColor: 'rgba(76,175,122,0.35)'  },
-  cancelled:          { label: 'Cancelled',          color: '#E5484D', bgColor: 'rgba(229,72,77,0.1)',   bdColor: 'rgba(229,72,77,0.35)'   },
+  ordered:            { label: 'Sent',               color: 'var(--ink-3)', bgColor: 'rgba(107,114,128,0.1)', bdColor: 'rgba(107,114,128,0.35)' },
+  draft:              { label: 'Draft',              color: 'var(--ink-4)', bgColor: 'rgba(156,163,175,0.1)', bdColor: 'rgba(156,163,175,0.35)' },
+  received:           { label: 'Received',           color: 'var(--good-ink)', bgColor: 'var(--good-ghost)',  bdColor: 'var(--good-border)'  },
+  cancelled:          { label: 'Cancelled',          color: 'var(--critical-text)', bgColor: 'var(--critical-ghost)',   bdColor: 'var(--critical-border)'   },
 };
 
 const fmtDate = (iso: string | null): string => {
@@ -153,7 +153,7 @@ function DeliverySignal({ expectedDate, status }: { expectedDate: string | null;
   }
   const isOverdue = days < 0;
   const isUrgent = days >= 0 && days <= 2;
-  const color = isOverdue ? '#E5484D' : isUrgent ? '#D9A23B' : 'var(--ink-3)';
+  const color = isOverdue ? 'var(--critical-text)' : isUrgent ? 'var(--warning-text)' : 'var(--ink-3)';
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
       <Typography sx={{ fontSize: 12, fontWeight: 300, color }}>{fmtDate(expectedDate)}</Typography>
@@ -185,7 +185,7 @@ function DecisionRow({ item, onReceive, onViewJob }: {
   onReceive: (poId: string) => void;
   onViewJob: (jobId: string) => void;
 }) {
-  const accent = item.tier === 'critical' ? '#E5484D' : '#D9A23B';
+  const accent = item.tier === 'critical' ? 'var(--critical-ink)' : 'var(--warning-ink)';
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', alignItems: 'center', gap: 2, px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', '&:hover': { bgcolor: 'var(--bg-2)' } }}>
       <Box sx={{ minWidth: 0 }}>
@@ -201,7 +201,7 @@ function DecisionRow({ item, onReceive, onViewJob }: {
       </Typography>
       {item.receivable ? (
         item.jobId ? (
-          <Box onClick={() => onViewJob(item.jobId!)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>
+          <Box onClick={() => onViewJob(item.jobId!)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>
             View job →
           </Box>
         ) : (
@@ -241,7 +241,7 @@ function DecisionBand({ label, accent, items, onReceive, onViewJob }: {
         {hidden.map(it => <DecisionRow key={it.poId} item={it} onReceive={onReceive} onViewJob={onViewJob} />)}
       </Collapse>
       {hidden.length > 0 && (
-        <Box onClick={() => setExpanded(v => !v)} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}>
+        <Box onClick={() => setExpanded(v => !v)} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}>
           <Typography sx={{ fontSize: 11, fontWeight: 500 }}>{expanded ? 'Show less' : `See ${hidden.length} more`}</Typography>
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </Box>
@@ -383,7 +383,7 @@ const activeJobs = receiveJobs.filter(
               {poLoading ? '—' : `${pulse.openPos} open POs · ${pulse.unitsExpected} units expected · ${pulse.arrivingSoon} arriving this week`}
             </Typography>
           </Box>
-          <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.875, borderRadius: '8px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: theme => theme.palette.common.white, '&:hover': { opacity: 0.88 } }}>
+          <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.875, borderRadius: '6px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: theme => theme.palette.common.white, '&:hover': { opacity: 0.88 } }}>
             <Plus size={13} />
             New PO
           </Box>
@@ -397,7 +397,7 @@ const activeJobs = receiveJobs.filter(
 
         {poLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
-            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+            <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
           </Box>
         ) : (
           <>
@@ -414,8 +414,8 @@ const activeJobs = receiveJobs.filter(
                 </Box>
                 {hasDecisions ? (
                   <>
-                    <DecisionBand label="Critical — receive today" accent="#E5484D" items={critical} onReceive={handleReceive} onViewJob={handleViewJob} />
-                    <DecisionBand label="Watch" accent="#D9A23B" items={watch} onReceive={handleReceive} onViewJob={handleViewJob} />
+                    <DecisionBand label="Critical — receive today" accent="var(--critical-text)" items={critical} onReceive={handleReceive} onViewJob={handleViewJob} />
+                    <DecisionBand label="Watch" accent="var(--warning-text)" items={watch} onReceive={handleReceive} onViewJob={handleViewJob} />
                   </>
                 ) : (
                   <Box sx={{ px: 2.5, py: 4, textAlign: 'center', borderTop: '1px solid var(--rule)' }}>
@@ -429,15 +429,15 @@ const activeJobs = receiveJobs.filter(
                 <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
                   Receiving health
                 </Typography>
-                <PulseRow label="At risk" value={atRiskCents > 0 ? fmtMoney(atRiskCents) : '$0'} valueColor={atRiskCents > 0 ? '#E5484D' : undefined} sub="value in critical POs" />
+                <PulseRow label="At risk" value={atRiskCents > 0 ? fmtMoney(atRiskCents) : '$0'} valueColor={atRiskCents > 0 ? 'var(--critical-text)' : undefined} sub="value in critical POs" />
                 <PulseRow label="Open POs" value={String(pulse.openPos)} />
                 <PulseRow label="Units expected" value={String(pulse.unitsExpected)} />
-                <PulseRow label="Arriving this week" value={String(pulse.arrivingSoon)} valueColor={pulse.arrivingSoon > 0 ? '#D9A23B' : undefined} />
-                <PulseRow label="Short / rejected" value={String(pulse.rejected)} valueColor={pulse.rejected > 0 ? '#E5484D' : undefined} />
-                <PulseRow label="Awaiting stow" value={String(pulse.stowUnits)} valueColor={pulse.stowUnits > 0 ? '#D9A23B' : undefined} sub="received, not yet in a pickable bin" />
+                <PulseRow label="Arriving this week" value={String(pulse.arrivingSoon)} valueColor={pulse.arrivingSoon > 0 ? 'var(--warning-text)' : undefined} />
+                <PulseRow label="Short / rejected" value={String(pulse.rejected)} valueColor={pulse.rejected > 0 ? 'var(--critical-text)' : undefined} />
+                <PulseRow label="Awaiting stow" value={String(pulse.stowUnits)} valueColor={pulse.stowUnits > 0 ? 'var(--warning-text)' : undefined} sub="received, not yet in a pickable bin" />
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }}>
                   <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Receiving now</Typography>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: pulse.activeJobs > 0 ? '#4CAF7A' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{pulse.activeJobs}</Typography>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: pulse.activeJobs > 0 ? 'var(--good-ink)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{pulse.activeJobs}</Typography>
                 </Box>
               </Box>
             </Box>
@@ -454,7 +454,7 @@ const activeJobs = receiveJobs.filter(
               <Box sx={{ py: 8, textAlign: 'center', border: '1px solid var(--rule)', borderRadius: '14px', bgcolor: 'var(--surface)' }}>
                 <Package size={32} style={{ opacity: 0.2, marginBottom: 8 }} />
                 <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mb: 1.5 }}>No purchase orders yet.</Typography>
-                <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.75, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme => theme.palette.common.white, borderRadius: '8px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
+                <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.75, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme => theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
                   Create your first PO in the Suppliers portal →
                 </Box>
               </Box>
@@ -498,14 +498,14 @@ const activeJobs = receiveJobs.filter(
                       {/* Received */}
                       <Box sx={{ display: { xs: 'none', lg: 'block' }, pr: 2 }}>
                         <Box sx={{ height: 5, borderRadius: '3px', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', overflow: 'hidden', mb: 0.5 }}>
-                          <Box sx={{ height: '100%', width: `${progressPct}%`, bgcolor: progressPct === 100 ? '#4CAF7A' : '#3B82F6', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+                          <Box sx={{ height: '100%', width: `${progressPct}%`, bgcolor: progressPct === 100 ? 'var(--good-ink)' : 'var(--accent)', borderRadius: '3px', transition: 'width 0.3s ease' }} />
                         </Box>
                         <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-4)' }}>{unitsReceived > 0 ? `${unitsReceived} / ${unitsOrdered}` : `${progressPct}%`}</Typography>
                       </Box>
                       {/* Action */}
                       {isActionable(po.status) ? (
                         job ? (
-                          <Box onClick={() => handleViewJob(job.receive_job_id)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.625, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: 11, fontWeight: 500, width: 'fit-content', '&:hover': { opacity: 0.75 } }}>
+                          <Box onClick={() => handleViewJob(job.receive_job_id)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.625, color: 'var(--accent-text)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: 11, fontWeight: 500, width: 'fit-content', '&:hover': { opacity: 0.75 } }}>
                             View job →
                           </Box>
                         ) : (

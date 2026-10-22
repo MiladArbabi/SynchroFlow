@@ -1023,7 +1023,7 @@ export function OrderDetailModalBody({
           size="small"
           endIcon={<ArrowRight size={14} />}
           onClick={() => { onClose?.(); navigate('/orders/flow'); }}
-          sx={{ flex: '0 1 auto', minWidth: 140, borderColor: 'var(--accent-border)', color: 'var(--accent)', textTransform: 'none' }}
+          sx={{ flex: '0 1 auto', minWidth: 140, borderColor: 'var(--accent-border)', color: 'var(--accent-text)', textTransform: 'none' }}
         >
           Go to order flow
         </Button>
@@ -1090,7 +1090,7 @@ export function OrderDetailModalBody({
   if (isLoading || detailQuery.isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+        <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
       </Box>
     );
   }
@@ -1398,14 +1398,14 @@ export function OrderDetailModalBody({
                     </Typography>
                   </Box>
                   {exc.resolved ? (
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#4CAF7A' }}>Resolved</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--good-ink)' }}>Resolved</Typography>
                   ) : (
                     // GH-1238: closure needs canonical recovery evidence, which
                     // lives in Problem Center — a truthful handoff, not a
                     // direct close of the exception from here.
                     <Button size="small" variant="outlined"
                       onClick={() => { onClose?.(); navigate('/problem-center'); }}
-                      sx={{ fontSize: 11, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+                      sx={{ fontSize: 11, color: 'var(--accent-text)', borderColor: 'var(--accent)' }}>
                       Open Problem Center
                     </Button>
                   )}

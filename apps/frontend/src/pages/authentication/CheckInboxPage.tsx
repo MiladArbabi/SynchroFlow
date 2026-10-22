@@ -107,11 +107,11 @@ export default function CheckInboxPage() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               mx: 'auto', mb: 3,
             }}>
-              <MarkEmailUnreadOutlinedIcon sx={{ color: 'var(--accent)', fontSize: 32 }} />
+              <MarkEmailUnreadOutlinedIcon sx={{ color: 'var(--accent-text)', fontSize: 32 }} />
             </Box>
 
             {/* Label */}
-            <Typography variant="caption" sx={{ color: 'var(--accent)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '0.7rem', display: 'block', mb: 1 }}>
+            <Typography variant="caption" sx={{ color: 'var(--accent-text)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '0.7rem', display: 'block', mb: 1 }}>
               Verify email
             </Typography>
 
@@ -258,7 +258,7 @@ export default function CheckInboxPage() {
                 <Box
                   component="span"
                   onClick={handleSignOut}
-                  sx={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}
+                  sx={{ color: 'var(--accent-text)', cursor: 'pointer', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}
                 >
                   Sign out
                 </Box>

@@ -112,7 +112,6 @@ export function AddSeatsModal({ open, onClose, onSuccess }: AddSeatsModalProps) 
         </Box>
 
         <Typography sx={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
           fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mb: 1.25,
         }}>

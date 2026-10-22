@@ -1,136 +1,86 @@
 // apps/frontend/src/themes/palette.ts
 // ==========================================================
-// LaSyncro Color System — v1 (FOUNDATIONAL)
+// LaSyncro Color System — MUI palette adapter
 //
 // IMPORTANT:
-// - Only TWO modes exist: light | dark
-// - No presets, no variants, no IDs
-// - Blue = structural interaction
-// - Orange = brand whisper (non-signal)
-// - Red / Yellow / Green = semantic health signals
-//
-// This file is the SINGLE SOURCE OF TRUTH for color.
-// Any deviation elsewhere is a bug.
+// - Colour values live in ./tokens.ts (the single source of truth).
+//   This file only maps those tokens onto MUI palette keys, so
+//   `theme.palette.*` and `var(--*)` always agree.
+// - Only TWO colour schemes exist: light | dark
+//   (ThemeMode.SYSTEM merely picks one of them from the OS).
+// - primary = the orange accent (structural interaction + CTAs)
+// - secondary = neutral ink — never a second brand colour
+// - success / warning / error = the pulse severity tokens
 // ==========================================================
 
 import { ThemeOptions } from '@mui/material/styles';
 import { ThemeMode } from 'config';
+import { LASYNCRO_TOKENS } from './tokens';
 
 /**
  * buildPalette
  * ------------
  * Deterministic palette builder.
- * Accepts ONLY the color mode.
- *
- * This function must stay:
- * - side-effect free
- * - preset-free
- * - scale-free
+ * Accepts ONLY the color mode. Side-effect free; no hex literals here.
  */
 export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
   const isDark = mode === ThemeMode.DARK;
-
-  // ----------------------------------------------------------
-  // ABSOLUTE ANCHORS (never change)
-  // ----------------------------------------------------------
-  const WHITE = '#FFFFFF';
-  const BLACK = '#000000';
-
-  // ----------------------------------------------------------
-  // NEUTRAL SYSTEM
-  // One surface + one text color per mode.
-  // No grey scales. No ambiguity.
-  // ----------------------------------------------------------
-  const neutralSurface = isDark ? '#0D1526' : '#F1F5F9';       // page background
-  const neutralElevated = isDark ? '#1C2740' : '#FFFFFF';       // card / panel surface — matches --surface token
-  const neutralText = isDark ? '#E5E7EB' : '#0F172A';
-
-  // ----------------------------------------------------------
-  // STRUCTURAL ACCENT — BLUE
-  // Used for:
-  // - focus
-  // - selection
-  // - active navigation
-  // - interactive affordances
-  // ----------------------------------------------------------
-  const structuralBlue = isDark ? '#60A5FA' : '#2563EB';
-
-  // ----------------------------------------------------------
-  // BRAND WHISPER — ORANGE
-  // Used ONLY for subtle brand presence.
-  // Never for interaction or signals.
-  // ----------------------------------------------------------
-  const brandOrange = isDark ? '#FDBA74' : '#F59E0B';
-
-  // ----------------------------------------------------------
-  // SEMANTIC HEALTH SIGNALS
-  // These are RESERVED and must not be reused.
-  // ----------------------------------------------------------
-  const success = isDark ? '#4ADE80' : '#16A34A';
-  const warning = isDark ? '#FACC15' : '#CA8A04';
-  const error = isDark ? '#F87171' : '#DC2626';
+  const t = LASYNCRO_TOKENS[isDark ? 'dark' : 'light'];
 
   return {
     mode: isDark ? 'dark' : 'light',
 
-    // ----- Required MUI keys -----
     common: {
-      white: WHITE,
-      black: BLACK,
+      white: '#FFFFFF',
+      black: '#000000',
     },
 
     background: {
-      default: neutralSurface,   // page / outlet background
-      paper: neutralElevated,    // cards, panels, modals — visually elevated above page
+      default: t.bg, //       page / outlet background
+      paper: t.surface, //    cards, panels, modals
     },
 
     text: {
-      primary: neutralText,
-      secondary: isDark ? '#9CA3AF' : '#475569',
-      // Defined explicitly: 27 call sites across 12 files reference
-      // text.disabled. Without this key both colour schemes fall through to
-      // MUI's built-in default, which is not scheme-aware and renders
-      // illegibly in dark mode (THEME-TEXT-DISABLED-MISSING-137).
-      disabled: isDark ? '#6B7280' : '#94A3B8',
+      primary: t.ink,
+      secondary: t['ink-3'],
+      // Must stay defined: without it MUI falls back to a default that is
+      // not scheme-aware and is illegible in dark mode
+      // (THEME-TEXT-DISABLED-MISSING-137).
+      disabled: t['ink-4'],
     },
 
-    divider: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB',
+    divider: t.rule,
 
-    // ----- STRUCTURAL INTERACTION COLOR -----
+    // ----- INTERACTION: the LaSyncro accent -----
+    // contrastText is accent-ink: white on orange fails WCAG AA (2.84:1).
     primary: {
-      main: structuralBlue,
-      contrastText: WHITE,
+      main: t.accent,
+      light: t['accent-hover'],
+      dark: t['accent-text'],
+      contrastText: t['accent-ink'],
     },
 
-    // ----- BRAND (NON-INTERACTIVE) -----
+    // ----- NEUTRAL (not a brand colour) -----
     secondary: {
-      main: brandOrange,
-      contrastText: BLACK,
+      main: t['ink-2'],
+      contrastText: t.surface,
     },
 
     // ----- SEMANTIC SIGNALS -----
-    success: { main: success },
-    warning: { main: warning },
-    error: { main: error },
+    // main holds the text-safe variant so helper text, Alert and Chip
+    // labels pass AA; the brighter *-ink fills are used directly via CSS vars.
+    success: { main: t['good-ink'], contrastText: isDark ? t['accent-ink'] : '#FFFFFF' },
+    warning: { main: t['warning-text'], contrastText: isDark ? t['accent-ink'] : '#FFFFFF' },
+    error: { main: t['critical-text'], contrastText: isDark ? t['accent-ink'] : '#FFFFFF' },
 
-    // ----- ACTION STATES (DERIVED, NOT CREATIVE) -----
+    // ----- ACTION STATES (derived, neutral hover, accent selection) -----
     action: {
-      active: structuralBlue,
-      hover: isDark
-        ? 'rgba(96,165,250,0.08)'
-        : 'rgba(37,99,235,0.08)',
-      selected: isDark
-        ? 'rgba(96,165,250,0.16)'
-        : 'rgba(37,99,235,0.16)',
-      disabled: isDark
-        ? 'rgba(229,231,235,0.3)'
-        : 'rgba(15,23,42,0.3)',
-      disabledBackground: isDark
-        ? 'rgba(229,231,235,0.12)'
-        : 'rgba(15,23,42,0.12)',
-      focus: isDark
-        ? 'rgba(96,165,250,0.24)'
-        : 'rgba(37,99,235,0.24)',
+      active: t['ink-2'],
+      hover: t['tile-hover'],
+      selected: t['accent-selected'],
+      focus: t['accent-focus'],
+      disabled: t['disabled-ink'],
+      disabledBackground: t['disabled-fill'],
     },
   };
 }

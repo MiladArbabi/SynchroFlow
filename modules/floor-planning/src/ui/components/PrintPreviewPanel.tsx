@@ -337,11 +337,11 @@ export function PrintPreviewPanel({ items, formats, defaultFormatId, emptyMessag
         startIcon={<Printer size={15} />}
         sx={{
           bgcolor: 'var(--accent)',
-          color: '#fff',
+          color: 'var(--accent-ink)',
           fontWeight: 600,
           fontSize: 13,
           py: 1.25,
-          borderRadius: 1.5,
+          borderRadius: '6px',
           textTransform: 'none',
           '&:hover': { bgcolor: 'var(--accent-hover)' },
           '&.Mui-disabled': { bgcolor: 'var(--rule)', color: 'var(--ink-4)' },
@@ -371,7 +371,7 @@ export function PrintPreviewPanel({ items, formats, defaultFormatId, emptyMessag
               rel="noopener noreferrer"
               size="small"
               startIcon={<ExternalLink size={13} />}
-              sx={{ textTransform: 'none', fontSize: 12, color: 'var(--accent)' }}
+              sx={{ textTransform: 'none', fontSize: 12, color: 'var(--accent-text)' }}
             >
               Open printable PDF
             </Button>

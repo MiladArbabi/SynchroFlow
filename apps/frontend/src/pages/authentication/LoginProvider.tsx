@@ -81,7 +81,7 @@ export default function LoginProvider({ currentLoginWith }: LoginProviderProps) 
                 }
               }}
               variant="outlined"
-              color="secondary"
+              color="inherit"
               startIcon={<CardMedia component="img" src={button.icon} alt={button.name} />}
               component={RouterLink}
               to={button.url}

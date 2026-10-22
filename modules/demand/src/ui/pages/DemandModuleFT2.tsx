@@ -118,7 +118,7 @@ function VariantRow({ variant }: { variant: DemandVelocity }) {
       <td>{risk && (
         <Box component="a" href={`/suppliers-portal/sourcing?${params.toString()}`} sx={{
           display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 11, fontWeight: 500,
-          color: 'var(--accent)', textDecoration: 'none', border: '0.5px solid var(--accent-border)',
+          color: 'var(--accent-text)', textDecoration: 'none', border: '0.5px solid var(--accent-border)',
           borderRadius: '6px', px: 1, py: 0.5, '&:hover': { opacity: 0.75 }, ...focus,
         }}>Review sourcing<span aria-hidden="true">→</span></Box>
       )}</td>

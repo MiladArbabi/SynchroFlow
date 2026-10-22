@@ -219,9 +219,9 @@ function liveStatus(order: OutboundOrder): { label: string; tone: LiveTone } {
 }
 
 const LIVE_TONE_STYLE: Record<LiveTone, { bg: string; ink: string }> = {
-  good: { bg: 'rgba(76,175,122,0.1)', ink: '#4CAF7A' },
-  warn: { bg: 'rgba(217,162,59,0.1)', ink: '#D9A23B' },
-  critical: { bg: 'rgba(229,72,77,0.1)', ink: '#E5484D' },
+  good: { bg: 'var(--good-ghost)', ink: 'var(--good-ink)' },
+  warn: { bg: 'var(--warning-ghost)', ink: 'var(--warning-text)' },
+  critical: { bg: 'var(--critical-ghost)', ink: 'var(--critical-text)' },
   neutral: { bg: 'var(--bg-2)', ink: 'var(--ink-3)' },
 };
 
@@ -448,7 +448,7 @@ export default function OrdersOutboundPage() {
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
             <Box
               onClick={handleExportOutbound}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Export →
             </Box>
@@ -551,7 +551,7 @@ export default function OrdersOutboundPage() {
                   {label}
                 </Typography>
                 {field && sortField === field && (
-                  <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>
+                  <Typography sx={{ fontSize: 9, color: 'var(--accent-text)' }}>
                     {sortDir === 'desc' ? '↓' : '↑'}
                   </Typography>
                 )}
@@ -566,7 +566,7 @@ export default function OrdersOutboundPage() {
           {/* Loading */}
           {isLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+              <CircularProgress size={24} sx={{ color: 'var(--accent-text)' }} />
             </Box>
           )}
 
@@ -622,7 +622,7 @@ export default function OrdersOutboundPage() {
                   </Typography>
                 ) : (
                   <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', width: 'fit-content', bgcolor: 'rgba(255,107,43,0.1)' }}>
-                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-text)' }}>
                       Missing
                     </Typography>
                   </Box>
@@ -650,7 +650,7 @@ export default function OrdersOutboundPage() {
                 <Box
                   component="button"
                   onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
-                  sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                 >
                   View order →
                 </Box>
@@ -799,7 +799,7 @@ export default function OrdersOutboundPage() {
                     component="button"
                     type="button"
                     onClick={() => navigate('/settings/carriers')}
-                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                    sx={{ alignSelf: 'flex-start', p: 0, border: 'none', bgcolor: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-text)', '&:hover': { opacity: 0.75 } }}
                   >
                     Set up →
                   </Box>

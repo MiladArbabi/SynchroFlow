@@ -60,12 +60,12 @@ export const ConnectionErrorModal: React.FC<ConnectionErrorModalProps> = ({
       </DialogContent>
       <DialogActions sx={{ p: 3, pt: 1, justifyContent: 'space-between' }}>
         {/* "Skip for Now" button */}
-        <Button onClick={onClose} color="secondary">
+        <Button onClick={onClose} color="inherit">
           Skip for Now
         </Button>
         <Box sx={{ display: 'flex', gap: 1 }}>
           {/* "Get Help" button */}
-          <Button onClick={handleHelp} variant="outlined" color="secondary">
+          <Button onClick={handleHelp} variant="outlined" color="primary">
             Get Help
           </Button>
           {/* "Try Again" button */}

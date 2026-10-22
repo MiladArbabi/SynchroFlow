@@ -96,7 +96,7 @@ export default function Register() {
                 <Stack direction="row" alignItems="center" spacing={1.5} sx={{ width: '100%' }}>
                   <Stack direction="row" alignItems="center" spacing={0.75}>
                     <Box sx={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Typography sx={{ color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 700 }}>1</Typography>
+                      <Typography sx={{ color: 'var(--accent-text)', fontSize: '0.7rem', fontWeight: 700 }}>1</Typography>
                     </Box>
                     <Typography variant="caption" sx={{ color: 'var(--ink)', fontWeight: 600 }}>Account</Typography>
                   </Stack>
@@ -113,7 +113,7 @@ export default function Register() {
                   {/* AUTH-004: target headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
                     Create your account.{' '}
-                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
+                    <Box component="span" sx={{ color: 'var(--accent-text)', fontStyle: 'italic', fontWeight: 600 }}>
                       60 seconds.
                     </Box>
                   </Typography>
@@ -124,7 +124,7 @@ export default function Register() {
                 <Box sx={{ width: '100%' }}>
                   {AuthRegisterComponent
                     ? <AuthRegisterComponent posthog={posthog}/>
-                    : <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress sx={{ color: 'var(--accent)' }} /></Box>
+                    : <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress sx={{ color: 'var(--accent-text)' }} /></Box>
                   }
                 </Box>
                 <Divider sx={{ width: 1 }} />
@@ -135,7 +135,7 @@ export default function Register() {
                     <Box
                       component={Link}
                       to={authParam ? `/login?auth=${authParam}` : '/login'}
-                      sx={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                      sx={{ color: 'var(--accent-text)', textDecoration: 'none', fontWeight: 600 }}
                     >
                       Sign in
                     </Box>

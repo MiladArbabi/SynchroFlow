@@ -103,7 +103,7 @@ export function SocialProofTicker() {
               sx={{
                 fontSize: '0.8rem',
                 fontWeight: 700,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 mr: 1,
                 whiteSpace: 'nowrap',
               }}

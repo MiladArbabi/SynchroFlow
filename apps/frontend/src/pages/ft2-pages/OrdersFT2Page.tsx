@@ -267,7 +267,7 @@ export default function OrdersFT2Page() {
             <path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" />
           </svg>
         </Box>
-        <Typography sx={{ fontSize: 21, fontFamily: 'Instrument Serif', color: 'var(--ink)' }}>
+        <Typography sx={{ fontSize: 21, color: 'var(--ink)' }}>
           We couldn't load your floor.
         </Typography>
         <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', lineHeight: 1.6, maxWidth: 340 }}>
@@ -280,7 +280,7 @@ export default function OrdersFT2Page() {
           sx={{
             display: 'flex', alignItems: 'center', gap: '8px', fontSize: 12.5,
             fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
-            border: 'none', borderRadius: '8px', px: '20px', py: '10px', cursor: 'pointer',
+            border: 'none', borderRadius: '6px', px: '20px', py: '10px', cursor: 'pointer',
             '&:hover': { opacity: 0.85 },
             '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
           }}
@@ -306,7 +306,7 @@ export default function OrdersFT2Page() {
               '@keyframes ov03Blink': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
               animation: 'ov03Blink 2.4s ease-in-out infinite',
             }} />
-            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent-text)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Orders live map
             </Typography>
           </Box>
@@ -332,7 +332,7 @@ export default function OrdersFT2Page() {
             sx={{
               display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px',
               fontSize: 13, fontWeight: 500, fontFamily: 'inherit', color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
-              border: 'none', borderRadius: '8px', cursor: 'pointer', mt: '6px',
+              border: 'none', borderRadius: '6px', cursor: 'pointer', mt: '6px',
               '&:hover': { bgcolor: 'var(--accent-hover)' },
               '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
             }}

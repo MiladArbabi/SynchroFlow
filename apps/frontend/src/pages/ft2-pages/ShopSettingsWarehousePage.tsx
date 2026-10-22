@@ -156,10 +156,10 @@ function FloorDisplaySection() {
         </Box>
         <Box
           onClick={() => setShowCreate(true)}
-          sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.8 } }}
+          sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.8 } }}
         >
           <Plus size={13} strokeWidth={2} />
-          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>New display URL</Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-text)' }}>New display URL</Typography>
         </Box>
       </Box>
 
@@ -190,7 +190,7 @@ function FloorDisplaySection() {
               {buildDisplayUrl(revealedToken.raw)}
             </Typography>
             <Box onClick={() => copyToClipboard(buildDisplayUrl(revealedToken.raw))}
-              sx={{ cursor: 'pointer', color: 'var(--accent)', flexShrink: 0, '&:hover': { opacity: 0.8 } }}>
+              sx={{ cursor: 'pointer', color: 'var(--accent-text)', flexShrink: 0, '&:hover': { opacity: 0.8 } }}>
               <Copy size={13} />
             </Box>
             <Box onClick={() => setRevealedToken(null)}
@@ -233,7 +233,7 @@ function FloorDisplaySection() {
               ) : (
                 <Typography
                   onClick={() => { setEditingId(token.id); setEditingLabel(token.label ?? ''); }}
-                  sx={{ fontSize: 12, color: 'var(--ink)', flex: 1, cursor: 'text', '&:hover': { color: 'var(--accent)' } }}
+                  sx={{ fontSize: 12, color: 'var(--ink)', flex: 1, cursor: 'text', '&:hover': { color: 'var(--accent-text)' } }}
                 >
                   {token.label || 'Unlabelled display'}
                 </Typography>
@@ -310,8 +310,8 @@ function UnitLabelCoverageSection() {
   const unlabelled = data?.unlabelled_in_circulation ?? 0;
 
   const barColor = pct === 100
-    ? '#22C55E'
-    : pct >= 50 ? 'var(--accent)' : '#EAB308';
+    ? 'var(--good-ink)'
+    : pct >= 50 ? 'var(--accent)' : 'var(--warning-ink)';
 
   return (
     <SettingsCard
@@ -367,7 +367,7 @@ function UnitLabelCoverageSection() {
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#EAB308' }} />
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--warning-ink)' }} />
                 <Typography sx={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 500 }}>
                   {unlabelled.toLocaleString()} {unlabelled === 1 ? 'unit' : 'units'} still in circulation without a label
                 </Typography>
@@ -532,7 +532,7 @@ function PrintersSection() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           <Box sx={{
             width: 7, height: 7, borderRadius: '50%',
-            bgcolor: qzStatus === 'connected' ? '#22C55E' : qzStatus === 'detecting' ? '#EAB308' : 'var(--ink-4)',
+            bgcolor: qzStatus === 'connected' ? 'var(--good-ink)' : qzStatus === 'detecting' ? 'var(--warning-ink)' : 'var(--ink-4)',
           }} />
           <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
             {qzStatus === 'connected'  ? 'QZ Tray connected' :
@@ -548,7 +548,7 @@ function PrintersSection() {
               sx={{
                 display: 'inline-flex', alignItems: 'center',
                 px: 1, py: 0.25, fontSize: 11, fontWeight: 500,
-                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+                color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)',
                 borderRadius: '6px', cursor: 'pointer', textDecoration: 'none',
                 '&:hover': { opacity: 0.75 },
               }}
@@ -561,11 +561,11 @@ function PrintersSection() {
           onClick={() => setShowAdd(true)}
           sx={{
             display: 'flex', alignItems: 'center', gap: 0.5,
-            cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.8 },
+            cursor: 'pointer', color: 'var(--accent-text)', '&:hover': { opacity: 0.8 },
           }}
         >
           <Plus size={13} strokeWidth={2} />
-          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-text)' }}>
             Add printer
           </Typography>
         </Box>
@@ -698,7 +698,7 @@ function PrintersSection() {
                 <Tooltip title="Set as default">
                   <Box
                     onClick={() => void handleSetDefault(p.printer_id, p.role)}
-                    sx={{ cursor: 'pointer', color: 'var(--ink-4)', flexShrink: 0, '&:hover': { color: 'var(--accent)' } }}
+                    sx={{ cursor: 'pointer', color: 'var(--ink-4)', flexShrink: 0, '&:hover': { color: 'var(--accent-text)' } }}
                   >
                     <CheckCircle size={13} />
                   </Box>

@@ -3,7 +3,6 @@
 // apps/frontend/src/themes/overrides/InternalDateTimePickerTabs.ts
 import { Theme } from '@mui/material/styles';
 import { Components } from '@mui/material/styles';
-import { withAlpha } from 'utils/colorUtils'; // Ensure typed later
 
 // --- Type Imports for Date Pickers (Assuming @mui/x-date-pickers) ---
 // This internal component might not have explicit theme augmentation.
@@ -15,32 +14,26 @@ type InternalDateTimePickerTabsComponentConfig = any; // Use 'any' for now
 
 // ==============================|| OVERRIDES - INTERNAL DATE TIME PICKER TABS ||============================== //
 
-export default function InternalDateTimePickerTabs(theme: Theme): InternalDateTimePickerTabsComponentConfig {
+export default function InternalDateTimePickerTabs(_theme: Theme): InternalDateTimePickerTabsComponentConfig {
     return {
         // Key for the internal component (might change between MUI versions)
         MuiInternalDateTimePickerTabs: {
             styleOverrides: {
                 // Target the 'tabs' class key
                 tabs: {
-                    backgroundColor: theme.palette.mode === 'dark'
-                        ? theme.palette.dark?.[900] || '#111936' // Use augmented dark or fallback
-                        : theme.palette.primary.light, // Light mode background
+                    backgroundColor: 'var(--bg-2)',
 
                     '& .MuiTabs-flexContainer': {
-                        borderColor: theme.palette.mode === 'dark'
-                            ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.2) // Dark border
-                            : theme.palette.primary[200] || '#90caf9', // Light border
+                        borderColor: 'var(--rule)',
                     },
                     '& .MuiTab-root': {
-                        color: theme.palette.mode === 'dark'
-                            ? theme.palette.text.secondary // Dark text
-                            : theme.palette.grey[900] || '#121926', // Light text
+                        color: 'var(--ink-3)',
                     },
                     '& .MuiTabs-indicator': {
-                        backgroundColor: theme.palette.primary.dark, // Keep dark in both modes?
+                        backgroundColor: 'var(--accent)',
                     },
                     '& .Mui-selected': {
-                        color: theme.palette.primary.dark, // Keep dark in both modes?
+                        color: 'var(--accent-text)',
                     },
                 }
                 // Add overrides for other class keys if necessary

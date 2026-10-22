@@ -222,7 +222,7 @@ function NotificationRow({
               fontFamily: 'inherit',
               fontSize: 11,
               fontWeight: 500,
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               bgcolor: 'transparent',
               border: '0.5px solid var(--accent)',
               borderRadius: '6px',

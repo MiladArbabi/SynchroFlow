@@ -165,7 +165,7 @@ export function ShippingAddressResolver({
                 fontSize: 11,
                 fontWeight: 600,
                 textTransform: 'none',
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 bgcolor: 'transparent',
                 border: '0.5px solid var(--accent)',
                 borderRadius: '6px',
