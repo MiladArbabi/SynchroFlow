@@ -439,15 +439,14 @@ describe('WS-UX-01 S1 — unstarted Receive counts', () => {
   });
 });
 
-describe('WS-UX-01 S1/S2 — no S3 dependency', () => {
+describe('WS-UX-01 S1/S2 — module boundary (S3: claim is wired by the app wrapper)', () => {
   const src = fs.readFileSync(
     path.resolve(__dirname, '../../../../modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx'),
     'utf8'
   );
 
-  it('introduces no claim orchestration or Unassign', () => {
+  it('makes no direct claim HTTP call and introduces no Unassign', () => {
     expect(src).not.toMatch(/\/claim/);
-    expect(src).not.toMatch(/onClaimReceiveJob/);
     expect(src).not.toMatch(/Unassign/);
   });
 });

@@ -2,8 +2,8 @@
 //
 // Contract (approved S2 brief + Receive handoff):
 //   1. "Receive myself" only when the LOADED roster proves the viewer is the
-//      sole eligible assignee; it assigns (never claims/starts) and navigates
-//      to the existing Receive brief.
+//      sole eligible assignee; it assigns (never claims/starts). WS-UX-01 S3:
+//      it stays in Purchasing and the reconciled PO shows the inline brief.
 //   2. A team gets a compact popover: nobody preselected, picking a row is the
 //      explicit dispatch, no further confirmation.
 //   3. Existing work shows its assignee and is never re-created.
@@ -130,6 +130,19 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** Reconciled own pending job, as the awaited canonical re-read returns it. */
+function ownPending(jobId: string) {
+  return { receive_job_id: jobId, receive_status: 'pending', receive_assigned_operator_id: ME, receive_assigned_operator_name: 'Mila Owner' };
+}
+
+/** WS-UX-01 S3 — canonical GET /receive-jobs/:jobId for an own pending job. */
+function ownPendingDetail(jobId: string) {
+  return {
+    job: { receive_job_id: jobId, po_id: PO_ID, status: 'pending', assigned_operator_id: ME, started_at: null, supplier_name: SUPPLIER },
+    lines: [{ receive_job_line_id: 'line-1', quantity_expected: 3, quantity_accepted: 0 }],
+  };
+}
+
 function ambiguousNetworkError() {
   return Object.assign(new Error('Network Error'), { isAxiosError: true });
 }
@@ -139,15 +152,21 @@ beforeEach(() => {
 });
 
 describe('WS-UX-01 S2 (1) — single eligible self', () => {
-  it('Receive myself assigns the authenticated user and opens the existing brief without claiming', async () => {
-    const { props } = renderExpanded(basePo(), { teamAssignableOperators: [ME_ROW] });
+  it('Receive myself assigns the authenticated user and stays in Purchasing without claiming', async () => {
+    const { props } = renderExpanded(basePo(), {
+      teamAssignableOperators: [ME_ROW],
+      onReconcilePurchaseOrders: jest.fn().mockResolvedValue(canonical(ownPending('receive-new'))),
+      onClaimReceiveJob: jest.fn(),
+    });
 
     fireEvent.click(screen.getByRole('button', { name: /^receive myself$/i }));
 
     await waitFor(() => {
       expect(props.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, { assigned_operator_id: ME });
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-new');
+    expect(await screen.findByText(/receive is assigned to you/i)).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(props.onClaimReceiveJob).not.toHaveBeenCalled();
     expect(props.onCreateReceiveJob).toHaveBeenCalledTimes(1);
     expect(props.onReassignReceiveJob).not.toHaveBeenCalled();
     expect(screen.queryByRole('list', { name: /assign receive to/i })).toBeNull();
@@ -196,16 +215,19 @@ describe('WS-UX-01 S2 (2) — multiple eligible operators', () => {
     expect(props.onReconcilePurchaseOrders).toHaveBeenCalledTimes(1);
   });
 
-  it('picking Me from the team popover assigns self and opens the brief', async () => {
-    const { props } = renderExpanded();
+  it('picking Me from the team popover assigns self and stays in Purchasing', async () => {
+    const { props } = renderExpanded(basePo(), {
+      onReconcilePurchaseOrders: jest.fn().mockResolvedValue(canonical(ownPending('receive-new'))),
+      onClaimReceiveJob: jest.fn(),
+    });
 
     fireEvent.click(screen.getByRole('button', { name: /assign receive/i }));
     fireEvent.click(await screen.findByRole('button', { name: /me · mila owner/i }));
 
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-new');
-    });
+    expect(await screen.findByText(/receive is assigned to you/i)).toBeInTheDocument();
     expect(props.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, { assigned_operator_id: ME });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(props.onClaimReceiveJob).not.toHaveBeenCalled();
   });
 });
 
@@ -258,18 +280,17 @@ describe('WS-UX-01 S2 (4) — existing pending assignment', () => {
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
   });
 
-  it('own pending job opens that exact job (pending-job recovery preserved)', () => {
-    const { props } = renderExpanded(
-      basePo({
-        receive_job_id: 'receive-job-own',
-        receive_status: 'pending',
-        receive_assigned_operator_id: ME,
-        receive_assigned_operator_name: 'Mila Owner',
-      })
-    );
+  it('own pending job shows the inline brief for that exact job (pending-job recovery preserved)', async () => {
+    const { props } = renderExpanded(basePo(ownPending('receive-job-own')), {
+      onFetchReceiveJob: jest.fn().mockResolvedValue(ownPendingDetail('receive-job-own')),
+      onClaimReceiveJob: jest.fn(),
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /open receive/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-job-own');
+    expect(await screen.findByRole('button', { name: /^start receiving$/i })).toBeEnabled();
+    expect(props.onFetchReceiveJob).toHaveBeenCalledWith('receive-job-own');
+    expect(screen.queryByRole('button', { name: /open receive/i })).toBeNull();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(props.onClaimReceiveJob).not.toHaveBeenCalled();
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
   });
 });
@@ -389,7 +410,8 @@ describe('WS-UX-01 S2 (9) — submission locking', () => {
       const onCreateReceiveJob = jest.fn(
         () => new Promise<{ receive_job_id: string }>((resolve) => { resolveCreate = resolve; })
       );
-      renderExpanded(basePo(), { teamAssignableOperators: [ME_ROW], onCreateReceiveJob });
+      const onReconcilePurchaseOrders = jest.fn().mockResolvedValue(canonical(ownPending('receive-new')));
+      renderExpanded(basePo(), { teamAssignableOperators: [ME_ROW], onCreateReceiveJob, onReconcilePurchaseOrders });
 
       const button = screen.getByRole('button', { name: /^receive myself$/i });
       fireEvent.click(button);
@@ -405,7 +427,8 @@ describe('WS-UX-01 S2 (9) — submission locking', () => {
 
       await act(async () => { resolveCreate({ receive_job_id: 'receive-new' }); });
       expect(onCreateReceiveJob).toHaveBeenCalledTimes(1);
-      expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-new');
+      expect(onReconcilePurchaseOrders).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }
@@ -548,9 +571,16 @@ describe('WS-UX-01 S2 (11) — ambiguous outcomes (timeout / 5xx)', () => {
     expect(onCreateReceiveJob).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    view.rerender(moduleAt('/', { ...props, data: { ...props.data, purchase_orders: canonical(ownJob) } }));
-    fireEvent.click(await screen.findByRole('button', { name: /open receive/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-own');
+    const s3Props = {
+      ...props,
+      onFetchReceiveJob: jest.fn().mockResolvedValue(ownPendingDetail('receive-own')),
+      onClaimReceiveJob: jest.fn(),
+    };
+    view.rerender(moduleAt('/', { ...s3Props, data: { ...props.data, purchase_orders: canonical(ownJob) } }));
+    expect(await screen.findByRole('button', { name: /^start receiving$/i })).toBeEnabled();
+    expect(s3Props.onFetchReceiveJob).toHaveBeenCalledWith('receive-own');
+    expect(s3Props.onClaimReceiveJob).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('timeout with the PO unchanged: no failure is assumed, and a reload is required before another attempt', async () => {
@@ -679,15 +709,16 @@ describe('WS-UX-01 S2 (12) — definite refusals and existing 409 recovery', () 
     expect(screen.getByRole('button', { name: /assign receive/i })).toBeDisabled();
   });
 
-  it("the app wrapper's 409 recovery returning the existing job navigates to that exact job", async () => {
+  it("the app wrapper's 409 recovery returning the existing job reconciles to that exact job without navigating", async () => {
     const onCreateReceiveJob = jest.fn().mockResolvedValue({ receive_job_id: 'receive-existing-legacy' });
-    renderExpanded(basePo(), { teamAssignableOperators: [ME_ROW], onCreateReceiveJob });
+    const onReconcilePurchaseOrders = jest.fn().mockResolvedValue(canonical(ownPending('receive-existing-legacy')));
+    renderExpanded(basePo(), { teamAssignableOperators: [ME_ROW], onCreateReceiveJob, onReconcilePurchaseOrders });
 
     fireEvent.click(screen.getByRole('button', { name: /^receive myself$/i }));
 
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-existing-legacy');
-    });
+    expect(await screen.findByText(/receive is assigned to you/i)).toBeInTheDocument();
+    expect(onReconcilePurchaseOrders).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 

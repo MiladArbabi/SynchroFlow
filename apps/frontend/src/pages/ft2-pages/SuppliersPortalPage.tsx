@@ -437,6 +437,19 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     refetch();
   }, [refetch]);
 
+  // WS-UX-01 S3 — canonical Receive job read for the inline brief and for
+  // reconciling an uncertain claim. Read-only.
+  const handleFetchReceiveJob = useCallback(async (jobId: string) => {
+    const { data: job } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}`);
+    return job;
+  }, []);
+
+  // WS-UX-01 S3 — claim is the single backend start transition. Exactly one
+  // request per call; the module owns reconciliation and never retries.
+  const handleClaimReceiveJob = useCallback(async (jobId: string): Promise<void> => {
+    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/claim`);
+  }, []);
+
   const sharedProps = {
     // P0-A3-5: `never_ordered` is Growth-only ADVANCED SOURCING intelligence and
     // is deliberately EMPTY on the shared Core props — SourcingRoute supplies
@@ -455,6 +468,8 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onCreatePo: handleCreatePo,
     onCreateReceiveJob: handleCreateReceiveJob,
     onReassignReceiveJob: handleReassignReceiveJob,
+    onFetchReceiveJob: handleFetchReceiveJob,
+    onClaimReceiveJob: handleClaimReceiveJob,
     currentUserId,
     teamAssignableOperators,
     receiveAssigneesStatus,

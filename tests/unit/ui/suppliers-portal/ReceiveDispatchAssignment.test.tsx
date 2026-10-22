@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import SuppliersPortalModuleFT2, {
@@ -130,12 +130,21 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
         assigned_operator_id: 7,
       });
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-self');
+    // WS-UX-01 S3 — self-assignment stays in Purchasing; Start is a separate click.
+    expect(mockNavigate).not.toHaveBeenCalled();
 
+    // Other-operator branch on a fresh, unassigned PO.
+    cleanup();
     mockNavigate.mockClear();
     (p.onCreateReceiveJob as jest.Mock).mockResolvedValueOnce({
       receive_job_id: 'receive-other',
     });
+    render(
+      <MemoryRouter>
+        <SuppliersPortalModuleFT2 {...p} />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByText('North Dock Supply'));
 
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
     fireEvent.click(await screen.findByRole('button', { name: /avery worker/i }));

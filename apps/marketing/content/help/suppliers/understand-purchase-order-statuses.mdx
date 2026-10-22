@@ -19,7 +19,7 @@ searchAliases:
   - "partially received"
   - "PO lifecycle"
 order: 3
-lastReviewed: "2026-08-17"
+lastReviewed: "2026-10-22"
 relatedArticles:
   - "/help/suppliers/create-a-purchase-order"
   - "/help/suppliers/add-shopify-products-to-a-purchase-order"
@@ -64,7 +64,18 @@ Use **Mark as arrived** when the shipment is ready to be handed to receiving.
 
 **Arrived** is the key handoff into receiving.
 
-Once the PO is Arrived, you can choose **Receive via WMS** to start or open the receive workflow for that purchase order.
+Once the PO is Arrived, assign who will receive it:
+
+- Choose **Receive myself** when you are the only person on your team who can receive it.
+- Otherwise choose **Assign receive** and pick a person from the list. Nobody is preselected.
+
+Assigning a receive does not start it. Nothing is counted until the assigned person starts receiving.
+
+When the receive is assigned to you, the PO shows a short receive brief: the number of products, the units expected and the units remaining. Expected units come from the purchase order; they are not a physical count.
+
+Choose **Start receiving** when you are ready to count. The receive opens in the warehouse, where you inspect or scan the stock.
+
+When the receive is assigned to someone else, they find it in **Warehouse → Operations → Receiving** and start it there.
 
 Marking a PO as Arrived does not itself receive the stock or add inventory.
 
@@ -76,7 +87,7 @@ The receive job must still be processed.
 
 For example, this can occur with a partial delivery.
 
-Use **Receive via WMS** again when more stock arrives for the same PO.
+A PO has only one active receive at a time. When more stock arrives for the same PO, close the existing receive first, then assign and start a new receive the same way.
 
 ## Received
 
@@ -96,13 +107,13 @@ Cancelled purchase orders no longer show the normal open-PO action buttons.
 
 ## When can receiving begin?
 
-A PO must reach **Arrived** before its WMS receive job is created.
+A PO must reach **Arrived** before its receive can be assigned.
 
-Starting receiving is an explicit action.
+Assigning and starting are separate, explicit actions.
 
 The sequence is:
 
-**Arrived PO → Receive via WMS → Inspect or scan stock → Close receiving → Create stow tasks**
+**Arrived PO → Assign receive → Receive brief → Start receiving → Inspect or scan stock in the warehouse → Close receiving → Create stow tasks**
 
 This preserves the distinction between stock expected from a supplier and stock that has physically arrived and been accepted into the warehouse.
 

@@ -52,11 +52,35 @@ draft → ordered → shipped → received | partially_received
 
 - Draft → "Mark as sent" → sets `ordered`
 - On the way → "Mark as arrived" → sets `shipped`
-- Arrived → "Receive via WMS" → creates receive job, navigates to WMS session
+- Arrived, no active job → "Receive myself" (viewer is the sole eligible assignee) or
+  "Assign receive" (popover, nobody preselected) → `POST /purchase-orders/:poId/receive-jobs`
+  creates a `pending` job assigned to the picked operator. Assignment never claims, starts or
+  navigates (WS-UX-01 S2/S3).
+- Own pending job → inline Receive brief in Purchasing. Its quantities come from the canonical
+  `GET /receive-jobs/:jobId` (job lines' `quantity_expected` / `quantity_accepted`), never from
+  the PO's ordered totals. Expected units are display-only; they never prefill or confirm a count.
+- "Start receiving" → `POST /receive-jobs/:jobId/claim` for that exact job. Claim is the single
+  start transition (`pending → in_progress`, sets `started_at`); there is no separate start
+  endpoint. One claim per click, never retried automatically. On success the UI opens
+  `/wms?receiveJobId=<jobId>`, which enters the existing session in inspect.
+  - Unknown outcome (no response / 5xx): one canonical job read decides — started by the viewer →
+    open it; still pending and the viewer's → explicit retry only; anything else → fail closed.
+  - Definite refusal (409 / 404 / other 4xx): the reason is kept, the job and PO are re-read, and
+    the UI fails closed unless they agree.
+- Own started job → "Resume Receive" navigates to that exact job without claiming.
+- `action=receive` deep link follows the same decision and never claims or dispatches on its own:
+  own pending → expands the PO to the brief; own started → opens the job in WMS; unassigned →
+  assignment popover; another operator's job → no action.
+- Work assigned to another operator is started from Warehouse → Operations → Receiving.
 
 A receive job can only be created when PO status is `shipped` or `partially_received`.
-One active receive job per PO at a time (enforced by backend guard).
-409 on create = active job exists → navigate to existing job (handled gracefully).
+One active receive job per PO at a time (enforced by backend guard); a later delivery needs the
+active job closed first. 409 on create = an active job exists → the UI reconciles to that
+existing job and never creates a second one.
+Only the assigned operator can claim (claim requires `receive-job:read` and
+`assigned_operator_id = caller`); assignment requires `receive-job:assign` (owner/admin).
+Entering an active job's WMS session writes nothing on entry — no provisional (zero) count, no
+count confirmation, no claim.
 
 ---
 

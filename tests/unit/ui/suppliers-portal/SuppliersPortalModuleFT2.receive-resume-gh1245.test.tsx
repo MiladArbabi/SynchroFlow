@@ -6,8 +6,8 @@
 //   2. Resume navigates to /wms?receiveJobId=<existing job ID>.
 //   3. Resume opens no assignment dialog and calls neither the create
 //      (POST receive-jobs) nor the reassignment (PATCH assignment) callback.
-//   4. A pending job assigned to the current user opens the existing brief
-//      (same navigation, no dialog/create/reassign).
+//   4. A pending job assigned to the current user shows the WS-UX-01 S3
+//      inline brief in Purchasing: no navigation, dialog, create or reassign.
 //   5. Work owned by another operator is not resumable/openable by the
 //      current user, and started work offers no reassignment.
 //   6. No-job initial dispatch and explicit pending reassignment are
@@ -164,14 +164,14 @@ describe('GH-1245 — own in_progress Receive resumes the existing job', () => {
 });
 
 describe('GH-1245 — own pending Receive opens the existing brief', () => {
-  it('(4) navigates to the existing pending job with no dialog, create, or reassignment', async () => {
+  it('(4) shows the inline brief for the existing pending job with no navigation, dialog, create, or reassignment', () => {
     const props = renderModule(basePo({ receive_status: 'pending' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /open receive/i }));
-
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(`/wms?receiveJobId=${EXISTING_JOB_ID}`);
-    });
+    expect(screen.getByTestId('receive-inline-brief')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open receive/i })).toBeNull();
+    // Without canonical job data Start stays disabled (WS-UX-01 S3 D2).
+    expect(screen.getByRole('button', { name: /^start receiving$/i })).toBeDisabled();
+    expect(mockNavigate).not.toHaveBeenCalled();
     expectNoDispatchSideEffects(props);
   });
 });
@@ -254,13 +254,11 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
     expectNoDispatchSideEffects(props);
   });
 
-  it('(D2) own pending job opens the existing brief without redispatch', async () => {
+  it('(D2) own pending job expands the PO to the WS-UX-01 S3 inline brief without navigation or redispatch', async () => {
     const props = renderDeepLink(basePo({ receive_status: 'pending' }));
 
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(`/wms?receiveJobId=${EXISTING_JOB_ID}`);
-    });
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('receive-inline-brief')).toBeVisible();
+    expect(mockNavigate).not.toHaveBeenCalled();
     expectNoDispatchSideEffects(props);
   });
 

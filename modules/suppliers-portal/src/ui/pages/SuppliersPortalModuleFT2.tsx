@@ -418,6 +418,10 @@ export type SuppliersPortalPageProps = {
    * Without it, assignment outcomes cannot be confirmed and fail closed.
    */
   onReconcilePurchaseOrders?: () => Promise<PurchaseOrder[]>;
+  /** WS-UX-01 S3 — canonical GET /receive-jobs/:jobId for the inline brief. */
+  onFetchReceiveJob?: (jobId: string) => Promise<ReceiveJobDetail>;
+  /** WS-UX-01 S3 — claims exactly this job. Claim is the single start transition. */
+  onClaimReceiveJob?: (jobId: string) => Promise<void>;
   /** Explicit authenticated identity. Never infer "Me" from array order. */
   currentUserId?: number | null;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
@@ -1334,6 +1338,145 @@ function receiveFailureMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+/** WS-UX-01 S3 — the parts of GET /receive-jobs/:jobId the inline brief reads. */
+export type ReceiveJobDetail = {
+  job: {
+    receive_job_id: string;
+    po_id: string;
+    status: string;
+    assigned_operator_id: number | null;
+    started_at: string | null;
+    supplier_name?: string | null;
+  };
+  lines: Array<{
+    receive_job_line_id: string;
+    quantity_expected: number;
+    quantity_accepted?: number | null;
+  }>;
+};
+
+/** Mirrors the WMS session's active (started) Receive statuses. */
+const STARTED_RECEIVE_STATUSES = new Set(['in_progress', 'inspection', 'barcode_assignment', 'stow_ready']);
+
+export type ReceiveBriefModel =
+  | { ok: true; supplierName: string | null; lineCount: number; expectedUnits: number; remainingUnits: number }
+  | { ok: false; reason: 'changed' | 'no_lines' };
+
+function isCount(value: unknown): boolean {
+  return Number.isSafeInteger(Number(value)) && Number(value) >= 0 && value !== '' && value !== null;
+}
+
+/**
+ * WS-UX-01 S3 — the inline brief for the viewer's own pending job, from the
+ * canonical job only. Expected quantities are display-only: they never prefill
+ * or confirm a physical count. Anything inconsistent with "pending, assigned to
+ * the viewer, never started, this PO" or without valid lines disables Start.
+ */
+export function resolveReceiveBrief(
+  detail: ReceiveJobDetail | null | undefined,
+  expected: { jobId: string; poId: string; currentUserId: number | null }
+): ReceiveBriefModel {
+  const job = detail?.job;
+  if (
+    !job ||
+    expected.currentUserId == null ||
+    job.receive_job_id !== expected.jobId ||
+    job.po_id !== expected.poId ||
+    job.status !== 'pending' ||
+    job.assigned_operator_id !== expected.currentUserId ||
+    job.started_at != null
+  ) {
+    return { ok: false, reason: 'changed' };
+  }
+  const lines = Array.isArray(detail?.lines) ? detail.lines : [];
+  const valid =
+    lines.length > 0 &&
+    lines.every((line) =>
+      typeof line?.receive_job_line_id === 'string' &&
+      line.receive_job_line_id !== '' &&
+      isCount(line.quantity_expected) &&
+      (line.quantity_accepted == null || isCount(line.quantity_accepted))
+    );
+  if (!valid) return { ok: false, reason: 'no_lines' };
+  const expectedUnits = lines.reduce((sum, line) => sum + Number(line.quantity_expected), 0);
+  if (expectedUnits <= 0) return { ok: false, reason: 'no_lines' };
+  const remainingUnits = lines.reduce(
+    (sum, line) => sum + Math.max(0, Number(line.quantity_expected) - Number(line.quantity_accepted ?? 0)),
+    0
+  );
+  return {
+    ok: true,
+    supplierName: job.supplier_name?.trim() || null,
+    lineCount: lines.length,
+    expectedUnits,
+    remainingUnits,
+  };
+}
+
+/** WS-UX-01 S3 — the canonical job shows Receive started by this viewer. */
+function isReceiveStartedBy(
+  detail: ReceiveJobDetail | null | undefined,
+  jobId: string,
+  currentUserId: number | null
+): boolean {
+  const job = detail?.job;
+  return (
+    job != null &&
+    currentUserId != null &&
+    job.receive_job_id === jobId &&
+    job.assigned_operator_id === currentUserId &&
+    job.started_at != null &&
+    STARTED_RECEIVE_STATUSES.has(job.status)
+  );
+}
+
+/**
+ * WS-UX-01 S3 — after a definite claim refusal, the canonical job and PO must
+ * agree before anything unlocks. A PO still pointing at the job must show the
+ * job's status and assignee; a PO no longer pointing at it must mean the job
+ * is closed or cancelled. A 409 whose canonical state is still "pending,
+ * mine" contradicts the refusal and fails closed.
+ */
+function isRefusalReconciled(
+  detail: ReceiveJobDetail | null | undefined,
+  canonicalPo: PurchaseOrder,
+  expected: { jobId: string; poId: string; currentUserId: number | null },
+  conflict: boolean
+): boolean {
+  const job = detail?.job;
+  if (!job || job.receive_job_id !== expected.jobId || job.po_id !== expected.poId) return false;
+  if (canonicalPo.receive_job_id === expected.jobId) {
+    if (
+      canonicalPo.receive_status !== job.status ||
+      (canonicalPo.receive_assigned_operator_id ?? null) !== (job.assigned_operator_id ?? null)
+    ) {
+      return false;
+    }
+  } else if (job.status !== 'closed' && job.status !== 'cancelled') {
+    return false;
+  }
+  return !(conflict && resolveReceiveBrief(detail, expected).ok);
+}
+
+const CLAIM_REFUSAL_MESSAGES: Record<string, string> = {
+  JOB_CLAIMED_BY_OTHER: 'This Receive is now assigned to someone else.',
+  JOB_NOT_ASSIGNED: "This Receive isn't assigned to anyone now.",
+  JOB_NOT_CLAIMABLE: 'This Receive can no longer be started.',
+  JOB_CLAIM_CONFLICT: 'This Receive changed while you were starting it.',
+};
+
+function claimRefusalMessage(err: unknown): string {
+  const e = err as { response?: { status?: number; data?: { error?: unknown } } } | null;
+  const code = e?.response?.data?.error;
+  if (typeof code === 'string' && CLAIM_REFUSAL_MESSAGES[code]) return CLAIM_REFUSAL_MESSAGES[code];
+  if (e?.response?.status === 404) return 'This Receive no longer exists.';
+  return receiveFailureMessage(err, 'Receive could not be started.');
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 /** WS-UX-01 S2 — the Receive state an assignment mutation should produce. */
 type ReceiveExpectation = { jobId: string | null; assigneeId: number };
 
@@ -1391,6 +1534,8 @@ function PoAccordion({
   canManageReceiveAssignment,
   currentUserId,
   onReconcilePurchaseOrders,
+  onFetchReceiveJob,
+  onClaimReceiveJob,
   autoOpenReceive = false,
   receiveDispatchAssignmentSpotlight,
 }: {
@@ -1409,6 +1554,8 @@ function PoAccordion({
   canManageReceiveAssignment: boolean;
   currentUserId: number | null;
   onReconcilePurchaseOrders?: () => Promise<PurchaseOrder[]>;
+  onFetchReceiveJob?: (jobId: string) => Promise<ReceiveJobDetail>;
+  onClaimReceiveJob?: (jobId: string) => Promise<void>;
   autoOpenReceive?: boolean;
   /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the assignment popover. */
   receiveDispatchAssignmentSpotlight?: { isDismissed: boolean; dismiss: () => void };
@@ -1471,7 +1618,7 @@ function PoAccordion({
    */
   const runReceiveMutation = useCallback(async (options: {
     stale: ReceiveSnapshot;
-    mutate: () => Promise<ReceiveExpectation | 'navigated'>;
+    mutate: () => Promise<ReceiveExpectation>;
     intended: ReceiveExpectation;
     confirmedMessage: string;
     failureMessage: string;
@@ -1490,13 +1637,7 @@ function PoAccordion({
       let expected: ReceiveExpectation;
       let ambiguous = false;
       try {
-        const result = await options.mutate();
-        if (result === 'navigated') {
-          receiveInFlightRef.current = false;
-          setReceiveMutation('idle');
-          return;
-        }
-        expected = result;
+        expected = await options.mutate();
       } catch (err) {
         if (isReceiveConflict(err)) {
           // Concurrent Receive activity: keep the refusal reason, never treat
@@ -1579,7 +1720,7 @@ function PoAccordion({
       stale: receiveSnapshotOf(po),
       intended: { jobId: null, assigneeId: operatorId },
       confirmedMessage: isSelf
-        ? 'Receive is assigned to you. Open it to claim & start.'
+        ? "Receive is assigned to you. Start receiving when you're ready."
         : `Receive assigned to ${operatorName(operatorId)}. ` +
           'They can find it in Warehouse → Operations → Receiving ' +
           'and claim & start it there.',
@@ -1589,11 +1730,8 @@ function PoAccordion({
         const { receive_job_id } = await onCreateReceiveJob(po.id, {
           assigned_operator_id: operatorId,
         });
-        if (isSelf) {
-          // Assignment only: the existing Receive brief owns claim and start.
-          navigate(`/wms?receiveJobId=${receive_job_id}`);
-          return 'navigated';
-        }
+        // WS-UX-01 S3 — assignment only, for self too: the reconciled PO
+        // renders the inline brief, and Start receiving is a separate click.
         return { jobId: receive_job_id, assigneeId: operatorId };
       },
     });
@@ -1631,10 +1769,155 @@ function PoAccordion({
     navigate(`/wms?receiveJobId=${existingReceiveJobId}`);
   }, [existingReceiveJobId, navigate]);
 
+  // WS-UX-01 S3 — the viewer's own pending job shows an inline brief read
+  // from the canonical job. Fetched only while the PO is expanded; a newer
+  // request (or a reconciliation) always supersedes an older response.
+  const [receiveBrief, setReceiveBrief] = useState<{
+    jobId: string;
+    status: 'loading' | 'ready' | 'error';
+    detail: ReceiveJobDetail | null;
+  } | null>(null);
+  const receiveBriefRequestRef = useRef(0);
+  const briefJobId =
+    expanded && receiveAction === 'open_own' ? existingReceiveJobId : null;
+
+  const loadReceiveBrief = useCallback((jobId: string) => {
+    const requestId = ++receiveBriefRequestRef.current;
+    if (!onFetchReceiveJob) {
+      setReceiveBrief({ jobId, status: 'error', detail: null });
+      return;
+    }
+    setReceiveBrief({ jobId, status: 'loading', detail: null });
+    onFetchReceiveJob(jobId).then(
+      (detail) => {
+        if (requestId === receiveBriefRequestRef.current) {
+          setReceiveBrief({ jobId, status: 'ready', detail });
+        }
+      },
+      () => {
+        if (requestId === receiveBriefRequestRef.current) {
+          setReceiveBrief({ jobId, status: 'error', detail: null });
+        }
+      }
+    );
+  }, [onFetchReceiveJob]);
+
+  useEffect(() => {
+    if (briefJobId) loadReceiveBrief(briefJobId);
+  }, [briefJobId, loadReceiveBrief, po.receive_status, po.receive_assigned_operator_id]);
+
+  const receiveBriefModel =
+    receiveBrief?.status === 'ready' && receiveBrief.jobId === existingReceiveJobId
+      ? resolveReceiveBrief(receiveBrief.detail, {
+          jobId: receiveBrief.jobId,
+          poId: po.id,
+          currentUserId,
+        })
+      : null;
+
+  /**
+   * WS-UX-01 S3 — Start receiving. Claim is the single start transition:
+   * exactly one claim per click, for the job the brief was rendered from,
+   * never retried automatically.
+   * - 200: open that exact job in WMS.
+   * - No response / 5xx: one canonical job read decides. Started by the viewer
+   *   → open it; still pending and theirs → unlock for an explicit retry;
+   *   anything else, or a failed read → lock until reload.
+   * - Definite refusal (409/404/other 4xx): keep the reason and re-read the
+   *   job and PO. Unlock only when they agree (isRefusalReconciled), and stay
+   *   disabled until the projection renders it; a failed or inconsistent
+   *   re-read locks until reload.
+   */
+  const handleStartReceive = useCallback(async () => {
+    const jobId = receiveBrief?.jobId ?? null;
+    if (
+      receiveInFlightRef.current ||
+      !jobId ||
+      !receiveBriefModel?.ok ||
+      jobId !== existingReceiveJobId ||
+      !onClaimReceiveJob ||
+      !onFetchReceiveJob
+    ) {
+      return;
+    }
+    receiveInFlightRef.current = true;
+    receiveBriefRequestRef.current += 1;
+    setReceiveMutation('pending');
+    setReceiveDispatchError(null);
+    setReceiveAssignmentConfirmation(null);
+    const slowTimer = setTimeout(() => setReceiveSlow(true), 2000);
+    const lockUntilReload = (message: string) => {
+      setReceiveDispatchError(`${message} ${RECEIVE_RELOAD_REQUIRED}`);
+      setReceiveMutation('locked');
+    };
+    const unlock = () => {
+      receiveInFlightRef.current = false;
+      setReceiveMutation('idle');
+    };
+    try {
+      try {
+        await onClaimReceiveJob(jobId);
+      } catch (err) {
+        if (isAmbiguousReceiveFailure(err)) {
+          setReceiveMutation('reconciling');
+          let detail: ReceiveJobDetail;
+          try {
+            detail = await onFetchReceiveJob(jobId);
+          } catch {
+            lockUntilReload("We couldn't confirm whether Receive started, and couldn't reload it.");
+            return;
+          }
+          if (isReceiveStartedBy(detail, jobId, currentUserId)) {
+            navigate(`/wms?receiveJobId=${jobId}`);
+            return;
+          }
+          if (resolveReceiveBrief(detail, { jobId, poId: po.id, currentUserId }).ok) {
+            setReceiveBrief({ jobId, status: 'ready', detail });
+            // The read shows pending now; that is not proof the claim failed.
+            setReceiveDispatchError(
+              "We couldn't confirm that Receive started. It still shows as not started, so you can try again."
+            );
+            unlock();
+            return;
+          }
+          lockUntilReload("We couldn't confirm whether Receive started. The latest Receive doesn't show it.");
+          return;
+        }
+        const reason = claimRefusalMessage(err);
+        setReceiveDispatchError(reason);
+        setReceiveMutation('reconciling');
+        let detail: ReceiveJobDetail;
+        let canonicalPo: PurchaseOrder | null;
+        try {
+          [detail, canonicalPo] = await Promise.all([onFetchReceiveJob(jobId), readCanonicalPo()]);
+        } catch {
+          lockUntilReload(`${reason} This Receive couldn't be reloaded to show its current state.`);
+          return;
+        }
+        if (!canonicalPo || !isRefusalReconciled(detail, canonicalPo, { jobId, poId: po.id, currentUserId }, isReceiveConflict(err))) {
+          lockUntilReload(`${reason} The latest Receive and PO don't show a consistent state yet.`);
+          return;
+        }
+        setReceiveBrief({ jobId, status: 'ready', detail });
+        // Controls stay disabled until the PO projection renders the reconciled state.
+        setAwaitedReceive({ reconciled: receiveSnapshotOf(canonicalPo), stale: receiveSnapshotOf(po) });
+        unlock();
+        return;
+      }
+      navigate(`/wms?receiveJobId=${jobId}`);
+    } finally {
+      clearTimeout(slowTimer);
+      setReceiveSlow(false);
+    }
+  }, [currentUserId, existingReceiveJobId, navigate, onClaimReceiveJob, onFetchReceiveJob, po.id, readCanonicalPo, receiveBrief?.jobId, receiveBriefModel?.ok]);
+
   const autoReceiveOpenedRef = useRef(false);
   // WS-UX-01 S2 — a deep link to unassigned work expands the PO and, for a
   // team, opens the assignment popover. It never dispatches on its own.
   const [autoAssignPending, setAutoAssignPending] = useState(false);
+  // WS-UX-01 S3 D5 — a deep link to the viewer's own pending job expands the
+  // PO so the inline brief shows. It never claims.
+  const [autoBriefPending, setAutoBriefPending] = useState(false);
 
   useEffect(() => {
     if (
@@ -1653,7 +1936,9 @@ function PoAccordion({
     // explicit; started work never routes through assignment.
     if (receiveAction === 'assign') {
       setAutoAssignPending(true);
-    } else if (receiveAction === 'open_own' || receiveAction === 'resume_own') {
+    } else if (receiveAction === 'open_own') {
+      setAutoBriefPending(true);
+    } else if (receiveAction === 'resume_own') {
       handleOpenOwnReceive();
     }
   }, [autoOpenReceive, currentUserId, handleOpenOwnReceive, po.status, receiveAction]);
@@ -1744,6 +2029,14 @@ function PoAccordion({
     // handleExpand is recreated every render; the pending flag gates re-entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAssignPending, expanded, receiveAssigneesStatus, receiveRosterReady, soleSelfEligible, handleOpenAssignPopover]);
+
+  useEffect(() => {
+    if (!autoBriefPending) return;
+    setAutoBriefPending(false);
+    if (!expanded) void handleExpand();
+    // handleExpand is recreated every render; the pending flag gates re-entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBriefPending, expanded]);
 
   const handleStatusUpdate = async (newStatus: PurchaseOrderStatus) => {
     setUpdatingStatus(true);
@@ -1967,8 +2260,8 @@ function PoAccordion({
                 )}
               </>
             )}
-            {/* GH-1245 — own existing job → open/resume that exact job in WMS */}
-            {canOpenOwnReceive && (po.status === 'shipped' || po.status === 'partially_received') && (
+            {/* GH-1245 — own started job → resume that exact job in WMS. Never claims. */}
+            {receiveJobStarted && isReceiveEligible && (
               <Button
                 size="small"
                 variant="contained"
@@ -1977,8 +2270,74 @@ function PoAccordion({
                 onClick={handleOpenOwnReceive}
                 sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
               >
-                {receiveJobStarted ? 'Resume Receive' : 'Open Receive'}
+                Resume Receive
               </Button>
+            )}
+            {/* WS-UX-01 S3 — own pending job → inline brief + explicit Start receiving. */}
+            {canOpenOwnReceive && !receiveJobStarted && isReceiveEligible && (
+              <Box
+                data-testid="receive-inline-brief"
+                sx={{ flexBasis: '100%', display: 'grid', gap: 0.5, justifyItems: 'start' }}
+              >
+                <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
+                  {receiveBriefModel?.ok && receiveBriefModel.supplierName
+                    ? `Receive from ${receiveBriefModel.supplierName} · ${poDisplay} · `
+                    : ''}
+                  Assigned to you · Not started
+                </Typography>
+                {(receiveBrief == null || receiveBrief.status === 'loading') && (
+                  <Typography variant="caption" color="text.secondary">
+                    Loading receive details…
+                  </Typography>
+                )}
+                {receiveBrief?.status === 'error' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="caption" color="error">
+                      Couldn't load this receive.
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="text"
+                      disabled={receiveBusy}
+                      onClick={() => { if (existingReceiveJobId) loadReceiveBrief(existingReceiveJobId); }}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Try again
+                    </Button>
+                  </Box>
+                )}
+                {receiveBriefModel && !receiveBriefModel.ok && (
+                  <Typography variant="caption" color="text.secondary">
+                    {receiveBriefModel.reason === 'no_lines'
+                      ? 'This receive has no products to count.'
+                      : 'This receive has changed. Reload the page to see its current state.'}
+                  </Typography>
+                )}
+                {receiveBriefModel?.ok && (
+                  <>
+                    <Typography variant="body2" fontWeight={600}>
+                      {plural(receiveBriefModel.lineCount, 'product')} · {plural(receiveBriefModel.expectedUnits, 'unit')} expected · {receiveBriefModel.remainingUnits} remaining
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Count good, usable units only. Set damaged items aside — you'll record them at review.
+                    </Typography>
+                  </>
+                )}
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={
+                    !receiveBriefModel?.ok ||
+                    !onClaimReceiveJob ||
+                    receiveBusy ||
+                    updatingStatus
+                  }
+                  onClick={() => void handleStartReceive()}
+                  sx={{ mt: 0.5, textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                >
+                  {receiveMutation === 'pending' ? 'Starting…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Start receiving'}
+                </Button>
+              </Box>
             )}
             {/* WS-UX-01 S2 — arrived, no active job (or legacy unassigned pending). */}
             {canStartReceiveDispatch && isReceiveEligible && (
@@ -2372,6 +2731,7 @@ function PurchasingPosView({
   teamAssignableOperators = [], currentUserId = null,
   receiveAssigneesStatus = 'ready', onRetryReceiveAssignees,
   canManageReceiveAssignment = false, onReconcilePurchaseOrders,
+  onFetchReceiveJob, onClaimReceiveJob,
   spotlights,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
@@ -2457,6 +2817,8 @@ function PurchasingPosView({
                   canManageReceiveAssignment={canManageReceiveAssignment}
                   currentUserId={currentUserId}
                   onReconcilePurchaseOrders={onReconcilePurchaseOrders}
+                  onFetchReceiveJob={onFetchReceiveJob}
+                  onClaimReceiveJob={onClaimReceiveJob}
                   autoOpenReceive={autoOpenReceivePoId === po.id}
                   receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
                 />
