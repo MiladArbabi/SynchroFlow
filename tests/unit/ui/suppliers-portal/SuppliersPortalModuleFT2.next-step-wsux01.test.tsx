@@ -7,7 +7,8 @@
 //   2. "Prepare to send" and Copy for supplier are removed; Mark as sent is
 //      the only Draft step and never happens automatically.
 //   3. Receive-eligible POs keep the GH-1245 resolveReceiveAction() decision.
-//      S1 adds no new Receive affordance (no "Receive myself", no claim).
+//      S1 adds no new Receive affordance (no claim). WS-UX-01 S2 later owns
+//      "Receive myself" and the assignment popover (assignment-wsux01-s2 suite).
 //   4. Cancel PO sits under More, requires a confirmation naming the PO, is
 //      not actionable while any Receive job is known, and a backend rejection
 //      is surfaced without retry.
@@ -258,11 +259,18 @@ describe('WS-UX-01 S1 — Arrived: existing Receive dispatch unchanged', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('Receive via WMS still opens the existing assignment dialog', async () => {
-    const props = await renderExpanded(basePo({ status: 'shipped' }));
+  it('team assignment opens the S2 picker without creating work', async () => {
+    const props = await renderExpanded(basePo({ status: 'shipped' }), {
+      canManageReceiveAssignment: true,
+      receiveAssigneesStatus: 'ready',
+      teamAssignableOperators: [
+        { id: CURRENT_USER_ID, name: 'Me (Owner)', role: 'owner' },
+        { id: OTHER_OPERATOR_ID, name: 'Sam Rivera', role: 'operator' },
+      ],
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /receive via wms/i }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /assign receive/i }));
+    expect(await screen.findByRole('list', { name: /assign receive to/i })).toBeInTheDocument();
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
   });
 
@@ -280,7 +288,7 @@ describe('WS-UX-01 S1 — Arrived: existing Receive dispatch unchanged', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/wms?receiveJobId=receive-job-1005');
   });
 
-  it("another operator's pending job still offers explicit Reassign Receive", async () => {
+  it("another operator's pending job still offers explicit Reassign", async () => {
     await renderExpanded(
       basePo({
         status: 'shipped',
@@ -288,10 +296,11 @@ describe('WS-UX-01 S1 — Arrived: existing Receive dispatch unchanged', () => {
         receive_status: 'pending',
         receive_assigned_operator_id: OTHER_OPERATOR_ID,
         receive_assigned_operator_name: 'Sam Rivera',
-      })
+      }),
+      { canManageReceiveAssignment: true, receiveAssigneesStatus: 'ready' }
     );
 
-    expect(screen.getByRole('button', { name: /reassign receive/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^reassign$/i })).toBeInTheDocument();
   });
 });
 
@@ -430,14 +439,13 @@ describe('WS-UX-01 S1 — unstarted Receive counts', () => {
   });
 });
 
-describe('WS-UX-01 S1 — no S2/S3 dependency', () => {
+describe('WS-UX-01 S1/S2 — no S3 dependency', () => {
   const src = fs.readFileSync(
     path.resolve(__dirname, '../../../../modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx'),
     'utf8'
   );
 
-  it('introduces no Receive myself, claim orchestration or Unassign', () => {
-    expect(src).not.toMatch(/Receive myself/);
+  it('introduces no claim orchestration or Unassign', () => {
     expect(src).not.toMatch(/\/claim/);
     expect(src).not.toMatch(/onClaimReceiveJob/);
     expect(src).not.toMatch(/Unassign/);

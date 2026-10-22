@@ -87,6 +87,8 @@ function buildProps(po: ReturnType<typeof basePo>, currentUserId: number | null)
     onCreateReceiveJob: jest.fn().mockResolvedValue({ receive_job_id: 'receive-new' }),
     onReassignReceiveJob: jest.fn().mockResolvedValue(undefined),
     teamAssignableOperators,
+    receiveAssigneesStatus: 'ready',
+    canManageReceiveAssignment: true,
     currentUserId,
     onSearchVariants: jest.fn(),
     onFetchSourcingRecommendations: jest.fn(),
@@ -133,6 +135,7 @@ function renderDeepLink(
 
 function expectNoDispatchSideEffects(props: ReturnType<typeof renderModule>) {
   expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('list', { name: /assign receive to|reassign to/i })).toBeNull();
   expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
   expect(props.onReassignReceiveJob).not.toHaveBeenCalled();
 }
@@ -184,15 +187,15 @@ describe('GH-1245 — other-operator ownership remains protected', () => {
 
     expect(screen.queryByRole('button', { name: /resume receive/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /open receive/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /receive via wms/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /reassign receive/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /assign receive|receive myself/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /reassign/i })).toBeNull();
     expectNoDispatchSideEffects(props);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 
 describe('GH-1245 — existing dispatch branches unchanged', () => {
-  it('(6a) no-job PO still opens the assignment dialog before creating work', async () => {
+  it('(6a) no-job PO still opens assignment before creating work', async () => {
     const props = renderModule(
       basePo({
         receive_job_id: null,
@@ -202,14 +205,13 @@ describe('GH-1245 — existing dispatch branches unchanged', () => {
       })
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /receive via wms/i }));
+    fireEvent.click(screen.getByRole('button', { name: /assign receive/i }));
 
-    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
+    const picker = await screen.findByRole('list', { name: /assign receive to/i });
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByText('Sam Rivera'));
-    fireEvent.click(within(dialog).getByRole('button', { name: /assign/i }));
+    fireEvent.click(within(picker).getByRole('button', { name: /sam rivera/i }));
 
     await waitFor(() => {
       expect(props.onCreateReceiveJob).toHaveBeenCalledWith('po-uuid-1005', {
@@ -228,11 +230,10 @@ describe('GH-1245 — existing dispatch branches unchanged', () => {
       })
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /reassign receive/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^reassign$/i }));
 
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByText('Sam Rivera').closest('[role="radio"]') as HTMLElement);
-    fireEvent.click(within(dialog).getByRole('button', { name: /^reassign receive$|^reassign$/i }));
+    const picker = await screen.findByRole('list', { name: /^reassign to$/i });
+    fireEvent.click(within(picker).getByRole('button', { name: /sam rivera/i }));
 
     await waitFor(() => {
       expect(props.onReassignReceiveJob).toHaveBeenCalledWith(EXISTING_JOB_ID, OTHER_OPERATOR_ID);
@@ -275,7 +276,7 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('(D4) other operator pending job keeps explicit Reassign Receive, no silent initial assignment', () => {
+  it('(D4) other operator pending job keeps explicit Reassign, no silent initial assignment', () => {
     const props = renderDeepLink(
       basePo({
         receive_status: 'pending',
@@ -288,10 +289,10 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
     expect(mockNavigate).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Nordic Textile Works'));
-    expect(screen.getByRole('button', { name: /reassign receive/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^reassign$/i })).toBeInTheDocument();
   });
 
-  it('(D5) no job: deep-link still opens initial Assign Receive without creating work', async () => {
+  it('(D5) no job: deep-link opens the initial assignment popover without creating work', async () => {
     const props = renderDeepLink(
       basePo({
         receive_job_id: null,
@@ -301,7 +302,7 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
       })
     );
 
-    await screen.findByRole('dialog', { name: /assign receive/i });
+    await screen.findByRole('list', { name: /assign receive to/i });
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
     expect(props.onReassignReceiveJob).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -316,7 +317,7 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
       })
     );
 
-    await screen.findByRole('dialog', { name: /assign receive/i });
+    await screen.findByRole('list', { name: /assign receive to/i });
     expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
     expect(props.onReassignReceiveJob).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();

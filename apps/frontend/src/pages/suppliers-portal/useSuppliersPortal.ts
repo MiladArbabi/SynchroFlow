@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/suppliers-portal/useSuppliersPortal.ts
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import type { PurchaseOrder } from '@lasyncro/suppliers-portal';
 
 /**
  * SUPPLIERS PORTAL HOOK — CORE PURCHASING DATA ONLY
@@ -43,6 +44,22 @@ export function useSuppliersPortal() {
     refetch: () => {
       void pos.refetch();
       void suppliers.refetch();
+    },
+    /**
+     * WS-UX-01 S2 — awaitable, authoritative PO re-read for mutation
+     * reconciliation. Resolves only with a completed, usable response and
+     * rejects otherwise; the generic refetch above stays fire-and-forget.
+     */
+    refetchPurchaseOrders: async (): Promise<PurchaseOrder[]> => {
+      const result = await pos.refetch({ throwOnError: true });
+      const purchaseOrders: unknown = result.data?.purchase_orders;
+      if (
+        !Array.isArray(purchaseOrders) ||
+        !purchaseOrders.every((po) => typeof po?.id === 'string' && po.id.length > 0)
+      ) {
+        throw new Error('Purchase order response was unusable.');
+      }
+      return purchaseOrders as PurchaseOrder[];
     },
   };
 }

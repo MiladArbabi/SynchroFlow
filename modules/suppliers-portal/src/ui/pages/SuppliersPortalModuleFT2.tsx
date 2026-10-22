@@ -26,7 +26,7 @@ import {
   Menu,
   MenuItem,
   IconButton,
-  Radio,
+  Popover,
 } from '@mui/material';
 import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2, MoreHorizontal } from 'lucide-react';
 import { 
@@ -367,6 +367,8 @@ export type ReceiveAssignableOperator = {
   role?: string;
 };
 
+export type ReceiveAssigneesStatus = 'loading' | 'error' | 'ready' | 'unavailable';
+
 export type SuppliersPortalPageProps = {
   /** Which half of the Purchasing surface to render. Tab routing lives in the ft2-pages wrapper, not here. */
   view: 'pos' | 'suppliers' | 'sourcing';
@@ -402,6 +404,20 @@ export type SuppliersPortalPageProps = {
   ) => Promise<void>;
   /** Candidates already filtered by the app wrapper for Receive assignment. */
   teamAssignableOperators?: ReceiveAssignableOperator[];
+  /**
+   * WS-UX-01 S2 — load state of teamAssignableOperators. Only 'ready' is proof
+   * of who is eligible; 'unavailable' means the viewer may not assign.
+   */
+  receiveAssigneesStatus?: ReceiveAssigneesStatus;
+  onRetryReceiveAssignees?: () => void;
+  /** WS-UX-01 S2 — owner/admin dispatch authority (receive-job:assign). */
+  canManageReceiveAssignment?: boolean;
+  /**
+   * WS-UX-01 S2 — awaitable, authoritative PO re-read used to reconcile
+   * assignment mutations. Must reject when the read fails or is unusable.
+   * Without it, assignment outcomes cannot be confirmed and fail closed.
+   */
+  onReconcilePurchaseOrders?: () => Promise<PurchaseOrder[]>;
   /** Explicit authenticated identity. Never infer "Me" from array order. */
   currentUserId?: number | null;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
@@ -1290,6 +1306,79 @@ export function isReceiveCountingStarted(po: PurchaseOrder): boolean {
   );
 }
 
+/**
+ * WS-UX-01 S2 — a failure is ambiguous when the server's outcome is unknown:
+ * no HTTP response (network/timeout) or a 5xx. Definite 4xx refusals and
+ * explicit errors raised by the app wrapper's 409 recovery are not.
+ */
+function isAmbiguousReceiveFailure(err: unknown): boolean {
+  const e = err as { isAxiosError?: boolean; response?: { status?: number } } | null;
+  if (e?.isAxiosError) {
+    const status = e.response?.status;
+    return status == null || status >= 500;
+  }
+  return !(err instanceof Error);
+}
+
+/** WS-UX-01 S2 — HTTP 409 (or the app wrapper's 409 recovery): concurrent Receive activity. */
+function isReceiveConflict(err: unknown): boolean {
+  const e = err as { status?: number; response?: { status?: number } } | null;
+  return e?.status === 409 || e?.response?.status === 409;
+}
+
+function receiveFailureMessage(err: unknown, fallback: string): string {
+  const serverMessage = (err as { response?: { data?: { error?: unknown } } } | null)
+    ?.response?.data?.error;
+  if (typeof serverMessage === 'string' && serverMessage.trim()) return serverMessage;
+  if ((err as { isAxiosError?: boolean } | null)?.isAxiosError) return fallback;
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+/** WS-UX-01 S2 — the Receive state an assignment mutation should produce. */
+type ReceiveExpectation = { jobId: string | null; assigneeId: number };
+
+/** A null jobId (outcome of an ambiguous create) accepts any active job. */
+function poMatchesReceiveExpectation(
+  po: PurchaseOrder | null | undefined,
+  expected: ReceiveExpectation
+): boolean {
+  return (
+    po != null &&
+    po.receive_job_id != null &&
+    po.receive_assigned_operator_id === expected.assigneeId &&
+    (expected.jobId == null || po.receive_job_id === expected.jobId)
+  );
+}
+
+/** The Receive fields of a PO projection. */
+type ReceiveSnapshot = {
+  jobId: string | null;
+  status: string | null;
+  assigneeId: number | null;
+};
+
+function receiveSnapshotOf(po: PurchaseOrder): ReceiveSnapshot {
+  return {
+    jobId: po.receive_job_id ?? null,
+    status: po.receive_status ?? null,
+    assigneeId: po.receive_assigned_operator_id ?? null,
+  };
+}
+
+function sameReceiveSnapshot(a: ReceiveSnapshot, b: ReceiveSnapshot): boolean {
+  return a.jobId === b.jobId && a.status === b.status && a.assigneeId === b.assigneeId;
+}
+
+/**
+ * A reconciled canonical state the projection has not rendered yet. The
+ * projection counts as reconciled once it shows that state, or anything
+ * newer than the stale state the mutation started from.
+ */
+type AwaitedReceive = { reconciled: ReceiveSnapshot; stale: ReceiveSnapshot };
+
+const RECEIVE_RELOAD_REQUIRED =
+  'Reload the page before making another change to this Receive.';
+
 function PoAccordion({
   po,
   onFetchLineItems,
@@ -1297,7 +1386,11 @@ function PoAccordion({
   onCreateReceiveJob,
   onReassignReceiveJob,
   teamAssignableOperators,
+  receiveAssigneesStatus,
+  onRetryReceiveAssignees,
+  canManageReceiveAssignment,
   currentUserId,
+  onReconcilePurchaseOrders,
   autoOpenReceive = false,
   receiveDispatchAssignmentSpotlight,
 }: {
@@ -1311,9 +1404,13 @@ function PoAccordion({
   /** GH-1143 RECEIVE-REASSIGN-UI-01 — reassigns an EXISTING pending/unstarted job. */
   onReassignReceiveJob?: (jobId: string, targetOperatorId: number) => Promise<void>;
   teamAssignableOperators: ReceiveAssignableOperator[];
+  receiveAssigneesStatus: ReceiveAssigneesStatus;
+  onRetryReceiveAssignees?: () => void;
+  canManageReceiveAssignment: boolean;
   currentUserId: number | null;
+  onReconcilePurchaseOrders?: () => Promise<PurchaseOrder[]>;
   autoOpenReceive?: boolean;
-  /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the Assign Receive dialog. */
+  /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the assignment popover. */
   receiveDispatchAssignmentSpotlight?: { isDismissed: boolean; dismiss: () => void };
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1323,18 +1420,25 @@ function PoAccordion({
   const [error, setError] = useState<string | null>(null);
 
   // GH-1109: dispatch happens before execution. Assignment does not claim work.
-  const [assignReceiveOpen, setAssignReceiveOpen] = useState(false);
-  const [selectedReceiveOperatorId, setSelectedReceiveOperatorId] =
-    useState<number | null>(null);
-  const [assigningReceive, setAssigningReceive] = useState(false);
+  // WS-UX-01 S2 — a compact popover replaces the Assign Receive modal; the
+  // same popover serves initial assignment and GH-1143 reassignment.
+  const [assignAnchor, setAssignAnchor] = useState<HTMLElement | null>(null);
+  const [assignMode, setAssignMode] = useState<'assign' | 'reassign'>('assign');
+  const assignButtonRef = useRef<HTMLButtonElement | null>(null);
+  // In-flight lock: the ref blocks repeat clicks before React re-renders.
+  const receiveInFlightRef = useRef(false);
+  // 'locked': the outcome could not be confirmed; a page reload is required
+  // before any further assignment mutation on this PO.
+  const [receiveMutation, setReceiveMutation] =
+    useState<'idle' | 'pending' | 'reconciling' | 'locked'>('idle');
+  // A confirmed result the PO projection has not rendered yet. Controls stay
+  // disabled until it does, so nothing unlocks against a stale projection.
+  const [awaitedReceive, setAwaitedReceive] = useState<AwaitedReceive | null>(null);
+  const [receiveSlow, setReceiveSlow] = useState(false);
   const [receiveDispatchError, setReceiveDispatchError] =
     useState<string | null>(null);
   const [receiveAssignmentConfirmation, setReceiveAssignmentConfirmation] =
     useState<string | null>(null);
-  // GH-1143 RECEIVE-REASSIGN-UI-01 — the same dialog serves two distinct
-  // states: initial assignment (create) vs reassignment of an existing
-  // pending/unstarted job. Never confused with each other (see J).
-  const [reassignReceiveMode, setReassignReceiveMode] = useState(false);
   // WS-UX-01 S1 — Cancel PO lives under More and requires a named confirmation.
   const [moreMenuAnchor, setMoreMenuAnchor] = useState<HTMLElement | null>(null);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
@@ -1343,31 +1447,176 @@ function PoAccordion({
 
   const navigate = useNavigate();
 
-  /**
-   * RECEIVE DISPATCH
-   * ----------------
-   * Opening Receive does not create or claim work. The dispatcher must choose
-   * an assignee first. Claim remains an explicit action on the Receive Brief.
-   */
-  const handleReceive = useCallback(() => {
-    setReassignReceiveMode(false);
-    setSelectedReceiveOperatorId(null);
-    setReceiveDispatchError(null);
-    setReceiveAssignmentConfirmation(null);
-    setAssignReceiveOpen(true);
-  }, []);
+  /** Authoritative re-read of this PO; throws when it cannot be confirmed. */
+  const readCanonicalPo = useCallback(async (): Promise<PurchaseOrder | null> => {
+    if (!onReconcilePurchaseOrders) {
+      throw new Error('Purchase order reconciliation is unavailable.');
+    }
+    const purchaseOrders = await onReconcilePurchaseOrders();
+    return purchaseOrders.find((candidate) => candidate.id === po.id) ?? null;
+  }, [onReconcilePurchaseOrders, po.id]);
 
   /**
-   * GH-1143 RECEIVE-REASSIGN-UI-01 — explicit reassignment of an EXISTING
-   * pending/unstarted Receive job. Current assignee preselected/represented.
+   * WS-UX-01 S2 — one wrapper for every assignment mutation.
+   * - The first click locks; repeat clicks are ignored; after 2 seconds the
+   *   panel says it is still working.
+   * - Success is reconciled against an awaited canonical PO re-read before the
+   *   controls unlock, and they stay disabled until the projection renders it.
+   * - An ambiguous failure (no response, or 5xx) is never treated as a
+   *   failure: the canonical PO is re-read and a confirmed change is shown as
+   *   persisted. Anything inconclusive, or a failed re-read, locks the
+   *   controls until the page is reloaded.
+   * - A definite refusal (4xx, or the app wrapper's 409-recovery errors)
+   *   changed nothing and unlocks with its reason.
    */
-  const handleReassignReceive = useCallback(() => {
-    setReassignReceiveMode(true);
-    setSelectedReceiveOperatorId(po.receive_assigned_operator_id ?? null);
+  const runReceiveMutation = useCallback(async (options: {
+    stale: ReceiveSnapshot;
+    mutate: () => Promise<ReceiveExpectation | 'navigated'>;
+    intended: ReceiveExpectation;
+    confirmedMessage: string;
+    failureMessage: string;
+  }) => {
+    if (receiveInFlightRef.current) return;
+    receiveInFlightRef.current = true;
+    setReceiveMutation('pending');
     setReceiveDispatchError(null);
     setReceiveAssignmentConfirmation(null);
-    setAssignReceiveOpen(true);
-  }, [po.receive_assigned_operator_id]);
+    const slowTimer = setTimeout(() => setReceiveSlow(true), 2000);
+    const lockUntilReload = (message: string) => {
+      setReceiveDispatchError(`${message} ${RECEIVE_RELOAD_REQUIRED}`);
+      setReceiveMutation('locked');
+    };
+    try {
+      let expected: ReceiveExpectation;
+      let ambiguous = false;
+      try {
+        const result = await options.mutate();
+        if (result === 'navigated') {
+          receiveInFlightRef.current = false;
+          setReceiveMutation('idle');
+          return;
+        }
+        expected = result;
+      } catch (err) {
+        if (isReceiveConflict(err)) {
+          // Concurrent Receive activity: keep the refusal reason, never treat
+          // it as success, and render the reconciled job state before unlocking.
+          const reason = receiveFailureMessage(err, options.failureMessage);
+          setReceiveDispatchError(reason);
+          setReceiveMutation('reconciling');
+          let conflictPo: PurchaseOrder | null;
+          try {
+            conflictPo = await readCanonicalPo();
+          } catch {
+            lockUntilReload(`${reason} This PO couldn't be reloaded to show its current state.`);
+            return;
+          }
+          if (!conflictPo || sameReceiveSnapshot(receiveSnapshotOf(conflictPo), options.stale)) {
+            lockUntilReload(`${reason} The latest PO doesn't show the change yet.`);
+            return;
+          }
+          setAwaitedReceive({ reconciled: receiveSnapshotOf(conflictPo), stale: options.stale });
+          receiveInFlightRef.current = false;
+          setReceiveMutation('idle');
+          return;
+        }
+        if (!isAmbiguousReceiveFailure(err)) {
+          setReceiveDispatchError(receiveFailureMessage(err, options.failureMessage));
+          receiveInFlightRef.current = false;
+          setReceiveMutation('idle');
+          return;
+        }
+        ambiguous = true;
+        expected = options.intended;
+      }
+
+      setReceiveMutation('reconciling');
+      let canonical: PurchaseOrder | null;
+      try {
+        canonical = await readCanonicalPo();
+      } catch {
+        lockUntilReload(
+          ambiguous
+            ? "We couldn't confirm whether that change was saved, and couldn't reload this PO."
+            : "The change was saved, but this PO couldn't be reloaded to confirm it."
+        );
+        return;
+      }
+
+      if (canonical && poMatchesReceiveExpectation(canonical, expected)) {
+        setAwaitedReceive({ reconciled: receiveSnapshotOf(canonical), stale: options.stale });
+        setReceiveAssignmentConfirmation(options.confirmedMessage);
+        receiveInFlightRef.current = false;
+        setReceiveMutation('idle');
+        return;
+      }
+      lockUntilReload(
+        ambiguous
+          ? "We couldn't confirm that change. The latest PO doesn't show it yet, but it may still be processing."
+          : "The change was saved, but the latest PO doesn't show it yet."
+      );
+    } finally {
+      clearTimeout(slowTimer);
+      setReceiveSlow(false);
+    }
+  }, [readCanonicalPo]);
+
+  const handleOpenAssignPopover = useCallback((mode: 'assign' | 'reassign') => {
+    if (receiveInFlightRef.current) return;
+    setAssignMode(mode);
+    setReceiveDispatchError(null);
+    setReceiveAssignmentConfirmation(null);
+    setAssignAnchor(assignButtonRef.current);
+  }, []);
+
+  const operatorName = (operatorId: number) =>
+    teamAssignableOperators.find((o) => o.id === operatorId)?.name ?? 'operator';
+
+  /** Picking an operator is the explicit dispatch decision — no confirm step. */
+  const handleDispatchReceive = (operatorId: number) => {
+    const isSelf = operatorId === currentUserId;
+    return runReceiveMutation({
+      stale: receiveSnapshotOf(po),
+      intended: { jobId: null, assigneeId: operatorId },
+      confirmedMessage: isSelf
+        ? 'Receive is assigned to you. Open it to claim & start.'
+        : `Receive assigned to ${operatorName(operatorId)}. ` +
+          'They can find it in Warehouse → Operations → Receiving ' +
+          'and claim & start it there.',
+      failureMessage: 'Failed to assign Receive work. Please try again.',
+      mutate: async () => {
+        setAssignAnchor(null);
+        const { receive_job_id } = await onCreateReceiveJob(po.id, {
+          assigned_operator_id: operatorId,
+        });
+        if (isSelf) {
+          // Assignment only: the existing Receive brief owns claim and start.
+          navigate(`/wms?receiveJobId=${receive_job_id}`);
+          return 'navigated';
+        }
+        return { jobId: receive_job_id, assigneeId: operatorId };
+      },
+    });
+  };
+
+  /** GH-1143 — reassigns the EXISTING job; never routes through creation. */
+  const handleReassignReceive = (operatorId: number) => {
+    const jobId = po.receive_job_id ?? null;
+    return runReceiveMutation({
+      stale: receiveSnapshotOf(po),
+      intended: { jobId, assigneeId: operatorId },
+      confirmedMessage: `Receive reassigned to ${operatorName(operatorId)}.`,
+      failureMessage: 'Failed to reassign Receive work. Please try again.',
+      mutate: async () => {
+        setAssignAnchor(null);
+        if (!jobId || !onReassignReceiveJob) {
+          throw new Error('Receive job reference is missing.');
+        }
+        await onReassignReceiveJob(jobId, operatorId);
+        return { jobId, assigneeId: operatorId };
+      },
+    });
+  };
 
   const receiveAction = resolveReceiveAction(po, currentUserId);
   const nextAction = resolvePoNextAction(po, currentUserId);
@@ -1383,6 +1632,9 @@ function PoAccordion({
   }, [existingReceiveJobId, navigate]);
 
   const autoReceiveOpenedRef = useRef(false);
+  // WS-UX-01 S2 — a deep link to unassigned work expands the PO and, for a
+  // team, opens the assignment popover. It never dispatches on its own.
+  const [autoAssignPending, setAutoAssignPending] = useState(false);
 
   useEffect(() => {
     if (
@@ -1398,79 +1650,13 @@ function PoAccordion({
 
     autoReceiveOpenedRef.current = true;
     // GH-1245 — same decision as the PO accordion CTA. Reassignment stays
-    // explicit; started work never routes through handleReceive.
+    // explicit; started work never routes through assignment.
     if (receiveAction === 'assign') {
-      handleReceive();
+      setAutoAssignPending(true);
     } else if (receiveAction === 'open_own' || receiveAction === 'resume_own') {
       handleOpenOwnReceive();
     }
-  }, [autoOpenReceive, currentUserId, handleReceive, handleOpenOwnReceive, po.status, receiveAction]);
-
-  const handleCloseReceiveAssignment = () => {
-    if (assigningReceive) return;
-    setAssignReceiveOpen(false);
-    setSelectedReceiveOperatorId(null);
-    setReceiveDispatchError(null);
-    setReassignReceiveMode(false);
-  };
-
-  const handleAssignReceive = async () => {
-    if (selectedReceiveOperatorId == null) return;
-
-    setAssigningReceive(true);
-    setReceiveDispatchError(null);
-
-    try {
-      if (reassignReceiveMode) {
-        // GH-1143 — reassigns the EXISTING job. Never routes through
-        // onCreateReceiveJob's create/legacy-recovery path.
-        if (!po.receive_job_id) {
-          throw new Error('Receive job reference is missing.');
-        }
-
-        await onReassignReceiveJob?.(po.receive_job_id, selectedReceiveOperatorId);
-
-        setAssignReceiveOpen(false);
-        setSelectedReceiveOperatorId(null);
-        setReassignReceiveMode(false);
-        return;
-      }
-
-      const { receive_job_id } = await onCreateReceiveJob(po.id, {
-        assigned_operator_id: selectedReceiveOperatorId,
-      });
-
-      const selectedOperator = teamAssignableOperators.find(
-        (operator) => operator.id === selectedReceiveOperatorId
-      );
-
-      setAssignReceiveOpen(false);
-      setSelectedReceiveOperatorId(null);
-
-      if (selectedReceiveOperatorId === currentUserId) {
-        setReceiveAssignmentConfirmation(null);
-        navigate(`/wms?receiveJobId=${receive_job_id}`);
-        return;
-      }
-
-      setReceiveAssignmentConfirmation(
-        `Receive assigned to ${selectedOperator?.name ?? 'operator'}. ` +
-          'They can find it in Warehouse → Operations → Receiving ' +
-          'and claim & start it there.'
-      );
-    } catch (err) {
-      // Keep the dialog open and preserve the selected assignee for retry.
-      setReceiveDispatchError(
-        err instanceof Error
-          ? err.message
-          : reassignReceiveMode
-            ? 'Failed to reassign Receive work. Please try again.'
-            : 'Failed to assign Receive work. Please try again.'
-      );
-    } finally {
-      setAssigningReceive(false);
-    }
-  };
+  }, [autoOpenReceive, currentUserId, handleOpenOwnReceive, po.status, receiveAction]);
 
   const status = STATUS_CONFIG[po.status];
   const eta = po.expected_delivery_date
@@ -1491,6 +1677,27 @@ function PoAccordion({
     receiveAction === 'open_own' || receiveAction === 'resume_own';
   const receiveJobStarted = receiveAction === 'resume_own';
   const canStartReceiveDispatch = receiveAction === 'assign';
+
+  // WS-UX-01 S2 — "Receive myself" only when the LOADED roster proves the
+  // viewer is the sole eligible assignee. Loading/error/unavailable never do.
+  const receiveRosterReady = receiveAssigneesStatus === 'ready';
+  const soleSelfEligible =
+    receiveRosterReady &&
+    currentUserId != null &&
+    teamAssignableOperators.length === 1 &&
+    teamAssignableOperators[0].id === currentUserId;
+  const awaitingReceiveProjection =
+    awaitedReceive != null &&
+    !sameReceiveSnapshot(receiveSnapshotOf(po), awaitedReceive.reconciled) &&
+    sameReceiveSnapshot(receiveSnapshotOf(po), awaitedReceive.stale);
+  const receiveBusy = receiveMutation !== 'idle' || awaitingReceiveProjection;
+  const assignPopoverOperators = [
+    ...teamAssignableOperators.filter((o) => o.id === currentUserId),
+    ...teamAssignableOperators.filter((o) => o.id !== currentUserId),
+  ].filter((o) => assignMode === 'assign' || o.id !== po.receive_assigned_operator_id);
+  const receiveAssigneeName =
+    po.receive_assigned_operator_name?.trim() ||
+    (po.receive_assigned_operator_id != null ? `Operator #${po.receive_assigned_operator_id}` : null);
 
   const receiveAssignmentLabel = isReceiveEligible
     ? po.receive_job_id && po.receive_assigned_operator_id != null
@@ -1516,6 +1723,27 @@ function PoAccordion({
       }
     }
   };
+
+  useEffect(() => {
+    if (awaitedReceive != null && !awaitingReceiveProjection) {
+      setAwaitedReceive(null);
+    }
+  }, [awaitedReceive, awaitingReceiveProjection]);
+
+  useEffect(() => {
+    if (!autoAssignPending) return;
+    if (!expanded) {
+      void handleExpand();
+      return;
+    }
+    if (receiveAssigneesStatus === 'loading') return;
+    setAutoAssignPending(false);
+    if (receiveRosterReady && !soleSelfEligible && assignButtonRef.current) {
+      handleOpenAssignPopover('assign');
+    }
+    // handleExpand is recreated every render; the pending flag gates re-entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAssignPending, expanded, receiveAssigneesStatus, receiveRosterReady, soleSelfEligible, handleOpenAssignPopover]);
 
   const handleStatusUpdate = async (newStatus: PurchaseOrderStatus) => {
     setUpdatingStatus(true);
@@ -1708,18 +1936,36 @@ function PoAccordion({
                 Mark as arrived
               </Button>
             )}
-            {/* Arrived, already assigned pending Receive → manage reassignment */}
+            {/* GH-1143 / WS-UX-01 S2 — pending work owned by someone else: show the
+                owner; only owners/admins get an enabled Reassign. */}
             {canReassignExistingReceive && (
-              <Button
-                size="small"
-                variant="contained"
-                disabled={updatingStatus}
-                startIcon={<CheckCircle size={14} />}
-                onClick={() => void handleReassignReceive()}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-              >
-                Reassign Receive
-              </Button>
+              <>
+                <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
+                  Assigned to {receiveAssigneeName} · Not started
+                </Typography>
+                <Button
+                  ref={assignButtonRef}
+                  size="small"
+                  variant="outlined"
+                  aria-haspopup="dialog"
+                  disabled={
+                    !canManageReceiveAssignment ||
+                    !onReassignReceiveJob ||
+                    !receiveRosterReady ||
+                    receiveBusy ||
+                    updatingStatus
+                  }
+                  onClick={() => handleOpenAssignPopover('reassign')}
+                  sx={{ textTransform: 'none' }}
+                >
+                  {receiveMutation === 'pending' ? 'Reassigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Reassign'}
+                </Button>
+                {!canManageReceiveAssignment && (
+                  <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+                    Only owners and admins can reassign receives.
+                  </Typography>
+                )}
+              </>
             )}
             {/* GH-1245 — own existing job → open/resume that exact job in WMS */}
             {canOpenOwnReceive && (po.status === 'shipped' || po.status === 'partially_received') && (
@@ -1734,18 +1980,76 @@ function PoAccordion({
                 {receiveJobStarted ? 'Resume Receive' : 'Open Receive'}
               </Button>
             )}
-            {/* Arrived, no active job (or legacy unassigned pending) → assign Receive */}
-            {canStartReceiveDispatch && (po.status === 'shipped' || po.status === 'partially_received') && (
-              <Button
-                size="small"
-                variant="contained"
-                disabled={updatingStatus}
-                startIcon={<CheckCircle size={14} />}
-                onClick={() => void handleReceive()}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-              >
-                Receive via WMS
-              </Button>
+            {/* WS-UX-01 S2 — arrived, no active job (or legacy unassigned pending). */}
+            {canStartReceiveDispatch && isReceiveEligible && (
+              <>
+                {!canManageReceiveAssignment ? (
+                  <>
+                    <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                      Assign receive
+                    </Button>
+                    <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+                      Only owners and admins can assign receives.
+                    </Typography>
+                  </>
+                ) : receiveAssigneesStatus === 'loading' ? (
+                  <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                    Loading team…
+                  </Button>
+                ) : receiveAssigneesStatus === 'error' ? (
+                  <>
+                    <Typography variant="body2" color="error">
+                      Couldn't load who can receive this.
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => onRetryReceiveAssignees?.()}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Try again
+                    </Button>
+                  </>
+                ) : soleSelfEligible ? (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    disabled={receiveBusy || updatingStatus}
+                    onClick={() => { if (currentUserId != null) void handleDispatchReceive(currentUserId); }}
+                    sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                  >
+                    {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Receive myself'}
+                  </Button>
+                ) : teamAssignableOperators.length === 0 ? (
+                  <>
+                    <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                      Assign receive
+                    </Button>
+                    <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+                      No one on your team can receive this yet.
+                    </Typography>
+                  </>
+                ) : (
+                  <Button
+                    ref={assignButtonRef}
+                    size="small"
+                    variant="contained"
+                    aria-haspopup="dialog"
+                    aria-expanded={assignAnchor ? 'true' : undefined}
+                    disabled={receiveBusy || updatingStatus}
+                    endIcon={<ChevronDown size={14} />}
+                    onClick={() => handleOpenAssignPopover('assign')}
+                    sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                  >
+                    {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Assign receive'}
+                  </Button>
+                )}
+              </>
+            )}
+            {receiveSlow && (
+              <Typography variant="caption" color="text.secondary" role="status" sx={{ flexBasis: '100%' }}>
+                Still working. Your click registered, so there's no need to click again or refresh.
+              </Typography>
             )}
             {/* WS-UX-01 S1 — destructive actions sit apart from the next step. */}
             <IconButton
@@ -1787,205 +2091,71 @@ function PoAccordion({
           </Typography>
         )}
 
-        <EntityDetailModal
-          entityId={assignReceiveOpen ? po.id : null}
-          onClose={handleCloseReceiveAssignment}
-          title={
-            <Box
-              component="span"
-              role="heading"
-              aria-level={2}
-            >
-              {reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive'}
-            </Box>
-          }
-          maxWidth="md"
-          footerActions={
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: 1,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Button
-                variant="outlined"
-                onClick={handleCloseReceiveAssignment}
-                disabled={assigningReceive}
-                sx={{
-                  color: 'var(--ink-3)',
-                  borderColor: 'var(--rule)',
-                  '&:hover': {
-                    borderColor: 'var(--rule-2)',
-                    bgcolor: 'var(--surface)',
-                  },
-                }}
-              >
-                Cancel
-              </Button>
+        {receiveDispatchError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {receiveDispatchError}
+          </Alert>
+        )}
 
-              <Button
-                variant="contained"
-                disabled={
-                  selectedReceiveOperatorId == null || assigningReceive
-                }
-                onClick={() => void handleAssignReceive()}
-                sx={{
-                  bgcolor: 'var(--accent)',
-                  color: 'var(--accent-ink)',
-                  '&:hover': {
-                    bgcolor: 'var(--accent)',
-                    opacity: 0.88,
-                  },
-                }}
-              >
-                {assigningReceive
-                  ? (reassignReceiveMode ? 'Reassigning…' : 'Assigning…')
-                  : (reassignReceiveMode ? 'Reassign Receive' : 'Assign Receive')}
-              </Button>
-            </Box>
-          }
+        {/* WS-UX-01 S2 — compact assignment popover. Nobody is preselected;
+            picking a row is the explicit dispatch decision. */}
+        <Popover
+          open={assignAnchor != null}
+          anchorEl={assignAnchor}
+          onClose={() => setAssignAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          slotProps={{ paper: { sx: { width: 280, p: 1 } } }}
         >
-            <Typography variant="body2" fontWeight={700}>
-              {po.supplier_name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {poDisplay}
-            </Typography>
-
-            <Box sx={{ mt: 2 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-              >
-                Receive work
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {po.line_items_count} {Number(po.line_items_count) === 1 ? 'product' : 'products'}
-                {' · '}
-                {po.total_units_ordered} units
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Expected delivery:{' '}
-                {po.expected_delivery_date
-                  ? new Date(po.expected_delivery_date).toLocaleDateString()
-                  : '—'}
-              </Typography>
+          <Typography
+            id={`assign-receive-title-${po.id}`}
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', px: 1, pt: 0.5, pb: 0.75, textTransform: 'uppercase', letterSpacing: '0.06em' }}
+          >
+            {assignMode === 'reassign' ? 'Reassign to' : 'Assign receive to'}
+          </Typography>
+          {assignMode === 'assign' && receiveDispatchAssignmentSpotlight && (
+            <Box sx={{ px: 1, pb: 0.75 }}>
+              <SpotlightCoachMark
+                title="Assign Receive work"
+                body={'Assignment sends the work to Warehouse → Operations → Receiving; it does not start the job. The assigned operator opens it there and claims & starts Receive.'}
+                isDismissed={receiveDispatchAssignmentSpotlight.isDismissed}
+                onDismiss={receiveDispatchAssignmentSpotlight.dismiss}
+              />
             </Box>
-
-            <Box sx={{ mt: 2 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-              >
-                Assign to
-              </Typography>
-
-              {receiveDispatchAssignmentSpotlight && (
-                <Box sx={{ mt: 0.75 }}>
-                  <SpotlightCoachMark
-                    title="Assign Receive work"
-                    body={'Choose who should receive this shipment. Assignment sends the work to Warehouse → Operations → Receiving; it does not start the job. The assigned operator opens it there and claims & starts Receive.'}
-                    isDismissed={receiveDispatchAssignmentSpotlight.isDismissed}
-                    onDismiss={receiveDispatchAssignmentSpotlight.dismiss}
-                  />
-                </Box>
-              )}
-
-              <Box
-                role="radiogroup"
-                aria-label="Assign Receive to"
-                sx={{ mt: 0.75, display: 'grid', gap: 0.5 }}
-              >
-                {teamAssignableOperators.map((operator) => {
-                  const isSelected = selectedReceiveOperatorId === operator.id;
-                  const isSelf = operator.id === currentUserId;
-
-                  return (
-                    <Box
-                      key={operator.id}
-                      role="radio"
-                      aria-checked={isSelected}
-                      tabIndex={0}
-                      onClick={() => setSelectedReceiveOperatorId(operator.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setSelectedReceiveOperatorId(operator.id);
-                        }
-                      }}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        px: 1,
-                        py: 0.75,
-                        border: '1px solid',
-                        borderColor: isSelected ? 'var(--accent)' : 'divider',
-                        borderRadius: 1,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Radio
-                        checked={isSelected}
-                        readOnly
-                        size="small"
-                        tabIndex={-1}
-                      />
-                      <Box>
-                        <Typography variant="body2" fontWeight={600}>
-                          {operator.name}{isSelf ? ' — Me' : ''}
+          )}
+          <Box role="list" aria-labelledby={`assign-receive-title-${po.id}`} sx={{ display: 'grid', gap: 0.25 }}>
+            {assignPopoverOperators.map((operator) => {
+              const isSelf = operator.id === currentUserId;
+              return (
+                <Box role="listitem" key={operator.id}>
+                  <Button
+                    fullWidth
+                    disabled={receiveBusy}
+                    onClick={() =>
+                      void (assignMode === 'reassign'
+                        ? handleReassignReceive(operator.id)
+                        : handleDispatchReceive(operator.id))
+                    }
+                    sx={{ justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none', color: 'var(--ink)', px: 1, py: 0.75 }}
+                  >
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>
+                        {isSelf ? `Me · ${operator.name}` : operator.name}
+                      </Typography>
+                      {operator.role && (
+                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>
+                          {operator.role}
                         </Typography>
-                        {operator.role && (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ textTransform: 'capitalize' }}
-                          >
-                            {operator.role}
-                          </Typography>
-                        )}
-                      </Box>
+                      )}
                     </Box>
-                  );
-                })}
-              </Box>
-            </Box>
-
-            <Paper
-              variant="outlined"
-              sx={{ mt: 2, p: 1.25, borderRadius: 1 }}
-            >
-              <Typography variant="caption" fontWeight={700}>
-                Work identity
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Action: Receive shipment
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Reference: {poDisplay}
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Supplier: {po.supplier_name}
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Qty: {po.total_units_ordered} units
-              </Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Next: Assigned operator claims & starts Receive
-              </Typography>
-            </Paper>
-
-            {receiveDispatchError && (
-              <Alert severity="error" sx={{ mt: 2 }}>
-                {receiveDispatchError}
-              </Alert>
-            )}
-        </EntityDetailModal>
+                  </Button>
+                </Box>
+              );
+            })}
+          </Box>
+        </Popover>
 
         {/* WS-UX-01 S1 — named, explicit Cancel PO confirmation. */}
         <EntityDetailModal
@@ -2200,6 +2370,8 @@ function PurchasingPosView({
   onCreateReceiveJob, onReassignReceiveJob, onSearchVariants, autoOpenCreatePo = false,
   autoOpenReceivePoId, prefilledLineItem,
   teamAssignableOperators = [], currentUserId = null,
+  receiveAssigneesStatus = 'ready', onRetryReceiveAssignees,
+  canManageReceiveAssignment = false, onReconcilePurchaseOrders,
   spotlights,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
@@ -2280,7 +2452,11 @@ function PurchasingPosView({
                   onCreateReceiveJob={onCreateReceiveJob}
                   onReassignReceiveJob={onReassignReceiveJob}
                   teamAssignableOperators={teamAssignableOperators}
+                  receiveAssigneesStatus={receiveAssigneesStatus}
+                  onRetryReceiveAssignees={onRetryReceiveAssignees}
+                  canManageReceiveAssignment={canManageReceiveAssignment}
                   currentUserId={currentUserId}
+                  onReconcilePurchaseOrders={onReconcilePurchaseOrders}
                   autoOpenReceive={autoOpenReceivePoId === po.id}
                   receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
                 />
@@ -2312,7 +2488,11 @@ function PurchasingPosView({
                   onCreateReceiveJob={onCreateReceiveJob}
                   onReassignReceiveJob={onReassignReceiveJob}
                   teamAssignableOperators={teamAssignableOperators}
+                  receiveAssigneesStatus={receiveAssigneesStatus}
+                  onRetryReceiveAssignees={onRetryReceiveAssignees}
+                  canManageReceiveAssignment={canManageReceiveAssignment}
                   currentUserId={currentUserId}
+                  onReconcilePurchaseOrders={onReconcilePurchaseOrders}
                 />
               ))}
             </Box>

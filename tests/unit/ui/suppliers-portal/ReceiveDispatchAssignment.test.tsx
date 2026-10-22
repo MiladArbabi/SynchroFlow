@@ -82,6 +82,8 @@ function props(): SuppliersPortalPageProps & {
     onCreateReorderRequest: jest.fn(),
     onDeleteReorderRequest: jest.fn(),
     currentUserId: 7,
+    canManageReceiveAssignment: true,
+    receiveAssigneesStatus: 'ready',
     teamAssignableOperators: [
       { id: 7, name: 'Mila Owner', role: 'owner' },
       { id: 8, name: 'Avery Worker', role: 'operator' },
@@ -111,20 +113,17 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     );
 
     fireEvent.click(screen.getByText('North Dock Supply'));
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
 
+    // WS-UX-01 S2 — opening the popover creates nothing; picking a row does.
     expect(p.onCreateReceiveJob).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
-    expect(within(dialog).getByText(/mila owner/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/avery worker/i)).toBeInTheDocument();
+    const picker = await screen.findByRole('list', { name: /assign receive to/i });
+    expect(within(picker).getByText(/mila owner/i)).toBeInTheDocument();
+    expect(within(picker).getByText(/avery worker/i)).toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: /assign/i });
-    expect(confirm).toBeDisabled();
-
-    fireEvent.click(within(dialog).getByText(/mila owner/i));
-    fireEvent.click(confirm);
+    fireEvent.click(within(picker).getByRole('button', { name: /mila owner/i }));
 
     await waitFor(() => {
       expect(p.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, {
@@ -138,9 +137,8 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       receive_job_id: 'receive-other',
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
-    fireEvent.click(await screen.findByText(/avery worker/i));
-    fireEvent.click(screen.getByRole('button', { name: /assign/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /avery worker/i }));
 
     await waitFor(() => {
       expect(p.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, {
@@ -216,7 +214,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     }
   );
 
-  it('opens the canonical assignment dialog from a Receive PO deep-link without creating work', async () => {
+  it('opens the assignment popover from a Receive PO deep-link without creating work', async () => {
     const p = props();
 
     render(
@@ -229,19 +227,13 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    const dialog = await screen.findByRole(
-      'dialog',
-      { name: /assign receive/i }
-    );
+    const picker = await screen.findByRole('list', { name: /assign receive to/i });
+    expect(within(picker).getByText(/avery worker/i)).toBeInTheDocument();
 
-    expect(
-      within(dialog).getByText(/^north dock supply$/i)
-    ).toBeInTheDocument();
-
-    expect(
-      within(dialog).getByText(/^PO-1109$/i)
-    ).toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent(PO_ID);
+    // The expanded PO identifies the work by its canonical number, never the UUID.
+    expect(screen.getByText(/^north dock supply$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^PO-1109$/i)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(PO_ID);
 
     expect(
       p.onCreateReceiveJob
@@ -264,9 +256,8 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     expect(screen.getByText(/^PO-1109$/i)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(PO_ID);
 
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
-    fireEvent.click(await screen.findByText(/mila owner/i));
-    fireEvent.click(screen.getByRole('button', { name: /assign/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /mila owner/i }));
 
     await waitFor(() => {
       expect(p.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, {
@@ -275,7 +266,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     });
   });
 
-  it('GH-1109 residual: shows the Receive dispatch onboarding coach mark in the Assign Receive dialog when not dismissed', async () => {
+  it('GH-1109 residual: shows the Receive dispatch onboarding coach mark in the assignment popover when not dismissed', async () => {
     const p = props();
 
     render(
@@ -285,16 +276,15 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     );
 
     fireEvent.click(screen.getByText('North Dock Supply'));
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
+    await screen.findByRole('list', { name: /assign receive to/i });
 
-    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
-
-    expect(within(dialog).getByText('Assign Receive work')).toBeInTheDocument();
+    expect(screen.getByText('Assign Receive work')).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/warehouse.*operations.*receiving/i)
+      screen.getByText(/warehouse.*operations.*receiving/i)
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/does not start the job/i)
+      screen.getByText(/does not start the job/i)
     ).toBeInTheDocument();
   });
 
@@ -312,15 +302,23 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     );
 
     fireEvent.click(screen.getByText('North Dock Supply'));
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
+    await screen.findByRole('list', { name: /assign receive to/i });
 
-    const dialog = await screen.findByRole('dialog', { name: /assign receive/i });
-
-    expect(within(dialog).queryByText('Assign Receive work')).not.toBeInTheDocument();
+    expect(screen.queryByText('Assign Receive work')).not.toBeInTheDocument();
   });
 
   it('GH-1109 residual: assign-to-other confirmation identifies the Receiving queue handoff', async () => {
     const p = props();
+    // WS-UX-01 S2 — the confirmation follows a canonical re-read showing the job.
+    (p as any).onReconcilePurchaseOrders = jest.fn().mockResolvedValue([
+      {
+        ...p.data!.purchase_orders[0],
+        receive_job_id: 'receive-self',
+        receive_status: 'pending',
+        receive_assigned_operator_id: 8,
+      },
+    ]);
 
     render(
       <MemoryRouter>
@@ -329,9 +327,8 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     );
 
     fireEvent.click(screen.getByText('North Dock Supply'));
-    fireEvent.click(await screen.findByRole('button', { name: /receive via wms/i }));
-    fireEvent.click(await screen.findByText(/avery worker/i));
-    fireEvent.click(screen.getByRole('button', { name: /assign/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /avery worker/i }));
 
     await waitFor(() => {
       expect(p.onCreateReceiveJob).toHaveBeenCalledWith(PO_ID, {

@@ -36,25 +36,21 @@ function ctaBlock(label: string): string {
   return src.slice(start, labelIndex);
 }
 
-describe('SUPPLIERS-UX-POLISH-01 — canonical Receive assignment modal', () => {
-  it('uses EntityDetailModal for Assign/Reassign Receive and keeps the commit CTA Tier 1', () => {
-    const anchor = 'entityId={assignReceiveOpen ? po.id : null}';
-    const start = src.indexOf(anchor);
+describe('SUPPLIERS-UX-POLISH-01 / WS-UX-01 S2 — Receive assignment surface', () => {
+  it('retires the Assign Receive modal and keeps the dispatch commit CTA Tier 1', () => {
+    // WS-UX-01 S2 replaced the EntityDetailModal with a compact popover.
+    expect(src).not.toMatch(/assignReceiveOpen/);
+    expect(src).not.toMatch(/Work identity/);
 
+    const start = src.indexOf('{/* WS-UX-01 S2 — arrived, no active job');
     expect(start).toBeGreaterThan(-1);
-
-    const end = src.indexOf(
-      '{/* WS-UX-01 S1 — named, explicit Cancel PO confirmation. */}',
-      start
-    );
-
+    const end = src.indexOf('{receiveSlow && (', start);
     expect(end).toBeGreaterThan(start);
 
-    const modalBlock = src.slice(Math.max(0, start - 250), end);
-
-    expect(modalBlock).toMatch(/<EntityDetailModal/);
-    expect(modalBlock).toMatch(/bgcolor:\s*'var\(--accent\)'/);
-    expect(modalBlock).toMatch(/color:\s*'var\(--accent-ink\)'/);
+    const ctaBlock = src.slice(start, end);
+    expect(ctaBlock).toMatch(/Receive myself/);
+    expect(ctaBlock).toMatch(/bgcolor:\s*'var\(--accent\)'/);
+    expect(ctaBlock).toMatch(/color:\s*'var\(--accent-ink\)'/);
   });
 });
 

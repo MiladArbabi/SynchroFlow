@@ -29,6 +29,7 @@ import type {
 type FetchSourcingWorklist = SuppliersPortalPageProps['onFetchSourcingWorklist'];
 type SourcingWorklistParams = Parameters<FetchSourcingWorklist>[0];
 type SourcingWorklistResult = Awaited<ReturnType<FetchSourcingWorklist>>;
+type ReceiveAssigneesStatus = NonNullable<SuppliersPortalPageProps['receiveAssigneesStatus']>;
 
 type ReceiveTeamMember = {
   user_id: number;
@@ -57,7 +58,7 @@ import { useAuth } from 'contexts/AuthContext';
  * All HTTP calls live here — module stays decoupled.
  */
 export default function SuppliersPortalPage() {
-  const { data, isLoading, isError, refetch } = useSuppliersPortal();
+  const { data, isLoading, isError, refetch, refetchPurchaseOrders } = useSuppliersPortal();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -66,17 +67,28 @@ export default function SuppliersPortalPage() {
   const currentUserRole =
     (user as { role?: string } | null)?.role ?? 'operator';
 
+  const canManageReceiveAssignment =
+    currentUserId != null &&
+    (currentUserRole === 'owner' || currentUserRole === 'admin');
+
   const receiveTeam = useQuery<{ operators: ReceiveTeamMember[] }>({
     queryKey: ['operators', 'team'],
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/operators/receive-assignees');
       return data;
     },
-    enabled:
-      currentUserId != null &&
-      (currentUserRole === 'owner' || currentUserRole === 'admin'),
+    enabled: canManageReceiveAssignment,
     staleTime: 5 * 60_000,
   });
+
+  // WS-UX-01 S2 — an unloaded roster is never proof of who is eligible.
+  const receiveAssigneesStatus: ReceiveAssigneesStatus = !canManageReceiveAssignment
+    ? 'unavailable'
+    : receiveTeam.isError
+      ? 'error'
+      : receiveTeam.isSuccess
+        ? 'ready'
+        : 'loading';
 
   // GH-1109: assignment choices are deliberately narrow:
   // authenticated dispatcher ("Me") + warehouse operators.
@@ -374,8 +386,11 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
         existing.status !== 'pending' ||
         existing.started_at != null
       ) {
-        throw new Error(
-          'Receive work has already started and cannot be reassigned.'
+        // WS-UX-01 S2 — refusals carry the conflict status so the module
+        // reconciles the PO instead of re-enabling stale controls.
+        throw Object.assign(
+          new Error('Receive work has already started and cannot be reassigned.'),
+          { status: 409 }
         );
       }
 
@@ -387,8 +402,9 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
       }
 
       if (existing.assigned_operator_id != null) {
-        throw new Error(
-          'Receive work is already assigned to another operator.'
+        throw Object.assign(
+          new Error('Receive work is already assigned to another operator.'),
+          { status: 409 }
         );
       }
 
@@ -430,6 +446,7 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     isLoading,
     isError,
     onRefresh: refetch,
+    onReconcilePurchaseOrders: refetchPurchaseOrders,
     onFetchLineItems: handleFetchLineItems,
     onUpdatePoStatus: handleUpdatePoStatus,
     onCreateSupplier: handleCreateSupplier,
@@ -440,6 +457,9 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onReassignReceiveJob: handleReassignReceiveJob,
     currentUserId,
     teamAssignableOperators,
+    receiveAssigneesStatus,
+    onRetryReceiveAssignees: () => { void receiveTeam.refetch(); },
+    canManageReceiveAssignment,
     onSearchVariants: handleSearchVariants,
     onFetchSourcingRecommendations: handleFetchSourcingRecommendations,
     onFetchSourcingWorklist: handleFetchSourcingWorklist,
