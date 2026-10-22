@@ -477,6 +477,27 @@ jobs:
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109'
 
+      # TEMPORARY (verify branch only) — WS-UX-01 S1 cancellation RED/GREEN.
+      # SF-WSUX01-S1-CANCEL-CI-001. Not for main.
+      - name: TEMP WS-UX-01 S1 cancellation regression
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: |
+          set -uo pipefail
+          npm run test:integration -- --testPathPatterns receive-outstanding-gh1245 -t WS-UX-01
+          targeted=$?
+          echo "WSUX01_TARGETED_EXIT=$targeted"
+          npm run test:integration -- --testPathPatterns receive-outstanding-gh1245
+          full=$?
+          echo "WSUX01_FULL_FILE_EXIT=$full"
+          [ "$targeted" = 0 ] && [ "$full" = 0 ]
+
       - name: Restore runner network
         if: always()
         shell: bash
