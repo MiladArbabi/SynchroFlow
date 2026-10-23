@@ -1,5 +1,5 @@
 // modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
-import { Fragment, useState, useCallback, useRef, useEffect } from 'react';
+import { Fragment, useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
@@ -30,7 +30,7 @@ import {
   Popover,
   Tooltip,
 } from '@mui/material';
-import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2, MoreHorizontal } from 'lucide-react';
+import { Truck, Star, Clock, ChevronDown, ChevronLeft, Package, CheckCircle, XCircle, Plus, Trash2, MoreHorizontal } from 'lucide-react';
 import { 
   ModuleErrorBoundary, 
   ModuleLoadingSkeleton, 
@@ -1675,6 +1675,7 @@ function PoDetail({
   onClaimReceiveJob,
   autoOpenReceive = false,
   receiveDispatchAssignmentSpotlight,
+  narrow = false,
 }: {
   po: PurchaseOrder;
   onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
@@ -1702,6 +1703,8 @@ function PoDetail({
   onDeepLinkHandled?: (poId: string) => void;
   /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the assignment popover. */
   receiveDispatchAssignmentSpotlight?: { isDismissed: boolean; dismiss: () => void };
+  /** WS-UX-01 S5-B — single-pane workspace (< 880px): stacked actions, compact progress. */
+  narrow?: boolean;
 }) {
   // WS-UX-01 S4 — the detail is mounted on first selection and kept mounted,
   // so mutation locks, reconciliation and the line-item cache survive
@@ -2261,6 +2264,19 @@ function PoDetail({
     }
   };
 
+  /** WS-UX-01 S1 — canCancelPo and the named confirmation still guard it. */
+  const cancelPoButton = (
+    <Button
+      variant="outlined"
+      disabled={!cancelAllowed || updatingStatus || receiveBusy || cancellingPo}
+      onClick={handleOpenCancelConfirm}
+      aria-describedby={!cancelAllowed ? `cancel-po-unavailable-${po.id}` : undefined}
+      sx={{ textTransform: 'none', color: 'var(--critical-text)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--critical-border)', bgcolor: 'transparent' } }}
+    >
+      Cancel PO…
+    </Button>
+  );
+
   return (
     <Box
       data-testid={`po-detail-${po.id}`}
@@ -2280,10 +2296,11 @@ function PoDetail({
       }}
     >
       {/* WS-UX-01 S4 — supplier and status, then reference, date and size. */}
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, px: '28px', pt: '20px', pb: '14px' }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, px: narrow ? '16px' : '28px', pt: '20px', pb: '14px' }}>
         <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-            <Typography component="h2" noWrap sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.2, color: 'var(--ink)' }}>
+          {/* WS-UX-01 S5-B — narrow: the supplier name wraps instead of truncating. */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, flexWrap: narrow ? 'wrap' : undefined }}>
+            <Typography component="h2" noWrap={!narrow} sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.2, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
               {po.supplier_name}
             </Typography>
             {hasStartedReceive(po) ? (
@@ -2310,9 +2327,9 @@ function PoDetail({
         </Box>
       </Box>
 
-      <PoLifecycleSteps po={po} />
+      <PoLifecycleSteps po={po} compact={narrow} />
 
-      <Box sx={{ ...THIN_SCROLL_SX, flex: 1, minHeight: 0, overflow: 'auto', px: '28px', pb: 2 }}>
+      <Box sx={{ ...THIN_SCROLL_SX, flex: 1, minHeight: 0, overflow: 'auto', px: narrow ? '16px' : '28px', pb: 2 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {lineItemsFailed && (
           <Alert
@@ -2416,7 +2433,8 @@ function PoDetail({
               '& th:last-of-type, & td:last-of-type': { pr: 0 },
             }}
           >
-            <Table size="small">
+            {/* WS-UX-01 S5-B — narrow: columns keep a readable width; the container scrolls sideways. */}
+            <Table size="small" sx={narrow ? { minWidth: 360 } : undefined}>
               <TableHead>
                 <TableRow>
                   <TableCell sx={LINE_TABLE_HEAD_SX}>Product</TableCell>
@@ -2488,11 +2506,13 @@ function PoDetail({
               color: 'var(--accent-ink)',
               '&:hover': { bgcolor: 'var(--accent-hover)', opacity: 1 },
             },
+            // WS-UX-01 S5-B — narrow: copy above full-width stacked actions.
+            ...(narrow ? { px: '16px', flexDirection: 'column', alignItems: 'stretch', '& .MuiButton-contained': { minHeight: 44, minWidth: 0, px: 2.5, fontSize: 14, borderRadius: '8px' } } : null),
           }}
         >
           {/* WS-UX-01 S4 — text column: heading, copy and every supporting
               message. It grows for briefs and errors; the actions never move. */}
-          <Box sx={{ display: 'grid', gap: 0.5, flex: '1 1 320px', minWidth: 0, alignContent: 'center' }}>
+          <Box sx={{ display: 'grid', gap: 0.5, flex: narrow ? '0 0 auto' : '1 1 320px', minWidth: 0, alignContent: 'center' }}>
             <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent-text)' }}>
               Next step
             </Typography>
@@ -2618,18 +2638,11 @@ function PoDetail({
               flex: '0 0 auto',
               maxWidth: '100%',
               '& .MuiButton-root': { minHeight: 44, borderRadius: '8px', whiteSpace: 'nowrap' },
+              // WS-UX-01 S5-B — narrow: full-width, primary above Cancel PO… (DOM order matches).
+              ...(narrow ? { flexDirection: 'column', alignItems: 'stretch', ml: 0, width: '100%', '& .MuiButton-root': { minHeight: 44, borderRadius: '8px', whiteSpace: 'normal', width: '100%' } } : null),
             }}
           >
-            {/* WS-UX-01 S1 — canCancelPo and the named confirmation still guard it. */}
-            <Button
-              variant="outlined"
-              disabled={!cancelAllowed || updatingStatus || receiveBusy || cancellingPo}
-              onClick={handleOpenCancelConfirm}
-              aria-describedby={!cancelAllowed ? `cancel-po-unavailable-${po.id}` : undefined}
-              sx={{ textTransform: 'none', color: 'var(--critical-text)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--critical-border)', bgcolor: 'transparent' } }}
-            >
-              Cancel PO…
-            </Button>
+            {!narrow && cancelPoButton}
             {/* WS-UX-01 S1 — Draft: the merchant confirms they sent it externally (draft → ordered). */}
             {nextAction.kind === 'mark_sent' && (
               <Button
@@ -2763,6 +2776,7 @@ function PoDetail({
                 </Button>
               )
             )}
+            {narrow && cancelPoButton}
           </Box>
         )}
         </Box>
@@ -2837,7 +2851,7 @@ function PoDetail({
           subtitle={po.supplier_name}
           maxWidth="md"
           footerActions={
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap', [COARSE_POINTER]: { '& .MuiButton-root': { minHeight: 44 } } }}>
               <Button
                 variant="outlined"
                 onClick={handleCloseCancelConfirm}
@@ -3076,7 +3090,7 @@ export function resolvePoLifecycleSteps(po: PurchaseOrder): PoLifecycleStep[] {
 }
 
 /** Informational only: no step is interactive. */
-function PoLifecycleSteps({ po }: { po: PurchaseOrder }) {
+function PoLifecycleSteps({ po, compact = false }: { po: PurchaseOrder; compact?: boolean }) {
   const steps = resolvePoLifecycleSteps(po);
   const cancelled = po.status === 'cancelled';
   return (
@@ -3084,14 +3098,18 @@ function PoLifecycleSteps({ po }: { po: PurchaseOrder }) {
       component="ol"
       aria-label={cancelled ? 'PO progress (cancelled)' : 'PO progress'}
       data-testid="po-lifecycle"
-      sx={{ listStyle: 'none', m: 0, display: 'flex', alignItems: 'center', gap: '14px', px: '28px', py: '12px', borderTop: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)' }}
+      sx={{
+        listStyle: 'none', m: 0, display: 'flex', alignItems: 'center', gap: '14px', px: '28px', py: '12px', borderTop: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)',
+        // WS-UX-01 S5-B — narrow: the three stages stack vertically, full text.
+        ...(compact ? { flexDirection: 'column', alignItems: 'flex-start', gap: '10px', px: '16px' } : null),
+      }}
     >
       {steps.map((step, i) => {
         const done = step.state === 'done';
         const current = step.state === 'current';
         return (
           <Fragment key={step.label}>
-            {i > 0 && (
+            {i > 0 && !compact && (
               <Box
                 component="li"
                 aria-hidden="true"
@@ -3379,7 +3397,14 @@ export function sortPurchaseOrders(pos: PurchaseOrder[], key: PoSortKey): Purcha
     .map(({ po }) => po);
 }
 
+/** WS-UX-01 S5-B — below this measured workspace width Purchasing shows one pane. */
+export const NARROW_WORKSPACE_PX = 880;
+/** WS-UX-01 S5-B — touch devices get >= 44px targets; fine pointers keep S4 density. */
+const COARSE_POINTER = '@media (pointer: coarse)';
+const COARSE_MENU_SX = { [COARSE_POINTER]: { '& .MuiMenuItem-root': { minHeight: 44 } } } as const;
+
 const LIST_TOOL_SX = {
+  [COARSE_POINTER]: { minHeight: 44 },
   minHeight: 32,
   px: 1.25,
   fontSize: 12.5,
@@ -3455,19 +3480,43 @@ function PurchasingPosView({
   const loaded = !isLoading && !isError && data != null;
   const knownPoIds = new Set(allPos.map((po) => po.id));
 
+  // WS-UX-01 S5-B — the measured Purchasing workspace (not the viewport)
+  // decides the layout, so the sidenav width is accounted for. Until the
+  // first measurement nothing is mounted, so no default detail (and no
+  // line-item request) is created for a layout that then hides it.
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const canMeasure = typeof ResizeObserver !== 'undefined';
+  const [workspaceWidth, setWorkspaceWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = workspaceRef.current;
+    if (!el || !canMeasure) return;
+    setWorkspaceWidth(el.getBoundingClientRect().width);
+    const observer = new ResizeObserver(() => setWorkspaceWidth(el.getBoundingClientRect().width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canMeasure]);
+  const layoutKnown = !canMeasure || workspaceWidth != null;
+  // Zero width means "not laid out" (hidden ancestor, no layout engine):
+  // keep the certified S4 layout rather than guess a narrow one.
+  const narrow = workspaceWidth != null && workspaceWidth > 0 && workspaceWidth < NARROW_WORKSPACE_PX;
+
   // WS-UX-01 S4 D2/D3 — selection: a pending action=receive deep link, else
   // ?po=<id>, else the first Arrived → On the way → Draft PO (unfiltered, so
-  // filters and sorting never move it).
+  // filters and sorting never move it). S5-B: a narrow workspace has no
+  // default — without ?po it shows the list.
   const poParam = searchParams.get('po');
   const deepLinkPoId = autoOpenReceivePoId && knownPoIds.has(autoOpenReceivePoId) ? autoOpenReceivePoId : null;
   const requestedPoId = deepLinkPoId ?? (poParam && knownPoIds.has(poParam) ? poParam : null);
   const defaultPoId = groups.find((group) => group.pos.length > 0)?.pos[0]?.id ?? null;
-  const selectedPoId = claimHoldPoId ?? requestedPoId ?? defaultPoId;
-  if (selectedPoId) mountedPoIdsRef.current.add(selectedPoId);
+  const selectedPoId = claimHoldPoId ?? requestedPoId ?? (narrow ? null : defaultPoId);
+  if (layoutKnown && selectedPoId) mountedPoIdsRef.current.add(selectedPoId);
   const selectedPo = allPos.find((po) => po.id === selectedPoId) ?? null;
   const selectedView: PoListView | null = selectedPo ? (OPEN_STATUSES.includes(selectedPo.status) ? 'open' : 'closed') : null;
   if (selectedPoId && selectedView) lastSelectedRef.current[selectedView] = selectedPoId;
-  const listView: PoListView = emptyView ?? selectedView ?? 'open';
+  // S5-B: in the narrow list pane, ?view=open|closed carries the list view.
+  const viewParam: PoListView = searchParams.get('view') === 'closed' ? 'closed' : 'open';
+  const pane: 'list' | 'detail' | null = narrow ? (selectedPoId ? 'detail' : 'list') : null;
+  const listView: PoListView = pane === 'list' ? viewParam : (emptyView ?? selectedView ?? 'open');
   // A PO from the other view is never shown as the active detail.
   const displayedPoId = selectedView === listView ? selectedPoId : null;
   const displayedPo = displayedPoId != null ? selectedPo : null;
@@ -3492,6 +3541,16 @@ function PurchasingPosView({
     if (claimHoldPoId || view === listView) return;
     // A status filter from the other view would only empty this one.
     setStatusFilter('all');
+    // S5-B: the narrow list pane stays in the list; the view is a history entry.
+    if (pane === 'list') {
+      updateParams((params) => {
+        params.set('view', view);
+        params.delete('po');
+        params.delete('action');
+        params.delete('poId');
+      }, false);
+      return;
+    }
     const viewPos = view === 'open'
       ? groups.flatMap((group) => group.pos)
       : PO_CLOSED_GROUPS.flatMap((group) => closedPos.filter((po) => po.status === group.key));
@@ -3523,8 +3582,38 @@ function PurchasingPosView({
       params.set('po', poId);
       params.delete('action');
       params.delete('poId');
+      params.delete('view');
     }, false);
   }, [claimHoldPoId, updateParams]);
+
+  /**
+   * S5-B — narrow detail → list: a new history entry without po/action/poId,
+   * keeping the PO's Open/Closed view. Never history.go(-1); blocked while a
+   * Start receiving claim holds the selection.
+   */
+  const handleBackToList = () => {
+    if (claimHoldPoId) return;
+    const view = selectedView ?? 'open';
+    updateParams((params) => {
+      params.delete('po');
+      params.delete('action');
+      params.delete('poId');
+      params.set('view', view);
+    }, false);
+  };
+
+  // S5-B — on a narrow pane switch, bring the workspace top into view and
+  // move focus to the new pane's anchor (Back to POs, or the PO just left).
+  const previousPaneRef = useRef<{ pane: typeof pane; poId: string | null }>({ pane, poId: selectedPoId });
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    const previous = previousPaneRef.current;
+    previousPaneRef.current = { pane, poId: selectedPoId };
+    if (pane == null || previous.pane == null || previous.pane === pane) return;
+    workspaceRef.current?.scrollIntoView?.({ block: 'start' });
+    if (pane === 'detail') backButtonRef.current?.focus();
+    else if (previous.poId) workspaceRef.current?.querySelector<HTMLElement>(`[data-testid="po-row-${previous.poId}"]`)?.focus();
+  }, [pane, selectedPoId]);
 
   /** D3 — after the deep link ran its D5 decision, normalize to ?po=X (replace). */
   const handleDeepLinkHandled = useCallback((poId: string) => {
@@ -3586,6 +3675,10 @@ function PurchasingPosView({
 
   return (
     <Box
+      ref={workspaceRef}
+      data-testid="purchasing-workspace"
+      data-layout={narrow ? 'narrow' : 'wide'}
+      data-pane={pane ?? undefined}
       sx={{
         px: { xs: 2, md: '32px' },
         pt: '20px',
@@ -3594,8 +3687,9 @@ function PurchasingPosView({
         flexDirection: 'column',
         gap: '16px',
         // WS-UX-01 S4 — fill the route's height (no viewport guess); the list
-        // rows and the detail body own their scrolling.
-        '@media (min-width: 1100px)': { flex: 1, minHeight: 0 },
+        // rows and the detail body own their scrolling. S5-B: a narrow
+        // workspace uses natural page flow instead.
+        '@media (min-width: 1100px)': narrow ? {} : { flex: 1, minHeight: 0 },
       }}
     >
 
@@ -3649,10 +3743,11 @@ function PurchasingPosView({
         </Paper>
       )}
 
-      {/* WS-UX-01 S4 — PO list beside the selected PO (D5: one column below ~1100px). */}
-      {loaded && allPos.length > 0 && (
+      {/* WS-UX-01 S4 — PO list beside the selected PO (D5: one column below ~1100px).
+          S5-B — below 880px of workspace: one pane, list OR detail. */}
+      {loaded && allPos.length > 0 && layoutKnown && (
         <Box
-          sx={{
+          sx={narrow ? { display: 'grid', gap: '12px', gridTemplateColumns: 'minmax(0, 1fr)' } : {
             display: 'grid',
             gap: '20px',
             gridTemplateColumns: 'minmax(0, 1fr)',
@@ -3666,9 +3761,10 @@ function PurchasingPosView({
           <Box
             component="nav"
             aria-label="Purchase orders"
+            hidden={pane === 'detail'}
             sx={{
               minHeight: 0,
-              display: 'flex',
+              display: pane === 'detail' ? 'none' : 'flex',
               flexDirection: 'column',
               border: '1px solid var(--rule)',
               borderRadius: '12px',
@@ -3685,7 +3781,7 @@ function PurchasingPosView({
                   inputProps={{ 'aria-label': 'Search PO or supplier' }}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { height: 32, fontSize: 13 } }}
+                  sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { height: 32, fontSize: 13, [COARSE_POINTER]: { height: 44, '& .MuiInputBase-input': { height: '100%', py: 0, boxSizing: 'border-box' } } } }}
                 />
                 <Button
                   variant="outlined"
@@ -3712,7 +3808,7 @@ function PurchasingPosView({
                   Sort
                 </Button>
               </Box>
-              <Menu anchorEl={filtersAnchor} open={filtersAnchor != null} onClose={() => setFiltersAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Filters' }}>
+              <Menu anchorEl={filtersAnchor} open={filtersAnchor != null} onClose={() => setFiltersAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Filters' }} slotProps={{ paper: { sx: COARSE_MENU_SX } }}>
                 <ListSubheader sx={{ lineHeight: '28px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' }}>PO status</ListSubheader>
                 {statusChoices.map(([value, label]) => (
                   <MenuItem key={value} role="menuitemradio" aria-checked={statusFilter === value} selected={statusFilter === value} onClick={() => setStatusFilter(value)} sx={{ fontSize: 13 }}>
@@ -3730,7 +3826,7 @@ function PurchasingPosView({
                   Clear filters
                 </MenuItem>
               </Menu>
-              <Menu anchorEl={sortAnchor} open={sortAnchor != null} onClose={() => setSortAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Sort' }}>
+              <Menu anchorEl={sortAnchor} open={sortAnchor != null} onClose={() => setSortAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Sort' }} slotProps={{ paper: { sx: COARSE_MENU_SX } }}>
                 {PO_SORTS.map(([value, label]) => (
                   <MenuItem key={value} role="menuitemradio" aria-checked={sortKey === value} selected={sortKey === value} onClick={() => { setSortKey(value); setSortAnchor(null); }} sx={{ fontSize: 13 }}>
                     {label}
@@ -3751,6 +3847,7 @@ function PurchasingPosView({
                       flex: 1,
                       textAlign: 'center',
                       py: '5px',
+                      [COARSE_POINTER]: { minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', py: 0 },
                       borderRadius: '6px',
                       cursor: 'pointer',
                       fontSize: 12.5,
@@ -3798,7 +3895,8 @@ function PurchasingPosView({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '1px',
-                '@media (max-width: 1099.98px)': { maxHeight: 480 },
+                // S5-B: the narrow list pane is the whole page; it is not capped.
+                '@media (max-width: 1099.98px)': { maxHeight: narrow ? 'none' : 480 },
               }}
             >
               {visibleCount === 0 && (
@@ -3843,7 +3941,28 @@ function PurchasingPosView({
             </Box>
           </Box>
 
-          <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <Box hidden={pane === 'list'} sx={{ minHeight: 0, minWidth: 0, display: pane === 'list' ? 'none' : 'flex', flexDirection: 'column', gap: narrow ? '8px' : 0 }}>
+            {/* S5-B — narrow detail pane: an explicit way back to the list. */}
+            {pane === 'detail' && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Button
+                  ref={backButtonRef}
+                  variant="text"
+                  startIcon={<ChevronLeft size={18} />}
+                  onClick={handleBackToList}
+                  disabled={claimHoldPoId != null}
+                  aria-describedby={claimHoldPoId != null ? 'po-back-held' : undefined}
+                  sx={{ minHeight: 44, px: 1, ml: -1, textTransform: 'none', fontSize: 14, color: 'var(--ink-2)' }}
+                >
+                  Back to POs
+                </Button>
+                {claimHoldPoId != null && (
+                  <Typography id="po-back-held" variant="caption" color="text.secondary">
+                    Available once Start receiving finishes.
+                  </Typography>
+                )}
+              </Box>
+            )}
             {displayedPoId == null && (
               <Box sx={{ border: '1px dashed var(--rule)', borderRadius: '14px', p: 4, textAlign: 'center', color: 'var(--ink-3)' }}>
                 <Typography variant="body2">
@@ -3875,6 +3994,7 @@ function PurchasingPosView({
                 onClaimReceiveJob={onClaimReceiveJob}
                 autoOpenReceive={OPEN_STATUSES.includes(po.status) && deepLinkPoId === po.id}
                 receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
+                narrow={narrow}
               />
             ))}
           </Box>

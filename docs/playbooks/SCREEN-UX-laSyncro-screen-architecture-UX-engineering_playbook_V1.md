@@ -2,7 +2,7 @@
 
 **Status:** Living engineering contract
 **Version:** V1
-**Last architecture update:** 2026-09-27
+**Last architecture update:** 2026-10-23
 **Canonical scope:** LaSyncro operational screen architecture and UX normalization
 
 This becomes the reference contract for the rest of the screen-by-screen sprint.
@@ -634,6 +634,7 @@ Pick	…	Execution	CONTEXTUAL	No	Global	Audit	Needs audit
 Pack	…	Execution	NONE/OD	No	Global	Audit	Needs audit
 Floor Planning	/floor-planning	Spatial	PRIMARY	No	Global	Audit	Needs audit
 Warehouse Analytics	/wms/analytics	Operational Context	NONE	NO	Global; contextual nonmodal Details (no rail) withdraws while Console open; <1200 overlay exception	PASS: AppLayout + document overflow 0 at 1440×720 + 1024×820 (light + dark); natural AppLayout scroll at 390×844 (single column)	LOCAL CERTIFIED 2026-10-09 (GH-1231, §18B) — PRODUCTION CERTIFICATION PENDING; GH-1230 data reliability shipped and CLOSED (5d7b145f, production smoke accepted)
+Purchasing Open POs	/suppliers-portal	Operational Context	NONE	NO	Global; independent of the <768px overlay sidenav	S4 split/stacked at workspace >= 880px; single-pane natural page flow < 880px (1024×820 expanded sidenav, 768×1024, 390×844, 320×740)	S5 IMPLEMENTED + TARGETED VERIFIED LOCALLY 2026-10-23 (WS-UX-01 S5) — COMBINED VERIFY / CERTIFICATION PENDING
 Question marks mean decision not yet certified, not implementation uncertainty.
 
 ## 14. Registry screen detail
@@ -1515,6 +1516,36 @@ GH-1231 commit, deployment or production acceptance.
 The GH-1230 data reliability contract shipped (5d7b145f), passed CI, deploy
 and production smoke, is CLOSED, and applies unchanged.
 WORKFLOW_DOC_UPDATE_REQUIRED=NO.
+
+## 18C. Purchasing Open POs registry record — RESPONSIVE (WS-UX-01 S5)
+
+Contract: WS-UX-01-S5-RESPONSIVE-v1.1. Builds on the certified S4 split list/detail (WS-UX-01 S4, production v838).
+
+SHELL (S5-A)
+Below 768px viewport the AppLayout sidenav reserves no width and opens as a modal overlay from a 44px header trigger (Escape, backdrop, close button and any navigation dismiss it; focus is contained and returned). The desktop EXPANDED/COMPACT preference is never written by the mobile shell or by resizing. FT2 admission, the operator chrome-free shell and valid warehouseFocus keep suppressing navigation. The Ops Console stays independent; its trigger is 44px on coarse-pointer mobile.
+
+PURCHASING (S5-B)
+The measured Purchasing workspace (ResizeObserver, border box) decides the layout:
+- >= 880px: the certified S4 layout and URL behaviour, unchanged (split at viewport >= 1100px, stacked below, default selection when no ?po).
+- < 880px: one pane. No ?po shows the list (?view=open|closed); a valid ?po or normalized D5 deep link shows the detail. Selecting pushes history; Back to POs pushes a list entry. Details stay mounted; a Start receiving claim disables Back to POs and keeps the held detail. Actions stack full width (primary, then Cancel PO…). Modules UX Playbook §1 rule 21 is the shared rule.
+
+RESPONSIVE CONTRACT
+1440×900 and 1024×820 with a compact sidenav: wide (S4).
+1024×820 with an expanded sidenav, 768×1024, 390×844, 320×740: single pane, natural AppLayout page flow (as the Inventory precedent at 390×844).
+
+VERIFICATION (local, isolated fixtures)
+Browser: all six cells × light/dark — layout per the 880px rule, CTA centre hit-tests, 44px coarse-pointer targets, contained long-table scroll, progress on screen, identity untruncated, popover and Cancel confirmation in view, Back/Forward, D5 deep link, zero mutations.
+Shared dialog touch correction: the shared EntityDetailModal Close control is 44×44px under a coarse pointer and keeps 28×28px on fine pointers (verified on Purchasing Cancel PO, Ops Console → Order Detail and the variant detail modal).
+Not covered: real devices and production.
+
+STATUS
+LOCALLY CERTIFIED — SHIPMENT AND PRODUCTION CERTIFICATION PENDING (2026-10-23).
+- S5-A responsive shell: accepted.
+- S5-B responsive Purchasing: accepted.
+- Shared dialog touch correction (EntityDetailModal Close, coarse pointer): accepted.
+- 880px interpretation ratified: the 880px measured-workspace threshold controls S5 single-pane activation only; at or above it the existing S4 viewport-dependent split/stacked layout is retained unchanged.
+- Real-device acceptance: PENDING.
+This record does not claim CI, deployment or production certification.
 
 ## 19. Enforcement rule for engineers
 The registry should display this prominently:

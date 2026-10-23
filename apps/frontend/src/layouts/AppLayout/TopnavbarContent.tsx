@@ -5,10 +5,10 @@ import { useLocation, Link as RouterLink, useNavigate } from "react-router-dom";
 import { getBreadcrumbLabel } from "runtime/registerNav";
 import {
   Box, Typography, Breadcrumbs as MuiBreadcrumbs,
-  Link, Tooltip, Popover,
+  Link, Tooltip, Popover, IconButton,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
-import { Home } from 'lucide-react';
+import { Home, Menu } from 'lucide-react';
 import { OpsConsoleButton } from '../../components/OpsConsole';
 import { useAlerts } from '../../pages/alerts/useAlerts';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
@@ -23,9 +23,11 @@ interface TopnavbarContentProps {
   onEditToggle: () => void;
   onAddWidget: () => void;
   onToggleSidenav: () => void;
+  /** WS-UX-01 S5-A — present only while AppLayout shows the mobile overlay nav. */
+  mobileNav?: { open: boolean; controlsId: string; onOpen: () => void };
 }
 
-const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) => {
+const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav, mobileNav }) => {
   const location  = useLocation();
   const navigate = useNavigate();
   // Read-only here: the logo follows the scheme. The theme control itself
@@ -84,31 +86,57 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
     <Box sx={{
       width: "100%", display: "flex", alignItems: "center",
       justifyContent: "space-between", padding: "0 16px",
+      '@media (max-width: 767.98px)': { padding: "0 4px 0 2px" },
     }}>
       {/* LEFT — LOGO + BREADCRUMBS */}
       <Box sx={{ display: "flex", alignItems: "center", minWidth: 0, flex: "1 1 auto", overflow: "hidden" }}>
+        {mobileNav && (
+          <IconButton
+            aria-label="Open navigation"
+            aria-haspopup="dialog"
+            aria-controls={mobileNav.controlsId}
+            aria-expanded={mobileNav.open}
+            onClick={mobileNav.onOpen}
+            sx={{ width: 44, height: 44, flexShrink: 0, color: 'var(--ink-2)', borderRadius: '8px' }}
+          >
+            <Menu size={20} strokeWidth={1.75} />
+          </IconButton>
+        )}
         <Box
           component="img"
           src={mode === 'dark' ? '/logo-dark.png' : '/logo.png'}
           alt="LaSyncro"
-          sx={{ height: 22, width: 'auto', display: 'block', mr: 2, ml: 1, flexShrink: 0 }}
+          sx={{
+            height: 22, width: 'auto', display: 'block', mr: 2, ml: 1, flexShrink: 0,
+            '@media (max-width: 767.98px)': { mr: 1, ml: 0 },
+          }}
         />
         <MuiBreadcrumbs
           aria-label="breadcrumb"
-          sx={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
+          sx={{
+            minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
+            // WS-UX-01 S5-A — one line on mobile: labels truncate, Home never shrinks.
+            '@media (max-width: 767.98px)': {
+              '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' },
+              '& .MuiBreadcrumbs-li': { minWidth: 0, overflow: 'hidden' },
+              '& .MuiBreadcrumbs-li:first-of-type, & .MuiBreadcrumbs-separator': { flexShrink: 0 },
+              '& .MuiBreadcrumbs-separator': { mx: '4px' },
+            },
+          }}
         >
-          <Link component={RouterLink} to="/" underline="none" sx={{
+          <Link component={RouterLink} to="/" underline="none" aria-label="Home" sx={{
             display: 'flex', alignItems: 'center',
             color: 'var(--ink-3)', '&:hover': { color: 'var(--ink)' },
+            '@media (pointer: coarse) and (max-width: 767.98px)': { minWidth: 44, minHeight: 44, justifyContent: 'center' },
           }}>
             <Home size={14} strokeWidth={1.75} />
           </Link>
           {crumb?.parentLabel && (
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            <Typography noWrap sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
               {crumb.parentLabel}
             </Typography>
           )}
-          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-text)' }}>
+          <Typography noWrap sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-text)' }}>
             {crumb?.label ?? capitalize(fallbackLabel.replace(/-/g, " "))}
           </Typography>
         </MuiBreadcrumbs>

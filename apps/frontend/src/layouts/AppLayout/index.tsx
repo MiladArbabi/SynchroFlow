@@ -2,7 +2,7 @@
 import React, { ReactNode, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { axiosInstance } from "api/axiosConfig";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Drawer, IconButton, Typography, useMediaQuery } from "@mui/material";
 import SidenavContent from "./SidenavContent";
 import TopnavbarContent from "./TopnavbarContent";
 import routes from "routes";
@@ -16,7 +16,7 @@ import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
 import { getWarehouseFocusSession } from '../../utils/warehouseFocus';
 import { useAuth } from 'contexts/AuthContext';
 import { useIdleTimeout } from 'hooks/useIdleTimeout';
-import { ChevronLeft, LogOut } from "lucide-react";
+import { ChevronLeft, LogOut, X } from "lucide-react";
 
 interface AppLayoutProps {
   children?: ReactNode;
@@ -26,6 +26,12 @@ type SidenavState = 'EXPANDED' | 'COMPACT';
 
 const SIDENAV_WIDTH_EXPANDED = 180;
 const SIDENAV_WIDTH_COMPACT = 56;
+
+// WS-UX-01 S5-A — below 768px the sidenav reserves no width and opens as an
+// on-demand overlay. The desktop EXPANDED/COMPACT preference is untouched.
+export const MOBILE_SHELL_QUERY = '(max-width: 767.98px)';
+const MOBILE_NAV_WIDTH = 264;
+const MOBILE_NAV_ID = 'mobile-navigation';
 
 
 const AppLayout = (props: AppLayoutProps) => {
@@ -101,6 +107,26 @@ const AppLayout = (props: AppLayoutProps) => {
   const showTopnav = !isExecutionFocused && !isOperator;
   const showSidenav = isSidenavAllowed && !isExecutionFocused && !isOperator;
   const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
+
+  /**
+   * WS-UX-01 S5-A — MOBILE SHELL
+   * Viewport only decides presentation: the same showSidenav gate admits
+   * the overlay, and only one SidenavContent is ever mounted. The drawer
+   * starts closed, closes after any navigation and whenever the viewport
+   * leaves mobile, and never writes the desktop preference.
+   */
+  const isMobileShell = useMediaQuery(MOBILE_SHELL_QUERY, { noSsr: true });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const showDesktopSidenav = showSidenav && !isMobileShell;
+  const showMobileNav = showSidenav && isMobileShell;
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.key]);
+
+  useEffect(() => {
+    if (!showMobileNav) setMobileNavOpen(false);
+  }, [showMobileNav]);
 
   /**
    * SYSTEM HEALTH
@@ -189,8 +215,60 @@ const AppLayout = (props: AppLayoutProps) => {
                   ? () => setSidenavState(prev => prev === 'EXPANDED' ? 'COMPACT' : 'EXPANDED')
                   : () => { console.warn('[SIDENAV][BLOCKED_TOGGLE]', { phase }); }
               }
+              mobileNav={showMobileNav ? { open: mobileNavOpen, controlsId: MOBILE_NAV_ID, onOpen: () => setMobileNavOpen(true) } : undefined}
             />
           </Box>
+        )}
+
+        {/* MOBILE NAVIGATION (WS-UX-01 S5-A) — modal overlay below 768px.
+            MUI Modal supplies the focus trap, Escape/backdrop dismissal,
+            inert background and focus return to the header trigger. */}
+        {showMobileNav && (
+          <Drawer
+            variant="temporary"
+            anchor="left"
+            open={mobileNavOpen}
+            onClose={() => setMobileNavOpen(false)}
+            slotProps={{
+              paper: {
+                id: MOBILE_NAV_ID,
+                role: 'dialog',
+                'aria-modal': true,
+                'aria-label': 'Main navigation',
+                sx: {
+                  width: MOBILE_NAV_WIDTH,
+                  maxWidth: '85vw',
+                  bgcolor: 'var(--bg)',
+                  borderRight: '1px solid var(--rule)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  // Touch: every navigation control in the overlay is >= 44px.
+                  '@media (pointer: coarse)': {
+                    '& .MuiListItemButton-root, & .MuiButtonBase-root, & [role="button"]': { minHeight: 44 },
+                  },
+                },
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', px: 0.5, height: 48, flexShrink: 0, borderBottom: '0.5px solid var(--rule)' }}>
+              <IconButton
+                aria-label="Close navigation"
+                onClick={() => setMobileNavOpen(false)}
+                sx={{ width: 44, height: 44, color: 'var(--ink-3)' }}
+              >
+                <X size={18} strokeWidth={1.75} />
+              </IconButton>
+            </Box>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <SidenavContent
+                brandName="LaSyncro"
+                routes={routes}
+                sidenavState="EXPANDED"
+                isConnected={isConnected}
+                isFt2Ready={isSidenavAllowed}
+              />
+            </Box>
+          </Drawer>
         )}
 
         {/* BELOW TOPNAV — sidenav + content side by side */}
@@ -200,7 +278,7 @@ const AppLayout = (props: AppLayoutProps) => {
               execution-focused, same as the topnav above. Does not mutate
               the saved sidenavState preference — it reappears exactly as
               the operator left it once focus clears. */}
-          {showSidenav && (
+          {showDesktopSidenav && (
             <Box
               sx={{
                 width: `${sidenavWidth}px`,

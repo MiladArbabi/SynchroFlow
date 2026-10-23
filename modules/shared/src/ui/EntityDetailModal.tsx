@@ -175,7 +175,13 @@ export function EntityDetailModal({
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, ml: 2 }}>
           {headerActions}
-          <IconButton aria-label="Close" onClick={onClose} size="small" sx={{ color: 'var(--ink-4)' }}>
+          <IconButton
+            aria-label="Close"
+            onClick={onClose}
+            size="small"
+            // WS-UX-01 S5 — touch target on coarse pointers; fine pointers keep 28px.
+            sx={{ color: 'var(--ink-4)', '@media (pointer: coarse)': { width: 44, height: 44 } }}
+          >
             <X size={18} />
           </IconButton>
         </Box>

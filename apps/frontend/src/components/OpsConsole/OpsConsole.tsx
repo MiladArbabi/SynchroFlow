@@ -2555,6 +2555,8 @@ export function OpsConsoleButton({
           onAnimationEnd={() => setPulse(false)}
           sx={{
             borderRadius: '8px',
+            // WS-UX-01 S5-A — touch target on coarse-pointer mobile.
+            '@media (pointer: coarse) and (max-width: 767.98px)': { width: 44, height: 44 },
             color: open || hasAttention ? 'var(--accent)' : 'text.secondary',
             // GH-1158 — open state takes the accent wash; keyboard focus draws
             // the accent ring, pointer focus leaves nothing behind.
