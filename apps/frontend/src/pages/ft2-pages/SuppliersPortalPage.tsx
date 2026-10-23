@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Route, Routes, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Box } from '@mui/material';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -519,6 +520,10 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     // merchant never mounts SourcingRoute and therefore never issues its
     // Growth-only request.
     <CommercialGate capabilityId="purchasing.core">
+      {/* WS-UX-01 S4 — route root fills AppLayout's content box (same chain as
+          OrderFlowPage), so Open POs can own its scrolling instead of guessing
+          the shell height. Other views keep their natural height. */}
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <ModuleTabBar tabs={PURCHASING_SUB_TABS} />
       <Routes>
         <Route path="/" element={<SuppliersPortalModuleFT2 view="pos" {...sharedProps} />} />
@@ -536,6 +541,7 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
           }
         />
       </Routes>
+      </Box>
     </CommercialGate>
   );
 }

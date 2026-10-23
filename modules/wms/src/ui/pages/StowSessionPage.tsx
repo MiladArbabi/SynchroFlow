@@ -316,6 +316,7 @@ function ScanInput({ hint, onSubmit, error, disabled = false }: {
           disabled={disabled}
           sx={{
             bgcolor: 'var(--accent)',
+            color: 'var(--accent-ink)',
             borderRadius: '6px',
             fontWeight: 600,
             mt: '2px',
@@ -1292,7 +1293,7 @@ export default function StowSessionPage({
           {tasks.length} SKU{tasks.length !== 1 ? 's' : ''} stowed. Inventory updated.
         </Typography>
         <Button variant="contained" size="large"
-          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={onComplete}>
           Exit Stow
         </Button>

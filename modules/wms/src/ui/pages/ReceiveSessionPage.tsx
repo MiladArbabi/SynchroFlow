@@ -1782,7 +1782,7 @@ function ReceiveSessionFlow({
           size="large"
           onClick={handleStart}
           disabled={claiming}
-          sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+          sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
         >
           {claiming
             ? 'Claiming…'
@@ -1944,6 +1944,7 @@ function ReceiveSessionFlow({
                   minHeight: 36,
                   mt: 'auto',
                   bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
                   '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                   borderRadius: '6px',
                   fontWeight: 700,
@@ -2136,6 +2137,7 @@ function ReceiveSessionFlow({
                     width: '100%',
                     minHeight: 36,
                     bgcolor: 'var(--accent)',
+                    color: 'var(--accent-ink)',
                     '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                     borderRadius: '6px',
                     fontWeight: 700,
@@ -2376,6 +2378,7 @@ function ReceiveSessionFlow({
                 width: '100%',
                 minHeight: 36,
                 bgcolor: 'var(--accent)',
+                color: 'var(--accent-ink)',
                 '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                 borderRadius: '6px',
                 fontWeight: 700,
@@ -2511,7 +2514,7 @@ function ReceiveSessionFlow({
             variant="contained"
             disabled={closing || !deliveryDate.trim() || lines.some(isLineAwaitingLabel)}
             onClick={() => void handleCloseJob()}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
           >
             {closing ? 'Closing receive...' : 'Close receive'}
           </Button>
@@ -2546,7 +2549,7 @@ function ReceiveSessionFlow({
         // crashed WmsOperationsPage trying to render it as a child ("Objects
         // are not valid as a React child"). Call it explicitly instead.
         onClick={() => onComplete()}
-        sx={{ mt: 3, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+        sx={{ mt: 3, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
       >
         Back to WMS
       </Button>
@@ -2677,7 +2680,7 @@ function ReceiveSessionFlow({
             variant="contained"
             disabled={!shortfallProblemType || shortfallSubmitting}
             onClick={() => void handleShortfallConfirm()}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
           >
             {shortfallSubmitting ? 'Saving...' : 'Save problem'}
           </Button>
@@ -2877,6 +2880,7 @@ function ReceiveSessionFlow({
             onClick={() => void handleReportProblem()}
             sx={{
               bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
               '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
               borderRadius: '6px',
               fontWeight: 700,

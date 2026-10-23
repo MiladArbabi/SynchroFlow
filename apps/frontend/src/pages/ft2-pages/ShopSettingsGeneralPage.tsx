@@ -195,6 +195,7 @@ export default function ShopSettingsGeneralPage() {
                     data-testid="sla-save-button"
                     sx={{
                       bgcolor: slaSaveFeedback !== 'idle' ? 'success.main' : 'var(--accent)',
+                      color: slaSaveFeedback !== 'idle' ? 'success.contrastText' : 'var(--accent-ink)',
                       '&:hover': {
                         bgcolor: slaSaveFeedback !== 'idle' ? 'success.main' : 'var(--accent)',
                         opacity: 0.88,

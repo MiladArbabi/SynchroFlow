@@ -173,7 +173,7 @@ function FloorDisplaySection() {
             sx={{ flex: 1 }}
           />
           <Button size="small" variant="contained" onClick={handleCreate} disabled={isCreating}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12, flexShrink: 0 }}>
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12, flexShrink: 0 }}>
             {isCreating ? 'Creating…' : 'Create'}
           </Button>
           <Button size="small" onClick={() => setShowCreate(false)} sx={{ fontSize: 12, flexShrink: 0 }}>Cancel</Button>
@@ -643,7 +643,7 @@ function PrintersSection() {
               <Button
                 size="small" variant="contained" disabled={!newName || adding}
                 onClick={() => void handleAdd()}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 11 }}
+                sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 11 }}
               >
                 {adding ? 'Adding…' : 'Add printer'}
               </Button>

@@ -676,6 +676,7 @@ try {
             borderRadius: '6px',
             fontWeight: 600,
             bgcolor: 'var(--accent)',
+            color: 'var(--accent-ink)',
             '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
           }}
         >
@@ -1078,7 +1079,7 @@ try {
                   handleLocationScan(val);
                 }}
                 sx={{
-                  bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600,
+                  bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', fontWeight: 600,
                   '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                   flexShrink: 0,
                 }}
@@ -1127,7 +1128,7 @@ try {
                   });
                 }}
                 sx={{
-                  bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600,
+                  bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', fontWeight: 600,
                   '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                   flexShrink: 0,
                 }}
@@ -1163,7 +1164,7 @@ try {
                 disabled={scanProcessing || !qtyInput.trim()}
                 onClick={handleQtyConfirm}
                 sx={{
-                  bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600,
+                  bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', fontWeight: 600,
                   '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
                   flexShrink: 0,
                 }}
@@ -1278,6 +1279,7 @@ try {
             sx={{
               borderRadius: '6px', fontWeight: 600,
               bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
               '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
             }}
           >

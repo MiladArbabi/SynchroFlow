@@ -42,15 +42,18 @@ describe('SUPPLIERS-UX-POLISH-01 / WS-UX-01 S2 — Receive assignment surface', 
     expect(src).not.toMatch(/assignReceiveOpen/);
     expect(src).not.toMatch(/Work identity/);
 
+    // WS-UX-01 S4 — bounded by the commit CTA's own label, not by the
+    // position of unrelated sibling conditionals. Availability of the
+    // Receive action in the rendered rail is protected by the S4 split-view
+    // suite ("Cancel PO… and the primary sit together in one group").
     const start = src.indexOf('{/* WS-UX-01 S2 — arrived, no active job');
     expect(start).toBeGreaterThan(-1);
-    const end = src.indexOf('{receiveSlow && (', start);
+    const end = src.indexOf("'Receive myself'", start);
     expect(end).toBeGreaterThan(start);
 
-    const ctaBlock = src.slice(start, end);
-    expect(ctaBlock).toMatch(/Receive myself/);
-    expect(ctaBlock).toMatch(/bgcolor:\s*'var\(--accent\)'/);
-    expect(ctaBlock).toMatch(/color:\s*'var\(--accent-ink\)'/);
+    const receiveCta = ctaBlock("'Receive myself'");
+    expect(receiveCta).toMatch(/bgcolor:\s*'var\(--accent\)'/);
+    expect(receiveCta).toMatch(/color:\s*'var\(--accent-ink\)'/);
   });
 });
 
@@ -76,17 +79,17 @@ describe('SUPPLIERS-UX-POLISH-01 — canonical PO creation modal', () => {
 });
 
 describe('SUPPLIERS-UX-POLISH-01 — stable PO lifecycle action rail', () => {
-  it('reserves stable action-row height and vertically aligns lifecycle CTAs', () => {
-    const start = src.indexOf('{OPEN_STATUSES.includes(po.status) && (');
+  // WS-UX-01 S4 — the rail is the "PO actions" group (Cancel PO… then the
+  // primary); grouping and order are protected by the S4 split-view suite.
+  it('lifecycle CTAs meet the 44px minimum and are vertically aligned', () => {
+    const marker = src.indexOf('data-testid="po-next-step-actions"');
+    expect(marker).toBeGreaterThan(-1);
 
-    expect(start).toBeGreaterThan(-1);
+    const sxEnd = src.indexOf('}}', marker);
+    const groupSx = src.slice(marker, sxEnd);
 
-    const boxStart = src.indexOf('<Box', start);
-    const boxEnd = src.indexOf('>', boxStart);
-    const openingTag = src.slice(boxStart, boxEnd + 1);
-
-    expect(openingTag).toMatch(/minHeight:\s*32/);
-    expect(openingTag).toMatch(/alignItems:\s*'center'/);
+    expect(groupSx).toMatch(/alignItems:\s*'center'/);
+    expect(groupSx).toMatch(/'& \.MuiButton-root':\s*\{\s*minHeight:\s*44/);
   });
 
   it('Mark as arrived is a canonical workflow CTA, not a success-green action', () => {

@@ -108,7 +108,7 @@ function renderModule(po: ReturnType<typeof basePo>) {
 }
 
 function expandPo(supplierName: string) {
-  fireEvent.click(screen.getByText(supplierName));
+  fireEvent.click(screen.getAllByText(supplierName)[0]);
 }
 
 describe('GH-1143 (3a) — already-assigned pending Receive exposes Reassign', () => {

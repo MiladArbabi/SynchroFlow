@@ -127,14 +127,15 @@ async function renderExpanded(
       <SuppliersPortalModuleFT2 {...props} />
     </MemoryRouter>
   );
-  fireEvent.click(screen.getByText(po.supplier_name));
+  fireEvent.click(screen.getAllByText(po.supplier_name)[0]);
   await screen.findByText('WT-01');
   return props;
 }
 
+// WS-UX-01 S4: Cancel PO is a visible secondary action (no longer under More).
+const cancelButton = () => screen.getByRole('button', { name: /^cancel po…$/i });
 function openCancelFromMore() {
-  fireEvent.click(screen.getByRole('button', { name: /more actions for po-1005/i }));
-  fireEvent.click(screen.getByRole('menuitem', { name: /cancel po/i }));
+  fireEvent.click(cancelButton());
 }
 
 beforeEach(() => {
@@ -220,7 +221,7 @@ describe('WS-UX-01 S1 — sentence-case actions under the app theme', () => {
         </MemoryRouter>
       </ThemeProvider>
     );
-    fireEvent.click(screen.getByText('Nordic Textile Works'));
+    fireEvent.click(screen.getAllByText('Nordic Textile Works')[0]);
     await screen.findByText('WT-01');
 
     expect(screen.getByRole('button', { name: 'Mark as sent' })).toHaveStyle({ textTransform: 'none' });
@@ -304,12 +305,15 @@ describe('WS-UX-01 S1 — Arrived: existing Receive dispatch unchanged', () => {
   });
 });
 
-describe('WS-UX-01 S1 — Cancel PO under More, with confirmation', () => {
-  it('is not a direct action-rail button', async () => {
-    await renderExpanded(basePo());
+describe('WS-UX-01 S1 — Cancel PO with named confirmation (S4: visible secondary action)', () => {
+  it('is a visible secondary action that never cancels on one click', async () => {
+    const props = await renderExpanded(basePo());
 
-    expect(screen.queryByRole('button', { name: /cancel po/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /more actions for po-1005/i })).toBeInTheDocument();
+    expect(cancelButton()).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /more actions/i })).toBeNull();
+    fireEvent.click(cancelButton());
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(props.onUpdatePoStatus).not.toHaveBeenCalled();
   });
 
   it('requires a confirmation naming the PO; Keep PO changes nothing', async () => {
@@ -337,9 +341,8 @@ describe('WS-UX-01 S1 — Cancel PO under More, with confirmation', () => {
   ])('known %s → Cancel is not actionable', async (_label, job) => {
     const props = await renderExpanded(basePo({ status: 'shipped', ...job }));
 
-    fireEvent.click(screen.getByRole('button', { name: /more actions for po-1005/i }));
-    const item = screen.getByRole('menuitem', { name: /cancel po/i });
-    expect(item).toHaveAttribute('aria-disabled', 'true');
+    const item = cancelButton();
+    expect(item).toBeDisabled();
 
     fireEvent.click(item);
     expect(screen.queryByText('Cancel PO-1005?')).toBeNull();
@@ -382,9 +385,8 @@ describe('WS-UX-01 S1 — Cancel PO under More, with confirmation', () => {
   ])('%s → disabled Cancel never invokes the status mutation', async (_label, state) => {
     const props = await renderExpanded(basePo(state));
 
-    fireEvent.click(screen.getByRole('button', { name: /more actions for po-1005/i }));
-    const item = screen.getByRole('menuitem', { name: /cancel po/i });
-    expect(item).toHaveAttribute('aria-disabled', 'true');
+    const item = cancelButton();
+    expect(item).toBeDisabled();
 
     fireEvent.click(item);
     expect(screen.queryByText('Cancel PO-1005?')).toBeNull();

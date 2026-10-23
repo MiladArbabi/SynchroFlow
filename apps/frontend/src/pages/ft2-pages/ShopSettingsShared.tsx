@@ -72,7 +72,7 @@ export function SaveButton({
     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
       <Button
         size="small" variant="contained" onClick={onSave} disabled={saving}
-        sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
+        sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
       >
         {saving ? 'Saving…' : 'Save'}
       </Button>

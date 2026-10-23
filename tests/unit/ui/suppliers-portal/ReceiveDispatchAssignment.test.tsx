@@ -112,7 +112,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
 
     // WS-UX-01 S2 — opening the popover creates nothing; picking a row does.
@@ -144,7 +144,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
         <SuppliersPortalModuleFT2 {...p} />
       </MemoryRouter>
     );
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
 
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
     fireEvent.click(await screen.findByRole('button', { name: /avery worker/i }));
@@ -240,7 +240,8 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
     expect(within(picker).getByText(/avery worker/i)).toBeInTheDocument();
 
     // The expanded PO identifies the work by its canonical number, never the UUID.
-    expect(screen.getByText(/^north dock supply$/i)).toBeInTheDocument();
+    // WS-UX-01 S4: the supplier is named in both the list row and the detail header.
+    expect(screen.getAllByText(/^north dock supply$/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/^PO-1109$/i)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(PO_ID);
 
@@ -260,7 +261,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
 
     expect(screen.getByText(/^PO-1109$/i)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(PO_ID);
@@ -284,7 +285,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
     await screen.findByRole('list', { name: /assign receive to/i });
 
@@ -310,7 +311,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
     await screen.findByRole('list', { name: /assign receive to/i });
 
@@ -335,7 +336,7 @@ describe('GH-1109 — Suppliers Portal Receive dispatch UX', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText('North Dock Supply'));
+    fireEvent.click(screen.getAllByText('North Dock Supply')[0]);
     fireEvent.click(await screen.findByRole('button', { name: /assign receive/i }));
     fireEvent.click(await screen.findByRole('button', { name: /avery worker/i }));
 

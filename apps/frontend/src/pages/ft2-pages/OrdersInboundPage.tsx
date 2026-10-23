@@ -205,7 +205,7 @@ function DecisionRow({ item, onReceive, onViewJob }: {
             View job →
           </Box>
         ) : (
-          <Box onClick={() => onReceive(item.poId)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme => theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.88 } }}>
+          <Box onClick={() => onReceive(item.poId)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.88 } }}>
             Receive →
           </Box>
         )
@@ -383,7 +383,7 @@ const activeJobs = receiveJobs.filter(
               {poLoading ? '—' : `${pulse.openPos} open POs · ${pulse.unitsExpected} units expected · ${pulse.arrivingSoon} arriving this week`}
             </Typography>
           </Box>
-          <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.875, borderRadius: '6px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: theme => theme.palette.common.white, '&:hover': { opacity: 0.88 } }}>
+          <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.875, borderRadius: '6px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', '&:hover': { opacity: 0.88 } }}>
             <Plus size={13} />
             New PO
           </Box>
@@ -454,7 +454,7 @@ const activeJobs = receiveJobs.filter(
               <Box sx={{ py: 8, textAlign: 'center', border: '1px solid var(--rule)', borderRadius: '14px', bgcolor: 'var(--surface)' }}>
                 <Package size={32} style={{ opacity: 0.2, marginBottom: 8 }} />
                 <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mb: 1.5 }}>No purchase orders yet.</Typography>
-                <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.75, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme => theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
+                <Box onClick={() => navigate('/suppliers-portal')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.75, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
                   Create your first PO in the Suppliers portal →
                 </Box>
               </Box>
@@ -509,7 +509,7 @@ const activeJobs = receiveJobs.filter(
                             View job →
                           </Box>
                         ) : (
-                          <Box onClick={() => handleReceive(po.id)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.625, bgcolor: 'var(--accent)', color: theme => theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', fontSize: 11, fontWeight: 600, width: 'fit-content', '&:hover': { opacity: 0.88 } }}>
+                          <Box onClick={() => handleReceive(po.id)} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.625, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', fontSize: 11, fontWeight: 600, width: 'fit-content', '&:hover': { opacity: 0.88 } }}>
                             Receive →
                           </Box>
                         )

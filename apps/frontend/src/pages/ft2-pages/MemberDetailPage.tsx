@@ -212,7 +212,7 @@ function ScheduleGrid({
         <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
           <Button
             size="small" variant="contained" onClick={save} disabled={isPending}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
           >
             {isPending ? 'Saving…' : 'Save schedule'}
           </Button>
@@ -480,7 +480,7 @@ export default function MemberDetailPage() {
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <Button
                       size="small" variant="contained" onClick={saveCost} disabled={isPatching}
-                      sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
+                      sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
                     >
                       {isPatching ? 'Saving…' : 'Save'}
                     </Button>
@@ -518,7 +518,7 @@ export default function MemberDetailPage() {
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
                   <Button
                     size="small" variant="contained" onClick={saveNotes} disabled={isPatching}
-                    sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
+                    sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 12 }}
                   >
                     {isPatching ? 'Saving…' : 'Save notes'}
                   </Button>

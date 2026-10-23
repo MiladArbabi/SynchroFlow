@@ -138,7 +138,7 @@ function moduleAt(url: string, props: ReturnType<typeof buildProps>) {
 function renderExpanded(po = basePo(OWN_PENDING), overrides: Record<string, unknown> = {}) {
   const props = buildProps(po, overrides);
   const view = render(moduleAt('/', props));
-  fireEvent.click(screen.getByText(SUPPLIER));
+  fireEvent.click(screen.getAllByText(SUPPLIER)[0]);
   return { props, view };
 }
 
@@ -172,7 +172,7 @@ describe('WS-UX-01 S3 — assignment never starts', () => {
       onReconcilePurchaseOrders: jest.fn().mockResolvedValue([basePo(OWN_PENDING)]),
     });
     const view = render(moduleAt('/', props));
-    fireEvent.click(screen.getByText(SUPPLIER));
+    fireEvent.click(screen.getAllByText(SUPPLIER)[0]);
 
     fireEvent.click(screen.getByRole('button', { name: /^receive myself$/i }));
     expect(await screen.findByText(/receive is assigned to you/i)).toBeInTheDocument();
@@ -219,10 +219,18 @@ describe('WS-UX-01 S3 — inline brief from the canonical job', () => {
     expect(within(screen.getByTestId('receive-inline-brief')).queryByText(/10 units/i)).toBeNull();
   });
 
-  it('does not fetch the brief while the PO is collapsed', () => {
-    const props = buildProps(basePo(OWN_PENDING));
+  it('does not fetch the brief until the PO is selected (WS-UX-01 S4)', async () => {
+    const otherPo = basePo({ id: 'po-uuid-first', po_number: 3001, supplier_name: 'Alpine Board Co.' });
+    const props = buildProps(otherPo);
+    props.data.purchase_orders = [otherPo, basePo(OWN_PENDING)];
     render(moduleAt('/', props));
+
+    // The first Arrived PO is selected by default; the own pending one is not.
     expect(props.onFetchReceiveJob).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId(`po-row-${PO_ID}`));
+    await readyStart();
+    expect(props.onFetchReceiveJob).toHaveBeenCalledWith(JOB_ID);
   });
 
   it.each([
@@ -464,7 +472,7 @@ describe('WS-UX-01 S3 — Start receiving claims exactly once', () => {
       onClaimReceiveJob: jest.fn().mockRejectedValue(axiosError(409, 'JOB_NOT_CLAIMABLE')),
     });
     const view = render(moduleAt('/', props));
-    fireEvent.click(screen.getByText(SUPPLIER));
+    fireEvent.click(screen.getAllByText(SUPPLIER)[0]);
 
     fireEvent.click(await readyStart());
 

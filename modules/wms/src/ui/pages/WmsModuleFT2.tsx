@@ -665,7 +665,7 @@ function OverviewWorkProgress({ completed, total, verb }: { completed: number; t
       <Box aria-hidden="true" sx={{ height: 4, borderRadius: '100px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
         <Box sx={{ height: '100%', width: `${percent}%`, borderRadius: '100px', bgcolor: 'var(--accent)' }} />
       </Box>
-      <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+      <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
         {label}
       </Typography>
     </Box>
@@ -732,12 +732,12 @@ const BatchCard = memo(function BatchCard({
           <Typography sx={{ ...OVERVIEW_WORK_TITLE_SX, fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
             Batch <Box component="span">{batch.pick_batch_id.slice(0, 8).toUpperCase()}</Box>
           </Typography>
-          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
             {workload} · {batch.total_units} {batch.total_units === 1 ? 'unit' : 'units'}
             {isPickComplete && ` · ${progress}`}
           </Typography>
           {owner && (
-            <Typography sx={{ mt: 0.25, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+            <Typography sx={{ mt: 0.25, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
               {isPacking ? 'Packer' : 'Picker'}: {owner}
             </Typography>
           )}
@@ -761,7 +761,7 @@ const BatchCard = memo(function BatchCard({
           </Box>
         ) : isPacking ? (
           <Box sx={OVERVIEW_WORK_ACTION_SX}>
-            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-2)' }}>
               Packing in progress
             </Typography>
           </Box>
@@ -782,11 +782,11 @@ const BatchCard = memo(function BatchCard({
         <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
           Batch <Box component="span">{batch.pick_batch_id.slice(0, 8).toUpperCase()}</Box>
         </Typography>
-        <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+        <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
           {workload} · {batch.total_units} {batch.total_units === 1 ? 'unit' : 'units'} · {progress}
         </Typography>
         {owner && (
-          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>
             {isPacking ? 'Packer' : 'Picker'}: {owner}
           </Typography>
         )}
@@ -803,7 +803,7 @@ const BatchCard = memo(function BatchCard({
           }}
         >{ctaLabel}</Box>
       ) : isPacking ? (
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-2)' }}>
           Packing in progress
         </Typography>
       ) : null}
@@ -950,13 +950,13 @@ const StowTaskCard = memo(function StowTaskCard({
             </Typography>
             {menuNode}
           </Box>
-          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+          <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
             {[task.sku, `Qty ${task.quantity}`, task.location_code ?? 'No location', triggerLabel].filter(Boolean).join(' · ')}
           </Typography>
           {isClaimed && <OverviewWorkProgress completed={task.quantity_placed} total={task.quantity} verb="put away" />}
           <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            <Box sx={{ px: 1, py: 0.25, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule)', borderRadius: '100px' }}>
-              <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-3)', letterSpacing: '0.04em' }}>
+            <Box sx={{ px: 1, py: 0.25, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule-2)', borderRadius: '100px' }}>
+              <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-2)', letterSpacing: '0.04em' }}>
                 {describeStowAssignment(task, currentUserId)}
               </Typography>
             </Box>
@@ -1011,11 +1011,11 @@ const StowTaskCard = memo(function StowTaskCard({
             {task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase()}
           </Typography>
           {task.sku && (
-            <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>{task.sku}</Typography>
+            <Typography sx={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)', mt: 0.25 }}>{task.sku}</Typography>
           )}
         </Box>
-        <Box sx={{ px: 1, py: 0.375, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule)', borderRadius: '100px', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-3)', letterSpacing: '0.04em' }}>
+        <Box sx={{ px: 1, py: 0.375, bgcolor: accentOn ? 'var(--accent-ghost)' : 'var(--bg)', border: '0.5px solid', borderColor: accentOn ? 'var(--accent-border)' : 'var(--rule-2)', borderRadius: '100px', flexShrink: 0 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: accentOn ? 'var(--accent)' : 'var(--ink-2)', letterSpacing: '0.04em' }}>
             {describeStowAssignment(task, currentUserId)}
           </Typography>
         </Box>
@@ -1025,9 +1025,9 @@ const StowTaskCard = memo(function StowTaskCard({
 
       {/* METADATA */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Qty: {task.quantity}</Typography>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Location: {task.location_code ?? 'Unassigned'}</Typography>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Source: {triggerLabel}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>Qty: {task.quantity}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>Location: {task.location_code ?? 'Unassigned'}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>Source: {triggerLabel}</Typography>
       </Box>
 
       {/* CTA — withheld for a task assigned to somebody else (see J: never a
@@ -1168,8 +1168,8 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
             {[ownership, lifecycle].map((label) => (
               <Box component="span" key={label} sx={{
                 px: 0.75, py: 0.25, borderRadius: '6px',
-                border: '1px solid var(--rule)', bgcolor: 'var(--bg)',
-                fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', overflowWrap: 'anywhere',
+                border: '1px solid var(--rule-2)', bgcolor: 'var(--bg)',
+                fontSize: 11.5, fontWeight: 500, color: 'var(--ink-2)', overflowWrap: 'anywhere',
               }}>
                 {label}
               </Box>
@@ -1242,7 +1242,7 @@ const ReceiveWorkCard = memo(function ReceiveWorkCard({
             {job.total_units} {job.total_units === 1 ? 'unit' : 'units'}
           </Typography>
 
-          <Typography sx={{ mt: 0.75, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)' }}>
+          <Typography sx={{ mt: 0.75, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-2)' }}>
             {isOwnJob
               ? (started ? 'Assigned to you · In progress' : 'Assigned to you · Not started')
               : `Assigned to ${job.assigned_operator_name ?? 'another operator'} · Not started`}
@@ -1400,7 +1400,7 @@ const CountingTaskCard = memo(function CountingTaskCard({
 
         <Typography sx={{
           fontSize: 12,
-          fontWeight: 300,
+          fontWeight: 400,
           color: 'var(--ink-3)',
           mt: 0.375,
         }}>
@@ -3184,7 +3184,7 @@ function WmsModuleFT2Inner({
           Pack batch {pendingPackBatchId.slice(0, 8).toUpperCase()}
         </Typography>
         {packBatch && (
-          <Typography sx={{ mt: 0.5, fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+          <Typography sx={{ mt: 0.5, fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
             {packOrderCount > 0 ? `${packOrderCount} ${packOrderCount === 1 ? 'order' : 'orders'} · ` : ''}
             {packBatch.total_units} {packBatch.total_units === 1 ? 'unit' : 'units'}
           </Typography>

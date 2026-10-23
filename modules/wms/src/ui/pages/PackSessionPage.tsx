@@ -90,7 +90,7 @@ function ScanInput({
       />
       {value.trim() && !disabled && (
         <Button variant="contained" size="small" onClick={handleSubmit}
-          sx={{ bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600, mt: '2px', flexShrink: 0 }}>
+          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', fontWeight: 600, mt: '2px', flexShrink: 0 }}>
           Scan
         </Button>
       )}
@@ -454,7 +454,7 @@ export default function PackSessionPage({
                 variant={problemType === opt.value ? 'contained' : 'outlined'}
                 size="small" onClick={() => setProblemType(opt.value)}
                 sx={{ justifyContent: 'flex-start', borderRadius: 1.5,
-                  ...(problemType === opt.value && { bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)' } }) }}>
+                  ...(problemType === opt.value && { bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)' } }) }}>
                 {opt.label}
               </Button>
             ))}
@@ -466,7 +466,7 @@ export default function PackSessionPage({
           <Button onClick={() => setProblemDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" disabled={problemLoading}
             onClick={() => void handleReportProblem()}
-            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)' } }}>
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)' } }}>
             {problemLoading ? <CircularProgress size={16} /> : 'Report'}
           </Button>
         </DialogActions>

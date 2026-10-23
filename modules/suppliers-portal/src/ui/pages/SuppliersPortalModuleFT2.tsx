@@ -1,5 +1,5 @@
 // modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { Fragment, useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
@@ -23,10 +23,12 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  ListSubheader,
   Menu,
   MenuItem,
   IconButton,
   Popover,
+  Tooltip,
 } from '@mui/material';
 import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2, MoreHorizontal } from 'lucide-react';
 import { 
@@ -1519,11 +1521,146 @@ function sameReceiveSnapshot(a: ReceiveSnapshot, b: ReceiveSnapshot): boolean {
  */
 type AwaitedReceive = { reconciled: ReceiveSnapshot; stale: ReceiveSnapshot };
 
+/** WS-UX-01 S4 D6 — an active Receive job has started (projection only). */
+function hasStartedReceive(po: PurchaseOrder): boolean {
+  return po.receive_job_id != null && po.receive_status != null && po.receive_status !== 'pending';
+}
+
+/**
+ * WS-UX-01 S4 — a stored delivery date as a local calendar day. The leading
+ * YYYY-MM-DD is the calendar date (never shifted through UTC midnight); a
+ * missing or malformed value is null.
+ */
+function parseCalendarDate(value?: string | null): Date | null {
+  const match = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+}
+
+function formatShortDate(value?: string | null): string | null {
+  const date = parseCalendarDate(value);
+  return date ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+}
+
+/**
+ * WS-UX-01 S4 — only an outstanding On the way PO can be overdue: its expected
+ * date is before today's local calendar date. Due today is not overdue.
+ */
+export function isPoOverdue(po: PurchaseOrder, today: Date = new Date()): boolean {
+  if (po.status !== 'ordered' && po.status !== 'confirmed' && po.status !== 'in_production') return false;
+  const expected = parseCalendarDate(po.expected_delivery_date);
+  if (!expected) return false;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return expected.getTime() < startOfToday.getTime();
+}
+
+/**
+ * WS-UX-01 S4 — Next step heading for the S1 lifecycle steps and unassigned
+ * arrivals. Receive states with their own certified copy (S2/S3) get none.
+ */
+function resolveNextStepCopy(
+  po: PurchaseOrder,
+  nextAction: PoNextAction
+): { title: string; body?: string } | null {
+  if (nextAction.kind === 'mark_sent') {
+    return { title: 'Not sent yet', body: 'Send it to your supplier however you usually do, then mark it as sent.' };
+  }
+  if (nextAction.kind === 'mark_arrived') {
+    const due = formatShortDate(po.expected_delivery_date);
+    return {
+      title: !due ? 'On the way' : isPoOverdue(po) ? `On the way · Overdue · ${due}` : `On the way · due ${due}`,
+      body: 'Mark it as arrived once the delivery is in your warehouse.',
+    };
+  }
+  if (nextAction.kind === 'receive' && nextAction.receiveAction === 'resume_own') {
+    return { title: 'Receiving · in progress', body: 'Counts save as you go. Resume to continue where you left off.' };
+  }
+  if (nextAction.kind === 'receive' && nextAction.receiveAction === 'assign') {
+    return { title: 'Arrived · not assigned yet', body: "Choose who counts this delivery. Assigning doesn't begin the count." };
+  }
+  return null;
+}
+
+/** WS-UX-01 S4 — the one date that matters for the PO's stage. */
+function poDateLabel(po: PurchaseOrder): string | null {
+  const expected = formatShortDate(po.expected_delivery_date);
+  if (po.status === 'draft') return expected ? `Expected ${expected}` : null;
+  if (po.status === 'shipped' || po.status === 'partially_received') {
+    const arrived = formatShortDate(po.actual_delivery_date);
+    return arrived ? `Arrived ${arrived}` : expected ? `Due ${expected}` : null;
+  }
+  if (!expected) return null;
+  return isPoOverdue(po) ? `Overdue · ${expected}` : `Due ${expected}`;
+}
+
+const LINE_TABLE_HEAD_SX = {
+  fontSize: 11,
+  fontWeight: 500,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--ink-3)',
+} as const;
+
+/** WS-UX-01 S4 — short lists stay a plain list; inspection tools from this many lines. */
+export const LINE_INSPECT_MIN = 6;
+
+export type LineSortKey = 'default' | 'product' | 'ordered' | 'received';
+export type LineFilterKey = 'all' | 'outstanding' | 'received';
+
+const LINE_SORTS: Array<[LineSortKey, string]> = [
+  ['default', 'Original order'],
+  ['product', 'Product A–Z'],
+  ['ordered', 'Ordered quantity'],
+  ['received', 'Received quantity'],
+];
+
+const LINE_FILTERS: Array<[LineFilterKey, string]> = [
+  ['all', 'All lines'],
+  ['outstanding', 'Outstanding quantity'],
+  ['received', 'Fully received'],
+];
+
+const lineProductName = (item: PoLineItem) => item.product_title ?? item.description;
+
+/**
+ * WS-UX-01 S4 — in-memory line inspection: search product name or SKU,
+ * filter by outstanding (received < ordered) or fully received, and sort
+ * stably (quantities highest first; ties keep the API order).
+ */
+export function inspectLineItems(
+  items: PoLineItem[],
+  { search, filter, sort }: { search: string; filter: LineFilterKey; sort: LineSortKey },
+): PoLineItem[] {
+  const q = search.trim().toLowerCase();
+  const shown = items.filter((item) => {
+    const outstanding = Number(item.quantity_received) < Number(item.quantity_ordered);
+    if (filter === 'outstanding' && !outstanding) return false;
+    if (filter === 'received' && outstanding) return false;
+    return !q || lineProductName(item).toLowerCase().includes(q) || (item.sku ?? '').toLowerCase().includes(q);
+  });
+  if (sort === 'default') return shown;
+  const compare = (a: PoLineItem, b: PoLineItem) =>
+    sort === 'product'
+      ? lineProductName(a).localeCompare(lineProductName(b), undefined, { sensitivity: 'base' })
+      : sort === 'ordered'
+      ? Number(b.quantity_ordered) - Number(a.quantity_ordered)
+      : Number(b.quantity_received) - Number(a.quantity_received);
+  return shown
+    .map((item, index) => ({ item, index }))
+    .sort((x, y) => compare(x.item, y.item) || x.index - y.index)
+    .map(({ item }) => item);
+}
+
 const RECEIVE_RELOAD_REQUIRED =
   'Reload the page before making another change to this Receive.';
 
-function PoAccordion({
+function PoDetail({
   po,
+  selected = false,
+  onStartClaimChange,
+  onDeepLinkHandled,
   onFetchLineItems,
   onUpdatePoStatus,
   onCreateReceiveJob,
@@ -1557,11 +1694,31 @@ function PoAccordion({
   onFetchReceiveJob?: (jobId: string) => Promise<ReceiveJobDetail>;
   onClaimReceiveJob?: (jobId: string) => Promise<void>;
   autoOpenReceive?: boolean;
+  /** WS-UX-01 S4 — this PO is the one shown in the detail pane. */
+  selected?: boolean;
+  /** WS-UX-01 S4 D1 — an explicit Start receiving claim holds the selection until it resolves. */
+  onStartClaimChange?: (poId: string, inFlight: boolean) => void;
+  /** WS-UX-01 S4 D3 — the action=receive deep link was evaluated here (without navigating away). */
+  onDeepLinkHandled?: (poId: string) => void;
   /** GH-1109 residual: assignment vs claim/start onboarding, rendered inside the assignment popover. */
   receiveDispatchAssignmentSpotlight?: { isDismissed: boolean; dismiss: () => void };
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // WS-UX-01 S4 — the detail is mounted on first selection and kept mounted,
+  // so mutation locks, reconciliation and the line-item cache survive
+  // switching to another PO. "Expanded" now means "selected".
+  const expanded = selected;
   const [lineItems, setLineItems] = useState<PoLineItem[] | null>(null);
+  const [lineItemsFailed, setLineItemsFailed] = useState(false);
+  // WS-UX-01 S4 — display-only line inspection (>= LINE_INSPECT_MIN lines).
+  const [lineSearch, setLineSearch] = useState('');
+  const [lineFilter, setLineFilter] = useState<LineFilterKey>('all');
+  const [lineSort, setLineSort] = useState<LineSortKey>('default');
+  const [lineFilterAnchor, setLineFilterAnchor] = useState<HTMLElement | null>(null);
+  const [lineSortAnchor, setLineSortAnchor] = useState<HTMLElement | null>(null);
+  // True while a line-item request is in flight or has succeeded (the cache).
+  const lineItemsRequestedRef = useRef(false);
+  // The automatic load happens once, on first selection; never as a retry loop.
+  const lineItemsAutoLoadedRef = useRef(false);
   const [loadingItems, setLoadingItems] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1586,8 +1743,7 @@ function PoAccordion({
     useState<string | null>(null);
   const [receiveAssignmentConfirmation, setReceiveAssignmentConfirmation] =
     useState<string | null>(null);
-  // WS-UX-01 S1 — Cancel PO lives under More and requires a named confirmation.
-  const [moreMenuAnchor, setMoreMenuAnchor] = useState<HTMLElement | null>(null);
+  // WS-UX-01 S1 — Cancel PO requires a named confirmation (S4: a visible secondary action).
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancellingPo, setCancellingPo] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -1842,17 +1998,22 @@ function PoAccordion({
     }
     receiveInFlightRef.current = true;
     receiveBriefRequestRef.current += 1;
+    onStartClaimChange?.(po.id, true);
     setReceiveMutation('pending');
     setReceiveDispatchError(null);
     setReceiveAssignmentConfirmation(null);
     const slowTimer = setTimeout(() => setReceiveSlow(true), 2000);
+    // Both resolved states release the selection hold; a confirmed start
+    // navigates away instead.
     const lockUntilReload = (message: string) => {
       setReceiveDispatchError(`${message} ${RECEIVE_RELOAD_REQUIRED}`);
       setReceiveMutation('locked');
+      onStartClaimChange?.(po.id, false);
     };
     const unlock = () => {
       receiveInFlightRef.current = false;
       setReceiveMutation('idle');
+      onStartClaimChange?.(po.id, false);
     };
     try {
       try {
@@ -1909,15 +2070,12 @@ function PoAccordion({
       clearTimeout(slowTimer);
       setReceiveSlow(false);
     }
-  }, [currentUserId, existingReceiveJobId, navigate, onClaimReceiveJob, onFetchReceiveJob, po.id, readCanonicalPo, receiveBrief?.jobId, receiveBriefModel?.ok]);
+  }, [currentUserId, existingReceiveJobId, navigate, onClaimReceiveJob, onFetchReceiveJob, onStartClaimChange, po.id, readCanonicalPo, receiveBrief?.jobId, receiveBriefModel?.ok]);
 
   const autoReceiveOpenedRef = useRef(false);
   // WS-UX-01 S2 — a deep link to unassigned work expands the PO and, for a
   // team, opens the assignment popover. It never dispatches on its own.
   const [autoAssignPending, setAutoAssignPending] = useState(false);
-  // WS-UX-01 S3 D5 — a deep link to the viewer's own pending job expands the
-  // PO so the inline brief shows. It never claims.
-  const [autoBriefPending, setAutoBriefPending] = useState(false);
 
   useEffect(() => {
     if (
@@ -1934,19 +2092,26 @@ function PoAccordion({
     autoReceiveOpenedRef.current = true;
     // GH-1245 — same decision as the PO accordion CTA. Reassignment stays
     // explicit; started work never routes through assignment.
-    if (receiveAction === 'assign') {
-      setAutoAssignPending(true);
-    } else if (receiveAction === 'open_own') {
-      setAutoBriefPending(true);
-    } else if (receiveAction === 'resume_own') {
+    // WS-UX-01 S3 D5 — the viewer's own pending job needs nothing more: the
+    // selected detail shows the inline brief. Nothing here claims.
+    if (receiveAction === 'resume_own') {
       handleOpenOwnReceive();
+      return;
     }
-  }, [autoOpenReceive, currentUserId, handleOpenOwnReceive, po.status, receiveAction]);
+    if (receiveAction === 'assign') setAutoAssignPending(true);
+    onDeepLinkHandled?.(po.id);
+  }, [autoOpenReceive, currentUserId, handleOpenOwnReceive, onDeepLinkHandled, po.id, po.status, receiveAction]);
 
   const status = STATUS_CONFIG[po.status];
-  const eta = po.expected_delivery_date
-    ? new Date(po.expected_delivery_date).toLocaleDateString()
-    : '—';
+  const isOpenPo = OPEN_STATUSES.includes(po.status);
+  // WS-UX-01 S4 D6 — "Receiving" only for an active started Receive job.
+  const detailStatusLabel = hasStartedReceive(po)
+    ? 'Receiving'
+    : po.status === 'partially_received'
+      ? 'Partially received'
+      : status.label;
+  const dateLabel = poDateLabel(po);
+  const nextStepCopy = resolveNextStepCopy(po, nextAction);
 
   const isReceiveEligible =
     po.status === 'shipped' || po.status === 'partially_received';
@@ -1993,21 +2158,35 @@ function PoAccordion({
       : 'Receive: Not assigned'
     : null;
   const poDisplay = formatPoDisplay(po);
+  const inspectLines = (lineItems?.length ?? 0) >= LINE_INSPECT_MIN;
+  const lineInspectActive = lineSearch.trim() !== '' || lineFilter !== 'all';
+  const shownLineItems = lineItems && inspectLines
+    ? inspectLineItems(lineItems, { search: lineSearch, filter: lineFilter, sort: lineSort })
+    : lineItems;
+  const clearLineInspect = () => { setLineSearch(''); setLineFilter('all'); };
 
-  const handleExpand = async () => {
-    setExpanded((v) => !v);
-    if (!lineItems && !loadingItems) {
-      setLoadingItems(true);
-      try {
-        const items = await onFetchLineItems(po.id);
-        setLineItems(items);
-      } catch {
-        setError('Failed to load line items.');
-      } finally {
-        setLoadingItems(false);
-      }
-    }
-  };
+  // WS-UX-01 S4 — line items load on first selection and stay cached. A
+  // failed load releases the guard so the explicit Try again can request once
+  // more; nothing retries on its own.
+  const loadLineItems = useCallback(() => {
+    if (lineItemsRequestedRef.current) return;
+    lineItemsRequestedRef.current = true;
+    setLineItemsFailed(false);
+    setLoadingItems(true);
+    onFetchLineItems(po.id)
+      .then((items) => setLineItems(items))
+      .catch(() => {
+        lineItemsRequestedRef.current = false;
+        setLineItemsFailed(true);
+      })
+      .finally(() => setLoadingItems(false));
+  }, [onFetchLineItems, po.id]);
+
+  useEffect(() => {
+    if (!selected || lineItemsAutoLoadedRef.current) return;
+    lineItemsAutoLoadedRef.current = true;
+    loadLineItems();
+  }, [selected, loadLineItems]);
 
   useEffect(() => {
     if (awaitedReceive != null && !awaitingReceiveProjection) {
@@ -2017,26 +2196,24 @@ function PoAccordion({
 
   useEffect(() => {
     if (!autoAssignPending) return;
-    if (!expanded) {
-      void handleExpand();
-      return;
-    }
+    if (!expanded) return;
     if (receiveAssigneesStatus === 'loading') return;
     setAutoAssignPending(false);
     if (receiveRosterReady && !soleSelfEligible && assignButtonRef.current) {
       handleOpenAssignPopover('assign');
     }
-    // handleExpand is recreated every render; the pending flag gates re-entry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAssignPending, expanded, receiveAssigneesStatus, receiveRosterReady, soleSelfEligible, handleOpenAssignPopover]);
 
+  // WS-UX-01 S4 — a deselected (hidden) detail keeps its state but never an
+  // open popover or menu. An in-flight cancel keeps its dialog.
   useEffect(() => {
-    if (!autoBriefPending) return;
-    setAutoBriefPending(false);
-    if (!expanded) void handleExpand();
-    // handleExpand is recreated every render; the pending flag gates re-entry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoBriefPending, expanded]);
+    if (selected) return;
+    setAssignAnchor(null);
+    if (!cancellingPo) {
+      setCancelConfirmOpen(false);
+      setCancelError(null);
+    }
+  }, [selected, cancellingPo]);
 
   const handleStatusUpdate = async (newStatus: PurchaseOrderStatus) => {
     setUpdatingStatus(true);
@@ -2055,8 +2232,7 @@ function PoAccordion({
   };
 
   const handleOpenCancelConfirm = () => {
-    setMoreMenuAnchor(null);
-    if (!cancelAllowed) return;
+    if (!cancelAllowed || receiveBusy || updatingStatus) return;
     setCancelError(null);
     setCancelConfirmOpen(true);
   };
@@ -2086,55 +2262,77 @@ function PoAccordion({
   };
 
   return (
-    <Accordion
-      expanded={expanded}
-      onChange={() => void handleExpand()}
-      variant="outlined"
-      sx={{ mb: 1.5, borderRadius: '8px !important', '&:before': { display: 'none' } }}
+    <Box
+      data-testid={`po-detail-${po.id}`}
+      role="region"
+      aria-label={`${po.supplier_name} · ${poDisplay}`}
+      hidden={!selected}
+      sx={{
+        display: selected ? 'flex' : 'none',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+        minWidth: 0,
+        border: '1px solid var(--rule)',
+        borderRadius: '14px',
+        bgcolor: 'var(--surface)',
+        overflow: 'hidden',
+      }}
     >
-      <AccordionSummary expandIcon={<ChevronDown size={16} />}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%', pr: 1 }}>
-          <Box sx={{ flex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-              <Typography variant="body2" fontWeight={700}>{po.supplier_name}</Typography>
-              <Chip label={status.label} size="small" color={status.color} />
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Typography variant="caption" color="text.secondary">
-                  {poDisplay}
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Clock size={12} />
-                  <Typography variant="caption" color="text.secondary">ETA: {eta}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Package size={12} />
-                  <Typography variant="caption" color="text.secondary">
-                    {po.total_units_ordered} units · {po.line_items_count} lines
-                  </Typography>
-                </Box>
-                {po.first_line_description && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                    {po.first_line_description}{Number(po.line_items_count) > 1 ? ` +${Number(po.line_items_count) - 1} more` : ''}
-                  </Typography>
-                )}
-            </Box>
-            {receiveAssignmentLabel && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mt: 0.25 }}
-              >
-                {receiveAssignmentLabel}
-              </Typography>
+      {/* WS-UX-01 S4 — supplier and status, then reference, date and size. */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, px: '28px', pt: '20px', pb: '14px' }}>
+        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+            <Typography component="h2" noWrap sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.2, color: 'var(--ink)' }}>
+              {po.supplier_name}
+            </Typography>
+            {hasStartedReceive(po) ? (
+              // WS-UX-01 S4 — an active started Receive job always reads the same,
+              // whether the PO is still Arrived or already partially received.
+              <Chip
+                label={detailStatusLabel}
+                size="small"
+                variant="outlined"
+                sx={{ flexShrink: 0, bgcolor: 'var(--accent-ghost)', color: 'var(--accent-text)', borderColor: 'var(--accent-border)', fontWeight: 500 }}
+              />
+            ) : (
+              <Chip label={detailStatusLabel} size="small" color={status.color} sx={{ flexShrink: 0 }} />
             )}
           </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', color: 'var(--ink-3)', fontSize: 13 }}>
+            <Box component="span" sx={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}>{poDisplay}</Box>
+            {dateLabel && <Box component="span">{dateLabel}</Box>}
+            <Box component="span">
+              {plural(Number(po.total_units_ordered) || 0, 'unit')} · {plural(Number(po.line_items_count) || 0, 'line')}
+            </Box>
+            {receiveAssignmentLabel && <Box component="span">{receiveAssignmentLabel}</Box>}
+          </Box>
         </Box>
-      </AccordionSummary>
+      </Box>
 
-      <AccordionDetails sx={{ pt: 0 }}>
-        <Divider sx={{ mb: 2 }} />
+      <PoLifecycleSteps po={po} />
+
+      <Box sx={{ ...THIN_SCROLL_SX, flex: 1, minHeight: 0, overflow: 'auto', px: '28px', pb: 2 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {lineItemsFailed && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                disabled={loadingItems}
+                onClick={loadLineItems}
+                sx={{ textTransform: 'none' }}
+              >
+                Try again
+              </Button>
+            }
+          >
+            Failed to load line items.
+          </Alert>
+        )}
         {receiveAssignmentConfirmation && (
           <Alert severity="success" sx={{ mb: 2 }}>
             {receiveAssignmentConfirmation}
@@ -2143,36 +2341,110 @@ function PoAccordion({
 
         {loadingItems && <ModuleLoadingSkeleton rows={1} height={20} />}
 
-        {lineItems && (
-          <TableContainer sx={{ mb: 2 }}>
+        {/* WS-UX-01 S4 — inspection tools only for long lists; display only. */}
+        {lineItems && inspectLines && (
+          <Box
+            role="search"
+            aria-label="Filter product lines"
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', pt: '4px', pb: '8px' }}
+          >
+            <TextField
+              size="small"
+              placeholder="Search product or SKU…"
+              inputProps={{ 'aria-label': 'Search product or SKU' }}
+              value={lineSearch}
+              onChange={(e) => setLineSearch(e.target.value)}
+              sx={{ flex: '1 1 200px', minWidth: 0, '& .MuiInputBase-root': { height: 32, fontSize: 13 } }}
+            />
+            <Button
+              variant="outlined"
+              aria-haspopup="menu"
+              aria-label={`Show: ${LINE_FILTERS.find(([key]) => key === lineFilter)?.[1]}`}
+              aria-expanded={lineFilterAnchor ? 'true' : undefined}
+              onClick={(e) => setLineFilterAnchor(e.currentTarget)}
+              sx={{ ...LIST_TOOL_SX, ...(lineFilter !== 'all' && { color: 'var(--accent-text)', borderColor: 'var(--accent-border)', bgcolor: 'var(--accent-ghost)' }) }}
+            >
+              {LINE_FILTERS.find(([key]) => key === lineFilter)?.[1]}
+            </Button>
+            <Button
+              variant="outlined"
+              aria-haspopup="menu"
+              aria-label={`Sort lines: ${LINE_SORTS.find(([key]) => key === lineSort)?.[1]}`}
+              aria-expanded={lineSortAnchor ? 'true' : undefined}
+              onClick={(e) => setLineSortAnchor(e.currentTarget)}
+              sx={{ ...LIST_TOOL_SX, ...(lineSort !== 'default' && { color: 'var(--accent-text)', borderColor: 'var(--accent-border)' }) }}
+            >
+              Sort
+            </Button>
+            <Box component="span" role="status" sx={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+              {lineInspectActive ? `${shownLineItems?.length ?? 0} of ${lineItems.length} lines` : plural(lineItems.length, 'line')}
+            </Box>
+            <Menu anchorEl={lineFilterAnchor} open={lineFilterAnchor != null} onClose={() => setLineFilterAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Show lines' }}>
+              {LINE_FILTERS.map(([value, label]) => (
+                <MenuItem key={value} role="menuitemradio" aria-checked={lineFilter === value} selected={lineFilter === value} onClick={() => { setLineFilter(value); setLineFilterAnchor(null); }} sx={{ fontSize: 13 }}>
+                  {label}
+                </MenuItem>
+              ))}
+            </Menu>
+            <Menu anchorEl={lineSortAnchor} open={lineSortAnchor != null} onClose={() => setLineSortAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Sort lines' }}>
+              {LINE_SORTS.map(([value, label]) => (
+                <MenuItem key={value} role="menuitemradio" aria-checked={lineSort === value} selected={lineSort === value} onClick={() => { setLineSort(value); setLineSortAnchor(null); }} sx={{ fontSize: 13 }}>
+                  {label}
+                </MenuItem>
+              ))}
+            </Menu>
+          </Box>
+        )}
+
+        {shownLineItems && shownLineItems.length === 0 && inspectLines && (
+          <Box sx={{ py: 3, display: 'grid', gap: 1, justifyItems: 'start' }}>
+            <Typography variant="body2" color="text.secondary">
+              No product lines match {lineSearch.trim() ? `“${lineSearch.trim()}”` : 'this filter'}.
+            </Typography>
+            <Button size="small" variant="outlined" onClick={clearLineInspect} sx={{ textTransform: 'none' }}>
+              Show all lines
+            </Button>
+          </Box>
+        )}
+
+        {shownLineItems && (shownLineItems.length > 0 || !inspectLines) && (
+          <TableContainer
+            sx={{
+              '& th, & td': { borderBottom: '0.5px solid var(--rule)' },
+              '& tbody tr:last-of-type td': { borderBottom: 'none' },
+              '& th:first-of-type, & td:first-of-type': { pl: 0 },
+              '& th:last-of-type, & td:last-of-type': { pr: 0 },
+            }}
+          >
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Product</TableCell>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Ordered</TableCell>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Received</TableCell>
+                  <TableCell sx={LINE_TABLE_HEAD_SX}>Product</TableCell>
+                  <TableCell sx={{ ...LINE_TABLE_HEAD_SX, width: 96 }} align="right">Ordered</TableCell>
+                  <TableCell sx={{ ...LINE_TABLE_HEAD_SX, width: 96 }} align="right">Received</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {lineItems.map((item) => (
-                  <TableRow key={item.id} hover>
-                    <TableCell sx={{ fontSize: 12 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {shownLineItems.map((item) => (
+                  // WS-UX-01 S4 — informational rows: compact, no hover affordance.
+                  <TableRow key={item.id}>
+                    <TableCell sx={{ fontSize: 12, py: '8px' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
                         {item.image_url ? (
-                          <Box component="img" src={item.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
+                          <Box component="img" src={item.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }} />
                         ) : (
-                          <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Package size={14} style={{ opacity: 0.4 }} />
+                          <Box sx={{ width: 32, height: 32, borderRadius: '6px', bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Package size={15} style={{ opacity: 0.4 }} />
                           </Box>
                         )}
-                        <Box>
-                          <Typography variant="body2" fontWeight={600}>{item.product_title ?? item.description}</Typography>
-                          {item.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{item.sku}</Typography>}
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={500} sx={{ fontSize: 13.5, lineHeight: 1.3 }}>{item.product_title ?? item.description}</Typography>
+                          {item.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', lineHeight: 1.3, display: 'block' }}>{item.sku}</Typography>}
                         </Box>
                       </Box>
                     </TableCell>
-                    <TableCell align="right" sx={{ fontSize: 12 }}>{item.quantity_ordered}</TableCell>
-                    <TableCell align="right" sx={{ fontSize: 12, fontWeight: item.quantity_received > 0 ? 700 : 400 }}>
+                    <TableCell align="right" sx={{ fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{item.quantity_ordered}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', fontWeight: item.quantity_received > 0 ? 700 : 400 }}>
                       {/* WS-UX-01 S1 — no physical count exists before Receive starts. */}
                       {countingStarted || Number(item.quantity_received) > 0
                         ? item.quantity_received
@@ -2185,100 +2457,73 @@ function PoAccordion({
           </TableContainer>
         )}
 
-        {OPEN_STATUSES.includes(po.status) && (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              flexWrap: 'wrap',
-              minHeight: 32,
-            }}
-          >
-            {/* WS-UX-01 S1 — Draft: the merchant confirms they sent it externally (draft → ordered). */}
-            {nextAction.kind === 'mark_sent' && (
-              <Button
-                size="small"
-                variant="contained"
-                disabled={updatingStatus}
-                onClick={() => void handleStatusUpdate('ordered')}
-                sx={{
-                  textTransform: 'none',
-                  bgcolor: 'var(--accent)',
-                  color: 'var(--accent-ink)',
-                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                }}
-              >
-                Mark as sent
-              </Button>
+        {po.notes && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+            Notes: {po.notes}
+          </Typography>
+        )}
+      </Box>
+
+      {/* WS-UX-01 S4 — the Next step section holds the PO's only lifecycle controls. */}
+      {isOpenPo && (
+        <Box
+          data-testid="po-next-step"
+          sx={{
+            // WS-UX-01 S4 — a compact strip: hairline top rule and an accent
+            // edge instead of a tinted card. It grows for briefs and errors.
+            borderTop: '1px solid var(--rule)',
+            boxShadow: 'inset 2px 0 0 var(--accent)',
+            px: '28px',
+            py: '12px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            columnGap: 3,
+            rowGap: 1,
+            // Same certified controls, at the target's primary-action size and
+            // one accent/ink contrast pair (about 7:1 in both themes).
+            '& .MuiButton-contained': { minHeight: 44, minWidth: 184, px: 2.5, fontSize: 14, borderRadius: '8px' },
+            '& .MuiButton-contained:not(.Mui-disabled)': {
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              '&:hover': { bgcolor: 'var(--accent-hover)', opacity: 1 },
+            },
+          }}
+        >
+          {/* WS-UX-01 S4 — text column: heading, copy and every supporting
+              message. It grows for briefs and errors; the actions never move. */}
+          <Box sx={{ display: 'grid', gap: 0.5, flex: '1 1 320px', minWidth: 0, alignContent: 'center' }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent-text)' }}>
+              Next step
+            </Typography>
+            {nextStepCopy && (
+              <>
+                <Typography sx={{ fontSize: 15, fontWeight: 500, lineHeight: 1.3, color: 'var(--ink)' }}>
+                  {nextStepCopy.title}
+                </Typography>
+                {nextStepCopy.body && (
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)', fontSize: 13 }}>
+                    {nextStepCopy.body}
+                  </Typography>
+                )}
+              </>
             )}
-            {/* On the way → mark as arrived at dock */}
-            {nextAction.kind === 'mark_arrived' && (
-              <Button
-                size="small"
-                variant="contained"
-                disabled={updatingStatus}
-                onClick={() => void handleStatusUpdate('shipped')}
-                sx={{
-                  textTransform: 'none',
-                  bgcolor: 'var(--accent)',
-                  color: 'var(--accent-ink)',
-                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                }}
-              >
-                Mark as arrived
-              </Button>
-            )}
-            {/* GH-1143 / WS-UX-01 S2 — pending work owned by someone else: show the
-                owner; only owners/admins get an enabled Reassign. */}
+            {/* GH-1143 / WS-UX-01 S2 — pending work owned by someone else: show the owner. */}
             {canReassignExistingReceive && (
               <>
                 <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
                   Assigned to {receiveAssigneeName} · Not started
                 </Typography>
-                <Button
-                  ref={assignButtonRef}
-                  size="small"
-                  variant="outlined"
-                  aria-haspopup="dialog"
-                  disabled={
-                    !canManageReceiveAssignment ||
-                    !onReassignReceiveJob ||
-                    !receiveRosterReady ||
-                    receiveBusy ||
-                    updatingStatus
-                  }
-                  onClick={() => handleOpenAssignPopover('reassign')}
-                  sx={{ textTransform: 'none' }}
-                >
-                  {receiveMutation === 'pending' ? 'Reassigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Reassign'}
-                </Button>
                 {!canManageReceiveAssignment && (
-                  <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+                  <Typography variant="caption" color="text.secondary">
                     Only owners and admins can reassign receives.
                   </Typography>
                 )}
               </>
             )}
-            {/* GH-1245 — own started job → resume that exact job in WMS. Never claims. */}
-            {receiveJobStarted && isReceiveEligible && (
-              <Button
-                size="small"
-                variant="contained"
-                disabled={updatingStatus}
-                startIcon={<CheckCircle size={14} />}
-                onClick={handleOpenOwnReceive}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-              >
-                Resume Receive
-              </Button>
-            )}
-            {/* WS-UX-01 S3 — own pending job → inline brief + explicit Start receiving. */}
+            {/* WS-UX-01 S3 — own pending job → inline brief; Start receiving sits in the action group. */}
             {canOpenOwnReceive && !receiveJobStarted && isReceiveEligible && (
-              <Box
-                data-testid="receive-inline-brief"
-                sx={{ flexBasis: '100%', display: 'grid', gap: 0.5, justifyItems: 'start' }}
-              >
+              <Box data-testid="receive-inline-brief" sx={{ display: 'grid', gap: 0.5, justifyItems: 'start' }}>
                 <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
                   {receiveBriefModel?.ok && receiveBriefModel.supplierName
                     ? `Receive from ${receiveBriefModel.supplierName} · ${poDisplay} · `
@@ -2323,138 +2568,205 @@ function PoAccordion({
                     </Typography>
                   </>
                 )}
-                <Button
-                  size="small"
-                  variant="contained"
-                  disabled={
-                    !receiveBriefModel?.ok ||
-                    !onClaimReceiveJob ||
-                    receiveBusy ||
-                    updatingStatus
-                  }
-                  onClick={() => void handleStartReceive()}
-                  sx={{ mt: 0.5, textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-                >
-                  {receiveMutation === 'pending' ? 'Starting…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Start receiving'}
-                </Button>
               </Box>
             )}
-            {/* WS-UX-01 S2 — arrived, no active job (or legacy unassigned pending). */}
             {canStartReceiveDispatch && isReceiveEligible && (
-              <>
-                {!canManageReceiveAssignment ? (
-                  <>
-                    <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
-                      Assign receive
-                    </Button>
-                    <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
-                      Only owners and admins can assign receives.
-                    </Typography>
-                  </>
-                ) : receiveAssigneesStatus === 'loading' ? (
-                  <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
-                    Loading team…
-                  </Button>
-                ) : receiveAssigneesStatus === 'error' ? (
-                  <>
-                    <Typography variant="body2" color="error">
-                      Couldn't load who can receive this.
-                    </Typography>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => onRetryReceiveAssignees?.()}
-                      sx={{ textTransform: 'none' }}
-                    >
-                      Try again
-                    </Button>
-                  </>
-                ) : soleSelfEligible ? (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    disabled={receiveBusy || updatingStatus}
-                    onClick={() => { if (currentUserId != null) void handleDispatchReceive(currentUserId); }}
-                    sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-                  >
-                    {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Receive myself'}
-                  </Button>
-                ) : teamAssignableOperators.length === 0 ? (
-                  <>
-                    <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
-                      Assign receive
-                    </Button>
-                    <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
-                      No one on your team can receive this yet.
-                    </Typography>
-                  </>
-                ) : (
-                  <Button
-                    ref={assignButtonRef}
-                    size="small"
-                    variant="contained"
-                    aria-haspopup="dialog"
-                    aria-expanded={assignAnchor ? 'true' : undefined}
-                    disabled={receiveBusy || updatingStatus}
-                    endIcon={<ChevronDown size={14} />}
-                    onClick={() => handleOpenAssignPopover('assign')}
-                    sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-                  >
-                    {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Assign receive'}
-                  </Button>
-                )}
-              </>
+              !canManageReceiveAssignment ? (
+                <Typography variant="caption" color="text.secondary">
+                  Only owners and admins can assign receives.
+                </Typography>
+              ) : receiveAssigneesStatus === 'error' ? (
+                <Typography variant="body2" color="error">
+                  Couldn't load who can receive this.
+                </Typography>
+              ) : receiveAssigneesStatus !== 'loading' && !soleSelfEligible && teamAssignableOperators.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  No one on your team can receive this yet.
+                </Typography>
+              ) : null
             )}
             {receiveSlow && (
-              <Typography variant="caption" color="text.secondary" role="status" sx={{ flexBasis: '100%' }}>
+              <Typography variant="caption" color="text.secondary" role="status">
                 Still working. Your click registered, so there's no need to click again or refresh.
               </Typography>
             )}
-            {/* WS-UX-01 S1 — destructive actions sit apart from the next step. */}
-            <IconButton
-              size="small"
-              aria-label={`More actions for ${poDisplay}`}
-              aria-haspopup="menu"
-              aria-expanded={moreMenuAnchor ? 'true' : undefined}
-              onClick={(e) => setMoreMenuAnchor(e.currentTarget)}
-              sx={{ ml: 'auto', color: 'var(--ink-3)' }}
+            {!cancelAllowed && (
+              <Typography id={`cancel-po-unavailable-${po.id}`} variant="caption" color="text.secondary">
+                Cancel is unavailable while this PO has Receive work.
+              </Typography>
+            )}
+            {receiveDispatchError && (
+              <Alert severity="error" sx={{ mt: 0.5 }}>
+                {receiveDispatchError}
+              </Alert>
+            )}
+          </Box>
+        {OPEN_STATUSES.includes(po.status) && (
+          // WS-UX-01 S4 — one right-aligned action group: Cancel PO… then the
+          // primary. Same placement in every state; it wraps as a unit.
+          <Box
+            role="group"
+            aria-label="PO actions"
+            data-testid="po-next-step-actions"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              flexWrap: 'nowrap',
+              gap: '10px',
+              ml: 'auto',
+              flex: '0 0 auto',
+              maxWidth: '100%',
+              '& .MuiButton-root': { minHeight: 44, borderRadius: '8px', whiteSpace: 'nowrap' },
+            }}
+          >
+            {/* WS-UX-01 S1 — canCancelPo and the named confirmation still guard it. */}
+            <Button
+              variant="outlined"
+              disabled={!cancelAllowed || updatingStatus || receiveBusy || cancellingPo}
+              onClick={handleOpenCancelConfirm}
+              aria-describedby={!cancelAllowed ? `cancel-po-unavailable-${po.id}` : undefined}
+              sx={{ textTransform: 'none', color: 'var(--critical-text)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--critical-border)', bgcolor: 'transparent' } }}
             >
-              <MoreHorizontal size={16} />
-            </IconButton>
-            <Menu
-              anchorEl={moreMenuAnchor}
-              open={moreMenuAnchor != null}
-              onClose={() => setMoreMenuAnchor(null)}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
-              <MenuItem
-                disabled={!cancelAllowed || updatingStatus}
-                onClick={handleOpenCancelConfirm}
-                sx={{ color: 'error.main', fontSize: 13, display: 'block' }}
+              Cancel PO…
+            </Button>
+            {/* WS-UX-01 S1 — Draft: the merchant confirms they sent it externally (draft → ordered). */}
+            {nextAction.kind === 'mark_sent' && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('ordered')}
+                sx={{
+                  textTransform: 'none',
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                }}
               >
-                Cancel PO…
-                {!cancelAllowed && (
-                  <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Unavailable while this PO has Receive work
-                  </Typography>
-                )}
-              </MenuItem>
-            </Menu>
+                Mark as sent
+              </Button>
+            )}
+            {/* On the way → mark as arrived at dock */}
+            {nextAction.kind === 'mark_arrived' && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('shipped')}
+                sx={{
+                  textTransform: 'none',
+                  bgcolor: 'var(--accent)',
+                  color: 'var(--accent-ink)',
+                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                }}
+              >
+                Mark as arrived
+              </Button>
+            )}
+            {/* GH-1143 / WS-UX-01 S2 — only owners/admins get an enabled Reassign. */}
+            {canReassignExistingReceive && (
+              <Button
+                ref={assignButtonRef}
+                size="small"
+                variant="outlined"
+                aria-haspopup="dialog"
+                disabled={
+                  !canManageReceiveAssignment ||
+                  !onReassignReceiveJob ||
+                  !receiveRosterReady ||
+                  receiveBusy ||
+                  updatingStatus
+                }
+                onClick={() => handleOpenAssignPopover('reassign')}
+                sx={{ textTransform: 'none' }}
+              >
+                {receiveMutation === 'pending' ? 'Reassigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Reassign'}
+              </Button>
+            )}
+            {/* GH-1245 — own started job → resume that exact job in WMS. Never claims. */}
+            {receiveJobStarted && isReceiveEligible && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={updatingStatus}
+                startIcon={<CheckCircle size={14} />}
+                onClick={handleOpenOwnReceive}
+                sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+              >
+                Resume Receive
+              </Button>
+            )}
+            {/* WS-UX-01 S3 — explicit Start receiving for the inline brief. */}
+            {canOpenOwnReceive && !receiveJobStarted && isReceiveEligible && (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={
+                  !receiveBriefModel?.ok ||
+                  !onClaimReceiveJob ||
+                  receiveBusy ||
+                  updatingStatus
+                }
+                onClick={() => void handleStartReceive()}
+                sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+              >
+                {receiveMutation === 'pending' ? 'Starting…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Start receiving'}
+              </Button>
+            )}
+            {/* WS-UX-01 S2 — arrived, no active job (or legacy unassigned pending). */}
+            {canStartReceiveDispatch && isReceiveEligible && (
+              !canManageReceiveAssignment ? (
+                <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                  Assign receive
+                </Button>
+              ) : receiveAssigneesStatus === 'loading' ? (
+                <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                  Loading team…
+                </Button>
+              ) : receiveAssigneesStatus === 'error' ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => onRetryReceiveAssignees?.()}
+                  sx={{ textTransform: 'none' }}
+                >
+                  Try again
+                </Button>
+              ) : soleSelfEligible ? (
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={receiveBusy || updatingStatus}
+                  onClick={() => { if (currentUserId != null) void handleDispatchReceive(currentUserId); }}
+                  sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                >
+                  {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Receive myself'}
+                </Button>
+              ) : teamAssignableOperators.length === 0 ? (
+                <Button size="small" variant="contained" disabled sx={{ textTransform: 'none' }}>
+                  Assign receive
+                </Button>
+              ) : (
+                <Button
+                  ref={assignButtonRef}
+                  size="small"
+                  variant="contained"
+                  aria-haspopup="dialog"
+                  aria-expanded={assignAnchor ? 'true' : undefined}
+                  disabled={receiveBusy || updatingStatus}
+                  endIcon={<ChevronDown size={14} />}
+                  onClick={() => handleOpenAssignPopover('assign')}
+                  sx={{ textTransform: 'none', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                >
+                  {receiveMutation === 'pending' ? 'Assigning…' : receiveMutation === 'reconciling' ? 'Checking…' : 'Assign receive'}
+                </Button>
+              )
+            )}
           </Box>
         )}
-
-        {po.notes && (
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-            Notes: {po.notes}
-          </Typography>
-        )}
-
-        {receiveDispatchError && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {receiveDispatchError}
-          </Alert>
-        )}
+        </Box>
+      )}
 
         {/* WS-UX-01 S2 — compact assignment popover. Nobody is preselected;
             picking a row is the explicit dispatch decision. */}
@@ -2462,9 +2774,10 @@ function PoAccordion({
           open={assignAnchor != null}
           anchorEl={assignAnchor}
           onClose={() => setAssignAnchor(null)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-          slotProps={{ paper: { sx: { width: 280, p: 1 } } }}
+          // WS-UX-01 S4 — the Next step primary sits bottom-right; open above it.
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          slotProps={{ paper: { sx: { width: 280, p: 1, mt: -1 } } }}
         >
           <Typography
             id={`assign-receive-title-${po.id}`}
@@ -2557,8 +2870,7 @@ function PoAccordion({
             )}
           </Box>
         </EntityDetailModal>
-      </AccordionDetails>
-    </Accordion>
+    </Box>
   );
 };
 
@@ -2630,7 +2942,7 @@ function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
       <DialogActions>
         <Button onClick={onClose} color="inherit">Cancel</Button>
         <Button onClick={handleSave} disabled={submitting} variant="contained"
-          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
           {mode === 'add' ? 'Add supplier' : 'Save changes'}
         </Button>
       </DialogActions>
@@ -2723,6 +3035,371 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
 // MAIN MODULE
 // ─────────────────────────────────────────────
 
+export type PoLifecycleStep = { label: string; when: string; state: 'done' | 'current' | 'upcoming' | 'stopped' };
+
+/**
+ * WS-UX-01 S4 — Draft → On the way → Arrived, derived only from the canonical
+ * PO status and its stored dates. The PO's own stage is current; earlier
+ * stages are done; later ones upcoming. Arrived stays current through
+ * receiving (incl. partially received) and is done only once the PO is
+ * Received. Overdue annotates On the way and never activates Arrived. A
+ * cancelled PO stops: no stage is shown as completed, because the projection
+ * does not record where it stopped.
+ */
+export function resolvePoLifecycleSteps(po: PurchaseOrder): PoLifecycleStep[] {
+  const shortDate = (value?: string | null) => formatShortDate(value)?.replace(/ \d{4}$/, '') ?? null;
+  const created = shortDate(po.created_at);
+  const createdWhen = created ? `Created ${created}` : 'Created';
+  if (po.status === 'cancelled') {
+    return [
+      { label: 'Draft', when: createdWhen, state: 'stopped' },
+      { label: 'On the way', when: 'Cancelled', state: 'stopped' },
+      { label: 'Arrived', when: '—', state: 'stopped' },
+    ];
+  }
+  const stage = po.status === 'draft' ? 0 : poListGroupOf(po) === 'on_the_way' ? 1 : 2;
+  const terminal = po.status === 'received';
+  const due = shortDate(po.expected_delivery_date);
+  const arrived = shortDate(po.actual_delivery_date);
+  const onTheWayWhen = stage === 0
+    ? 'Not yet'
+    : stage === 1
+      ? due ? (isPoOverdue(po) ? `Overdue · ${due}` : `Due ${due}`) : 'Sent'
+      : 'Sent';
+  const arrivedWhen = stage < 2 ? 'Not yet' : terminal ? 'Received' : arrived ? `Arrived ${arrived}` : 'Arrived';
+  const whens = [createdWhen, onTheWayWhen, arrivedWhen];
+  return ['Draft', 'On the way', 'Arrived'].map((label, i) => ({
+    label,
+    when: whens[i],
+    state: i < stage || (i === stage && terminal) ? 'done' : i === stage ? 'current' : 'upcoming',
+  }));
+}
+
+/** Informational only: no step is interactive. */
+function PoLifecycleSteps({ po }: { po: PurchaseOrder }) {
+  const steps = resolvePoLifecycleSteps(po);
+  const cancelled = po.status === 'cancelled';
+  return (
+    <Box
+      component="ol"
+      aria-label={cancelled ? 'PO progress (cancelled)' : 'PO progress'}
+      data-testid="po-lifecycle"
+      sx={{ listStyle: 'none', m: 0, display: 'flex', alignItems: 'center', gap: '14px', px: '28px', py: '12px', borderTop: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)' }}
+    >
+      {steps.map((step, i) => {
+        const done = step.state === 'done';
+        const current = step.state === 'current';
+        return (
+          <Fragment key={step.label}>
+            {i > 0 && (
+              <Box
+                component="li"
+                aria-hidden="true"
+                sx={{ flex: 1, height: '1px', minWidth: 16, bgcolor: done ? 'var(--good-ink)' : 'var(--rule)', opacity: done ? 0.5 : 1 }}
+              />
+            )}
+            <Box
+              component="li"
+              aria-current={current ? 'step' : undefined}
+              data-step-state={step.state}
+              sx={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 'none' }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--good-ink)',
+                  bgcolor: done ? 'color-mix(in srgb, var(--good-ink) 16%, transparent)' : current ? 'var(--accent-ghost)' : 'transparent',
+                  boxShadow: done ? 'none' : `inset 0 0 0 1px ${current ? 'var(--accent-border)' : 'var(--rule)'}`,
+                }}
+              >
+                {done && <CheckCircle size={14} aria-hidden="true" />}
+                {current && (
+                  <Box
+                    component="span"
+                    data-pulse="true"
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      bgcolor: 'var(--accent)',
+                      '@keyframes poStepPulse': {
+                        '0%': { boxShadow: '0 0 0 0 rgba(255, 107, 43, 0.5)' },
+                        '70%, 100%': { boxShadow: '0 0 0 6px rgba(255, 107, 43, 0)' },
+                      },
+                      '@media (prefers-reduced-motion: no-preference)': {
+                        animation: 'poStepPulse 2.4s ease-out infinite',
+                      },
+                    }}
+                  />
+                )}
+              </Box>
+              <Box component="span" sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <Box component="span" sx={{ fontSize: 13, fontWeight: 500, lineHeight: 1, color: done || current ? 'var(--ink)' : 'var(--ink-3)' }}>
+                  {step.label}
+                  <Box component="span" sx={visuallyHiddenSx}>
+                    {done ? ' (done)' : current ? ' (next)' : step.state === 'stopped' ? ' (not completed)' : ''}
+                  </Box>
+                </Box>
+                <Box component="span" sx={{ fontSize: 12, lineHeight: 1, color: step.when.startsWith('Overdue') ? 'var(--warning-text)' : 'var(--ink-3)' }}>
+                  {step.when}
+                </Box>
+              </Box>
+            </Box>
+          </Fragment>
+        );
+      })}
+    </Box>
+  );
+}
+
+// Explicit px: MUI sx treats numeric sizes <= 1 as percentages (1 → 100%),
+// which made these spans as tall as the content box and scrolled the page.
+const visuallyHiddenSx = {
+  position: 'absolute', width: '1px', height: '1px', p: 0, m: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+} as const;
+
+type PoListGroupKey = 'arrived' | 'on_the_way' | 'draft';
+
+const PO_LIST_GROUPS: Array<{ key: PoListGroupKey; label: string }> = [
+  { key: 'arrived', label: 'Arrived' },
+  { key: 'on_the_way', label: 'On the way' },
+  { key: 'draft', label: 'Drafts' },
+];
+
+function poListGroupOf(po: PurchaseOrder): PoListGroupKey | null {
+  if (po.status === 'shipped' || po.status === 'partially_received') return 'arrived';
+  if (po.status === 'ordered' || po.status === 'confirmed' || po.status === 'in_production') return 'on_the_way';
+  if (po.status === 'draft') return 'draft';
+  return null;
+}
+
+/** WS-UX-01 S4 — canonical PO lifecycle label (never the Receive job state). */
+function poStatusLabel(po: PurchaseOrder): string {
+  return po.status === 'partially_received' ? 'Partially received' : STATUS_CONFIG[po.status].label;
+}
+
+/** The assignee as the projection names it; an id only when no name exists. */
+function poAssigneeLabel(po: PurchaseOrder): string | null {
+  const name = po.receive_assigned_operator_name?.trim();
+  if (name) return name;
+  return po.receive_assigned_operator_id != null ? `Operator #${po.receive_assigned_operator_id}` : null;
+}
+
+export type PoRowLabels = {
+  status: string;
+  overdue: boolean;
+  assignment: { label: string; tone: 'accent' | 'ink' | 'muted' };
+};
+
+/**
+ * WS-UX-01 S4 — two-line list row, from the canonical PO projection only (no
+ * per-row job reads). The top line is the PO lifecycle status; the bottom
+ * line is the Receive assignment. "Receiving" requires an active started job.
+ */
+export function resolvePoRowLabels(po: PurchaseOrder, currentUserId: number | null): PoRowLabels {
+  const status = poStatusLabel(po);
+  const overdue = isPoOverdue(po);
+  const group = poListGroupOf(po);
+  const assignee = poAssigneeLabel(po);
+  let assignment: PoRowLabels['assignment'];
+  if (group === 'arrived') {
+    const action = resolveReceiveAction(po, currentUserId);
+    if (hasStartedReceive(po)) assignment = { label: assignee ? `Receiving: ${assignee}` : 'Receiving', tone: 'accent' };
+    else if (action === 'assign') assignment = { label: 'Not assigned', tone: 'accent' };
+    else if (po.receive_job_id != null && assignee) assignment = { label: `Assigned: ${assignee}`, tone: 'ink' };
+    else assignment = { label: 'Receive state unknown', tone: 'muted' };
+  } else if (po.status === 'received') {
+    assignment = { label: 'Receive complete', tone: 'muted' };
+  } else if (po.status === 'cancelled') {
+    assignment = { label: 'No receive', tone: 'muted' };
+  } else {
+    assignment = { label: 'Receive not started', tone: 'muted' };
+  }
+  return { status, overdue, assignment };
+}
+
+function PoListRow({ po, selected, disabled, currentUserId, onSelect }: {
+  po: PurchaseOrder;
+  selected: boolean;
+  disabled: boolean;
+  currentUserId: number | null;
+  onSelect: (poId: string) => void;
+}) {
+  const labels = resolvePoRowLabels(po, currentUserId);
+  const group = poListGroupOf(po);
+  const dot = group === 'arrived' ? 'var(--accent)' : group === 'on_the_way' ? 'var(--ink-3)' : 'var(--ink-4)';
+  const toneColor = { accent: 'var(--accent-text)', ink: 'var(--ink-2)', muted: 'var(--ink-3)' }[labels.assignment.tone];
+  const due = formatShortDate(po.expected_delivery_date)?.replace(/ \d{4}$/, '');
+  const identity = `${po.supplier_name} · ${formatPoDisplay(po)} · ${labels.status} · ${labels.assignment.label}`;
+  // WS-UX-01 S4 — the app's MUI Tooltip (as in WarehouseGrid BinCell) shows
+  // the full identity of a truncated row. The span keeps it working while the
+  // row is disabled by a claim hold.
+  return (
+    <Tooltip title={identity} placement="right" enterDelay={400} arrow>
+      <Box component="span" sx={{ display: 'flex', flexDirection: 'column' }}>
+        <Box
+          component="button"
+          type="button"
+          data-testid={`po-row-${po.id}`}
+          aria-current={selected ? 'true' : undefined}
+          disabled={disabled && !selected}
+          onClick={() => onSelect(po.id)}
+          sx={{
+            all: 'unset',
+            boxSizing: 'border-box',
+            display: 'grid',
+            gridTemplateColumns: '7px minmax(0, 1fr) auto',
+            alignItems: 'center',
+            columnGap: '10px',
+            rowGap: '3px',
+            mx: '6px',
+            px: '14px',
+            py: '8px',
+            borderRadius: '8px',
+            cursor: disabled && !selected ? 'not-allowed' : 'pointer',
+            bgcolor: selected ? 'var(--accent-ghost)' : 'transparent',
+            boxShadow: selected ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
+            opacity: disabled && !selected ? 0.5 : 1,
+            '&:hover': selected || disabled ? undefined : { bgcolor: 'var(--bg-2)' },
+            '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '-2px' },
+          }}
+        >
+          <Box component="span" sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: dot }} />
+          <Box component="span" sx={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.25, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {po.supplier_name}
+          </Box>
+          <Box component="span" data-testid="po-row-status" sx={{ fontSize: 12, lineHeight: 1.2, color: 'var(--ink-2)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+            {labels.status}
+            {labels.overdue && (
+              <Box component="span" sx={{ color: 'var(--warning-text)', fontWeight: 500 }}>
+                {` · Overdue${due ? ` ${due}` : ''}`}
+              </Box>
+            )}
+          </Box>
+          <Box component="span" />
+          <Box component="span" sx={{ fontSize: 12, lineHeight: 1.2, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {formatPoDisplay(po)} · {plural(Number(po.total_units_ordered) || 0, 'unit')}
+          </Box>
+          <Box
+            component="span"
+            data-testid="po-row-assignment"
+            sx={{ fontSize: 12, lineHeight: 1.2, textAlign: 'right', whiteSpace: 'nowrap', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', color: toneColor, fontWeight: labels.assignment.tone === 'accent' ? 500 : 400 }}
+          >
+            {labels.assignment.label}
+          </Box>
+        </Box>
+      </Box>
+    </Tooltip>
+  );
+}
+
+type PoStatusFilter = 'all' | 'draft' | 'on_the_way' | 'shipped' | 'partially_received' | 'received' | 'cancelled';
+type PoAssignmentFilter = 'any' | 'unassigned' | 'mine' | 'others' | 'receiving';
+
+const PO_STATUS_FILTERS: Array<[PoStatusFilter, string]> = [
+  ['all', 'All statuses'], ['draft', 'Draft'], ['on_the_way', 'On the way'], ['shipped', 'Arrived'],
+  ['partially_received', 'Partially received'], ['received', 'Received'], ['cancelled', 'Cancelled'],
+];
+const PO_ASSIGNMENT_FILTERS: Array<[PoAssignmentFilter, string]> = [
+  ['any', 'Any receive'], ['unassigned', 'Not assigned'], ['mine', 'Assigned to me'],
+  ['others', 'Assigned to others'], ['receiving', 'Receiving'],
+];
+
+/** WS-UX-01 S4 — in-memory list filtering over the existing projection. */
+export function poMatchesFilters(
+  po: PurchaseOrder,
+  filters: { search: string; status: PoStatusFilter; assignment: PoAssignmentFilter },
+  currentUserId: number | null
+): boolean {
+  const query = filters.search.trim().toLowerCase();
+  if (query) {
+    const haystack = [po.supplier_name, formatPoDisplay(po), String(po.po_number ?? '')].join(' ').toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+  if (filters.status !== 'all') {
+    const matches = filters.status === 'on_the_way' ? poListGroupOf(po) === 'on_the_way' : po.status === filters.status;
+    if (!matches) return false;
+  }
+  switch (filters.assignment) {
+    case 'unassigned':
+      return poListGroupOf(po) === 'arrived' && resolveReceiveAction(po, currentUserId) === 'assign';
+    case 'mine':
+      return po.receive_job_id != null && currentUserId != null && po.receive_assigned_operator_id === currentUserId;
+    case 'others':
+      return po.receive_job_id != null && po.receive_assigned_operator_id != null && po.receive_assigned_operator_id !== currentUserId;
+    case 'receiving':
+      return hasStartedReceive(po);
+    default:
+      return true;
+  }
+}
+
+type PoListView = 'open' | 'closed';
+type PoSortKey = 'default' | 'newest' | 'expected' | 'supplier';
+
+const PO_SORTS: Array<[PoSortKey, string]> = [
+  ['default', 'Default order'],
+  ['newest', 'Newest first'],
+  ['expected', 'Expected date soonest'],
+  ['supplier', 'Supplier A–Z'],
+];
+
+const PO_CLOSED_GROUPS: Array<{ key: 'received' | 'cancelled'; label: string }> = [
+  { key: 'received', label: 'Received' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
+/**
+ * WS-UX-01 S4 — stable, deterministic list sort inside a group. "default"
+ * keeps the API order; missing or malformed dates sort last; ties keep the
+ * API order.
+ */
+export function sortPurchaseOrders(pos: PurchaseOrder[], key: PoSortKey): PurchaseOrder[] {
+  if (key === 'default') return pos;
+  const time = (value: string | null | undefined) => {
+    const t = key === 'expected' ? parseCalendarDate(value)?.getTime() : value ? Date.parse(value) : NaN;
+    return t == null || Number.isNaN(t) ? null : t;
+  };
+  const compare = (a: PurchaseOrder, b: PurchaseOrder): number => {
+    if (key === 'supplier') return (a.supplier_name ?? '').localeCompare(b.supplier_name ?? '', undefined, { sensitivity: 'base' });
+    const ta = time(key === 'newest' ? a.created_at : a.expected_delivery_date);
+    const tb = time(key === 'newest' ? b.created_at : b.expected_delivery_date);
+    if (ta == null || tb == null) return ta == null ? (tb == null ? 0 : 1) : -1;
+    return key === 'newest' ? tb - ta : ta - tb;
+  };
+  return pos
+    .map((po, index) => ({ po, index }))
+    .sort((x, y) => compare(x.po, y.po) || x.index - y.index)
+    .map(({ po }) => po);
+}
+
+const LIST_TOOL_SX = {
+  minHeight: 32,
+  px: 1.25,
+  fontSize: 12.5,
+  textTransform: 'none',
+  color: 'var(--ink-2)',
+  borderColor: 'var(--rule)',
+  borderRadius: '6px',
+  whiteSpace: 'nowrap',
+  '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '1px' },
+} as const;
+
+/** Thin, unobtrusive native scrollbar; wheel, trackpad and keyboard scrolling unchanged. */
+const THIN_SCROLL_SX = {
+  scrollbarWidth: 'thin',
+  scrollbarColor: 'var(--rule) transparent',
+  '&::-webkit-scrollbar': { width: 8, height: 8 },
+  '&::-webkit-scrollbar-thumb': { backgroundColor: 'var(--rule)', borderRadius: 8 },
+  '&::-webkit-scrollbar-track': { background: 'transparent' },
+} as const;
+
 function PurchasingPosView({
   data, isLoading, isError, onRefresh,
   onFetchLineItems, onUpdatePoStatus, onCreatePo,
@@ -2735,36 +3412,213 @@ function PurchasingPosView({
   spotlights,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
-  const [showClosed, setShowClosed] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // WS-UX-01 S4 D1 — a Start receiving claim in flight holds the selection.
+  const [claimHoldPoId, setClaimHoldPoId] = useState<string | null>(null);
+  // WS-UX-01 S4 D1 — details mount on first selection and stay mounted.
+  const mountedPoIdsRef = useRef<Set<string>>(new Set());
+
+  // WS-UX-01 S4 — Open/Closed is navigation: the view is the selected PO's
+  // view, and switching selects that view's remembered (or first) PO. Only an
+  // empty view is held here. Filters and sort only choose which rows show and
+  // in which order; they never touch selection, the claim hold or the mounted
+  // details.
+  const [emptyView, setEmptyView] = useState<PoListView | null>(null);
+  const lastSelectedRef = useRef<Record<PoListView, string | null>>({ open: null, closed: null });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<PoStatusFilter>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<PoAssignmentFilter>('any');
+  const [sortKey, setSortKey] = useState<PoSortKey>('default');
+  const [filtersAnchor, setFiltersAnchor] = useState<HTMLElement | null>(null);
+  const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+  const activeFilterCount = (search.trim() ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (assignmentFilter !== 'any' ? 1 : 0);
+  const filtersActive = activeFilterCount > 0;
+  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setAssignmentFilter('any'); };
 
   const allPos = data?.purchase_orders ?? [];
   const suppliers = data?.suppliers ?? [];
   const openPos = allPos.filter((po) => OPEN_STATUSES.includes(po.status));
   const closedPos = allPos.filter((po) => !OPEN_STATUSES.includes(po.status));
+  const groups = PO_LIST_GROUPS.map((group) => ({
+    ...group,
+    pos: openPos.filter((po) => poListGroupOf(po) === group.key),
+  }));
+  const matches = (po: PurchaseOrder) =>
+    poMatchesFilters(po, { search, status: statusFilter, assignment: assignmentFilter }, currentUserId);
+  const visibleOpenGroups = groups.map((group) => ({ ...group, pos: sortPurchaseOrders(group.pos.filter(matches), sortKey) }));
+  const visibleClosedGroups = PO_CLOSED_GROUPS.map((group) => ({
+    ...group,
+    pos: sortPurchaseOrders(closedPos.filter((po) => po.status === group.key && matches(po)), sortKey),
+  }));
+  const visibleOpenCount = visibleOpenGroups.reduce((n, group) => n + group.pos.length, 0);
+  const visibleClosedCount = visibleClosedGroups.reduce((n, group) => n + group.pos.length, 0);
+  const loaded = !isLoading && !isError && data != null;
+  const knownPoIds = new Set(allPos.map((po) => po.id));
+
+  // WS-UX-01 S4 D2/D3 — selection: a pending action=receive deep link, else
+  // ?po=<id>, else the first Arrived → On the way → Draft PO (unfiltered, so
+  // filters and sorting never move it).
+  const poParam = searchParams.get('po');
+  const deepLinkPoId = autoOpenReceivePoId && knownPoIds.has(autoOpenReceivePoId) ? autoOpenReceivePoId : null;
+  const requestedPoId = deepLinkPoId ?? (poParam && knownPoIds.has(poParam) ? poParam : null);
+  const defaultPoId = groups.find((group) => group.pos.length > 0)?.pos[0]?.id ?? null;
+  const selectedPoId = claimHoldPoId ?? requestedPoId ?? defaultPoId;
+  if (selectedPoId) mountedPoIdsRef.current.add(selectedPoId);
+  const selectedPo = allPos.find((po) => po.id === selectedPoId) ?? null;
+  const selectedView: PoListView | null = selectedPo ? (OPEN_STATUSES.includes(selectedPo.status) ? 'open' : 'closed') : null;
+  if (selectedPoId && selectedView) lastSelectedRef.current[selectedView] = selectedPoId;
+  const listView: PoListView = emptyView ?? selectedView ?? 'open';
+  // A PO from the other view is never shown as the active detail.
+  const displayedPoId = selectedView === listView ? selectedPoId : null;
+  const displayedPo = displayedPoId != null ? selectedPo : null;
+
+  // Any selection change (click, Back/Forward, deep link) ends an empty view.
+  useEffect(() => { setEmptyView(null); }, [selectedPoId]);
+
+  const visibleGroups = listView === 'open' ? visibleOpenGroups : visibleClosedGroups;
+  const visibleCount = listView === 'open' ? visibleOpenCount : visibleClosedCount;
+  const viewTotal = listView === 'open' ? openPos.length : closedPos.length;
+  const selectedVisible = displayedPoId != null && visibleGroups.some((group) => group.pos.some((po) => po.id === displayedPoId));
+  const statusChoices = PO_STATUS_FILTERS.filter(([value]) =>
+    value === 'all' || (listView === 'closed' ? value === 'received' || value === 'cancelled' : value !== 'received' && value !== 'cancelled')
+  );
+
+  /**
+   * Open/Closed navigation: select the view's last PO (if still in it), else
+   * its first PO (unfiltered group order); an empty view shows its empty
+   * state. A Start receiving claim holds the view with the selection.
+   */
+  const handleListView = (view: PoListView) => {
+    if (claimHoldPoId || view === listView) return;
+    // A status filter from the other view would only empty this one.
+    setStatusFilter('all');
+    const viewPos = view === 'open'
+      ? groups.flatMap((group) => group.pos)
+      : PO_CLOSED_GROUPS.flatMap((group) => closedPos.filter((po) => po.status === group.key));
+    const remembered = lastSelectedRef.current[view];
+    const target = viewPos.find((po) => po.id === remembered)?.id ?? viewPos[0]?.id ?? null;
+    if (target == null) setEmptyView(view);
+    else if (target === selectedPoId) setEmptyView(null);
+    else handleSelectPo(target);
+  };
+
+  /** Reveal the selected PO when filters hide it. Selection is unchanged. */
+  const revealSelected = clearFilters;
+
+  const updateParams = useCallback(
+    (mutate: (params: URLSearchParams) => void, replace: boolean) => {
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        mutate(next);
+        return next;
+      }, { replace });
+    },
+    [setSearchParams]
+  );
+
+  /** A user selection is a history entry (D2). Unrelated params are kept. */
+  const handleSelectPo = useCallback((poId: string) => {
+    if (claimHoldPoId) return;
+    updateParams((params) => {
+      params.set('po', poId);
+      params.delete('action');
+      params.delete('poId');
+    }, false);
+  }, [claimHoldPoId, updateParams]);
+
+  /** D3 — after the deep link ran its D5 decision, normalize to ?po=X (replace). */
+  const handleDeepLinkHandled = useCallback((poId: string) => {
+    updateParams((params) => {
+      params.delete('action');
+      params.delete('poId');
+      params.set('po', poId);
+    }, true);
+  }, [updateParams]);
+
+  const handleStartClaimChange = useCallback((poId: string, inFlight: boolean) => {
+    setClaimHoldPoId((current) => (inFlight ? poId : current === poId ? null : current));
+  }, []);
+
+  // WS-UX-01 S4 D2/D3 — automatic normalization (replace): drop an unknown
+  // ?po, drop a deep link to an unknown PO, and normalize a deep link the
+  // Receive decision does not apply to. A Receive-eligible deep link is
+  // normalized by its detail once evaluated.
+  useEffect(() => {
+    if (!loaded) return;
+    const actionReceive = searchParams.get('action') === 'receive';
+    const linkPoId = actionReceive ? searchParams.get('poId') : null;
+    if (actionReceive) {
+      const target = linkPoId ? allPos.find((po) => po.id === linkPoId) : undefined;
+      if (!target) {
+        updateParams((params) => { params.delete('action'); params.delete('poId'); }, true);
+      } else if (target.status !== 'shipped' && target.status !== 'partially_received') {
+        handleDeepLinkHandled(target.id);
+      }
+      return;
+    }
+    if (poParam && !knownPoIds.has(poParam)) {
+      updateParams((params) => params.delete('po'), true);
+    }
+  });
 
   const handlePoCreated = () => {
     setCreatePoOpen(false);
     onRefresh();
   };
 
+  const renderRow = (po: PurchaseOrder) => (
+    <PoListRow
+      key={po.id}
+      po={po}
+      selected={po.id === displayedPoId}
+      disabled={claimHoldPoId != null}
+      currentUserId={currentUserId}
+      onSelect={handleSelectPo}
+    />
+  );
+
+  const mountedPos = allPos.filter((po) => mountedPoIdsRef.current.has(po.id));
+  const viewCount = (view: PoListView) => {
+    const total = view === 'open' ? openPos.length : closedPos.length;
+    const shown = view === 'open' ? visibleOpenCount : visibleClosedCount;
+    return filtersActive ? `${shown} of ${total}` : String(total);
+  };
+
   return (
-    <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
+    <Box
+      sx={{
+        px: { xs: 2, md: '32px' },
+        pt: '20px',
+        pb: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+        // WS-UX-01 S4 — fill the route's height (no viewport guess); the list
+        // rows and the detail body own their scrolling.
+        '@media (min-width: 1100px)': { flex: 1, minHeight: 0 },
+      }}
+    >
 
       {/* HEADER */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <Box>
           <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-            Open POs
+            {listView === 'closed' ? 'Closed POs' : 'Open POs'}
           </Typography>
+          {/* WS-UX-01 S4 — counts describe the active view. */}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Purchase orders and ETAs.
+            {loaded && listView === 'closed' && closedPos.length > 0
+              ? PO_CLOSED_GROUPS.map((group) => `${closedPos.filter((po) => po.status === group.key).length} ${group.label.toLowerCase()}`).join(' · ')
+              : loaded && listView === 'open' && openPos.length > 0
+              ? `${groups[0].pos.length} arrived · ${groups[1].pos.length} on the way · ${plural(groups[2].pos.length, 'draft')}`
+              : 'Purchase orders and ETAs.'}
           </Typography>
         </Box>
         <Button
           variant="contained"
           startIcon={<Plus size={16} />}
           onClick={() => setCreatePoOpen(true)}
-          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
         >
           New PO
         </Button>
@@ -2773,93 +3627,258 @@ function PurchasingPosView({
       {isLoading && <ModuleLoadingSkeleton />}
 
       {isError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error">
           Failed to load supplier data. Please refresh.
         </Alert>
       )}
 
-      {!isLoading && !isError && (
-        <>
-          {/* OPEN POs */}
-          <Box sx={{ mb: 4 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <Truck size={18} />
-              <Typography variant="subtitle1" fontWeight={700}>Open Purchase Orders</Typography>
-              <Chip label={openPos.length} size="small" color={openPos.length > 0 ? 'primary' : 'default'} />
-            </Box>
-            {openPos.length === 0 ? (
-              <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
-                <Truck size={36} style={{ opacity: 0.3 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  No open purchase orders.
-                </Typography>
-                <Button
-                  size="small"
-                  startIcon={<Plus size={14} />}
-                  sx={{ mt: 2 }}
-                  onClick={() => setCreatePoOpen(true)}
-                >
-                  Create your first PO
-                </Button>
-              </Paper>
-            ) : (
-              openPos.map((po) => (
-                <PoAccordion
-                  key={po.id}
-                  po={po}
-                  onFetchLineItems={onFetchLineItems}
-                  onUpdatePoStatus={onUpdatePoStatus}
-                  onCreateReceiveJob={onCreateReceiveJob}
-                  onReassignReceiveJob={onReassignReceiveJob}
-                  teamAssignableOperators={teamAssignableOperators}
-                  receiveAssigneesStatus={receiveAssigneesStatus}
-                  onRetryReceiveAssignees={onRetryReceiveAssignees}
-                  canManageReceiveAssignment={canManageReceiveAssignment}
-                  currentUserId={currentUserId}
-                  onReconcilePurchaseOrders={onReconcilePurchaseOrders}
-                  onFetchReceiveJob={onFetchReceiveJob}
-                  onClaimReceiveJob={onClaimReceiveJob}
-                  autoOpenReceive={autoOpenReceivePoId === po.id}
-                  receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
-                />
-              ))
-            )}
-          </Box>
+      {loaded && allPos.length === 0 && (
+        <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
+          <Truck size={36} style={{ opacity: 0.3 }} />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            No open purchase orders.
+          </Typography>
+          <Button
+            size="small"
+            startIcon={<Plus size={14} />}
+            sx={{ mt: 2 }}
+            onClick={() => setCreatePoOpen(true)}
+          >
+            Create your first PO
+          </Button>
+        </Paper>
+      )}
 
-          {/* CLOSED POs */}
-          {closedPos.length > 0 && (
-            <Box sx={{ mb: 4 }}>
-              <Box
-                sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, cursor: 'pointer' }}
-                onClick={() => setShowClosed((v) => !v)}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  {closedPos.length} closed / cancelled PO{closedPos.length > 1 ? 's' : ''}
-                </Typography>
-                <ChevronDown
-                  size={14}
-                  style={{ transform: showClosed ? 'rotate(180deg)' : 'none', transition: '0.2s' }}
+      {/* WS-UX-01 S4 — PO list beside the selected PO (D5: one column below ~1100px). */}
+      {loaded && allPos.length > 0 && (
+        <Box
+          sx={{
+            display: 'grid',
+            gap: '20px',
+            gridTemplateColumns: 'minmax(0, 1fr)',
+            '@media (min-width: 1100px)': {
+              gridTemplateColumns: '372px minmax(0, 1fr)',
+              flex: 1,
+              minHeight: 0,
+            },
+          }}
+        >
+          <Box
+            component="nav"
+            aria-label="Purchase orders"
+            sx={{
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid var(--rule)',
+              borderRadius: '12px',
+              bgcolor: 'var(--surface)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Toolbar: search · Filters · Sort, then Open / Closed. Never scrolls. */}
+            <Box sx={{ flexShrink: 0, px: '10px', pt: '10px', pb: '8px', display: 'grid', gap: '8px', borderBottom: '1px solid var(--rule)' }}>
+              <Box role="search" aria-label="Filter purchase orders" sx={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  placeholder="Search PO or supplier…"
+                  inputProps={{ 'aria-label': 'Search PO or supplier' }}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { height: 32, fontSize: 13 } }}
                 />
+                <Button
+                  variant="outlined"
+                  aria-haspopup="menu"
+                  aria-expanded={filtersAnchor ? 'true' : undefined}
+                  onClick={(e) => setFiltersAnchor(e.currentTarget)}
+                  sx={{
+                    ...LIST_TOOL_SX,
+                    ...((statusFilter !== 'all' || assignmentFilter !== 'any') && { color: 'var(--accent-text)', borderColor: 'var(--accent-border)', bgcolor: 'var(--accent-ghost)' }),
+                  }}
+                >
+                  {statusFilter !== 'all' || assignmentFilter !== 'any'
+                    ? `Filters · ${(statusFilter !== 'all' ? 1 : 0) + (assignmentFilter !== 'any' ? 1 : 0)}`
+                    : 'Filters'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  aria-haspopup="menu"
+                  aria-label={`Sort: ${PO_SORTS.find(([key]) => key === sortKey)?.[1]}`}
+                  aria-expanded={sortAnchor ? 'true' : undefined}
+                  onClick={(e) => setSortAnchor(e.currentTarget)}
+                  sx={{ ...LIST_TOOL_SX, ...(sortKey !== 'default' && { color: 'var(--accent-text)', borderColor: 'var(--accent-border)' }) }}
+                >
+                  Sort
+                </Button>
               </Box>
-              {showClosed && closedPos.map((po) => (
-                <PoAccordion
-                  key={po.id}
-                  po={po}
-                  onFetchLineItems={onFetchLineItems}
-                  onUpdatePoStatus={onUpdatePoStatus}
-                  onCreateReceiveJob={onCreateReceiveJob}
-                  onReassignReceiveJob={onReassignReceiveJob}
-                  teamAssignableOperators={teamAssignableOperators}
-                  receiveAssigneesStatus={receiveAssigneesStatus}
-                  onRetryReceiveAssignees={onRetryReceiveAssignees}
-                  canManageReceiveAssignment={canManageReceiveAssignment}
-                  currentUserId={currentUserId}
-                  onReconcilePurchaseOrders={onReconcilePurchaseOrders}
-                />
+              <Menu anchorEl={filtersAnchor} open={filtersAnchor != null} onClose={() => setFiltersAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Filters' }}>
+                <ListSubheader sx={{ lineHeight: '28px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' }}>PO status</ListSubheader>
+                {statusChoices.map(([value, label]) => (
+                  <MenuItem key={value} role="menuitemradio" aria-checked={statusFilter === value} selected={statusFilter === value} onClick={() => setStatusFilter(value)} sx={{ fontSize: 13 }}>
+                    {label}
+                  </MenuItem>
+                ))}
+                <ListSubheader sx={{ lineHeight: '28px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Receive</ListSubheader>
+                {PO_ASSIGNMENT_FILTERS.map(([value, label]) => (
+                  <MenuItem key={value} role="menuitemradio" aria-checked={assignmentFilter === value} selected={assignmentFilter === value} onClick={() => setAssignmentFilter(value)} sx={{ fontSize: 13 }}>
+                    {label}
+                  </MenuItem>
+                ))}
+                <Divider />
+                <MenuItem disabled={!filtersActive} onClick={() => { clearFilters(); setFiltersAnchor(null); }} sx={{ fontSize: 13 }}>
+                  Clear filters
+                </MenuItem>
+              </Menu>
+              <Menu anchorEl={sortAnchor} open={sortAnchor != null} onClose={() => setSortAnchor(null)} MenuListProps={{ dense: true, 'aria-label': 'Sort' }}>
+                {PO_SORTS.map(([value, label]) => (
+                  <MenuItem key={value} role="menuitemradio" aria-checked={sortKey === value} selected={sortKey === value} onClick={() => { setSortKey(value); setSortAnchor(null); }} sx={{ fontSize: 13 }}>
+                    {label}
+                  </MenuItem>
+                ))}
+              </Menu>
+              <Box role="group" aria-label="Open or closed purchase orders" sx={{ display: 'flex', gap: '4px', p: '3px', borderRadius: '8px', border: '1px solid var(--rule)' }}>
+                {(['open', 'closed'] as const).map((view) => (
+                  <Box
+                    key={view}
+                    component="button"
+                    type="button"
+                    aria-pressed={listView === view}
+                    disabled={claimHoldPoId != null && listView !== view}
+                    onClick={() => handleListView(view)}
+                    sx={{
+                      all: 'unset',
+                      flex: 1,
+                      textAlign: 'center',
+                      py: '5px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      // Not --bg-2: it equals --surface in dark mode (§11).
+                      color: listView === view ? 'var(--ink)' : 'var(--ink-3)',
+                      bgcolor: listView === view ? 'var(--accent-ghost)' : 'transparent',
+                      boxShadow: listView === view ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
+                      '&:hover': listView === view ? undefined : { color: 'var(--ink-2)' },
+                      '&:disabled': { cursor: 'not-allowed', opacity: 0.5 },
+                      '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '1px' },
+                    }}
+                  >
+                    {view === 'open' ? 'Open' : 'Closed'} ({viewCount(view)})
+                  </Box>
+                ))}
+              </Box>
+              {(filtersActive || (displayedPo && !selectedVisible)) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, fontSize: 12, color: 'var(--ink-3)' }}>
+                  <span role="status">
+                    {displayedPo && !selectedVisible
+                      ? `${formatPoDisplay(displayedPo)} is selected but hidden here.`
+                      : `Showing ${visibleCount} of ${viewTotal} POs`}
+                  </span>
+                  <Button
+                    size="small"
+                    onClick={displayedPo && !selectedVisible ? revealSelected : clearFilters}
+                    sx={{ textTransform: 'none', minHeight: 0, py: 0, fontSize: 12 }}
+                  >
+                    {displayedPo && !selectedVisible ? `Show ${formatPoDisplay(displayedPo)}` : 'Clear filters'}
+                  </Button>
+                </Box>
+              )}
+            </Box>
+
+            {/* The only scrolling region of the list. */}
+            <Box
+              data-testid="po-list-rows"
+              sx={{
+                ...THIN_SCROLL_SX,
+                flex: 1,
+                minHeight: 0,
+                overflowY: 'auto',
+                py: '4px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1px',
+                '@media (max-width: 1099.98px)': { maxHeight: 480 },
+              }}
+            >
+              {visibleCount === 0 && (
+                filtersActive ? (
+                  <Box sx={{ px: 3, py: 3, display: 'grid', gap: 1, justifyItems: 'start' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No purchase orders match these filters.
+                    </Typography>
+                    <Button size="small" variant="outlined" onClick={clearFilters} sx={{ textTransform: 'none' }}>
+                      Clear filters
+                    </Button>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" sx={{ px: 3, py: 2 }}>
+                    {listView === 'open' ? 'No open purchase orders.' : 'No received or cancelled purchase orders yet.'}
+                  </Typography>
+                )
+              )}
+              {visibleGroups.filter((group) => group.pos.length > 0).map((group) => (
+                <Box key={group.key} role="group" aria-label={group.label} sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      px: '22px',
+                      pt: '12px',
+                      pb: '6px',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      lineHeight: 1,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      color: group.key === 'arrived' ? 'var(--accent-text)' : 'var(--ink-3)',
+                    }}
+                  >
+                    <span>{group.label}</span>
+                    <span>{group.pos.length}</span>
+                  </Box>
+                  {group.pos.map(renderRow)}
+                </Box>
               ))}
             </Box>
-          )}
-          </>
+          </Box>
+
+          <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {displayedPoId == null && (
+              <Box sx={{ border: '1px dashed var(--rule)', borderRadius: '14px', p: 4, textAlign: 'center', color: 'var(--ink-3)' }}>
+                <Typography variant="body2">
+                  {viewTotal === 0
+                    ? listView === 'open' ? 'No open purchase orders.' : 'No closed purchase orders yet.'
+                    : 'Select a purchase order to see its details.'}
+                </Typography>
+              </Box>
+            )}
+            {/* Hidden details stay mounted: locks, caches and pending work survive. */}
+            {mountedPos.map((po) => (
+              <PoDetail
+                key={po.id}
+                po={po}
+                selected={po.id === displayedPoId}
+                onStartClaimChange={handleStartClaimChange}
+                onDeepLinkHandled={handleDeepLinkHandled}
+                onFetchLineItems={onFetchLineItems}
+                onUpdatePoStatus={onUpdatePoStatus}
+                onCreateReceiveJob={onCreateReceiveJob}
+                onReassignReceiveJob={onReassignReceiveJob}
+                teamAssignableOperators={teamAssignableOperators}
+                receiveAssigneesStatus={receiveAssigneesStatus}
+                onRetryReceiveAssignees={onRetryReceiveAssignees}
+                canManageReceiveAssignment={canManageReceiveAssignment}
+                currentUserId={currentUserId}
+                onReconcilePurchaseOrders={onReconcilePurchaseOrders}
+                onFetchReceiveJob={onFetchReceiveJob}
+                onClaimReceiveJob={onClaimReceiveJob}
+                autoOpenReceive={OPEN_STATUSES.includes(po.status) && deepLinkPoId === po.id}
+                receiveDispatchAssignmentSpotlight={spotlights?.receiveDispatchAssignment}
+              />
+            ))}
+          </Box>
+        </Box>
       )}
 
       {/* CREATE PO DIALOG */}
@@ -2902,7 +3921,7 @@ function PurchasingSuppliersView({
             <Box sx={{ flex: 1 }} />
             <Button size="small" startIcon={<Plus size={16} />} variant="contained"
               onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
-              sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+              sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
               Add supplier
             </Button>
           </Box>

@@ -112,7 +112,7 @@ function moduleAt(url: string, props: ReturnType<typeof buildProps>) {
 function renderExpanded(po = basePo(), overrides: Record<string, unknown> = {}) {
   const props = buildProps(po, overrides);
   const view = render(moduleAt('/', props));
-  fireEvent.click(screen.getByText(SUPPLIER));
+  fireEvent.click(screen.getAllByText(SUPPLIER)[0]);
   return { props, view };
 }
 

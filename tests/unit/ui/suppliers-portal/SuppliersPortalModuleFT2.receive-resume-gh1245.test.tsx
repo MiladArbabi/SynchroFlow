@@ -120,7 +120,7 @@ function renderModule(
   const props = buildProps(po, currentUserId);
 
   render(moduleAt(url, props));
-  if (expand) fireEvent.click(screen.getByText(po.supplier_name as string));
+  if (expand) fireEvent.click(screen.getAllByText(po.supplier_name as string)[0]);
   return props;
 }
 
@@ -286,7 +286,7 @@ describe('GH-1245 — action=receive deep-link uses the same job-aware decision'
     expectNoDispatchSideEffects(props);
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText('Nordic Textile Works'));
+    fireEvent.click(screen.getAllByText('Nordic Textile Works')[0]);
     expect(screen.getByRole('button', { name: /^reassign$/i })).toBeInTheDocument();
   });
 
