@@ -1373,3 +1373,100 @@ describe('GH-1262 S1 H1 — PO variant picker eligibility', () => {
     }
   });
 });
+
+// ── S1b R10 — REORDER CONVERSION ELIGIBILITY (RED) ─────────────────────────
+//
+// A queued request was valid when queued; eligibility is lost before
+// conversion. Conversion must apply the same canonical eligibility as E1:
+// refuse with zero side effects. Causal control: the SAME tenant, token,
+// supplier and pending request convert (201) once eligibility is restored, so
+// the refusal cannot come from auth, entitlement, lead time, SKU or MOQ.
+
+type EligibilityLoss = {
+  lose: (shopId: number, variantId: string) => Promise<() => Promise<void>>;
+};
+
+async function setProductStatus(shopId: number, variantId: string, status: string): Promise<void> {
+  await withTenant(shopId, async (trx) => {
+    const { lasyncro_product_id } = await trx('variants')
+      .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+      .first('lasyncro_product_id');
+    await trx('products').where({ shop_id: shopId, lasyncro_product_id }).update({ status });
+  });
+}
+
+const ELIGIBILITY_LOSSES: Array<[string, EligibilityLoss]> = [
+  ['archived product', {
+    lose: async (shopId, variantId) => {
+      await setProductStatus(shopId, variantId, 'archived');
+      return () => setProductStatus(shopId, variantId, 'active');
+    },
+  }],
+  ['deleted product', {
+    lose: async (shopId, variantId) => {
+      await setProductStatus(shopId, variantId, 'deleted');
+      return () => setProductStatus(shopId, variantId, 'active');
+    },
+  }],
+  ['removed Shopify identity mapping', {
+    lose: async (shopId, variantId) => {
+      const saved = await withTenant(shopId, async (trx) => {
+        const rows = await trx('external_product_identity_map')
+          .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+          .select('*');
+        await trx('external_product_identity_map')
+          .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+          .del();
+        return rows;
+      });
+      expect(saved).toHaveLength(1);
+      return async () => {
+        await withTenant(shopId, (trx) => trx('external_product_identity_map').insert(saved));
+      };
+    },
+  }],
+  ['uninstalled Shopify connection', {
+    lose: async (shopId) => {
+      await uninstallShopify(shopId);
+      return async () => {
+        await withTenant(shopId, (trx) =>
+          trx('shopify_app_installations').where({ shop_id: shopId }).update({ uninstalled_at: null }),
+        );
+      };
+    },
+  }],
+];
+
+describe('GH-1262 S1b R10 — reorder conversion enforces canonical eligibility', () => {
+  it.each(ELIGIBILITY_LOSSES)(
+    'S1b-R10: a request queued for a valid variant is not converted after %s; restoring eligibility converts it',
+    async (_label, loss) => {
+      const tenant = await createTenant('s1b-r10-convert-eligibility');
+      const supplierId = await createSupplier(tenant.shopId, { moq: null });
+      const variantId = await createShopifyVariant(tenant.shopId, 'active');
+      await queueReorder(tenant.ownerToken, supplierId, variantId, 2);
+
+      const restore = await loss.lose(tenant.shopId, variantId);
+      const before = await purchasingState(tenant.shopId);
+      const inventoryBefore = await inventoryState(tenant.shopId);
+
+      const refused = await convert(tenant.ownerToken, { supplier_id: supplierId });
+
+      const after = await purchasingState(tenant.shopId);
+      expect({ status: refused.status, purchaseOrders: after.purchaseOrders, lines: after.lines })
+        .toEqual({ status: refused.status, purchaseOrders: 0, lines: 0 });
+      expect(after).toEqual(before);
+      expect(after.reorderRequests).toEqual([expect.objectContaining({ status: 'pending', converted_po_id: null })]);
+      expect(await inventoryState(tenant.shopId)).toEqual(inventoryBefore);
+      expectBusinessRejection(refused);
+
+      await restore();
+      const control = await convert(tenant.ownerToken, { supplier_id: supplierId });
+      expect(control.status).toBe(201);
+      const lines = await withTenant(tenant.shopId, (trx) =>
+        trx('purchase_order_line_items').where({ po_id: control.body.po_id }).select('lasyncro_variant_id'),
+      );
+      expect(lines).toEqual([{ lasyncro_variant_id: variantId }]);
+    },
+  );
+});

@@ -21,6 +21,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
 import { enqueueShopSnapshotJob } from '../../services/shop-snapshot/enqueueShopSnapshotJob.js';
+import { findPurchaseOrderEligibilityFailure } from '../../services/purchasing/purchaseOrderCreation.service.js';
 
 /**
  * OUTCOME-INV-01 — INVENTORY INTERVENTION PROVENANCE
@@ -475,6 +476,16 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
         gateFailure = `MOQ not met — ${totalQty}/${moq} units. Pass override_moq to order anyway`;
         return;
       }
+
+      // GH-1262 S1b: revalidate canonical Shopify eligibility at conversion
+      // time (queue-time validity is not enough), after the supplier lock and
+      // before any write. One ineligible variant refuses the whole conversion.
+      gateFailure = await findPurchaseOrderEligibilityFailure(
+        trx,
+        shopId,
+        pending.map((r: any) => r.lasyncro_variant_id),
+      );
+      if (gateFailure) return;
 
       // Collapse to one line item per variant — sum qty across multiple requests
       const lineItemMap = new Map<string, { description: string; qty: number; lasyncro_variant_id: string }>();

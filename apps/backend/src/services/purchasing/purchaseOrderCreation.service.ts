@@ -255,6 +255,29 @@ async function loadEligibleVariantIds(trx: Knex.Transaction, shopId: number, ids
   return new Set(rows.map((id: string) => id.toLowerCase()));
 }
 
+/**
+ * GH-1262 S1b — the same eligibility for every PO writer (reorder conversion).
+ * Returns a business-rejection message, or null when the shop is installed and
+ * every variant passes loadEligibleVariantIds. Caller owns the transaction.
+ */
+export async function findPurchaseOrderEligibilityFailure(
+  trx: Knex.Transaction,
+  shopId: number,
+  variantIds: string[],
+): Promise<string | null> {
+  const connection = await classifyShopifyConnection(trx, shopId);
+  if (!connection.installed) {
+    return 'Shopify is not installed — reinstall the app before creating a purchase order';
+  }
+  const ids = variantIds.map((id) => id.toLowerCase());
+  const eligible = await loadEligibleVariantIds(trx, shopId, ids);
+  const ineligible = ids.filter((id) => !eligible.has(id)).length;
+  if (ineligible) {
+    return `${ineligible} queued line(s) are no longer active, draft or unlisted Shopify variants of this store — remove them before ordering`;
+  }
+  return null;
+}
+
 export type PurchaseOrderCreateResult = { purchaseOrder: any; replayed: boolean };
 
 /** Caller owns the transaction and has set app.current_tenant = shopId. */

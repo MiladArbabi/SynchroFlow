@@ -329,6 +329,8 @@ describe('GH-1109 — PO number API projection', () => {
     const shopId = await createShop('po-number-reorder');
     const supplierId = await createSupplier(shopId, { moq: 1 });
     const variantId = await createVariant(shopId);
+    await installShopify(shopId);
+    await linkShopifyIdentity(shopId, variantId);
     const userId = await createUser(shopId);
     await activateGrowthShop(shopId, userId);
     const token = issueTestToken({ userId, shopId, tier: 'growth', roles: ['owner'] });
