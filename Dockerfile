@@ -42,7 +42,7 @@ COPY --link . .
 RUN rm -rf modules/*/dist packages/*/dist
 
 # Build frontend dependencies used by module imports
-RUN npm run build:deps
+RUN npm run build:deps:production
 
 # Build frontend bundle only.
 # We intentionally skip `tsc -b` here because existing frontend type errors
