@@ -4,7 +4,6 @@ import { withTenant } from '@lasyncro/backend-core/db.js';
 import { decrypt } from '../../security/encryption.service.js';
 import { normalizeAndValidateShopifyGrantedScopes } from './shopifyScopes.js';
 import type { ShopifyOAuthAcquisition } from './shopifyOAuthAcquisition.service.js';
-import { refreshShopifyAdminCredential } from './shopifyAdminCredentialRefreshProvider.service.js';
 import { executeShopifyReconnectFinalizer } from './shopifyReconnectExecutor.db.js';
 import { hasUnresolvedShopifyDisconnect } from './shopifyDisconnectAttempt.repository.js';
 import {
@@ -207,22 +206,16 @@ export type ShopifyAdminCredentialReconnectPreparation =
   | { kind: 'REFRESH_IN_PROGRESS' | 'RETRYABLE' };
 
 type ReconnectInput = ShopifyAdminCredentialReconnectOwner & { now: Date };
-type ReconnectRecovery = {
-  kind: 'RECOVERY_CLAIMED';
-  owner: RotationInput;
-  refreshTokenEncrypted: string;
-};
 
 function liveProviderLease(credential: ShopifyAdminCredentialRow, now: Date): boolean {
   return !!credential.rotation_lease_token
     && (credential.rotation_lease_expires_at?.getTime() ?? -Infinity) > now.getTime();
 }
 
-/** One locked classification/claim/fence. Provider HTTP is never executed here. */
+/** One locked classification/fence. Provider HTTP is never executed here. */
 async function prepareReconnectTransaction(
   input: { shopId: number; shopDomain: string; now: Date },
-  recovered: boolean,
-): Promise<ShopifyAdminCredentialReconnectPreparation | ReconnectRecovery> {
+): Promise<ShopifyAdminCredentialReconnectPreparation> {
   return withTenant(input.shopId, async trx => {
     await lockShopifyAdminCredentialRotation(trx, input.shopId);
     const { installation, credential } = await readShopifyAdminReconnectAuthority(
@@ -234,23 +227,8 @@ async function prepareReconnectTransaction(
     // Any live provider lease wins, regardless of access usability or business state.
     if (liveProviderLease(credential, input.now)) return { kind: 'REFRESH_IN_PROGRESS' };
 
-    const due = credential.credential_state === 'ACTIVE' && installation.uninstalled_at === null
-      && (credential.access_expires_at?.getTime() ?? -Infinity)
-        <= input.now.getTime() + REFRESH_THRESHOLD_MS;
-    const usableRefresh = !!credential.refresh_token_encrypted
-      && (credential.refresh_expires_at?.getTime() ?? -Infinity) > input.now.getTime();
-    if (due && usableRefresh) {
-      if (recovered) return { kind: 'RETRYABLE' };
-      const leaseToken = crypto.randomUUID();
-      await writeShopifyAdminCredentialRotationLease(trx, credential, leaseToken, input.now);
-      return {
-        kind: 'RECOVERY_CLAIMED',
-        owner: { shopId: input.shopId, installationId: installation.id,
-          generation: String(credential.credential_generation), leaseToken, now: input.now },
-        refreshTokenEncrypted: credential.refresh_token_encrypted!,
-      };
-    }
-
+    // GH-979: a newly authorized grant never depends on refreshing the prior
+    // credential; the fence supersedes it before acquisition.
     const leaseToken = crypto.randomUUID();
     const generation = await fenceShopifyAdminCredentialReconnect(
       trx, credential, installation, leaseToken, input.now);
@@ -266,33 +244,11 @@ async function prepareReconnectTransaction(
   });
 }
 
-/** At most one recovery; its provider operation and owner settlement precede the committed fence. */
+/** The committed fence precedes acquisition; no prior-credential refresh is attempted. */
 export async function prepareShopifyAdminCredentialReconnect(
   input: { shopId: number; shopDomain: string; now: Date },
 ): Promise<ShopifyAdminCredentialReconnectPreparation> {
-  const startedAt = Date.now();
-  const prepared = await prepareReconnectTransaction(input, false);
-  if (prepared.kind !== 'RECOVERY_CLAIMED') return prepared;
-  let refreshToken: string;
-  try {
-    refreshToken = decrypt(prepared.refreshTokenEncrypted, DECRYPT_CONTEXT);
-  } catch (error) {
-    await settleShopifyAdminCredentialRotation({ ...prepared.owner, outcome: { kind: 'RETRYABLE' } });
-    throw error;
-  }
-  const result = await refreshShopifyAdminCredential({
-    shopDomain: input.shopDomain, refreshToken, now: input.now,
-  });
-  const completion = result.kind === 'SUCCESS'
-    ? await finalizeShopifyAdminCredentialRotation({ ...prepared.owner, credentials: result.credentials })
-    : await settleShopifyAdminCredentialRotation({ ...prepared.owner, outcome: result });
-  if (completion.kind === 'STALE_RESULT') return { kind: 'RETRYABLE' };
-  if (result.kind !== 'SUCCESS' && result.kind !== 'REAUTH_REQUIRED') return { kind: 'RETRYABLE' };
-  // Start the reconnect horizon after recovery settles, retaining the caller's clock base.
-  const fenceInput = { ...input, now: new Date(input.now.getTime() + Math.max(0, Date.now() - startedAt)) };
-  const fenced = await prepareReconnectTransaction(fenceInput, true);
-  // A second recovery is deliberately never started.
-  return fenced.kind === 'RECOVERY_CLAIMED' ? { kind: 'RETRYABLE' } : fenced;
+  return prepareReconnectTransaction(input);
 }
 
 function ownsReconnect(

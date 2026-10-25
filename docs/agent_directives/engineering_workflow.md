@@ -1194,6 +1194,15 @@ Choose the lowest-cost layer that proves the invariant.
 
 Add higher integration only when wiring itself is materially risky.
 
+For a consequential merchant journey that crosses services, authority boundaries, or lifecycle states, identify:
+
+- the entry point;
+- the consequential adverse transition (for example, credential expiry before reinstall);
+- the required recovery or invariant;
+- the cheapest decisive verification.
+
+Reuse existing coverage. This does not require a complete state matrix, tests at every layer, or redundant suites.
+
 10.3 Defect regression rule
 
 For a confirmed meaningful defect:
@@ -2138,6 +2147,14 @@ Use for user-facing workflow changes requiring real UI acceptance.
 PROVIDER_E2E
 
 Use only when real provider acceptance is part of the contract.
+
+Certification claims must describe the journey and state actually tested:
+
+- component GREEN does not by itself prove the complete merchant journey;
+- fresh install does not prove reinstall after credential expiry;
+- mocked provider acceptance is not live provider acceptance.
+
+Require additional proof only when the missing scenario is consequential and within the approved issue contract.
 
 18.2 Production SQL
 

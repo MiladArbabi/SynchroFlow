@@ -615,6 +615,10 @@ When fixture creation is authorised:
 * avoid push subscriptions unless required;
 * avoid unrelated rows;
 * record fixture IDs when requested.
+When a critical cross-boundary contract is in scope, verify that the fixtures actually reach the adverse state the contract names. If they do not, report under FINDINGS:
+CROSS_BOUNDARY_GAP=<adverse state not reached>
+CHEAPEST_DECISIVE_PROOF=<smallest proof that would reach it>
+Do not independently expand tests, architecture, acceptance criteria or the issue roadmap.
 If a fixture is incomplete and the test hits an unrelated gate:
 STOP if the correction changes fixture semantics.
 A purely mechanical prerequisite correction is allowed only under COMMAND CORRECTIONS / Mechanical fixture corrections and must be reported under DEVIATIONS.

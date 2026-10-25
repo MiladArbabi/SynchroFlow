@@ -77,6 +77,8 @@ import { decrypt } from 'api-src/security/encryption.service';
 import { invalidatePermissionCache, isActionAllowed } from 'api-src/services/permissions/permissionCache.service';
 import { closeShopifyReconnectExecutor } from 'api-src/services/shopify/shopifyReconnectExecutor.db';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { processShopifyUninstallVerificationOnce } from 'api-src/workers/shopifyUninstallVerification.worker';
+import 'api-src/api/shopify/shopify.webhook';
 import { issueTestToken } from '../unit/helpers/auth';
 
 const app = createApp();
@@ -436,6 +438,63 @@ async function syncDispatchIntents(shopId: number) {
   );
 }
 
+/**
+ * GH-979: route the token endpoint by grant type. The prior refresh grant
+ * (form-encoded) is definitively rejected; a fresh authorization code yields
+ * the given synthetic pair. Returns the observed grant sequence.
+ */
+function programGh979Grants(shopDomain: string, accessToken: string, refreshToken: string): string[] {
+  const grants: string[] = [];
+  axiosPost.mockReset();
+  axiosGet.mockReset();
+  axiosPost.mockImplementation(async (url: unknown, body: unknown) => {
+    if (typeof url === 'string' && url.includes(TOKEN_URL_FRAGMENT)) {
+      if (typeof body === 'string' && new URLSearchParams(body).get('grant_type') === 'refresh_token') {
+        grants.push('refresh_token');
+        throw Object.assign(new Error('gh979 synthetic invalid_grant'), { isAxiosError: true,
+          code: 'ERR_BAD_REQUEST', response: { status: 400, data: { error: 'invalid_grant' } } });
+      }
+      if (body && typeof body === 'object' && typeof (body as { code?: unknown }).code === 'string') {
+        grants.push('authorization_code');
+        return tokenOk(accessToken, FULL_GRANT_STRING, refreshToken).resolve;
+      }
+      throw new Error('UNMOCKED_TOKEN_GRANT');
+    }
+    if (typeof url === 'string' && url.includes(GRAPHQL_URL_FRAGMENT)) return graphqlOk(shopDomain).resolve;
+    throw new Error(`PROVIDER_NETWORK_ESCAPE_BLOCKED:${String(url)}`);
+  });
+  return grants;
+}
+
+/** A genuinely signed app/uninstalled delivery through the canonical webhook route. */
+function gh979SignedUninstall(shopId: number, shopDomain: string, webhookId: string) {
+  const body = JSON.stringify({ id: shopId, domain: shopDomain, myshopify_domain: shopDomain });
+  const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!).update(body).digest('base64');
+  return request(app).post('/api/v1/shopify/webhooks')
+    .set('Content-Type', 'application/json').set('x-shopify-topic', 'app/uninstalled')
+    .set('x-shopify-shop-domain', shopDomain).set('x-shopify-webhook-id', webhookId)
+    .set('x-shopify-hmac-sha256', hmac).send(body);
+}
+
+async function gh979DrainVerification(maxCycles = 25) {
+  for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+    if (await processShopifyUninstallVerificationOnce() === 'IDLE') return;
+  }
+  throw new Error('GH979_VERIFICATION_NOT_IDLE');
+}
+
+async function gh979Receipt(shopId: number, webhookId: string) {
+  return withTenant(shopId, async trx => ({
+    verifications: await trx('shopify_uninstall_verifications').where({ shop_id: shopId })
+      .orderBy('created_at', 'asc').select('status', 'outcome_code'),
+    ledger: await trx('integration_webhook_events')
+      .where({ shop_id: shopId, integration: 'shopify', external_event_id: webhookId })
+      .select('processing_status'),
+    disconnectAttempts: Number((await trx('shopify_app_disconnect_attempts').where({ shop_id: shopId })
+      .count<{ count: string }[]>({ count: '*' }))[0].count),
+  }));
+}
+
 jest.setTimeout(120_000);
 
 describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, disposable DB)', () => {
@@ -444,6 +503,9 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       process.env.SHOPIFY_API_SECRET || 'test_shopify_secret';
     process.env.SHOPIFY_API_KEY =
       process.env.SHOPIFY_API_KEY || 'test_shopify_key';
+    // GH-979 R55 delivers a signed webhook; the verifier requires both secrets.
+    process.env.SHOPIFY_WEBHOOK_SECRET =
+      process.env.SHOPIFY_WEBHOOK_SECRET || 'test_shopify_webhook_secret';
     process.env.API_URL = process.env.API_URL || 'https://api.test';
     process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://app.test';
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret';
@@ -727,6 +789,178 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     expect(intents.map(intent => intent.event_payload.source)).toEqual(['install', 'reconnect']);
     expect(intents[1]).toMatchObject({ published_at: null, processing_at: null });
     expect(axiosPost.mock.calls.filter(call => String(call[0]).includes(TOKEN_URL_FRAGMENT))).toHaveLength(1);
+  });
+
+  // GH-979 Reinstall RED Contract v1.0 T1: a provider-rejected prior refresh
+  // token must not block a fresh, signed, owner-authorized OAuth grant.
+  it.each([
+    ['signed App Store reinstall', 'app_store'],
+    ['owner-initiated reconnect', 'reconnect'],
+  ] as const)('GH-979 T1: %s with expired access and a rejected prior refresh completes through canonical fencing',
+    async (_label, entry) => {
+      const fixture = await d07Fixture();
+      programAxios({ token: tokenOk('gh979-t1-initial-access', FULL_GRANT_STRING, 'gh979-t1-initial-refresh'),
+        graphql: graphqlOk(fixture.shopDomain) });
+      expect((await d07Callback(fixture.query)).status).toBe(302);
+
+      // Adverse state: access expired, refresh present and unexpired, no lease,
+      // installation still locally active (uninstall never confirmed).
+      await withTenant(fixture.shopId, trx => trx('shopify_admin_credentials')
+        .where({ shop_id: fixture.shopId })
+        .update({ access_expires_at: trx.raw("pg_catalog.now() - interval '1 hour'") }));
+      const before = await d07Authority(fixture.shopId);
+      expect(before.credentials).toHaveLength(1);
+      expect(before.credentials[0]).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
+      expect(before.credentials[0].refresh_expires_at.getTime()).toBeGreaterThan(Date.now());
+      expect(before.installations[0].uninstalled_at).toBeNull();
+      const countsBefore = await counts(fixture.shopId);
+      const intentsBefore = await syncDispatchIntents(fixture.shopId);
+
+      let state: string;
+      if (entry === 'app_store') {
+        const timestamp = String(Math.floor(Date.now() / 1000));
+        const params = { shop: fixture.shopDomain, timestamp };
+        const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+          .update(`shop=${params.shop}&timestamp=${params.timestamp}`).digest('hex');
+        const install = await request(app).get('/api/v1/integrations/shopify/install')
+          .query({ ...params, hmac }).redirects(0);
+        expect(install.status).toBe(302);
+        const row = await systemQuery(db('integration_oauth_states')
+          .where({ platform: 'shopify', shop_domain: fixture.shopDomain }).orderBy('id', 'desc').first());
+        expect(row).toMatchObject({ user_id: fixture.userId, install_source: 'app_store' });
+        state = row.state;
+      } else {
+        const token = issueTestToken({ userId: fixture.userId, shopId: fixture.shopId, roles: ['owner'] });
+        const initiated = await request(app).get('/api/v1/integrations/oauth/initiate')
+          .set('Authorization', `Bearer ${token}`).query({ platform: 'shopify', shop: fixture.shopDomain });
+        expect(initiated.status).toBe(200);
+        state = await readOAuthState(fixture.userId);
+      }
+
+      const grants = programGh979Grants(fixture.shopDomain, 'gh979-t1-new-access', 'gh979-t1-new-refresh');
+
+      const res = await d07Callback(d07SignedQuery({ code: 'gh979-t1-code', state,
+        shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+      const after = await d07Authority(fixture.shopId);
+      const credential = after.credentials[0];
+      const intentsAfter = await syncDispatchIntents(fixture.shopId);
+      const observed = {
+        status: res.status,
+        error: res.body?.error ?? null,
+        authorizationCodeGrants: grants.filter(g => g === 'authorization_code').length,
+        stateRows: await oauthStateRows(state),
+        integrations: after.integrations.map(i => Number(i.id)),
+        installations: after.installations.map(i => Number(i.id)),
+        credentials: after.credentials.length,
+        credentialInstallation: Number(credential.installation_id),
+        credentialState: credential.credential_state,
+        generationAdvanced: BigInt(credential.credential_generation)
+          > BigInt(before.credentials[0].credential_generation),
+        leaseHeld: credential.rotation_lease_token !== null,
+        oldAccessRetained: credential.access_token_encrypted === before.credentials[0].access_token_encrypted,
+        oldRefreshRetained: credential.refresh_token_encrypted === before.credentials[0].refresh_token_encrypted,
+        newAccessIsAuthority: decrypt(credential.access_token_encrypted, 'shopify.dev') === 'gh979-t1-new-access',
+        newReconnectIntents: intentsAfter.length - intentsBefore.length,
+        counts: await counts(fixture.shopId),
+      };
+      // Diagnostic only: grant mix observed at the provider boundary (no secrets).
+      console.info('[GH979_T1_OBSERVED]', JSON.stringify({ entry, grants, ...observed,
+        generationBefore: String(before.credentials[0].credential_generation),
+        generationAfter: String(credential.credential_generation) }));
+      expect(observed).toEqual({
+        status: 302,
+        error: null,
+        authorizationCodeGrants: 1,
+        stateRows: 0,
+        integrations: before.integrations.map(i => Number(i.id)),
+        installations: before.installations.map(i => Number(i.id)),
+        credentials: 1,
+        credentialInstallation: Number(before.installations[0].id),
+        credentialState: 'ACTIVE',
+        generationAdvanced: true,
+        leaseHeld: false,
+        oldAccessRetained: false,
+        oldRefreshRetained: false,
+        newAccessIsAuthority: true,
+        newReconnectIntents: 1,
+        counts: countsBefore,
+      });
+    });
+
+  // GH-979 approved regression (#6397441487): the production uninstall/reinstall
+  // shape. An UNRESOLVED / AUTHORITY_UNAVAILABLE uninstall receipt is not an
+  // owner-disconnect attempt and must not block a fresh signed reinstall.
+  it('GH-979 R55: unresolved uninstall receipt with expired access does not block a signed App Store reinstall', async () => {
+    const fixture = await d07Fixture();
+    programAxios({ token: tokenOk('gh979-r55-initial-access', FULL_GRANT_STRING, 'gh979-r55-initial-refresh'),
+      graphql: graphqlOk(fixture.shopDomain) });
+    expect((await d07Callback(fixture.query)).status).toBe(302);
+    await withTenant(fixture.shopId, trx => trx('shopify_admin_credentials')
+      .where({ shop_id: fixture.shopId })
+      .update({ access_expires_at: trx.raw("pg_catalog.now() - interval '1 hour'") }));
+
+    const webhookId = `gh979-r55-${crypto.randomUUID()}`;
+    expect((await gh979SignedUninstall(fixture.shopId, fixture.shopDomain, webhookId)).status).toBe(200);
+    await gh979DrainVerification();
+    expect(await gh979Receipt(fixture.shopId, webhookId)).toEqual({
+      verifications: [{ status: 'UNRESOLVED', outcome_code: 'AUTHORITY_UNAVAILABLE' }],
+      ledger: [{ processing_status: 'received' }],
+      disconnectAttempts: 0,
+    });
+    const before = await d07Authority(fixture.shopId);
+    expect(before.credentials[0]).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
+    expect(before.credentials[0].refresh_expires_at.getTime()).toBeGreaterThan(Date.now());
+    expect(before.installations[0].uninstalled_at).toBeNull();
+    const countsBefore = await counts(fixture.shopId);
+    const intentsBefore = await syncDispatchIntents(fixture.shopId);
+
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const hmac = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET!)
+      .update(`shop=${fixture.shopDomain}&timestamp=${timestamp}`).digest('hex');
+    const install = await request(app).get('/api/v1/integrations/shopify/install')
+      .query({ shop: fixture.shopDomain, timestamp, hmac }).redirects(0);
+    expect(install.status).toBe(302);
+    const row = await systemQuery(db('integration_oauth_states')
+      .where({ platform: 'shopify', shop_domain: fixture.shopDomain }).orderBy('id', 'desc').first());
+    expect(row).toMatchObject({ user_id: fixture.userId, install_source: 'app_store' });
+
+    const grants = programGh979Grants(fixture.shopDomain, 'gh979-r55-new-access', 'gh979-r55-new-refresh');
+    const res = await d07Callback(d07SignedQuery({ code: 'gh979-r55-code', state: row.state,
+      shop: fixture.shopDomain, timestamp: String(Math.floor(Date.now() / 1000)) }));
+    expect(res.status).toBe(302);
+    expect(grants).toEqual(['authorization_code']);
+    expect(await oauthStateRows(row.state)).toBe(0);
+    const exposed = JSON.stringify(res.headers) + (res.text ?? '');
+    for (const secret of ['gh979-r55-new-access', 'gh979-r55-new-refresh',
+      'gh979-r55-initial-access', 'gh979-r55-initial-refresh']) expect(exposed).not.toContain(secret);
+
+    const after = await d07Authority(fixture.shopId);
+    expect(after.integrations).toEqual(before.integrations);
+    expect(after.installations.map(i => Number(i.id))).toEqual(before.installations.map(i => Number(i.id)));
+    expect(after.installations[0].uninstalled_at).toBeNull();
+    expect(after.credentials).toHaveLength(1);
+    const credential = after.credentials[0];
+    expect(credential).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null,
+      installation_id: before.installations[0].id });
+    expect(BigInt(credential.credential_generation)).toBe(BigInt(before.credentials[0].credential_generation) + 1n);
+    expect(decrypt(credential.access_token_encrypted, 'shopify.dev')).toBe('gh979-r55-new-access');
+    expect(decrypt(credential.refresh_token_encrypted, 'shopify.dev')).toBe('gh979-r55-new-refresh');
+    expect(await counts(fixture.shopId)).toEqual(countsBefore);
+    const intents = await syncDispatchIntents(fixture.shopId);
+    expect(intents).toHaveLength(intentsBefore.length + 1);
+    expect(intents[intents.length - 1].event_payload).toMatchObject({ source: 'reconnect',
+      integration_id: Number(before.integrations[0].id), installation_id: Number(before.installations[0].id) });
+
+    // The ordered receipt is superseded only by the existing later-exact-reconnect evidence.
+    await gh979DrainVerification();
+    expect(await gh979Receipt(fixture.shopId, webhookId)).toEqual({
+      verifications: [{ status: 'SUPERSEDED', outcome_code: 'LATER_RECONNECT_VERIFIED' }],
+      ledger: [{ processing_status: 'processed' }],
+      disconnectAttempts: 0,
+    });
+    console.info('[GH979_R55_OBSERVED]', JSON.stringify({ grants,
+      generationBefore: String(before.credentials[0].credential_generation),
+      generationAfter: String(credential.credential_generation), intents: intents.map(i => i.event_payload.source) }));
   });
 
   it('GH-1068 T3-B: a failure after reconnect finalization cannot lose the committed durable sync intent', async () => {
@@ -1114,7 +1348,8 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
     for (const call of adminCalls) {
       expect(new Headers(call[1].headers).get('X-Shopify-Access-Token') === 'fake-shopify-access-token-happy').toBe(true);
     }
-    expect(axiosPost.mock.calls.filter(call => call[1]?.grant_type === 'refresh_token')).toHaveLength(0);
+    expect(axiosPost.mock.calls.filter(call => typeof call[1] === 'string'
+      && new URLSearchParams(call[1]).get('grant_type') === 'refresh_token')).toHaveLength(0);
   });
 
   it('A13: failed post-OAuth Admin webhook registration preserves committed credentials, state burn, sync, JWT and redirect', async () => {
@@ -1169,7 +1404,8 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       expect(adminObservations).toHaveLength(1);
       expect(logs.some(args => args[0] === '[SHOPIFY_WEBHOOK_REGISTRATION_FAILED_NON_FATAL]' &&
         (args[1] as { error?: string })?.error === 'A13_SYNTHETIC_WEBHOOK_PROVIDER_FAILURE')).toBe(true);
-      expect(axiosPost.mock.calls.filter(call => call[1]?.grant_type === 'refresh_token')).toHaveLength(0);
+      expect(axiosPost.mock.calls.filter(call => typeof call[1] === 'string'
+        && new URLSearchParams(call[1]).get('grant_type') === 'refresh_token')).toHaveLength(0);
       const publicAndLogs = canonicaliseCalls(logs) + JSON.stringify({ body: res.body, headers: res.headers });
       for (const secret of [accessToken, refreshToken, credentials[0].access_token_encrypted, credentials[0].refresh_token_encrypted]) {
         expect(publicAndLogs.includes(secret)).toBe(false);

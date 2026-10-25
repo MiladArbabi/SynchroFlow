@@ -737,6 +737,61 @@ describe('GH-979 C — newer installation and credential epochs are never fenced
     expect(before.rotation_lease_token).toBeNull();
   });
 
+  // GH-979 Reinstall RED Contract v1.0 T2: the reconnect path honours the same
+  // unresolved-owner-disconnect refresh prohibition as the consumer path.
+  it('GH-979 T2: unresolved owner disconnect forbids old-refresh recovery during owner reconnect preparation', async () => {
+    const f = await fixture('t2-unresolved');
+    mockPrecheck.mockResolvedValue(precheckOk(f));
+    mockUninstall.mockRejectedValue(new HttpRequestError('socket hang up'));
+    expect((await disconnect(f)).status).toBe(502);
+    expect(await latestAttempt(f)).toMatchObject({ status: 'OUTCOME_UNKNOWN', resolved_at: null });
+    // Access expired, refresh nominally usable, no live rotation lease.
+    await withTenant(f.shopId, trx => trx('shopify_admin_credentials').where({ shop_id: f.shopId })
+      .update({ access_expires_at: trx.raw("pg_catalog.now() - interval '1 hour'") }));
+    const before = await credential(f);
+    expect(before).toMatchObject({ credential_state: 'ACTIVE', rotation_lease_token: null });
+    expect(before.refresh_expires_at.getTime()).toBeGreaterThan(Date.now());
+    expect((await installation(f)).uninstalled_at).toBeNull();
+    mockRefresh.mockResolvedValueOnce({ kind: 'PROVIDER_REJECTED', diagnostics: { status: 400 } });
+
+    const prepared = await prepareShopifyAdminCredentialReconnect({ shopId: f.shopId, shopDomain: f.domain,
+      now: new Date() });
+    const after = await credential(f);
+    const observed = {
+      refreshCalls: mockRefresh.mock.calls.length,
+      kind: prepared.kind,
+      credentialState: after.credential_state,
+      generationAdvanced: BigInt(after.credential_generation) > BigInt(before.credential_generation),
+      ownerLeaseHeld: after.rotation_lease_token !== null,
+      attemptStatus: (await latestAttempt(f)).status,
+    };
+    console.info('[GH979_T2_OBSERVED]', JSON.stringify({ ...observed,
+      generationBefore: String(before.credential_generation), generationAfter: String(after.credential_generation) }));
+    expect(observed).toEqual({
+      refreshCalls: 0,
+      kind: 'RECONNECT_PREPARED',
+      credentialState: 'REAUTH_REQUIRED',
+      generationAdvanced: true,
+      ownerLeaseHeld: true,
+      attemptStatus: 'OUTCOME_UNKNOWN',
+    });
+
+    // No stale-generation finalization; only the fenced owner may finalize.
+    const now = Date.now();
+    const credentials = {
+      accessToken: 'gh979-t2-access', refreshToken: 'gh979-t2-refresh',
+      accessExpiresAt: new Date(now + 86_400_000), refreshExpiresAt: new Date(now + 604_800_000),
+      grantedScopes: SHOPIFY_REQUIRED_SCOPE_STRING,
+      shopIdentity: { gid: `gid://shopify/Shop/${f.shopId}`, currencyCode: 'EUR', name: null,
+        contactEmail: null, ianaTimezone: null } };
+    await expect(finalizeShopifyAdminCredentialReconnect({ ...(prepared as any),
+      generation: String(before.credential_generation), credentials }))
+      .resolves.toMatchObject({ kind: 'STALE_RESULT' });
+    await expect(finalizeShopifyAdminCredentialReconnect({ ...(prepared as any), credentials }))
+      .resolves.toMatchObject({ kind: 'RECONNECTED' });
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
   it('a generation-only advance (same material) is not fenced and stays fail-closed', async () => {
     const f = await fixture('epoch-moved');
     mockPrecheck.mockResolvedValue(precheckOk(f));
