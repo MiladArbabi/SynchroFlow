@@ -2,6 +2,24 @@
 
 Stable entry point for GTM agents and operators. Read this file first, then read only the documents listed as **APPROVED** below, from the pinned commit (`git show <commit>:<path>`). Untracked or working-tree copies are not authoritative.
 
+## Startup instruction
+
+1. Read this index.
+2. Read the approved strategy and the approved workflow listed below.
+3. Load the current sprint charter from the path under **Current sprint**. The charter path always follows the convention `docs/stratgies/gtm_sprints/<sprint-id>/charter.md`.
+4. Read `docs/stratgies/gtm_sprints/blocker_register.md`.
+5. Classify every rule or value you rely on as one of:
+   - **Published directive:** a rule in an approved document. It binds every sprint.
+   - **Approved research permission:** a charter value carrying a lead decision ID.
+   - **Pending decision:** any `ASSIGN`, `PENDING`, `FALSE` or `null` charter value. It permits nothing.
+6. If the charter is missing, or a required permission is pending, report G0-A/G0-B as HOLD or BLOCKED. Do not start research.
+
+## Current sprint
+
+| Sprint | Charter | Mode | Research authorized | Outreach authorized |
+|---|---|---|---|---|
+| GTM-01-S01 | `docs/stratgies/gtm_sprints/GTM-01-S01/charter.md` | RESEARCH_ONLY | FALSE | FALSE |
+
 **Index status:** APPROVED (GTM-CHG-001), effective from GTM-01-S01.
 
 **Pinning rule:** this index records path, version and file SHA-256 only. Every sprint charter must additionally pin the actual Git commit SHA from which these files are read (workflow §3, §10). A charter without a commit pin fails G0-A.
@@ -25,6 +43,7 @@ Approval of the workflow does not by itself pass G0-A or G0-B: the open blockers
 
 | Record | Path |
 |---|---|
+| Sprint charter | `docs/stratgies/gtm_sprints/<sprint-id>/charter.md` |
 | Blocker register | `docs/stratgies/gtm_sprints/blocker_register.md` |
 | Sprint review | `docs/stratgies/gtm_sprints/<sprint-id>/review.md` |
 
@@ -36,5 +55,6 @@ Repository files contain no merchant names, contact details, prospect lists, sou
 |---|---|---|---|
 | 2026-10-26 | — | Strategy v1.0 ratified | APPROVED |
 | 2026-10-26 | GTM-CHG-001 | Ratify workflow v1.1, this index and the gtm_sprints locations; effective GTM-01-S01 | APPROVED AND RATIFIED |
+| 2026-10-26 | GTM-CHG-002 | Charter discovery convention, current-sprint pointer and startup instruction; GTM-01-S01 charter created (draft, no permissions granted) | APPROVED |
 
 Updating this index is a C2 change (workflow §13.5): it requires a GTM lead decision ID and a revision-log entry.
