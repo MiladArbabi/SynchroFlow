@@ -30,10 +30,9 @@ import {
   tierAtLeast,
   evaluateAccess,
   CAPABILITY_REQUIREMENTS,
-  modulesForTier,
-  flagsForTier,
 } from '@lasyncro/commercial-policy';
 import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
+import { resolveEffectiveAccessForShop } from '@lasyncro/backend-core/services/effective-access.service.js';
 import { captureEvent } from '../utils/analytics.js';
 
 /**
@@ -106,39 +105,31 @@ export function requireTier(minimumTier: Tier) {
 /**
  * COMMERCIAL-ACCESS-ARCH-01 P0-A2A — capability-level commercial decision.
  *
- * Resolves the acting request's tier via `resolveTier(req)` and evaluates the
- * canonical `CAPABILITY_REQUIREMENTS[capabilityId]` from
- * @lasyncro/commercial-policy against a STANDARD context for that tier
- * (`modulesForTier` / `flagsForTier`).
+ * Resolves the verified request shop through the canonical effective-access
+ * service and evaluates `CAPABILITY_REQUIREMENTS[capabilityId]` against its
+ * current tier plus active independent and eligible legacy grants.
  *
- * TRANSITIONAL BOUNDARY (P0-A2A/A3-1): standard-plan capabilities only.
- * Persisted `shop_module_entitlements` rows are deliberately NOT loaded here
- * — every migrated capability so far is a standard-plan capability. Bespoke
- * row-based backend capability grants land in P0-A3.
- *
- * TIER FRESHNESS (GH-1136, formerly P0-B): this function itself makes no DB
- * round-trip — it still follows `req.user.tier` verbatim, unchanged. What
- * changed is where that value comes from: authenticateToken now re-resolves
- * it from the CURRENT authoritative shop_subscriptions row on every request
- * (packages/backend-core/src/middleware/auth.middleware.ts), rather than
- * trusting the JWT's issuance-time tier claim. A shop downgraded mid-session
- * therefore loses paid access on its very next request, not only after its
- * access token expires.
+ * The database read is tenant-scoped and repeatable-read. It intentionally
+ * ignores the issuance-time JWT tier so a fresh decision observes committed
+ * tier changes and authorization revocations.
  *
  * This is the ONE shared primitive both route-level `requireCapability` and
  * field-level controller checks (e.g. exports' filters.columns ->
  * exports.column_selection) build on — never re-evaluate
  * CAPABILITY_REQUIREMENTS/evaluateAccess independently.
  */
-function resolveCapabilityDecision(
+async function resolveCapabilityDecision(
   req: Request,
   capabilityId: CapabilityId,
-): { decision: AccessDecision; currentTier: Tier } {
-  const currentTier = resolveTier(req);
+): Promise<{ decision: AccessDecision; currentTier: Tier }> {
+  const shopId = req.user?.shopId;
+  if (!shopId) throw new Error('SHOP_CONTEXT_REQUIRED: capability decision requires shop');
+  const effective = await resolveEffectiveAccessForShop(shopId);
+  const currentTier = effective.tier;
   const decision = evaluateAccess(CAPABILITY_REQUIREMENTS[capabilityId], {
     tier: currentTier,
-    modules: modulesForTier(currentTier),
-    flags: flagsForTier(currentTier),
+    modules: effective.modules,
+    flags: effective.flags,
   });
   return { decision, currentTier };
 }
@@ -203,14 +194,14 @@ function sendCapabilityDenied(
  * by requireAction and is never produced here.
  */
 export function requireCapability(capabilityId: CapabilityId) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const { decision, currentTier } = resolveCapabilityDecision(req, capabilityId);
-
-    if (decision.allowed) {
-      return next();
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { decision, currentTier } = await resolveCapabilityDecision(req, capabilityId);
+      if (decision.allowed) return next();
+      return sendCapabilityDenied(req, res, capabilityId, decision, currentTier);
+    } catch (error) {
+      return next(error);
     }
-
-    return sendCapabilityDenied(req, res, capabilityId, decision, currentTier);
   };
 }
 
@@ -226,8 +217,8 @@ export function requireCapability(capabilityId: CapabilityId) {
  * already been sent; the caller must return immediately without writing its
  * own response.
  */
-export function enforceCapability(req: Request, res: Response, capabilityId: CapabilityId): boolean {
-  const { decision, currentTier } = resolveCapabilityDecision(req, capabilityId);
+export async function enforceCapability(req: Request, res: Response, capabilityId: CapabilityId): Promise<boolean> {
+  const { decision, currentTier } = await resolveCapabilityDecision(req, capabilityId);
 
   if (decision.allowed) {
     return true;

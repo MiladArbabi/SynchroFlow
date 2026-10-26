@@ -43,7 +43,7 @@ export async function forceDowngradeShopToStarter(
   // exists, so this can never become an unintended creation. `reason` is the
   // caller-supplied cause ('app_uninstalled_no_grace_remaining' or
   // 'shopify_grace_period_expired') and is recorded as-is.
-  await transitionShopSubscription(
+  const transition = await transitionShopSubscription(
     {
       shopId,
       to: { tier: 'starter', status: 'canceled' },
@@ -59,9 +59,10 @@ export async function forceDowngradeShopToStarter(
     },
     trx
   );
+  if (!transition.applied || !transition.preconditionMatched || transition.duplicate) return;
 
-  const priorModules = [...modulesForTier(priorTier)];
-  const priorFlags = [...flagsForTier(priorTier)];
+  const priorModules = [...modulesForTier(transition.from!.tier as Tier)];
+  const priorFlags = [...flagsForTier(transition.from!.tier as Tier)];
   const starterModuleSet = modulesForTier('starter');
   const starterFlagSet = flagsForTier('starter');
   const modulesToRevoke = priorModules.filter((m) => !starterModuleSet.has(m));
@@ -75,7 +76,8 @@ export async function forceDowngradeShopToStarter(
         flags: flagsToRevoke as string[],
       },
       reason,
-    });
+      planOnly: true,
+    }, trx);
   }
 
   console.log('[shopify][force_downgrade_to_starter] complete', {

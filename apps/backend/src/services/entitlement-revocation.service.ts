@@ -27,6 +27,15 @@
 // apps/backend/src/services/entitlement-revocation.service.ts
 
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
+
+// Exact identities emitted by the existing tier/Shopify/trial writers.
+// In particular, bare 'billing' is unresolved legacy authorization, not plan ownership.
+const PLAN_MATERIALIZATION_SOURCES = [
+  'tier:starter', 'tier:core', 'tier:growth', 'tier:scale',
+  'shopify_billing:starter', 'shopify_billing:core', 'shopify_billing:growth', 'shopify_billing:scale',
+  'trial_expiry:downgrade_to_starter',
+];
 
 export class EntitlementRevocationService {
   static async revokeEntitlements(params: {
@@ -37,7 +46,9 @@ export class EntitlementRevocationService {
     };
     revokedAt?: Date;
     reason?: string;
-  }): Promise<void> {
+    /** Exact historical writer identities, supplied only by plan transitions. */
+    planOnly?: boolean;
+  }, trx?: Knex): Promise<void> {
     const { shopId, scope, revokedAt } = params;
     const { modules, flags } = scope;
 
@@ -54,22 +65,29 @@ export class EntitlementRevocationService {
 
     const effectiveRevokedAt = revokedAt ?? new Date();
 
-    await withTenant(shopId, async (trx) => {
+    const revoke = async (trx: Knex) => {
+      const targets = () => {
+        const query = trx('shop_module_entitlements').where({ shop_id: shopId });
+        if (params.planOnly) {
+          // Do not infer plan ownership from a prefix or close future grants.
+          query.whereIn('source', PLAN_MATERIALIZATION_SOURCES).where('valid_from', '<=', effectiveRevokedAt)
+            .andWhere(qb => qb.whereNull('valid_until').orWhere('valid_until', '>', effectiveRevokedAt));
+        } else query.whereNull('valid_until');
+        return query;
+      };
       if (modules && modules.length > 0) {
-        await trx('shop_module_entitlements')
-          .where({ shop_id: shopId })
+        await targets()
           .whereIn('module_key', modules)
-          .whereNull('valid_until')
           .update({ valid_until: effectiveRevokedAt });
       }
 
       if (flags && flags.length > 0) {
-        await trx('shop_module_entitlements')
-          .where({ shop_id: shopId })
+        await targets()
           .whereIn('flag_key', flags)
-          .whereNull('valid_until')
           .update({ valid_until: effectiveRevokedAt });
       }
-    });
+    };
+    if (trx) await revoke(trx);
+    else await withTenant(shopId, revoke);
   }
 }

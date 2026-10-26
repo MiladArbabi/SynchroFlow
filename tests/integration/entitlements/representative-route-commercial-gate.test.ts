@@ -107,8 +107,8 @@ afterAll(async () => {
  * it before each request is safe.
  */
 async function get(pathname: string, tier: Tier, roles: string[] = ['owner']) {
-  await withTenant(SHOP_ID, (trx) =>
-    transitionShopSubscription(
+  await withTenant(SHOP_ID, async (trx) => {
+    await transitionShopSubscription(
       {
         shopId: SHOP_ID,
         to: { tier, status: 'active', billingProvider: 'shopify' },
@@ -118,8 +118,11 @@ async function get(pathname: string, tier: Tier, roles: string[] = ['owner']) {
         actingProvider: 'shopify',
       },
       trx,
-    ),
-  );
+    );
+    await trx('shop_memberships')
+      .where({ shop_id: SHOP_ID, user_id: USER_ID })
+      .update({ role: roles[0] ?? 'owner' });
+  });
   const token = issueTestToken({ userId: USER_ID, shopId: SHOP_ID, tier, roles });
   return request(app).get(pathname).set('Authorization', `Bearer ${token}`);
 }
@@ -499,6 +502,11 @@ describe('RBAC stays with requireAction — POST /api/v1/suppliers/ as operator 
         },
         trx,
       ),
+    );
+    await withTenant(SHOP_ID, (trx) =>
+      trx('shop_memberships')
+        .where({ shop_id: SHOP_ID, user_id: USER_ID })
+        .update({ role: 'operator' }),
     );
     const token = issueTestToken({
       userId: USER_ID,

@@ -140,6 +140,14 @@ export interface SubscriptionTransitionInput {
     status?: string;
     billingProvider?: string;
     trialEndsAt?: Date | null;
+    exists?: boolean;
+    stripeSubscriptionId?: string | null;
+    stripeCustomerId?: string | null;
+    stripeStateVersion?: string;
+    billingInterval?: string | null;
+    extraSeats?: number | null;
+    currentPeriodStart?: Date | null;
+    currentPeriodEnd?: Date | null;
   };
 }
 
@@ -193,6 +201,14 @@ interface SubscriptionRow {
   status: string;
   billing_provider: string;
   trial_ends_at: Date | string | null;
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
+  billing_interval: string | null;
+  extra_seats: number | null;
+  current_period_start: Date | string | null;
+  current_period_end: Date | string | null;
+  updated_at: Date;
+  stripe_state_version: string;
 }
 
 function sameTimestamp(current: Date | string | null, expected: Date | null): boolean {
@@ -210,12 +226,26 @@ function preconditionMatches(
   current: SubscriptionRow | undefined
 ): boolean {
   const hasExpectation =
+    expected.exists === true ||
+    expected.stripeSubscriptionId !== undefined ||
+    expected.stripeCustomerId !== undefined ||
+    expected.stripeStateVersion !== undefined ||
     expected.tier !== undefined ||
     expected.status !== undefined ||
     expected.billingProvider !== undefined ||
-    expected.trialEndsAt !== undefined;
+    expected.trialEndsAt !== undefined ||
+    expected.billingInterval !== undefined ||
+    expected.extraSeats !== undefined ||
+    expected.currentPeriodStart !== undefined ||
+    expected.currentPeriodEnd !== undefined;
 
   if (!current) return !hasExpectation;
+  if (expected.exists === false) return false;
+  if (expected.stripeSubscriptionId !== undefined && current.stripe_subscription_id !== expected.stripeSubscriptionId) return false;
+  if (expected.stripeCustomerId !== undefined && current.stripe_customer_id !== expected.stripeCustomerId) return false;
+  if (expected.stripeStateVersion !== undefined && current.stripe_state_version !== expected.stripeStateVersion) return false;
+  if (expected.billingInterval !== undefined && current.billing_interval !== expected.billingInterval) return false;
+  if (expected.extraSeats !== undefined && current.extra_seats !== expected.extraSeats) return false;
 
   if (expected.tier !== undefined && current.tier !== expected.tier) return false;
   if (expected.status !== undefined && current.status !== expected.status) return false;
@@ -231,6 +261,8 @@ function preconditionMatches(
   ) {
     return false;
   }
+  if (expected.currentPeriodStart !== undefined && !sameTimestamp(current.current_period_start, expected.currentPeriodStart)) return false;
+  if (expected.currentPeriodEnd !== undefined && !sameTimestamp(current.current_period_end, expected.currentPeriodEnd)) return false;
   return true;
 }
 
@@ -267,7 +299,8 @@ export async function transitionShopSubscription(
 
   const current = (await trx(SUBSCRIPTION_TABLE)
     .where({ shop_id: shopId })
-    .first('tier', 'status', 'billing_provider', 'trial_ends_at')) as SubscriptionRow | undefined;
+    .first('tier', 'status', 'billing_provider', 'trial_ends_at', 'stripe_subscription_id', 'stripe_customer_id', 'billing_interval', 'extra_seats', 'current_period_start', 'current_period_end', 'updated_at', trx.raw('updated_at::text AS stripe_state_version'))
+    .forUpdate()) as SubscriptionRow | undefined;
 
   const from: AuthoritativeState | null = current
     ? {

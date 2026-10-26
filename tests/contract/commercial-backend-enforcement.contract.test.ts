@@ -74,10 +74,16 @@ describe('A2A-C6 — effective union is a derived resolver, no schema / no deny 
     expect(bad).toEqual([]);
   });
 
-  it('EXPECTED RED: EntitlementsService derives the tier floor from commercial-policy', () => {
+  it('W1-B: EntitlementsService delegates tier-floor resolution to the canonical resolver', () => {
     const src = read(ENT_SERVICE);
-    expect(/from\s+['"]@lasyncro\/commercial-policy['"]/.test(src)).toBe(true);
-    expect(/modulesForTier|flagsForTier/.test(src)).toBe(true);
+    const resolver = read('packages/backend-core/src/services/effective-access.service.ts');
+
+    expect(/from\s+['"]\.\/effective-access\.service\.js['"]/.test(src)).toBe(true);
+    expect(/await\s+resolveEffectiveAccessForShop\(shopId\)/.test(src)).toBe(true);
+
+    expect(/from\s+['"]@lasyncro\/commercial-policy['"]/.test(resolver)).toBe(true);
+    expect(/modulesForTier\(tier\)/.test(resolver)).toBe(true);
+    expect(/flagsForTier\(tier\)/.test(resolver)).toBe(true);
   });
 
   it('EXPECTED RED: the resolver no longer early-returns an empty snapshot on zero rows', () => {
@@ -98,12 +104,19 @@ describe('A2A-C7 — requireCapability(capabilityId)', () => {
     expect(/export\s+(?:function|const)\s+requireCapability\b/.test(src)).toBe(true);
   });
 
-  it('EXPECTED RED: it imports evaluateAccess / CAPABILITY_REQUIREMENTS / modulesForTier / flagsForTier from the package', () => {
+  it('W1-B: capability evaluation consumes canonical effective access and policy requirements', () => {
     const src = capMwSource();
+
     expect(/from\s+['"]@lasyncro\/commercial-policy['"]/.test(src)).toBe(true);
-    for (const sym of ['evaluateAccess', 'CAPABILITY_REQUIREMENTS', 'modulesForTier', 'flagsForTier']) {
+    expect(/from\s+['"]@lasyncro\/backend-core\/services\/effective-access\.service\.js['"]/.test(src)).toBe(true);
+
+    for (const sym of ['evaluateAccess', 'CAPABILITY_REQUIREMENTS']) {
       expect(new RegExp(`\\b${sym}\\b`).test(src)).toBe(true);
     }
+
+    expect(/await\s+resolveEffectiveAccessForShop\(shopId\)/.test(src)).toBe(true);
+    expect(/evaluateAccess\(CAPABILITY_REQUIREMENTS\[capabilityId\]/.test(src)).toBe(true);
+    expect(/tier:\s*currentTier,\s*modules:\s*effective\.modules,\s*flags:\s*effective\.flags/.test(src)).toBe(true);
   });
 
   it('GREEN GUARD: it must not redefine a local capability requirement table (import from the package)', () => {
@@ -207,7 +220,7 @@ describe('A2A-C16 — commercial gate precedes RBAC', () => {
 // ===========================================================================
 // A2A-C18 — JWT tier boundary (documented + enforced-by-absence-of-DB-fetch)
 // ===========================================================================
-describe('A2A-C18 — requireCapability reads req.user.tier, no new DB tier fetch', () => {
+describe('A2A-C18 — requireCapability uses canonical effective access', () => {
   /**
    * Explicit source slice for one top-level function: from its declaration
    * to the start of the next top-level `function` declaration (or EOF).
@@ -229,22 +242,30 @@ describe('A2A-C18 — requireCapability reads req.user.tier, no new DB tier fetc
   const requireCapabilityBody = (): string => sliceFunction(capMwSource(), 'requireCapability');
   const resolveCapabilityDecisionBody = (): string => sliceFunction(capMwSource(), 'resolveCapabilityDecision');
 
-  it('EXPECTED RED: requireCapability delegates its tier decision to resolveCapabilityDecision(req, ...), or resolves req.user.tier/resolveTier(req) directly; whichever helper does the resolving does it from the request, not a DB call', () => {
-    const reqCapBody = requireCapabilityBody();
-    expect(reqCapBody.length).toBeGreaterThan(0); // RED today — no requireCapability
+  it('W1-B: capability decisions use fresh tenant-scoped subscription and authorization state', () => {
+    const middleware = requireCapabilityBody();
+    const helper = resolveCapabilityDecisionBody();
+    const resolver = read('packages/backend-core/src/services/effective-access.service.ts');
 
-    const delegatesToHelper = /resolveCapabilityDecision\(\s*req\s*,/.test(reqCapBody);
-    const resolvesDirectly = /req\.user(\?\.)?\.tier|resolveTier\(req\)/.test(reqCapBody);
-    expect(delegatesToHelper || resolvesDirectly).toBe(true);
+    expect(middleware.length).toBeGreaterThan(0);
+    expect(helper.length).toBeGreaterThan(0);
 
-    // If requireCapability delegates, the delegate itself must resolve tier
-    // from the request boundary — the RED condition can't be satisfied by
-    // requireCapability merely calling a helper that fetches from a DB.
-    if (delegatesToHelper) {
-      const helperBody = resolveCapabilityDecisionBody();
-      expect(helperBody.length).toBeGreaterThan(0);
-      expect(/req\.user(\?\.)?\.tier|resolveTier\(req\)/.test(helperBody)).toBe(true);
-    }
+    expect(/await\s+resolveCapabilityDecision\(\s*req\s*,/.test(middleware)).toBe(true);
+    expect(/const\s+shopId\s*=\s*req\.user\?\.shopId/.test(helper)).toBe(true);
+    expect(/await\s+resolveEffectiveAccessForShop\(shopId\)/.test(helper)).toBe(true);
+    expect(/const\s+currentTier\s*=\s*effective\.tier/.test(helper)).toBe(true);
+
+    // Capability decisions must not rely on a potentially stale request tier.
+    expect(/req\.user(?:\?\.)?\.tier|resolveTier\(req\)/.test(helper)).toBe(false);
+
+    // Canonical resolver owns tenant isolation, subscription authority,
+    // independent authorization reads, and snapshot consistency.
+    expect(/withTenant\(shopId,/.test(resolver)).toBe(true);
+    expect(/trx\('shop_subscriptions'\)/.test(resolver)).toBe(true);
+    expect(/trx\('shop_authorizations'\)/.test(resolver)).toBe(true);
+    expect(/whereNull\('revoked_at'\)/.test(resolver)).toBe(true);
+    expect(/isolationLevel:\s*'repeatable read'/.test(resolver)).toBe(true);
+    expect(/readOnly:\s*true/.test(resolver)).toBe(true);
   });
 
   it('EXPECTED RED: neither requireCapability nor resolveCapabilityDecision import resolveTierForShop / read shop_subscriptions', () => {

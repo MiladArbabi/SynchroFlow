@@ -54,13 +54,8 @@
  */
 
 import { withTenant } from '../db.js';
-import { requireShopIdForUser, resolveTierForShop } from './shop-resolution.service.js';
-import {
-  modulesForTier,
-  flagsForTier,
-  isValidTier,
-  isEffectivePersistedGrant,
-} from '@lasyncro/commercial-policy';
+import { requireShopIdForUser } from './shop-resolution.service.js';
+import { resolveEffectiveAccessForShop } from './effective-access.service.js';
 
 export interface EntitlementsSnapshot {
   shopId: number;
@@ -112,45 +107,12 @@ export class EntitlementsService {
       return null;
     }
 
-    // 2) Canonical current tier (shop_subscriptions; fails closed to 'starter').
-    const rawTier = await resolveTierForShop(shopId);
-    const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
-
-    // 3) Load temporally-valid persisted entitlement rows for this shop.
-    const rows = await withTenant(shopId, (trx) =>
-      trx('shop_module_entitlements')
-        .where({ shop_id: shopId })
-        .andWhere('valid_from', '<=', trx.fn.now())
-        .andWhere((qb) =>
-          qb.whereNull('valid_until').orWhere('valid_until', '>', trx.fn.now())
-        )
-        .select('module_key', 'flag_key', 'source')
-    );
-
-    // 4) Effective set = canonical tier floor ∪ effective persisted rows.
-    const moduleSet = new Set<string>(modulesForTier(currentTier));
-    const flagSet = new Set<string>(flagsForTier(currentTier));
-
-    for (const row of rows ?? []) {
-      if (!isEffectivePersistedGrant({
-        moduleKey: row.module_key,
-        flagKey: row.flag_key,
-        source: row.source,
-      })) {
-        continue;
-      }
-      if (row.module_key) {
-        moduleSet.add(row.module_key);
-      }
-      if (row.flag_key) {
-        flagSet.add(row.flag_key);
-      }
-    }
+    const effective = await resolveEffectiveAccessForShop(shopId);
 
     return {
       shopId,
-      modules: Array.from(moduleSet),
-      flags: Array.from(flagSet),
+      modules: Array.from(effective.modules),
+      flags: Array.from(effective.flags),
     };
   }
 

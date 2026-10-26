@@ -96,7 +96,8 @@ async function downgradeTrialShop(shopId: number, trialEndsAt: Date): Promise<bo
           flags: flagsToRevoke as string[],
         },
         reason: 'trial_expired',
-      });
+        planOnly: true,
+      }, trx);
     }
 
     // 3. Seed Starter entitlements (additive, idempotent)

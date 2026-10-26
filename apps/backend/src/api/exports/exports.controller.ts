@@ -294,7 +294,7 @@ export async function exportOrders(req: Request, res: Response) {
     // entitled to it — a different meaning from InvalidFilterError, so it
     // does not route through that hierarchy. Absent filters.columns must
     // behave exactly as before this feature existed, at every tier.
-    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+    if ('columns' in filters && !await enforceCapability(req, res, 'exports.column_selection')) {
       return;
     }
 
@@ -405,7 +405,7 @@ export async function exportOutboundOrders(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { columns } = filters;
 
-    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+    if ('columns' in filters && !await enforceCapability(req, res, 'exports.column_selection')) {
       return;
     }
 
@@ -482,7 +482,7 @@ export async function exportReturns(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+    if ('columns' in filters && !await enforceCapability(req, res, 'exports.column_selection')) {
       return;
     }
 
@@ -552,7 +552,7 @@ export async function exportFinances(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+    if ('columns' in filters && !await enforceCapability(req, res, 'exports.column_selection')) {
       return;
     }
 
@@ -617,7 +617,7 @@ export async function exportProducts(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { status, columns } = filters;
 
-    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+    if ('columns' in filters && !await enforceCapability(req, res, 'exports.column_selection')) {
       return;
     }
 
