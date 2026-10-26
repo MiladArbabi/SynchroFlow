@@ -20,7 +20,7 @@ mode: RESEARCH_ONLY            # RESEARCH_AND_CONTACT requires G5 PASS
 # Active documents (from GTM_INDEX.md)
 index:
   path: docs/stratgies/GTM_INDEX.md
-  version: "GTM-CHG-003 prepared revision"
+  version: "GTM-CHG-003 (published in a5363140497f96b91c1096c9e40b56e4878d8506)"
   sha256: 705974f9e2e41f405a2e48f43d9b3c50ece7fbc9fc4d252d305b93c9baa36a45
 strategy:
   path: docs/stratgies/GTM_strategy_v1.0.md
@@ -31,6 +31,7 @@ workflow:
   version: "1.2"
   sha256: 99f2e8c2afd55674341719d09c4ff68e6d401310bf5d833d2e40ad6296ebf070
 source_baseline_commit: d7fafc66e51e0ecbeccc6804576e2c4cef7aaa40   # baseline the charter was drafted from
+document_baseline_commit: a5363140497f96b91c1096c9e40b56e4878d8506  # Published workflow/index baseline
 execution_commit: PENDING   # recorded in the sprint execution record at G0-B, never self-referenced here
 
 # Decisions
