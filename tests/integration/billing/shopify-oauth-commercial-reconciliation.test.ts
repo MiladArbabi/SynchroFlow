@@ -618,9 +618,9 @@ describe('P0-B3 CORRECTION — Shopify OAuth reconnect reconciles authoritative 
     const first = await callback({ code: 'code-initial', state: state1, shop: shopDomain });
     expect(first.status).toBe(302);
 
-    // Pin an exact, deterministic trial_ends_at so preservation can be
-    // proven byte-for-byte rather than merely "still in the future".
-    const fixedTrialEndsAt = new Date('2026-10-15T12:00:00.000Z');
+    // Construct one future trial boundary, then prove that exact instant is
+    // preserved byte-for-byte through reconnect and reinstall.
+    const fixedTrialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await withTenant(shopId, (trx) =>
       trx('shop_subscriptions').where({ shop_id: shopId }).update({
         trial_ends_at: fixedTrialEndsAt,

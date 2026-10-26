@@ -29,6 +29,7 @@ import { EntitlementRevocationService } from '../../../services/entitlement-revo
 import { captureEvent } from '../../../utils/analytics.js';
 import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
 import { resolveStripeSubscriptionCommercial } from '../../../services/billing/providerPriceResolver.service.js';
+import { requireStripeSubscriptionAuthority } from '../../../services/billing/stripeSubscriptionAuthority.service.js';
 
 // BILL-ENTITLEMENT-01 / P0-B3: the env-derived SEAT_ADDON_PRICE_IDS set that
 // used to live here has been removed. It classified items by exclusion
@@ -39,15 +40,28 @@ import { resolveStripeSubscriptionCommercial } from '../../../services/billing/p
 
 export async function handleSubscriptionUpsert(
   envelope: WebhookEnvelope,
-  trx: Knex.Transaction
+  trx: Knex.Transaction,
+  attribution?: unknown
 ): Promise<void> {
-  const sub = envelope.rawPayload as any;
+  const authority = requireStripeSubscriptionAuthority(envelope, attribution);
+  if (authority.ignored) return;
+  const sub = authority.subscription! as NonNullable<typeof authority.subscription> & {
+    current_period_start?: number;
+    current_period_end?: number;
+  };
   const shopId = envelope.shopId;
 
   if (!shopId) {
     console.error('[billing][subscription_upsert] missing shopId', { eventId: envelope.eventId });
     throw new Error('[billing][subscription_upsert] shopId required');
   }
+
+  const rawStatus = sub.status;
+  const trialValid = rawStatus === 'trialing' && Number.isFinite(sub.trial_end) &&
+    sub.trial_end! * 1000 > Date.now();
+  const eligible = rawStatus === 'active' || rawStatus === 'past_due' || trialValid;
+  const status = rawStatus === 'canceled' ? 'canceled' : rawStatus === 'active' ? 'active' :
+    rawStatus === 'past_due' ? 'past_due' : trialValid ? 'trialing' : 'unpaid';
 
   // BILL-ENTITLEMENT-01 / P0-B3: the tier is derived from the Stripe price the
   // merchant actually bought, never from sub.metadata.tier. Metadata is mutable,
@@ -57,21 +71,14 @@ export async function handleSubscriptionUpsert(
   // resolveStripeSubscriptionCommercial fails closed on an unknown price, on zero
   // or multiple base lines, and on any unrecognized line item — there is no
   // metadata fallback and no items[0] fallback.
-  const commercial = resolveStripeSubscriptionCommercial(sub);
+  // An authoritative ineligible state must revoke paid access even if its old
+  // price line is no longer classifiable. Eligible grants remain strict and
+  // fail closed through the canonical resolver.
+  const commercial = eligible ? resolveStripeSubscriptionCommercial(sub) : null;
 
-  const status = sub?.status ?? 'active';
-
-  // SHB-14: mirror SHB-13's Shopify-side contract — resolveTierForShop()
-  // reads shop_subscriptions.tier verbatim with no status check, so tier
-  // must never stay elevated once Stripe has genuinely given up collecting.
-  // 'past_due' is intentionally excluded: Stripe's own dunning/retry grace
-  // period applies, entitlements stay live (see handlePaymentFailed.ts).
-  // 'canceled' and 'unpaid' are terminal — force starter regardless of
-  // what stale metadata.tier still says.
-  const TERMINAL_STRIPE_STATUSES = new Set(['canceled', 'unpaid']);
-  const tier: Tier = TERMINAL_STRIPE_STATUSES.has(status)
-    ? 'starter'
-    : commercial.tier;
+  // W1-A-D7: keep the five canonical statuses. Ineligible provider states
+  // normalize to unpaid/Starter; past_due keeps existing dunning access.
+  const tier: Tier = commercial?.tier ?? 'starter';
   const tierConfig = getTierConfig(tier);
 
   // AUD-C16: subscription items now may include a seat add-on line
@@ -83,12 +90,12 @@ export async function handleSubscriptionUpsert(
   // classification, so period boundaries below are read from the line that
   // genuinely IS the tier line rather than from whichever line Stripe listed
   // first. Seats are counted only from lines that resolved as seat add-ons.
-  const baseItem = commercial.baseItem;
-  const extraSeats = commercial.extraSeats;
+  const baseItem = commercial?.baseItem;
+  const extraSeats = commercial?.extraSeats ?? 0;
 
   // Interval comes from the price identity, not from the item's plan object.
-  const billingInterval = commercial.interval;
-  const stripeCustomerId = sub?.customer ?? null;
+  const billingInterval = commercial?.interval ?? null;
+  const stripeCustomerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
   const stripeSubscriptionId = sub?.id ?? null;
 
   // Stripe flexible billing moved period boundaries from the subscription
@@ -109,10 +116,6 @@ export async function handleSubscriptionUpsert(
   // ISS-C19: capture the shop's pre-upsert tier so we can detect a
   // downgrade after the upsert overwrites it. A shop with no prior
   // row (brand-new subscription) has nothing to revoke.
-  const priorRow = await trx('shop_subscriptions')
-    .where({ shop_id: shopId })
-    .first('tier');
-  const priorTier = priorRow?.tier as Tier | undefined;
 
   // 1. Upsert subscription record — BILL-ENTITLEMENT-01
   //
@@ -127,27 +130,30 @@ export async function handleSubscriptionUpsert(
   // install. Here that is expressed by passing billingProvider ONLY when there
   // is no prior row: an omitted `to` key means "leave this dimension
   // unchanged", which is precisely what excluding it from the merge did.
-  await transitionShopSubscription(
+  const transition = await transitionShopSubscription(
     {
       shopId,
       to: {
         tier,
         status,
-        ...(priorRow ? {} : { billingProvider: 'stripe' }),
+        billingProvider: 'stripe',
       },
       fields: {
-        billing_interval: billingInterval,
+        ...(commercial ? {
+          billing_interval: billingInterval,
+          extra_seats: extraSeats,
+          current_period_start: currentPeriodStart,
+          current_period_end: currentPeriodEnd,
+        } : {}),
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
-        extra_seats: extraSeats,
         trial_ends_at: trialEnd,
-        current_period_start: currentPeriodStart,
-        current_period_end: currentPeriodEnd,
       },
       source: 'stripe_webhook',
       reason: envelope.eventType,
       actorType: 'stripe',
       actingProvider: 'stripe',
+      expectedCurrent: authority.expectedCurrent,
       externalEventId: envelope.eventId,
       idempotencyKey: envelope.eventId,
       occurredAt: envelope.receivedAt,
@@ -155,19 +161,22 @@ export async function handleSubscriptionUpsert(
       // disagreement is inspectable after the fact. Price IDs and tier names
       // are configuration identifiers, not secrets — no key or token is stored.
       metadata: {
-        stripe_base_price_id: commercial.basePriceId,
-        price_derived_tier: commercial.tier,
-        price_derived_interval: commercial.interval,
-        price_derived_currency: commercial.currency,
-        metadata_tier: commercial.metadataTier,
-        metadata_disagreement: commercial.metadataDisagreement,
-        extra_seats: commercial.extraSeats,
+        stripe_base_price_id: commercial?.basePriceId ?? null,
+        price_derived_tier: commercial?.tier ?? null,
+        price_derived_interval: commercial?.interval ?? null,
+        price_derived_currency: commercial?.currency ?? null,
+        metadata_tier: commercial?.metadataTier ?? null,
+        metadata_disagreement: commercial?.metadataDisagreement ?? false,
+        extra_seats: commercial?.extraSeats ?? 0,
+        stripe_raw_status: rawStatus,
       },
     },
     trx
   );
+  if (!transition.preconditionMatched || transition.duplicate) return;
+  const priorTier = transition.from?.tier as Tier | undefined;
 
-  if (commercial.metadataDisagreement) {
+  if (commercial?.metadataDisagreement) {
     // Loud, but non-fatal: the price has already decided the tier. This is the
     // signal that a portal-driven or dashboard-driven plan change happened
     // without our metadata being rewritten.
@@ -199,7 +208,9 @@ export async function handleSubscriptionUpsert(
     source: `tier:${tier}`,
   }));
 
-  await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+  if (transition.applied) {
+    await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+  }
 
   // ISS-C19: revoke modules/flags the prior tier granted that the new
   // tier does not. Only real downgrades produce anything to revoke —
@@ -222,7 +233,8 @@ export async function handleSubscriptionUpsert(
           flags: flagsToRevoke as string[],
         },
         reason: `tier_downgrade:${priorTier}->${tier}`,
-      });
+        planOnly: true,
+      }, trx);
       console.log('[billing][subscription_upsert] entitlements revoked on downgrade', {
         shopId,
         priorTier,

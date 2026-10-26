@@ -81,7 +81,7 @@ export async function applyShopifyBillingState(
   // webhook paths, and its own signature carries no provider event id. The
   // sweep must stay free to record every genuine state change it observes, so
   // no key is invented here.
-  await transitionShopSubscription(
+  const transition = await transitionShopSubscription(
     {
       shopId,
       to: { tier, status: billingState.status, billingProvider: 'shopify' },
@@ -115,6 +115,7 @@ export async function applyShopifyBillingState(
     },
     trx
   );
+  if (!transition.preconditionMatched || transition.duplicate) return billingState;
 
   // 2. Re-seed entitlements from tier constants (additive only)
   const moduleRows = tierModules.map((moduleKey) => ({
@@ -131,13 +132,14 @@ export async function applyShopifyBillingState(
     source: `shopify_billing:${tier}`,
   }));
 
-  await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+  if (transition.applied) await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
 
   // 3. Revoke modules/flags the prior tier granted that the new tier does not.
   // Covers both real tier downgrades AND SHB-13 forced-starter on cancellation.
-  if (priorTier && priorTier !== tier) {
-    const priorModules = [...modulesForTier(priorTier)];
-    const priorFlags = [...flagsForTier(priorTier)];
+  const lockedPriorTier = transition.from?.tier as Tier | undefined;
+  if (lockedPriorTier && lockedPriorTier !== tier) {
+    const priorModules = [...modulesForTier(lockedPriorTier)];
+    const priorFlags = [...flagsForTier(lockedPriorTier)];
     const newModuleSet = new Set(tierModules);
     const newFlagSet = new Set(tierFlags);
     const modulesToRevoke = priorModules.filter((m) => !newModuleSet.has(m));
@@ -151,7 +153,8 @@ export async function applyShopifyBillingState(
           flags: flagsToRevoke as string[],
         },
         reason: `shopify_billing_change:${priorTier}->${tier}:${billingState.status}`,
-      });
+        planOnly: true,
+      }, trx);
       console.log('[shopify][billing_state_applied] entitlements revoked', {
         shopId,
         priorTier,

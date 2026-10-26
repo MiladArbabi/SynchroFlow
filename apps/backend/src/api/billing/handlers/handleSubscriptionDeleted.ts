@@ -16,11 +16,19 @@ import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
+import { requireStripeSubscriptionAuthority } from '../../../services/billing/stripeSubscriptionAuthority.service.js';
+import { handleSubscriptionUpsert } from './handleSubscriptionUpsert.js';
 export async function handleSubscriptionDeleted(
   envelope: WebhookEnvelope,
-  trx: Knex.Transaction
+  trx: Knex.Transaction,
+  attribution?: unknown
 ): Promise<void> {
-  const sub = envelope.rawPayload as any;
+  const authority = requireStripeSubscriptionAuthority(envelope, attribution);
+  if (authority.ignored) return;
+  const sub = authority.subscription!;
+  // Even a deletion notification is not the state oracle: reconcile a
+  // reactivated/current non-canceled subscription from provider truth.
+  if (sub.status !== 'canceled') return handleSubscriptionUpsert(envelope, trx, authority);
   const shopId = envelope.shopId;
   if (!shopId) {
     console.error('[billing][subscription_deleted] missing shopId', { eventId: envelope.eventId });
@@ -33,10 +41,6 @@ export async function handleSubscriptionDeleted(
   // unambiguously terminal, so unlike that handler there is no "same tier
   // or upgrade" case to guard against — any priorTier other than starter
   // itself always has something to revoke.
-  const priorRow = await trx('shop_subscriptions')
-    .where({ shop_id: shopId })
-    .first('tier');
-  const priorTier = priorRow?.tier as Tier | undefined;
 
   // SHB-14: hard delete is unambiguously terminal — force starter here too,
   // since this handler previously left tier untouched entirely, relying on
@@ -49,13 +53,13 @@ export async function handleSubscriptionDeleted(
   // The old "no subscription row" guard was `updated === 0`; it is now the
   // absence of priorRow, which is the same condition read one statement
   // earlier. A cancellation must never CREATE a subscription row.
-  if (!priorRow) {
+  if (authority.expectedCurrent.exists === false) {
     // Non-fatal: shop may not have a subscription row if never activated
     console.warn('[billing][subscription_deleted] no subscription row found for shop', { shopId, eventId: envelope.eventId });
     return;
   }
 
-  await transitionShopSubscription(
+  const transition = await transitionShopSubscription(
     {
       shopId,
       to: { tier: 'starter', status: 'canceled' },
@@ -64,12 +68,16 @@ export async function handleSubscriptionDeleted(
       reason: 'customer.subscription.deleted',
       actorType: 'stripe',
       actingProvider: 'stripe',
+      expectedCurrent: authority.expectedCurrent,
       externalEventId: envelope.eventId,
       idempotencyKey: envelope.eventId,
       occurredAt: envelope.receivedAt,
+      metadata: { stripe_raw_status: sub.status },
     },
     trx
   );
+  if (!transition.preconditionMatched || transition.duplicate || !transition.applied) return;
+  const priorTier = transition.from?.tier as Tier | undefined;
 
   // SHB-14b: revoke whatever the prior paid tier granted that starter does
   // not. No re-seed call needed — starter modules were already granted
@@ -90,7 +98,8 @@ export async function handleSubscriptionDeleted(
           flags: flagsToRevoke as string[],
         },
         reason: `subscription_deleted:${priorTier}->starter`,
-      });
+        planOnly: true,
+      }, trx);
       console.log('[billing][subscription_deleted] entitlements revoked', {
         shopId,
         priorTier,

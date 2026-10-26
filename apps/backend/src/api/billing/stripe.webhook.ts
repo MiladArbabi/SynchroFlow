@@ -15,6 +15,7 @@
 import { Request, Response } from 'express';
 import { WebhookRouter } from '../webhooks/webhookRouter.js';
 import { StripeWebhookAdapter } from '../webhooks/adapters/stripe.adapter.js';
+import { attributeStripeSubscription } from '../../services/billing/stripeSubscriptionAuthority.service.js';
 import {
   handleSubscriptionUpsert,
   handleSubscriptionDeleted,
@@ -27,18 +28,21 @@ import {
 WebhookRouter.register({
   integration: 'stripe',
   eventType: 'customer.subscription.created',
+  attribute: attributeStripeSubscription,
   handle: handleSubscriptionUpsert,
 });
 
 WebhookRouter.register({
   integration: 'stripe',
   eventType: 'customer.subscription.updated',
+  attribute: attributeStripeSubscription,
   handle: handleSubscriptionUpsert,
 });
 
 WebhookRouter.register({
   integration: 'stripe',
   eventType: 'customer.subscription.deleted',
+  attribute: attributeStripeSubscription,
   handle: handleSubscriptionDeleted,
 });
 
