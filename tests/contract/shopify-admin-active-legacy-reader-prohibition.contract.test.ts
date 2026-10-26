@@ -356,12 +356,24 @@ describe('CERT-4J — active Shopify Admin legacy-reader prohibition', () => {
       expect(calls(file, legacyMethods).map(call => location(file, call))).toEqual([]);
     }
   });
-  it('C4J-17 canonical ACCESS/REFRESH decryption remains permitted', () => {
+  it('C4J-17 canonical ACCESS decryption remains permitted; reconnect fences old authority', () => {
     const lifecycle = residual.crypto[0];
-    expect(calls(lifecycle, ['decrypt']).length).toBeGreaterThan(0);
+    expect(calls(lifecycle, ['decrypt']).some(call =>
+      call.arguments[0]?.getText() === 'credential.access_token_encrypted!')).toBe(true);
     expect(nodes(source(lifecycle)).some(node => ts.isPropertyAccessExpression(node)
       && node.expression.getText() === 'credential' && node.name.text === 'access_token_encrypted')).toBe(true);
-    expect(calls(lifecycle, ['decrypt']).some(call => call.arguments[0]?.getText() === 'prepared.refreshTokenEncrypted')).toBe(true);
+
+    // GH-979: reconnect must not refresh or decrypt the superseded credential.
+    const preparation = declaration(lifecycle, 'prepareShopifyAdminCredentialReconnect');
+    const transaction = declaration(lifecycle, 'prepareReconnectTransaction');
+    expect(calls(lifecycle, ['prepareReconnectTransaction'], preparation)).toHaveLength(1);
+    for (const scope of [preparation, transaction]) {
+      expect(calls(lifecycle, ['decrypt', 'refreshShopifyAdminCredential'], scope))
+        .toHaveLength(0);
+    }
+    expect(calls(lifecycle, ['fenceShopifyAdminCredentialReconnect'], transaction))
+      .toHaveLength(1);
+
     expect(nodes(source(`${app}services/shopify/shopifyAdminCredential.repository.ts`))
       .some(node => literal(node) === 'shopify_admin_credentials')).toBe(true);
     expect(calls(lifecycle, legacyMethods)).toHaveLength(0);
