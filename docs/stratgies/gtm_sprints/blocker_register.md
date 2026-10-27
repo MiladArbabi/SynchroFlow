@@ -2,20 +2,20 @@
 
 Sanitized and persistent (workflow v1.2 §13.1, §15). Opaque IDs only: no merchant names, contact details or record contents. Rows are never deleted; state changes are appended to the History table.
 
-**Status:** ACTIVE. C2 workflow/index/charter remediation is published (b0ff019bfac5b51e72436ccdf4d112cba195f01e); the C1 charter reviewer, workspace and source-method record is published (1108d3d989ae011e23471ca1dfabb8b1da35d108). GTM-01-S01-BLOCKER-REVIEW-001 reviewed all eight legacy blockers, reassigned and dated them. FIXED is not VERIFIED: independent re-check and fresh cold-start PREFLIGHT under workflow §13.6 remain required. No blocker is VERIFIED. G0-A/G0-B remain BLOCKED.
+**Status:** ACTIVE. C2 workflow/index/charter remediation is published (b0ff019bfac5b51e72436ccdf4d112cba195f01e); the C1 charter reviewer, workspace and source-method record is published (1108d3d989ae011e23471ca1dfabb8b1da35d108). GTM-01-S01-BLOCKER-REVIEW-001 reviewed all eight legacy blockers, reassigned and dated them. FIXED is not VERIFIED: independent re-check and fresh cold-start PREFLIGHT under workflow §13.6 remain required. Seven blocker remediations are VERIFIED by GTM-01-S01-QA-01 final independent cold-start; BLK-0004 remains OPEN (G5 only, nonblocking for RESEARCH_ONLY). G0-A PASS under GTM-01-S01-G0A-LEAD-001; G0-B remains BLOCKED.
 
 ## Open blockers
 
 | ID | Opened | Sprint | Gate | Sev | Root cause | Description | Owner | Category | Due | State |
 |---|---|---|---|---|---|---|---|---|---|---|
-| BLK-0001 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | APPROVAL_MISSING | No approved sprint workflow; remediated by GTM-CHG-001 ratifying v1.1 | LaSyncro GTM lead | C2 | 2026-10-30 | FIXED |
-| BLK-0002 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | APPROVAL_MISSING | GTM-01-S01-SETUP-001 names the lead and researcher and proposes restricted company Google Drive; the specific independent reviewer/session and exact secure workspace path/access verification remain pending | LaSyncro GTM lead | C1 | 2026-10-30 | IN_PROGRESS |
-| BLK-0003 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | SOURCE_PERMISSION | No source APPROVED_FOR_RESEARCH; candidates SRC-001/SRC-003 proposed; SRC-002 and SRC-004 terms UNKNOWN | LaSyncro GTM lead | C1 | 2026-10-30 | FIXED |
+| BLK-0001 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | APPROVAL_MISSING | No approved sprint workflow; remediated by GTM-CHG-001 ratifying v1.1 | LaSyncro GTM lead | C2 | 2026-10-30 | VERIFIED |
+| BLK-0002 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | APPROVAL_MISSING | GTM-01-S01-SETUP-001 names the lead and researcher and proposes restricted company Google Drive; the specific independent reviewer/session and exact secure workspace path/access verification remain pending | LaSyncro GTM lead | C1 | 2026-10-30 | VERIFIED |
+| BLK-0003 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | SOURCE_PERMISSION | No source APPROVED_FOR_RESEARCH; candidates SRC-001/SRC-003 proposed; SRC-002 and SRC-004 terms UNKNOWN | LaSyncro GTM lead | C1 | 2026-10-30 | VERIFIED |
 | BLK-0004 | 2026-10-26 | GTM-01-S01 | G5 | SEV-3 | COMPLIANCE | No compliance reviewer or documented legal basis; blocks contact only (needed before S02 outreach) | LaSyncro GTM lead | C1 | 2026-11-13 | OPEN |
-| BLK-0005 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | Sprint charter location undefined; a fresh agent could not discover the active charter from repo documents. Remediated by GTM-CHG-002 (index convention + GTM-01-S01 charter) | LaSyncro GTM lead | C2 | 2026-10-30 | FIXED |
-| BLK-0006 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | F1: workflow v1.1 lacks an R16 regression for a missing, incorrect, nonexistent or sprint-mismatched current-charter pointer. GTM-CHG-003 remediation adds R16 in v1.2; publication and independent verification remain pending | LaSyncro GTM lead | C2 | 2026-10-30 | FIXED |
-| BLK-0007 | 2026-10-26 | GTM-01-S01 | G0-A/G0-B | SEV-2 | DOC_CONFLICT | F2: charter labels missing mandatory G0-A/G0-B inputs HOLD although workflow §3 requires BLOCKED. GTM-CHG-003 remediation changes both gate statuses to BLOCKED; publication remains pending | LaSyncro GTM lead | C2 | 2026-10-30 | FIXED |
-| BLK-0008 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | F3: the S01 charter does not pin the active GTM_INDEX path/version/SHA-256. GTM-CHG-003 remediation adds the prepared index pin; publication and subsequent commit pinning remain pending | LaSyncro GTM lead | C2 | 2026-10-30 | FIXED |
+| BLK-0005 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | Sprint charter location undefined; a fresh agent could not discover the active charter from repo documents. Remediated by GTM-CHG-002 (index convention + GTM-01-S01 charter) | LaSyncro GTM lead | C2 | 2026-10-30 | VERIFIED |
+| BLK-0006 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | F1: workflow v1.1 lacks an R16 regression for a missing, incorrect, nonexistent or sprint-mismatched current-charter pointer. GTM-CHG-003 remediation adds R16 in v1.2; publication and independent verification remain pending | LaSyncro GTM lead | C2 | 2026-10-30 | VERIFIED |
+| BLK-0007 | 2026-10-26 | GTM-01-S01 | G0-A/G0-B | SEV-2 | DOC_CONFLICT | F2: charter labels missing mandatory G0-A/G0-B inputs HOLD although workflow §3 requires BLOCKED. GTM-CHG-003 remediation changes both gate statuses to BLOCKED; publication remains pending | LaSyncro GTM lead | C2 | 2026-10-30 | VERIFIED |
+| BLK-0008 | 2026-10-26 | GTM-01-S01 | G0-A | SEV-2 | DOC_GAP | F3: the S01 charter does not pin the active GTM_INDEX path/version/SHA-256. GTM-CHG-003 remediation adds the prepared index pin; publication and subsequent commit pinning remain pending | LaSyncro GTM lead | C2 | 2026-10-30 | VERIFIED |
 
 ## History
 
@@ -39,6 +39,8 @@ Sanitized and persistent (workflow v1.2 §13.1, §15). Opaque IDs only: no merch
 | 2026-10-27 | BLK-0008 | IN_PROGRESS | FIXED | GTM-01-S01-BLOCKER-REVIEW-001; owner=LaSyncro GTM lead; due=2026-10-30; Active index path/version/SHA-256 pinned in charter to C2 document baseline; FIXED not verified; reviewer must check SHA and provenance. |
 
 **2026-10-27 lead blocker review.** The 2026-10-30 dates are the next G0-A verification checkpoints. BLK-0004 has a separate 2026-11-13 planning review date for pre-G5 work, not S01 outreach permission. These dates are internal checkpoints, not external deadlines. Only the distinct GTM-01-S01-QA-01 reviewer may provide independent verification evidence, followed by a new cold-start PREFLIGHT. G0-A/G0-B/G5 remain BLOCKED; no research authorized.
+
+| 2026-10-27 | BLK-0001, BLK-0002, BLK-0003, BLK-0005–0008 | FIXED / IN_PROGRESS | VERIFIED | GTM-01-S01-G0A-REGISTER-VERIFIED-001; independent QA-01 recheck GTM-01-S01-G0A-FINAL-002 at dc21bdfc764e928be93585869b81d00ca90f38ae; fresh cold-start PASS; index/hash/source/security owner-attestation validation PASS. Lead foundation decision GTM-01-S01-G0A-LEAD-001. BLK-0004 remains OPEN for G5 and nonblocking for research-only S01. |
 
 ## Row template
 
