@@ -38,6 +38,8 @@ execution_commit: PENDING   # recorded in the sprint execution record at G0-B, n
 workflow_decision_id: GTM-CHG-003     # workflow v1.2 approved; effective after publication and charter pinning
 charter_convention_decision_id: GTM-CHG-002
 setup_decision_id: GTM-01-S01-SETUP-001
+reviewer_designation_decision_id: GTM-01-S01-REVIEWER-DESIGNATE-001
+c1_record_decision_id: GTM-01-S01-C1-RECORD-001  # lead-approved setup recording, not gate authorization
 g0a_decision_id: PENDING
 g0b_decision_id: PENDING
 g5_decision_id: null                  # no contact authorization
@@ -64,37 +66,50 @@ end_date: ASSIGN
 
 # Responsibilities
 lead: approving user, GTM lead
-evidence_reviewer: PENDING            # independent agent session; specific reviewer/session designation pending
+evidence_reviewer: GTM-01-S01-QA-01   # lead-designated distinct reviewer agent session; not a second human
 compliance_reviewer: null             # required before any G5 decision
 researcher: dedicated GTM research agent
+researcher_id: GTM-01-S01-RESEARCH-01 # reserved; no research authorized
+retention_review_deletion_owner: GTM lead  # dates assigned after actual sprint close
 
-# Sources (the register lives in the approved workspace; IDs only here)
-approved_sources: PENDING
-candidate_sources:
-  - id: SRC-001
-    name: Bolagsverket free high-value datasets
-    proposed_method: manual lookup; legal persons only
-    terms_status: UNKNOWN (licence name); commercial reuse stated on official page
-    approval: PENDING
-  - id: SRC-003
-    name: Merchant's own public website
-    proposed_method: manual human-paced viewing; no automation; no individual names
-    terms_status: UNKNOWN (per site)
-    approval: PENDING
+# Sources (approved METHOD IDs only; research execution still blocked by G0-B)
+source_charter_decision_id: GTM-01-S01-SOURCES-CHARTER-001  # lead-approved C1 alignment on 2026-10-27
+source_register: GTM-01-S01 restricted company Drive / Research Source Permissions Register
+approved_sources:
+  - SRC-002        # SCB; primary structured AB discovery
+  - SRC-004        # JobTech; OPTIONAL corroboration, no hiring-based quota
+approved_access_methods:
   - id: SRC-002
-    name: SCB company register API
-    terms_status: UNKNOWN (terms shown at registration)
-    approval: NOT PROPOSED
+    provider: SCB Allmänna företagsregister, current free API
+    permission_id: GTM-01-S01-SRC002-PERM-001
+    terms_clearance_id: GTM-01-S01-SRC002-TERMS-CLEAR-001
+    scope: AB-level filtered queries, Gothenburg/Borås/Helsingborg; company-only fields
+    terms_status: APPROVED_FOR_RESEARCH
+    cost_sek: 0
+    review_by: 2027-01-25
+    execution: NOT_AUTHORIZED_UNTIL_G0_B
   - id: SRC-004
-    name: JobTech JobSearch
-    terms_status: UNKNOWN
-    approval: NOT PROPOSED
-approved_access_methods: PENDING
-personal_data: NONE                   # company-level only in S01
+    provider: Arbetsförmedlingen JobTech JobSearch
+    permission_id: GTM-01-S01-SRC004-PERM-001
+    scope: at most 3 optional candidate-specific lookups, no negative signal from absent ads
+    terms_status: APPROVED_FOR_RESEARCH
+    cost_sek: 0
+    review_by: 2027-01-25
+    execution: NOT_AUTHORIZED_UNTIL_G0_B
+candidate_sources:
+  - id: SRC-003
+    role: primary merchant-domain Shopify and self-fulfillment verification
+    status: NOT_APPROVED_FOR_RESEARCH  # requires reviewed domain-specific method/terms
+  - id: SRC-001
+    role: supporting Bolagsverket legal-entity verification
+    status: NOT_APPROVED_FOR_RESEARCH  # exact method pending approval
+personal_data: NONE  # company-level only; no named contacts or raw responses
 
 # Storage
 workspace_proposal: restricted company Google Drive
-workspace_location: PENDING_VERIFICATION  # exact secure path and access controls remain pending; not approved for use
+workspace_location: "https://drive.google.com/drive/folders/1tLruW0KvPOKB7kSPTnRH5dx4pBn93bUa"  # verified folder; not research permission
+workspace_owner: "milad.arbabi@lasyncro.com"
+workspace_access_evidence: "restricted owner-only Google Drive; QA-01 read access via owner account (read-only by conduct, not ACL)"
 sanitized_outputs:
   blocker_register: docs/stratgies/gtm_sprints/blocker_register.md
   sprint_review: docs/stratgies/gtm_sprints/GTM-01-S01/review.md
@@ -110,17 +125,17 @@ data_import_authorized: false
 
 ## Setup decision record
 
-`GTM-01-S01-SETUP-001` records only the named roles, proposed workspace type, planning-hour caps and zero budget above. It does not pass G0-A or G0-B and does not authorize research execution, source use or access, contact/outreach, CRM writes/imports, purchases or account registration. The evidence review must be performed in an independent agent session; its specific reviewer/session designation remains pending.
+`GTM-01-S01-SETUP-001` records only the named roles, proposed workspace type, planning-hour caps and zero budget above. It does not pass G0-A or G0-B and does not authorize research execution, source use or access, contact/outreach, CRM writes/imports, purchases or account registration. The GTM lead designated `GTM-01-S01-QA-01` in decision `GTM-01-S01-REVIEWER-DESIGNATE-001` and assigned the GTM lead as retention review/deletion owner under `GTM-01-S01-C1-RECORD-001`. One person can coordinate or operate every sprint role; separate people, computers and Google accounts are not prerequisites. Research and independent QA remain distinct passes (separate agent sessions when using agents). This recording does not authorize research, source use, outreach or any gate.
 
 ## Gate status
 
 | Gate | Status | Missing |
 |---|---|---|
-| G0-A Foundation | BLOCKED | g0a_decision_id; specific evidence reviewer/session; exact secure workspace path and access verification; at least two approved source-register rows including terms and review-by dates; previous_blocker_review; publication/pinning of workflow v1.2 and this index; BLK-0001/BLK-0005 independent verification |
+| G0-A Foundation | BLOCKED | Source method minimum 2/2 met. Outstanding: previous blocker review with owner/due dates; publication and independent reviewer/cold-start R1–R16 checks; verified security preflight; g0a_decision_id. |
 | G0-B Research authorization | BLOCKED | G0-A PASS; g0b_decision_id naming this RUN_ID, cohort cap, dates and approved sources/methods; start_date and end_date; published execution_commit |
 | G5 Contact/compliance | BLOCKED by design | compliance_reviewer; legal basis; suppression list. Not required for S01 |
 
-**Next gate:** GTM-01-S01-G0A-COLDSTART-002, run in a new session by a reviewer who is not the fixer.
+**Next prerequisites:** independent G0-A preflight and previous-blocker review after publication. SRC-003 remains unapproved for merchant-site research (domain-specific checks required before use); SRC-001 remains pending. Source minimum 2/2 does not authorize execution. COLDSTART-002 is historical.
 
 ## Unresolved blockers (see blocker register)
 
