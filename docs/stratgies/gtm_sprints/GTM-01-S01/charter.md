@@ -2,7 +2,7 @@
 
 Sanitized sprint charter (workflow v1.2 §3). No merchant names, contact details, prospect lists or source exports. Values marked `ASSIGN` or `PENDING` are not approvals, and agents must never fill them.
 
-**Charter status:** DRAFT. G0-A and G0-B have not passed. Research authorization is FALSE and outreach authorization is FALSE.
+**Charter status:** G0-A FOUNDATION PASS under GTM-01-S01-G0A-LEAD-001; G0-B RESEARCH AUTHORIZATION BLOCKED. Research authorization is FALSE and outreach authorization is FALSE.
 
 ## How to read this charter
 
@@ -40,7 +40,7 @@ charter_convention_decision_id: GTM-CHG-002
 setup_decision_id: GTM-01-S01-SETUP-001
 reviewer_designation_decision_id: GTM-01-S01-REVIEWER-DESIGNATE-001
 c1_record_decision_id: GTM-01-S01-C1-RECORD-001  # lead-approved setup recording, not gate authorization
-g0a_decision_id: PENDING
+g0a_decision_id: GTM-01-S01-G0A-LEAD-001  # 2026-10-27; conditional lead approval + QA-01 final cold-start PASS
 g0b_decision_id: PENDING
 g5_decision_id: null                  # no contact authorization
 previous_blocker_review: GTM-01-S01-BLOCKER-REVIEW-001  # published 2026-10-27; verified evidence still pending
@@ -127,19 +127,23 @@ data_import_authorized: false
 
 `GTM-01-S01-SETUP-001` records only the named roles, proposed workspace type, planning-hour caps and zero budget above. It does not pass G0-A or G0-B and does not authorize research execution, source use or access, contact/outreach, CRM writes/imports, purchases or account registration. The GTM lead designated `GTM-01-S01-QA-01` in decision `GTM-01-S01-REVIEWER-DESIGNATE-001` and assigned the GTM lead as retention review/deletion owner under `GTM-01-S01-C1-RECORD-001`. One person can coordinate or operate every sprint role; separate people, computers and Google accounts are not prerequisites. Research and independent QA remain distinct passes (separate agent sessions when using agents). This recording does not authorize research, source use, outreach or any gate.
 
+## G0-A foundation decision
+
+GTM lead decision: `GTM-01-S01-G0A-LEAD-001` (2026-10-27), ratified against the lead's prior explicit approval to proceed contingent on the final QA recommendation. Fresh independent reviewer pass `GTM-01-S01-G0A-FINAL-002` at `dc21bdfc764e928be93585869b81d00ca90f38ae` returned PASS; no second human reviewer is required. MFA and data-location/export controls are documented lead attestations in the restricted company Drive (not independently inspected admin controls). Previous-blocker review `GTM-01-S01-BLOCKER-REVIEW-001` has been linked. Seven previously blocking rows are VERIFIED in the published blocker register; G5-only BLK-0004 remains OPEN. **Foundation PASS does not authorize research or outreach.**
+
 ## Gate status
 
 | Gate | Status | Missing |
 |---|---|---|
-| G0-A Foundation | BLOCKED | Source methods 2/2 and previous-blocker review published/linked. Independent documentary and R1–R16 synthetic checks passed under GTM-01-S01-G0A-INDEPENDENT-001, but full cold-start remains BLOCKED: account-linked MFA/export controls need evidence; renewed independent preflight and lead g0a_decision_id remain pending. |
+| G0-A Foundation | PASS | GTM-01-S01-G0A-LEAD-001; final QA-01 cold-start GTM-01-S01-G0A-FINAL-002 PASS; seven blockers VERIFIED. MFA and restricted export handling confirmed by lead attestation, not independently inspected UI. BLK-0004 remains OPEN, G5 only. |
 | G0-B Research authorization | BLOCKED | G0-A PASS; g0b_decision_id naming this RUN_ID, cohort cap, dates and approved sources/methods; start_date and end_date; published execution_commit |
 | G5 Contact/compliance | BLOCKED by design | compliance_reviewer; legal basis; suppression list. Not required for S01 |
 
-**Next prerequisites:** verify company-account MFA and appropriate export controls, then conduct fresh independent G0-A cold-start and targeted blocker re-check. SRC-003 remains unapproved for merchant-site research (site-specific permission required before use); SRC-001 remains pending. Source minimum 2/2 does not authorize execution.
+**Next prerequisite:** specific G0-B research authorization with RUN_ID, dates, 15-merchant cap, 12 research hours, approved source methods and execution commit. SRC-003 merchant-site verification remains method/domain-specific pending; SRC-001 Bolagsverket pending. No execution until G0-B.
 
 ## Unresolved blockers (see blocker register)
 
-BLK-0001 (FIXED), BLK-0002 (IN_PROGRESS: security evidence outstanding), BLK-0003 (FIXED), BLK-0004 (OPEN: G5/S02, nonblocking for research-only), BLK-0005–BLK-0008 (FIXED). None is VERIFIED pending fresh independent cold-start; see GTM-01-S01-BLOCKER-REVIEW-001.
+BLK-0001–BLK-0003 and BLK-0005–BLK-0008 VERIFIED after GTM-01-S01-G0A-FINAL-002; BLK-0004 OPEN (G5/S02, nonblocking for research-only). Tracked history: GTM-01-S01-G0A-REGISTER-VERIFIED-001.
 
 ## Change control
 
