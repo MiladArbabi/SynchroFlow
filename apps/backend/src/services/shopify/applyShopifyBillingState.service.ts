@@ -19,6 +19,7 @@ import { EntitlementsService } from '@lasyncro/backend-core/services/entitlement
 import { EntitlementRevocationService } from '../entitlement-revocation.service.js';
 import { fetchShopifyBillingState, ShopifyBillingState } from './shopifyBillingReconciliation.service.js';
 import { transitionShopSubscription } from '../billing/subscriptionTransition.service.js';
+import { rotateShopifyPaidUsagePeriod } from '../../api/billing/usagePeriod.service.js';
 
 export async function applyShopifyBillingState(
   shopId: number,
@@ -30,7 +31,14 @@ export async function applyShopifyBillingState(
   // GH-1132 local-trial-preservation check below.
   const priorRow = await trx('shop_subscriptions')
     .where({ shop_id: shopId })
-    .first('tier', 'status', 'billing_provider', 'trial_ends_at');
+    .first(
+      'tier',
+      'status',
+      'billing_provider',
+      'trial_ends_at',
+      'current_period_start',
+      'current_period_end'
+    );
   const priorTier = priorRow?.tier as Tier | undefined;
 
   // GH-1132 — a null Partner commercial plan must not revoke a still-valid
@@ -61,6 +69,24 @@ export async function applyShopifyBillingState(
     return billingState;
   }
 
+  // FI-001: an older paid-cycle observation must not rewind
+  // subscription boundaries or trigger an outdated commercial transition.
+  if (
+    priorRow?.billing_provider === 'shopify' &&
+    billingState.isEntitled &&
+    billingState.currentPeriodStart &&
+    priorRow.current_period_start &&
+    new Date(priorRow.current_period_start).getTime() >
+      billingState.currentPeriodStart.getTime()
+  ) {
+    console.warn('[shopify][billing_state_applied] stale cycle ignored', {
+      shopId,
+      observedCycleStart: billingState.currentPeriodStart,
+      storedCycleStart: priorRow.current_period_start,
+    });
+    return billingState;
+  }
+
   const tier = billingState.tier;
   const tierModules = [...modulesForTier(tier)];
   const tierFlags = [...flagsForTier(tier)];
@@ -86,6 +112,9 @@ export async function applyShopifyBillingState(
       shopId,
       to: { tier, status: billingState.status, billingProvider: 'shopify' },
       fields: {
+        ...(billingState.currentPeriodStart === null
+          ? {}
+          : { current_period_start: billingState.currentPeriodStart }),
         ...(billingState.currentPeriodEnd === null
           ? {}
           : { current_period_end: billingState.currentPeriodEnd }),
@@ -96,6 +125,15 @@ export async function applyShopifyBillingState(
         // stale future date once we're writing real provider-derived state.
         ...(priorRow?.trial_ends_at != null ? { trial_ends_at: null } : {}),
       },
+      // Revalidate the observed boundaries under the canonical
+      // subscription-transition lock. A concurrent reconciliation
+      // must not overwrite a more recently committed cycle.
+      ...(priorRow && billingState.currentPeriodStart ? {
+        expectedCurrent: {
+          currentPeriodStart: priorRow.current_period_start ?? null,
+          currentPeriodEnd: priorRow.current_period_end ?? null,
+        },
+      } : {}),
       source: 'shopify_billing_reconciliation',
       reason: 'shopify_billing_state_applied',
       actorType: 'shopify',
@@ -116,6 +154,21 @@ export async function applyShopifyBillingState(
     trx
   );
   if (!transition.preconditionMatched || transition.duplicate) return billingState;
+
+  // FI-001: same transaction as the authoritative subscription transition.
+  // Never infer a paid cycle from the calendar or missing provider facts.
+  if (
+    billingState.isEntitled &&
+    tier !== 'starter' &&
+    billingState.currentPeriodStart
+  ) {
+    await rotateShopifyPaidUsagePeriod(
+      trx,
+      shopId,
+      billingState.currentPeriodStart,
+      tier
+    );
+  }
 
   // 2. Re-seed entitlements from tier constants (additive only)
   const moduleRows = tierModules.map((moduleKey) => ({

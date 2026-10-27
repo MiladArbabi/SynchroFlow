@@ -228,6 +228,243 @@ describe('MON-REM-01B-4 — Shopify App Pricing redirect reconciliation API', ()
       .toBe(knownPeriodEnd.toISOString());
   });
 
+  it('FI001-PERIOD-ROTATION: advances Shopify paid usage exactly once', async () => {
+    const f = await fixture();
+
+    const oldStart = new Date('2026-09-01T00:00:00Z');
+    const nextStart = new Date('2026-10-01T00:00:00Z');
+    const nextEnd = new Date('2026-11-01T00:00:00Z');
+
+    await withTenant(f.shopId, async (trx) => {
+      await trx('shop_subscriptions')
+        .where({ shop_id: f.shopId })
+        .update({
+          tier: 'core',
+          status: 'active',
+          billing_provider: 'shopify',
+          current_period_end: nextStart,
+        });
+
+      await trx('shop_usage_metrics').insert({
+        shop_id: f.shopId,
+        tier_at_period_start: 'core',
+        period_starts_at: oldStart,
+        period_ends_at: null,
+        ingested_orders: 12,
+        shipped_orders: 8,
+      });
+    });
+
+    programPartnerActiveSubscription({
+      shopGid: f.shopGid,
+      commercialHandle: 'core',
+      currentBillingCycleStart: nextStart.toISOString(),
+      currentBillingCycleEnd: nextEnd.toISOString(),
+    });
+
+    const reconcile = () =>
+      withTenant(f.shopId, (trx) =>
+        applyShopifyBillingState(f.shopId, trx)
+      );
+
+    const readPeriods = () =>
+      withTenant(f.shopId, (trx) =>
+        trx('shop_usage_metrics')
+          .where({ shop_id: f.shopId })
+          .orderBy('period_starts_at', 'asc')
+          .select(
+            'period_starts_at',
+            'period_ends_at',
+            'tier_at_period_start',
+            'ingested_orders',
+            'shipped_orders'
+          )
+      );
+
+    await reconcile();
+
+    const periods = await readPeriods();
+
+    expect(periods).toHaveLength(2);
+
+    expect(new Date(periods[0].period_ends_at).toISOString())
+      .toBe(nextStart.toISOString());
+
+    expect(periods[0]).toMatchObject({
+      ingested_orders: 12,
+      shipped_orders: 8,
+    });
+
+    expect(new Date(periods[1].period_starts_at).toISOString())
+      .toBe(nextStart.toISOString());
+
+    expect(periods[1]).toMatchObject({
+      period_ends_at: null,
+      tier_at_period_start: 'core',
+      ingested_orders: 0,
+      shipped_orders: 0,
+    });
+
+    await reconcile();
+
+    expect(await readPeriods()).toHaveLength(2);
+  });
+
+  it('FI001-STALE-CYCLE: older Shopify evidence cannot rewind the paid boundary', async () => {
+    const f = await fixture();
+
+    const oldStart = new Date('2026-09-01T00:00:00Z');
+    const newStart = new Date('2026-10-01T00:00:00Z');
+    const newEnd = new Date('2026-11-01T00:00:00Z');
+
+    await withTenant(f.shopId, async (trx) => {
+      await trx('shop_subscriptions')
+        .where({ shop_id: f.shopId })
+        .update({
+          tier: 'core',
+          status: 'active',
+          billing_provider: 'shopify',
+          current_period_end: newStart,
+        });
+
+      await trx('shop_usage_metrics').insert({
+        shop_id: f.shopId,
+        tier_at_period_start: 'core',
+        period_starts_at: oldStart,
+        period_ends_at: null,
+        ingested_orders: 12,
+        shipped_orders: 8,
+      });
+    });
+
+    const apply = () =>
+      withTenant(f.shopId, (trx) =>
+        applyShopifyBillingState(f.shopId, trx)
+      );
+
+    const periods = () =>
+      withTenant(f.shopId, (trx) =>
+        trx('shop_usage_metrics')
+          .where({ shop_id: f.shopId })
+          .orderBy('period_starts_at', 'asc')
+          .select(
+            'period_starts_at',
+            'period_ends_at',
+            'ingested_orders',
+            'shipped_orders'
+          )
+      );
+
+    // The newer cycle is observed and applied first.
+    programPartnerActiveSubscription({
+      shopGid: f.shopGid,
+      commercialHandle: 'core',
+      currentBillingCycleStart: newStart.toISOString(),
+      currentBillingCycleEnd: newEnd.toISOString(),
+    });
+
+    await apply();
+    const before = await periods();
+    expect(before).toHaveLength(2);
+
+    // An older provider observation arrives afterward.
+    programPartnerActiveSubscription({
+      shopGid: f.shopGid,
+      commercialHandle: 'core',
+      currentBillingCycleStart: oldStart.toISOString(),
+      currentBillingCycleEnd: newStart.toISOString(),
+    });
+
+    await apply();
+
+    // Historical counters and the new open cycle must remain unchanged.
+    expect(await periods()).toEqual(before);
+
+    // Subscription billing authority must not move backward either.
+    const stored = await subscription(f.shopId);
+    expect(new Date(stored.current_period_end).toISOString())
+      .toBe(newEnd.toISOString());
+  });
+
+  it('FI001-CONCURRENT: reconciliations open exactly one new paid period', async () => {
+    const f = await fixture();
+
+    const oldStart = new Date('2026-09-01T00:00:00Z');
+    const newStart = new Date('2026-10-01T00:00:00Z');
+    const newEnd = new Date('2026-11-01T00:00:00Z');
+
+    await withTenant(f.shopId, async (trx) => {
+      await trx('shop_subscriptions')
+        .where({ shop_id: f.shopId })
+        .update({
+          tier: 'core',
+          status: 'active',
+          billing_provider: 'shopify',
+          current_period_start: oldStart,
+          current_period_end: newStart,
+        });
+
+      await trx('shop_usage_metrics').insert({
+        shop_id: f.shopId,
+        tier_at_period_start: 'core',
+        period_starts_at: oldStart,
+        period_ends_at: null,
+        ingested_orders: 12,
+        shipped_orders: 8,
+      });
+    });
+
+    programPartnerActiveSubscription({
+      shopGid: f.shopGid,
+      commercialHandle: 'core',
+      currentBillingCycleStart: newStart.toISOString(),
+      currentBillingCycleEnd: newEnd.toISOString(),
+    });
+
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        withTenant(f.shopId, (trx) =>
+          applyShopifyBillingState(f.shopId, trx)
+        )
+      )
+    );
+
+    const periods = await withTenant(f.shopId, (trx) =>
+      trx('shop_usage_metrics')
+        .where({ shop_id: f.shopId })
+        .orderBy('period_starts_at', 'asc')
+        .select(
+          'period_starts_at',
+          'period_ends_at',
+          'ingested_orders',
+          'shipped_orders'
+        )
+    );
+
+    expect(periods).toHaveLength(2);
+
+    expect(new Date(periods[0].period_ends_at).toISOString())
+      .toBe(newStart.toISOString());
+
+    expect(periods[0]).toMatchObject({
+      ingested_orders: 12,
+      shipped_orders: 8,
+    });
+
+    expect(new Date(periods[1].period_starts_at).toISOString())
+      .toBe(newStart.toISOString());
+
+    expect(periods[1]).toMatchObject({
+      period_ends_at: null,
+      ingested_orders: 0,
+      shipped_orders: 0,
+    });
+
+    const stored = await subscription(f.shopId);
+    expect(new Date(stored.current_period_end).toISOString())
+      .toBe(newEnd.toISOString());
+  });
+
   // GH-1128: `early-access` was a pre-launch Shopify public plan, since
   // deleted from the Partner Dashboard. LaSyncro has not launched — there is
   // no subscriber to migrate — so it must not remain a valid commercial
@@ -360,6 +597,7 @@ function programPartnerActiveSubscription(input: {
   shopGid: string;
   commercialHandle: 'core' | 'growth' | 'scale' | 'starter' | 'early-access';
   currentBillingCycleEnd?: string | null;
+  currentBillingCycleStart?: string;
 }) {
   partnerFetch.mockImplementation(async (url: unknown, init?: RequestInit) => {
     const href = String(url);
@@ -381,7 +619,7 @@ function programPartnerActiveSubscription(input: {
             cancelAtEndOfCycle: false,
             trialEndsAt: null,
             currentBillingCycle: {
-              startTime: '2026-09-01T00:00:00Z',
+              startTime: input.currentBillingCycleStart ?? '2026-09-01T00:00:00Z',
               endTime:
                 input.currentBillingCycleEnd === undefined
                   ? '2026-10-01T00:00:00Z'

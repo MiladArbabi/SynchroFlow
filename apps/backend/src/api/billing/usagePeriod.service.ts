@@ -20,7 +20,8 @@ export type UsagePeriodRow = {
  * Returns the shop's open usage period and lazily rotates stale Starter
  * periods at the UTC calendar-month boundary.
  *
- * Paid tiers remain invoice-driven. The transaction-scoped advisory lock
+ * Stripe-paid tiers remain invoice-driven. Shopify-paid tiers rotate
+ * from authoritative Partner API cycle boundaries. The transaction-scoped advisory lock
  * serializes concurrent reads/writes so the partial unique index can never
  * receive two open periods for the same shop.
  */
@@ -106,4 +107,60 @@ export async function getOrRotateOpenUsagePeriod(
   });
 
   return newPeriod;
+}
+/**
+ * FI-001: Rotate Shopify-paid usage only when the authoritative provider
+ * cycle advances. Uses the same per-shop transaction lock as order ingestion
+ * and pack-complete, protecting both counters and the one-open-period index.
+ */
+export async function rotateShopifyPaidUsagePeriod(
+  trx: Knex,
+  shopId: number,
+  cycleStart: Date,
+  tier: Tier
+): Promise<void> {
+  if (tier === 'starter' || !Number.isFinite(cycleStart.getTime())) {
+    throw new Error('[billing][usage_period] invalid Shopify paid cycle');
+  }
+
+  await trx.raw(
+    'SELECT pg_advisory_xact_lock(?, ?)',
+    [USAGE_PERIOD_LOCK_NAMESPACE, shopId]
+  );
+
+  const open = await trx('shop_usage_metrics')
+    .where({ shop_id: shopId })
+    .whereNull('period_ends_at')
+    .orderBy('period_starts_at', 'desc')
+    .first('id', 'period_starts_at');
+
+  if (open) {
+    const previousStart = new Date(open.period_starts_at).getTime();
+
+    if (!Number.isFinite(previousStart)) {
+      throw new Error('[billing][usage_period] invalid current period');
+    }
+
+    // Equal is an idempotent replay. Older is a stale provider observation.
+    if (previousStart >= cycleStart.getTime()) {
+      return;
+    }
+
+    await trx('shop_usage_metrics')
+      .where({ id: open.id, shop_id: shopId })
+      .whereNull('period_ends_at')
+      .update({
+        period_ends_at: cycleStart,
+        updated_at: new Date(),
+      });
+  }
+
+  // The database defaults initialize all usage counters to zero.
+  // Both operations remain in the caller's tenant-scoped transaction.
+  await trx('shop_usage_metrics').insert({
+    shop_id: shopId,
+    tier_at_period_start: tier,
+    period_starts_at: cycleStart,
+    period_ends_at: null,
+  });
 }

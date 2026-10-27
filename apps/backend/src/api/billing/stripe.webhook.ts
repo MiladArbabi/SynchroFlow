@@ -65,8 +65,10 @@ WebhookRouter.register({
 });
 
 export async function stripeWebhookHandler(req: Request, res: Response) {
-  const envelope = StripeWebhookAdapter.toEnvelope(req);
   try {
+    // FI-002: attribution can reject conflicting signed invoice metadata.
+    // Keep adapter errors inside the HTTP failure boundary.
+    const envelope = StripeWebhookAdapter.toEnvelope(req);
     await WebhookRouter.dispatch(envelope);
     return res.status(200).json({ status: 'ok' });
   } catch (err: any) {
