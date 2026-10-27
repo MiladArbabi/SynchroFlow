@@ -18,9 +18,9 @@ Stable entry point for GTM agents and operators. Read this file first, then read
 
 | Sprint | Charter | Mode | Research authorized | Outreach authorized |
 |---|---|---|---|---|
-| GTM-01-S01 | `docs/stratgies/gtm_sprints/GTM-01-S01/charter.md` | RESEARCH_ONLY | FALSE | FALSE |
+| GTM-01-S01 | `docs/stratgies/gtm_sprints/GTM-01-S01/charter.md` | RESEARCH_ONLY | TRUE (G0-B: GTM-01-S01-G0B-LEAD-001) | FALSE |
 
-**Index status:** GTM-CHG-003 APPROVED; this prepared revision becomes the published active index for GTM-01-S01 only after the four-file change is committed and available on remote `main`. Until then, the published baseline remains authoritative.
+**Index status:** GTM-CHG-003 published and active. G0-A PASS (`GTM-01-S01-G0A-LEAD-001`); G0-B research authorized only for `GTM-01-S01-RESEARCH-001` under lead decision `GTM-01-S01-G0B-LEAD-001` (2026-10-27); G5 outreach BLOCKED. `GTM-CHG-004` records only this approved S01 status reconciliation, with no new workflow/schema/strategy rules.
 
 **Pinning rule:** this index records path, version and file SHA-256 only. Every sprint charter must additionally pin the actual Git commit SHA from which these files are read (workflow §3, §10). A charter without a commit pin fails G0-A.
 
@@ -31,7 +31,7 @@ Stable entry point for GTM agents and operators. Read this file first, then read
 | GTM strategy | `docs/stratgies/GTM_strategy_v1.0.md` | 1.0 | APPROVED AND RATIFIED (2026-10-26) | `2f2b4e98ff0f647479473c65cd6566f6f97e88a562e9d0ace7d3a4b507277bd7` |
 | Sprint workflow | `docs/stratgies/GTM_sprint_workflow_v1.2.md` | 1.2 | APPROVED; ACTIVE AFTER PUBLICATION (GTM-CHG-003; effective GTM-01-S01) | `99f2e8c2afd55674341719d09c4ff68e6d401310bf5d833d2e40ad6296ebf070` |
 
-Approval of the workflow does not by itself pass G0-A or G0-B: the open blockers in `docs/stratgies/gtm_sprints/blocker_register.md` and the charter requirements in workflow §3 still apply.
+Approval of the workflow does not itself pass G0-A or G0-B. Follow the current charter's separate gate decisions and `docs/stratgies/gtm_sprints/blocker_register.md`. BLK-0004 remains OPEN for G5; it does not block RESEARCH_ONLY S01.
 
 ## Historical and proposed documents (not authoritative)
 
@@ -57,6 +57,7 @@ Repository files contain no merchant names, contact details, prospect lists, sou
 | 2026-10-26 | — | Strategy v1.0 ratified | APPROVED |
 | 2026-10-26 | GTM-CHG-001 | Ratify workflow v1.1, this index and the gtm_sprints locations; effective GTM-01-S01 | APPROVED AND RATIFIED |
 | 2026-10-26 | GTM-CHG-002 | Charter discovery convention, current-sprint pointer and startup instruction; GTM-01-S01 charter created (draft, no permissions granted) | APPROVED |
-| 2026-10-26 | GTM-CHG-003 | Add workflow v1.2 R16 current-sprint pointer regression; update the index, S01 charter and blocker register without changing strategy or granting execution permissions | APPROVED; PUBLICATION PENDING |
+| 2026-10-26 | GTM-CHG-003 | Add workflow v1.2 R16 current-sprint pointer regression; update index, S01 charter and blocker register | APPROVED; PUBLISHED |
+| 2026-10-27 | GTM-CHG-004 | Reconcile index S01 status with lead-approved G0-B for `GTM-01-S01-RESEARCH-001`; research only; G5 remains BLOCKED; no strategy/workflow change | APPROVED; PUBLISHED |
 
 Updating this index is a C2 change (workflow §13.5): it requires a GTM lead decision ID and a revision-log entry.
