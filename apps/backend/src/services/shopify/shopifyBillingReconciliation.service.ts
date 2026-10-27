@@ -13,6 +13,7 @@ export interface ShopifyBillingState {
   tier: Tier;
   status: string; // mapped DB status
   isEntitled: boolean; // true only when active or inside a paid grace period
+  currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   shopifySubscriptionId: string | null;
   shopifySubscriptionName: string | null;
@@ -38,6 +39,7 @@ function starterCanceledState(): ShopifyBillingState {
     tier: 'starter',
     status: 'canceled',
     isEntitled: false,
+    currentPeriodStart: null,
     currentPeriodEnd: null,
     shopifySubscriptionId: null,
     shopifySubscriptionName: null,
@@ -113,6 +115,21 @@ function readPrice(item: any): ShopifyRecurringPrice | null {
   };
 }
 
+function readCurrentPeriodStart(activeSubscription: any): Date | null {
+  const value = activeSubscription?.currentBillingCycle?.startTime ?? null;
+  if (value === null) return null;
+
+  const start = new Date(value);
+  if (!Number.isFinite(start.getTime())) {
+    throw new ShopifyPartnerBillingError(
+      '[shopify_billing_reconciliation] invalid billing cycle start',
+      'SHOPIFY_PARTNER_CYCLE_INVALID',
+      409
+    );
+  }
+  return start;
+}
+
 function readCurrentPeriodEnd(activeSubscription: any): Date | null {
   const value =
     activeSubscription?.currentBillingCycle?.endTime ??
@@ -143,6 +160,7 @@ export function normalizePartnerActiveSubscriptionToBillingState(
         tier,
         status: 'active',
         isEntitled: true,
+        currentPeriodStart: readCurrentPeriodStart(subscription),
         currentPeriodEnd: readCurrentPeriodEnd(subscription),
         shopifySubscriptionId: subscription?.legacySubscriptionId ?? subscription?.id ?? null,
         shopifySubscriptionName: item?.description ?? subscription?.name ?? null,

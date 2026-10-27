@@ -19,11 +19,50 @@ export class StripeWebhookAdapter {
   static toEnvelope(req: any): WebhookEnvelope {
     const event = req.body;
     const metadata = event?.data?.object?.metadata ?? {};
-    // Resolve shopId from metadata — support both camelCase and snake_case keys
-    const rawShopId = metadata.shopId ?? metadata.shop_id ?? null;
-    const shopId = rawShopId !== null && !isNaN(Number(rawShopId))
-      ? Number(rawShopId)
-      : undefined;
+    const isPaidInvoice = event?.type === 'invoice.payment_succeeded';
+
+    let shopId: number | undefined;
+
+    if (isPaidInvoice) {
+      // FI-002: Stripe copies subscription metadata into the invoice's
+      // subscription_details snapshot, not necessarily invoice.metadata.
+      const parent = event?.data?.object?.parent;
+      const snapshotMetadata =
+        parent?.type === 'subscription_details'
+          ? parent.subscription_details?.metadata ?? {}
+          : {};
+
+      const candidates = [
+        metadata.shopId,
+        metadata.shop_id,
+        snapshotMetadata.shopId,
+        snapshotMetadata.shop_id,
+      ].filter((value) => value !== undefined && value !== null);
+
+      const resolved = candidates.map((value) => {
+        if (
+          (typeof value !== 'string' && typeof value !== 'number') ||
+          String(value).trim().length === 0 ||
+          !Number.isSafeInteger(Number(value)) ||
+          Number(value) <= 0
+        ) {
+          throw new Error('[stripe.adapter] invalid invoice shopId');
+        }
+        return Number(value);
+      });
+
+      if (new Set(resolved).size > 1) {
+        throw new Error('[stripe.adapter] conflicting invoice shopId');
+      }
+
+      shopId = resolved[0];
+    } else {
+      // Preserve existing attribution for non-invoice-paid webhooks.
+      const rawShopId = metadata.shopId ?? metadata.shop_id ?? null;
+      shopId = rawShopId !== null && !isNaN(Number(rawShopId))
+        ? Number(rawShopId)
+        : undefined;
+    }
     if (shopId === undefined) {
       console.warn('[stripe.adapter] shopId missing from event metadata', {
         eventId: event?.id,
