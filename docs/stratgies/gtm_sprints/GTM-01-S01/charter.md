@@ -89,6 +89,7 @@ approved_access_methods:
     terms_clearance_id: GTM-01-S01-SRC002-TERMS-CLEAR-001
     scope: bounded AB-level filtered queries, Stockholm County and named Mälardalen pilot municipalities, selective outer cities; company-only fields
     geography_extension_id: GTM-01-S01-SRC002-GEO-EXT-001
+    one_time_screening_amendment_id: GTM-01-S01-SRC002-METHOD-ADJ-001  # one Stockholm (0180) municipality query, limit=5; local AB-only minimization
     terms_status: APPROVED_FOR_RESEARCH
     cost_sek: 0
     review_by: 2027-01-25
@@ -149,6 +150,10 @@ GTM lead decision: `GTM-01-S01-G0A-LEAD-001` (2026-10-27), ratified against the 
 **Not permitted:** generic merchant website browsing/scraping under `SRC-003` absent site-specific method approval; Bolagsverket `SRC-001` without method approval; any merchant contact, outreach, CRM writes, account registration, data imports, new spending, production Shopify records, personal-data harvesting or unsupported Shopify/in-house warehouse claims. `G5` remains blocked. Reports may mark Shopify and in-house fulfillment **UNKNOWN** until separately verified; do not boost uncertain leads to confirmed just to hit targets.
 
 **Audit trail and execution identity:** Gate decision recorded here; exact published execution commit is recorded in the restricted S01 Drive G0-A/G0-B handoff because the charter cannot embed its own future commit hash. The prior `G0-A` decision and separate QA session remain valid. Status-only index alignment `GTM-CHG-004` changes no GTM strategy principles or workflow mechanics.
+
+## One-request SCB screening decision
+
+The GTM lead approved `GTM-01-S01-SRC002-METHOD-ADJ-001` on 2026-10-27 as a **single narrowly bounded test**, supplementing the existing SRC-002 permission for `GTM-01-S01-RESEARCH-001` only. Use the documented Stockholm municipality (0180) endpoint with `limit=5`, once, without pagination or retries. The named API-key holder executes privately on their own device, processing at most five returned rows transiently in memory. Exclude any record not positively schema-validated as Swedish AB (`jurform=49`), retaining only previously approved AB company fields in restricted Drive. Never save raw response, excluded entities, personal names/contact details or address fields. On provider error, unexpected response or missing legal-form validation, stop and report a nonidentifying result. Zero eligible ABs is valid. This does not authorize other geography or API calls, broader mixed-entity screening, SRC-003 merchant website work, contact collection or G5 outreach. Full decision conditions are recorded in the restricted Research Source Permissions Register. No authenticated request is claimed by the permission record.
 
 ## Gate status
 
