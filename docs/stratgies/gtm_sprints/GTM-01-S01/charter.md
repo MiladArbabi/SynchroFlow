@@ -89,7 +89,8 @@ approved_access_methods:
     terms_clearance_id: GTM-01-S01-SRC002-TERMS-CLEAR-001
     scope: bounded AB-level filtered queries, Stockholm County and named Mälardalen pilot municipalities, selective outer cities; company-only fields
     geography_extension_id: GTM-01-S01-SRC002-GEO-EXT-001
-    one_time_screening_amendment_id: GTM-01-S01-SRC002-METHOD-ADJ-001  # one Stockholm (0180) municipality query, limit=5; local AB-only minimization
+    one_time_screening_amendment_id: GTM-01-S01-SRC002-METHOD-ADJ-001  # CONSUMED: prior HTTP 200, unrecognized envelope, 0 retained
+    second_one_time_screening_amendment_id: GTM-01-S01-SRC002-METHOD-ADJ-002  # APPROVED 2026-10-27: one extra request, v2 jes parser, same limits
     terms_status: APPROVED_FOR_RESEARCH
     cost_sek: 0
     review_by: 2027-01-25
@@ -154,6 +155,10 @@ GTM lead decision: `GTM-01-S01-G0A-LEAD-001` (2026-10-27), ratified against the 
 ## One-request SCB screening decision
 
 The GTM lead approved `GTM-01-S01-SRC002-METHOD-ADJ-001` on 2026-10-27 as a **single narrowly bounded test**, supplementing the existing SRC-002 permission for `GTM-01-S01-RESEARCH-001` only. Use the documented Stockholm municipality (0180) endpoint with `limit=5`, once, without pagination or retries. The named API-key holder executes privately on their own device, processing at most five returned rows transiently in memory. Exclude any record not positively schema-validated as Swedish AB (`jurform=49`), retaining only previously approved AB company fields in restricted Drive. Never save raw response, excluded entities, personal names/contact details or address fields. On provider error, unexpected response or missing legal-form validation, stop and report a nonidentifying result. Zero eligible ABs is valid. This does not authorize other geography or API calls, broader mixed-entity screening, SRC-003 merchant website work, contact collection or G5 outreach. Full decision conditions are recorded in the restricted Research Source Permissions Register. No authenticated request is claimed by the permission record.
+
+## Follow-up SCB screening amendment
+
+`GTM-01-S01-SRC002-METHOD-ADJ-002` was approved by the GTM lead on 2026-10-27 following public schema inspection and successful offline v2 self-test. It permits **one additional** authenticated request to the Stockholm municipality (0180) SCB API endpoint, with `limit=5`, run locally by the authorized key holder. No pagination, retries or additional endpoints. The v2 parser checks the `jes`/`pagination` envelope and transiently excludes non-AB records; retain only validated ABs (`jurform=49`) meeting the approved SNI and employee-class discovery screens, with the established company-only allowlist. No raw response, excluded records, personal contacts, addresses or credentials may be shared or stored. Unexpected schema/errors must stop execution; zero accepted records is valid. The earlier `METHOD-ADJ-001` allowance is consumed and cannot be reused. The decision is recorded in the restricted source register; G0-A/G0-B and all sprint caps remain intact. G5 remains BLOCKED. **No live API request has been executed by this decision record.**
 
 ## Gate status
 
