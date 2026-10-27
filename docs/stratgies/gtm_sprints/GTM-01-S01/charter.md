@@ -46,7 +46,11 @@ g5_decision_id: null                  # no contact authorization
 previous_blocker_review: GTM-01-S01-BLOCKER-REVIEW-001  # published 2026-10-27; verified evidence still pending
 
 # Scope
-geography: [Gothenburg, Borås, Helsingborg]
+geography_decision_id: GTM-01-S01-GEO-REV-001  # lead ratified 2026-10-27; only S01 pilot territory
+geography: [Stockholm County (all 26 municipalities), Uppsala, Västerås, Eskilstuna, Enköping, Strängnäs, Håbo]
+geography_extended_selective: [Örebro, Norrköping, Linköping, Gävle]  # when merchant fit justifies travel
+geography_sample_guidance: "~8–10 Greater Stockholm, ~3–5 core Mälardalen, ~0–2 extended; not quotas; total <=15"
+geography_scope_rule: "Stockholm-based visit access and ICP evidence outrank population; warehouse site may differ from company office; visits not mandatory in research-only S01"
 segment: Shopify-first, self-fulfilling SMB (strategy §3.1 core ICP)
 core_icp:
   revenue: "~USD 500K–10M"
@@ -83,7 +87,8 @@ approved_access_methods:
     provider: SCB Allmänna företagsregister, current free API
     permission_id: GTM-01-S01-SRC002-PERM-001
     terms_clearance_id: GTM-01-S01-SRC002-TERMS-CLEAR-001
-    scope: AB-level filtered queries, Gothenburg/Borås/Helsingborg; company-only fields
+    scope: bounded AB-level filtered queries, Stockholm County and named Mälardalen pilot municipalities, selective outer cities; company-only fields
+    geography_extension_id: GTM-01-S01-SRC002-GEO-EXT-001
     terms_status: APPROVED_FOR_RESEARCH
     cost_sek: 0
     review_by: 2027-01-25
@@ -126,6 +131,10 @@ data_import_authorized: false
 ## Setup decision record
 
 `GTM-01-S01-SETUP-001` records only the named roles, proposed workspace type, planning-hour caps and zero budget above. It does not pass G0-A or G0-B and does not authorize research execution, source use or access, contact/outreach, CRM writes/imports, purchases or account registration. The GTM lead designated `GTM-01-S01-QA-01` in decision `GTM-01-S01-REVIEWER-DESIGNATE-001` and assigned the GTM lead as retention review/deletion owner under `GTM-01-S01-C1-RECORD-001`. One person can coordinate or operate every sprint role; separate people, computers and Google accounts are not prerequisites. Research and independent QA remain distinct passes (separate agent sessions when using agents). This recording does not authorize research, source use, outreach or any gate.
+
+## S01 geographical decision
+
+`GTM-01-S01-GEO-REV-001` (GTM lead ratification, 2026-10-27) supersedes the earlier Gothenburg/Borås/Helsingborg sampling assumption **for GTM-01-S01 only**. The underlying Sweden-first strategy, ICP, source legality, G0-A PASS and research caps remain unchanged. Prioritize Greater Stockholm and nearby Mälardalen for potential future warehouse visits; cities and population are research sampling inputs, not qualification evidence or visit obligations. Source-method geographic clearance for SRC-002 is recorded in restricted Drive as `GTM-01-S01-SRC002-GEO-EXT-001`. Merchant-site SRC-003 remains method/domain-specific pending. No G0-B execution, G5 outreach, contact collection or API credential use is authorized by this geographical decision.
 
 ## G0-A foundation decision
 
