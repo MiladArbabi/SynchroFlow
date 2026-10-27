@@ -43,7 +43,7 @@ c1_record_decision_id: GTM-01-S01-C1-RECORD-001  # lead-approved setup recording
 g0a_decision_id: PENDING
 g0b_decision_id: PENDING
 g5_decision_id: null                  # no contact authorization
-previous_blocker_review: PENDING      # §13.2 kickoff review of BLK-0001..0008
+previous_blocker_review: GTM-01-S01-BLOCKER-REVIEW-001  # published 2026-10-27; verified evidence still pending
 
 # Scope
 geography: [Gothenburg, Borås, Helsingborg]
@@ -131,15 +131,15 @@ data_import_authorized: false
 
 | Gate | Status | Missing |
 |---|---|---|
-| G0-A Foundation | BLOCKED | Source method minimum 2/2 met. Outstanding: previous blocker review with owner/due dates; publication and independent reviewer/cold-start R1–R16 checks; verified security preflight; g0a_decision_id. |
+| G0-A Foundation | BLOCKED | Source methods 2/2 and previous-blocker review published/linked. Independent documentary and R1–R16 synthetic checks passed under GTM-01-S01-G0A-INDEPENDENT-001, but full cold-start remains BLOCKED: account-linked MFA/export controls need evidence; renewed independent preflight and lead g0a_decision_id remain pending. |
 | G0-B Research authorization | BLOCKED | G0-A PASS; g0b_decision_id naming this RUN_ID, cohort cap, dates and approved sources/methods; start_date and end_date; published execution_commit |
 | G5 Contact/compliance | BLOCKED by design | compliance_reviewer; legal basis; suppression list. Not required for S01 |
 
-**Next prerequisites:** independent G0-A preflight and previous-blocker review after publication. SRC-003 remains unapproved for merchant-site research (domain-specific checks required before use); SRC-001 remains pending. Source minimum 2/2 does not authorize execution. COLDSTART-002 is historical.
+**Next prerequisites:** verify company-account MFA and appropriate export controls, then conduct fresh independent G0-A cold-start and targeted blocker re-check. SRC-003 remains unapproved for merchant-site research (site-specific permission required before use); SRC-001 remains pending. Source minimum 2/2 does not authorize execution.
 
 ## Unresolved blockers (see blocker register)
 
-BLK-0001 (FIXED, not VERIFIED), BLK-0002 (OPEN), BLK-0003 (OPEN), BLK-0004 (OPEN, carried to S02), BLK-0005 (FIXED, not VERIFIED), BLK-0006–BLK-0008 (IN_PROGRESS pending correction publication).
+BLK-0001 (FIXED), BLK-0002 (IN_PROGRESS: security evidence outstanding), BLK-0003 (FIXED), BLK-0004 (OPEN: G5/S02, nonblocking for research-only), BLK-0005–BLK-0008 (FIXED). None is VERIFIED pending fresh independent cold-start; see GTM-01-S01-BLOCKER-REVIEW-001.
 
 ## Change control
 
