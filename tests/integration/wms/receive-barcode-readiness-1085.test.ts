@@ -839,7 +839,7 @@ it('B13 — GET /receive-job restores durable reconciliation state', async () =>
   }));
 });
 
-it('B14 — resolved receive problems remain part of historical accounting', async () => {
+it('B14 — receive problem evidence is immutable: resolving it is refused and historical accounting is unchanged', async () => {
   const f = await receiveFixture({ externalBarcode: '5012345678900', quantityOrdered: 2 });
 
   const report = await reportReceiveProblem(f, {
@@ -850,18 +850,32 @@ it('B14 — resolved receive problems remain part of historical accounting', asy
   });
   expect(report.status).toBe(201);
 
-  await withTenant(f.shopId, (trx) =>
-    trx('receive_exceptions')
-      .where({ receive_exception_id: report.body.receive_exception_id, shop_id: f.shopId })
-      .update({ resolved: true, resolved_at: new Date(), resolved_by: f.userId })
-  );
+  const evidence = () =>
+    withTenant(f.shopId, (trx) =>
+      trx('receive_exceptions')
+        .where({ receive_exception_id: report.body.receive_exception_id, shop_id: f.shopId })
+        .first()
+    );
+  const before = await evidence();
+  expect(before).toMatchObject({ exception_type: 'missing_item', resolved: false, counts_toward_shortfall: true });
+
+  // 0223 evidence guard: the runtime role may only supersede via Recount.
+  await expect(
+    withTenant(f.shopId, (trx) =>
+      trx('receive_exceptions')
+        .where({ receive_exception_id: report.body.receive_exception_id, shop_id: f.shopId })
+        .update({ resolved: true, resolved_at: new Date(), resolved_by: f.userId })
+    )
+  ).rejects.toThrow('receive_exceptions evidence is immutable; only a Recount may supersede an active row.');
+
+  expect(await evidence()).toEqual(before);
 
   const line = await fetchReceiveJobLine(f);
   expect(line.reconciliation.allocations).toEqual([
     expect.objectContaining({
       receive_exception_id: report.body.receive_exception_id,
       exception_type: 'missing_item',
-      resolved: true,
+      resolved: false,
       counts_toward_shortfall: true,
     }),
   ]);
