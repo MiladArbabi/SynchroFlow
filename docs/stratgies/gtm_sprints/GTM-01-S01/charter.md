@@ -1,6 +1,6 @@
 # GTM-01-S01 Sprint Charter
 
-Sanitized sprint charter (workflow v1.2 §3). No merchant names, contact details, prospect lists or source exports. Values marked `ASSIGN` or `PENDING` are not approvals, and agents must never fill them.
+Sanitized sprint charter (workflow v1.3 §3). No merchant names, contact details, prospect lists or source exports. Values marked `ASSIGN` or `PENDING` are not approvals, and agents must never fill them.
 
 **Charter status:** G0-A FOUNDATION PASS; G0-B RESEARCH_ONLY PASS (`GTM-01-S01-G0B-LEAD-001`) for run `GTM-01-S01-RESEARCH-001` during 2026-10-27 to 2026-11-09. Research authorization is TRUE within this bounded scope; outreach authorization is FALSE.
 
@@ -20,22 +20,22 @@ mode: RESEARCH_ONLY            # RESEARCH_AND_CONTACT requires G5 PASS
 # Active documents (from GTM_INDEX.md)
 index:
   path: docs/stratgies/GTM_INDEX.md
-  version: "GTM-CHG-003 published; GTM-CHG-004 S01 execution-status sync"
-  sha256: 35a0a48056da49e0f98d2435f48147fedb772dd9f9b1e90874f668e5eed2d503
+  version: "GTM-CHG-005 workflow v1.3; GTM-CHG-004 S01 execution-status sync"
+  sha256: 55458c1068189a4eac2b597a58b038aa8482686a5f4fdd39d221507a3295a7fe
 strategy:
   path: docs/stratgies/GTM_strategy_v1.0.md
   version: "1.0"
   sha256: 2f2b4e98ff0f647479473c65cd6566f6f97e88a562e9d0ace7d3a4b507277bd7
 workflow:
-  path: docs/stratgies/GTM_sprint_workflow_v1.2.md
-  version: "1.2"
-  sha256: 99f2e8c2afd55674341719d09c4ff68e6d401310bf5d833d2e40ad6296ebf070
+  path: docs/stratgies/GTM_sprint_workflow_v1.3.md
+  version: "1.3"
+  sha256: 34c91af925c3051cc4e47555d11fb798011913e9b64ab154d3312bf485d65a95
 source_baseline_commit: d7fafc66e51e0ecbeccc6804576e2c4cef7aaa40   # baseline the charter was drafted from
-document_baseline_commit: a5363140497f96b91c1096c9e40b56e4878d8506  # Published workflow/index baseline
+document_baseline_commit: b7d47ae993feecc5cbdac02df99e85ecfd7cffc9  # Approved v1.3 workflow and index baseline
 execution_commit: RESTRICTED_DRIVE_EXECUTION_RECORD  # exact charter commit recorded after publication in approved GTM S01 Drive handoff; no self-reference
 
 # Decisions
-workflow_decision_id: GTM-CHG-003     # workflow v1.2 approved; effective after publication and charter pinning
+workflow_decision_id: GTM-CHG-005     # workflow v1.3 approved; effective after publication and charter pinning
 charter_convention_decision_id: GTM-CHG-002
 setup_decision_id: GTM-01-S01-SETUP-001
 reviewer_designation_decision_id: GTM-01-S01-REVIEWER-DESIGNATE-001
@@ -245,3 +245,7 @@ BLK-0001–BLK-0003 and BLK-0005–BLK-0008 VERIFIED after GTM-01-S01-G0A-FINAL-
 ## Change control
 
 Filling a `PENDING` or `ASSIGN` value requires a lead decision ID recorded in this charter. That is a C1 change (workflow §13.5). Changing caps beyond workflow limits, or the mode, is C2.
+
+## GTM-CHG-005 — lead-approved merchant triage (2026-10-27)
+
+Pre-contact qualification: GOOD_CANDIDATE enters the outreach-PREPARATION shortlist; HUMAN_REVIEW receives one targeted human decision for a material fit uncertainty; DROP is parked with a brief reason. There is no mandatory repeat website QA for an obviously good initial candidate. This triage does not upgrade G2 identity, G3 warehouse evidence or G4 fit facts; keep unknowns and provenance. Formal CONTACT_READY still requires G5 and independent G6 review and separate outbound approval. Research remains RESEARCH_ONLY, contact_ready_target=0, and no outreach, CRM writes, source expansion, or changed sprint caps are authorized. Approved source methods and review-by dates are unchanged.
