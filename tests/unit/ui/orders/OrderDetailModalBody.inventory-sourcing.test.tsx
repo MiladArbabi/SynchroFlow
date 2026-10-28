@@ -961,3 +961,54 @@ describe('OrderDetailModalBody inventory treatment assist — INV-TREAT-01', () 
   });
 
 });
+
+// STOCK-SUPPLY-01 D3: canonical cancellation overrides stale sourcing evidence.
+describe('STOCK-SUPPLY-01 D3 — cancelled subject sourcing actions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseOrderDecision.mockReturnValue({
+      data: decisionResponse([inventoryConstraint('variant-a')]),
+      isLoading: false, isError: false, error: null,
+    });
+  });
+
+  it('does not offer the Source this item fallback on a confirmed cancelled order', () => {
+    mockUseOrderDetail.mockReturnValue({
+      data: { ...orderDetail(null), fulfillment: { status: 'cancelled' } },
+      isLoading: false,
+    });
+    renderModal();
+    expect(screen.queryByRole('button', { name: 'Source this item' })).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('does not offer an enriched sourcing action on a confirmed cancelled order', () => {
+    const assist = assistOf([assistItem({
+      variantId: 'variant-a',
+      treatments: [{ type: 'source_remaining', rank: 1, quantity: 7,
+        reason: 'Stale purchasing advice', automationLevel: 'assist',
+        action: openSourcingAction('variant-a') }],
+    })]);
+    mockUseOrderDetail.mockReturnValue({
+      data: { ...orderDetail(assist), fulfillment: { status: 'cancelled' } },
+      isLoading: false,
+    });
+    renderModal();
+    expect(screen.queryByRole('button', { name: /Source 7 units/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Source this item' })).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('preserves sourcing navigation on a confirmed pending order', () => {
+    mockUseOrderDetail.mockReturnValue({
+      data: { ...orderDetail(null), fulfillment: { status: 'pending' } },
+      isLoading: false,
+    });
+    renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Source this item' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/suppliers-portal/sourcing?variantId=variant-a&orderId=order-1');
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});

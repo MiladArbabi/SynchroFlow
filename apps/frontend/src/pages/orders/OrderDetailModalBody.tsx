@@ -625,9 +625,12 @@ export function OrderDetailModalBody({
    * Constraints without a usable target_id are skipped rather than routed
    * to a broken Sourcing URL.
    */
+  // Confirmed cancellation overrides stale constraint/assist navigation.
+  // Unknown fulfillment state retains the existing active-order fallback.
   const inventorySourcingTargets = constraints
     .filter(
       (c) =>
+        order?.fulfillment?.status !== 'cancelled' &&
         c.constraint_type === 'inventory' &&
         typeof c.target_id === 'string' &&
         c.target_id.length > 0
