@@ -790,7 +790,7 @@ function boardRules(node: Element) {
   return { base, media };
 }
 
-describe('Q — desktop board overflow and shrink contract (structural only)', () => {
+describe('Q — board overflow and containment contract (structural only)', () => {
   it('base board is five minmax(0,1fr) tracks with no min-width track and no horizontal scroll; overflow only at the narrower breakpoint', () => {
     renderAs('owner');
     const pipeline = board();
@@ -816,7 +816,7 @@ describe('Q — desktop board overflow and shrink contract (structural only)', (
     }
   });
 
-  it('board and its management column can shrink vertically (minHeight 0, shrinkable flex); no stage or card scrolls', () => {
+  it('board and management retain content height; page owns vertical scrolling and stages never scroll', () => {
     renderAs('owner');
     const pipeline = board();
     const column = pipeline.parentElement as HTMLElement;
@@ -824,9 +824,20 @@ describe('Q — desktop board overflow and shrink contract (structural only)', (
     expect(getComputedStyle(column).flexDirection).toBe('column');
     for (const node of [pipeline, column]) {
       const style = getComputedStyle(node);
-      expect(style.minHeight).toMatch(/^0(px)?$/);
-      // flex: 1 0 auto forces content height past the viewport; shrink must be allowed.
-      expect(style.flexShrink).not.toBe('0');
+      expect(style.flexShrink).toBe('0');
+      expect(style.flexBasis).toBe('auto');
+    }
+    // Intrinsic height protects the narrow horizontal scroller from clipping work.
+    expect(getComputedStyle(pipeline).minHeight).toBe('min-content');
+    expect(getComputedStyle(column).minHeight).toBe('auto');
+    const root = column.parentElement as HTMLElement;
+    expect(getComputedStyle(root).height).toBe('auto');
+    expect(getComputedStyle(root).overflowY).toBe('visible');
+    for (const { style } of boardRules(pipeline).media) {
+      expect(style.getPropertyValue('height')).toBe('');
+      expect(style.getPropertyValue('max-height')).toBe('');
+      expect(style.getPropertyValue('min-height')).not.toBe('0');
+      expect(style.getPropertyValue('flex-shrink')).not.toBe('1');
     }
     for (const name of STAGES) {
       const stage = stageRegion(name);

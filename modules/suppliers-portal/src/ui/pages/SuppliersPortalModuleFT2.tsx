@@ -8,9 +8,6 @@ import {
   Alert,
   Chip,
   Divider,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Table,
   TableBody,
   TableCell,
@@ -2934,7 +2931,7 @@ function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth sx={{ '@media (pointer: coarse)': { '& .MuiButton-root': { minHeight: 44 }, '& .MuiInputBase-root': { minHeight: 44 } } }}>
       <DialogTitle>{mode === 'add' ? 'Add supplier' : 'Edit supplier'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
@@ -2967,84 +2964,6 @@ function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
 // ─────────────────────────────────────────────
 // SUPPLIER ACCORDION
 // ─────────────────────────────────────────────
-function SupplierAccordion({ supplier, onEdit, onDelete }: {
-  supplier: Supplier;
-  onEdit: (s: Supplier) => void;
-  onDelete: (s: Supplier) => void;
-}) {
-  return (
-    <Accordion
-      variant="outlined"
-      sx={{ mb: 1, borderRadius: '8px !important', '&:before': { display: 'none' } }}
-    >
-      <AccordionSummary expandIcon={<ChevronDown size={16} />}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%', pr: 1 }}>
-          <Box sx={{ flex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" fontWeight={700}>{supplier.name}</Typography>
-              {!supplier.active && <Chip label="Inactive" size="small" />}
-              {Number(supplier.open_po_count) > 0 && (
-                <Chip
-                  label={`${supplier.open_po_count} open PO${Number(supplier.open_po_count) > 1 ? 's' : ''}`}
-                  size="small" color="primary"
-                />
-              )}
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1.5 }}>
-            <RatingBadge label="On-time" value={supplier.on_time_rate} />
-            <RatingBadge label="Fill" value={supplier.fill_rate} />
-          </Box>
-        </Box>
-      </AccordionSummary>
-      <AccordionDetails sx={{ pt: 0 }}>
-        <Divider sx={{ mb: 1.5 }} />
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          {supplier.contact_name && (
-            <Typography variant="caption" color="text.secondary">Contact: {supplier.contact_name}</Typography>
-          )}
-          {supplier.contact_email && (
-            <Typography variant="caption" color="text.secondary">Email: {supplier.contact_email}</Typography>
-          )}
-          {supplier.contact_phone && (
-            <Typography variant="caption" color="text.secondary">Phone: {supplier.contact_phone}</Typography>
-          )}
-          <Typography variant="caption" color="text.secondary">Received POs: {supplier.total_pos}</Typography>
-          {supplier.defect_rate !== null && (
-            <Typography variant="caption" color="text.secondary">Defect rate: {supplier.defect_rate}%</Typography>
-          )}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              MOQ: {supplier.moq != null ? `${supplier.moq} units` : '—'}
-            </Typography>
-            {supplier.moq == null && (
-              <Box component="span" onClick={() => onEdit(supplier)}
-                sx={{ fontSize: 11, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-                Set minimum order →
-              </Box>
-            )}
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              Lead time: {supplier.lead_time_days != null ? `${supplier.lead_time_days} days` : '—'}
-            </Typography>
-            {supplier.lead_time_days == null && (
-              <Box component="span" onClick={() => onEdit(supplier)}
-                sx={{ fontSize: 11, color: 'var(--accent-text)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-                Set delivery time →
-              </Box>
-            )}
-          </Box>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
-          <Button size="small" variant="outlined" onClick={() => onEdit(supplier)}>Edit</Button>
-          <Button size="small" variant="outlined" color="error" onClick={() => onDelete(supplier)}>Delete</Button>
-        </Box>
-      </AccordionDetails>
-    </Accordion>
-  );
-}
-
 // ─────────────────────────────────────────────
 // MAIN MODULE
 // ─────────────────────────────────────────────
@@ -4014,75 +3933,235 @@ function PurchasingPosView({
   );
 }
 
+type SupplierFilter = 'all' | 'open' | 'moq' | 'lead';
+type SupplierSort = 'default' | 'name' | 'open';
+const SUPPLIER_FILTERS: Array<[SupplierFilter, string]> = [
+  ['all', 'All'], ['open', 'Open POs'], ['moq', 'Missing MOQ'], ['lead', 'Missing lead time'],
+];
+const SUPPLIER_SORTS: Array<[SupplierSort, string]> = [
+  ['default', 'Default'], ['name', 'Name'], ['open', 'Open PO count'],
+];
+
 function PurchasingSuppliersView({
   data, isLoading, isError, onUpdateSupplier, onCreateSupplier, onDeleteSupplier,
 }: SuppliersPortalPageProps) {
+  const [params, setParams] = useSearchParams();
   const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-  const suppliers = data?.suppliers ?? [];
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<SupplierFilter>('all');
+  const [sort, setSort] = useState<SupplierSort>('default');
+  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+  const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // CRUD callbacks refetch asynchronously. Keep returned records usable until
+  // the authoritative projection catches up, and hide successfully removed rows.
+  const [saved, setSaved] = useState<Supplier | null>(null);
+  const [removed, setRemoved] = useState<number[]>([]);
+  const suppliers = (data?.suppliers ?? []).filter((s) => !removed.includes(s.id))
+    .map((s) => saved?.id === s.id ? saved : s);
+  if (saved && !removed.includes(saved.id) && !suppliers.some((s) => s.id === saved.id)) suppliers.push(saved);
+  useEffect(() => {
+    if (saved && data?.suppliers.some((s) => s.id === saved.id &&
+      s.name === saved.name && s.contact_name === saved.contact_name &&
+      s.contact_email === saved.contact_email && s.contact_phone === saved.contact_phone &&
+      s.moq === saved.moq && s.lead_time_days === saved.lead_time_days)) setSaved(null);
+  }, [data, saved]);
+  const loaded = !isLoading && !isError && data != null;
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const backRef = useRef<HTMLButtonElement | null>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  const canMeasure = typeof ResizeObserver !== 'undefined';
+  useLayoutEffect(() => {
+    const el = workspaceRef.current;
+    if (!el || !canMeasure) return;
+    const measure = () => setWidth(el.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canMeasure]);
+  const narrow = width != null && width > 0 && width < NARROW_WORKSPACE_PX;
+  const layoutKnown = !canMeasure || width != null;
+  const requested = params.get('supplier');
+  const selected = suppliers.find((s) => String(s.id) === requested) ?? (narrow ? null : suppliers[0] ?? null);
+  const pane = narrow ? selected ? 'detail' : 'list' : null;
+  const select = (id: number | null, replace = false) => {
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (id == null) next.delete('supplier');
+      else next.set('supplier', String(id));
+      return next;
+    }, { replace });
+  };
+  useEffect(() => {
+    if (loaded && requested && !suppliers.some((s) => String(s.id) === requested)) {
+      // One authority repairs invalid selection. A completed deletion selects
+      // a remaining record here, rather than racing navigation from its handler.
+      const replacement = removed.some((id) => String(id) === requested) ? suppliers[0] : null;
+      setParams((previous) => {
+        const next = new URLSearchParams(previous);
+        if (replacement) next.set('supplier', String(replacement.id));
+        else next.delete('supplier');
+        return next;
+      }, { replace: true });
+    }
+  }, [loaded, requested, data, saved, removed, setParams]);
+  const previousPane = useRef<{ pane: typeof pane; id: number | null }>({ pane, id: selected?.id ?? null });
+  useEffect(() => {
+    const previous = previousPane.current;
+    previousPane.current = { pane, id: selected?.id ?? null };
+    if (!pane || !previous.pane || pane === previous.pane) return;
+    workspaceRef.current?.scrollIntoView?.({ block: 'start' });
+    if (pane === 'detail') backRef.current?.focus();
+    else workspaceRef.current?.querySelector<HTMLElement>(`[data-testid="supplier-row-${previous.id}"]`)?.focus();
+  }, [pane, selected?.id]);
+  const query = search.trim().toLowerCase();
+  const filtered = suppliers.filter((s) =>
+    [s.name, s.contact_name, s.contact_email, s.contact_phone].some((value) => value?.toLowerCase().includes(query)) &&
+    (filter === 'all' || (filter === 'open' ? Number(s.open_po_count) > 0 : filter === 'moq' ? s.moq == null : s.lead_time_days == null)));
+  const visible = filtered.map((supplier, index) => ({ supplier, index })).sort((a, b) =>
+    (sort === 'name' ? a.supplier.name.localeCompare(b.supplier.name, undefined, { sensitivity: 'base' }) :
+      sort === 'open' ? Number(b.supplier.open_po_count) - Number(a.supplier.open_po_count) : 0) || a.index - b.index).map((row) => row.supplier);
+  const active = Boolean(query) || filter !== 'all';
+  const hiddenSelection = selected && !visible.some((s) => s.id === selected.id);
+  const clear = () => { setSearch(''); setFilter('all'); };
+  const edit = () => { if (selected) { setEditingSupplier(selected); setSupplierFormOpen(true); } };
+  const removeSupplierButton = selected && (<Button variant="outlined" color="error" disabled={deleting} sx={{ textTransform: 'none', color: 'var(--critical-text)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--critical-border)', bgcolor: 'transparent' } }} onClick={async () => {
+                  const target = selected;
+                  if (!window.confirm(`Remove ${target.name}? Past purchase orders are kept; the supplier is hidden from new POs.`)) return;
+                  setDeleting(true); setDeleteError(null);
+                  try {
+                    await onDeleteSupplier(target.id);
+                    setRemoved((previous) => [...previous, target.id]);
+                    if (saved?.id === target.id) setSaved(null);
+                  } catch (error: any) { setDeleteError(error?.response?.data?.error ?? 'Failed to remove supplier.'); }
+                  finally { setDeleting(false); }
+                }}>{deleting ? 'Removing…' : 'Remove supplier…'}</Button>);
+  const editSupplierButton = <Button variant="contained" onClick={edit} disabled={deleting} sx={{ textTransform: 'none' }}>Edit supplier</Button>;
 
   return (
-    <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
-
+    <Box ref={workspaceRef} data-testid="suppliers-workspace" data-layout={narrow ? 'narrow' : 'wide'} data-pane={pane ?? undefined}
+      sx={{ px: { xs: 2, md: '32px' }, pt: '20px', pb: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0,
+        '@media (min-width: 1100px)': narrow ? {} : { flex: 1, minHeight: 0 },
+        [COARSE_POINTER]: { '& button, & .MuiMenuItem-root': { minHeight: 44 }, '& .MuiInputBase-root': { minHeight: 44 } } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
+        <Box><Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>Suppliers</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{plural(suppliers.length, 'supplier')} · Contacts and purchasing terms.</Typography></Box>
+        <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
+          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>Add supplier</Button>
+      </Box>
       {isLoading && <ModuleLoadingSkeleton />}
-
-      {isError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          Failed to load supplier data. Please refresh.
-        </Alert>
-      )}
-
-      {!isLoading && !isError && (
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb:2 }}>
-            <Star size={18} />
-            <Typography variant="subtitle1" fontWeight={700}>Suppliers</Typography>
-            <Chip label={suppliers.length} size="small" />
-            <Box sx={{ flex: 1 }} />
-            <Button size="small" startIcon={<Plus size={16} />} variant="contained"
-              onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
-              sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
-              Add supplier
-            </Button>
+      {isError && <Alert severity="error">Failed to load supplier data. Please refresh.</Alert>}
+      {loaded && layoutKnown && (
+        suppliers.length === 0 ? <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
+          <Typography variant="body2" color="text.secondary">No suppliers added yet. Add your first supplier to get started.</Typography>
+        </Paper> :
+        <Box sx={narrow ? { display: 'grid', gap: '12px', gridTemplateColumns: 'minmax(0, 1fr)' } : {
+          display: 'grid', gap: '20px', gridTemplateColumns: 'minmax(0, 1fr)',
+          '@media (min-width: 1100px)': { gridTemplateColumns: '372px minmax(0, 1fr)', flex: 1, minHeight: 0 } }}>
+          <Box component="nav" aria-label="Suppliers" hidden={pane === 'detail'} sx={{ minHeight: 0, minWidth: 0, display: pane === 'detail' ? 'none' : 'flex', flexDirection: 'column', border: '1px solid var(--rule)', borderRadius: '12px', bgcolor: 'var(--surface)', overflow: 'hidden' }}>
+            <Box sx={{ flexShrink: 0, p: '10px', display: 'grid', gap: '8px', borderBottom: '1px solid var(--rule)' }}>
+              <Box role="search" aria-label="Filter suppliers" sx={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <TextField size="small" placeholder="Search suppliers…" inputProps={{ 'aria-label': 'Search suppliers' }} value={search} onChange={(e) => setSearch(e.target.value)}
+                  sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { height: 32, fontSize: 13, [COARSE_POINTER]: { height: 44 } } }} />
+                <Button variant="outlined" aria-label={`Supplier filters: ${SUPPLIER_FILTERS.find(([key]) => key === filter)?.[1]}`} aria-expanded={Boolean(filterAnchor)} onClick={(e) => setFilterAnchor(e.currentTarget)} sx={LIST_TOOL_SX}>Filters{filter !== 'all' ? ' · 1' : ''}</Button>
+                <Button variant="outlined" aria-label={`Supplier sort: ${SUPPLIER_SORTS.find(([key]) => key === sort)?.[1]}`} aria-expanded={Boolean(sortAnchor)} onClick={(e) => setSortAnchor(e.currentTarget)} sx={LIST_TOOL_SX}>Sort</Button>
+              </Box>
+              <Menu anchorEl={filterAnchor} open={Boolean(filterAnchor)} onClose={() => setFilterAnchor(null)} slotProps={{ paper: { sx: COARSE_MENU_SX } }}>
+                {SUPPLIER_FILTERS.map(([key, label]) => <MenuItem key={key} role="menuitemradio" aria-checked={filter === key} selected={filter === key} onClick={() => { setFilter(key); setFilterAnchor(null); }}>{label}</MenuItem>)}
+                <MenuItem disabled={!active} onClick={() => { clear(); setFilterAnchor(null); }}>Clear filters</MenuItem>
+              </Menu>
+              <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)} slotProps={{ paper: { sx: COARSE_MENU_SX } }}>
+                {SUPPLIER_SORTS.map(([key, label]) => <MenuItem key={key} role="menuitemradio" aria-checked={sort === key} selected={sort === key} onClick={() => { setSort(key); setSortAnchor(null); }}>{label}</MenuItem>)}
+              </Menu>
+              <Typography variant="caption" color="text.secondary" role="status">{active ? `Showing ${visible.length} of ${suppliers.length} suppliers` : plural(suppliers.length, 'supplier')}</Typography>
+              {hiddenSelection && <Button size="small" onClick={clear} sx={{ textTransform: 'none' }}>Show {selected.name}</Button>}
+            </Box>
+            <Box sx={{ ...THIN_SCROLL_SX, flex: 1, minHeight: 0, overflowY: 'auto', py: '4px', display: 'flex', flexDirection: 'column', gap: '1px', '@media (max-width: 1099.98px)': { maxHeight: narrow ? 'none' : 480 } }}>
+              {visible.length === 0 && <Box sx={{ p: 3 }}><Typography variant="body2">No suppliers match these filters.</Typography><Button onClick={clear}>Clear filters</Button></Box>}
+              {visible.map((s) => <Tooltip key={s.id} title={[s.name, s.contact_name, s.contact_email, s.contact_phone].filter(Boolean).join(' · ')} placement="right" enterDelay={400} arrow>
+                <Box component="button" type="button" data-testid={`supplier-row-${s.id}`} aria-current={selected?.id === s.id ? 'true' : undefined} onClick={() => { setDeleteError(null); select(s.id); }}
+                  sx={{ all: 'unset', boxSizing: 'border-box', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', columnGap: '10px', rowGap: '3px', mx: '6px', px: '14px', py: '8px', borderRadius: '8px', cursor: 'pointer',
+                    bgcolor: selected?.id === s.id ? 'var(--accent-ghost)' : 'transparent', boxShadow: selected?.id === s.id ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
+                    '&:hover': selected?.id === s.id ? {} : { bgcolor: 'var(--bg-2)' }, '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '-2px' } }}>
+                  <Box component="span" sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</Box>
+                  <Box component="span" sx={{ fontSize: 12, color: 'var(--ink-2)' }}>{Number(s.open_po_count)} open {Number(s.open_po_count) === 1 ? 'PO' : 'POs'}</Box>
+                  <Box component="span" sx={{ fontSize: 12, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.contact_name || s.contact_email || s.contact_phone || 'No contact details'}</Box>
+                  <Box component="span" sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{Number(s.total_pos)} received {Number(s.total_pos) === 1 ? 'PO' : 'POs'}</Box>
+                </Box>
+              </Tooltip>)}
+            </Box>
           </Box>
-
-          {suppliers.length === 0 ? (
-            <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
-              <Star size={36} style={{ opacity: 0.3 }} />
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                No suppliers added yet. Create a PO to add your first supplier.
-              </Typography>
-            </Paper>
-          ) : (
-            suppliers.map((s) => (
-              <SupplierAccordion
-                key={s.id}
-                supplier={s}
-                onEdit={(sup) => { setEditingSupplier(sup); setSupplierFormOpen(true); }}
-                onDelete={async (sup) => {
-                  if (window.confirm(`Remove ${sup.name}? Past purchase orders are kept; the supplier is hidden from new POs.`)) {
-                    await onDeleteSupplier(sup.id);
-                  }
-                }}
-              />
-            ))
-          )}
+          <Box hidden={pane === 'list'} sx={{ minHeight: 0, minWidth: 0, display: pane === 'list' ? 'none' : 'flex', flexDirection: 'column', gap: '8px' }}>
+            {pane === 'detail' && <Button ref={backRef} startIcon={<ChevronLeft size={18} />} onClick={() => select(null)} sx={{ alignSelf: 'flex-start', minHeight: 44, color: 'var(--ink-2)', textTransform: 'none' }}>Back to suppliers</Button>}
+            {selected && <Box component="section" aria-label={`Supplier details: ${selected.name}`}
+              sx={{ display: 'flex', flexDirection: 'column', flex: narrow ? '0 0 auto' : 1, minHeight: 0, minWidth: 0,
+                border: '1px solid var(--rule)', borderRadius: '14px', bgcolor: 'var(--surface)', overflow: 'hidden', overflowWrap: 'anywhere' }}>
+              <Box component="header" sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, flexShrink: 0,
+                px: narrow ? '16px' : '28px', pt: '20px', pb: '14px' }}>
+                <Typography component="h2" sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.2, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{selected.name}</Typography>
+                {!selected.active && <Chip label="Inactive" size="small" sx={{ alignSelf: 'flex-start' }} />}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <RatingBadge label="On-time" value={selected.on_time_rate} />
+                  <RatingBadge label="Fill" value={selected.fill_rate} />
+                </Box>
+              </Box>
+              <Box sx={{ ...THIN_SCROLL_SX, flex: narrow ? '0 0 auto' : 1, minHeight: 0, minWidth: 0,
+                overflow: narrow ? 'visible' : 'auto', px: narrow ? '16px' : '28px', pb: 2 }}>
+                <Box component="section" aria-labelledby="supplier-contact-heading" sx={{ display: 'grid', gap: 1, pt: 1 }}>
+                  <Typography id="supplier-contact-heading" component="h3" sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Contact</Typography>
+                  <Typography variant="body2">Contact: {selected.contact_name || '—'}</Typography>
+                  <Typography variant="body2">Email: {selected.contact_email || '—'}</Typography>
+                  <Typography variant="body2">Phone: {selected.contact_phone || '—'}</Typography>
+                </Box>
+                <Divider sx={{ my: 2 }} />
+                <Box component="section" aria-labelledby="supplier-terms-heading" sx={{ display: 'grid', gap: 1 }}>
+                  <Typography id="supplier-terms-heading" component="h3" sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Purchasing terms</Typography>
+                  <Typography variant="body2">MOQ: {selected.moq != null ? `${selected.moq} units` : '—'}</Typography>
+                  {selected.moq == null && <Button onClick={edit} sx={{ justifySelf: 'start', textTransform: 'none' }}>Set minimum order →</Button>}
+                  <Typography variant="body2">Lead time: {selected.lead_time_days != null ? plural(selected.lead_time_days, 'day') : '—'}</Typography>
+                  {selected.lead_time_days == null && <Button onClick={edit} sx={{ justifySelf: 'start', textTransform: 'none' }}>Set delivery time →</Button>}
+                </Box>
+                <Divider sx={{ my: 2 }} />
+                <Box component="section" aria-labelledby="supplier-performance-heading" sx={{ display: 'grid', gap: 1 }}>
+                  <Typography id="supplier-performance-heading" component="h3" sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Supplier performance</Typography>
+                  <Typography variant="body2">Open POs: {selected.open_po_count}</Typography>
+                  <Typography variant="body2">Received POs: {selected.total_pos}</Typography>
+                  <Typography variant="body2">Defect rate: {selected.defect_rate != null ? `${selected.defect_rate}%` : '—'}</Typography>
+                </Box>
+              </Box>
+              <Box component="footer" sx={{ flexShrink: 0, borderTop: '1px solid var(--rule)', boxShadow: 'inset 2px 0 0 var(--accent)',
+                px: narrow ? '16px' : '28px', py: '12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 3, rowGap: 1,
+                ...(narrow ? { flexDirection: 'column', alignItems: 'stretch' } : null),
+                '& .MuiButton-contained': { minHeight: 44, minWidth: narrow ? 0 : 184, px: 2.5, fontSize: 14, borderRadius: '8px' },
+                '& .MuiButton-contained:not(.Mui-disabled)': { bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)', opacity: 1 } } }}>
+                {deleteError && <Alert severity="error" sx={{ flex: narrow ? '0 0 auto' : '1 1 240px', minWidth: 0 }}>{deleteError}</Alert>}
+                <Box role="group" aria-label="Supplier actions" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'nowrap', gap: '10px', ml: 'auto', flex: '0 0 auto', maxWidth: '100%',
+                  '& .MuiButton-root': { minHeight: 44, borderRadius: '8px', whiteSpace: 'nowrap' },
+                  ...(narrow ? { flexDirection: 'column', alignItems: 'stretch', ml: 0, width: '100%', '& .MuiButton-root': { minHeight: 44, borderRadius: '8px', whiteSpace: 'normal', width: '100%' } } : null) }}>
+                  {!narrow && removeSupplierButton}
+                  {editSupplierButton}
+                  {narrow && removeSupplierButton}
+                </Box>
+              </Box>
+            </Box>}
+          </Box>
         </Box>
       )}
-
-      <SupplierFormDialog
-        open={supplierFormOpen}
-        mode={editingSupplier ? 'edit' : 'add'}
-        initial={editingSupplier ?? undefined}
-        onClose={() => { setSupplierFormOpen(false); setEditingSupplier(null); }}
-        onSubmit={async (input) => {
-          if (editingSupplier) await onUpdateSupplier(editingSupplier.id, input);
-          else await onCreateSupplier(input);
-        }}
-      />
+      <Box sx={{ [COARSE_POINTER]: { '& .MuiButton-root': { minHeight: 44 } } }}>
+        <SupplierFormDialog open={supplierFormOpen} mode={editingSupplier ? 'edit' : 'add'} initial={editingSupplier ?? undefined}
+          onClose={() => { setSupplierFormOpen(false); setEditingSupplier(null); }}
+          onSubmit={async (input) => {
+            const result = editingSupplier ? await onUpdateSupplier(editingSupplier.id, input) : await onCreateSupplier(input);
+            setSaved(result);
+            select(result.id);
+          }} />
+      </Box>
     </Box>
   );
-};
+}
 
 // ─────────────────────────────────────────────
 // ASSIGN SUPPLIER DIALOG (§7.6 ISS-SR-03)

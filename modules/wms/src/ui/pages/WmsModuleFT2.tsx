@@ -3564,12 +3564,14 @@ function WmsModuleFT2Inner({
         p: { xs: '20px 16px', md: '24px' },
         width: '100%',
         maxWidth: 'none',
-        height: '100%',
+        // Management grows with work; AppLayout owns vertical page scrolling.
+        // Preserve the operator execution shell's existing scroll behavior.
+        height: isOperatorShell ? '100%' : 'auto',
         minHeight: 0,
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        overflowY: 'auto',
+        overflowY: isOperatorShell ? 'auto' : 'visible',
         bgcolor: 'var(--bg)',
       }}
     >
@@ -4133,11 +4135,10 @@ function WmsModuleFT2Inner({
         aria-hidden={isOpsConsoleOpen ? true : undefined}
         inert={isOpsConsoleOpen ? true : undefined}
         sx={{
-          // 1a: management is a flex column so the pipeline board can take the
-          // remaining height; the operator shell keeps its grid.
+          // Management grows with visible work; the operator keeps its grid.
           ...(isOperatorShell
             ? { display: 'grid', alignContent: 'start' }
-            : { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }),
+            : { display: 'flex', flexDirection: 'column', flex: '1 0 auto', minHeight: 'auto' }),
           gap: 2,
           // VISUAL-PARITY-02: Operations stays visibly present (same nodes,
           // same geometry) under the Console overlay; inert + aria-hidden +
@@ -4466,18 +4467,18 @@ function WmsModuleFT2Inner({
 
       {/* WMS-OPS-OWNER-1A-ALIGNMENT — one pipeline board. The five stages are
           its direct children on one continuous surface; one stable track
-          definition (no 1/2/5 wrapping). PARITY-04: at desktop the board
-          neither scrolls nor forces page scroll (shrinkable, minHeight 0);
-          only below lg, where tracks get a minimum width, does the BOARD
-          scroll horizontally — a stage never scrolls. */}
+          definition (no 1/2/5 wrapping). The page scrolls vertically when
+          work exceeds the viewport. Below lg the BOARD also scrolls
+          horizontally — a stage never scrolls. */}
       {!isLoading && !loadingSession && !isOperatorShell && (
         <Box
           component="section"
           role="region"
           aria-label="Warehouse pipeline"
           sx={{
-            flex: '1 1 auto',
-            minHeight: 0,
+            flex: '1 0 auto',
+            // Keep the horizontal scroll container at least as tall as its work.
+            minHeight: 'min-content',
             display: 'grid',
             alignItems: 'stretch',
             gridTemplateColumns: `repeat(${OPERATIONS_LIFECYCLE_STAGES.length}, minmax(0, 1fr))`,
