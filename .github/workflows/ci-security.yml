@@ -37,6 +37,8 @@ on:
       - 'tests/integration/wms/receive-barcode-readiness-1085.test.ts'
       - 'tests/integration/wms/stow-receive-lineage-contract.test.ts'
       - 'tests/integration/wms/receive-held-safety-s4-2.test.ts'
+      - 'tests/integration/wms/receive-finalization-held-0225-migration-safety.test.ts'
+      - 'tests/integration/wms/receive-grouped-reconciliation-gh1241-s3b.test.ts'
   push:
     branches: [main]
     paths:
@@ -72,6 +74,8 @@ on:
       - 'tests/integration/wms/receive-barcode-readiness-1085.test.ts'
       - 'tests/integration/wms/stow-receive-lineage-contract.test.ts'
       - 'tests/integration/wms/receive-held-safety-s4-2.test.ts'
+      - 'tests/integration/wms/receive-finalization-held-0225-migration-safety.test.ts'
+      - 'tests/integration/wms/receive-grouped-reconciliation-gh1241-s3b.test.ts'
 
 jobs:
   rls-security:
@@ -539,7 +543,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5|wms/receive-recoverable-foundation-0224-migration-safety|wms/receive-delivery-accounting-0208-migration-safety|wms/receive-barcode-readiness-1085|wms/stow-receive-lineage-contract'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5|wms/receive-recoverable-foundation-0224-migration-safety|wms/receive-delivery-accounting-0208-migration-safety|wms/receive-barcode-readiness-1085|wms/stow-receive-lineage-contract|wms/receive-finalization-held-0225-migration-safety|wms/receive-grouped-reconciliation-gh1241-s3b'
 
       # S4-2 held-unit safety commits held/discarded fixtures, which the 0224
       # rollback guard rightly treats as persisted recovery evidence. It runs in
