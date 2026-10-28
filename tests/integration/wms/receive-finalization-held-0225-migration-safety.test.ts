@@ -261,15 +261,7 @@ describe('S4-3A — migration 0225 grouped finalization held accounting', () => 
       expect(failureCode(await inSavepoint(trx, (sp) =>
         sp(TABLE).insert(lineRow(f, 0, { accepted: 2, rejected: 1, held: 1, missing: 1, deferred: 0 }))))).toBeNull();
 
-      // Another tenant neither sees the held allocation nor may write one for this shop.
-      await asTenant(trx, otherShopId);
-      const visible = await trx(TABLE).where({ reconciliation_id: f.reconciliationId }).count<{ n: string }>('* as n').first();
-      expect(Number(visible?.n)).toBe(0);
-      const crossTenant = await inSavepoint(trx, (sp) =>
-        sp(TABLE).insert(lineRow(f, 1, { accepted: 2, rejected: 1, held: 1, missing: 1, deferred: 0 })));
-      expect(failureCode(crossTenant)).toBe('42501');
-      await asTenant(trx, shopId);
-
+      // Schema posture is read under the migration role.
       const posture = await trx.raw(
         `SELECT c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
                 has_table_privilege('sf_app', c.oid, 'SELECT') AS can_select,
@@ -286,6 +278,30 @@ describe('S4-3A — migration 0225 grouped finalization held accounting', () => 
         rls: true, forced: true, can_select: true, can_insert: true,
         can_update: false, can_delete: false, can_truncate: false, append_only_triggers: 2,
       });
+
+      // The migration role is the cluster superuser and bypasses RLS, so tenant
+      // isolation is asserted under the real runtime authority (precedent:
+      // receive-line-recount-s8c5 asRuntimeRole). Reverts when the trx rolls back.
+      await trx.raw('SET LOCAL SESSION AUTHORIZATION sf_app');
+      const who = await trx.raw(
+        `SELECT session_user AS s, current_user AS u, r.rolsuper AS super, r.rolbypassrls AS bypass
+           FROM pg_roles r WHERE r.rolname = current_user`,
+      );
+      expect(who.rows[0]).toEqual({ s: 'sf_app', u: 'sf_app', super: false, bypass: false });
+      const visibleTo = async (tenant: number) => {
+        await asTenant(trx, tenant);
+        const row = await trx(TABLE).where({ reconciliation_id: f.reconciliationId }).count<{ n: string }>('* as n').first();
+        return Number(row?.n);
+      };
+
+      // Positive control: the owning tenant sees its held allocation.
+      expect(await visibleTo(shopId)).toBe(1);
+      // Another tenant neither sees it nor may write one for this shop.
+      expect(await visibleTo(otherShopId)).toBe(0);
+      const crossTenant = await inSavepoint(trx, (sp) =>
+        sp(TABLE).insert(lineRow(f, 1, { accepted: 2, rejected: 1, held: 1, missing: 1, deferred: 0 })));
+      expect(failureCode(crossTenant)).toBe('42501');
+      expect(await visibleTo(shopId)).toBe(1);
     });
   });
 

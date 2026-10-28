@@ -63,6 +63,10 @@ import * as migration0210 from
   '../../../apps/backend/migrations/20261013150000_0210_receive_grouped_reconciliation';
 import * as migration0209 from
   '../../../apps/backend/migrations/20261012150000_0209_receive_line_count_confirmation';
+import * as migration0223 from
+  '../../../apps/backend/migrations/20261027120000_0223_receive_line_recount_supersession';
+import * as migration0225 from
+  '../../../apps/backend/migrations/20261028150000_0225_receive_finalization_held_recoverable';
 import * as migration0211 from
   '../../../apps/backend/migrations/20261013160000_0211_receive_count_confirmation_events_privileges';
 
@@ -1438,13 +1442,43 @@ describe('GH-1241 S3-B — migration 0210 is tenant-isolated, append-only and ne
     return { shop, j, rev };
   }
 
+  /**
+   * Later migrations build on 0210 objects: 0223's receive_line_recount_events
+   * FK depends on receive_job_lines_shop_job_line_unique, and 0225 alters
+   * receive_reconciliation_finalization_lines. A valid rollback of 0210 therefore
+   * first rolls those back in reverse order, and their DOWNs refuse on evidence
+   * too. Recount evidence (other suites commit it) is removed ONLY inside this
+   * always-rolled-back transaction (precedent: receive-line-recount-s8c5 M2).
+   */
+  async function withoutRecountEvidence(trx: Knex.Transaction) {
+    await trx.raw(`SET LOCAL row_security = off`);
+    await trx.raw(`ALTER TABLE receive_line_recount_events DISABLE TRIGGER USER`);
+    await trx.raw(`UPDATE receive_exceptions SET superseded_at = NULL, superseded_by = NULL, superseded_by_recount_event_id = NULL WHERE superseded_at IS NOT NULL`);
+    await trx.raw(`DELETE FROM receive_line_recount_events`);
+    await trx.raw(`ALTER TABLE receive_line_recount_events ENABLE TRIGGER USER`);
+  }
+
+  const DEPENDENTS_OF_0210 = [
+    { name: '0225', migration: migration0225 },
+    { name: '0223', migration: migration0223 },
+  ];
+
   it('M1 — head schema is FORCE-RLS, SELECT/INSERT-only for sf_app and append-only; without evidence DOWN → UP round-trips', async () => {
     await inRolledBackTransaction(async (trx) => {
       expect(await schema0210(trx)).toEqual(HEAD);
       await withoutPersistedEvidence(trx);
+      await withoutRecountEvidence(trx);
+      for (const dependent of DEPENDENTS_OF_0210) {
+        expect({ [dependent.name]: await inSavepoint(trx, (sp) => dependent.migration.down(sp)) })
+          .toEqual({ [dependent.name]: { ok: true } });
+      }
       expect(await inSavepoint(trx, (sp) => migration0210.down(sp))).toEqual({ ok: true });
       expect(await schema0210(trx)).toEqual(PRE_0210);
       expect(await inSavepoint(trx, (sp) => migration0210.up(sp))).toEqual({ ok: true });
+      for (const dependent of [...DEPENDENTS_OF_0210].reverse()) {
+        expect({ [dependent.name]: await inSavepoint(trx, (sp) => dependent.migration.up(sp)) })
+          .toEqual({ [dependent.name]: { ok: true } });
+      }
       expect(await schema0210(trx)).toEqual(HEAD);
     });
     await inRolledBackTransaction(async (trx) => {
