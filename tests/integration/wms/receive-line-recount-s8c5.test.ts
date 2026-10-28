@@ -477,7 +477,9 @@ describe('S8-C5 — per-line Recount supersedes shortfall allocations before ins
     await miscountedWithAllocations(j);
     const before = await state(j);
     const intruder = await addOperator(shop);
-    expect((await httpRecount(j, crypto.randomUUID(), intruder.token)).status).toBe(403);
+    const refused = await httpRecount(j, crypto.randomUUID(), intruder.token);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('JOB_CLAIMED_BY_OTHER');
     expect([403, 404]).toContain((await httpRecount(j, crypto.randomUUID(), other.token)).status);
     expect(await state(j)).toEqual(before);
     // Tenant RLS on the event table.
