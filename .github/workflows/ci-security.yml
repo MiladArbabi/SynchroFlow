@@ -32,6 +32,8 @@ on:
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
       - 'tests/integration/wms/receive-line-recount-s8c5.test.ts'
+      - 'tests/integration/wms/receive-recoverable-foundation-0224-migration-safety.test.ts'
+      - 'tests/integration/wms/receive-delivery-accounting-0208-migration-safety.test.ts'
   push:
     branches: [main]
     paths:
@@ -62,6 +64,8 @@ on:
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
       - 'tests/integration/wms/receive-line-recount-s8c5.test.ts'
+      - 'tests/integration/wms/receive-recoverable-foundation-0224-migration-safety.test.ts'
+      - 'tests/integration/wms/receive-delivery-accounting-0208-migration-safety.test.ts'
 
 jobs:
   rls-security:
@@ -529,7 +533,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5|wms/receive-recoverable-foundation-0224-migration-safety|wms/receive-delivery-accounting-0208-migration-safety'
 
       - name: Restore runner network
         if: always()
