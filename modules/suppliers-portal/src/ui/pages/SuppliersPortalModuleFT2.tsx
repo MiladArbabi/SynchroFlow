@@ -2931,9 +2931,27 @@ function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth sx={{ '@media (pointer: coarse)': { '& .MuiButton-root': { minHeight: 44 }, '& .MuiInputBase-root': { minHeight: 44 } } }}>
-      <DialogTitle>{mode === 'add' ? 'Add supplier' : 'Edit supplier'}</DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+    <EntityDetailModal
+      entityId={open ? (initial?.id ?? 'new-supplier') : null}
+      onClose={onClose}
+      title={mode === 'add' ? 'Add supplier' : 'Edit supplier'}
+      maxWidth="md"
+      footerActions={
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1, flexWrap: 'wrap',
+          '@media (pointer: coarse)': { '& .MuiButton-root': { minHeight: 44 } } }}>
+          <Button variant="outlined" onClick={onClose}
+            sx={{ color: 'var(--ink-3)', borderColor: 'var(--rule)', '&:hover': { borderColor: 'var(--rule-2)', bgcolor: 'var(--surface)' } }}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleSave()} disabled={submitting} variant="contained"
+            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+            {mode === 'add' ? 'Add supplier' : 'Save changes'}
+          </Button>
+        </Box>
+      }
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1,
+        '@media (pointer: coarse)': { '& .MuiInputBase-root': { minHeight: 44 } } }}>
         {error && <Alert severity="error">{error}</Alert>}
         <TextField label="Name *" size="small" fullWidth value={form.name}
           onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
@@ -2949,15 +2967,8 @@ function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
         <TextField label="Lead time (days)" type="number" size="small" fullWidth value={form.lead_time_days}
           onChange={(e) => setForm((p) => ({ ...p, lead_time_days: e.target.value }))}
           helperText="Days from PO sent to goods received. Used to compute the best reorder date." />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button onClick={handleSave} disabled={submitting} variant="contained"
-          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
-          {mode === 'add' ? 'Add supplier' : 'Save changes'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+      </Box>
+    </EntityDetailModal>
   );
 }
 

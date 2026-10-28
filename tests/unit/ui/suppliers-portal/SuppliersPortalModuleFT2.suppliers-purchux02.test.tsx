@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
 import Module, { Supplier, SuppliersPortalPageProps } from '../../../../modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2';
 
 const alpha: Supplier = { id: 1, name: 'Alpha', contact_name: 'Alice', contact_email: 'alice@example.com', contact_phone: '123', active: true, moq: null, lead_time_days: 4, open_po_count: 2, total_pos: 8, on_time_rate: 90, fill_rate: 95, defect_rate: 3 };
@@ -22,14 +23,14 @@ function Probe() {
   const navigate = useNavigate();
   return <><button onClick={() => navigate(-1)}>history back</button><button onClick={() => navigate(1)}>history forward</button></>;
 }
-function setup(url = '/?keep=yes', overrides: Partial<SuppliersPortalPageProps> = {}) {
+function setup(url = '/?keep=yes', overrides: Partial<SuppliersPortalPageProps> = {}, mode: 'light' | 'dark' = 'light') {
   const props = {
     view: 'suppliers', data: { suppliers: [beta, alpha], purchase_orders: [], never_ordered: [], never_ordered_count: 0 }, isLoading: false, isError: false,
     onCreateSupplier: jest.fn().mockResolvedValue({ ...alpha, id: 3, name: 'Gamma' }),
     onUpdateSupplier: jest.fn().mockResolvedValue({ ...beta, name: 'Updated' }),
     onDeleteSupplier: jest.fn().mockResolvedValue(undefined), ...overrides,
   } as unknown as SuppliersPortalPageProps;
-  const tree = (p: SuppliersPortalPageProps) => <MemoryRouter initialEntries={[url]}><Module {...p} /><Probe /></MemoryRouter>;
+  const tree = (p: SuppliersPortalPageProps) => <ThemeProvider theme={createTheme({ palette: { mode } })}><MemoryRouter initialEntries={[url]}><Module {...p} /><Probe /></MemoryRouter></ThemeProvider>;
   const result = render(tree(props));
   return { props, ...result, rerenderProps: (p: SuppliersPortalPageProps) => result.rerender(tree(p)) };
 }
@@ -174,4 +175,45 @@ it('uses singular and plural PO counts in supplier identities', () => {
   expect(row(1)).toHaveTextContent('1 received PO');
   expect(row(2)).toHaveTextContent('5 open POs');
   expect(row(2)).toHaveTextContent('8 received POs');
+});
+
+it('initializes every edit field in the canonical light-theme modal and resets add fields', async () => {
+  setup('/?supplier=2');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit supplier' }));
+  const dialog = screen.getByRole('dialog', { name: 'Edit supplier' });
+  expect(within(dialog).getByLabelText('Name *')).toHaveValue('Beta');
+  expect(within(dialog).getByLabelText('Contact name')).toHaveValue('Bob');
+  expect(within(dialog).getByLabelText('Email')).toHaveValue('bob@example.com');
+  expect(within(dialog).getByLabelText('Phone')).toHaveValue('456');
+  expect(within(dialog).getByLabelText('Min order qty (MOQ)')).toHaveValue(10);
+  expect(within(dialog).getByLabelText('Lead time (days)')).toHaveValue(null);
+  expect(within(dialog).getByText('Units this supplier requires per order. Leave blank for no minimum.')).toBeVisible();
+  expect(within(dialog).getByText('Days from PO sent to goods received. Used to compute the best reorder date.')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Add supplier' }));
+  await waitFor(() => {
+    const add = screen.getByRole('dialog', { name: 'Add supplier' });
+    expect(within(add).getByLabelText('Name *')).toHaveValue('');
+    expect(within(add).getByLabelText('Email')).toHaveValue('');
+    expect(within(add).getByLabelText('Min order qty (MOQ)')).toHaveValue(null);
+  });
+});
+it('renders the accessible shared shell in dark mode and submits all supplier fields once', async () => {
+  let resolve!: (value: Supplier) => void;
+  const save = jest.fn(() => new Promise<Supplier>((done) => { resolve = done; }));
+  setup('/?supplier=1', { onUpdateSupplier: save }, 'dark');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit supplier' }));
+  const dialog = screen.getByRole('dialog', { name: 'Edit supplier' });
+  expect(within(dialog).getByRole('button', { name: 'Close' })).toBeVisible();
+  fireEvent.change(within(dialog).getByLabelText('Name *'), { target: { value: ' Alpha changed ' } });
+  fireEvent.change(within(dialog).getByLabelText('Min order qty (MOQ)'), { target: { value: '12' } });
+  const submit = within(dialog).getByRole('button', { name: 'Save changes' });
+  fireEvent.click(submit);
+  expect(submit).toBeDisabled();
+  fireEvent.click(submit);
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save).toHaveBeenCalledWith(1, { name: 'Alpha changed', contact_name: 'Alice', contact_email: 'alice@example.com', contact_phone: '123', moq: 12, lead_time_days: 4 });
+  await act(async () => resolve({ ...alpha, name: 'Alpha changed', moq: 12 }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
