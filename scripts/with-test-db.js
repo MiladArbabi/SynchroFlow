@@ -187,6 +187,12 @@ function buildChildEnv(testDatabase, input = process.env) {
   return result;
 }
 
+/** True while PUBLIC still holds TEMPORARY or CREATE on the named database. */
+const PUBLIC_DATABASE_AUTHORITY_SQL = `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database d,
+    pg_catalog.aclexplode(COALESCE(d.datacl, pg_catalog.acldefault('d', d.datdba))) a
+   WHERE d.datname = $1 AND a.grantee = 0
+     AND a.privilege_type IN ('TEMPORARY', 'CREATE')) AS public_open`;
+
 function safetyInput(testDatabase, env = process.env) {
   return {
     nodeEnv: 'test',
@@ -264,6 +270,16 @@ async function runLifecycle({ env = process.env, argv = process.argv.slice(2), d
     created = true;
     log(`TEST_DB_CREATED=${testDatabase}`);
 
+    // S8-C5: a new database grants PUBLIC TEMPORARY by default, and migration
+    // 0223 fails closed while the runtime role can create temporary objects.
+    // sf_app may not exist yet (0105 creates it), so prove the PUBLIC ACL here
+    // and the runtime role's effective privilege after migration.
+    await maintenance.query(`REVOKE TEMPORARY ON DATABASE ${quoteIdentifier(testDatabase)} FROM PUBLIC`);
+    const publicAuthority = await maintenance.query(PUBLIC_DATABASE_AUTHORITY_SQL, [testDatabase]);
+    if (publicAuthority.rows[0]?.public_open !== false) {
+      throw new Error('PUBLIC_DATABASE_AUTHORITY_VERIFY_FAILED');
+    }
+
     const provisioned = await provision({ target, administrator: {
       user: env.PGMIGRATION_USER, password: env.PGMIGRATION_PASSWORD },
       mode: 'PROVISION', context: 'disposable-ci', executorPassword: env.SYNCHROFLOW_TEST_EXECUTOR_PASSWORD },
@@ -314,7 +330,9 @@ async function runLifecycle({ env = process.env, argv = process.argv.slice(2), d
           current_database() AS db,
           current_user AS usr,
           r.rolsuper AS rolsuper,
-          r.rolbypassrls AS rolbypassrls
+          r.rolbypassrls AS rolbypassrls,
+          has_database_privilege(current_user, current_database(), 'TEMPORARY') AS can_temp,
+          has_database_privilege(current_user, current_database(), 'CREATE') AS can_create
         FROM pg_roles r
         WHERE r.rolname = current_user
       `);
@@ -331,6 +349,9 @@ async function runLifecycle({ env = process.env, argv = process.argv.slice(2), d
       }
       if (row.rolbypassrls !== false) {
         throw new Error('RUNTIME_VERIFY_FAILED: runtime role bypasses RLS');
+      }
+      if (row.can_temp !== false || row.can_create !== false) {
+        throw new Error('RUNTIME_VERIFY_FAILED: runtime role can create database objects');
       }
 
       // Schema-presence proof, non-mutating: the knex migration-tracking

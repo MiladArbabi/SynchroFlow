@@ -347,7 +347,7 @@ describe('GH-1241 S3C-M4 — grouped-finalized labels, close and Stow handoff', 
     await settle();
     expect(screen.queryByText('Receive complete')).toBeNull();
     expect(closeButton()).not.toBeNull();
-    expect(document.body).toHaveTextContent(/labels outstanding|could not close/i);
+    expect(screen.getByRole('alert')).toHaveTextContent('Some unit labels still need confirmation before this Receive can close.');
     expectNoAccountingWrites(props);
   });
 

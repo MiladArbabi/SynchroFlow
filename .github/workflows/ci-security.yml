@@ -31,6 +31,7 @@ on:
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
+      - 'tests/integration/wms/receive-line-recount-s8c5.test.ts'
   push:
     branches: [main]
     paths:
@@ -60,6 +61,7 @@ on:
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
+      - 'tests/integration/wms/receive-line-recount-s8c5.test.ts'
 
 jobs:
   rls-security:
@@ -332,6 +334,45 @@ jobs:
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: node scripts/with-test-db.js --provision-only
 
+      # S8-C5: migration 0223 fails closed while sf_app can create temporary
+      # objects. A new database grants PUBLIC TEMPORARY by default; remove it
+      # from this job's service database only, before it is migrated.
+      - name: Revoke PUBLIC TEMPORARY on the CI service database
+        run: |
+          set -euo pipefail
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const { Client } = require('pg');
+          (async () => {
+            assert.equal(process.env.PGHOST, '127.0.0.1');
+            assert.equal(process.env.PGDATABASE, 'synchroflow_db');
+            assert.equal(process.env.PGMIGRATION_USER, 'sf_user');
+            const client = new Client({
+              host: process.env.PGHOST, port: Number(process.env.PGPORT),
+              user: process.env.PGMIGRATION_USER, password: process.env.PGMIGRATION_PASSWORD,
+              database: process.env.PGDATABASE, connectionTimeoutMillis: 5000, query_timeout: 5000,
+            });
+            try {
+              await client.connect();
+              const who = await client.query('SELECT current_user AS usr, current_database() AS db');
+              assert.deepEqual(who.rows[0], { usr: 'sf_user', db: 'synchroflow_db' });
+              await client.query('REVOKE TEMPORARY ON DATABASE synchroflow_db FROM PUBLIC');
+              const { rows } = await client.query(
+                `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database d,
+                   pg_catalog.aclexplode(COALESCE(d.datacl, pg_catalog.acldefault('d', d.datdba))) a
+                  WHERE d.datname = 'synchroflow_db' AND a.grantee = 0
+                    AND a.privilege_type IN ('TEMPORARY', 'CREATE')) AS public_open`);
+              assert.equal(rows[0].public_open, false);
+              console.log('CI_SERVICE_DB_PUBLIC_TEMP_REVOKED=PASS');
+            } finally {
+              await client.end();
+            }
+          })().catch(error => {
+            console.error('CI_SERVICE_DB_PUBLIC_TEMP_REVOKED=FAIL code=' + (error.code || error.name));
+            process.exitCode = 1;
+          });
+          JS
+
       - name: Apply migrations and release assertions
         run: npm run migrate -w apps/backend
 
@@ -488,7 +529,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5'
 
       - name: Restore runner network
         if: always()

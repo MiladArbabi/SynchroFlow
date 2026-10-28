@@ -213,6 +213,65 @@ describe('GH-1245 — web Receive disposition never fabricates Problem Center wo
     expect(new Set([e1, e2, e3]).size).toBe(3);
   });
 
+  // S8-C5 — a Recount event is consumed once. A lost-response retry replays it;
+  // once the server shows the line counted/allocated again, the pending event is
+  // spent and a new Recount must be a new event (never a permanent no-op).
+  const RECOUNT_ROUTE = `/api/v1/suppliers/receive-jobs/${JOB_ID}/lines/${LINE_ID}/recount`;
+  const recounted = (replayed: boolean) => ({ data: { replayed, quantity_count_confirmed: null, reconciliation: { allocations: [] } } });
+  const stillAllocated = (replayed: boolean) => ({
+    data: {
+      replayed,
+      quantity_count_confirmed: 8,
+      reconciliation: { allocations: [{ exception_type: 'missing_item', accounting_role: 'shortfall', counts_toward_shortfall: true, quantity_affected: 2 }] },
+    },
+  });
+
+  it('W5 — unknown outcome, server applied, line re-allocated: the stale replay is detected and one new Recount succeeds', async () => {
+    const props = renderPage();
+    const recountEvents = () => post.mock.calls.map((call) => call[1].device_event_id);
+
+    // 1. Response lost: E1 stays pending.
+    post.mockRejectedValueOnce(new Error('network lost'));
+    await expect(props.onRecountReceiveLine(JOB_ID, LINE_ID)).rejects.toThrow('network lost');
+    // 2. Genuine retry, nothing changed since: the replay is the success.
+    post.mockResolvedValueOnce(recounted(true));
+    await props.onRecountReceiveLine(JOB_ID, LINE_ID);
+    expect(postedRoutes()).toEqual([RECOUNT_ROUTE, RECOUNT_ROUTE]);
+    const [e1, e1Retry] = recountEvents();
+    expect(e1Retry).toBe(e1);
+
+    // 3. Lost again after applying; the operator refreshed, re-counted and allocated.
+    post.mockRejectedValueOnce(new Error('network lost'));
+    await expect(props.onRecountReceiveLine(JOB_ID, LINE_ID)).rejects.toThrow('network lost');
+    post.mockResolvedValueOnce(stillAllocated(true)).mockResolvedValueOnce(recounted(false));
+    await props.onRecountReceiveLine(JOB_ID, LINE_ID);
+
+    const [, , e2, e2Replay, e3] = recountEvents();
+    expect(postedRoutes()).toEqual(Array(5).fill(RECOUNT_ROUTE));
+    expect(e2Replay).toBe(e2);
+    expect(new Set([e1, e2, e3]).size).toBe(3);
+
+    // 4. Nothing pending afterwards: the next Recount is a new event.
+    post.mockResolvedValueOnce(recounted(false));
+    await props.onRecountReceiveLine(JOB_ID, LINE_ID);
+    expect(new Set(recountEvents()).size).toBe(4);
+  });
+
+  it('W6 — never reports success while the server still shows allocations; a definitive refusal clears the pending event', async () => {
+    const props = renderPage();
+
+    post.mockResolvedValueOnce(stillAllocated(true)).mockResolvedValueOnce(stillAllocated(false));
+    await expect(props.onRecountReceiveLine(JOB_ID, LINE_ID)).rejects.toThrow(/not applied/);
+    expect(post).toHaveBeenCalledTimes(2);
+
+    const refusal = Object.assign(new Error('refused'), { response: { status: 409, data: { code: 'RECEIVE_LINE_ALREADY_INSPECTED' } } });
+    post.mockRejectedValueOnce(refusal).mockResolvedValueOnce(recounted(false));
+    await expect(props.onRecountReceiveLine(JOB_ID, LINE_ID)).rejects.toBe(refusal);
+    await props.onRecountReceiveLine(JOB_ID, LINE_ID);
+    const events = post.mock.calls.map((call) => call[1].device_event_id);
+    expect(events[3]).not.toBe(events[2]);
+  });
+
   it('W5 — a definitive refusal releases the event; the next confirmation is a new event', async () => {
     const props = renderPage();
     post.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 409'), {

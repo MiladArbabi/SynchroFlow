@@ -345,6 +345,9 @@ async function finalizeLine(
   const lineId = line.receive_job_line_id;
   const evidence = await trx('receive_exceptions')
     .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: lineId })
+    // S8-C5 Recount: superseded allocations are history, never active evidence;
+    // referencing one is refused as unknown below.
+    .whereNull('superseded_at')
     .select('receive_exception_id', 'exception_type');
   const evidenceIds = new Set(evidence.map((e: any) => e.receive_exception_id as string));
 

@@ -11,6 +11,7 @@ import {
   closeReceiveJob,
   confirmReceiveJobLineCount,
   receiveLineReconciliationState,
+  recountReceiveJobLine,
   updateReceiveJobLineProgress,
 } from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
@@ -255,6 +256,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
 
       const reportedProblems = await trx('receive_exceptions')
         .where({ shop_id: shopId, receive_job_id: jobId })
+        .whereNull('superseded_at')
         .select(
           'receive_exception_id',
           'receive_job_line_id',
@@ -647,6 +649,42 @@ export async function httpConfirmReceiveJobLineCount(req: Request, res: Response
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     if (err.code === '23505') return res.status(409).json({ error: 'Count confirmation event conflicts with existing evidence', code: 'RECEIVE_COUNT_CONFIRMATION_REPLAY_CONFLICT' });
     return res.status(500).json({ error: `Count confirmation failed: ${err.message}` });
+  }
+}
+
+// ─────────────────────────────────────────
+// POST /receive-jobs/:jobId/lines/:lineId/recount
+// ─────────────────────────────────────────
+/** S8-C5 — supersede the line's shortfall allocations and void its count before inspection. */
+export async function httpRecountReceiveJobLine(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const lineId = req.params.lineId as string;
+  const { device_event_id } = req.body ?? {};
+  if (device_event_id === undefined || !validEventId(device_event_id)) {
+    return res.status(400).json({ error: 'A valid device_event_id is required', code: 'RECEIVE_RECOUNT_EVENT_REQUIRED' });
+  }
+
+  try {
+    const recounted = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return recountReceiveJobLine(trx, {
+        shopId,
+        receiveJobId: jobId,
+        receiveJobLineId: lineId,
+        recountEventId: device_event_id,
+        recountedBy: req.user!.userId,
+      });
+    });
+
+    return res.json({ success: true, receive_job_id: jobId, receive_job_line_id: lineId, ...recounted });
+  } catch (err: any) {
+    console.error('[RECEIVE_JOB_RECOUNT_FAILED]', { shopId, jobId, lineId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    if (err.code === '23505') return res.status(409).json({ error: 'Recount event conflicts with existing evidence', code: 'RECEIVE_RECOUNT_REPLAY_CONFLICT' });
+    return res.status(500).json({ error: `Recount failed: ${err.message}` });
   }
 }
 

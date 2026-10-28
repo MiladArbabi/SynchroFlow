@@ -352,6 +352,28 @@ export async function fireReceiveExceptionAlert(
   console.info('[WMS_RECEIVE_EXCEPTION_ALERT_FIRED]', { shopId, receiveJobId, lasyncroVariantId, exceptionType });
 }
 
+/**
+ * S8-C5 Recount — the owner alert for a job+variant is obsolete once every
+ * receive exception behind it was superseded. Deactivates it only then; any
+ * remaining active exception (of any type) keeps it.
+ */
+export async function clearReceiveExceptionAlertIfNoneActive(
+  trx: Knex | Knex.Transaction,
+  params: { shopId: number; receiveJobId: string; lasyncroVariantId: string }
+): Promise<boolean> {
+  const { shopId, receiveJobId, lasyncroVariantId } = params;
+  const remaining = await trx('receive_exceptions')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, lasyncro_variant_id: lasyncroVariantId })
+    .whereNull('superseded_at')
+    .first('receive_exception_id');
+  if (remaining) return false;
+
+  const cleared = await trx('alerts')
+    .where({ shop_id: shopId, alert_key: `wms:receive:exception:${receiveJobId}:${lasyncroVariantId}`, is_active: true })
+    .update({ is_active: false, dismissed_at: new Date(), updated_at: new Date() });
+  return Number(cleared) > 0;
+}
+
 // ─────────────────────────────────────────
 // Batch Released (pick job created)
 // category: warehouse_floor | audience: operator

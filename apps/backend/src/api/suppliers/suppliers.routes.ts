@@ -37,6 +37,7 @@ import {
   httpAssignReceiveJob,
   httpUpdateReceiveJobLineProgress,
   httpConfirmReceiveJobLineCount,
+  httpRecountReceiveJobLine,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
@@ -228,6 +229,16 @@ router.post(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpConfirmReceiveJobLineCount
+);
+// S8-C5 — per-line Recount before inspection: supersede allocations, void the count.
+router.post(
+  '/receive-jobs/:jobId/lines/:lineId/recount',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpRecountReceiveJobLine
 );
 // GH-1241 S3-B — opt-in grouped reconciliation. Reads inherit job reads;
 // draft/finalize inherit inspection and claimed-job ownership.

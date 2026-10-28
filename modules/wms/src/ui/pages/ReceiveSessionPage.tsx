@@ -18,7 +18,6 @@ import {
   TableRow,
   TextField,
   Typography,
-  useTheme,
 } from '@mui/material';
 import {
   AlertTriangle,
@@ -28,6 +27,29 @@ import {
   PackageX,
   ScanBarcode,
 } from 'lucide-react';
+import {
+  ReceiveActions,
+  ReceiveCta,
+  ReceiveExitSheet,
+  ReceiveFactStrip,
+  ReceiveFooterButton,
+  ReceiveItemLine,
+  ReceiveProductImage,
+  ReceiveLinesDrawer,
+  ReceiveListPager,
+  RECEIVE_LIST_PAGE_SIZE,
+  ReceivePill,
+  ReceivePillRow,
+  ReceiveSeal,
+  ReceiveSessionShell,
+  ReceiveStatusLine,
+  ReceiveTaskHeading,
+  ReceiveTextAction,
+  receiveFocusRingSx,
+  receiveTouchTargetSx,
+  type ReceiveBarTone,
+  type ReceiveStatusTone,
+} from '../components/receive/ReceiveSessionShell';
 
 type SessionPhase = 'brief' | 'inspect' | 'reconcile' | 'review' | 'handoff';
 type LineAction = 'scan' | 'count';
@@ -38,6 +60,54 @@ const ACTIVE_RECEIVE_JOB_STATUSES = new Set([
   'barcode_assignment',
   'stow_ready',
 ]);
+
+/**
+ * WS-UX-RECEIVE-D4R S8-C3 — the host's report of one canonical refresh.
+ * applied:false means the read was skipped, superseded or belonged to an
+ * older session; it is never evidence of the Receive's state.
+ */
+export type ReceiveRefreshResult =
+  | { applied: true; jobStatus: string | null; closedAt: string | null }
+  | { applied: false };
+
+type CanonicalCloseStatus = 'closed' | 'open' | 'unknown';
+
+const CLOSE_UNKNOWN_MESSAGE = "We couldn't confirm whether this Receive closed. Check its latest status before trying again.";
+const CLOSE_OPEN_MESSAGE = 'This Receive is still open. You can try closing it again.';
+
+/**
+ * S8-C3 — a definitive close refusal, as operator instructions. null means the
+ * response is no proof the close failed (no response, 5xx, Already closed,
+ * terminal job): the caller must read the canonical status instead.
+ */
+/** S8-C5 — a definitive Recount refusal: the server changed nothing. */
+function recountRefusalMessage(err: any): string {
+  const code = err?.response?.data?.code;
+  if (code === 'RECEIVE_LINE_ALREADY_INSPECTED') return 'This product is already finished, so it can\'t be recounted. Nothing was changed.';
+  if (code === 'RECEIVE_JOB_TERMINAL') return 'This Receive is finished, so it can\'t be recounted. Nothing was changed.';
+  if (code === 'RECEIVE_RECOUNT_GROUPED' || code === 'RECEIVE_RECONCILIATION_FINALIZED') {
+    return 'This Receive is checked as a group, so this product can\'t be recounted here. Nothing was changed.';
+  }
+  if (err?.response?.status === 403) return 'This Receive isn\'t assigned to you, so it can\'t be recounted. Nothing was changed.';
+  return 'The Recount wasn\'t accepted. Nothing was changed.';
+}
+
+function closeRefusalMessage(err: any): string | null {
+  const status = Number(err?.response?.status);
+  if (!err?.response || !Number.isFinite(status) || status >= 500) return null;
+  const refusal = String(err?.response?.data?.error ?? '');
+  if (/already closed|is terminal/i.test(refusal)) return null;
+  if (err?.response?.data?.code === 'RECEIVE_BARCODE_READINESS_REQUIRED' || /RECEIVE_BARCODE_READINESS_REQUIRED/.test(refusal)) {
+    return 'Some unit labels still need confirmation before this Receive can close.';
+  }
+  if (/not yet inspected/i.test(refusal)) return 'Some products still need inspection. Finish those products before closing.';
+  if (/delivery accounting|grouped reconciliation/i.test(refusal)) return 'Some products still need their delivery counts finished before this Receive can close.';
+  if (/cancelled po/i.test(refusal)) return 'This purchase order was cancelled, so this Receive can’t close. Return to Operations.';
+  if (status === 400) return 'Enter a valid actual delivery date, then try again.';
+  if (status === 401 || status === 403) return 'You don’t have access to close this Receive. Ask a lead for help.';
+  if (status === 404) return 'This Receive couldn’t be found. Return to Operations and reopen it.';
+  return 'This Receive couldn’t close. Review the products above, then try again.';
+}
 
 export interface ReceiveJobLine {
   receive_job_line_id: string;
@@ -156,12 +226,19 @@ export interface ReceiveSessionPageProps {
     receiveJobLineId: string,
     params: { quantity_confirmed: number }
   ) => Promise<void>;
+  /**
+   * S8-C5 — Recount a line after shortfall allocations were saved (before
+   * inspection): the server supersedes them and voids the count. Without it,
+   * Recount stays available only while nothing is allocated (client-only).
+   */
+  onRecountLine?: (receiveJobLineId: string) => Promise<void>;
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
   onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
-  onRefresh?: () => Promise<void> | void;
+  /** S8-C3 — the WMS host returns a ReceiveRefreshResult; other hosts may return nothing (never close evidence). */
+  onRefresh?: () => Promise<ReceiveRefreshResult | void> | void;
   /**
    * WAREHOUSE-FOCUS-SHELL-01A — reports whether the operator is actively
    * executing this Receive job (sessionPhase !== 'brief') versus still on
@@ -339,13 +416,16 @@ const PROBLEM_CHOICES: Array<{
   { id: 'other', label: 'Other', problemType: 'other' },
 ];
 
-const RECONCILIATION_CHOICES: Array<{ type: ProblemType; label: string; requiresNotes?: boolean }> = [
-  { type: 'deferred', label: 'Coming in a later delivery' },
-  { type: 'defect', label: 'Damaged unit' },
-  { type: 'wrong_item', label: 'Wrong product' },
-  { type: 'wrong_variant', label: 'Wrong variant' },
-  { type: 'missing_item', label: 'Missing item' },
-  { type: 'other', label: 'Other', requiresNotes: true },
+// WS-UX-RECEIVE-D4R S3 / owner decision O2 — the six canonical shortfall
+// reasons. Barcode mismatch is never one: it consumes no shortfall and stays
+// on its own scan/problem path.
+const RECONCILIATION_CHOICES: Array<{ type: ProblemType; label: string; hint: string; requiresNotes?: boolean }> = [
+  { type: 'deferred', label: 'Later delivery', hint: 'Coming in a later delivery' },
+  { type: 'defect', label: 'Damaged unit', hint: 'Set aside, not sellable' },
+  { type: 'wrong_item', label: 'Wrong product', hint: 'Different product sent' },
+  { type: 'wrong_variant', label: 'Wrong variant', hint: 'Different size or colour' },
+  { type: 'missing_item', label: 'Missing item', hint: 'Not in the delivery' },
+  { type: 'other', label: 'Other', hint: 'Notes required', requiresNotes: true },
 ];
 
 const OPS_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
@@ -381,91 +461,69 @@ function formatOpsTimestamp(value?: string | null): string {
 }
 const countStepperButtonSx = (emphasized = false) => ({
   minWidth: 0,
-  height: 40,
-  px: 1.5,
-  borderRadius: '6px',
-  bgcolor: emphasized ? 'var(--surface)' : 'transparent',
-  borderColor: emphasized ? 'var(--rule-2)' : 'var(--rule)',
+  height: { xs: 64, md: 88 },
+  px: 0,
+  borderRadius: '10px',
+  bgcolor: 'var(--surface)',
+  borderColor: emphasized ? 'var(--rule-2)' : 'var(--rule-2)',
   color: 'var(--ink)',
-  fontWeight: 800,
+  fontSize: 30,
+  fontWeight: 300,
   '&:hover': {
-    bgcolor: 'var(--surface)',
+    bgcolor: 'var(--bg-2)',
     borderColor: 'var(--rule-2)',
   },
   '&.Mui-disabled': {
-    bgcolor: 'transparent',
+    bgcolor: 'var(--surface)',
     borderColor: 'var(--rule)',
   },
+  ...receiveFocusRingSx,
 } as const);
-const countStepperValueSx = {
-  '& .MuiInputBase-root': {
-    height: 40,
-    borderRadius: '6px',
-    bgcolor: 'transparent',
-    color: 'var(--ink)',
-  },
-  '& .MuiOutlinedInput-notchedOutline': {
-    borderColor: 'var(--rule)',
-  },
-  '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': {
-    borderColor: 'var(--rule-2)',
-  },
-  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-    borderColor: 'var(--rule-2)',
-    borderWidth: 1,
-  },
+// WS-UX-RECEIVE-D4R S1 — the counter's physical-count value (88/64px light).
+const countValueSx = {
+  width: '100%',
   '& .MuiInputBase-input': {
-    py: 0,
+    fontSize: { xs: 64, md: 88 },
+    lineHeight: 1,
+    height: 'auto',
+    color: 'var(--ink)',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  // S8-C4 — the empty-count placeholder is a label, not a numeral: sized to fit.
+  '& .MuiInputBase-input::placeholder': {
+    fontSize: { xs: 28, md: 36 },
+    color: 'var(--ink-3)',
+    opacity: 1,
   },
 } as const;
 const reconciliationChoiceSx = (selected: boolean) => ({
-  minHeight: 40,
-  px: 1.5,
+  minHeight: { xs: 46, md: 48 },
+  px: 1.75,
   py: 0.75,
-  borderRadius: '6px',
+  borderRadius: '10px',
   justifyContent: 'flex-start',
-  bgcolor: selected ? 'var(--surface)' : 'transparent',
-  borderColor: selected ? 'var(--rule-2)' : 'var(--rule)',
+  textAlign: 'left',
+  textTransform: 'none',
+  bgcolor: selected ? 'var(--accent-ghost)' : 'var(--surface)',
+  border: selected ? '2px solid var(--accent)' : '1px solid var(--rule-2)',
   color: 'var(--ink)',
   boxShadow: 'none',
-  fontWeight: selected ? 700 : 600,
+  fontSize: 14,
+  fontWeight: 500,
   cursor: 'pointer',
   '&:hover': {
-    bgcolor: selected ? 'var(--surface)' : 'var(--surface)',
-    borderColor: 'var(--rule-2)',
+    bgcolor: selected ? 'var(--accent-ghost)' : 'var(--bg-2)',
+    borderColor: selected ? 'var(--accent)' : 'var(--rule-2)',
   },
   '&.Mui-focusVisible': {
-    outline: '2px solid var(--rule-2)',
+    outline: '2px solid var(--accent)',
     outlineOffset: 2,
   },
   '&.Mui-disabled': {
-    bgcolor: 'transparent',
+    bgcolor: 'var(--surface)',
     borderColor: 'var(--rule)',
   },
 } as const);
-const reconciliationCommitActionSx = {
-  width: '100%',
-  minHeight: 38,
-  borderRadius: '6px',
-  bgcolor: 'var(--accent)',
-  borderColor: 'var(--accent)',
-  color: 'var(--accent-ink)',
-  fontWeight: 750,
-  '&:hover': {
-    bgcolor: 'var(--accent)',
-    borderColor: 'var(--accent)',
-    opacity: 0.88,
-  },
-  '&.Mui-focusVisible': {
-    outline: '2px solid var(--rule-2)',
-    outlineOffset: 2,
-  },
-  '&.Mui-disabled': {
-    bgcolor: 'transparent',
-    borderColor: 'var(--rule)',
-    color: 'text.disabled',
-  },
-} as const;
 
 function lineName(line: ReceiveJobLine): string {
   return line.product_title ?? line.variant_title ?? line.description ?? line.sku ?? 'Unknown item';
@@ -500,6 +558,50 @@ function reportedProblems(line: ReceiveJobLine): ReceiveReportedProblem[] {
   return line.reported_problems ?? [];
 }
 
+// WS-UX-RECEIVE-D4R S8-C1 — Review/Completion outcome classification.
+// reported_problems are receive_exceptions rows; accounting_role=overage is the
+// persisted over-delivery approval (isPersistedOverageApproval), not a problem.
+// Later delivery is never an exception row: it is the line's quantity_deferred
+// (also echoed as a synthetic reconciliation allocation, so read it only here).
+// Problems count records, as before; later and extra count units.
+export interface ReceiveLineOutcome {
+  accepted: number;
+  problems: ReceiveReportedProblem[];
+  later: number;
+  extra: number;
+  extraApproved: boolean;
+}
+
+export function receiveLineOutcome(line: ReceiveJobLine, acceptedOverride?: number): ReceiveLineOutcome {
+  const accepted = acceptedOverride ?? Number(line.quantity_accepted ?? 0);
+  const all = reportedProblems(line);
+  const extra = Math.max(0, accepted - line.quantity_expected);
+  return {
+    accepted,
+    problems: all.filter((problem) => problem.accounting_role !== 'overage'),
+    later: Math.max(0, Number(line.quantity_deferred ?? 0)),
+    extra,
+    extraApproved: extra > 0 && (Boolean(line.reconciliation?.overage_approved) || all.some((problem) => problem.accounting_role === 'overage')),
+  };
+}
+
+export function summarizeReceiveOutcome(lines: ReceiveJobLine[], acceptedByLine: Record<string, number> = {}) {
+  const outcomes = lines.map((line) => receiveLineOutcome(line, acceptedByLine[line.receive_job_line_id]));
+  return {
+    accepted: outcomes.reduce((sum, outcome) => sum + outcome.accepted, 0),
+    problems: outcomes.reduce((sum, outcome) => sum + outcome.problems.length, 0),
+    later: outcomes.reduce((sum, outcome) => sum + outcome.later, 0),
+    extra: outcomes.reduce((sum, outcome) => sum + outcome.extra, 0),
+    extraApproved: outcomes.some((outcome) => outcome.extra > 0) && outcomes.every((outcome) => outcome.extra === 0 || outcome.extraApproved),
+  };
+}
+
+function receiveOutcomeSub(summary: ReturnType<typeof summarizeReceiveOutcome>): string {
+  return `${summary.accepted} accepted · ${summary.problems} ${summary.problems === 1 ? 'problem' : 'problems'}`
+    + (summary.later > 0 ? ` · ${summary.later} later` : '')
+    + (summary.extra > 0 ? ` · +${summary.extra} extra${summary.extraApproved ? ' approved' : ''}` : '');
+}
+
 function projectedSellable(line: ReceiveJobLine): number {
   return Number(
     line.quantity_sellable_provisional
@@ -528,6 +630,17 @@ function hasApprovedOverage(line: ReceiveJobLine): boolean {
 // expected minus reported problems: an inference, never a count.
 function confirmedCount(line: ReceiveJobLine): number | null {
   return line.quantity_count_confirmed == null ? null : Number(line.quantity_count_confirmed);
+}
+
+// A canonical confirmed zero is explicit count evidence. An unconfirmed
+// provisional zero is not: older/default projections may expose zero before
+// any physical counting action. Non-zero provisional progress can only have
+// come from an operator count/scan and remains resumable.
+function hasEstablishedCountEvidence(line: ReceiveJobLine): boolean {
+  if (confirmedCount(line) != null) return true;
+  if (line.quantity_sellable_provisional != null
+    && Number(line.quantity_sellable_provisional) > 0) return true;
+  return Number(line.quantity_accepted ?? 0) > 0;
 }
 
 function hasProjectedReconciliation(line: ReceiveJobLine): boolean {
@@ -576,11 +689,12 @@ function problemDetailLabel(problem: ReceiveReportedProblem): string {
 function ReportedProblemSummary({
   line,
   compact = false,
+  problems = reportedProblems(line),
 }: {
   line: ReceiveJobLine;
   compact?: boolean;
+  problems?: ReceiveReportedProblem[];
 }) {
-  const problems = reportedProblems(line);
   if (problems.length === 0) return null;
 
   if (compact) {
@@ -694,6 +808,7 @@ function ReceiveSessionFlow({
   onApproveOverDelivery,
   onPersistLineProgress,
   onConfirmLineCount,
+  onRecountLine,
   onCloseJob,
   onComplete,
   onResolveBarcode,
@@ -703,10 +818,18 @@ function ReceiveSessionFlow({
   onExecutionFocusChange,
 }: ReceiveSessionPageProps) {
   const poDisplay = poNumber == null ? 'PO reference unavailable' : `PO-${poNumber}`;
-  const theme = useTheme();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const progressPersistQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const progressPersistErrorRef = useRef<Error | null>(null);
+  // WS-UX-RECEIVE-D4R S3-B — per line, the last provisional count the server
+  // accepted; a failed over-delivery save restores the screen to it.
+  const savedProgressRef = useRef<Record<string, number>>({});
+  // WS-UX-RECEIVE-D4R S7-CORRECT — per line, the latest provisional write the
+  // server refused (line, attempted quantity, reason). Only a later successful
+  // write for the SAME line clears it; writes for other lines never do.
+  const failedProgressRef = useRef<Record<string, { line: ReceiveJobLine; quantity: number; error: Error }>>({});
+  // Without a progress writer nothing reaches the server: counts stay local
+  // drafts and are never reported as saved.
+  const unsavedDraftRef = useRef<Record<string, { line: ReceiveJobLine; quantity: number }>>({});
 
   const hasCanonicalJobStatus = typeof jobStatus === 'string';
   const isPendingJob = jobStatus === 'pending';
@@ -741,6 +864,13 @@ function ReceiveSessionFlow({
   );
   const initialAccepted = useMemo(
     () => Object.fromEntries(lines.map((line) => [line.receive_job_line_id, projectedSellable(line)])),
+    [lines]
+  );
+  const initialCountEstablished = useMemo(
+    () => Object.fromEntries(lines.map((line) => [
+      line.receive_job_line_id,
+      hasEstablishedCountEvidence(line),
+    ])),
     [lines]
   );
   const initialRejected = useMemo(
@@ -798,11 +928,20 @@ function ReceiveSessionFlow({
   const [lineAction, setLineAction] = useState<LineAction>('count');
   const [accepted, setAccepted] = useState(0);
   const [acceptedByLine, setAcceptedByLine] = useState<Record<string, number>>(initialAccepted);
+  const [countEstablishedByLine, setCountEstablishedByLine] = useState<Record<string, boolean>>(initialCountEstablished);
   const [rejectedByLine, setRejectedByLine] = useState<Record<string, number>>(initialRejected);
   const [completeLines, setCompleteLines] = useState<Set<string>>(initialComplete);
   const [acknowledgedLabelLines, setAcknowledgedLabelLines] = useState<Set<string>>(new Set());
   const [labelHoldLineId, setLabelHoldLineId] = useState<string | null>(firstBackendHold);
   const [labelPrintFailed, setLabelPrintFailed] = useState(false);
+  // WS-UX-RECEIVE-D4R S4 — local print request status for the held line.
+  // Printing is never acknowledgement: only onConfirmUnitLabelsPrinted
+  // releases a hold. Refs block duplicate print / acknowledgement requests
+  // fired before React re-renders the disabled controls.
+  const [labelPrinting, setLabelPrinting] = useState(false);
+  const [labelsPrinted, setLabelsPrinted] = useState(false);
+  const labelPrintInFlightRef = useRef(false);
+  const labelAckInFlightRef = useRef(false);
   const [labelAckSubmitting, setLabelAckSubmitting] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -853,6 +992,8 @@ function ReceiveSessionFlow({
   const [shortfallProblemQty, setShortfallProblemQty] = useState('');
   const [shortfallProblemNotes, setShortfallProblemNotes] = useState('');
   const [shortfallSubmitting, setShortfallSubmitting] = useState(false);
+  // S8-C5 Recount sheet: confirm → busy → (closed | refused | unknown outcome).
+  const [recountSheet, setRecountSheet] = useState<null | { status: 'confirm' | 'busy' | 'refused' | 'unknown'; message?: string }>(null);
   const [shortfallQtyError, setShortfallQtyError] = useState<string | null>(null);
   const [reconciliationLine, setReconciliationLine] = useState<{
     line: ReceiveJobLine;
@@ -864,9 +1005,40 @@ function ReceiveSessionFlow({
 
   const [deliveryDate, setDeliveryDate] = useState('');
   const [closing, setClosing] = useState(false);
+  const [linesDrawerOpen, setLinesDrawerOpen] = useState(false);
+  const [identityDetailLine, setIdentityDetailLine] = useState<ReceiveJobLine | null>(null);
+  // WS-UX-RECEIVE-D4R S6 — UX-14 page of the Brief / Review line list
+  // (presentation only; totals and gates always use every line).
+  const [listPage, setListPage] = useState(0);
+  const closeInFlightRef = useRef(false);
+  // WS-UX-RECEIVE-D4R S7 — save-aware per-line Exit. 'saving' flushes queued
+  // count writes; 'checking' waits for in-flight submissions, then decides.
+  const [exitSheet, setExitSheet] = useState<
+    | { variant: 'saving' }
+    | { variant: 'checking' }
+    | { variant: 'saved' }
+    | { variant: 'failed'; failures: Array<{ lineId: string; name: string; quantity: number; error: string }> }
+    | { variant: 'review'; reasons: string[] }
+    | null
+  >(null);
+  const exitInFlightRef = useRef(false);
+  // Finish Count's canonical confirmation is in flight (Exit waits for it).
+  const [countConfirming, setCountConfirming] = useState(false);
+  // Each Exit attempt gets a token; a flush finishing after Keep receiving is ignored.
+  const exitAttemptRef = useRef(0);
+  // S8-C3 — close outcome reconciliation: 'checking' reads canonical status,
+  // 'unknown' blocks Close until a read succeeds, 'open' allows a deliberate retry.
+  const [closeRecovery, setCloseRecovery] = useState<'checking' | 'unknown' | 'open' | null>(null);
+  // A confirmed close never reverts; its final details may still need a re-read.
+  const closeConfirmedRef = useRef(false);
+  const [closeDetailsPending, setCloseDetailsPending] = useState(false);
+  const closeOutcomeUnknown = closeRecovery === 'checking';
 
   const totalExpected = lines.reduce((sum, line) => sum + line.quantity_expected, 0);
   const currentLine = lines[currentIndex] ?? null;
+  const currentCountEstablished = currentLine
+    ? countEstablishedByLine[currentLine.receive_job_line_id] === true
+    : false;
 
   // WAREHOUSE-FOCUS-SHELL-01A — execution-focus is derived purely from
   // sessionPhase, not called individually from handleStart/handleClaim/etc.
@@ -894,7 +1066,6 @@ function ReceiveSessionFlow({
   ), [isLineAwaitingLabel, isLineComplete]);
 
   const completedCount = lines.filter(isLineDone).length;
-  const progress = lines.length ? Math.round((completedCount / lines.length) * 100) : 0;
   const currentAwaitingLabel = currentLine ? isLineAwaitingLabel(currentLine) : false;
   // GH-1241 S3C-M4 — the product whose labels are being handled: the one this
   // session put on hold, else the current product canonical readiness still
@@ -913,10 +1084,38 @@ function ReceiveSessionFlow({
     && !reconciliationLine
     && !overDeliveryDecision
     && !submitting
+    && !exitSheet
     && !currentComplete;
   const activeAccepted = currentLine ? accepted : 0;
   const activeRejected = currentLine ? rejectedByLine[currentLine.receive_job_line_id] ?? 0 : 0;
   const allLinesDone = lines.length > 0 && lines.every(isLineDone);
+
+  /** Queue one provisional write for `line` without touching the count on screen. */
+  const enqueueProgressWrite = useCallback((
+    line: ReceiveJobLine,
+    quantity: number,
+    options?: { reconciliationRequired?: boolean },
+  ) => {
+    if (!onPersistLineProgress) return progressPersistQueueRef.current;
+    const lineId = line.receive_job_line_id;
+    progressPersistQueueRef.current = progressPersistQueueRef.current
+      .then(async () => {
+        await onPersistLineProgress(lineId, {
+          quantity_sellable_provisional: quantity,
+          ...(options?.reconciliationRequired ? { reconciliation_required: true } : {}),
+        });
+        savedProgressRef.current = { ...savedProgressRef.current, [lineId]: quantity };
+        if (failedProgressRef.current[lineId]) {
+          const { [lineId]: _resolved, ...rest } = failedProgressRef.current;
+          failedProgressRef.current = rest;
+        }
+      })
+      .catch((err: any) => {
+        const error = err instanceof Error ? err : new Error(err?.message ?? 'Could not save count progress.');
+        failedProgressRef.current = { ...failedProgressRef.current, [lineId]: { line, quantity, error } };
+      });
+    return progressPersistQueueRef.current;
+  }, [onPersistLineProgress]);
 
   const persistLineProgress = useCallback((
     line: ReceiveJobLine,
@@ -928,27 +1127,27 @@ function ReceiveSessionFlow({
       ...prev,
       [line.receive_job_line_id]: nextAccepted,
     }));
-    if (!onPersistLineProgress || isLineComplete(line)) return progressPersistQueueRef.current;
+    if (isLineComplete(line)) return progressPersistQueueRef.current;
+    if (!onPersistLineProgress) {
+      unsavedDraftRef.current = { ...unsavedDraftRef.current, [line.receive_job_line_id]: { line, quantity: nextAccepted } };
+      return progressPersistQueueRef.current;
+    }
+    return enqueueProgressWrite(line, nextAccepted, options);
+  }, [enqueueProgressWrite, isLineComplete, onPersistLineProgress]);
 
-    progressPersistQueueRef.current = progressPersistQueueRef.current
-      .then(async () => {
-        await onPersistLineProgress(line.receive_job_line_id, {
-          quantity_sellable_provisional: nextAccepted,
-          ...(options?.reconciliationRequired ? { reconciliation_required: true } : {}),
-        });
-        progressPersistErrorRef.current = null;
-      })
-      .catch((err: any) => {
-        const error = err instanceof Error ? err : new Error(err?.message ?? 'Could not save count progress.');
-        progressPersistErrorRef.current = error;
-      });
+  const establishCount = useCallback((line: ReceiveJobLine) => {
+    setCountEstablishedByLine((prev) => prev[line.receive_job_line_id]
+      ? prev
+      : { ...prev, [line.receive_job_line_id]: true });
+  }, []);
 
-    return progressPersistQueueRef.current;
-  }, [isLineComplete, onPersistLineProgress]);
-
-  const flushLineProgress = useCallback(async () => {
+  /** Wait for queued writes; reject if this line's (or, without a line, any line's) latest write failed. */
+  const flushLineProgress = useCallback(async (lineId?: string) => {
     await progressPersistQueueRef.current;
-    if (progressPersistErrorRef.current) throw progressPersistErrorRef.current;
+    const failures = lineId
+      ? (failedProgressRef.current[lineId] ? [failedProgressRef.current[lineId]] : [])
+      : Object.values(failedProgressRef.current);
+    if (failures.length > 0) throw failures[0].error;
   }, []);
 
   // GH-1241 S3-A1 — the operator's explicit "this is my physical count".
@@ -969,6 +1168,10 @@ function ReceiveSessionFlow({
     setScanError(null);
     setScanInputValue('');
   }, [currentCanScan, currentLine]);
+
+  useEffect(() => {
+    setListPage(0);
+  }, [sessionPhase]);
 
   useEffect(() => {
     if (sessionPhase !== 'inspect' || !allLinesDone) return;
@@ -1025,13 +1228,21 @@ function ReceiveSessionFlow({
     // completed-line effect can briefly see every line as done and advance
     // the session to Review before attachment acknowledgement exists.
     setLabelHoldLineId(line.receive_job_line_id);
+    setLabelsPrinted(false);
+    setLabelPrintFailed(false);
 
-    if (onPrintUnitLabels) {
+    if (onPrintUnitLabels && !labelPrintInFlightRef.current) {
+      labelPrintInFlightRef.current = true;
+      setLabelPrinting(true);
       try {
         await onPrintUnitLabels(line.receive_job_line_id);
         setLabelPrintFailed(false);
+        setLabelsPrinted(true);
       } catch {
         setLabelPrintFailed(true);
+      } finally {
+        labelPrintInFlightRef.current = false;
+        setLabelPrinting(false);
       }
     }
 
@@ -1111,18 +1322,21 @@ function ReceiveSessionFlow({
   ]);
 
   const handleCountConfirm = useCallback(async () => {
-    if (!currentLine || currentComplete || currentAwaitingLabel) return;
+    if (!currentLine || !currentCountEstablished || currentComplete || currentAwaitingLabel) return;
     try {
-      await flushLineProgress();
+      await flushLineProgress(currentLine.receive_job_line_id);
     } catch (err: any) {
       setSubmitError(err?.message ?? 'Could not save count progress. Please retry.');
       return;
     }
+    setCountConfirming(true);
     try {
       await confirmLineCount(currentLine, accepted);
     } catch (err: any) {
       setSubmitError(err?.message ?? 'Could not confirm this count. Your count is kept; retry when ready.');
       return;
+    } finally {
+      setCountConfirming(false);
     }
     if (accepted > currentLine.quantity_expected) {
       setOverDeliveryError(null);
@@ -1140,7 +1354,7 @@ function ReceiveSessionFlow({
     if (shortfall > 0) {
       try {
         await persistLineProgress(currentLine, accepted, { reconciliationRequired: true });
-        await flushLineProgress();
+        await flushLineProgress(currentLine.receive_job_line_id);
       } catch (err: any) {
         setSubmitError(err?.message ?? 'Could not save count progress. Please retry.');
         return;
@@ -1161,7 +1375,7 @@ function ReceiveSessionFlow({
     }
 
     await completeLine(currentLine, accepted, 0);
-  }, [accepted, completeLine, confirmLineCount, currentAwaitingLabel, currentComplete, currentLine, flushLineProgress, persistLineProgress]);
+  }, [accepted, completeLine, confirmLineCount, currentAwaitingLabel, currentComplete, currentCountEstablished, currentLine, flushLineProgress, persistLineProgress]);
 
   const handleScan = useCallback(async (value: string) => {
     if (!scanReady || !currentLine || !onResolveBarcode || scanProcessing) return;
@@ -1173,11 +1387,11 @@ function ReceiveSessionFlow({
     try {
       const resolved = await onResolveBarcode(scannedValue);
       if (!resolved?.lasyncro_variant_id) {
-        setScanError(`Barcode not recognised: ${scannedValue}`);
+        setScanError(`Barcode not recognised: ${scannedValue}. Nothing was counted.`);
         return;
       }
       if (resolved.lasyncro_variant_id !== currentLine.lasyncro_variant_id) {
-        setScanError('That barcode belongs to a different receive line.');
+        setScanError('That barcode belongs to a different receive line. Nothing was counted.');
         return;
       }
 
@@ -1188,11 +1402,12 @@ function ReceiveSessionFlow({
         return;
       }
 
+      establishCount(currentLine);
       void persistLineProgress(currentLine, next);
       setFlashLine(currentLine.receive_job_line_id);
       window.setTimeout(() => setFlashLine(null), 450);
     } catch {
-      setScanError('Scan failed. Check the connection and try again.');
+      setScanError('Scan failed. Nothing was counted. Check the connection and try again.');
     } finally {
       setScanProcessing(false);
       setScanInputValue('');
@@ -1201,6 +1416,7 @@ function ReceiveSessionFlow({
   }, [
     activeAccepted,
     currentLine,
+    establishCount,
     onResolveBarcode,
     persistLineProgress,
     scanProcessing,
@@ -1209,18 +1425,26 @@ function ReceiveSessionFlow({
 
   // Printing never acknowledges: only the operator's explicit confirmation does.
   const handleRetryPrintLabels = useCallback(async () => {
-    if (!activeHoldLineId || !onPrintUnitLabels) return;
+    if (!activeHoldLineId || !onPrintUnitLabels || labelPrintInFlightRef.current) return;
+    labelPrintInFlightRef.current = true;
+    setLabelPrinting(true);
     try {
       await onPrintUnitLabels(activeHoldLineId);
       setLabelPrintFailed(false);
+      setLabelsPrinted(true);
     } catch {
       setLabelPrintFailed(true);
+      setLabelsPrinted(false);
+    } finally {
+      labelPrintInFlightRef.current = false;
+      setLabelPrinting(false);
     }
   }, [activeHoldLineId, onPrintUnitLabels]);
 
   const handleConfirmLabelsPrinted = useCallback(async () => {
-    if (!activeHoldLineId) return;
+    if (!activeHoldLineId || labelAckInFlightRef.current) return;
     const ackedLineId = activeHoldLineId;
+    labelAckInFlightRef.current = true;
     setLabelAckSubmitting(true);
     setSubmitError(null);
     try {
@@ -1228,10 +1452,12 @@ function ReceiveSessionFlow({
       setAcknowledgedLabelLines((prev) => new Set([...prev, ackedLineId]));
       setLabelHoldLineId(null);
       setLabelPrintFailed(false);
+      setLabelsPrinted(false);
       moveToNextLineOrReview(undefined, ackedLineId);
     } catch (err: any) {
       setSubmitError(err?.message ?? 'Could not record label acknowledgement. Please retry.');
     } finally {
+      labelAckInFlightRef.current = false;
       setLabelAckSubmitting(false);
     }
   }, [activeHoldLineId, moveToNextLineOrReview, onConfirmUnitLabelsPrinted]);
@@ -1331,7 +1557,7 @@ function ReceiveSessionFlow({
       if (shortfallProblemType === 'deferred') {
         if (!onPersistLineProgress) throw new Error('Later-delivery reporting is unavailable. Please refresh.');
         const deferred = reconciliationLine.allocations.filter((a) => a.type === 'deferred').reduce((n, a) => n + a.quantity, 0) + qty;
-        await flushLineProgress();
+        await flushLineProgress(reconciliationLine.line.receive_job_line_id);
         await onPersistLineProgress(reconciliationLine.line.receive_job_line_id, {
           quantity_sellable_provisional: reconciliationLine.accepted,
           reconciliation_required: true,
@@ -1414,6 +1640,35 @@ function ReceiveSessionFlow({
     setSessionPhase('inspect');
   }, [reconciliationLine]);
 
+  // S8-C5 — saved allocations make Recount a server write. Only a confirmed
+  // success returns to Count; a refusal changed nothing; an unanswered request
+  // may have applied, so the only next step is the same (idempotent) request.
+  const handleConfirmRecount = useCallback(async () => {
+    if (!reconciliationLine || !onRecountLine) return;
+    setRecountSheet({ status: 'busy' });
+    try {
+      await onRecountLine(reconciliationLine.line.receive_job_line_id);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (typeof status === 'number' && status >= 400 && status < 500) {
+        setRecountSheet({ status: 'refused', message: recountRefusalMessage(err) });
+      } else {
+        setRecountSheet({ status: 'unknown' });
+      }
+      return;
+    }
+    setRecountSheet(null);
+    setAccepted(reconciliationLine.accepted);
+    setReconciliationLine(null);
+    setShortfallProblemType(null);
+    setShortfallProblemQty('1');
+    setShortfallProblemNotes('');
+    setShortfallQtyError(null);
+    setLineAction('count');
+    setSessionPhase('inspect');
+    await onRefresh?.();
+  }, [onRecountLine, onRefresh, reconciliationLine]);
+
   const openProblemDialog = useCallback((defaults?: { choice?: ProblemChoice; qty?: string; notes?: string }) => {
     const choice = defaults?.choice ?? null;
     const option = choice ? PROBLEM_CHOICES.find((item) => item.id === choice) : undefined;
@@ -1439,7 +1694,7 @@ function ReceiveSessionFlow({
   // preserves the counted quantity, and surfaces a retryable error — no
   // optimistic completion.
   const handleAcceptOverDelivery = useCallback(async () => {
-    if (!overDeliveryDecision) return;
+    if (!overDeliveryDecision || overDeliverySubmitting) return;
     const { line, counted, approved, countConfirmed } = overDeliveryDecision;
     // GH-1241 S3-A1 — approval follows the persisted physical count; it never
     // confirms a count itself.
@@ -1450,7 +1705,7 @@ function ReceiveSessionFlow({
     setOverDeliverySubmitting(true);
     try {
       await persistLineProgress(line, counted);
-      await flushLineProgress();
+      await flushLineProgress(line.receive_job_line_id);
 
       // Refresh/re-entry contract (GH-1108): when this decision was
       // reconstructed from an already-persisted canonical overage approval
@@ -1476,37 +1731,69 @@ function ReceiveSessionFlow({
     } finally {
       setOverDeliverySubmitting(false);
     }
-  }, [flushLineProgress, inspectAndResolveReadiness, moveToNextLineOrReview, onApproveOverDelivery, overDeliveryDecision, persistLineProgress]);
+  }, [flushLineProgress, inspectAndResolveReadiness, moveToNextLineOrReview, onApproveOverDelivery, overDeliveryDecision, overDeliverySubmitting, persistLineProgress]);
+
+  // WS-UX-RECEIVE-D4R S3-B — every over-delivery decision that writes the
+  // provisional count waits for that write to be saved before the decision
+  // closes. A failed save keeps the decision open with a retryable error and
+  // puts the local count back to the last value written for this line, so
+  // the screen never shows a count the server does not have. One submission
+  // at a time.
+  const persistOverDeliveryCount = useCallback(async (
+    decision: NonNullable<typeof overDeliveryDecision>,
+    nextAccepted: number,
+  ) => {
+    const lineId = decision.line.receive_job_line_id;
+    const previous = savedProgressRef.current[lineId]
+      ?? (decision.line.quantity_sellable_provisional != null
+        ? Number(decision.line.quantity_sellable_provisional)
+        : Number(decision.line.quantity_accepted ?? 0));
+    setOverDeliveryError(null);
+    setOverDeliverySubmitting(true);
+    try {
+      await persistLineProgress(decision.line, nextAccepted);
+      await flushLineProgress(lineId);
+      return true;
+    } catch (err: any) {
+      setAccepted(previous);
+      setAcceptedByLine((prev) => ({ ...prev, [lineId]: previous }));
+      setOverDeliveryError(err?.message
+        ? `Count not saved: ${err.message}. Nothing changed; try again.`
+        : 'Count not saved. Nothing changed; try again.');
+      return false;
+    } finally {
+      setOverDeliverySubmitting(false);
+    }
+  }, [flushLineProgress, persistLineProgress]);
 
   // GH-1241 S3-A1 — the live warning's "keep": the extra stays in the draft
   // count (a scan has not drafted it yet) and the operator continues to
   // Finish Count, which confirms the physical count before any approval.
-  const handleKeepOverCount = useCallback(() => {
-    if (!overDeliveryDecision || overDeliveryDecision.countConfirmed) return;
-    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.counted);
-    setOverDeliveryError(null);
-    setOverDeliveryDecision(null);
-  }, [overDeliveryDecision, persistLineProgress]);
+  const handleKeepOverCount = useCallback(async () => {
+    if (!overDeliveryDecision || overDeliveryDecision.countConfirmed || overDeliverySubmitting) return;
+    if (await persistOverDeliveryCount(overDeliveryDecision, overDeliveryDecision.counted)) {
+      setOverDeliveryDecision(null);
+    }
+  }, [overDeliveryDecision, overDeliverySubmitting, persistOverDeliveryCount]);
 
-  const handleRejectOverDelivery = useCallback(() => {
-    if (!overDeliveryDecision) return;
-    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
-    setOverDeliveryError(null);
-    setOverDeliveryDecision(null);
-  }, [overDeliveryDecision, persistLineProgress]);
+  const handleRejectOverDelivery = useCallback(async () => {
+    if (!overDeliveryDecision || overDeliverySubmitting) return;
+    if (await persistOverDeliveryCount(overDeliveryDecision, overDeliveryDecision.line.quantity_expected)) {
+      setOverDeliveryDecision(null);
+    }
+  }, [overDeliveryDecision, overDeliverySubmitting, persistOverDeliveryCount]);
 
-  const handleReportOverDelivery = useCallback(() => {
-    if (!overDeliveryDecision) return;
+  const handleReportOverDelivery = useCallback(async () => {
+    if (!overDeliveryDecision || overDeliverySubmitting) return;
     const extra = Math.max(1, overDeliveryDecision.counted - overDeliveryDecision.line.quantity_expected);
-    void persistLineProgress(overDeliveryDecision.line, overDeliveryDecision.line.quantity_expected);
-    setOverDeliveryError(null);
+    if (!(await persistOverDeliveryCount(overDeliveryDecision, overDeliveryDecision.line.quantity_expected))) return;
     setOverDeliveryDecision(null);
     openProblemDialog({
       choice: 'extra_item',
       qty: String(extra),
       notes: `${extra} extra unit${extra === 1 ? '' : 's'} found during receive`,
     });
-  }, [openProblemDialog, overDeliveryDecision, persistLineProgress]);
+  }, [openProblemDialog, overDeliveryDecision, overDeliverySubmitting, persistOverDeliveryCount]);
 
   const handleReportProblem = useCallback(async () => {
     if (!currentLine || !problemType) return;
@@ -1544,37 +1831,187 @@ function ReceiveSessionFlow({
     }
   }, [currentLine, onRefresh, onReportException, problemNotes, problemQty, problemType]);
 
+  // S8-C3 — only an applied canonical read decides closed vs open.
+  const readCanonicalCloseStatus = useCallback(async (): Promise<CanonicalCloseStatus> => {
+    if (!onRefresh) return 'unknown';
+    try {
+      const result = await onRefresh();
+      if (!result || result.applied !== true) return 'unknown';
+      if (result.closedAt || result.jobStatus === 'closed') return 'closed';
+      return result.jobStatus != null && ACTIVE_RECEIVE_JOB_STATUSES.has(result.jobStatus) ? 'open' : 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }, [onRefresh]);
+
+  const applyCloseStatus = useCallback((status: CanonicalCloseStatus) => {
+    if (closeConfirmedRef.current || status === 'closed') {
+      closeConfirmedRef.current = true;
+      setCloseRecovery(null);
+      setSubmitError(null);
+      setCloseDetailsPending(status !== 'closed');
+      setSessionPhase('handoff');
+      return;
+    }
+    setCloseRecovery(status);
+    setSubmitError(status === 'open' ? CLOSE_OPEN_MESSAGE : null);
+  }, []);
+
   const handleCloseJob = useCallback(async () => {
     if (!deliveryDate.trim()) {
       setSubmitError('Actual delivery date is required before closing this receive.');
       return;
     }
+    // WS-UX-RECEIVE-D4R S6 — one close request (or status read) at a time; an
+    // unresolved outcome never sends another close.
+    if (closeInFlightRef.current || closeConfirmedRef.current || closeRecovery === 'unknown') return;
+    closeInFlightRef.current = true;
 
     setClosing(true);
     setSubmitError(null);
+    setCloseRecovery(null);
     try {
-      await onCloseJob({ actual_delivery_date: deliveryDate });
-      await onRefresh?.();
-      setSessionPhase('handoff');
-    } catch (err: any) {
-      const refusal = String(err?.response?.data?.error ?? err?.message ?? '');
-      // GH-1241 S3C-M4 — an unanswered close, or "Already closed", may mean the
-      // Receive did close: re-read it. Only a canonically closed job reaches the
-      // handoff (the session re-renders closed); anything else stays this error.
-      if (!err?.response || /already closed/i.test(refusal)) {
-        try {
-          await onRefresh?.();
-        } catch {
-          // The refusal below stays visible; a later retry re-reads again.
+      try {
+        await onCloseJob({ actual_delivery_date: deliveryDate });
+      } catch (err: any) {
+        const refusal = closeRefusalMessage(err);
+        if (refusal) {
+          setSubmitError(refusal);
+          return;
         }
+        // GH-1241 S3C-M4 / S8-C3 — an unanswered or uncertain close may have
+        // committed: read the canonical status before offering anything.
+        setClosing(false);
+        setCloseRecovery('checking');
+        applyCloseStatus(await readCanonicalCloseStatus());
+        return;
       }
-      setSubmitError(refusal || 'Could not close receive. Nothing was changed; retry when ready.');
+      closeConfirmedRef.current = true;
+      applyCloseStatus(await readCanonicalCloseStatus());
     } finally {
+      closeInFlightRef.current = false;
       setClosing(false);
     }
-  }, [deliveryDate, onCloseJob, onRefresh]);
+  }, [applyCloseStatus, closeRecovery, deliveryDate, onCloseJob, readCanonicalCloseStatus]);
 
-  const WorkNote = () => {
+  const handleCheckCloseStatus = useCallback(async () => {
+    if (closeInFlightRef.current) return;
+    closeInFlightRef.current = true;
+    setCloseRecovery('checking');
+    try {
+      applyCloseStatus(await readCanonicalCloseStatus());
+    } finally {
+      closeInFlightRef.current = false;
+    }
+  }, [applyCloseStatus, readCanonicalCloseStatus]);
+
+  // WS-UX-RECEIVE-D4R S1 — Distributed Work Note (UX-13). The same canonical
+  // facts as before, placed in the shell instead of a separate strip:
+  // Action → eyebrow, Reference/Supplier/Job → header, Item/Identity/Qty → the
+  // item line, Next → status line.
+  // WS-UX-RECEIVE-D4R S7 — Exit never writes, closes, finalizes or releases
+  // the claim: it only waits for what is already being saved and tells the
+  // operator the truth about anything that is not.
+  const exitBusy = submitting || countConfirming || shortfallSubmitting || overDeliverySubmitting || labelAckSubmitting
+    || labelPrinting || closing || problemSubmitting || scanProcessing || claiming;
+  const unsubmittedWork = (): string[] => {
+    const reasons: string[] = [];
+    for (const draft of Object.values(unsavedDraftRef.current)) {
+      reasons.push(`the count of ${draft.quantity} for ${lineName(draft.line)} (this screen cannot save counts)`);
+    }
+    if (scanInputValue.trim()) reasons.push(`the scanned code ${scanInputValue.trim()}`);
+    if (overDeliveryDecision && !overDeliveryDecision.approved) {
+      reasons.push(`the extra-unit decision for ${lineName(overDeliveryDecision.line)}`);
+    }
+    if (reconciliationLine && (shortfallProblemType || shortfallProblemNotes.trim())) {
+      reasons.push(`the shortfall reason for ${lineName(reconciliationLine.line)}`);
+    }
+    if (problemDialog && (problemChoice || problemNotes.trim())) reasons.push('the problem report you were writing');
+    if (sessionPhase === 'review' && deliveryDate.trim()) reasons.push('the actual delivery date you entered');
+    return reasons;
+  };
+
+  /** Every line whose latest provisional write the server refused, with what was attempted. */
+  const exitFailures = () => Object.entries(failedProgressRef.current).map(([lineId, failure]) => ({
+    lineId,
+    name: lineName(failure.line),
+    quantity: failure.quantity,
+    error: failure.error.message || 'The server did not confirm the save.',
+  }));
+
+  const flushForExit = useCallback(async () => {
+    const attempt = exitAttemptRef.current;
+    try {
+      await flushLineProgress();
+      if (attempt !== exitAttemptRef.current) return;
+      setExitSheet({ variant: 'checking' });
+    } catch {
+      if (attempt !== exitAttemptRef.current) return;
+      exitInFlightRef.current = false;
+      setExitSheet({ variant: 'failed', failures: exitFailures() });
+    }
+    // exitFailures reads refs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flushLineProgress]);
+
+  const handleExitRequest = useCallback(() => {
+    if (exitInFlightRef.current) return;
+    exitInFlightRef.current = true;
+    setExitSheet({ variant: 'saving' });
+    void flushForExit();
+  }, [flushForExit]);
+
+  const handleExitSaveAgain = useCallback(() => {
+    if (exitInFlightRef.current) return;
+    exitInFlightRef.current = true;
+    setExitSheet({ variant: 'saving' });
+    // Retry each failed line with the quantity that line attempted; the count
+    // on screen (possibly another product) is left untouched.
+    for (const failure of Object.values(failedProgressRef.current)) {
+      void enqueueProgressWrite(failure.line, failure.quantity);
+    }
+    void flushForExit();
+  }, [enqueueProgressWrite, flushForExit]);
+
+  const leaveSession = useCallback(() => {
+    exitInFlightRef.current = false;
+    setExitSheet(null);
+    onComplete();
+  }, [onComplete]);
+
+  const keepReceiving = useCallback(() => {
+    exitAttemptRef.current += 1;
+    exitInFlightRef.current = false;
+    setExitSheet(null);
+  }, []);
+
+  // Once queued writes are flushed and nothing consequential is in flight,
+  // flush once more (a finished submission may have queued a write) and
+  // decide: unsaved choices, or saved.
+  useEffect(() => {
+    if (exitSheet?.variant !== 'checking' || exitBusy) return;
+    let cancelled = false;
+    const attempt = exitAttemptRef.current;
+    void (async () => {
+      try {
+        await flushLineProgress();
+      } catch {
+        if (cancelled || attempt !== exitAttemptRef.current) return;
+        exitInFlightRef.current = false;
+        setExitSheet({ variant: 'failed', failures: exitFailures() });
+        return;
+      }
+      if (cancelled || attempt !== exitAttemptRef.current) return;
+      const reasons = unsubmittedWork();
+      exitInFlightRef.current = false;
+      setExitSheet(reasons.length > 0 ? { variant: 'review', reasons } : { variant: 'saved' });
+    })();
+    return () => { cancelled = true; };
+    // unsubmittedWork reads current render state; re-run only on these changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exitBusy, exitSheet, flushLineProgress]);
+
+  const getWorkNote = () => {
     const item = currentLine ? lineName(currentLine) : `${lines.length} lines`;
     const identity = currentLine
       ? currentLine.barcode?.trim() || currentLine.sku || currentLine.lasyncro_variant_id || currentLine.receive_job_line_id
@@ -1582,7 +2019,7 @@ function ReceiveSessionFlow({
     const action = sessionPhase === 'brief'
       ? 'Brief'
       : sessionPhase === 'review'
-        ? 'Review'
+        ? 'Review receive'
         : sessionPhase === 'handoff'
           ? 'Stow handoff'
           : sessionPhase === 'reconcile'
@@ -1612,190 +2049,207 @@ function ReceiveSessionFlow({
         : sessionPhase === 'handoff'
           ? 'move stock to stow'
           : sessionPhase === 'reconcile'
-            ? 'account shortfall'
+            ? reconciliationLine && reconciliationLine.remainingShortfall <= 0 ? 'finish line' : 'account shortfall'
             : currentAwaitingLabel
-              ? 'attach LSU labels'
+              ? 'attach unit labels'
               : lineAction === 'scan'
                 ? 'scan or count locally'
                 : 'finish count';
-
-    const workNoteFields = sessionPhase === 'handoff'
-      ? [
-          ['Action', action],
-          ['Status', 'CLOSED'],
-          ['Closed at', formatOpsTimestamp(closedAt)],
-          ['Actual delivery', formatOpsDate(actualDeliveryDate)],
-          ['Reference', poDisplay],
-          ['Item', item],
-          ['Qty', quantity],
-          ['Supplier', supplierName],
-          ['Identity', identity],
-          ['Next', nextStep],
-        ]
-      : [
-          ['Action', action],
-          ['Reference', poDisplay],
-          ['Item', item],
-          ['Qty', quantity],
-          ['Supplier', supplierName],
-          ['Identity', identity],
-          ['Next', nextStep],
-        ];
-
-    return (
-      <Paper
-        variant="outlined"
-        sx={{
-          px: 2,
-          py: 1.25,
-          borderRadius: '6px',
-          bgcolor: 'background.paper',
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: '1fr 1fr',
-            md: sessionPhase === 'handoff'
-              ? 'repeat(5, minmax(0, 1fr))'
-              : 'repeat(4, minmax(0, 1fr))',
-          },
-          gap: 1,
-        }}
-      >
-        {workNoteFields.map(([label, value]) => (
-          <Box key={label} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
-              {label}
-            </Typography>
-            <Typography
-              variant="body2"
-              noWrap
-              sx={{ ...(label === 'Item' || label === 'Supplier' ? {} : monoSx), fontWeight: 650 }}
-            >
-              {value}
-            </Typography>
-          </Box>
-        ))}
-      </Paper>
-    );
+    return { item, identity, action, quantity, nextStep };
   };
+  const workNote = getWorkNote();
 
   const LineMedia = ({ line, size = 44 }: { line: ReceiveJobLine; size?: number }) => (
     line.image_url ? (
-      <Box component="img" src={line.image_url} alt="" sx={{ width: size, height: size, objectFit: 'cover', borderRadius: '4px', flexShrink: 0 }} />
+      <Box component="img" src={line.image_url} alt="" sx={{ width: size, height: size, objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
     ) : (
-      <Box sx={{ width: size, height: size, borderRadius: '4px', bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <Box sx={{ width: size, height: size, borderRadius: '8px', bgcolor: 'var(--bg-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <Package size={Math.max(16, size / 2.5)} style={{ opacity: 0.4 }} />
       </Box>
     )
   );
 
-  const renderBrief = () => (
-    <Box sx={{ display: 'grid', gap: 2 }}>
-      <Box>
-        <Typography variant="h5" fontWeight={750}>Receive from {supplierName}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          <Box component="span" sx={monoSx}>{poDisplay}</Box> · Receive <Box component="span" sx={monoSx}>{receiveJobId}</Box>
-        </Typography>
-      </Box>
+  /** Item + mono identity + Work Note quantity for the current line. */
+  const currentItemLine = (line: ReceiveJobLine, withMedia = true) => (
+    <ReceiveItemLine
+      media={withMedia ? <LineMedia line={line} size={40} /> : undefined}
+      name={lineName(line)}
+      identity={`${workNote.identity} · ${workNote.quantity}`}
+    />
+  );
 
-      <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
-        <Table size="small">
+  const statusNext = (tone: ReceiveStatusTone = 'neutral') => (
+    <ReceiveStatusLine tone={tone}>Next · {workNote.nextStep}</ReceiveStatusLine>
+  );
+
+  const lineRowSx = {
+    '& td': { borderBottom: '1px solid var(--rule)', py: 0.75, px: { xs: 1.25, md: 2 } },
+    '&:last-of-type td': { borderBottom: 0 },
+  } as const;
+  // WS-UX-RECEIVE-D4R S6 — V3.1 list rows stay one-line by default so six fit;
+  // operators can explicitly expand the full name and identity without hover.
+  const rowNameSx = { fontSize: 14, fontWeight: 500, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const;
+  const rowMetaSx = { ...monoSx, fontSize: 11, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const;
+  const shrinkCellSx = { width: '100%', maxWidth: 0 } as const;
+
+  // S8-C4 — Review names stay single-line with ellipsis on every viewport so
+  // six rows fit without scrolling; the identity dialog shows name and SKU in full.
+  const reviewWrapSx = {
+    name: {},
+    meta: {},
+  } as const;
+  const expandableLineIdentity = (line: ReceiveJobLine, meta: ReactNode, wrap = false) => {
+    const identity = line.sku ?? line.receive_job_line_id;
+    return (
+      <Button
+        variant="text"
+        color="inherit"
+        aria-expanded={identityDetailLine?.receive_job_line_id === line.receive_job_line_id}
+        aria-haspopup="dialog"
+        aria-label={`Show full product identity for ${lineName(line)}, SKU ${identity}`}
+        onClick={() => setIdentityDetailLine(line)}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          justifyContent: 'center',
+          width: '100%',
+          minWidth: 0,
+          p: 0,
+          // S8-C4 — a 44px mobile hit area without growing the row: the
+          // invisible target extends 6px above and below, inside the cell.
+          position: 'relative',
+          '&::after': { content: '""', position: 'absolute', left: 0, right: 0, top: { xs: -6, md: 0 }, bottom: { xs: -6, md: 0 } },
+          borderRadius: '3px',
+          color: 'inherit',
+          textAlign: 'left',
+          textTransform: 'none',
+          '&:hover': { bgcolor: 'transparent' },
+          '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+        }}
+      >
+        <Typography sx={{
+          ...rowNameSx,
+          ...(wrap ? reviewWrapSx.name : {}),
+        }}>
+          {lineName(line)}
+        </Typography>
+        <Typography component="div" sx={{
+          ...rowMetaSx,
+          ...(wrap ? reviewWrapSx.meta : {}),
+          color: 'var(--ink-3)',
+        }}>
+          {meta}
+        </Typography>
+      </Button>
+    );
+  };
+
+  const briefHeadSx = { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', borderBottom: '1px solid var(--rule)', py: 0.75 } as const;
+  const wideOnlySx = { display: { xs: 'none', sm: 'table-cell' } } as const;
+  const narrowOnlySx = { display: { xs: 'block', sm: 'none' } } as const;
+  const pageCount = Math.max(1, Math.ceil(lines.length / RECEIVE_LIST_PAGE_SIZE));
+  const pageIndex = Math.min(listPage, pageCount - 1);
+  const pageLines = lines.slice(pageIndex * RECEIVE_LIST_PAGE_SIZE, (pageIndex + 1) * RECEIVE_LIST_PAGE_SIZE);
+  const briefQtySx = { ...monoSx, fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', verticalAlign: 'top' } as const;
+
+  const renderBrief = () => (
+    // Lists carry up to six rows; a tighter local rhythm keeps them on one screen.
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.25, md: 1.75 }, flex: { xs: 1, md: 'none' } }}>
+      <ReceiveTaskHeading
+        eyebrow={workNote.action}
+        title={<>Receive from {supplierName}</>}
+        sub={`${lines.length} ${lines.length === 1 ? 'product' : 'products'} · ${totalExpected} ${totalExpected === 1 ? 'unit' : 'units'} expected`}
+      />
+
+      <Box sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', overflow: 'hidden' }}>
+        <Table size="small" aria-label="Products on this Receive">
           <TableHead>
             <TableRow>
-              <TableCell>Product + variant</TableCell>
-              <TableCell align="right">Expected</TableCell>
-              <TableCell align="right">Already received</TableCell>
-              <TableCell align="right">Remaining</TableCell>
-              <TableCell>Barcode state</TableCell>
+              <TableCell sx={briefHeadSx}>Product</TableCell>
+              <TableCell align="right" sx={briefHeadSx}>Expected</TableCell>
+              <TableCell align="right" sx={{ ...briefHeadSx, ...wideOnlySx }}>Received</TableCell>
+              <TableCell align="right" sx={{ ...briefHeadSx, ...wideOnlySx }}>Remaining</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {lines.map((line) => {
+            {pageLines.map((line) => {
               const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
               const remainingQty = Math.max(0, line.quantity_expected - acceptedQty);
               const awaiting = isLineAwaitingLabel(line);
               const complete = isLineComplete(line);
               return (
-                <TableRow key={line.receive_job_line_id}>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', minWidth: 0 }}>
-                      <LineMedia line={line} size={36} />
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={650} noWrap>{lineName(line)}</Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {variantName(line)}
-                          {line.sku ? <> · <Box component="span" sx={monoSx}>{line.sku}</Box></> : null}
-                        </Typography>
-                        <ReportedProblemSummary line={line} compact />
+                <TableRow key={line.receive_job_line_id} sx={lineRowSx}>
+                  <TableCell sx={shrinkCellSx}>
+                    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', minWidth: 0 }}>
+                    <Box
+                      aria-hidden="true"
+                      sx={{ width: 20, height: 20, flex: '0 0 auto', borderRadius: '50%', bgcolor: complete && !awaiting ? 'var(--good-ink)' : awaiting ? 'var(--accent)' : 'var(--bg-3)' }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                    {expandableLineIdentity(line, <>
+                      <Box component="span" sx={{ fontFamily: 'inherit' }}>{variantName(line)}</Box>
+                      {line.sku && line.sku !== variantName(line) ? <> · {line.sku}</> : null}
+                      {' · '}
+                      <Box component="span">
+                        {hasExternalBarcode(line) ? `barcode ${line.barcode}` : awaiting ? 'LSU label hold' : 'barcode-less: LSU labels after count'}
                       </Box>
+                    </>)}
+                    {/* Mobile keeps the facts of the collapsed columns. */}
+                    <Typography component="div" sx={{ ...rowMetaSx, ...narrowOnlySx, whiteSpace: 'normal', fontFamily: 'inherit', letterSpacing: 0, color: 'var(--ink-2)' }}>
+                      {`Received ${acceptedQty} · Remaining ${remainingQty}`}
+                    </Typography>
+                    <ReportedProblemSummary line={line} compact />
+                    </Box>
                     </Box>
                   </TableCell>
-                  <TableCell align="right" sx={monoSx}>{line.quantity_expected}</TableCell>
-                  <TableCell align="right" sx={monoSx}>{acceptedQty}</TableCell>
-                  <TableCell align="right" sx={monoSx}>{remainingQty}</TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={hasExternalBarcode(line) ? `barcode ${line.barcode}` : awaiting ? 'LSU label hold' : 'barcode-less: LSU labels after count'}
-                      color={awaiting ? 'warning' : complete ? 'success' : hasExternalBarcode(line) ? 'primary' : 'default'}
-                      variant={complete || awaiting ? 'filled' : 'outlined'}
-                      sx={{ maxWidth: 240, '& .MuiChip-label': { ...monoSx, overflow: 'hidden', textOverflow: 'ellipsis' } }}
-                    />
-                  </TableCell>
+                  <TableCell align="right" sx={briefQtySx}>{line.quantity_expected}</TableCell>
+                  <TableCell align="right" sx={{ ...briefQtySx, ...wideOnlySx }}>{acceptedQty}</TableCell>
+                  <TableCell align="right" sx={{ ...briefQtySx, ...wideOnlySx }}>{remainingQty}</TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-      </Paper>
+      </Box>
+      <ReceiveListPager page={pageIndex} total={lines.length} onPage={setListPage} label="Products on this Receive pages" />
 
-      {claimError && (
-        <Alert severity="error">
-          {claimError}
-        </Alert>
-      )}
-
+      {claimError && <Alert severity="error">{claimError}</Alert>}
       {blockedByOwnership && (
         <Alert severity="warning">
           This Receive is assigned to another operator. Only the assigned operator can continue this job.
         </Alert>
       )}
-
       {blockedUnassigned && (
         <Alert severity="warning">
           This Receive must be assigned before it can be started or continued.
         </Alert>
       )}
-
       {jobStatus === 'cancelled' && (
         <Alert severity="warning">
           This Receive job has been cancelled and cannot be started.
         </Alert>
       )}
 
-      <Alert severity="info">
-        Barcode-capable lines can scan continuously or be counted locally. Barcode-less lines are counted, then held until LSU labels are printed and attached.
-      </Alert>
-
-      {!blockedLifecycle && (requiresClaim || !hasCanonicalJobStatus) && (
-        <Button
-          variant="contained"
-          size="large"
-          onClick={handleStart}
-          disabled={claiming}
-          sx={{ justifySelf: 'start', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
-        >
-          {claiming
-            ? 'Claiming…'
-            : requiresClaim
-              ? 'Claim & Start Receive'
-              : 'Start Receive'}
-        </Button>
-      )}
+      <ReceiveActions>
+        <ReceiveStatusLine>
+          Count good units only. Barcode-less products get LSU labels after count. Next · {workNote.nextStep}
+        </ReceiveStatusLine>
+        {!blockedLifecycle && (requiresClaim || !hasCanonicalJobStatus) && (
+          <ReceiveCta onClick={handleStart} disabled={claiming}>
+            {claiming
+              ? 'Claiming…'
+              : requiresClaim
+                ? 'Claim & Start Receive'
+                : 'Start Receive'}
+          </ReceiveCta>
+        )}
+      </ReceiveActions>
     </Box>
   );
 
   const renderLineRail = () => (
-    <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
+    <Box sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', overflow: 'hidden' }}>
       {lines.map((line, index) => {
         const complete = isLineComplete(line);
         const awaiting = isLineAwaitingLabel(line);
@@ -1805,377 +2259,352 @@ function ReceiveSessionFlow({
             key={line.receive_job_line_id}
             component="button"
             disabled={done}
-            onClick={() => setCurrentIndex(index)}
+            onClick={() => { setCurrentIndex(index); setLinesDrawerOpen(false); }}
             sx={{
               width: '100%',
               display: 'grid',
               gridTemplateColumns: 'auto minmax(0,1fr) auto',
-              gap: 1,
+              gap: 1.5,
               alignItems: 'center',
-              p: 1.25,
+              px: 2,
+              py: 1.25,
               border: 0,
-              borderBottom: index === lines.length - 1 ? 0 : '1px solid',
-              borderColor: 'divider',
+              borderBottom: index === lines.length - 1 ? 0 : '1px solid var(--rule)',
               bgcolor: currentIndex === index ? 'var(--accent-ghost)' : 'transparent',
-              color: 'text.primary',
+              color: 'var(--ink)',
+              font: 'inherit',
               textAlign: 'left',
               cursor: done ? 'not-allowed' : 'pointer',
               opacity: done ? 0.58 : 1,
             }}
           >
-            {done ? <CheckCircle size={16} color={theme.palette.success.main} /> : awaiting ? <AlertTriangle size={16} color={theme.palette.warning.main} /> : <Hash size={16} />}
+            {done ? <CheckCircle size={18} color="var(--good-ink)" /> : awaiting ? <AlertTriangle size={18} color="var(--accent)" /> : <Hash size={18} color="var(--ink-3)" />}
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="body2" fontWeight={650} noWrap>{lineName(line)}</Typography>
-              <Typography variant="caption" color="text.secondary" noWrap sx={monoSx}>
+              <Typography sx={{ fontSize: 14, fontWeight: 500, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{lineName(line)}</Typography>
+              <Typography sx={{ ...monoSx, fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                 {line.sku ?? line.receive_job_line_id}
               </Typography>
               <ReportedProblemSummary line={line} compact />
             </Box>
-            <Chip size="small" label={statusLabel(line, awaiting, complete)} variant="outlined" sx={{ '& .MuiChip-label': monoSx }} />
+            <Typography component="span" sx={{ ...monoSx, fontSize: 12, color: 'var(--ink-2)' }}>
+              {statusLabel(line, awaiting, complete)}
+            </Typography>
           </Box>
         );
       })}
-    </Paper>
+    </Box>
   );
 
   const renderInspect = () => {
     if (!currentLine) return null;
     const remaining = Math.max(0, currentLine.quantity_expected - activeAccepted);
-    const extra = Math.max(0, activeAccepted - currentLine.quantity_expected);
 
+    if (currentAwaitingLabel) {
+      // WS-UX-RECEIVE-D4R S4 — Label hold (V3.1 Labels printing / Print
+      // failed / Labels ready). The hold stays until the operator confirms the
+      // labels are physically attached; print success or failure never does.
+      const labelCount = `${activeAccepted} unit ${activeAccepted === 1 ? 'label' : 'labels'}`;
+      // WS-UX-RECEIVE-D4R S8-C2 — print status is local only: after refresh or
+      // re-entry (or without a print path) it is unknown, never "printed".
+      // A resolved print request is a dispatch (printer or PDF), not proof of
+      // printed or attached labels.
+      const printUnknown = !labelPrinting && !labelPrintFailed && !labelsPrinted;
+      const printLeads = printUnknown && !!onPrintUnitLabels;
+      const unitLabels = `${activeAccepted} unit ${activeAccepted === 1 ? 'label' : 'labels'}`;
+      const holdStatus = labelPrinting ? (
+        <ReceiveStatusLine tone="warn" role="status">
+          {lineName(currentLine)} · Sending labels to the printer…
+        </ReceiveStatusLine>
+      ) : submitError ? (
+        <ReceiveStatusLine tone="error" role="alert">
+          {lineName(currentLine)} · {submitError}
+        </ReceiveStatusLine>
+      ) : labelPrintFailed ? (
+        <ReceiveStatusLine tone="error" role="alert">
+          {lineName(currentLine)} · Print failed · reprint, then attach a label to every unit
+        </ReceiveStatusLine>
+      ) : (
+        <ReceiveStatusLine tone={labelsPrinted ? 'ok' : 'neutral'}>
+          {lineName(currentLine)} · {labelsPrinted
+            ? `Print request sent · check all ${activeAccepted} labels printed, then attach them`
+            : printLeads
+              ? 'Next · print labels'
+              : `Next · attach a label to each of the ${activeAccepted} ${activeAccepted === 1 ? 'unit' : 'units'}`}
+        </ReceiveStatusLine>
+      );
+      return (
+        <>
+          <ReceiveTaskHeading
+            eyebrow={workNote.action}
+            eyebrowTone={labelPrintFailed && !labelPrinting ? 'error' : 'accent'}
+            title={labelPrinting ? 'Print' : labelPrintFailed ? 'Labels' : printUnknown ? 'Confirm' : 'Attach'}
+            accent={labelPrinting ? `${labelCount}.` : labelPrintFailed ? 'didn’t print.' : printUnknown ? `${unitLabels}.` : `${labelCount}.`}
+            sub={labelPrinting
+              ? 'These units have no barcode. One label goes on each unit.'
+              : labelPrintFailed
+                ? `The print request failed. Reprint, or continue only after all ${activeAccepted} labels are physically attached.`
+                : labelsPrinted
+                  ? 'Print request sent to the printer or opened as a PDF. Check every label, attach one to each unit, then confirm.'
+                  : printLeads
+                    ? `Label printing status is unknown. Print labels if needed, or continue only after all ${activeAccepted} labels are physically attached.`
+                    : `Label printing status is unknown. Continue only after all ${activeAccepted} labels are physically attached.`}
+          />
+          {currentItemLine(currentLine)}
+          <ReportedProblemSummary line={currentLine} />
+          {labelPrinting && (
+            <LinearProgress
+              aria-label="Printing labels"
+              sx={{ width: 200, alignSelf: 'center', height: 3, borderRadius: '2px', bgcolor: 'var(--bg-3)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--accent)' } }}
+            />
+          )}
+          {labelPrintFailed && !labelPrinting && (
+            <Box sx={{ borderRadius: '10px', px: 1.75, py: 1.25, textAlign: 'center', fontSize: 13, bgcolor: 'var(--warning-ghost, var(--bg-2))', color: 'var(--ink-2)' }}>
+              <Box component="b" sx={{ display: 'block', fontWeight: 600 }}>Labels could not be printed.</Box>
+              {`${activeAccepted} ${activeAccepted === 1 ? 'label' : 'labels'} for ${activeAccepted} ${activeAccepted === 1 ? 'unit' : 'units'}. Check the printer, then reprint.`}
+            </Box>
+          )}
+          <ReceiveActions>
+            {holdStatus}
+            {labelPrintFailed && onPrintUnitLabels && (
+              <ReceiveCta tier="strong" disabled={labelPrinting || labelAckSubmitting} onClick={() => void handleRetryPrintLabels()}>
+                {labelPrinting ? 'Printing…' : 'Reprint labels'}
+              </ReceiveCta>
+            )}
+            {printLeads && (
+              <ReceiveCta disabled={labelAckSubmitting} onClick={() => void handleRetryPrintLabels()}>
+                Print labels
+              </ReceiveCta>
+            )}
+            <ReceiveCta
+              data-testid="confirm-unit-labels-printed"
+              tier={labelPrintFailed || printLeads ? 'secondary' : 'primary'}
+              disabled={labelAckSubmitting || labelPrinting}
+              onClick={() => void handleConfirmLabelsPrinted()}
+              startIcon={<CheckCircle size={16} />}
+            >
+              {labelAckSubmitting ? 'Confirming...' : `All ${activeAccepted} labels are attached`}
+            </ReceiveCta>
+            {!labelPrintFailed && !printLeads && !labelPrinting && onPrintUnitLabels && (
+              <ReceiveTextAction disabled={labelPrinting || labelAckSubmitting} onClick={() => void handleRetryPrintLabels()}>
+                {labelsPrinted ? 'Reprint labels' : 'Print labels'}
+              </ReceiveTextAction>
+            )}
+          </ReceiveActions>
+        </>
+      );
+    }
+
+    const scanning = lineAction === 'scan' && currentCanScan;
     return (
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr) 320px' },
-          gap: 2,
-          alignItems: 'stretch',
-        }}
-      >
-        {renderLineRail()}
-
-        <Paper
-          variant="outlined"
+      <>
+        <ReceiveTaskHeading
+          eyebrow={workNote.action}
+          title={scanning ? 'Scan each' : lineName(currentLine)}
+          accent={scanning ? 'good unit.' : undefined}
+          titleSx={scanning ? undefined : { fontSize: { xs: 30, md: 44 } }}
+        />
+        <Box
           sx={{
-            borderRadius: '6px',
-            p: 2.25,
-            bgcolor: flashLine === currentLine.receive_job_line_id ? 'rgba(34,197,94,0.10)' : 'background.paper',
-            transition: 'background-color 180ms ease',
             display: 'flex',
             flexDirection: 'column',
-            minHeight: 320,
+            gap: { xs: 1.5, md: 2 },
+            borderRadius: '12px',
+            bgcolor: flashLine === currentLine.receive_job_line_id ? 'var(--good-ghost, rgba(34,197,94,0.10))' : 'transparent',
+            transition: 'background-color 180ms ease',
           }}
         >
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1, mb: 2 }}>
-            {currentLine.sku && (
-              <Chip
-                size="small"
-                label={`SKU ${currentLine.sku}`}
-                sx={{ width: '100%', '& .MuiChip-label': monoSx }}
-              />
-            )}
-            <Chip
-              size="small"
-              label={`Expected ${currentLine.quantity_expected}`}
-              sx={{ width: '100%', '& .MuiChip-label': monoSx }}
-            />
-            <Chip
-              size="small"
-              label={`Remaining ${remaining}`}
-              color={remaining === 0 ? 'success' : 'default'}
-              sx={{ width: '100%', '& .MuiChip-label': monoSx }}
-            />
-          </Box>
+          <ReceiveProductImage src={currentLine.image_url} />
+          {currentItemLine(currentLine, false)}
+
+          {currentCanScan && (
+            <Box
+              role="group"
+              aria-label="Receive treatment"
+              sx={{ alignSelf: 'center', display: 'inline-flex', border: '1px solid var(--rule-2)', borderRadius: '100px', p: '3px', bgcolor: 'var(--surface)' }}
+            >
+              {(['scan', 'count'] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  size="small"
+                  aria-pressed={lineAction === mode}
+                  startIcon={mode === 'scan' ? <ScanBarcode size={14} /> : <Hash size={14} />}
+                  onClick={() => {
+                    if (mode === 'scan') {
+                      setLineAction('scan');
+                      return;
+                    }
+                    setLineAction('count');
+                  }}
+                  sx={{
+                    minHeight: { xs: 44, md: 28 },
+                    px: 1.75,
+                    borderRadius: '100px',
+                    ...receiveFocusRingSx,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    textTransform: 'none',
+                    color: lineAction === mode ? 'var(--bg)' : 'var(--ink-3)',
+                    bgcolor: lineAction === mode ? 'var(--ink)' : 'transparent',
+                    '&:hover': { bgcolor: lineAction === mode ? 'var(--ink)' : 'var(--bg-2)' },
+                  }}
+                >
+                  {mode === 'scan' ? 'Scan' : 'Count'}
+                </Button>
+              ))}
+            </Box>
+          )}
 
           <ReportedProblemSummary line={currentLine} />
 
-          {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+          <Box sx={{ display: 'grid', gap: 1.25 }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '64px minmax(0,1fr) 64px', md: '88px minmax(0,1fr) 88px' },
+                alignItems: 'center',
+                gap: { xs: 1, md: 1.5 },
+                p: { xs: '12px', md: '20px 24px' },
+                border: '1px solid var(--rule-2)',
+                borderRadius: '12px',
+                bgcolor: 'var(--surface)',
+              }}
+            >
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  const next = Math.max(0, accepted - 1);
+                  establishCount(currentLine);
+                  void persistLineProgress(currentLine, next);
+                }}
+                disabled={scanning || !currentCountEstablished || accepted <= 0 || currentComplete}
+                sx={countStepperButtonSx()}
+              >
+                −
+              </Button>
 
-          {currentAwaitingLabel ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
-              <Box>
-                <Typography variant="subtitle1" fontWeight={750}>
-                  Attach a label to each unit
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  {activeAccepted} unit labels were created for {variantName(currentLine)}.
-                  Attach one label to each unit before moving them to Stow.
+              <Box sx={{ display: 'grid', justifyItems: 'center', gap: '2px', minWidth: 0 }}>
+                <TextField
+                  variant="standard"
+                  value={currentCountEstablished ? accepted : ''}
+                  placeholder="Not counted"
+                  disabled={scanning || currentComplete}
+                  onChange={(event) => {
+                    const next = Number.parseInt(event.target.value, 10);
+                    if (Number.isNaN(next) || next < 0) return;
+                    const crossedExpected = accepted <= currentLine.quantity_expected;
+                    establishCount(currentLine);
+                    void persistLineProgress(currentLine, next);
+                    if (next > currentLine.quantity_expected && crossedExpected) {
+                      setOverDeliveryError(null);
+                      setOverDeliveryDecision({ line: currentLine, counted: next });
+                      return;
+                    }
+                  }}
+                  InputProps={{ disableUnderline: true }}
+                  inputProps={{
+                    min: 0,
+                    'aria-label': 'Sellable count',
+                    style: { textAlign: 'center', fontWeight: 300, padding: 0 },
+                  }}
+                  sx={countValueSx}
+                />
+                <Typography component="span" sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)' }}>
+                  {currentCountEstablished
+                    ? `${accepted} / ${currentLine.quantity_expected} expected · remaining ${remaining}`
+                    : `of ${currentLine.quantity_expected} expected`}
                 </Typography>
               </Box>
-
-              {!labelPrintFailed && onPrintUnitLabels && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => void handleRetryPrintLabels()}
-                  sx={{ alignSelf: 'flex-start', borderRadius: '6px', fontWeight: 650 }}
-                >
-                  Print labels
-                </Button>
-              )}
-
-              {labelPrintFailed && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" color="warning.main">
-                    Labels could not be printed.
-                  </Typography>
-                  {onPrintUnitLabels && (
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      size="small"
-                      onClick={() => void handleRetryPrintLabels()}
-                      sx={{ borderRadius: '6px', fontWeight: 650 }}
-                    >
-                      Reprint labels
-                    </Button>
-                  )}
-                </Box>
-              )}
 
               <Button
-                data-testid="confirm-unit-labels-printed"
-                variant="contained"
-                disabled={labelAckSubmitting}
-                onClick={() => void handleConfirmLabelsPrinted()}
-                startIcon={<CheckCircle size={16} />}
-                sx={{
-                  width: '100%',
-                  minHeight: 36,
-                  mt: 'auto',
-                  bgcolor: 'var(--accent)',
-                  color: 'var(--accent-ink)',
-                  '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                  borderRadius: '6px',
-                  fontWeight: 700,
+                variant="outlined"
+                onClick={() => {
+                  const next = accepted + 1;
+                  establishCount(currentLine);
+                  void persistLineProgress(currentLine, next);
+                  if (accepted === currentLine.quantity_expected) {
+                    setOverDeliveryError(null);
+                    setOverDeliveryDecision({ line: currentLine, counted: next });
+                    return;
+                  }
                 }}
+                disabled={scanning || currentComplete}
+                sx={countStepperButtonSx(true)}
               >
-                {labelAckSubmitting ? 'Confirming...' : `All ${activeAccepted} labels are attached`}
+                +
               </Button>
             </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
-              {currentCanScan && (
-                <Box sx={{ display: 'inline-flex', gap: 0.75, alignItems: 'center' }}>
-                  <Button
-                    variant={lineAction === 'scan' ? 'contained' : 'outlined'}
-                    size="small"
-                    startIcon={<ScanBarcode size={14} />}
-                    onClick={() => setLineAction('scan')}
-                    sx={{ borderRadius: '6px', fontWeight: 650 }}
-                  >
-                    Scan
-                  </Button>
-                  <Button
-                    variant={lineAction === 'count' ? 'contained' : 'outlined'}
-                    size="small"
-                    startIcon={<Hash size={14} />}
-                    onClick={() => {
-                      setLineAction('count');
-                      void persistLineProgress(currentLine, accepted);
-                    }}
-                    sx={{ borderRadius: '6px', fontWeight: 650 }}
-                  >
-                    Count
-                  </Button>
-                </Box>
-              )}
 
-              {lineAction === 'scan' && currentCanScan ? (
-                <Box sx={{ display: 'grid', gap: 1 }}>
-                  <TextField
-                    inputRef={scanInputRef}
-                    size="small"
-                    fullWidth
-                    value={scanInputValue}
-                    disabled={!scanReady || scanProcessing || currentComplete}
-                    placeholder="Scan barcode"
-                    onChange={(event) => setScanInputValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return;
-                      const value = scanInputValue;
-                      setScanInputValue('');
-                      void handleScan(value);
-                    }}
-                    helperText={scanProcessing ? 'Processing scan...' : 'Scanner-ready: scan, process, clear, refocus'}
-                    autoComplete="off"
-                    inputProps={{ style: monoSx }}
-                  />
-                  {scanError && <Alert severity="error" onClose={() => setScanError(null)}>{scanError}</Alert>}
-                </Box>
-              ) : (
-                <Box sx={{ width: '100%', my: 'auto' }}>
-                  <Box
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                      gap: 1,
-                    }}
-                  >
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        const next = Math.max(0, accepted - 1);
-                        void persistLineProgress(currentLine, next);
-                      }}
-                      disabled={accepted <= 0 || currentComplete}
-                      sx={countStepperButtonSx()}
-                    >
-                      −
-                    </Button>
-
-                    <TextField
-                      size="small"
-                      value={accepted}
-                      disabled={currentComplete}
-                      onChange={(event) => {
-                        const next = Number.parseInt(event.target.value, 10);
-                        if (Number.isNaN(next) || next < 0) return;
-                        const crossedExpected = accepted <= currentLine.quantity_expected;
-                        void persistLineProgress(currentLine, next);
-                        if (next > currentLine.quantity_expected && crossedExpected) {
-                          setOverDeliveryError(null);
-                          setOverDeliveryDecision({ line: currentLine, counted: next });
-                          return;
-                        }
-                      }}
-                      inputProps={{
-                        min: 0,
-                        style: { ...monoSx, textAlign: 'center', fontWeight: 800 },
-                      }}
-                      sx={countStepperValueSx}
-                    />
-
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        const next = accepted + 1;
-                        void persistLineProgress(currentLine, next);
-                        if (accepted === currentLine.quantity_expected) {
-                          setOverDeliveryError(null);
-                          setOverDeliveryDecision({ line: currentLine, counted: next });
-                          return;
-                        }
-                      }}
-                      disabled={currentComplete}
-                      sx={countStepperButtonSx(true)}
-                    >
-                      +
-                    </Button>
-
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => void persistLineProgress(currentLine, currentLine.quantity_expected)}
-                      disabled={currentComplete}
-                      sx={{
-                        minWidth: 0,
-                        height: 40,
-                        gridColumn: 2,
-                        borderRadius: '6px',
-                        fontWeight: 650,
-                      }}
-                    >
-                      ALL {currentLine.quantity_expected}
-                    </Button>
-                  </Box>
-
-                  <Box sx={{ mt: 1.5 }}>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mb: 0.75,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 650 }}>
-                        COUNTED
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={monoSx}>
-                        {accepted} / {currentLine.quantity_expected}
-                      </Typography>
-                    </Box>
-
-                    <Box
-                      sx={{
-                        height: 4,
-                        borderRadius: 999,
-                        bgcolor: 'action.hover',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: `${Math.min(
-                            100,
-                            (accepted / Math.max(1, currentLine.quantity_expected)) * 100,
-                          )}%`,
-                          height: '100%',
-                          borderRadius: 999,
-                          bgcolor:
-                            accepted >= currentLine.quantity_expected
-                              ? 'var(--accent)'
-                              : 'text.secondary',
-                          transition: 'width 180ms ease, background-color 180ms ease',
-                        }}
-                      />
-                    </Box>
-                  </Box>
-                </Box>
-              )}
-
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1, mt: 'auto' }}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  aria-label="Finish count Confirm line"
-                  disabled={submitting || currentComplete}
-                  onClick={() => void handleCountConfirm()}
-                  startIcon={<CheckCircle size={16} />}
-                  sx={{
-                    width: '100%',
-                    minHeight: 36,
-                    bgcolor: 'var(--accent)',
-                    color: 'var(--accent-ink)',
-                    '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                    borderRadius: '6px',
-                    fontWeight: 700,
+            {scanning && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.75,
+                  height: 60,
+                  px: 2.25,
+                  border: scanError ? '1.5px solid var(--critical-ink)' : '1px solid var(--rule-2)',
+                  borderStyle: scanProcessing ? 'dashed' : 'solid',
+                  borderRadius: '12px',
+                  bgcolor: 'var(--surface)',
+                }}
+              >
+                <ScanBarcode size={18} color="var(--accent)" aria-hidden="true" />
+                <TextField
+                  inputRef={scanInputRef}
+                  variant="standard"
+                  fullWidth
+                  value={scanInputValue}
+                  disabled={!scanReady || scanProcessing || currentComplete}
+                  placeholder="Scan barcode"
+                  onChange={(event) => setScanInputValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    const value = scanInputValue;
+                    setScanInputValue('');
+                    void handleScan(value);
                   }}
+                  autoComplete="off"
+                  InputProps={{ disableUnderline: true }}
+                  inputProps={{ style: { ...monoSx, fontSize: 18 } }}
+                />
+                <Box
+                  component="span"
+                  aria-hidden="true"
+                  sx={{ display: { xs: 'none', md: 'inline' }, fontSize: 10, fontWeight: 500, border: '1px solid currentColor', borderRadius: '4px', px: 0.75, py: '2px', opacity: 0.75 }}
                 >
-                  {submitting ? 'Saving...' : 'Finish count'}
-                </Button>
+                  Enter
+                </Box>
               </Box>
-            </Box>
+            )}
+          </Box>
+        </Box>
+
+        {submitError && <Alert severity="error">{submitError}</Alert>}
+
+        <ReceiveActions>
+          {scanning && scanError ? (
+            <ReceiveStatusLine tone="error" role="alert">
+              <Box component="span">{scanError}</Box>
+              <Button size="small" color="inherit" onClick={() => setScanError(null)} sx={{ ml: 1, minWidth: { xs: 44, md: 0 }, textTransform: 'none', fontSize: 12, ...receiveTouchTargetSx, ...receiveFocusRingSx }}>
+                Dismiss
+              </Button>
+            </ReceiveStatusLine>
+          ) : scanning ? (
+            <ReceiveStatusLine tone={scanProcessing ? 'warn' : 'ok'}>
+              {scanProcessing ? 'Processing scan...' : 'Scanner ready · each scan adds 1'} · Next · {workNote.nextStep}
+            </ReceiveStatusLine>
+          ) : (
+            statusNext()
           )}
-        </Paper>
-
-        <Paper
-          variant="outlined"
-          sx={{
-            display: { xs: 'none', lg: 'flex' },
-            flexDirection: 'column',
-            borderRadius: '6px',
-            p: 2.25,
-            minHeight: 320,
-            overflow: 'hidden',
-            bgcolor: 'background.paper',
-          }}
-        >
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} noWrap>
-              {lineName(currentLine)}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {variantName(currentLine)}
-            </Typography>
-          </Box>
-
-          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-            <LineMedia line={currentLine} size={220} />
-          </Box>
-        </Paper>
-      </Box>
+          <ReceiveCta
+            aria-label="Finish count Confirm line"
+            disabled={submitting || countConfirming || !currentCountEstablished || currentComplete}
+            onClick={() => void handleCountConfirm()}
+          >
+            {submitting ? 'Saving...' : 'Finish count'}
+          </ReceiveCta>
+        </ReceiveActions>
+      </>
     );
   };
 
@@ -2186,55 +2615,48 @@ function ReceiveSessionFlow({
     const selectedChoice = RECONCILIATION_CHOICES.find((choice) => choice.type === shortfallProblemType);
 
     return (
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', lg: '320px minmax(0,1fr) 320px' },
-          gap: 2,
-          alignItems: 'stretch',
-        }}
-      >
-        {renderLineRail()}
+      // Shortfall carries the densest decision: a tighter local rhythm keeps
+      // every reason, the notes, errors and actions inside one screen.
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 0.75, md: 1.75 }, flex: { xs: 1, md: 'none' } }}>
+        <ReceiveTaskHeading
+          eyebrow={workNote.action}
+          title={remainingShortfall === 0 ? 'All' : `${sellable} of ${line.quantity_expected}`}
+          accent={remainingShortfall === 0 ? 'accounted for.' : 'sellable.'}
+          titleSx={{ fontSize: { xs: 34, md: 44 } }}
+          sub={remainingShortfall === 0
+            ? `Sellable ${sellable} + accounted ${accounted} = expected ${line.quantity_expected}`
+            : `Account for the remaining ${remainingShortfall} ${remainingShortfall === 1 ? 'unit' : 'units'} before finishing this line.`}
+        />
+        {currentItemLine(line)}
+        <ReceiveFactStrip
+          facts={[
+            { label: 'Expected', value: line.quantity_expected },
+            { label: 'Sellable', value: sellable },
+            { label: 'To account for', value: remainingShortfall, highlight: remainingShortfall > 0 },
+          ]}
+        />
 
-        <Paper
-          variant="outlined"
-          sx={{
-            borderRadius: '6px',
-            p: 2.25,
-            bgcolor: 'background.paper',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 420,
-            gap: 1.5,
-          }}
-        >
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
-            {[
-              ['Expected', line.quantity_expected],
-              ['Sellable', sellable],
-              ['To account for', remainingShortfall],
-            ].map(([label, value]) => (
-              <Paper key={label} variant="outlined" sx={{ p: 1.25, borderRadius: '6px', minHeight: 70 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
-                  {label}
-                </Typography>
-                <Typography variant="h6" sx={monoSx} fontWeight={800}>
-                  {value}
-                </Typography>
-              </Paper>
-            ))}
-          </Box>
+        <ReceivePillRow>
+          {allocations.map((allocation, index) => (
+            <ReceivePill key={`${allocation.type}-${index}`}>
+              <span>{problemLabel(allocation.type)}</span>
+              <b>{unitLabel(allocation.quantity)}</b>
+            </ReceivePill>
+          ))}
+          <ReceivePill tone={remainingShortfall === 0 ? 'ok' : 'neutral'}>
+            <span>{`Accounted ${accounted} / ${totalShortfall}`}</span>
+          </ReceivePill>
+          <ReceivePill>
+            <span>{`To account for ${remainingShortfall}`}</span>
+          </ReceivePill>
+        </ReceivePillRow>
 
-          <Typography variant="body2" color="text.secondary" sx={{ mt: -0.25 }}>
-            Account for the remaining {remainingShortfall} units before finishing this line.
-          </Typography>
+        {submitError && <Alert severity="error">{submitError}</Alert>}
 
-          {submitError && <Alert severity="error">{submitError}</Alert>}
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 0.875 }}>
+        {remainingShortfall > 0 && (
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
             {RECONCILIATION_CHOICES.map((choice) => {
               const selected = shortfallProblemType === choice.type;
-              const isOther = choice.type === 'other';
               return (
                 <Button
                   key={choice.type}
@@ -2249,276 +2671,238 @@ function ReceiveSessionFlow({
                     setShortfallProblemNotes('');
                     setShortfallQtyError(null);
                   }}
-                  sx={{
-                    ...reconciliationChoiceSx(selected),
-                    gridColumn: { xs: '1', sm: isOther ? '1 / -1' : 'auto' },
-                  }}
-                  style={isOther ? { gridColumn: '1 / -1' } : undefined}
+                  sx={reconciliationChoiceSx(selected)}
                 >
-                  {selected && (
-                    <CheckCircle
-                      size={14}
-                      aria-hidden="true"
-                      style={{ marginRight: 8, flexShrink: 0 }}
-                    />
-                  )}
-                  {choice.label}
+                  <Box component="span" sx={{ display: 'grid', gap: '1px', textAlign: 'left', minWidth: 0 }}>
+                    <Box component="span" sx={{ fontSize: 14, fontWeight: 500, lineHeight: 1.3 }}>{choice.label}</Box>
+                    <Box component="span" sx={{ display: { xs: 'none', md: 'block' }, fontSize: 12, fontWeight: 300, lineHeight: 1.3, color: 'var(--ink-3)' }}>
+                      {choice.hint}
+                    </Box>
+                  </Box>
                 </Button>
               );
             })}
           </Box>
+        )}
 
-          {shortfallProblemType && remainingShortfall > 0 && (
-            <Box sx={{ display: 'grid', gap: 1 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                Qty affected
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) 44px', gap: 1, alignItems: 'center' }}>
+        {shortfallProblemType && remainingShortfall > 0 && (
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            {selectedChoice?.requiresNotes && (
+              <TextField
+                label="Notes"
+                size="small"
+                value={shortfallProblemNotes}
+                onChange={(event) => setShortfallProblemNotes(event.target.value)}
+                required
+                error={!!shortfallQtyError && !shortfallProblemNotes.trim()}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'var(--surface)' } }}
+              />
+            )}
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: 1.25, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', height: { xs: 52, md: 56 }, border: '1px solid var(--rule-2)', borderRadius: '10px', bgcolor: 'var(--surface)' }}>
                 <Button
-                  variant="outlined"
                   color="inherit"
                   disabled={shortfallSubmitting}
                   onClick={() => {
                     const current = Number.parseInt(shortfallProblemQty, 10) || 1;
                     setShortfallProblemQty(String(Math.max(1, current - 1)));
                   }}
-                  sx={countStepperButtonSx()}
+                  sx={{ minWidth: 44, height: '100%', fontSize: 22, fontWeight: 300 }}
                 >
                   −
                 </Button>
                 <TextField
                   type="number"
-                  size="small"
+                  variant="standard"
                   value={shortfallProblemQty}
                   onChange={(event) => {
                     setShortfallProblemQty(event.target.value);
                     setShortfallQtyError(null);
                   }}
                   error={!!shortfallQtyError}
-                  helperText={shortfallQtyError ?? undefined}
+                  InputProps={{ disableUnderline: true }}
                   inputProps={{
                     min: 1,
                     max: remainingShortfall,
                     'aria-label': 'Qty affected',
-                    style: { ...monoSx, textAlign: 'center' },
+                    style: { ...monoSx, textAlign: 'center', fontSize: 20, fontWeight: 500 },
                   }}
-                  sx={countStepperValueSx}
+                  sx={{ width: 52, borderLeft: '1px solid var(--rule)', borderRight: '1px solid var(--rule)' }}
                 />
                 <Button
-                  variant="outlined"
                   color="inherit"
                   disabled={shortfallSubmitting}
                   onClick={() => {
                     const current = Number.parseInt(shortfallProblemQty, 10) || 1;
                     setShortfallProblemQty(String(Math.min(remainingShortfall, current + 1)));
                   }}
-                  sx={countStepperButtonSx(true)}
+                  sx={{ minWidth: 44, height: '100%', fontSize: 22, fontWeight: 300 }}
                 >
                   +
                 </Button>
               </Box>
-
-              {selectedChoice?.requiresNotes && (
-                <TextField
-                  label="Notes"
-                  size="small"
-                  value={shortfallProblemNotes}
-                  onChange={(event) => setShortfallProblemNotes(event.target.value)}
-                  required
-                  multiline
-                  rows={2}
-                />
-              )}
-
-              <Button
-                variant="contained"
-                color="inherit"
+              <ReceiveCta
                 disabled={shortfallSubmitting || !shortfallProblemType}
                 onClick={() => void handleReconciliationAllocation()}
-                sx={reconciliationCommitActionSx}
               >
                 {shortfallSubmitting ? 'Adding...' : 'Add to reconciliation'}
-              </Button>
+              </ReceiveCta>
             </Box>
+          </Box>
+        )}
+
+        <ReceiveActions>
+          {/* One status slot: a validation error replaces Next until it is fixed. */}
+          {shortfallQtyError && remainingShortfall > 0 ? (
+            <ReceiveStatusLine tone="error" role="alert">{shortfallQtyError}</ReceiveStatusLine>
+          ) : (
+            statusNext(remainingShortfall > 0 ? 'warn' : 'ok')
           )}
-
-          <Box sx={{ mt: 'auto', display: 'grid', gap: 0.75 }}>
-            <Typography variant="subtitle2" fontWeight={750}>
-              Accounted
-            </Typography>
-            {allocations.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No allocations yet.
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'grid', gap: 0.75 }}>
-                {allocations.map((allocation, index) => (
-                  <Box
-                    key={`${allocation.type}-${index}`}
-                    sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, borderBottom: '1px solid', borderColor: 'divider', pb: 0.75 }}
-                  >
-                    <Typography variant="body2">{problemLabel(allocation.type)}</Typography>
-                    <Typography variant="body2" sx={monoSx}>{unitLabel(allocation.quantity)}</Typography>
-                  </Box>
-                ))}
-              </Box>
-            )}
-            <Typography variant="body2" sx={monoSx}>
-              Accounted {accounted} / {totalShortfall}
-            </Typography>
-            <Typography variant="body2" sx={monoSx}>
-              To account for {remainingShortfall}
-            </Typography>
-            <Button
-              variant="contained"
-              disabled={remainingShortfall > 0 || submitting}
-              onClick={() => void handleFinishReconciledLine()}
-              sx={{
-                mt: 0.5,
-                width: '100%',
-                minHeight: 36,
-                bgcolor: 'var(--accent)',
-                color: 'var(--accent-ink)',
-                '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-                borderRadius: '6px',
-                fontWeight: 700,
-              }}
+          <ReceiveCta
+            tier={remainingShortfall > 0 && shortfallProblemType ? 'secondary' : 'primary'}
+            disabled={remainingShortfall > 0 || submitting}
+            onClick={() => void handleFinishReconciledLine()}
+          >
+            {submitting ? 'Finishing...' : 'Finish line'}
+          </ReceiveCta>
+          {(allocations.length === 0 || onRecountLine) && (
+            <ReceiveTextAction
+              disabled={shortfallSubmitting || submitting}
+              onClick={() => (allocations.length === 0
+                ? void handleReconciliationMiscount()
+                : setRecountSheet({ status: 'confirm' }))}
             >
-              {submitting ? 'Finishing...' : 'Finish line'}
-            </Button>
-            {allocations.length === 0 && (
-              <Button
-                color="inherit"
-                disabled={shortfallSubmitting || submitting}
-                onClick={() => void handleReconciliationMiscount()}
-                sx={{ borderRadius: '6px', fontWeight: 650 }}
-              >
-                I miscounted
-              </Button>
-            )}
-          </Box>
-        </Paper>
-
-        <Paper
-          variant="outlined"
-          sx={{
-            display: { xs: 'none', lg: 'flex' },
-            flexDirection: 'column',
-            borderRadius: '6px',
-            p: 2.25,
-            minHeight: 420,
-            overflow: 'hidden',
-            bgcolor: 'background.paper',
-          }}
-        >
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} noWrap>
-              {lineName(line)}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {variantName(line)}
-            </Typography>
-          </Box>
-
-          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-            <LineMedia line={line} size={220} />
-          </Box>
-        </Paper>
+              Recount
+            </ReceiveTextAction>
+          )}
+        </ReceiveActions>
       </Box>
     );
   };
 
   const renderReview = () => {
-    const totalAccepted = lines.reduce((sum, line) => sum + (acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0)), 0);
-    const totalProblems = lines.reduce((sum, line) => sum + reportedProblems(line).length, 0);
-    const totalExtra = lines.reduce((sum, line) => {
-      const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
-      return sum + Math.max(0, acceptedQty - line.quantity_expected);
-    }, 0);
+    const summary = summarizeReceiveOutcome(lines, acceptedByLine);
+    const { accepted: totalAccepted, problems: totalProblems, extra: totalExtra } = summary;
+    const headSx = { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', borderBottom: '1px solid var(--rule)', py: 0.75 } as const;
+    // Close is gated on every line, never just the visible page.
+    const heldLines = lines.filter(isLineAwaitingLabel).length;
 
     return (
-      <Box sx={{ display: 'grid', gap: 2 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={750}>Review receive</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Count and scan paths converge here before closing.
-          </Typography>
-        </Box>
+      // Lists carry up to six rows; a tighter local rhythm keeps them on one screen.
+      <Box data-testid="receive-review-content" sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 0, md: 1.75 }, flex: { xs: 1, md: 'none' } }}>
+        <ReceiveTaskHeading
+          eyebrow={workNote.action}
+          title="Check, then"
+          accent="close."
+          titleSx={{ fontSize: { xs: 34, md: 44 } }}
+          sub={receiveOutcomeSub(summary)}
+        />
 
-        {submitError && <Alert severity="error">{submitError}</Alert>}
-
-        <Paper variant="outlined" sx={{ borderRadius: '6px', overflow: 'hidden' }}>
-          <Table size="small">
+        <Box sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', overflow: 'hidden' }}>
+          <Table size="small" aria-label="Review lines">
             <TableHead>
               <TableRow>
-                <TableCell>Line</TableCell>
-                <TableCell align="right">Expected</TableCell>
-                <TableCell align="right">Received</TableCell>
-                <TableCell align="right">Extra</TableCell>
-                <TableCell align="right">Problems</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell sx={headSx}>Line</TableCell>
+                <TableCell align="right" sx={headSx}>Expected</TableCell>
+                <TableCell align="right" sx={headSx}>Received</TableCell>
+                <TableCell align="right" sx={{ ...headSx, ...wideOnlySx }}>Extra</TableCell>
+                <TableCell align="right" sx={{ ...headSx, ...wideOnlySx }}>Problems</TableCell>
+                <TableCell sx={{ ...headSx, ...wideOnlySx }}>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {lines.map((line) => {
-                const acceptedQty = acceptedByLine[line.receive_job_line_id] ?? Number(line.quantity_accepted ?? 0);
-                const problemCount = reportedProblems(line).length;
-                const extraQty = Math.max(0, acceptedQty - line.quantity_expected);
+              {pageLines.map((line) => {
+                const outcome = receiveLineOutcome(line, acceptedByLine[line.receive_job_line_id]);
+                const acceptedQty = outcome.accepted;
+                const problemCount = outcome.problems.length;
+                const extraQty = outcome.extra;
                 const awaiting = isLineAwaitingLabel(line);
                 return (
-                  <TableRow key={line.receive_job_line_id}>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={650}>{lineName(line)}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={monoSx}>{line.sku ?? line.receive_job_line_id}</Typography>
-                      <ReportedProblemSummary line={line} compact />
+                  <TableRow key={line.receive_job_line_id} sx={lineRowSx}>
+                    <TableCell sx={shrinkCellSx}>
+                      {expandableLineIdentity(line, line.sku ?? line.receive_job_line_id, true)}
+                      {/* Mobile keeps the facts of the collapsed columns. */}
+                      <Typography component="div" sx={{ ...rowMetaSx, ...narrowOnlySx, whiteSpace: 'normal', fontFamily: 'inherit', letterSpacing: 0, color: awaiting ? 'var(--accent-text)' : 'var(--ink-2)' }}>
+                        {`Extra ${extraQty} · Problems ${problemCount}${outcome.later > 0 ? ` · Later ${outcome.later}` : ''} · ${awaiting ? 'Label hold' : 'Ready'}`}
+                      </Typography>
+                      <ReportedProblemSummary line={line} problems={outcome.problems} compact />
+                      {outcome.later > 0 && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`${outcome.later} later`}
+                          sx={{ mt: 0.5, ml: 0.5, height: 24, borderColor: 'divider', bgcolor: 'background.paper', '& .MuiChip-label': { px: 0.9, fontSize: 11, fontWeight: 650 } }}
+                        />
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={monoSx}>{line.quantity_expected}</TableCell>
                     <TableCell align="right" sx={monoSx}>{acceptedQty}</TableCell>
-                    <TableCell align="right" sx={{ ...monoSx, color: extraQty > 0 ? 'warning.main' : 'text.primary' }}>{extraQty}</TableCell>
-                    <TableCell align="right" sx={monoSx}>{problemCount}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        color={awaiting ? 'warning' : 'success'}
-                        label={awaiting ? 'label hold' : 'ready'}
-                        sx={{ '& .MuiChip-label': monoSx }}
-                      />
+                    <TableCell align="right" sx={{ ...monoSx, ...wideOnlySx, color: extraQty > 0 ? 'var(--warning-text)' : 'var(--ink)' }}>{extraQty}</TableCell>
+                    <TableCell align="right" sx={{ ...monoSx, ...wideOnlySx }}>{problemCount}</TableCell>
+                    <TableCell sx={wideOnlySx}>
+                      <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, ...monoSx, fontSize: 12 }}>
+                        <Box aria-hidden="true" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: awaiting ? 'var(--accent)' : 'var(--good-ink)' }} />
+                        {awaiting ? 'label hold' : 'ready'}
+                      </Box>
                     </TableCell>
                   </TableRow>
                 );
               })}
-              <TableRow>
-                <TableCell sx={{ fontWeight: 750 }}>Total</TableCell>
-                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalExpected}</TableCell>
-                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalAccepted}</TableCell>
-                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750, color: totalExtra > 0 ? 'warning.main' : 'text.primary' }}>{totalExtra}</TableCell>
-                <TableCell align="right" sx={{ ...monoSx, fontWeight: 750 }}>{totalProblems}</TableCell>
-                <TableCell />
+              <TableRow sx={lineRowSx}>
+                <TableCell sx={{ fontWeight: 600 }}>Total</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 600 }}>{totalExpected}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, fontWeight: 600 }}>{totalAccepted}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, ...wideOnlySx, fontWeight: 600, color: totalExtra > 0 ? 'var(--warning-text)' : 'var(--ink)' }}>{totalExtra}</TableCell>
+                <TableCell align="right" sx={{ ...monoSx, ...wideOnlySx, fontWeight: 600 }}>{totalProblems}</TableCell>
+                <TableCell sx={wideOnlySx} />
               </TableRow>
             </TableBody>
           </Table>
-        </Paper>
+        </Box>
+        <ReceiveListPager page={pageIndex} total={lines.length} onPage={setListPage} label="Review lines pages" />
 
-        <Paper variant="outlined" sx={{ borderRadius: '6px', p: 2, display: 'grid', gap: 1.5, maxWidth: 420 }}>
-          <TextField
-            label="Actual delivery date"
-            type="date"
-            size="small"
-            required
-            value={deliveryDate}
-            onChange={(event) => setDeliveryDate(event.target.value)}
-            helperText="Required to close this receive."
-            InputLabelProps={{ shrink: true }}
-          />
-          <Button
-            variant="contained"
-            disabled={closing || !deliveryDate.trim() || lines.some(isLineAwaitingLabel)}
+        <TextField
+          label="Actual delivery date"
+          type="date"
+          required
+          value={deliveryDate}
+          onChange={(event) => setDeliveryDate(event.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ '& .MuiOutlinedInput-root': { height: 52, borderRadius: '10px', bgcolor: 'var(--surface)' }, '& input': monoSx }}
+        />
+
+        <ReceiveActions>
+          {/* One status slot: unknown outcome, closing, close refusal, label holds, date, Next. */}
+          {closeOutcomeUnknown ? (
+            <ReceiveStatusLine tone="warn" role="status">
+              Checking whether this Receive closed… reading the latest saved state.
+            </ReceiveStatusLine>
+          ) : closing ? (
+            <ReceiveStatusLine tone="warn" role="status">Closing… waiting for the server to confirm.</ReceiveStatusLine>
+          ) : closeRecovery === 'unknown' ? (
+            <ReceiveStatusLine tone="warn" role="alert">{CLOSE_UNKNOWN_MESSAGE}</ReceiveStatusLine>
+          ) : submitError ? (
+            <ReceiveStatusLine tone={closeRecovery === 'open' ? 'warn' : 'error'} role="alert">{submitError}</ReceiveStatusLine>
+          ) : heldLines > 0 ? (
+            <ReceiveStatusLine tone="warn">
+              {`${heldLines} ${heldLines === 1 ? 'product still needs' : 'products still need'} labels attached before closing.`}
+            </ReceiveStatusLine>
+          ) : !deliveryDate.trim() ? (
+            <ReceiveStatusLine>Next · enter the actual delivery date</ReceiveStatusLine>
+          ) : (
+            statusNext('neutral')
+          )}
+          {closeRecovery === 'unknown' && (
+            <ReceiveCta onClick={() => void handleCheckCloseStatus()}>Check status</ReceiveCta>
+          )}
+          <ReceiveCta
+            tier={closeRecovery === 'unknown' ? 'secondary' : 'primary'}
+            disabled={closing || closeRecovery === 'checking' || closeRecovery === 'unknown' || !deliveryDate.trim() || heldLines > 0}
             onClick={() => void handleCloseJob()}
-            sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
           >
             {closing ? 'Closing receive...' : 'Close receive'}
-          </Button>
-        </Paper>
+          </ReceiveCta>
+        </ReceiveActions>
       </Box>
     );
   };
@@ -2529,34 +2913,126 @@ function ReceiveSessionFlow({
     Number(line.quantity_accepted ?? 0) <= 0
       && Number(acceptedByLine[line.receive_job_line_id] ?? 0) <= 0
   ));
-  const renderHandoff = () => (
-    <Box sx={{ maxWidth: 560, mx: 'auto', textAlign: 'center', py: 7 }}>
-      <CheckCircle size={58} color={theme.palette.success.main} />
-      <Typography variant="h4" fontWeight={800} sx={{ mt: 2 }}>Receive complete</Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-        {receivedNothing
-          ? 'No usable items received. Nothing to put away.'
-          : 'Received units are now available for Stow.'}
-      </Typography>
-      <Button
-        variant="contained"
-        // RECEIVE-COMPLETE-EXIT-01 — onComplete is a zero-argument domain
-        // callback (exitSession upstream), not a MouseEvent handler. React
-        // calls onClick with the SyntheticEvent regardless of the handler's
-        // declared arity, so `onClick={onComplete}` forwarded that event as
-        // exitSession's optional `finishedLabel: string` argument — a truthy
-        // object that then reached onCountFinished/setFinishedCountLabel and
-        // crashed WmsOperationsPage trying to render it as a child ("Objects
-        // are not valid as a React child"). Call it explicitly instead.
-        onClick={() => onComplete()}
-        sx={{ mt: 3, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 700 }}
+  const renderHandoff = () => {
+    const { accepted: totalAccepted, problems: totalProblems, later: totalLater, extra: totalExtra } = summarizeReceiveOutcome(lines, acceptedByLine);
+    return (
+      <>
+        <ReceiveTaskHeading
+          eyebrow={<>Received · <Box component="span" sx={monoSx}>{poDisplay}</Box></>}
+          eyebrowTone="ok"
+          title="Receive complete"
+          sub={receivedNothing
+            ? 'No usable items received. Nothing to put away.'
+            : 'Received units are now available for Stow.'}
+        />
+        <ReceiveSeal
+          facts={[
+            { label: 'Status', value: 'CLOSED' },
+            { label: 'Closed at', value: formatOpsTimestamp(closedAt) },
+            { label: 'Actual delivery', value: formatOpsDate(actualDeliveryDate) },
+          ]}
+        />
+        <ReceivePillRow>
+          <ReceivePill tone="ok"><span>Accepted</span><b>{totalAccepted}</b></ReceivePill>
+          <ReceivePill><span>Problems</span><b>{totalProblems}</b></ReceivePill>
+          {totalLater > 0 && <ReceivePill><span>Later</span><b>{totalLater}</b></ReceivePill>}
+          {totalExtra > 0 && <ReceivePill><span>Extra</span><b>+{totalExtra}</b></ReceivePill>}
+        </ReceivePillRow>
+        <ReceiveActions>
+          {closeDetailsPending ? (
+            <ReceiveStatusLine tone="warn" role="status">
+              {closeOutcomeUnknown ? 'Loading the final details…' : 'This Receive closed. Its final details couldn’t load yet.'}
+            </ReceiveStatusLine>
+          ) : statusNext()}
+          {closeDetailsPending && (
+            <ReceiveTextAction disabled={closeOutcomeUnknown} onClick={() => void handleCheckCloseStatus()}>Check status</ReceiveTextAction>
+          )}
+          <ReceiveCta
+            tier="secondary"
+            // RECEIVE-COMPLETE-EXIT-01 — onComplete is a zero-argument domain
+            // callback (exitSession upstream), not a MouseEvent handler. React
+            // calls onClick with the SyntheticEvent regardless of the handler's
+            // declared arity, so `onClick={onComplete}` forwarded that event as
+            // exitSession's optional `finishedLabel: string` argument — a truthy
+            // object that then reached onCountFinished/setFinishedCountLabel and
+            // crashed WmsOperationsPage trying to render it as a child ("Objects
+            // are not valid as a React child"). Call it explicitly instead.
+            onClick={() => onComplete()}
+          >
+            Back to WMS
+          </ReceiveCta>
+        </ReceiveActions>
+      </>
+    );
+  };
+
+  // WS-UX-RECEIVE-D4R S3-C (UX-4) — the over-delivery decision sits inline in
+  // the task column instead of a modal dialog. Same handlers and gating:
+  // a live (unconfirmed) count can only be kept, refused or reported; Accept
+  // exists only for a count Finish Count has confirmed. No CTA autofocus.
+  const renderOverDelivery = () => {
+    if (!overDeliveryDecision) return null;
+    const { line, counted, countConfirmed } = overDeliveryDecision;
+    const extra = Math.max(0, counted - line.quantity_expected);
+    const extraUnits = `${extra} extra ${extra === 1 ? 'unit' : 'units'}`;
+    return (
+      <Box
+        role="region"
+        aria-label="Extra unit detected"
+        sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, md: 2.25 }, flex: { xs: 1, md: 'none' } }}
       >
-        Back to WMS
-      </Button>
-    </Box>
-  );
+        <ReceiveTaskHeading
+          eyebrow="Over count"
+          title={countConfirmed ? `${extra} more than` : 'More than'}
+          accent="ordered."
+          sub={countConfirmed
+            ? `Your count of ${counted} is confirmed. Decide what to do with the ${extraUnits}.`
+            : 'Keep counting, then Finish Count to confirm your physical count before approving the extra.'}
+        />
+        <ReceiveItemLine
+          media={<LineMedia line={line} size={40} />}
+          name={lineName(line)}
+          identity={line.barcode?.trim() || line.sku || line.receive_job_line_id}
+        />
+        <ReceiveFactStrip
+          facts={[
+            { label: 'Expected', value: line.quantity_expected },
+            { label: 'Counted', value: counted },
+            { label: 'Extra', value: `+${extra}`, highlight: true },
+          ]}
+        />
+        <ReceiveActions>
+          {overDeliverySubmitting ? (
+            <ReceiveStatusLine tone="warn" role="status">Saving…</ReceiveStatusLine>
+          ) : overDeliveryError ? (
+            <ReceiveStatusLine tone="error" role="alert">{overDeliveryError}</ReceiveStatusLine>
+          ) : (
+            <ReceiveStatusLine tone="warn">
+              {countConfirmed ? `Next · accept or refuse ${extraUnits}` : 'Next · keep counting, then Finish Count'}
+            </ReceiveStatusLine>
+          )}
+          {countConfirmed ? (
+            <ReceiveCta disabled={overDeliverySubmitting} onClick={() => void handleAcceptOverDelivery()}>
+              {overDeliverySubmitting ? 'Approving...' : `Accept extra unit${extra === 1 ? '' : 's'}`}
+            </ReceiveCta>
+          ) : (
+            <ReceiveCta disabled={overDeliverySubmitting} onClick={() => void handleKeepOverCount()}>
+              Keep extra in count
+            </ReceiveCta>
+          )}
+          <ReceiveCta tier="secondary" disabled={overDeliverySubmitting} onClick={() => void handleRejectOverDelivery()}>
+            Do not receive extra
+          </ReceiveCta>
+          <ReceiveTextAction disabled={overDeliverySubmitting} onClick={() => void handleReportOverDelivery()}>
+            Report problem
+          </ReceiveTextAction>
+        </ReceiveActions>
+      </Box>
+    );
+  };
 
   const renderBody = () => {
+    if (overDeliveryDecision && sessionPhase !== 'handoff') return renderOverDelivery();
     if (sessionPhase === 'brief') return renderBrief();
     if (sessionPhase === 'reconcile') return renderReconciliation();
     if (sessionPhase === 'review') return renderReview();
@@ -2564,54 +3040,202 @@ function ReceiveSessionFlow({
     return renderInspect();
   };
 
-  return (
-    <Box
-      sx={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1300,
-        bgcolor: 'background.default',
-        color: 'text.primary',
-        overflow: 'auto',
-      }}
-    >
-      <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
-        <Box
-          component="header"
-          sx={{
-            px: { xs: 2, md: 3 },
-            py: 1.5,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
-                Focus receive session
-              </Typography>
-              <Typography variant="h6" fontWeight={800} noWrap>
-                {supplierName}
-              </Typography>
-            </Box>
-            <Chip
-              label={`${progress}% complete`}
-              color={progress === 100 ? 'success' : 'default'}
-              sx={{ '& .MuiChip-label': monoSx }}
-            />
-          </Box>
-          <LinearProgress variant="determinate" value={progress} sx={{ height: 5, borderRadius: 1, mb: 1.25 }} />
-          <WorkNote />
-        </Box>
+  const sessionBars: ReceiveBarTone[] = sessionPhase === 'brief'
+    ? lines.map(() => 'idle')
+    : lines.map((line, index) => {
+        if (isLineDone(line)) return 'done';
+        if (index !== currentIndex || sessionPhase === 'review' || sessionPhase === 'handoff') return 'idle';
+        return sessionPhase === 'reconcile' || isLineAwaitingLabel(line) ? 'flag' : 'current';
+      });
+  const progressLabel = sessionPhase === 'brief'
+    ? `Brief · ${lines.length} ${lines.length === 1 ? 'product' : 'products'}`
+    : sessionPhase === 'handoff'
+      ? 'Receive closed'
+      : `${completedCount} of ${lines.length} lines counted`;
+  const showLinesFooter = sessionPhase === 'inspect' || sessionPhase === 'reconcile' || sessionPhase === 'review';
+  // V3.1: Exit in the header, hidden while closing and on Completion (which
+  // has its own Back to WMS). From the Brief nothing can be unsaved.
+  const showExit = sessionPhase !== 'handoff' && !closing && !closeOutcomeUnknown;
 
-        <Box component="main" sx={{ width: '100%', maxWidth: 1180, mx: 'auto', p: { xs: 2, md: 3 }, flex: 1 }}>
-          {renderBody()}
-        </Box>
-      </Box>
+  const recountSheetNode = (() => {
+    if (!recountSheet || !reconciliationLine) return null;
+    const recorded = reconciliationLine.allocations.length;
+    const keep = () => setRecountSheet(null);
+    if (recountSheet.status === 'unknown') {
+      return (
+        <ReceiveExitSheet
+          open
+          eyebrow="Not confirmed"
+          eyebrowTone="error"
+          title="Recount not"
+          accent="confirmed."
+          body={<span role="alert">We couldn't confirm whether the Recount was applied. Try again to check — it is never applied twice.</span>}
+        >
+          <ReceiveCta onClick={() => void handleConfirmRecount()}>Try again</ReceiveCta>
+        </ReceiveExitSheet>
+      );
+    }
+    if (recountSheet.status === 'refused') {
+      return (
+        <ReceiveExitSheet
+          open
+          eyebrow="Recount"
+          eyebrowTone="error"
+          title="Recount not"
+          accent="possible."
+          body={<span role="alert">{recountSheet.message}</span>}
+          onDismiss={keep}
+        >
+          <ReceiveCta tier="strong" onClick={keep}>Back to reconciliation</ReceiveCta>
+        </ReceiveExitSheet>
+      );
+    }
+    const busy = recountSheet.status === 'busy';
+    return (
+      <ReceiveExitSheet
+        open
+        eyebrow="Recount"
+        title="Recount this"
+        accent="product?"
+        busy={busy}
+        body={`Your ${recorded} recorded problem${recorded === 1 ? '' : 's'} for it will be cleared. Other products are not affected.`}
+        onDismiss={busy ? undefined : keep}
+      >
+        <ReceiveCta disabled={busy} onClick={() => void handleConfirmRecount()}>{busy ? 'Recounting…' : 'Recount'}</ReceiveCta>
+        <ReceiveCta tier="secondary" disabled={busy} onClick={keep}>Keep</ReceiveCta>
+      </ReceiveExitSheet>
+    );
+  })();
+
+  const exitSheetNode = (() => {
+    if (!exitSheet) return null;
+    if (exitSheet.variant === 'saving' || exitSheet.variant === 'checking') {
+      return (
+        <ReceiveExitSheet
+          open
+          eyebrow="Leave receiving"
+          title="Saving your"
+          accent="count…"
+          busy
+          body={<span role="status">Wait until saving finishes. Leaving now could lose the count you just entered.</span>}
+          onDismiss={keepReceiving}
+        >
+          <ReceiveCta tier="strong" onClick={keepReceiving}>Keep receiving</ReceiveCta>
+          <ReceiveCta tier="secondary" disabled>Back to WMS</ReceiveCta>
+        </ReceiveExitSheet>
+      );
+    }
+    if (exitSheet.variant === 'failed') {
+      const { failures } = exitSheet;
+      const several = failures.length > 1;
+      return (
+        <ReceiveExitSheet
+          open
+          eyebrow="Not saved"
+          eyebrowTone="error"
+          title={several ? 'Counts not' : 'Count not'}
+          accent="saved."
+          body={(
+            <span role="alert">
+              {several
+                ? `${failures.length} counts weren't saved: ${failures.map((f) => `${f.name} (${f.quantity}) — ${f.error}`).join('; ')}. Save them again, or leave without them.`
+                : `The count of ${failures[0]?.quantity ?? 0} for ${failures[0]?.name ?? 'a product'} wasn't saved (${failures[0]?.error ?? 'no confirmation'}). Save it again, or leave without it.`}
+            </span>
+          )}
+          onDismiss={keepReceiving}
+        >
+          <ReceiveCta onClick={handleExitSaveAgain}>Save again</ReceiveCta>
+          <ReceiveCta tier="secondary" onClick={leaveSession}>Leave without saving</ReceiveCta>
+        </ReceiveExitSheet>
+      );
+    }
+    if (exitSheet.variant === 'review') {
+      return (
+        <ReceiveExitSheet
+          open
+          eyebrow="Not saved"
+          eyebrowTone="error"
+          title="Choices"
+          accent="not saved."
+          body={(
+            <span role="alert">
+              {`Not saved yet: ${exitSheet.reasons.join('; ')}. Leaving now discards ${exitSheet.reasons.length === 1 ? 'it' : 'them'}. Saved counts stay saved.`}
+            </span>
+          )}
+          onDismiss={keepReceiving}
+        >
+          <ReceiveCta tier="strong" onClick={keepReceiving}>Back to receiving</ReceiveCta>
+          <ReceiveCta tier="secondary" onClick={leaveSession}>Leave without saving</ReceiveCta>
+        </ReceiveExitSheet>
+      );
+    }
+    return (
+      <ReceiveExitSheet
+        open
+        eyebrow="Leave receiving"
+        title="Leave this"
+        accent="Receive?"
+        body="Your counts are saved. This Receive stays assigned to you."
+        onDismiss={keepReceiving}
+      >
+        <ReceiveCta tier="strong" onClick={keepReceiving}>Keep receiving</ReceiveCta>
+        <ReceiveCta tier="secondary" onClick={leaveSession}>Back to WMS</ReceiveCta>
+      </ReceiveExitSheet>
+    );
+  })();
+
+  return (
+    <>
+      <ReceiveSessionShell
+        reference={poDisplay}
+        supplier={supplierName}
+        jobId={receiveJobId}
+        bars={sessionBars}
+        progressLabel={progressLabel}
+        headerAction={showExit ? (
+          <ReceiveFooterButton
+            onClick={() => (sessionPhase === 'brief' ? onComplete() : handleExitRequest())}
+            disabled={!!exitSheet}
+            aria-haspopup={sessionPhase === 'brief' ? undefined : 'dialog'}
+            sx={{ height: 36 }}
+          >
+            Exit
+          </ReceiveFooterButton>
+        ) : undefined}
+        footerRight={showLinesFooter ? (
+          <ReceiveFooterButton onClick={() => setLinesDrawerOpen(true)} aria-haspopup="dialog">
+            PO lines · {lines.length}
+          </ReceiveFooterButton>
+        ) : undefined}
+      >
+        {renderBody()}
+      </ReceiveSessionShell>
+      {exitSheetNode}
+      {recountSheetNode}
+
+      <ReceiveLinesDrawer
+        keepMounted={sessionPhase !== 'review'}
+        open={linesDrawerOpen && showLinesFooter}
+        title={`PO lines · ${lines.length}`}
+        onClose={() => setLinesDrawerOpen(false)}
+      >
+        {renderLineRail()}
+      </ReceiveLinesDrawer>
+
+      <Dialog open={!!identityDetailLine} fullWidth maxWidth="xs" onClose={() => setIdentityDetailLine(null)} sx={{ zIndex: 1400 }}>
+        <DialogTitle>Product identity</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 16, fontWeight: 500, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+            {identityDetailLine ? lineName(identityDetailLine) : ''}
+          </Typography>
+          <Typography sx={{ ...monoSx, mt: 1, fontSize: 13, color: 'var(--ink-3)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+            {identityDetailLine?.sku ?? identityDetailLine?.receive_job_line_id ?? ''}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setIdentityDetailLine(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={!!shortfallModal}
@@ -2673,7 +3297,7 @@ function ReceiveSessionFlow({
         <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
           {shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall && (
             <Button color="inherit" disabled={shortfallSubmitting} onClick={() => void handleMiscount()}>
-              I miscounted
+              Recount
             </Button>
           )}
           <Button
@@ -2687,64 +3311,6 @@ function ReceiveSessionFlow({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!overDeliveryDecision} fullWidth maxWidth="sm">
-        <DialogTitle>Extra unit detected</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'grid', gap: 1.5, pt: 0.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Decide what to do with the overage before this line can continue.
-            </Typography>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                gap: 1,
-              }}
-            >
-              {[
-                ['Expected', overDeliveryDecision?.line.quantity_expected ?? 0],
-                ['Counted', overDeliveryDecision?.counted ?? 0],
-                ['Extra', Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0))],
-              ].map(([label, value]) => (
-                <Paper key={label} variant="outlined" sx={{ p: 1.25, borderRadius: '6px' }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
-                    {label}
-                  </Typography>
-                  <Typography variant="h6" sx={monoSx} fontWeight={800}>
-                    {value}
-                  </Typography>
-                </Paper>
-              ))}
-            </Box>
-            {!overDeliveryDecision?.countConfirmed && (
-              <Typography variant="body2" color="text.secondary">
-                Keep counting, then Finish Count to confirm your physical count before approving the extra.
-              </Typography>
-            )}
-            {overDeliveryError && <Alert severity="error">{overDeliveryError}</Alert>}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleRejectOverDelivery} color="inherit" disabled={overDeliverySubmitting}>Do not receive extra</Button>
-          <Button onClick={handleReportOverDelivery} color="warning" disabled={overDeliverySubmitting}>Report problem</Button>
-          {overDeliveryDecision?.countConfirmed ? (
-            <Button
-              variant="contained"
-              color="warning"
-              disabled={overDeliverySubmitting}
-              onClick={() => void handleAcceptOverDelivery()}
-            >
-              {overDeliverySubmitting
-                ? 'Approving...'
-                : `Accept extra unit${Math.max(0, (overDeliveryDecision?.counted ?? 0) - (overDeliveryDecision?.line.quantity_expected ?? 0)) === 1 ? '' : 's'}`}
-            </Button>
-          ) : (
-            <Button variant="contained" color="warning" onClick={handleKeepOverCount}>
-              Keep extra in count
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
 
       <Dialog
         open={problemDialog}
@@ -2890,7 +3456,7 @@ function ReceiveSessionFlow({
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   );
 }
 
@@ -2905,32 +3471,41 @@ function ReceiveSessionNotice({
   props,
   severity,
   title,
+  accent,
   message,
+  ctaLabel = 'Back to WMS',
   children,
 }: {
   props: ReceiveSessionPageProps;
   severity: 'info' | 'error' | null;
   title: string;
+  accent?: ReactNode;
   message: string;
+  ctaLabel?: string;
   children?: ReactNode;
 }) {
   return (
-    <Box sx={{ display: 'grid', gap: 2, p: { xs: 2, md: 3 }, maxWidth: 880 }}>
-      <Box>
-        <Typography variant="h6" sx={{ fontWeight: 750 }}>{title}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          {props.supplierName}
-          {props.poNumber != null ? <> · <Box component="span" sx={monoSx}>PO-{props.poNumber}</Box></> : null}
-        </Typography>
-      </Box>
-      {severity ? <Alert severity={severity}>{message}</Alert> : <Typography variant="body2">{message}</Typography>}
+    <ReceiveSessionShell
+      reference={props.poNumber != null ? `PO-${props.poNumber}` : 'PO reference unavailable'}
+      supplier={props.supplierName}
+      jobId={props.receiveJobId}
+      bars={[]}
+    >
+      <ReceiveTaskHeading
+        eyebrow={severity === 'error' ? 'Unavailable' : 'Receive'}
+        eyebrowTone={severity === 'error' ? 'error' : 'accent'}
+        title={title}
+        accent={accent}
+        sub={props.supplierName}
+      />
+      {severity ? <Alert severity={severity}>{message}</Alert> : <ReceiveStatusLine>{message}</ReceiveStatusLine>}
       {children}
-      <Box>
-        <Button variant="outlined" onClick={props.onComplete} sx={{ borderRadius: '6px' }}>
-          Back to WMS
-        </Button>
-      </Box>
-    </Box>
+      <ReceiveActions>
+        <ReceiveCta tier="secondary" onClick={props.onComplete}>
+          {ctaLabel}
+        </ReceiveCta>
+      </ReceiveActions>
+    </ReceiveSessionShell>
   );
 }
 
@@ -3079,6 +3654,12 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   const [claiming, setClaiming] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [exiting, setExiting] = useState(false);
+  // WS-UX-RECEIVE-D4R S7 — the exit sheet shows while Exit waits for saves.
+  const [exitSaving, setExitSaving] = useState(false);
+  // S7-CORRECT — V3.1 Saved sheet for a clean grouped exit; the exit itself
+  // happens only on its Back to WMS, once.
+  const [exitSavedOpen, setExitSavedOpen] = useState(false);
+  const exitConfirmedRef = useRef(false);
   const [scanValue, setScanValue] = useState('');
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const countInputRef = useRef<HTMLInputElement | null>(null);
@@ -3091,6 +3672,11 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   // GH-1241 S3C-M3 — review: unsaved decisions (each bound to its good count),
   // the revision this session saved, approvals made here, one submission.
   const [reviewing, setReviewing] = useState(false);
+  // WS-UX-RECEIVE-D4R S5 (UX-14) — which difference the Check differences
+  // pager shows. Navigation only: decisions live in `decisions` for every
+  // line and finalization always submits the full review model.
+  const [reviewPage, setReviewPage] = useState(0);
+  const [productsOpen, setProductsOpen] = useState(false);
   const [decisions, setDecisionsState] = useState<Record<string, ReviewDecision>>({});
   const decisionsRef = useRef(decisions);
   const setDecisions = useCallback((next: Record<string, ReviewDecision>) => {
@@ -3175,11 +3761,13 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
         markSaveFailed(lineId, true);
         const line = lineById(lineId);
         if (mountedRef.current) {
-          setMessage({
+          // A retry from the exit sheet that fails again keeps its explicit leave option.
+          setMessage((current) => ({
             severity: 'error',
             text: `Couldn't save the count for ${line ? lineName(line) : 'this product'}. Check the connection, then save again.`,
             retryLineId: lineId,
-          });
+            ...(current?.leaveAnyway && current.retryLineId === lineId ? { leaveAnyway: true } : {}),
+          }));
         }
       } finally {
         savesInFlightRef.current[lineId] -= 1;
@@ -3364,10 +3952,12 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   const handleExit = useCallback(async () => {
     if (exiting) return;
     setExiting(true);
+    setExitSaving(true);
     await saveQueueRef.current;
     if (confirmInFlightRef.current) await confirmInFlightRef.current.catch(() => undefined);
     if (submitInFlightRef.current) await submitInFlightRef.current.catch(() => undefined);
     if (!mountedRef.current) return;
+    setExitSaving(false);
     const unsavedId = Object.keys(saveFailedRef.current).find((lineId) => saveFailedRef.current[lineId]);
     if (unsavedId) {
       setExiting(false);
@@ -3389,8 +3979,20 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
       });
       return;
     }
+    // Everything is saved: confirm before leaving (V3.1 Saved sheet). No write.
+    setExitSavedOpen(true);
+  }, [exiting, lineById]);
+
+  const keepReceivingGrouped = useCallback(() => {
+    setExitSavedOpen(false);
+    setExiting(false);
+  }, []);
+
+  const confirmGroupedExit = useCallback(() => {
+    if (exitConfirmedRef.current) return;
+    exitConfirmedRef.current = true;
     onComplete();
-  }, [exiting, lineById, onComplete]);
+  }, [onComplete]);
 
   /** One line's review: difference, the decision in force, settledness and its exact grouped payload. */
   const reviewLine = (line: ReceiveJobLine) => {
@@ -3566,17 +4168,56 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   const totalUnits = applicable.reduce((sum, line) => sum + Number(line.quantity_expected), 0);
 
   const backButton = (
-    <Button variant="outlined" onClick={() => void handleExit()} disabled={exiting} sx={{ borderRadius: '6px', flexShrink: 0 }}>
-      Back to WMS
-    </Button>
+    <ReceiveFooterButton onClick={() => void handleExit()} disabled={exiting} sx={{ height: 36 }}>
+      Exit
+    </ReceiveFooterButton>
   );
-  const identity = (
-    <Typography variant="body2" color="text.secondary">
-      {props.supplierName}
-      {props.poNumber != null ? <> · <Box component="span" sx={monoSx}>PO-{props.poNumber}</Box></> : null}
-    </Typography>
-  );
-  const messageNode = message ? (
+  const reference = props.poNumber != null ? `PO-${props.poNumber}` : 'PO reference unavailable';
+  // Exit outcomes (failed save / unsaved review choices) open in the V3.1
+  // exit sheet; every other message stays inline in the task column.
+  const exitMessage = message?.leaveAnyway ? message : null;
+  const exitSheetNode = exitSavedOpen ? (
+    <ReceiveExitSheet
+      open
+      eyebrow="Leave receiving"
+      title="Leave this"
+      accent="Receive?"
+      body="Your counts are saved. This Receive stays assigned to you."
+      onDismiss={keepReceivingGrouped}
+    >
+      <ReceiveCta tier="strong" onClick={keepReceivingGrouped}>Keep receiving</ReceiveCta>
+      <ReceiveCta tier="secondary" onClick={confirmGroupedExit}>Back to WMS</ReceiveCta>
+    </ReceiveExitSheet>
+  ) : exitSaving ? (
+    <ReceiveExitSheet
+      open
+      eyebrow="Leave receiving"
+      title="Saving your"
+      accent="count…"
+      busy
+      body={<span role="status">Wait until saving finishes. Leaving now could lose the count you just entered.</span>}
+    >
+      <ReceiveCta tier="secondary" disabled>Back to WMS</ReceiveCta>
+    </ReceiveExitSheet>
+  ) : exitMessage ? (
+    <ReceiveExitSheet
+      open
+      eyebrow="Not saved"
+      eyebrowTone="error"
+      title={exitMessage.retryLineId ? 'Count not' : 'Review choices'}
+      accent={exitMessage.retryLineId ? 'saved.' : 'not saved.'}
+      body={<span role="alert">{exitMessage.text}</span>}
+      onDismiss={() => setMessage(null)}
+    >
+      {exitMessage.retryLineId ? (
+        <ReceiveCta onClick={() => saveAgain(exitMessage.retryLineId!)}>Save again</ReceiveCta>
+      ) : (
+        <ReceiveCta tier="strong" onClick={() => setMessage(null)}>Back to review</ReceiveCta>
+      )}
+      <ReceiveCta tier="secondary" onClick={() => onComplete()}>Leave without saving</ReceiveCta>
+    </ReceiveExitSheet>
+  ) : null;
+  const messageNode = message && !message.leaveAnyway ? (
     <Alert
       severity={message.severity}
       action={(message.retryLineId || message.leaveAnyway) ? (
@@ -3607,29 +4248,30 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
 
   if (!counting) {
     return (
-      <Box sx={{ display: 'grid', gap: 2, p: { xs: 2, md: 3 }, maxWidth: 640 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 750 }}>Receive</Typography>
-            {identity}
-          </Box>
-          {backButton}
-        </Box>
-        <Paper variant="outlined" sx={{ borderRadius: '10px', p: 2, display: 'grid', gap: 1.5 }}>
-          <Typography variant="body1" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-            {`${total} ${total === 1 ? 'product' : 'products'} · ${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'} expected`}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Count good, usable units only. Set damaged items aside — you'll record them when you review.
-          </Typography>
-          <Box>
-            <Button variant="contained" disableElevation onClick={() => void handleStart()} disabled={claiming} sx={{ borderRadius: '6px', fontWeight: 700 }}>
-              {claiming ? 'Starting…' : 'Start receiving'}
-            </Button>
-          </Box>
-        </Paper>
+      <ReceiveSessionShell
+        reference={reference}
+        supplier={props.supplierName}
+        jobId={props.receiveJobId}
+        bars={applicable.map(() => 'idle')}
+        progressLabel={`Brief · ${total} ${total === 1 ? 'product' : 'products'}`}
+        headerAction={backButton}
+        overlay={exitSheetNode}
+      >
+        <ReceiveTaskHeading
+          eyebrow="Brief"
+          title={<>Receive from {props.supplierName}</>}
+          sub={`${total} ${total === 1 ? 'product' : 'products'} · ${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'} expected`}
+        />
         {messageNode}
-      </Box>
+        <ReceiveActions>
+          <ReceiveStatusLine>
+            Count only items ready to sell. Set damaged items aside and report them in Review.
+          </ReceiveStatusLine>
+          <ReceiveCta onClick={() => void handleStart()} disabled={claiming}>
+            {claiming ? 'Starting…' : 'Start receiving'}
+          </ReceiveCta>
+        </ReceiveActions>
+      </ReceiveSessionShell>
     );
   }
 
@@ -3644,37 +4286,312 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   const differing = reviewModels.filter((model) => model.difference !== 0 || model.countChanged || !model.settled);
   const matchingCount = reviewModels.length - differing.length;
   const allSettled = reviewModels.length > 0 && reviewModels.every((model) => model.settled);
+  const groupedBars: ReceiveBarTone[] = applicable.map((line) => {
+    const state = countEntryState(entries[line.receive_job_line_id]);
+    if (state === 'confirmed') return 'done';
+    return !showReview && line.receive_job_line_id === currentId ? 'current' : 'idle';
+  });
 
-  return (
-    <Box sx={{
-      display: 'grid',
-      gridTemplateRows: 'auto auto auto minmax(0, 1fr)',
-      gap: 1.5,
-      p: { xs: 2, md: 3 },
-      height: { md: 'calc(100vh - 32px)' },
-      maxWidth: 1280,
-      minHeight: 0,
-    }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, minWidth: 0 }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" sx={{ fontWeight: 750 }}>Receive</Typography>
-          {identity}
-        </Box>
-        <Box sx={{ flex: 1, maxWidth: 320, display: 'grid', gap: 0.5 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, color: 'var(--ink-2)' }}>
-            {`${countedTotal} of ${total} products counted`}
-          </Typography>
-          <LinearProgress variant="determinate" value={total ? (countedTotal / total) * 100 : 0} />
-        </Box>
-        {backButton}
-      </Box>
+  const productsList = (
+    <Box
+      component="ul"
+      aria-label="Products on this delivery"
+      sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', m: 0, p: 0.5, listStyle: 'none' }}
+    >
+      {applicable.map((line) => {
+        const lineId = line.receive_job_line_id;
+        const entry = entries[lineId];
+        const state = countEntryState(entry);
+        const isCurrent = lineId === currentId;
+        const status = state === 'confirmed'
+          ? `Counted ${entry!.confirmed}`
+          : state === 'unconfirmed'
+            ? `${entry!.count} · not confirmed`
+            : 'Not counted';
+        return (
+          <Box component="li" key={lineId}>
+            <Box
+              component="button"
+              type="button"
+              data-testid={`receive-count-line-${lineId}`}
+              data-count-state={state}
+              data-count={entry?.count == null ? '' : String(entry.count)}
+              data-current={isCurrent ? 'true' : 'false'}
+              aria-current={isCurrent ? 'true' : undefined}
+              onClick={() => { setProductsOpen(false); selectLine(lineId); }}
+              sx={{
+                all: 'unset',
+                boxSizing: 'border-box',
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: '22px minmax(0,1fr) auto',
+                alignItems: 'center',
+                gap: 1.5,
+                px: 1.5,
+                py: 1.1,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                bgcolor: isCurrent ? 'var(--accent-ghost)' : 'transparent',
+                '&:focus-visible': { outline: '2px solid var(--accent)' },
+              }}
+            >
+              <Box
+                aria-hidden="true"
+                sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: state === 'confirmed' ? 'var(--good-ink)' : state === 'unconfirmed' ? 'var(--accent)' : 'var(--bg-3)' }}
+              />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                  {lineName(line)}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', ...monoSx }}>
+                  {line.sku ?? '—'}
+                </Typography>
+              </Box>
+              <Typography sx={{
+                ...monoSx,
+                fontSize: 12,
+                fontWeight: 500,
+                flexShrink: 0,
+                color: state === 'confirmed' ? 'var(--ink)' : state === 'unconfirmed' ? 'var(--ink-2)' : 'var(--ink-4)',
+              }}>
+                {status}
+              </Typography>
+            </Box>
+          </Box>
+        );
+      })}
+    </Box>
+  );
 
-      <Box sx={{ display: 'grid', gap: 0.5 }}>
-        {!showReview && (
-          <>
+  const pageIndex = Math.min(reviewPage, Math.max(0, differing.length - 1));
+  const unsettledCount = differing.filter((model) => !model.settled).length;
+
+  const reviewBody = (
+    <Box data-testid="receive-review" sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, md: 2 } }}>
+      <ReceiveTaskHeading
+        eyebrow="Check differences"
+        title={differing.length === 0
+          ? 'Every product'
+          : `${differing.length} ${differing.length === 1 ? 'product' : 'products'}`}
+        accent={differing.length === 0 ? 'matches.' : differing.length === 1 ? 'differs.' : 'differ.'}
+        sub={differing.length === 0
+          ? 'Every product matches what was expected.'
+          : 'Tell us what happened to each difference. Counted means good, usable units.'}
+      />
+
+      {differing.length > 1 && (
+        <Box component="nav" aria-label="Differences" sx={{ display: 'grid', gap: 1 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', alignItems: 'center', gap: 1 }}>
+            <ReceiveFooterButton
+              aria-label="Previous difference"
+              disabled={pageIndex === 0}
+              onClick={() => setReviewPage(pageIndex - 1)}
+              sx={{ height: 32, minWidth: { xs: 44, md: 32 }, px: 1.25 }}
+            >
+              ‹
+            </ReceiveFooterButton>
+            <Typography role="status" aria-live="polite" sx={{ textAlign: 'center', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>
+              {`Difference ${pageIndex + 1} of ${differing.length}`}
+              {unsettledCount > 0 ? ` · ${unsettledCount} to settle` : ' · all settled'}
+            </Typography>
+            <ReceiveFooterButton
+              aria-label="Next difference"
+              disabled={pageIndex >= differing.length - 1}
+              onClick={() => setReviewPage(pageIndex + 1)}
+              sx={{ height: 32, minWidth: { xs: 44, md: 32 }, px: 1.25 }}
+            >
+              ›
+            </ReceiveFooterButton>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', columnGap: { xs: '20px', md: 0.75 }, rowGap: { xs: '20px', md: 0.75 } }}>
+            {differing.map((model, index) => (
+              <Box
+                key={model.lineId}
+                component="button"
+                type="button"
+                data-testid={`receive-review-page-${model.lineId}`}
+                aria-label={`Difference ${index + 1}: ${lineName(model.line)} — ${model.settled ? 'settled' : 'needs a decision'}`}
+                aria-current={index === pageIndex ? 'step' : undefined}
+                onClick={() => setReviewPage(index)}
+                sx={{
+                  all: 'unset',
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: index === pageIndex ? '2px solid var(--ink)' : '1px solid var(--rule-2)',
+                  bgcolor: 'var(--surface)',
+                  '&:focus-visible': { outline: '2px solid var(--accent)', outlineOffset: 2 },
+                  // S8-C5 — 44px touch target on mobile; the gap above keeps neighbours from overlapping.
+                  // The inset is measured from the padding box, so it also covers the 1–2px border.
+                  position: 'relative',
+                  '&::after': { content: '""', position: 'absolute', inset: { xs: index === pageIndex ? -12 : -11, md: 0 } },
+                }}
+              >
+                <Box aria-hidden="true" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: model.settled ? 'var(--good-ink)' : 'var(--accent)' }} />
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {differing.slice(pageIndex, pageIndex + 1).map((model) => {
+        const remaining = model.shortfall - model.assigned;
+        return (
+          <Box
+            key={model.lineId}
+            data-testid={`receive-review-line-${model.lineId}`}
+            data-difference={String(model.difference)}
+            data-settled={model.settled ? 'true' : 'false'}
+            sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', px: 2, py: 1.75, display: 'grid', gap: 1.25 }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5 }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
+                  {lineName(model.line)}
+                </Typography>
+                <Typography sx={{ ...monoSx, fontSize: 12, color: 'var(--ink-3)' }}>
+                  {`Expected ${model.expected} · Counted ${model.count}`}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 0.75, flexShrink: 0 }}>
+                {model.countChanged && <Chip size="small" color="warning" label="Count changed" />}
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={model.difference < 0 ? `${model.shortfall} short` : model.difference > 0 ? `${model.extra} extra` : 'Matches'}
+                  sx={{ borderColor: 'var(--rule-2)', '& .MuiChip-label': monoSx }}
+                />
+              </Box>
+            </Box>
+
+            {model.difference < 0 && (
+              <>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+                  {(['missing', 'later', 'damaged'] as const).map((field) => (
+                    <TextField
+                      key={field}
+                      label={field === 'missing' ? 'Missing' : field === 'later' ? 'Coming later' : 'Damaged'}
+                      type="number"
+                      size="small"
+                      value={String(model.decision[field])}
+                      disabled={submitting}
+                      onChange={(event) => setDecisionField(model, field, event.target.value)}
+                      inputProps={{
+                        min: field === 'missing' ? model.recordedMissing : field === 'damaged' ? model.recordedDamaged : 0,
+                        inputMode: 'numeric',
+                        style: { ...monoSx, textAlign: 'center', fontSize: 17 },
+                      }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'var(--surface)' } }}
+                    />
+                  ))}
+                </Box>
+                <ReceiveStatusLine tone={model.settled ? 'ok' : 'warn'}>
+                  {model.unsupportedEvidence
+                    ? 'A wrong item was recorded for this product. Ask a lead to review it before finishing.'
+                    : model.evidenceExceedsDifference
+                    ? 'More units were already recorded as missing or damaged than this difference. Ask a lead to review it.'
+                    : model.decision.missing < model.recordedMissing
+                    ? `${model.recordedMissing} already recorded as missing must stay missing`
+                    : model.decision.damaged < model.recordedDamaged
+                    ? `${model.recordedDamaged} already recorded as damaged must stay damaged`
+                    : remaining > 0
+                      ? `Assign ${remaining} more`
+                      : remaining < 0
+                        ? `${-remaining} too many assigned`
+                        : model.recordedMissing > 0
+                          ? `All accounted for · ${model.recordedMissing} already recorded as missing`
+                          : 'All accounted for'}
+                </ReceiveStatusLine>
+              </>
+            )}
+
+            {model.difference > 0 && (model.approved >= model.extra ? (
+              <ReceiveStatusLine tone="ok">
+                {`${model.extra} extra kept — received into stock when this Receive closes.`}
+              </ReceiveStatusLine>
+            ) : (
+              <Box sx={{ display: 'grid', gap: 0.75 }}>
+                <ReceiveCta
+                  tier="secondary"
+                  disabled={keepingExtraId != null || submitting}
+                  onClick={() => void keepExtra(model)}
+                  sx={{ height: 44 }}
+                >
+                  Keep extra units
+                </ReceiveCta>
+                <ReceiveStatusLine>
+                  {`The ${model.extra} extra will be received into stock when this Receive closes.`}
+                </ReceiveStatusLine>
+              </Box>
+            ))}
+
+            <ReceiveTextAction disabled={submitting} onClick={() => editCountFromReview(model.lineId)} sx={{ minHeight: { xs: 44, md: 28 } }}>
+              Edit count
+            </ReceiveTextAction>
+          </Box>
+        );
+      })}
+
+      {matchingCount > 0 && (
+        <ReceiveStatusLine tone="ok">
+          {`${matchingCount} ${matchingCount === 1 ? 'product matches' : 'products match'} what was expected`}
+        </ReceiveStatusLine>
+      )}
+
+      {messageNode}
+
+      <ReceiveActions>
+        {allSettled ? (
+          <ReceiveStatusLine>Next: labels and closing this Receive. Stock is added when it closes.</ReceiveStatusLine>
+        ) : (
+          <ReceiveStatusLine tone="warn">
+            {`${unsettledCount} ${unsettledCount === 1 ? 'difference still needs' : 'differences still need'} a decision before you can continue.`}
+          </ReceiveStatusLine>
+        )}
+        <ReceiveCta
+          disabled={!allSettled || submitting || keepingExtraId != null}
+          onClick={() => void submitReview(reviewModels)}
+        >
+          {submitting ? 'Saving…' : 'Confirm and continue'}
+        </ReceiveCta>
+        <ReceiveTextAction onClick={() => setReviewing(false)} disabled={submitting}>
+          Back to counting
+        </ReceiveTextAction>
+      </ReceiveActions>
+    </Box>
+  );
+
+  const countBody = (
+    <Box data-testid="receive-count-current" sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, md: 2 }, flex: { xs: 1, md: 'none' } }}>
+      {current ? (
+        <>
+          <ReceiveTaskHeading
+            eyebrow="Count"
+            title={lineName(current)}
+            titleSx={{ fontSize: { xs: 30, md: 44 } }}
+            sub={<Box component="span" sx={{ ...monoSx, fontSize: 12, letterSpacing: '0.04em', color: 'var(--ink-3)' }}>{current.sku ?? '—'}</Box>}
+          />
+          <ReceiveProductImage src={current.image_url} />
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.75,
+              height: 60,
+              px: 2.25,
+              border: '1px solid var(--rule-2)',
+              borderRadius: '12px',
+              bgcolor: 'var(--surface)',
+            }}
+          >
+            <ScanBarcode size={18} color="var(--accent)" aria-hidden="true" />
             <TextField
               inputRef={scanInputRef}
-              size="small"
+              variant="standard"
               fullWidth
               value={scanValue}
               placeholder="Scan barcode"
@@ -3686,321 +4603,136 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
                 void handleScan(value);
               }}
               autoComplete="off"
-              inputProps={{ style: monoSx, 'aria-label': 'Scan barcode' }}
+              InputProps={{ disableUnderline: true }}
+              inputProps={{ style: { ...monoSx, fontSize: 18 }, 'aria-label': 'Scan barcode' }}
             />
-            <Typography variant="caption" color="text.secondary">
-              Count good, usable units only. Set damaged items aside — you'll record them in review.
-            </Typography>
-          </>
-        )}
-      </Box>
-
-      <Box sx={{ display: 'grid', gap: 1 }}>
-        {messageNode}
-        {allCounted && !showReview && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-              All products counted
-            </Typography>
-            <Button
-              variant="contained"
-              disableElevation
-              size="small"
-              onClick={() => { setMessage(null); setReviewing(true); }}
-              sx={{ borderRadius: '6px', fontWeight: 700 }}
+            <Box
+              component="span"
+              aria-hidden="true"
+              sx={{ display: { xs: 'none', md: 'inline' }, fontSize: 10, fontWeight: 500, border: '1px solid currentColor', borderRadius: '4px', px: 0.75, py: '2px', opacity: 0.75 }}
             >
-              Review and finish
-            </Button>
-          </Box>
-        )}
-      </Box>
-
-      {showReview ? (
-        <Paper
-          variant="outlined"
-          data-testid="receive-review"
-          sx={{ borderRadius: '10px', p: 2.5, display: 'grid', gap: 1.5, alignContent: 'start', minHeight: 0, overflowY: 'auto' }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>Check differences</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {differing.length === 0
-                  ? 'Every product matches what was expected.'
-                  : 'Tell us what happened to each difference. Counted means good, usable units.'}
-              </Typography>
+              Enter
             </Box>
-            <Button variant="text" onClick={() => setReviewing(false)} disabled={submitting} sx={{ flexShrink: 0 }}>
-              Back to counting
-            </Button>
           </Box>
-
-          {differing.map((model) => {
-            const remaining = model.shortfall - model.assigned;
-            return (
-              <Box
-                key={model.lineId}
-                data-testid={`receive-review-line-${model.lineId}`}
-                data-difference={String(model.difference)}
-                data-settled={model.settled ? 'true' : 'false'}
-                sx={{ border: '1px solid var(--rule)', borderRadius: '8px', p: 1.5, display: 'grid', gap: 1 }}
+          <Box
+            sx={{
+              display: 'grid',
+              justifyItems: 'center',
+              gap: '2px',
+              p: { xs: '12px 16px', md: '20px 24px' },
+              border: '1px solid var(--rule-2)',
+              borderRadius: '12px',
+              bgcolor: 'var(--surface)',
+            }}
+          >
+            <TextField
+              inputRef={countInputRef}
+              variant="standard"
+              label="Counted"
+              type="number"
+              value={currentCount == null ? '' : String(currentCount)}
+              disabled={currentLocked}
+              onChange={(event) => handleTypedCount(current.receive_job_line_id, event.target.value)}
+              placeholder="not counted"
+              InputProps={{ disableUnderline: true }}
+              InputLabelProps={{ shrink: true, sx: { width: '100%', textAlign: 'center', transformOrigin: 'top center', left: 0, right: 0 } }}
+              inputProps={{ min: 0, inputMode: 'numeric', style: { textAlign: 'center', fontWeight: 300 } }}
+              sx={{
+                width: '100%',
+                maxWidth: 320,
+                '& .MuiInputBase-input': { fontSize: { xs: 56, md: 72 }, lineHeight: 1, height: 'auto', fontVariantNumeric: 'tabular-nums' },
+                '& .MuiInputBase-input::placeholder': { fontSize: 28, color: 'var(--ink-3)', opacity: 1 },
+              }}
+            />
+            <Typography component="span" sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)' }}>
+              of <Box component="span" sx={monoSx}>{currentExpected}</Box> expected
+            </Typography>
+          </Box>
+          {currentCount != null && currentCount !== currentExpected && (
+            <ReceiveStatusLine tone="warn">
+              {currentCount > currentExpected
+                ? `${currentCount - currentExpected} more than expected`
+                : `${currentExpected - currentCount} fewer than expected`}
+            </ReceiveStatusLine>
+          )}
+          {messageNode}
+          <ReceiveActions>
+            {allCounted ? (
+              <ReceiveStatusLine tone="ok">All products counted · only items ready to sell are counted.</ReceiveStatusLine>
+            ) : (
+              <ReceiveStatusLine>
+                Count only items ready to sell. Set damaged items aside and report them in Review.
+              </ReceiveStatusLine>
+            )}
+            {currentLocked ? (
+              <ReceiveCta
+                tier={allCounted ? 'secondary' : 'primary'}
+                onClick={() => { setEditingId(current.receive_job_line_id); setMessage(null); }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
-                      {lineName(model.line)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {`Expected ${model.expected} · Counted ${model.count}`}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 0.75, flexShrink: 0 }}>
-                    {model.countChanged && <Chip size="small" color="warning" label="Count changed" />}
-                    <Chip
-                      size="small"
-                      label={model.difference < 0 ? `${model.shortfall} short` : model.difference > 0 ? `${model.extra} extra` : 'Matches'}
-                    />
-                  </Box>
-                </Box>
-
-                {model.difference < 0 && (
-                  <>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {(['missing', 'later', 'damaged'] as const).map((field) => (
-                        <TextField
-                          key={field}
-                          label={field === 'missing' ? 'Missing' : field === 'later' ? 'Coming later' : 'Damaged'}
-                          type="number"
-                          size="small"
-                          value={String(model.decision[field])}
-                          disabled={submitting}
-                          onChange={(event) => setDecisionField(model, field, event.target.value)}
-                          inputProps={{
-                            min: field === 'missing' ? model.recordedMissing : field === 'damaged' ? model.recordedDamaged : 0,
-                            inputMode: 'numeric',
-                            style: monoSx,
-                          }}
-                          sx={{ width: 140 }}
-                        />
-                      ))}
-                    </Box>
-                    <Typography variant="caption" sx={{ color: model.settled ? 'var(--ink-3)' : 'var(--ink-2)' }}>
-                      {model.unsupportedEvidence
-                        ? 'A wrong item was recorded for this product. Ask a lead to review it before finishing.'
-                        : model.evidenceExceedsDifference
-                        ? 'More units were already recorded as missing or damaged than this difference. Ask a lead to review it.'
-                        : model.decision.missing < model.recordedMissing
-                        ? `${model.recordedMissing} already recorded as missing must stay missing`
-                        : model.decision.damaged < model.recordedDamaged
-                        ? `${model.recordedDamaged} already recorded as damaged must stay damaged`
-                        : remaining > 0
-                          ? `Assign ${remaining} more`
-                          : remaining < 0
-                            ? `${-remaining} too many assigned`
-                            : model.recordedMissing > 0
-                              ? `All accounted for · ${model.recordedMissing} already recorded as missing`
-                              : 'All accounted for'}
-                    </Typography>
-                  </>
-                )}
-
-                {model.difference > 0 && (model.approved >= model.extra ? (
-                  <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
-                    {`${model.extra} extra kept — received into stock when this Receive closes.`}
-                  </Typography>
-                ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      disabled={keepingExtraId != null || submitting}
-                      onClick={() => void keepExtra(model)}
-                      sx={{ borderRadius: '6px' }}
-                    >
-                      Keep extra units
-                    </Button>
-                    <Typography variant="caption" color="text.secondary">
-                      {`The ${model.extra} extra will be received into stock when this Receive closes.`}
-                    </Typography>
-                  </Box>
-                ))}
-
-                <Box>
-                  <Button size="small" variant="text" disabled={submitting} onClick={() => editCountFromReview(model.lineId)}>
-                    Edit count
-                  </Button>
-                </Box>
-              </Box>
-            );
-          })}
-
-          {matchingCount > 0 && (
-            <Typography variant="body2" color="text.secondary">
-              {`${matchingCount} ${matchingCount === 1 ? 'product matches' : 'products match'} what was expected`}
-            </Typography>
-          )}
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-            <Button
-              variant="contained"
-              disableElevation
-              disabled={!allSettled || submitting || keepingExtraId != null}
-              onClick={() => void submitReview(reviewModels)}
-              sx={{ borderRadius: '6px', fontWeight: 700 }}
-            >
-              {submitting ? 'Saving…' : 'Confirm and continue'}
-            </Button>
-            <Typography variant="caption" color="text.secondary">
-              Next: labels and closing this Receive. Stock is added when it closes.
-            </Typography>
-          </Box>
-        </Paper>
+                Edit count
+              </ReceiveCta>
+            ) : (
+              <ReceiveCta
+                tier={allCounted ? 'secondary' : 'primary'}
+                disabled={currentCount == null || confirming}
+                onClick={() => {
+                  if (currentCount != null) void confirmCount(current.receive_job_line_id, currentCount);
+                }}
+              >
+                {confirming ? 'Confirming…' : 'Confirm count'}
+              </ReceiveCta>
+            )}
+            {allCounted && (
+              <ReceiveCta onClick={() => { setMessage(null); setReviewPage(0); setReviewing(true); }}>
+                Review and finish
+              </ReceiveCta>
+            )}
+            {!currentLocked && (currentCount == null || currentCount === 0) && (
+              <ReceiveTextAction
+                disabled={confirming}
+                onClick={() => void confirmCount(current.receive_job_line_id, 0)}
+              >
+                None arrived
+              </ReceiveTextAction>
+            )}
+          </ReceiveActions>
+        </>
       ) : (
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 2fr) 3fr' },
-        gap: 2,
-        minHeight: 0,
-      }}>
-        <Paper
-          variant="outlined"
-          component="ul"
-          aria-label="Products on this delivery"
-          sx={{ borderRadius: '10px', m: 0, p: 0.5, listStyle: 'none', overflowY: 'auto', minHeight: 0, maxHeight: { xs: 320, md: '100%' } }}
-        >
-          {applicable.map((line) => {
-            const lineId = line.receive_job_line_id;
-            const entry = entries[lineId];
-            const state = countEntryState(entry);
-            const isCurrent = lineId === currentId;
-            const status = state === 'confirmed'
-              ? `Counted ${entry!.confirmed}`
-              : state === 'unconfirmed'
-                ? `${entry!.count} · not confirmed`
-                : 'Not counted';
-            return (
-              <Box component="li" key={lineId}>
-                <Box
-                  component="button"
-                  type="button"
-                  data-testid={`receive-count-line-${lineId}`}
-                  data-count-state={state}
-                  data-count={entry?.count == null ? '' : String(entry.count)}
-                  data-current={isCurrent ? 'true' : 'false'}
-                  aria-current={isCurrent ? 'true' : undefined}
-                  onClick={() => selectLine(lineId)}
-                  sx={{
-                    all: 'unset',
-                    boxSizing: 'border-box',
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 1.5,
-                    px: 1.5,
-                    py: 1,
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    bgcolor: isCurrent ? 'var(--accent-ghost)' : 'transparent',
-                    '&:focus-visible': { outline: '2px solid var(--accent)' },
-                  }}
-                >
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflowWrap: 'anywhere' }}>
-                      {lineName(line)}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', ...monoSx }}>
-                      {line.sku ?? '—'}
-                    </Typography>
-                  </Box>
-                  <Typography sx={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                    color: state === 'confirmed' ? 'var(--ink)' : state === 'unconfirmed' ? 'var(--ink-2)' : 'var(--ink-4)',
-                  }}>
-                    {status}
-                  </Typography>
-                </Box>
-              </Box>
-            );
-          })}
-        </Paper>
-
-        <Paper
-          variant="outlined"
-          data-testid="receive-count-current"
-          sx={{ borderRadius: '10px', p: 2.5, display: 'grid', gap: 2, alignContent: 'start', minHeight: 0, overflowY: 'auto' }}
-        >
-          {current ? (
-            <>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{lineName(current)}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={monoSx}>{current.sku ?? '—'}</Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                Expected <Box component="span" sx={monoSx}>{currentExpected}</Box>
-              </Typography>
-              <TextField
-                inputRef={countInputRef}
-                label="Counted"
-                type="number"
-                value={currentCount == null ? '' : String(currentCount)}
-                disabled={currentLocked}
-                onChange={(event) => handleTypedCount(current.receive_job_line_id, event.target.value)}
-                inputProps={{ min: 0, inputMode: 'numeric', style: { ...monoSx, fontSize: 28 } }}
-                sx={{ maxWidth: 240 }}
-              />
-              {currentCount != null && currentCount !== currentExpected && (
-                <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>
-                  {currentCount > currentExpected
-                    ? `${currentCount - currentExpected} more than expected`
-                    : `${currentExpected - currentCount} fewer than expected`}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {currentLocked ? (
-                  <Button
-                    variant="outlined"
-                    onClick={() => { setEditingId(current.receive_job_line_id); setMessage(null); }}
-                    sx={{ borderRadius: '6px' }}
-                  >
-                    Edit count
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      variant="contained"
-                      disableElevation
-                      disabled={currentCount == null || confirming}
-                      onClick={() => {
-                        if (currentCount != null) void confirmCount(current.receive_job_line_id, currentCount);
-                      }}
-                      sx={{ borderRadius: '6px', fontWeight: 700 }}
-                    >
-                      {confirming ? 'Confirming…' : 'Confirm count'}
-                    </Button>
-                    {(currentCount == null || currentCount === 0) && (
-                      <Button
-                        variant="outlined"
-                        disabled={confirming}
-                        onClick={() => void confirmCount(current.receive_job_line_id, 0)}
-                        sx={{ borderRadius: '6px' }}
-                      >
-                        None arrived
-                      </Button>
-                    )}
-                  </>
-                )}
-              </Box>
-            </>
-          ) : (
-            <Typography variant="body2" color="text.secondary">Nothing to count on this delivery.</Typography>
-          )}
-        </Paper>
-      </Box>
+        <>
+          <ReceiveTaskHeading eyebrow="Count" title="Nothing to count" />
+          <ReceiveStatusLine>Nothing to count on this delivery.</ReceiveStatusLine>
+          {messageNode}
+        </>
       )}
     </Box>
+  );
+
+  return (
+    <>
+      <ReceiveSessionShell
+        reference={reference}
+        supplier={props.supplierName}
+        jobId={props.receiveJobId}
+        bars={groupedBars}
+        progressLabel={`${countedTotal} of ${total} products counted`}
+        headerAction={backButton}
+        overlay={exitSheetNode}
+        footerRight={(
+          <ReceiveFooterButton onClick={() => setProductsOpen(true)} aria-haspopup="dialog">
+            Products · {countedTotal} of {total}
+          </ReceiveFooterButton>
+        )}
+      >
+        {showReview ? reviewBody : countBody}
+      </ReceiveSessionShell>
+      <ReceiveLinesDrawer
+        open={productsOpen}
+        title={`Products · ${countedTotal} of ${total}`}
+        onClose={() => setProductsOpen(false)}
+      >
+        {productsList}
+      </ReceiveLinesDrawer>
+    </>
   );
 }
 
@@ -4050,10 +4782,15 @@ export default function ReceiveSessionPage(props: ReceiveSessionPageProps) {
     return (
       <>
         {marker}
-        <Box sx={{ display: 'grid', gap: 1.5, p: { xs: 2, md: 3 }, maxWidth: 880 }}>
-          <Typography variant="body2" color="text.secondary">Checking this Receive…</Typography>
-          <LinearProgress />
-        </Box>
+        <ReceiveSessionShell
+          reference={props.poNumber != null ? `PO-${props.poNumber}` : 'PO reference unavailable'}
+          supplier={props.supplierName}
+          jobId={props.receiveJobId}
+          bars={[]}
+        >
+          <ReceiveTaskHeading eyebrow="Receive" title="Checking this" accent="Receive." sub="Checking this Receive…" />
+          <LinearProgress aria-label="Loading the latest saved state" sx={{ width: 200, alignSelf: 'center', height: 3, borderRadius: '2px', bgcolor: 'var(--bg-3)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--accent)' } }} />
+        </ReceiveSessionShell>
       </>
     );
   }
@@ -4064,7 +4801,9 @@ export default function ReceiveSessionPage(props: ReceiveSessionPageProps) {
       <ReceiveSessionNotice
         props={props}
         severity="error"
-        title="Receive unavailable"
+        title="This Receive"
+        accent="can't continue here."
+        ctaLabel="Back to Operations"
         message="This Receive can't continue here because its current state couldn't be confirmed. Nothing has been changed. Return to Operations and reopen it, or ask a lead to review it."
       />
     </>
