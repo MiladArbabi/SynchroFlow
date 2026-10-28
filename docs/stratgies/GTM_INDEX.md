@@ -18,9 +18,9 @@ Stable entry point for GTM agents and operators. Read this file first, then read
 
 | Sprint | Charter | Mode | Research authorized | Outreach authorized |
 |---|---|---|---|---|
-| GTM-01-S01 | `docs/stratgies/gtm_sprints/GTM-01-S01/charter.md` | RESEARCH_ONLY | TRUE (G0-B: GTM-01-S01-G0B-LEAD-001) | FALSE |
+| GTM-01-S02 | `docs/stratgies/gtm_sprints/GTM-01-S02/charter.md` | RESEARCH_ONLY / SETUP | FALSE (G0-B PENDING) | FALSE |
 
-**Index status:** GTM-CHG-005 approved and active after publication on main. GTM-CHG-003 remains historical. G0-A PASS (`GTM-01-S01-G0A-LEAD-001`); G0-B research authorized only for `GTM-01-S01-RESEARCH-001` under lead decision `GTM-01-S01-G0B-LEAD-001` (2026-10-27); G5 outreach BLOCKED. `GTM-CHG-004` records only this approved S01 status reconciliation, with no new workflow/schema/strategy rules.
+**Index status:** GTM-CHG-005 workflow v1.3 remains approved. GTM-01-S02 was requested by the GTM lead on 2026-10-28 for nationwide Sweden merchant discovery, RESEARCH_ONLY. S02 is SETUP-ONLY: G0-A and G0-B are BLOCKED until its own workspace, source/method authorization, charter decisions and independent preflight are completed; G5 outreach remains BLOCKED. The prior GTM-01-S01 G0-A/G0-B decisions were specific to S01 and do not transfer. S01 merchant cohort is left untouched; its charter remains available at `docs/stratgies/gtm_sprints/GTM-01-S01/charter.md`.
 
 **Pinning rule:** this index records path, version and file SHA-256 only. Every sprint charter must additionally pin the actual Git commit SHA from which these files are read (workflow §3, §10). A charter without a commit pin fails G0-A.
 
@@ -61,5 +61,6 @@ Repository files contain no merchant names, contact details, prospect lists, sou
 | 2026-10-26 | GTM-CHG-003 | Add workflow v1.2 R16 current-sprint pointer regression; update index, S01 charter and blocker register | APPROVED; PUBLISHED |
 | 2026-10-27 | GTM-CHG-004 | Reconcile index S01 status with lead-approved G0-B for `GTM-01-S01-RESEARCH-001`; research only; G5 remains BLOCKED; no strategy/workflow change | APPROVED; PUBLISHED |
 | 2026-10-27 | GTM-CHG-005 | Fast GOOD/HUMAN_REVIEW/DROP preliminary triage; keep G5/G6 contact-readiness, independent QA and separate dispatch authorization | APPROVED; published as v1.3 after main merge |
+| 2026-10-28 | GTM-01-S02-SETUP-001 | Lead directed new RESEARCH_ONLY Sweden-wide merchant sprint. Register S02 as SETUP-ONLY; G0-A/G0-B and website/source methods require new sprint-specific clearance. Prior S01 cohort untouched | LEAD DIRECTED; SETUP ONLY; RESEARCH NOT YET AUTHORIZED |
 
 Updating this index is a C2 change (workflow §13.5): it requires a GTM lead decision ID and a revision-log entry.
