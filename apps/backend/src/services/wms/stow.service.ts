@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
+import { HELD_UNIT_STATUSES } from './receiveBarcodeReadiness.service.js';
 
 /**
  * STOW SERVICE (WM-05)
@@ -320,6 +321,21 @@ export async function confirmStow(
   if (task.status !== 'in_progress') throw new Error(`[STOW_CONFIRM] Task not in progress: ${task.status}`);
   if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
+
+  // S4-2 — held Receive units are outside truth and never ordinary stock.
+  // Recovery Stow is not enabled yet, and no other trigger may place a held
+  // or discarded unit: refused here, before any truth, ledger or unit write.
+  if (task.trigger === 'receive_recovery') {
+    throw new Error('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
+  }
+  if (lasyncroUnitId) {
+    const scanned = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .first('status');
+    if (scanned && (HELD_UNIT_STATUSES as readonly string[]).includes(scanned.status)) {
+      throw new Error(`[STOW_CONFIRM] HELD_UNIT_NOT_STOWABLE: ${lasyncroUnitId}`);
+    }
+  }
 
     const completedAt = new Date();
     const qty = quantityPlaced ?? task.quantity; // support partial stow

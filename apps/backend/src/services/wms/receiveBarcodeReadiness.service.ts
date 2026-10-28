@@ -35,6 +35,12 @@ import { Knex } from 'knex';
  * match quantity_accepted, the evidence disagrees with itself and the line is
  * NOT ready. Guessing in either direction risks unscannable stock on a shelf.
  *
+ * HELD UNITS (S4-2): recoverable units held for Problem Center (status held /
+ * discarded) are never accepted stock and are counted apart from it. A line
+ * holding units must carry exactly quantity_held_recoverable held LSUs, every
+ * one label-acknowledged — checked before the no-accepted and external-barcode
+ * shortcuts, because a shared EAN cannot tell one held unit from another.
+ *
  * DEPENDENCY-NEUTRAL BY DESIGN: this module imports nothing from
  * receiveJob.service or inventoryUnit.service, so both can import it without a
  * cycle. It never closes a job and never creates a Stow task — it only decides
@@ -50,7 +56,12 @@ export type LineReadinessReason =
   | 'external_barcode'
   | 'labels_acknowledged'
   | 'labels_outstanding'
-  | 'unit_evidence_mismatch';
+  | 'unit_evidence_mismatch'
+  | 'held_unit_evidence_mismatch'
+  | 'held_labels_outstanding';
+
+/** S4-2 — unit statuses that are never accepted stock. */
+export const HELD_UNIT_STATUSES = ['held', 'discarded'] as const;
 
 export interface ReceiveLineReadiness {
   receiveJobLineId: string;
@@ -60,6 +71,9 @@ export interface ReceiveLineReadiness {
   hasExternalBarcode: boolean;
   acceptedUnitCount: number;
   labelledUnitCount: number;
+  quantityHeld: number;
+  heldUnitCount: number;
+  heldLabelledCount: number;
   ready: boolean;
   reason: LineReadinessReason;
 }
@@ -100,12 +114,18 @@ interface ReadinessRow {
   external_barcode: string | null;
   unit_count: string | number;
   labelled_count: string | number;
+  quantity_held_recoverable: string | number | null;
+  held_count: string | number;
+  held_labelled_count: string | number;
 }
 
 function classifyLine(row: ReadinessRow): ReceiveLineReadiness {
   const quantityAccepted = Number(row.quantity_accepted ?? 0);
   const acceptedUnitCount = Number(row.unit_count ?? 0);
   const labelledUnitCount = Number(row.labelled_count ?? 0);
+  const quantityHeld = Number(row.quantity_held_recoverable ?? 0);
+  const heldUnitCount = Number(row.held_count ?? 0);
+  const heldLabelledCount = Number(row.held_labelled_count ?? 0);
   const hasExternalBarcode = !!row.external_barcode;
 
   const base = {
@@ -116,12 +136,23 @@ function classifyLine(row: ReadinessRow): ReceiveLineReadiness {
     hasExternalBarcode,
     acceptedUnitCount,
     labelledUnitCount,
+    quantityHeld,
+    heldUnitCount,
+    heldLabelledCount,
   };
 
   // Readiness is a statement about INSPECTED stock. An uninspected line has
   // not yet said what arrived, so it cannot be ready.
   if (!base.inspectionComplete) {
     return { ...base, ready: false, reason: 'not_inspected' };
+  }
+
+  // Held units need their own LSU identity whatever the accepted stock says.
+  if (heldUnitCount !== quantityHeld) {
+    return { ...base, ready: false, reason: 'held_unit_evidence_mismatch' };
+  }
+  if (heldLabelledCount !== quantityHeld) {
+    return { ...base, ready: false, reason: 'held_labels_outstanding' };
   }
 
   // Nothing was accepted — there is no physical unit to identify.
@@ -163,20 +194,28 @@ export async function evaluateReceiveJobBarcodeReadiness(
       rjl.lasyncro_variant_id,
       rjl.quantity_accepted,
       rjl.inspection_complete,
+      rjl.quantity_held_recoverable,
       NULLIF(BTRIM(COALESCE(v.barcode, '')), '') AS external_barcode,
-      COALESCE(u.unit_count, 0)     AS unit_count,
-      COALESCE(u.labelled_count, 0) AS labelled_count
+      COALESCE(u.unit_count, 0)          AS unit_count,
+      COALESCE(u.labelled_count, 0)      AS labelled_count,
+      COALESCE(u.held_count, 0)          AS held_count,
+      COALESCE(u.held_labelled_count, 0) AS held_labelled_count
     FROM receive_job_lines rjl
     LEFT JOIN variants v
       ON v.lasyncro_variant_id = rjl.lasyncro_variant_id
      AND v.shop_id = rjl.shop_id
     LEFT JOIN LATERAL (
       SELECT
-        COUNT(*)::int AS unit_count,
-        COUNT(*) FILTER (WHERE iu.label_printed_at IS NOT NULL)::int AS labelled_count
-      FROM inventory_units iu
-      WHERE iu.shop_id = rjl.shop_id
-        AND iu.receive_job_line_id = rjl.receive_job_line_id
+        COUNT(*) FILTER (WHERE NOT iu.held)::int AS unit_count,
+        COUNT(*) FILTER (WHERE NOT iu.held AND iu.label_printed_at IS NOT NULL)::int AS labelled_count,
+        COUNT(*) FILTER (WHERE iu.held)::int AS held_count,
+        COUNT(*) FILTER (WHERE iu.held AND iu.label_printed_at IS NOT NULL)::int AS held_labelled_count
+      FROM (
+        SELECT label_printed_at, status::text = ANY(?::text[]) AS held
+          FROM inventory_units
+         WHERE shop_id = rjl.shop_id
+           AND receive_job_line_id = rjl.receive_job_line_id
+      ) iu
     ) u ON TRUE
     WHERE rjl.shop_id = ?
       AND rjl.receive_job_id = ?
@@ -195,7 +234,7 @@ export async function evaluateReceiveJobBarcodeReadiness(
       )
     ORDER BY rjl.receive_job_line_id
     `,
-    [shopId, receiveJobId]
+    [HELD_UNIT_STATUSES as unknown as string[], shopId, receiveJobId]
   );
 
   const lines = (result.rows as ReadinessRow[]).map(classifyLine);

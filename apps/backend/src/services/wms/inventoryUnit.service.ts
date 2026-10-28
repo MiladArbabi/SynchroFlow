@@ -1,7 +1,7 @@
 import { lockReceiveJob } from './receiveWorkflowLock.service.js';
 import { Knex } from 'knex';
 import crypto from 'crypto';
-import { refreshReadinessForUnits } from './receiveBarcodeReadiness.service.js';
+import { HELD_UNIT_STATUSES, refreshReadinessForUnits } from './receiveBarcodeReadiness.service.js';
 
 /**
  * INVENTORY UNIT SERVICE (WM-46)
@@ -465,9 +465,11 @@ export async function computeCoverage(
 
   // Numerator: physical stock that is LSU-backed. Each active inventory_units row
   // (not shipped/lost) represents one physically-present labelled unit.
+  // S4-2: held / discarded Receive units are outside inventory_truth, so they
+  // are excluded here too — numerator and denominator stay the same population.
   const unitRow = await trx('inventory_units')
     .where({ shop_id: shopId })
-    .whereNotIn('status', ['shipped', 'lost'])
+    .whereNotIn('status', ['shipped', 'lost', ...HELD_UNIT_STATUSES])
     .count<{ count: string }>('* as count')
     .first();
   const labelled = Number(unitRow?.count ?? 0);
