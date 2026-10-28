@@ -14,12 +14,10 @@ import { pendingDeliveryQuantitySql } from '../../services/purchasing/purchasing
 //   shortfall = max(0, open_demand - available)
 //   open_demand = SUM(quantity - fulfilled_quantity) across the variant's
 //     order lines. order_revenue_units enforces fulfilled <= quantity, so a
-//     shipped line contributes 0 — no order-status filter needed (and `orders`
-//     has no status column).
-//   available = SUM(inventory_truth.available_quantity) across locations.
-//     That table is written ONLY by physical events (receive/stow/pick), so a
-//     missing row means genuinely zero, not unknown. Floored at 0 because
-//     available_quantity goes negative on oversell.
+//     shipped line contributes 0. Known fulfilled/cancelled orders are excluded;
+//     missing fulfillment-status rows retain legacy demand.
+//   available = canonical release capacity at active pick bins and warehouse
+//     roots. Exception/staging/inactive locations cannot satisfy a shortage.
 // This replaced a `?needed=` query param that no caller ever set, which meant
 // every queued reorder defaulted to 1 unit and `exceeds_moq` (since removed —
 // see SRC-06) could never fire.
@@ -46,6 +44,7 @@ import { pendingDeliveryQuantitySql } from '../../services/purchasing/purchasing
 // of this codebase's explicit-data-over-inference principle.
 
 import { Request, Response } from 'express';
+import { readReleaseCapacity, sumReleaseCapacityByVariant } from '../../services/inventory/releaseCapacity.service.js';
 import db from '@lasyncro/backend-core/db.js';
 import { computeVariantPlanning } from '../../services/demand/demandIntelligence.service.js';
 import type { DemandVelocity } from '../../services/demand/demandIntelligence.service.js';
@@ -172,10 +171,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       };
 
       // ── SRC-03: SHORTFALL RESOLVER ──────────────────────────────────────
-      // Open demand = units ordered but not yet fulfilled. order_revenue_units
-      // enforces fulfilled_quantity <= quantity (CHECK constraint), so a fully
-      // shipped line contributes 0 — no order-status filter needed, and none
-      // exists on `orders` anyway.
+      // Shared live-order demand preserves missing-status compatibility.
       const variantIdForEvidence = Array.isArray(variantId) ? variantId[0] : variantId;
       const openDemandQty = await getVariantOpenDemandQty(
         trx,
@@ -183,18 +179,14 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
         variantIdForEvidence
       );
 
-      // inventory_truth is written ONLY by physical events (receive, stow,
-      // pick, cancel). A variant with no row has genuinely never been received,
-      // so absence means zero — not "unknown". Rows are per location_code, so
-      // this sums across locations. available_quantity can go negative on
-      // oversell, which is why the shortfall is floored below.
-      const availRow = await trx('inventory_truth')
-        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
-        .sum({ available: 'available_quantity' })
-        .first();
+      const capacity = await readReleaseCapacity(trx, {
+        shopId,
+        variantIds: [variantIdForEvidence],
+        lock: 'none',
+      });
 
       demandQty    = openDemandQty;
-      availableQty = Number(availRow?.available ?? 0);
+      availableQty = sumReleaseCapacityByVariant(capacity).get(variantIdForEvidence) ?? 0;
       neededQty    = Math.max(0, demandQty - availableQty);
 
       /**
@@ -250,6 +242,10 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       blockingOrders = (
         await trx('order_revenue_units as oru')
           .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+          .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where(function () {
+            this.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled', 'cancelled']);
+          })
           .leftJoin(
             'external_order_identity_map as eim',
             'eim.lasyncro_order_id',
@@ -800,6 +796,10 @@ export async function httpGetSourcingWorklist(req: Request, res: Response) {
       // ── OPEN DEMAND per variant (only lines with outstanding quantity) ──
       const demandRows = await trx('order_revenue_units as oru')
         .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+        .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where(function () {
+          this.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled', 'cancelled']);
+        })
         .where('o.shop_id', shopId)
         .whereRaw('oru.quantity > oru.fulfilled_quantity')
         .groupBy('oru.lasyncro_variant_id')
@@ -810,11 +810,12 @@ export async function httpGetSourcingWorklist(req: Request, res: Response) {
           trx.raw('MIN(o.order_created_at) as oldest_open_order_at')
         );
 
-      // ── AVAILABLE per variant, aggregated across every location ─────────
-      const availRows = await trx('inventory_truth')
-        .where({ shop_id: shopId })
-        .groupBy('lasyncro_variant_id')
-        .select('lasyncro_variant_id', trx.raw('SUM(available_quantity)::integer as available'));
+      // One canonical capacity read for the catalogue; never one query per item.
+      const capacity = await readReleaseCapacity(trx, {
+        shopId,
+        variantIds: variantRows.map((v) => v.lasyncro_variant_id),
+        lock: 'none',
+      });
 
       // ── COMMITTED INBOUND — same status domain as the targeted endpoint ──
       const committedRows = await trx('purchase_order_line_items as poli')
@@ -869,7 +870,7 @@ export async function httpGetSourcingWorklist(req: Request, res: Response) {
 
       // ── build lookup maps (all set-wise; zero per-variant queries) ───────
       const demandMap = new Map(demandRows.map((r: any) => [r.lasyncro_variant_id, r]));
-      const availMap = new Map(availRows.map((r: any) => [r.lasyncro_variant_id, Number(r.available)]));
+      const availMap = sumReleaseCapacityByVariant(capacity);
       const committedMap = new Map(committedRows.map((r: any) => [r.lasyncro_variant_id, Number(r.committed_inbound)]));
       const draftMap = new Map(draftRows.map((r: any) => [r.lasyncro_variant_id, Number(r.draft_po_qty)]));
       const queueMap = new Map(queueRows.map((r: any) => [r.lasyncro_variant_id, Number(r.pending_queue_qty)]));

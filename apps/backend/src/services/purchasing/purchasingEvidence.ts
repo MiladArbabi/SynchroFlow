@@ -45,8 +45,8 @@ export const COMMITTED_INBOUND_PO_STATUSES = [
  * Open demand = units ordered but not yet fulfilled, VARIANT-WIDE across every
  * order in the tenant. order_revenue_units enforces
  * fulfilled_quantity <= quantity (CHECK constraint), so a fully shipped line
- * contributes 0 — no order-status filter is needed, and none exists on
- * `orders` anyway.
+ * contributes 0. Known fulfilled/cancelled orders never contribute, even
+ * with stale quantities. Missing fulfillment status retains legacy demand.
  */
 export async function getVariantOpenDemandQty(
   trx: Knex.Transaction,
@@ -55,6 +55,10 @@ export async function getVariantOpenDemandQty(
 ): Promise<number> {
   const row = await trx('order_revenue_units as oru')
     .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where(function () {
+      this.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled', 'cancelled']);
+    })
     .where('o.shop_id', shopId)
     .andWhere('oru.lasyncro_variant_id', variantId)
     .sum({ demand: trx.raw('oru.quantity - oru.fulfilled_quantity') })
