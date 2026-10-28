@@ -1,48 +1,50 @@
-# GTM-01-S02 — Nationwide Sweden merchant discovery
+# GTM-01-S02 — Nationwide Sweden merchant discovery and contact preparation
 
-**Status: SETUP ONLY.** Lead direction GTM-01-S02-SETUP-001 on 2026-10-28. G0-A BLOCKED; G0-B BLOCKED; G5 BLOCKED. No research or outreach authorized by this document.
+**Status: LEAD-RATIFIED, EXECUTION PREFLIGHT NOT CERTIFIED.** On 2026-10-28 the GTM lead approved nationwide merchant research in GTM-01-S02-G0B-LEAD-001 and subsequently ratified the hero-first, language-aware workflow v1.4 and a bounded public-business-contact research METHOD (GTM-CHG-006 / GTM-01-S02-CONTACT-METHOD-001). The prior charter incorrectly remained SETUP ONLY and G0-B BLOCKED while the index asserted conditional authorization. This revision records the decisions without inventing independent G0-A preflight evidence or G5 compliance review. G0-A EVIDENCE_HOLD; G0-B LEAD_APPROVED, NOT CERTIFIED FOR EXECUTION; contact-source privacy/terms EXECUTION_HOLD; G5 BLOCKED; all sending prohibited.
 
 ## Objective
 
-Discover **new** Shopify-first Swedish merchants that operate their own inventory and fulfillment, across **all of Sweden**, using GTM workflow v1.3's GREEN (good candidate) / YELLOW (targeted human review) / RED (drop) triage. Geography is no longer an exclusion criterion; proximity may inform later outreach priority. Keep the same ratified ICP. S01's five previously researched merchants are closed for this work: four retained, one dropped. Do not revisit them or silently recategorize them; exclude duplicates from new counts.
+Prepare a nationwide Sweden shortlist of Shopify-first, merchant-operated warehouse SMBs. Apply fast GOOD_CANDIDATE / HUMAN_REVIEW / DROP commercial triage; DROP only with a concrete documented LaSyncro mismatch. Keep unknowns visible and retain prospects whose contact is not yet found. This work includes preparatory identification of a hero person, verified business email, language evidence and a merchant-specific operational hypothesis only when the relevant source and privacy approvals are genuinely verified. Draft only after those facts are present. Do not contact or send without separate G5, independent QA and individual send permission. The previous S01 cohort remains closed and is not reopened.
 
-## Authority
+## Authority and exact source pins
 
-- Index: `docs/stratgies/GTM_INDEX.md`, version includes `GTM-01-S02-SETUP-001`. Index SHA-256 **PENDING** until independent startup preflight; not a PASS.
-- Strategy: `docs/stratgies/GTM_strategy_v1.0.md`, approved v1.0, SHA-256 `2f2b4e98ff0f647479473c65cd6566f6f97e88a562e9d0ace7d3a4b507277bd7`.
-- Workflow: `docs/stratgies/GTM_sprint_workflow_v1.3.md`, approved v1.3/GTM-CHG-005, SHA-256 `34c91af925c3051cc4e47555d11fb798011913e9b64ab154d3312bf485d65a95`.
-- Document baseline commit: `72936ce08e594784266d13785b73433fcedb8e66` (v1.3 on main).
-- Active charter's publication commit and SHA pin are pending and required before G0-A PASS. No merchant or personal identifiers in Git.
+- Index: `docs/stratgies/GTM_INDEX.md`, GTM-CHG-006; SHA-256 `d5f2484c668ab210800a40b4125772b07a7c32191f6e65019c1d41c9f2130e73`, inspected from branch commit `647871a9878596b643cb9fee400699d5615ffe16` prior to this charter commit.
+- Strategy: `docs/stratgies/GTM_strategy_v1.0.md`, v1.0; SHA-256 `2f2b4e98ff0f647479473c65cd6566f6f97e88a562e9d0ace7d3a4b507277bd7`.
+- Workflow: `docs/stratgies/GTM_sprint_workflow_v1.4.md`, APPROVED GTM-CHG-006; SHA-256 `f8f7824c1340f93b700a5b8024052f24a801d22e493b687badc92e936bdc03ad`, introduced at commit `f098b12cdc490af8ef06af27b4b80c69b4e6e270`.
+- Source methods: private S02 permissions register, decision GTM-01-S02-SOURCES-001; approved bounded public search-index nomination, per-domain terms-conditioned company pages, optional narrow JobTech; SCB HOLD. Previously approved merchant-site method EXPRESSLY forbids collection of personal names and contact details.
+- Contact method: lead decision GTM-01-S02-CONTACT-METHOD-001 (2026-10-28); approved in PRINCIPLE ONLY, for manually checking official merchant team/contact pages, genuinely public professional materials and professional business email routes for already retained merchants, up to the six prioritized records first. No scraping, pattern guessing, private emails, paid enrichment or unsolicited messaging. Each source's access/terms and applicable privacy compliance must be independently approved and logged BEFORE any named-person collection. Individual LinkedIn profiles and other previously unapproved providers are not automatically authorized by this lead's method approval.
 
-## Boundaries and planning defaults (not new permissions)
+## Sprint scope and state
 
-| Field | Decision/state |
+| Field | Current state |
 |---|---|
-| Sprint | `GTM-01-S02`, existing second GTM-01 sprint |
-| Mode | `RESEARCH_ONLY` while G5 absent |
-| Geography | Sweden, nationwide |
-| Scope authorization | Lead-approved geography and new research-sprint setup; source use NOT authorized |
-| Provisional research RUN_ID | `GTM-01-S02-RESEARCH-001` — pending G0-B |
-| New merchant cap | Up to 15 distinct merchants — planning default, to ratify under G0-B |
-| Research time | Up to 12 h — planning default, to ratify |
-| Independent QA | Up to 4 h — planning default, to ratify |
-| Spending | 0 SEK — planning default; no purchases authorized |
-| Start | 2026-10-28 SETUP |
-| End | 2026-11-11 tentative, requires G0-B date decision |
+| Sprint | GTM-01-S02 (second existing GTM-01 sprint) |
+| Mode | RESEARCH_ONLY, including permitted preparation; no contact sending |
+| Geography | Sweden nationwide; no proximity exclusions |
+| Research RUN_ID | GTM-01-S02-RESEARCH-001 (lead scope approved; not execution-certified) |
+| Merchant cap | 15 new S02 nominations; previously retained S01 cohort separately; no new prospect records in Git |
+| Research cap | 12 hours, independent QA up to 4 hours, cost 0 SEK |
+| Dates | 2026-10-28 to 2026-11-11 as lead-approved intended window |
 | Lead | LaSyncro GTM lead |
-| Research/QA sessions | Separate S02 sessions to be explicitly designated |
-| Restricted workspace | New S02 controlled folder and access review **PENDING** |
-| Sources | New S02-specific method, geography and terms approval **PENDING** |
-| G0-A decision | null — BLOCKED |
-| G0-B decision | null — BLOCKED |
-| G5 decision | null — BLOCKED |
-| Contact-ready / outreach | 0 / NOT AUTHORIZED |
-| CRM writes, imports, accounts, spending | NOT AUTHORIZED |
+| Independent evidence reviewer | Not independently verified/designed in charter; G0-A HOLD |
+| Compliance reviewer | Not designated in charter; G5 BLOCKED |
+| Restricted workspace | Existing restricted S02 Google Drive workspace; latest access evidence and reviewer assignment remain to be certified |
+| Merchant-source decision | GTM-01-S02-SOURCES-001; conditional to provider terms, G0-A and G0-B evidence |
+| Hero/business-email method decision | GTM-01-S02-CONTACT-METHOD-001; method approved in principle; source terms and privacy review remain unresolved |
+| G0-A | EVIDENCE_HOLD — verify actual foundation checklist, registered sources, reviewer independence, previous blocker review and pins |
+| G0-B | LEAD_APPROVED (GTM-01-S02-G0B-LEAD-001), not PASS until G0-A and exact run scope evidenced |
+| G5 | BLOCKED — no legal-basis/transparency/suppression reviewer decision |
+| Contact ready | 0; all records remain NOT_CONTACT_READY |
+| Drafts | NOT_STARTED until named hero, verified professional email, operational hypothesis and language decision exist |
+| Send/CRM/purchases | NOT AUTHORIZED |
 
-### Next setup step
+## Required next execution steps
 
-Confirm a restricted S02 workspace and source-permission register. Prior S01 SRC-002/004 provider permissions may inform this work but do **not** carry S01-specific execution scope or geographic approval into S02. SRC-003 public-merchant methods remain domain-specific and are not a blanket nationwide authorization. Before doing merchant research: obtain two suitably approved method rows, complete an independent G0-A preflight, pin document hashes, then obtain explicit G0-B scoped to the S02 RUN_ID, nationwide geography, dates and limits.
+1. Independently reconcile current approved G0-A/G0-B evidence with the exact charter and index pins, designated researcher vs reviewer and restricted workspace access. Do not infer a PASS from the historic index entry.
+2. Record a specific source permission for each actual contact-provider method including terms, acceptable access, minimal professional-person data, retention/storage, reviewer, review date, and a privacy handling decision. If the source is unreviewed, `SOURCE_HOLD` that source; do not use public profiles merely because indexed.
+3. Once the relevant gate and source review has genuinely passed, identify hero, verify professional email, research merchant opportunity, select SV or EN from communications evidence (never name alone), then draft. If hero/email absent, hold drafting while retaining the merchant.
+4. Independently review any proposed CONTACT_READY record under G5–G7 and obtain explicit per-recipient dispatch authorization before sending. No bulk campaign or automation.
 
-GTM-01-S02 is a research-only adjustment to the initially planned S02 commercial-validation phase because G5 is not yet approved. Commercial validation is deferred; program conversion targets are not falsely counted as achieved. Formal pre-contact shortlisting requires no repeat website QA. Formal CONTACT_READY and actual messages remain subject to G5, independent evidence review and separate outreach approval.
+## Historic correction
 
-**Execution count at setup:** 0 new merchants researched, 0 new merchant website uses, 0 contacts, 0 spending, 0 CRM writes.
+Previous setup charter stated no source approvals and no restricted workspace; the private S02 permissions register and Drive workspace were subsequently established, and the lead later approved a bounded research scope. This charter records those later decisions accurately while deliberately leaving any undocumented independent certification as EVIDENCE_HOLD. No merchant names, addresses, contact details or lead list are stored in Git.
