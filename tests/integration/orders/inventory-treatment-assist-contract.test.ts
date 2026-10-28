@@ -230,7 +230,7 @@ type OrderLine = {
 async function seedOrder(
   shopId: number,
   lines: OrderLine[],
-  opts: { completeAddress?: boolean } = {}
+  opts: { completeAddress?: boolean; createFulfillmentStatus?: boolean } = {}
 ): Promise<string> {
   const orderId = crypto.randomUUID();
   const complete = opts.completeAddress ?? true;
@@ -297,14 +297,16 @@ async function seedOrder(
 
     await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
-    await trx('order_fulfillment_status').insert({
-      lasyncro_fulfillment_id: crypto.randomUUID(),
-      lasyncro_order_id: orderId,
-      status: 'pending',
-      status_updated_at: now,
-      created_at: now,
-      updated_at: now,
-    });
+    if (opts.createFulfillmentStatus ?? true) {
+      await trx('order_fulfillment_status').insert({
+        lasyncro_fulfillment_id: crypto.randomUUID(),
+        lasyncro_order_id: orderId,
+        status: 'pending',
+        status_updated_at: now,
+        created_at: now,
+        updated_at: now,
+      });
+    }
   });
 
   return orderId;
@@ -1144,5 +1146,46 @@ describe('INV-TREAT-01 — inventory treatment assist contract', () => {
     const after = await snapshot();
 
     expect(after).toEqual(before);
+  });
+});
+
+describe('STOCK-SUPPLY-01 assist purchasing evidence', () => {
+  it('F1 preserves canonical root/bin capacity and excludes exception/inactive stock', async () => {
+    const f = await createTenant('ss-assist-f1');
+    const c = await seedCatalogue(f.shopId, { productTitle: 'Capacity parity', variantTitle: 'Capacity parity' });
+    const orderId = await seedOrder(f.shopId, [{ productId: c.productId, variantId: c.variantId, quantity: 10 }]);
+    await withTenant(f.shopId, async (trx) => {
+      const root = await trx('warehouse_locations').where({ shop_id: f.shopId, location_code: f.rootCode }).first();
+      await trx('warehouse_locations').insert({ shop_id: f.shopId, warehouse_id: root.warehouse_id,
+        location_code: 'SS-I', parent_location_code: f.rootCode, type: 'bin', zone_type: 'pick', active: false });
+    });
+    await setStock(f.shopId, c.variantId, [{ location: f.rootCode, available: 3 }, { location: PICK_BIN, available: 2 },
+      { location: QUARANTINE_BIN, available: 40 }, { location: RECEIVE_BIN, available: 60 }, { location: 'SS-I', available: 50 }]);
+    await materialiseInventoryConstraint(f.shopId, orderId);
+    const item = itemFor(assistOf(await getOrderDetail(f.token, orderId)), c.variantId);
+    expect(item.blockerEvidence).toEqual({ orderRemainingQty: 10, pickableAvailableQty: 5, shortageQty: 5 });
+  });
+
+  it('F2 excludes terminal sibling demand while preserving partial and missing-status orders', async () => {
+    const f = await createTenant('ss-assist-f2');
+    const c = await seedCatalogue(f.shopId, { productTitle: 'Live demand', variantTitle: 'Live demand' });
+    const subject = await seedOrder(f.shopId, [{ productId: c.productId, variantId: c.variantId, quantity: 7, fulfilled: 2 }]);
+    const cancelled = await seedOrder(f.shopId, [{ productId: c.productId, variantId: c.variantId, quantity: 100 }]);
+    const fulfilled = await seedOrder(f.shopId, [{ productId: c.productId, variantId: c.variantId, quantity: 80 }]);
+    const missing = await seedOrder(f.shopId, [{ productId: c.productId, variantId: c.variantId, quantity: 3 }], { createFulfillmentStatus: false });
+    await withTenant(f.shopId, async (trx) => {
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await trx('order_fulfillment_status').where({ lasyncro_order_id: subject }).update({ status: 'partially_fulfilled' });
+      await trx('order_fulfillment_status').where({ lasyncro_order_id: cancelled }).update({ status: 'cancelled' });
+      await trx('order_fulfillment_status').where({ lasyncro_order_id: fulfilled }).update({ status: 'fulfilled', fulfilled_at: now });
+      // D1=B discriminator confined to this new fixture: genuinely absent status.
+      expect(await trx('order_fulfillment_status').where({ lasyncro_order_id: missing }).first()).toBeUndefined();
+    });
+    await setStock(f.shopId, c.variantId, [{ location: PICK_BIN, available: 2 }]);
+    await materialiseInventoryConstraint(f.shopId, subject);
+    const item = itemFor(assistOf(await getOrderDetail(f.token, subject)), c.variantId);
+    expect(item.blockerEvidence).toEqual({ orderRemainingQty: 5, pickableAvailableQty: 2, shortageQty: 3 });
+    expect(item.purchasingEvidence.variantOpenDemandQty).toBe(8); // partial 5 + missing 3, never 188
+    expect(item.treatments[0]).toMatchObject({ type: 'find_supplier', quantity: 6 });
   });
 });

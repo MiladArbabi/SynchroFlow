@@ -1100,3 +1100,95 @@ describe('SOURCING-UX-COGNITIVE-01 Slice 2 — pagination contract (RED)', () =>
     expect(response.body.summary.needs_supplier).toBe(TOTAL_ROWS);
   });
 });
+
+describe('STOCK-SUPPLY-01 worklist purchasing evidence', () => {
+  it('F1 preserves root/bin capacity and tenant isolation while excluding non-pickable stock', async () => {
+    const unique = crypto.randomBytes(6).toString('hex');
+    const f = await bootstrapShop(`ss-f1-${unique}`);
+    const foreign = await bootstrapShop(`ss-f1-foreign-${unique}`);
+    const productId = crypto.randomUUID(), variantId = crypto.randomUUID(), foreignProduct = crypto.randomUUID(), foreignVariant = crypto.randomUUID();
+    const sku = `SS-F1-${unique}`;
+    await seedProduct(f.shopId, productId, 'Stock supply F1');
+    await seedVariant(f.shopId, productId, { variantId, sku, title: 'Root and bin' });
+    await seedOpenDemand(f.shopId, productId, variantId, 10, '301');
+    const supplier = await seedSupplier(f.shopId, 'F1 queued supplier');
+    await seedReorderRequest(f.shopId, supplier, variantId, 1);
+    await withTenant(f.shopId, async (trx) => {
+      const root = await trx('warehouse_locations').where({ shop_id: f.shopId, type: 'warehouse' }).first();
+      await trx('warehouse_locations').insert([
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-Q', parent_location_code: root.location_code, type: 'bin', zone_type: 'quarantine', active: true },
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-R', parent_location_code: root.location_code, type: 'bin', zone_type: 'receive', active: true },
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-I', parent_location_code: root.location_code, type: 'bin', zone_type: 'pick', active: false },
+      ]);
+    });
+    await seedAvailability(f.shopId, variantId, [{ code: `WH-${f.shopId}-ROOT`, qty: 3 }, { code: 'A-1', qty: 2 },
+      { code: 'SS-Q', qty: 40 }, { code: 'SS-R', qty: 60 }, { code: 'SS-I', qty: 50 }]);
+    await seedProduct(foreign.shopId, foreignProduct, 'Foreign stock');
+    await seedVariant(foreign.shopId, foreignProduct, { variantId: foreignVariant, sku: `FOREIGN-${sku}`, title: 'Foreign stock' });
+    await seedAvailability(foreign.shopId, foreignVariant, [{ code: 'A-1', qty: 1000 }]);
+    await seedOpenDemand(foreign.shopId, foreignProduct, foreignVariant, 2000, '302');
+    const before = await purchasingStateSnapshot(f.shopId);
+    const response = await getWorklist(f.token, { category: 'all' });
+    expect(response.status).toBe(200);
+    const rows = response.body.items.filter((r: any) => r.lasyncro_variant_id === variantId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ available: 5, open_demand: 10, short_now: 5, still_to_source: 5,
+      pending_queue_qty: 1, draft_po_qty: 0, in_purchasing: 1, unplanned: 4, category: 'needs_supplier' });
+    expect(response.body.items.some((r: any) => r.lasyncro_variant_id === foreignVariant)).toBe(false);
+    expect(response.body.summary.needs_supplier).toBe(1);
+    const targeted = await request(app).get(`/api/v1/suppliers/sourcing-recommendations/${variantId}`)
+      .set('Authorization', `Bearer ${f.token}`);
+    expect(targeted.status).toBe(200);
+    expect(targeted.body.available).toBe(rows[0].available);
+    expect(targeted.body.short_now).toBe(rows[0].short_now);
+    expect(await purchasingStateSnapshot(f.shopId)).toEqual(before);
+  });
+
+  it('F2 uses live and missing-status remainders consistently for quantities/counts/oldest metadata', async () => {
+    const unique = crypto.randomBytes(6).toString('hex');
+    const f = await bootstrapShop(`ss-f2-${unique}`);
+    const productId = crypto.randomUUID(), variantId = crypto.randomUUID();
+    await seedProduct(f.shopId, productId, 'Stock supply F2');
+    await seedVariant(f.shopId, productId, { variantId, sku: `SS-F2-${unique}`, title: 'Live purchasing demand' });
+    const partialDate = new Date('2026-09-02T12:00:00.000Z');
+    const partial = await seedOpenDemand(f.shopId, productId, variantId, 7, '401', partialDate);
+    const missing = await seedOpenDemand(f.shopId, productId, variantId, 3, '402');
+    const pending = await seedOpenDemand(f.shopId, productId, variantId, 2, '403');
+    const cancelled = await seedOpenDemand(f.shopId, productId, variantId, 100, '404', new Date('2026-08-01T12:00:00.000Z'));
+    const fulfilled = await seedOpenDemand(f.shopId, productId, variantId, 80, '405', new Date('2026-07-01T12:00:00.000Z'));
+    await withTenant(f.shopId, async (trx) => {
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await trx('order_revenue_units').where({ lasyncro_order_id: partial }).update({ fulfilled_quantity: 2 });
+      await trx('order_fulfillment_status').insert([
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: partial, status: 'partially_fulfilled', status_updated_at: now },
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: pending, status: 'pending', status_updated_at: now },
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: cancelled, status: 'cancelled', status_updated_at: now },
+        // Stale outstanding quantities must not resurrect a known terminal order.
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: fulfilled, status: 'fulfilled', status_updated_at: now, fulfilled_at: now },
+      ]);
+      expect(await trx('order_fulfillment_status').where({ lasyncro_order_id: missing }).first()).toBeUndefined();
+    });
+    await seedAvailability(f.shopId, variantId, [{ code: 'A-1', qty: 2 }]);
+    const supplier = await seedSupplier(f.shopId, 'F2 supplier');
+    await seedPoLine(f.shopId, supplier, variantId, { status: 'ordered', ordered: 2, received: 0 });
+    await seedPoLine(f.shopId, supplier, variantId, { status: 'draft', ordered: 1, received: 0 });
+    await seedReorderRequest(f.shopId, supplier, variantId, 1);
+    const before = await purchasingStateSnapshot(f.shopId);
+    const response = await getWorklist(f.token, { category: 'all' });
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0]).toMatchObject({ lasyncro_variant_id: variantId, open_demand: 10, available: 2,
+      blocked_order_count: 3, oldest_open_order_at: partialDate.toISOString(), short_now: 8,
+      committed_inbound: 2, still_to_source: 6, in_purchasing: 2, unplanned: 4, category: 'needs_purchase' });
+    expect(response.body.summary.needs_purchase).toBe(1);
+    const targeted = await request(app).get(`/api/v1/suppliers/sourcing-recommendations/${variantId}`)
+      .set('Authorization', `Bearer ${f.token}`).query({ orderId: cancelled });
+    expect(targeted.status).toBe(200);
+    expect(targeted.body).toMatchObject({ open_demand: 10, available: 2, short_now: 8,
+      committed_inbound: 2, still_to_source: 6, in_purchasing: 2, unplanned: 4, originating_order_id: null });
+    expect(targeted.body.blocking_orders.map((o: any) => o.order_id).sort()).toEqual([partial, missing, pending].sort());
+    expect(targeted.body.blocking_orders).toHaveLength(response.body.items[0].blocked_order_count);
+    expect(targeted.body.blocking_orders.find((o: any) => o.order_id === partial).units).toBe(5);
+    expect(await purchasingStateSnapshot(f.shopId)).toEqual(before);
+  });
+});

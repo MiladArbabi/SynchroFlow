@@ -1036,3 +1036,74 @@ describe('SOURCING-UX-COGNITIVE-01 Slice 1A — targeted sourcing contract', () 
     }
   });
 });
+
+// STOCK-SUPPLY-01 F1/F2 — independent fixtures; existing domain cases unchanged.
+async function stockSupplyTargetFixture() {
+  const fixture = await createFixture();
+  // New regressions exercise purchasing.sourcing (Growth), not commercial denial.
+  // Only this newly created tenant is made eligible; the legacy helper is unchanged.
+  await withTenant(fixture.shopId, (trx) => trx('shop_subscriptions')
+    .where({ shop_id: fixture.shopId }).update({ tier: 'growth' }));
+  return fixture;
+}
+
+describe('STOCK-SUPPLY-01 targeted purchasing evidence', () => {
+  it('F1 counts root and pick bins, excludes quarantine/staging/inactive stock and isolates tenants', async () => {
+    const f = await stockSupplyTargetFixture();
+    const foreign = await stockSupplyTargetFixture();
+    await withTenant(f.shopId, async (trx) => {
+      const root = await trx('warehouse_locations').where({ shop_id: f.shopId, type: 'warehouse' }).first();
+      await trx('warehouse_locations').insert([
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-Q', parent_location_code: root.location_code, type: 'bin', zone_type: 'quarantine', active: true },
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-R', parent_location_code: root.location_code, type: 'bin', zone_type: 'receive', active: true },
+        { shop_id: f.shopId, warehouse_id: root.warehouse_id, location_code: 'SS-I', parent_location_code: root.location_code, type: 'bin', zone_type: 'pick', active: false },
+      ]);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      for (const [location, qty] of [[root.location_code, 3], ['SS-Q', 40], ['SS-R', 60], ['SS-I', 50]] as Array<[string, number]>) {
+        await trx('inventory_truth').insert({ shop_id: f.shopId, lasyncro_variant_id: f.targetVariantId, location_code: location,
+          on_hand_quantity: qty, available_quantity: qty, reserved_quantity: 0, committed_quantity: 0, last_evaluated_at: now });
+      }
+    });
+    const before = await purchasingStateSnapshot(f.shopId);
+    const response = await getSourcing(f, f.targetVariantId);
+    expect(response.status).toBe(200);
+    expect(response.body.available).toBe(5); // existing A-1=2 plus ROOT=3, never 155
+    expect(response.body.open_demand).toBe(10); // legacy missing-status demand remains valid
+    expect(response.body.short_now).toBe(5);
+    expect(response.body.committed_inbound).toBe(EXPECTED_COMMITTED_INBOUND);
+    expect((await getSourcing(f, foreign.targetVariantId)).status).toBe(404);
+    expect(await purchasingStateSnapshot(f.shopId)).toEqual(before);
+  });
+
+  it('F2 excludes terminal orders, preserves partial and missing-status demand, and aligns context', async () => {
+    const f = await stockSupplyTargetFixture();
+    const missingId = crypto.randomUUID();
+    await withTenant(f.shopId, async (trx) => {
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      await trx('order_fulfillment_status').insert([
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: f.blockingOrderOneId, status: 'cancelled', status_updated_at: now },
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: f.blockingOrderTwoId, status: 'partially_fulfilled', status_updated_at: now },
+        { lasyncro_fulfillment_id: crypto.randomUUID(), lasyncro_order_id: f.settledOrderId, status: 'fulfilled', status_updated_at: now, fulfilled_at: now },
+      ]);
+      await trx('order_revenue_units').where({ lasyncro_order_id: f.blockingOrderTwoId }).update({ fulfilled_quantity: 1 });
+      // Terminal status must win even when its economic quantity projection is stale.
+      await trx('order_revenue_units').where({ lasyncro_order_id: f.settledOrderId }).update({ fulfilled_quantity: 0 });
+      await trx('orders').insert({ lasyncro_order_id: missingId, shop_id: f.shopId, aggregate_version: 1, payment_state: 'paid',
+        currency: 'USD', total_price: '20.00', subtotal_price: '20.00', total_tax: '0.00', order_created_at: now, order_updated_at: now, created_at: now, updated_at: now });
+      // D1=B: deliberately no order_fulfillment_status row for this order.
+      await trx('order_revenue_units').insert({ lasyncro_revenue_unit_id: crypto.randomUUID(), lasyncro_order_id: missingId,
+        lasyncro_product_id: f.productId, lasyncro_variant_id: f.targetVariantId, sku: null, title: 'D1 missing status',
+        quantity: 2, fulfilled_quantity: 0, unit_price: '10.00', line_total: '20.00', estimated_unit_cost: '5.00' });
+    });
+    const before = await purchasingStateSnapshot(f.shopId);
+    const response = await getSourcing(f, f.targetVariantId, f.blockingOrderOneId);
+    expect(response.status).toBe(200);
+    expect(response.body.open_demand).toBe(5); // partial remainder 3 + missing-status 2
+    expect(response.body.short_now).toBe(3);
+    expect(response.body.originating_order_id).toBeNull();
+    expect(response.body.blocking_orders.map((o: any) => o.order_id).sort()).toEqual([f.blockingOrderTwoId, missingId].sort());
+    expect(response.body.blocking_orders.find((o: any) => o.order_id === f.blockingOrderTwoId).units).toBe(3);
+    expect((await getSourcing(f, f.targetVariantId, missingId)).body.originating_order_id).toBe(missingId);
+    expect(await purchasingStateSnapshot(f.shopId)).toEqual(before);
+  });
+});

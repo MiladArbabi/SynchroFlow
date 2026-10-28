@@ -31,6 +31,9 @@ on:
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
+      - 'tests/integration/suppliers/sourcing-targeted-contract.test.ts'
+      - 'tests/integration/suppliers/sourcing-worklist-contract.test.ts'
+      - 'tests/integration/orders/inventory-treatment-assist-contract.test.ts'
   push:
     branches: [main]
     paths:
@@ -60,6 +63,9 @@ on:
       - 'tests/integration/auth/auth-tenant-01.db.test.ts'
       - 'tests/integration/suppliers/po-create-gh1262-s1.test.ts'
       - 'tests/integration/suppliers/purchase-order-display-number-1109.test.ts'
+      - 'tests/integration/suppliers/sourcing-targeted-contract.test.ts'
+      - 'tests/integration/suppliers/sourcing-worklist-contract.test.ts'
+      - 'tests/integration/orders/inventory-treatment-assist-contract.test.ts'
 
 jobs:
   rls-security:
@@ -373,6 +379,20 @@ jobs:
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns fresh-install-release-path
+
+      # STOCK-SUPPLY-01: expected assertion RED until the approved F1/F2 fix.
+      # Reuse the existing service, isolation policy, roles and scratch-DB lifecycle.
+      - name: Run STOCK-SUPPLY-01 targeted purchasing regressions
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: >-
+          npm run test:integration --
+          --testPathPatterns 'sourcing-targeted-contract|sourcing-worklist-contract|inventory-treatment-assist-contract'
+          --testNamePattern 'STOCK-SUPPLY-01'
 
       - name: Run GH-1242 locked-action runtime regression
         env:
