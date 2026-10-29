@@ -171,6 +171,54 @@ describe('GH-1109 — WmsModuleFT2 Receive work queue', () => {
     );
   });
 
+  it('S4-4D F2: keeps an assigned, finalized-but-unclosed Receive visible and resumable; excludes foreign active work', () => {
+    const finalized = (['inspection', 'barcode_assignment', 'stow_ready'] as const).flatMap((status) => [
+      {
+        receive_job_id: `receive-${status}-self`,
+        status,
+        assigned_operator_id: 3,
+        started_at: '2026-10-28T09:00:00.000Z',
+        closed_at: null,
+        supplier_name: `Own ${status}`,
+        po_id: `PO-OWN-${status}`,
+        total_units: 4,
+        total_variants: 1,
+      },
+      {
+        receive_job_id: `receive-${status}-foreign`,
+        status,
+        assigned_operator_id: 9,
+        assigned_operator_name: 'Other Operator',
+        started_at: '2026-10-28T09:00:00.000Z',
+        closed_at: null,
+        supplier_name: `Foreign ${status}`,
+        po_id: `PO-FOREIGN-${status}`,
+        total_units: 4,
+        total_variants: 1,
+      },
+    ]);
+    // Own pending/in_progress rows are omitted so all three finalized cards fit the stage preview.
+    const terminal = openReceiveJobs.filter((job) => job.status === 'closed' || job.status === 'cancelled');
+    const props = { ...baseProps(), openReceiveJobs: [...terminal, ...finalized] };
+
+    render(<WmsModuleFT2 {...props} />);
+
+    const receiveStage = screen.getByRole('region', { name: /^Receive$/i });
+    expect(receiveStage).toHaveAccessibleDescription(/\b3 receive jobs\b/i);
+    for (const status of ['inspection', 'barcode_assignment', 'stow_ready']) {
+      const card = within(receiveStage).getByTestId(`receive-work-card-receive-${status}-self`);
+      expect(within(card).getByRole('button', { name: /resume receive/i })).toBeInTheDocument();
+      expect(screen.queryByText(`Foreign ${status}`)).toBeNull();
+    }
+    expect(screen.queryByText('Closed Supply')).toBeNull();
+    expect(screen.queryByText('Cancelled Supply')).toBeNull();
+
+    const stowReady = within(receiveStage).getByTestId('receive-work-card-receive-stow_ready-self');
+    fireEvent.click(within(stowReady).getByRole('button', { name: /resume receive/i }));
+    expect(props.onReceiveSessionEnter).toHaveBeenCalledWith('receive-stow_ready-self');
+    expect(props.onCreateReceiveJob).not.toHaveBeenCalled();
+  });
+
   it('GH-1109 residual: shows the Receive onboarding coach mark when assigned work exists and it is not dismissed', () => {
     const props = baseProps();
 

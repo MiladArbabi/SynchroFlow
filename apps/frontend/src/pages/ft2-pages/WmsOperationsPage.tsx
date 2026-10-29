@@ -1249,7 +1249,11 @@ export default function WmsOperationsPage() {
       open={recountUpgradeOpen}
       onClose={() => setRecountUpgradeOpen(false)}
     />
-   { showQzPrompt && (
+   {/* S4-4D F3 — onboarding is deferred while a Receive session is active
+       (?receiveJobId stays until explicit exit) so the fixed prompt never
+       covers label acknowledgement, scanning, custody or Close. Printing and
+       its browser fallback are unaffected; the prompt shows once they leave. */}
+   { showQzPrompt && !requestedReceiveJobId && (
     <QzTrayOnboardingPrompt
       onDismiss={() => {
         dismissQzPrompt();

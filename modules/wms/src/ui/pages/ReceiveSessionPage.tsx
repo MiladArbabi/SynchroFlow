@@ -710,6 +710,17 @@ function problemCountLabel(line: ReceiveJobLine): string | null {
   return `${count} problem${count === 1 ? '' : 's'} reported`;
 }
 
+/**
+ * S4-4D F4 — damage rows say whether the units are held for repair
+ * (recoverable_held) or set aside as not recoverable; null disposition on a
+ * damage type is the non-recoverable path (S4-4C).
+ */
+function problemTypeLabel(problem: ReceiveReportedProblem): string {
+  const label = problemLabel(problem.exception_type);
+  if (problem.exception_type !== 'defect' && problem.exception_type !== 'packaging_damage') return label;
+  return problem.disposition === 'recoverable_held' ? `${label} · held for repair` : `${label} · not recoverable`;
+}
+
 function problemDetailLabel(problem: ReceiveReportedProblem): string {
   const label = problemLabel(problem.exception_type);
   const quantity = unitLabel(Number(problem.quantity_affected ?? 0));
@@ -803,8 +814,8 @@ function ReportedProblemSummary({
             alignItems: 'center',
           }}
         >
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {problemLabel(problem.exception_type)}
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+            {problemTypeLabel(problem)}
           </Typography>
 
           <Typography
@@ -2923,7 +2934,8 @@ function ReceiveSessionFlow({
     return (
       <Box
         data-testid="receive-held-custody"
-        sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', px: 2, py: 1.75, display: 'grid', gap: 1.25 }}
+        // S4-4D F4.1 — minmax(0, 1fr) keeps nowrap content from widening the implicit grid track past the card.
+        sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', px: 2, py: 1.75, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 1.25, minWidth: 0 }}
       >
         <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
           <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Held for repair</Typography>
@@ -2933,15 +2945,23 @@ function ReceiveSessionFlow({
         </Box>
 
         {problemBin ? (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-            <Typography data-testid="receive-problem-bin" sx={{ ...monoSx, fontSize: 14, color: 'var(--ink)' }}>
-              {`Problem bin · ${problemBin.location_code}`}
-            </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, minWidth: 0 }}>
+            {/* S4-4D F4/F4.1 — label above, code on its own line; a code too long for the row breaks at its hyphens, never truncated. */}
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Problem bin</Typography>
+              <Typography
+                data-testid="receive-problem-bin"
+                sx={{ ...monoSx, fontSize: 14, color: 'var(--ink)', minWidth: 0, overflowWrap: 'break-word' }}
+              >
+                {problemBin.location_code}
+              </Typography>
+            </Box>
+            {/* Responsive values: receiveCtaSx sets {xs, md} height/fontSize, which a scalar override would not replace at md. */}
             <ReceiveCta
               tier="secondary"
               disabled={custodyBusy}
               onClick={() => { setProblemBin(null); setCustodyNotice(null); }}
-              sx={{ height: 36, minWidth: 0, px: 1.5 }}
+              sx={{ width: 'auto', flexShrink: 0, height: { xs: 36, md: 36 }, minWidth: 0, px: 1.5, fontSize: { xs: 13, md: 13 }, whiteSpace: 'nowrap' }}
             >
               Change bin
             </ReceiveCta>
@@ -3000,10 +3020,10 @@ function ReceiveSessionFlow({
               key={unit.lasyncro_unit_id}
               data-testid={`receive-held-unit-${unit.lasyncro_unit_id}`}
               data-placed={unit.placed ? 'true' : 'false'}
-              sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, ...monoSx, fontSize: 13 }}
+              sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: 1, minWidth: 0, ...monoSx, fontSize: 13 }}
             >
-              <Box component="span" sx={{ color: 'var(--ink)' }}>{unit.lasyncro_unit_id}</Box>
-              <Box component="span" sx={{ color: unit.placed ? 'var(--good-ink)' : 'var(--ink-3)' }}>
+              <Box component="span" sx={{ color: 'var(--ink)', minWidth: 0, overflowWrap: 'anywhere' }}>{unit.lasyncro_unit_id}</Box>
+              <Box component="span" sx={{ color: unit.placed ? 'var(--good-ink)' : 'var(--ink-3)', minWidth: 0, overflowWrap: 'anywhere' }}>
                 {unit.placed ? unit.location_code : unit.label_acknowledged ? 'not placed' : 'label not confirmed'}
               </Box>
             </Box>
@@ -4655,7 +4675,7 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   const unsettledCount = differing.filter((model) => !model.settled).length;
 
   const reviewBody = (
-    <Box data-testid="receive-review" sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, md: 2 } }}>
+    <Box data-testid="receive-review" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <ReceiveTaskHeading
         eyebrow="Check differences"
         title={differing.length === 0
@@ -4758,7 +4778,8 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
 
             {model.difference < 0 && (
               <>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+                {/* S4-4D F1 — two columns on mobile so the long Repairable labels stay fully readable at 390px. */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))' }, columnGap: 1, rowGap: { xs: 1.5, sm: 1 } }}>
                   {REVIEW_DECISION_FIELDS.map(({ field, label }) => (
                     <TextField
                       key={field}

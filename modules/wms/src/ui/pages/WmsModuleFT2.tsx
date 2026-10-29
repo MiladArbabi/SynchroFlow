@@ -49,6 +49,7 @@ import CountingSessionPage, {
   type CountingSessionPageProps,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
+import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
 import { EntityDetailModal, IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark } from '@lasyncro/shared/ui';
 import {
   classifyRecountBinAvailability,
@@ -2636,7 +2637,10 @@ function WmsModuleFT2Inner({
   const ownReceiveWorkJobs = (openReceiveJobs ?? []).filter(
     (job) =>
       job.assigned_operator_id === currentUserId &&
-      (job.status === 'pending' || job.status === 'in_progress') &&
+      // S4-4D F2 — the shared open-status contract, not a local subset: a
+      // finalized-but-unclosed job (inspection/barcode_assignment/stow_ready)
+      // must stay visible and resumable for its assigned operator.
+      (RECEIVE_JOB_OPEN_STATUSES as readonly string[]).includes(job.status) &&
       !job.closed_at
   );
 
