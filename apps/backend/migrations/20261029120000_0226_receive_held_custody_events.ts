@@ -35,8 +35,6 @@ export async function up(knex: Knex): Promise<void> {
     -- Composite targets for tenant-safe FKs. Both columns are already unique
     -- on their own (inventory_units.lasyncro_unit_id, problem_task_id PK), so
     -- these can never reject an existing row.
-    CREATE UNIQUE INDEX inventory_units_shop_unit_unique
-      ON inventory_units (shop_id, lasyncro_unit_id);
     CREATE UNIQUE INDEX problem_center_tasks_shop_task_unique
       ON problem_center_tasks (shop_id, problem_task_id);
 
@@ -238,6 +236,5 @@ export async function down(knex: Knex): Promise<void> {
     DROP FUNCTION prevent_receive_held_custody_event_mutation();
     DROP FUNCTION validate_receive_held_custody_event();
     DROP INDEX problem_center_tasks_shop_task_unique;
-    DROP INDEX inventory_units_shop_unit_unique;
   `);
 }

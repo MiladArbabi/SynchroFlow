@@ -136,7 +136,7 @@ const HEAD = {
 };
 const PRE_0226 = {
   events_table: false,
-  unit_index: false,
+  unit_index: true,
   task_index: false,
   constraints: null,
   triggers: null,
