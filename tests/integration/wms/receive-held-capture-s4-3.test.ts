@@ -39,8 +39,9 @@ import { issueTestToken } from '../../unit/helpers/auth';
  *   C6  Recount before inspection supersedes held evidence and keeps history (D3).
  *   C7  unacknowledged held labels block readiness; acknowledgement clears it; close stays 409.
  *   C8  sf_app tenant isolation: owning-shop positive, other-shop negative; LSUs unique.
- *   C9  public inspect / exception / grouped draft / finalize refuse held with 409, no
- *       held side effects; ordinary non-held requests still succeed.
+ *   C9  public per-line inspect / exception refuse held with 409 (S4-4C D4), no held
+ *       side effects; ordinary non-held requests still succeed. Grouped draft /
+ *       finalize held capture is active since S4-4C (receive-held-grouped-custody-s4-4c).
  *
  * Commits held units and tasks: runs only in the isolated held-unit CI step,
  * never with the 0224 / 0225 migration rollback suites.
@@ -718,7 +719,7 @@ describe('S4-3B recoverable held capture', () => {
     expect(dupes).toEqual([]);
   });
 
-  it('C9 — public routes refuse recoverable-held intent with 409 and persist nothing held; ordinary requests still work', async () => {
+  it('C9 — public per-line routes refuse recoverable-held intent with 409 and persist nothing held; ordinary requests still work', async () => {
     const j = await openJob(shopB, 4);
     await confirmCount(j, 2);
     const base = `/api/v1/suppliers/receive-jobs/${j.receiveJobId}`;
@@ -734,18 +735,9 @@ describe('S4-3B recoverable held capture', () => {
       receive_job_line_id: j.lineId, quantity_accepted: 2, quantity_rejected: 0, quantity_missing: 0, quantity_deferred: 0,
       quantity_held_recoverable: 2, device_event_id: crypto.randomUUID(),
     });
-    const draftHeld = await request(app).put(`${base}/reconciliation/draft`).set(auth(j.shop.token)).send({
-      base_revision_id: null, device_event_id: crypto.randomUUID(), lines: [{ ...heldLine, quantity_held_recoverable: 2 }],
-    });
-    const draftDisposition = await request(app).put(`${base}/reconciliation/draft`).set(auth(j.shop.token)).send({
-      base_revision_id: null, device_event_id: crypto.randomUUID(),
-      lines: [{ ...heldLine, quantity_held_recoverable: 0, quantity_missing: 2,
-        new_exceptions: [{ exception_type: 'defect', quantity_affected: 2, disposition: 'recoverable_held' }] }],
-    });
-    const finalizeHeld = await request(app).post(`${base}/reconciliation/finalize`).set(auth(j.shop.token)).send({
-      current_revision_id: crypto.randomUUID(), device_event_id: crypto.randomUUID(), lines: [{ ...heldLine, quantity_held_recoverable: 2 }],
-    });
-    for (const res of [report, inspectRes, draftHeld, draftDisposition, finalizeHeld]) {
+    // S4-4C D4: per-line held capture stays deferred; grouped draft / finalize
+    // held capture is active and covered by the S4-4C suite.
+    for (const res of [report, inspectRes]) {
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('RECEIVE_RECOVERABLE_HELD_NOT_ENABLED');
     }

@@ -25,6 +25,47 @@ function custodyError(errorCode: string, message: string, statusCode = 409) {
   return Object.assign(receiveError(`${errorCode}: ${message}`, statusCode), { errorCode });
 }
 
+/**
+ * The one custody-bin rule, shared by placement and scan resolution: a real,
+ * active problem-zone bin of this shop. Callers also refuse a pickable row
+ * (pickable rule as quarantine, wms.controller). Other non-pickable zones —
+ * receive, pack, quarantine — are not custody. Unknown and foreign bins are
+ * indistinguishable.
+ */
+function activeProblemBins(trx: Knex.Transaction, shopId: number) {
+  return trx('warehouse_locations as wl')
+    .where({ 'wl.shop_id': shopId, 'wl.active': true, 'wl.type': 'bin', 'wl.zone_type': 'problem' });
+}
+
+export interface ResolvedProblemBin {
+  location_code: string;
+  barcode: string | null;
+}
+
+/**
+ * S4-4C — resolve a scanned problem-bin barcode (or typed location code) to
+ * its Floor Planning location for this Receive. Read-only; the job must exist
+ * for the shop. Placement re-validates the bin under its own locks.
+ */
+export async function resolveProblemBin(
+  trx: Knex.Transaction,
+  input: { shopId: number; receiveJobId: string; scannedValue: string }
+): Promise<ResolvedProblemBin> {
+  const { shopId, receiveJobId, scannedValue } = input;
+  const job = await trx('receive_jobs').where({ shop_id: shopId, receive_job_id: receiveJobId }).first('receive_job_id');
+  if (!job) throw receiveError('Receive job not found', 404);
+
+  const matches = await activeProblemBins(trx, shopId)
+    .where((qb) => qb.where('wl.barcode', scannedValue).orWhere('wl.location_code', scannedValue))
+    .select('wl.location_code', 'wl.barcode', trx.raw('(?) AS pickable', [pickableLocationCondition(trx)]));
+  const bins = matches.filter((row: any) => !row.pickable);
+  // A barcode naming two different bins is ambiguous: never guess.
+  if (bins.length !== 1) {
+    throw custodyError('RECEIVE_PROBLEM_BIN_INVALID', `${scannedValue} is not an active non-pickable problem bin`);
+  }
+  return { location_code: bins[0].location_code, barcode: bins[0].barcode ?? null };
+}
+
 export interface PlaceHeldUnitInput {
   shopId: number;
   receiveJobId: string;
@@ -113,14 +154,8 @@ export async function placeHeldUnitInProblemBin(
     .first('problem_task_id', 'problem_bin_location');
   if (!task) throw custodyError('RECEIVE_HELD_TASK_MISSING', `${lasyncroUnitId} has no Receive Problem Center task`);
 
-  // A real, active problem-zone bin of this shop that is not sellable-from
-  // (pickable rule as quarantine, wms.controller). Other non-pickable zones —
-  // receive, pack, quarantine — are not custody. Unknown and foreign bins are
-  // indistinguishable.
-  const bin = await trx('warehouse_locations as wl')
-    .where({
-      'wl.shop_id': shopId, 'wl.location_code': locationCode, 'wl.active': true, 'wl.type': 'bin', 'wl.zone_type': 'problem',
-    })
+  const bin = await activeProblemBins(trx, shopId)
+    .where('wl.location_code', locationCode)
     .forShare()
     .first('wl.location_code', trx.raw('(?) AS pickable', [pickableLocationCondition(trx)]));
   if (!bin || bin.pickable) {

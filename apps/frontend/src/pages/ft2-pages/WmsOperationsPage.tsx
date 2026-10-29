@@ -546,6 +546,30 @@ export default function WmsOperationsPage() {
     receiveEvents.current.delete(key);
   }, []);
 
+  // S4-4C — problem-bin scan resolution for held-unit custody (read-only).
+  const handleResolveReceiveProblemBin = useCallback(async (jobId: string, scannedValue: string) => {
+    const { data } = await axiosInstance.get(
+      `/api/v1/suppliers/receive-jobs/${jobId}/problem-bins/resolve`,
+      { params: { scanned_value: scannedValue } }
+    );
+    return data as { location_code: string; barcode: string | null };
+  }, []);
+
+  // S4-4C — one held LSU into a problem bin. Same event discipline as
+  // postReceiveEvent: the event survives a failed request, so a retry replays.
+  const handlePlaceReceiveHeldUnit = useCallback(async (
+    jobId: string,
+    params: { lasyncro_unit_id: string; location_code: string }
+  ) => {
+    const url = `/api/v1/suppliers/receive-jobs/${jobId}/held-units/${encodeURIComponent(params.lasyncro_unit_id)}/custody`;
+    const key = JSON.stringify([url, params.location_code]);
+    const eventId = receiveEvents.current.get(key) ?? newReceiveEventId();
+    receiveEvents.current.set(key, eventId);
+    const { data } = await axiosInstance.post(url, { location_code: params.location_code, device_event_id: eventId });
+    receiveEvents.current.delete(key);
+    return data as { replayed: boolean };
+  }, []);
+
   const handleInspectReceiveLine = useCallback(async (
     jobId: string,
     params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }
@@ -1154,6 +1178,8 @@ export default function WmsOperationsPage() {
       operationsShell={operationsShell}
       onPrintUnitLabels={handlePrintUnitLabels}
       onConfirmUnitLabelsPrinted={handleConfirmUnitLabelsPrinted}
+      onResolveReceiveProblemBin={handleResolveReceiveProblemBin}
+      onPlaceReceiveHeldUnit={handlePlaceReceiveHeldUnit}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRaisePackDecision={handleRaisePackDecision}

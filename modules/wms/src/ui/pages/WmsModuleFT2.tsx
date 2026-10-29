@@ -30,6 +30,7 @@ import PackSessionPage, {
 } from './PackSessionPage.js';
 import ReceiveSessionPage, {
 type ReceiveJobLine,
+type ReceiveProblemBin,
 type ReceiveReconciliationEvidence,
 type ReceiveReconciliationDraftPayload,
 type ReceiveReconciliationFinalizePayload,
@@ -232,6 +233,10 @@ export type WmsModuleFT2Props = {
    * be treated as ready with nothing recorded in the backend.
    */
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
+  /** S4-4C — Receive-scoped problem-bin scan resolution (pass-through to ReceiveSessionPage). */
+  onResolveReceiveProblemBin?: (jobId: string, scannedValue: string) => Promise<ReceiveProblemBin>;
+  /** S4-4C — held LSU → problem bin custody (pass-through; the host owns the device event). */
+  onPlaceReceiveHeldUnit?: (jobId: string, params: { lasyncro_unit_id: string; location_code: string }) => Promise<{ replayed: boolean }>;
 
   onClaimBatch: (batchId: string) => Promise<void>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
@@ -2025,6 +2030,8 @@ function WmsModuleFT2Inner({
   onReceiveSessionFocusChange,
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
+  onResolveReceiveProblemBin,
+  onPlaceReceiveHeldUnit,
 
   onClaimBatch,
   onFetchLineItems,
@@ -3066,6 +3073,8 @@ function WmsModuleFT2Inner({
         onResolveBarcode={onResolveBarcode}
         onPrintUnitLabels={onPrintUnitLabels}
         onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
+        onResolveProblemBin={onResolveReceiveProblemBin ? (value) => onResolveReceiveProblemBin(activeSession.receiveJobId, value) : undefined}
+        onPlaceHeldUnit={onPlaceReceiveHeldUnit ? (params) => onPlaceReceiveHeldUnit(activeSession.receiveJobId, params) : undefined}
         onRefresh={refreshReceiveSession}
         onExecutionFocusChange={handleReceiveExecutionFocusChange}
         sessionMode={resolvedReceiveMode?.mode ?? 'resolving'}

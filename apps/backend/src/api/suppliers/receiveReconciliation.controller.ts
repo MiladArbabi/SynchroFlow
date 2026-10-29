@@ -58,7 +58,9 @@ export async function httpSaveReceiveReconciliationDraft(req: Request, res: Resp
   }
 
   try {
-    const parsed = parseGroupedLines(lines);
+    // S4-4C (D3/D4): recoverable-held capture is active for grouped review only;
+    // per-line inspect and exception routes still refuse it with 409.
+    const parsed = parseGroupedLines(lines, { allowRecoverableHeld: true });
     const revision = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       return saveReconciliationDraft(trx, {
@@ -87,7 +89,9 @@ export async function httpFinalizeReceiveReconciliation(req: Request, res: Respo
   }
 
   try {
-    const parsed = parseGroupedLines(lines);
+    // S4-4C (D3/D4): recoverable-held capture is active for grouped review only;
+    // per-line inspect and exception routes still refuse it with 409.
+    const parsed = parseGroupedLines(lines, { allowRecoverableHeld: true });
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       return finalizeReconciliation(trx, {

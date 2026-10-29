@@ -42,6 +42,7 @@ import {
   httpCloseReceiveJob,
   httpReportReceiveException,
   httpPlaceHeldUnitCustody,
+  httpResolveReceiveProblemBin,
 } from './receiveJob.controller.js';
 import {
   httpGetReceiveReconciliation,
@@ -287,6 +288,16 @@ router.post(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpPlaceHeldUnitCustody
+);
+// S4-4C — problem-bin scan resolution for custody; same chain as placement.
+router.get(
+  '/receive-jobs/:jobId/problem-bins/resolve',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpResolveReceiveProblemBin
 );
 router.post(
   '/receive-jobs/:jobId/close',

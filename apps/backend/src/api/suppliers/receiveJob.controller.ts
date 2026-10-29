@@ -16,7 +16,7 @@ import {
 } from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
 import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBarcodeReadiness.service.js';
-import { placeHeldUnitInProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
+import { placeHeldUnitInProblemBin, resolveProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
 import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 
@@ -272,6 +272,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           'raised_at',
           'accounting_role',
           'counts_toward_shortfall',
+          'disposition',
         )
         .orderBy('raised_at', 'asc');
 
@@ -287,8 +288,42 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           raised_at: problem.raised_at,
           accounting_role: problem.accounting_role ?? null,
           counts_toward_shortfall: Boolean(problem.counts_toward_shortfall),
+          // S4-4C: 'recoverable_held' separates held evidence from damage; null = legacy.
+          disposition: problem.disposition ?? null,
         });
         reportedProblemsByLine.set(problem.receive_job_line_id, lineProblems);
+      }
+
+      // S4-4C — held LSUs and their problem-bin custody, server-authoritative.
+      // Placement is confirmed only when the 0226 custody event, the unit and
+      // its location agree (same rule as the close gate).
+      const heldUnits = await trx('inventory_units as iu')
+        .join('receive_job_lines as hl', 'hl.receive_job_line_id', 'iu.receive_job_line_id')
+        .leftJoin('receive_held_custody_events as ce', function joinCustody() {
+          this.on('ce.shop_id', 'iu.shop_id').andOn('ce.lasyncro_unit_id', 'iu.lasyncro_unit_id');
+        })
+        .where({ 'iu.shop_id': shopId, 'hl.shop_id': shopId, 'hl.receive_job_id': jobId, 'iu.status': 'held' })
+        .orderBy('iu.receive_job_line_id').orderBy('iu.receive_sequence')
+        .select(
+          'iu.receive_job_line_id',
+          'iu.lasyncro_unit_id',
+          'iu.label_printed_at',
+          'iu.current_location_code',
+          'iu.held_placed_at',
+          'ce.location_code as custody_location_code',
+        );
+      const heldUnitsByLine = new Map<string, any[]>();
+      for (const unit of heldUnits) {
+        const lineUnits = heldUnitsByLine.get(unit.receive_job_line_id) ?? [];
+        lineUnits.push({
+          lasyncro_unit_id: unit.lasyncro_unit_id,
+          label_acknowledged: unit.label_printed_at != null,
+          location_code: unit.current_location_code ?? null,
+          placed: unit.held_placed_at != null
+            && unit.custody_location_code != null
+            && unit.current_location_code === unit.custody_location_code,
+        });
+        heldUnitsByLine.set(unit.receive_job_line_id, lineUnits);
       }
 
       const linesWithReadiness = await Promise.all(lines.map(async (line: any) => {
@@ -336,6 +371,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           accepted_unit_count: lineReadiness?.acceptedUnitCount ?? 0,
           labelled_unit_count: lineReadiness?.labelledUnitCount ?? 0,
           reported_problems: lineProblems,
+          held_units: heldUnitsByLine.get(line.receive_job_line_id) ?? [],
           reconciliation: { ...reconciliation, sellable_basis: sellableBasis },
         };
       }));
@@ -823,6 +859,35 @@ export async function httpPlaceHeldUnitCustody(req: Request, res: Response) {
       return res.status(409).json({ error: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT: this placement conflicts with recorded custody', code: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT' });
     }
     return res.status(500).json({ error: 'RECEIVE_HELD_CUSTODY_FAILED', code: 'RECEIVE_HELD_CUSTODY_FAILED' });
+  }
+}
+
+// ─────────────────────────────────────────
+// GET /receive-jobs/:jobId/problem-bins/resolve?scanned_value=
+// ─────────────────────────────────────────
+// S4-4C — resolve a scanned problem-bin barcode or typed location code to its
+// Floor Planning location, with the certified custody bin rule. Read-only.
+export async function httpResolveReceiveProblemBin(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const raw = req.query.scanned_value;
+  const scannedValue = typeof raw === 'string' ? raw.trim() : '';
+  if (!scannedValue || scannedValue.length > 255) {
+    return res.status(400).json({ error: 'scanned_value is required' });
+  }
+
+  try {
+    const bin = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return resolveProblemBin(trx, { shopId, receiveJobId: jobId, scannedValue });
+    });
+    return res.json(bin);
+  } catch (err: any) {
+    console.error('[RECEIVE_PROBLEM_BIN_RESOLVE_FAILED]', { shopId, jobId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    return res.status(500).json({ error: 'RECEIVE_PROBLEM_BIN_RESOLVE_FAILED', code: 'RECEIVE_PROBLEM_BIN_RESOLVE_FAILED' });
   }
 }
 

@@ -97,6 +97,9 @@ function closeRefusalMessage(err: any): string | null {
   if (!err?.response || !Number.isFinite(status) || status >= 500) return null;
   const refusal = String(err?.response?.data?.error ?? '');
   if (/already closed|is terminal/i.test(refusal)) return null;
+  if (err?.response?.data?.code === 'RECEIVE_HELD_CUSTODY_REQUIRED' || /RECEIVE_HELD_CUSTODY_REQUIRED/.test(refusal)) {
+    return 'Some units held for repair still need placing in a problem bin before this Receive can close.';
+  }
   if (err?.response?.data?.code === 'RECEIVE_BARCODE_READINESS_REQUIRED' || /RECEIVE_BARCODE_READINESS_REQUIRED/.test(refusal)) {
     return 'Some unit labels still need confirmation before this Receive can close.';
   }
@@ -143,6 +146,8 @@ export interface ReceiveJobLine {
   accepted_unit_count?: number;
   labelled_unit_count?: number;
   reported_problems?: ReceiveReportedProblem[];
+  /** S4-4C — held LSUs of this line and their server-authoritative problem-bin custody. */
+  held_units?: ReceiveHeldUnit[];
   reconciliation?: {
     expected: number;
     sellable: number;
@@ -176,6 +181,22 @@ export interface ReceiveReportedProblem {
   counts_toward_shortfall?: boolean;
   /** 'shortfall' | 'overage' | null — GET receive job reported_problems. */
   accounting_role?: string | null;
+  /** S4-4C — 'recoverable_held' for units held for repair; null = legacy evidence. */
+  disposition?: string | null;
+}
+
+/** S4-4C — GET receive job lines[].held_units. */
+export interface ReceiveHeldUnit {
+  lasyncro_unit_id: string;
+  label_acknowledged: boolean;
+  location_code: string | null;
+  placed: boolean;
+}
+
+/** S4-4C — a problem bin resolved from a scanned barcode or typed location code. */
+export interface ReceiveProblemBin {
+  location_code: string;
+  barcode: string | null;
 }
 
 export interface ReceiveSessionPageProps {
@@ -237,6 +258,14 @@ export interface ReceiveSessionPageProps {
   onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
+  /** S4-4C — resolve a scanned or typed problem-bin value to its Floor Planning location. */
+  onResolveProblemBin?: (scannedValue: string) => Promise<ReceiveProblemBin>;
+  /**
+   * S4-4C — place one held LSU into a problem bin. The host owns the
+   * device_event_id and reuses it until the request succeeds, so a retry after
+   * an interrupted request replays instead of placing twice.
+   */
+  onPlaceHeldUnit?: (params: { lasyncro_unit_id: string; location_code: string }) => Promise<{ replayed: boolean }>;
   /** S8-C3 — the WMS host returns a ReceiveRefreshResult; other hosts may return nothing (never close evidence). */
   onRefresh?: () => Promise<ReceiveRefreshResult | void> | void;
   /**
@@ -273,6 +302,8 @@ export interface ReceiveReconciliationException {
   quantity_affected: number;
   accounting_role: string | null;
   notes?: string | null;
+  /** S4-4C — present only for units held for repair (defect / packaging_damage). */
+  disposition?: 'recoverable_held';
 }
 
 /** GH-1241 S3-B — one line of a grouped draft revision or finalization. */
@@ -814,10 +845,21 @@ function ReceiveSessionFlow({
   onResolveBarcode,
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
+  onResolveProblemBin,
+  onPlaceHeldUnit,
   onRefresh,
   onExecutionFocusChange,
 }: ReceiveSessionPageProps) {
   const poDisplay = poNumber == null ? 'PO reference unavailable' : `PO-${poNumber}`;
+  // S4-4C — held-for-repair custody. The selected problem bin stays selected
+  // until the operator changes it or leaves this session.
+  const [problemBin, setProblemBin] = useState<ReceiveProblemBin | null>(null);
+  const [binInputValue, setBinInputValue] = useState('');
+  const [heldInputValue, setHeldInputValue] = useState('');
+  const [custodyBusy, setCustodyBusy] = useState(false);
+  const [custodyNotice, setCustodyNotice] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
+  const custodyInFlightRef = useRef(false);
+  const heldInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const progressPersistQueueRef = useRef<Promise<void>>(Promise.resolve());
   // WS-UX-RECEIVE-D4R S3-B — per line, the last provisional count the server
@@ -2780,6 +2822,203 @@ function ReceiveSessionFlow({
     );
   };
 
+  // S4-4C — server-authoritative held units across every line, never just the
+  // visible page. A label acknowledged in this session counts before the next
+  // re-read; placement itself is still refused server-side without it.
+  const heldUnits = lines.flatMap((line) => (line.held_units ?? []).map((unit) => (
+    acknowledgedLabelLines.has(line.receive_job_line_id) ? { ...unit, label_acknowledged: true } : unit
+  )));
+  const unplacedHeld = heldUnits.filter((unit) => !unit.placed).length;
+
+  const custodyRefusal = (err: any, fallback: string) => {
+    if (!err?.response) return "Couldn't reach the server. Scan again to retry — nothing is placed twice.";
+    const code = String(err.response.data?.code ?? '');
+    if (code === 'RECEIVE_PROBLEM_BIN_INVALID') return "That isn't an active problem bin. Scan a bin in a problem zone.";
+    if (code === 'RECEIVE_HELD_UNIT_ALREADY_PLACED') return 'That unit is already in a problem bin.';
+    if (code === 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT') return 'That scan conflicts with a placement already recorded. Scan the unit again.';
+    if (code === 'RECEIVE_HELD_LABEL_REQUIRED') return 'Attach and confirm this unit’s label before placing it.';
+    if (code === 'RECEIVE_HELD_UNIT_NOT_HELD' || code === 'RECEIVE_HELD_UNIT_NOT_FOUND') return 'That label isn’t a held unit of this Receive.';
+    return fallback;
+  };
+
+  const handleResolveProblemBin = useCallback(async (raw: string) => {
+    const value = raw.trim();
+    if (!value || custodyInFlightRef.current) return;
+    if (!onResolveProblemBin) {
+      setCustodyNotice({ tone: 'error', text: 'Problem-bin scanning is unavailable. Refresh and try again.' });
+      return;
+    }
+    custodyInFlightRef.current = true;
+    setCustodyBusy(true);
+    try {
+      const bin = await onResolveProblemBin(value);
+      setProblemBin(bin);
+      setCustodyNotice({ tone: 'ok', text: `Problem bin ${bin.location_code} selected. Scan each held unit.` });
+      window.setTimeout(() => heldInputRef.current?.focus(), 30);
+    } catch (err: any) {
+      setCustodyNotice({ tone: 'error', text: custodyRefusal(err, 'That bin couldn’t be checked. Try again.') });
+    } finally {
+      custodyInFlightRef.current = false;
+      setCustodyBusy(false);
+    }
+  }, [onResolveProblemBin]);
+
+  const handlePlaceHeldUnit = useCallback(async (raw: string) => {
+    const value = raw.trim();
+    if (!value || custodyInFlightRef.current) return;
+    const unit = heldUnits.find((candidate) => candidate.lasyncro_unit_id.toLowerCase() === value.toLowerCase());
+    if (!unit) {
+      setCustodyNotice({ tone: 'error', text: 'That label isn’t a held unit of this Receive.' });
+      return;
+    }
+    // A duplicate scan of a placed unit never reaches the server.
+    if (unit.placed) {
+      setCustodyNotice({ tone: 'warn', text: `${unit.lasyncro_unit_id} is already in ${unit.location_code}.` });
+      return;
+    }
+    if (!unit.label_acknowledged) {
+      setCustodyNotice({ tone: 'error', text: 'Attach and confirm this unit’s label before placing it.' });
+      return;
+    }
+    if (!problemBin) {
+      setCustodyNotice({ tone: 'warn', text: 'Scan the problem bin first.' });
+      return;
+    }
+    if (!onPlaceHeldUnit) {
+      setCustodyNotice({ tone: 'error', text: 'Placing held units is unavailable. Refresh and try again.' });
+      return;
+    }
+    custodyInFlightRef.current = true;
+    setCustodyBusy(true);
+    try {
+      const placed = await onPlaceHeldUnit({ lasyncro_unit_id: unit.lasyncro_unit_id, location_code: problemBin.location_code });
+      setCustodyNotice({
+        tone: 'ok',
+        text: placed.replayed
+          ? `${unit.lasyncro_unit_id} was already recorded in ${problemBin.location_code}.`
+          : `${unit.lasyncro_unit_id} placed in ${problemBin.location_code}.`,
+      });
+    } catch (err: any) {
+      if (err?.response?.data?.code === 'RECEIVE_PROBLEM_BIN_INVALID') setProblemBin(null);
+      setCustodyNotice({ tone: 'error', text: custodyRefusal(err, 'That unit couldn’t be placed. Try again.') });
+    } finally {
+      custodyInFlightRef.current = false;
+      setCustodyBusy(false);
+    }
+    // Placement state is the server's: re-read it whatever happened.
+    try {
+      await onRefresh?.();
+    } catch {
+      // A failed refresh keeps the last server state; the next scan or close re-checks.
+    }
+    window.setTimeout(() => heldInputRef.current?.focus(), 30);
+  }, [heldUnits, onPlaceHeldUnit, onRefresh, problemBin]);
+
+  const renderHeldCustody = () => {
+    if (heldUnits.length === 0) return null;
+    const scanFieldSx = {
+      display: 'flex', alignItems: 'center', gap: 1, px: 1.5, height: 48,
+      border: '1px solid var(--rule-2)', borderRadius: '10px', bgcolor: 'var(--surface)',
+    } as const;
+    return (
+      <Box
+        data-testid="receive-held-custody"
+        sx={{ border: '1px solid var(--rule-2)', borderRadius: '12px', bgcolor: 'var(--surface)', px: 2, py: 1.75, display: 'grid', gap: 1.25 }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Held for repair</Typography>
+          <Typography sx={{ ...monoSx, fontSize: 12, color: unplacedHeld > 0 ? 'var(--accent-text)' : 'var(--good-ink)' }}>
+            {`${heldUnits.length - unplacedHeld} of ${heldUnits.length} placed`}
+          </Typography>
+        </Box>
+
+        {problemBin ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography data-testid="receive-problem-bin" sx={{ ...monoSx, fontSize: 14, color: 'var(--ink)' }}>
+              {`Problem bin · ${problemBin.location_code}`}
+            </Typography>
+            <ReceiveCta
+              tier="secondary"
+              disabled={custodyBusy}
+              onClick={() => { setProblemBin(null); setCustodyNotice(null); }}
+              sx={{ height: 36, minWidth: 0, px: 1.5 }}
+            >
+              Change bin
+            </ReceiveCta>
+          </Box>
+        ) : (
+          <Box sx={scanFieldSx}>
+            <ScanBarcode size={18} color="var(--accent)" aria-hidden="true" />
+            <TextField
+              variant="standard"
+              fullWidth
+              value={binInputValue}
+              disabled={custodyBusy}
+              placeholder="Scan or type problem bin"
+              inputProps={{ 'aria-label': 'Problem bin', style: { ...monoSx, fontSize: 16 } }}
+              onChange={(event) => setBinInputValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const value = binInputValue;
+                setBinInputValue('');
+                void handleResolveProblemBin(value);
+              }}
+              autoComplete="off"
+              InputProps={{ disableUnderline: true }}
+            />
+          </Box>
+        )}
+
+        {problemBin && unplacedHeld > 0 && (
+          <Box sx={scanFieldSx}>
+            <ScanBarcode size={18} color="var(--accent)" aria-hidden="true" />
+            <TextField
+              inputRef={heldInputRef}
+              variant="standard"
+              fullWidth
+              value={heldInputValue}
+              disabled={custodyBusy}
+              placeholder="Scan or type held unit label"
+              inputProps={{ 'aria-label': 'Held unit label', style: { ...monoSx, fontSize: 16 } }}
+              onChange={(event) => setHeldInputValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const value = heldInputValue;
+                setHeldInputValue('');
+                void handlePlaceHeldUnit(value);
+              }}
+              autoComplete="off"
+              InputProps={{ disableUnderline: true }}
+            />
+          </Box>
+        )}
+
+        <Box component="ul" aria-label="Held units" sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 0.5 }}>
+          {heldUnits.map((unit) => (
+            <Box
+              component="li"
+              key={unit.lasyncro_unit_id}
+              data-testid={`receive-held-unit-${unit.lasyncro_unit_id}`}
+              data-placed={unit.placed ? 'true' : 'false'}
+              sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, ...monoSx, fontSize: 13 }}
+            >
+              <Box component="span" sx={{ color: 'var(--ink)' }}>{unit.lasyncro_unit_id}</Box>
+              <Box component="span" sx={{ color: unit.placed ? 'var(--good-ink)' : 'var(--ink-3)' }}>
+                {unit.placed ? unit.location_code : unit.label_acknowledged ? 'not placed' : 'label not confirmed'}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+
+        {custodyNotice && (
+          <ReceiveStatusLine tone={custodyNotice.tone} role={custodyNotice.tone === 'error' ? 'alert' : 'status'}>
+            {custodyNotice.text}
+          </ReceiveStatusLine>
+        )}
+      </Box>
+    );
+  };
+
   const renderReview = () => {
     const summary = summarizeReceiveOutcome(lines, acceptedByLine);
     const { accepted: totalAccepted, problems: totalProblems, extra: totalExtra } = summary;
@@ -2861,6 +3100,8 @@ function ReceiveSessionFlow({
         </Box>
         <ReceiveListPager page={pageIndex} total={lines.length} onPage={setListPage} label="Review lines pages" />
 
+        {renderHeldCustody()}
+
         <TextField
           label="Actual delivery date"
           type="date"
@@ -2887,6 +3128,10 @@ function ReceiveSessionFlow({
             <ReceiveStatusLine tone="warn">
               {`${heldLines} ${heldLines === 1 ? 'product still needs' : 'products still need'} labels attached before closing.`}
             </ReceiveStatusLine>
+          ) : unplacedHeld > 0 ? (
+            <ReceiveStatusLine tone="warn">
+              {`${unplacedHeld} held ${unplacedHeld === 1 ? 'unit needs' : 'units need'} a problem bin before closing.`}
+            </ReceiveStatusLine>
           ) : !deliveryDate.trim() ? (
             <ReceiveStatusLine>Next · enter the actual delivery date</ReceiveStatusLine>
           ) : (
@@ -2897,7 +3142,7 @@ function ReceiveSessionFlow({
           )}
           <ReceiveCta
             tier={closeRecovery === 'unknown' ? 'secondary' : 'primary'}
-            disabled={closing || closeRecovery === 'checking' || closeRecovery === 'unknown' || !deliveryDate.trim() || heldLines > 0}
+            disabled={closing || closeRecovery === 'checking' || closeRecovery === 'unknown' || !deliveryDate.trim() || heldLines > 0 || unplacedHeld > 0}
             onClick={() => void handleCloseJob()}
           >
             {closing ? 'Closing receive...' : 'Close receive'}
@@ -3549,7 +3794,26 @@ function countEntryState(entry: GroupedCountEntry | undefined): 'not_counted' | 
  * drafts/finalizes the reconciliation.
  */
 /** GH-1241 S3C-M3 — the operator's shortfall reasons for one line, bound to the good count they were made for. */
-type ReviewDecision = { missing: number; later: number; damaged: number; basisCount: number };
+/**
+ * repairDamage / repairPackaging — S4-4C units held for repair (recoverable
+ * defect / packaging_damage). `damaged` stays non-recoverable.
+ */
+type ReviewDecision = { missing: number; later: number; damaged: number; repairDamage: number; repairPackaging: number; basisCount: number };
+type ReviewDecisionField = 'missing' | 'later' | 'damaged' | 'repairDamage' | 'repairPackaging';
+const REVIEW_DECISION_FIELDS: Array<{ field: ReviewDecisionField; label: string }> = [
+  { field: 'missing', label: 'Missing' },
+  { field: 'later', label: 'Coming later' },
+  { field: 'damaged', label: 'Damaged' },
+  { field: 'repairDamage', label: 'Repairable damage' },
+  { field: 'repairPackaging', label: 'Repairable packaging' },
+];
+
+/** S4-4C — held quantity of one type in a saved grouped payload line. */
+function savedHeld(line: ReceiveReconciliationLinePayload, exceptionType: string): number {
+  return (line.new_exceptions ?? [])
+    .filter((exception) => exception.disposition === 'recoverable_held' && exception.exception_type === exceptionType)
+    .reduce((sum, exception) => sum + Number(exception.quantity_affected ?? 0), 0);
+}
 
 const RECONCILIATION_SHORTFALL_TYPES = new Set(['missing_item', 'defect', 'wrong_item', 'wrong_variant']);
 /** A revision or payload the server no longer considers current: the review must be renewed. */
@@ -3570,13 +3834,22 @@ function canonicalReconciliationLines(lines: ReceiveReconciliationLinePayload[])
       quantity_deferred: Number(line.quantity_deferred),
       quantity_held_recoverable: Number(line.quantity_held_recoverable ?? 0),
       new_exceptions: (line.new_exceptions ?? [])
-        .map((exception) => ({
-          exception_type: exception.exception_type,
-          quantity_affected: Number(exception.quantity_affected),
-          accounting_role: exception.accounting_role
-            ?? (RECONCILIATION_SHORTFALL_TYPES.has(exception.exception_type) ? 'shortfall' : null),
-          notes: exception.notes ?? null,
-        }))
+        .map((exception) => (exception.disposition === 'recoverable_held'
+          // S4-4C — held evidence never carries an accounting role (0224).
+          ? {
+            exception_type: exception.exception_type,
+            quantity_affected: Number(exception.quantity_affected),
+            accounting_role: null,
+            notes: exception.notes ?? null,
+            disposition: 'recoverable_held',
+          }
+          : {
+            exception_type: exception.exception_type,
+            quantity_affected: Number(exception.quantity_affected),
+            accounting_role: exception.accounting_role
+              ?? (RECONCILIATION_SHORTFALL_TYPES.has(exception.exception_type) ? 'shortfall' : null),
+            notes: exception.notes ?? null,
+          }))
         .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       existing_exception_ids: (line.existing_exception_ids ?? []).map((id) => id.toLowerCase()).sort(),
     }))
@@ -4007,11 +4280,14 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
     const recordedMissing = missingEvidence.reduce((sum, problem) => sum + Number(problem.quantity_affected ?? 0), 0);
     // GH-1241 S3C-M4 — damaged units an older client already recorded on this
     // line are part of the explanation, referenced by ID and never re-reported.
-    const defectEvidence = problems.filter((problem) => problem.exception_type === 'defect');
+    const defectEvidence = problems.filter((problem) =>
+      problem.exception_type === 'defect' && problem.disposition !== 'recoverable_held');
     const recordedDamaged = defectEvidence.reduce((sum, problem) => sum + Number(problem.quantity_affected ?? 0), 0);
     // Rejection evidence this review cannot express (wrong item/variant) is ambiguous: fail closed.
+    // S4-4C — so is held evidence recorded before this review (per-line capture is deferred).
     const unsupportedEvidence = problems.some((problem) =>
-      problem.exception_type === 'wrong_item' || problem.exception_type === 'wrong_variant');
+      problem.exception_type === 'wrong_item' || problem.exception_type === 'wrong_variant'
+      || problem.disposition === 'recoverable_held');
     const canonicalApproved = problems
       .filter((problem) => problem.exception_type === 'extra_item' && problem.accounting_role === 'overage')
       .reduce((sum, problem) => sum + Number(problem.quantity_affected ?? 0), 0);
@@ -4023,9 +4299,16 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
     const local = decisions[lineId]?.basisCount === count ? decisions[lineId] : null;
     const decision: ReviewDecision = local
       ?? (savedLine && !countChanged
-        ? { missing: Number(savedLine.quantity_missing), later: Number(savedLine.quantity_deferred), damaged: Number(savedLine.quantity_rejected), basisCount: count }
-        : { missing: recordedMissing, later: 0, damaged: recordedDamaged, basisCount: count });
-    const assigned = decision.missing + decision.later + decision.damaged;
+        ? {
+          missing: Number(savedLine.quantity_missing),
+          later: Number(savedLine.quantity_deferred),
+          damaged: Number(savedLine.quantity_rejected),
+          repairDamage: savedHeld(savedLine, 'defect'),
+          repairPackaging: savedHeld(savedLine, 'packaging_damage'),
+          basisCount: count,
+        }
+        : { missing: recordedMissing, later: 0, damaged: recordedDamaged, repairDamage: 0, repairPackaging: 0, basisCount: count });
+    const assigned = decision.missing + decision.later + decision.damaged + decision.repairDamage + decision.repairPackaging;
     const settled = !unsupportedEvidence && (difference < 0
       ? assigned === shortfall && decision.missing >= recordedMissing && decision.damaged >= recordedDamaged
       : recordedMissing === 0 && recordedDamaged === 0 && (difference === 0 || approved >= extra));
@@ -4034,6 +4317,8 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
     const missing = difference < 0 ? decision.missing : 0;
     const damaged = difference < 0 ? decision.damaged : 0;
     const later = difference < 0 ? decision.later : 0;
+    const repairDamage = difference < 0 ? decision.repairDamage : 0;
+    const repairPackaging = difference < 0 ? decision.repairPackaging : 0;
     const newMissing = missing - recordedMissing;
     const newDamaged = damaged - recordedDamaged;
     const payload: ReceiveReconciliationLinePayload = {
@@ -4042,10 +4327,13 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
       quantity_rejected: damaged,
       quantity_missing: missing,
       quantity_deferred: later,
-      quantity_held_recoverable: 0,
+      // S4-4C — each held unit becomes one held LSU and one Problem Center task at finalize.
+      quantity_held_recoverable: repairDamage + repairPackaging,
       new_exceptions: [
         ...(newDamaged > 0 ? [{ exception_type: 'defect', quantity_affected: newDamaged, accounting_role: 'shortfall', notes: null }] : []),
         ...(newMissing > 0 ? [{ exception_type: 'missing_item', quantity_affected: newMissing, accounting_role: 'shortfall', notes: null }] : []),
+        ...(repairDamage > 0 ? [{ exception_type: 'defect', quantity_affected: repairDamage, accounting_role: null, notes: null, disposition: 'recoverable_held' as const }] : []),
+        ...(repairPackaging > 0 ? [{ exception_type: 'packaging_damage', quantity_affected: repairPackaging, accounting_role: null, notes: null, disposition: 'recoverable_held' as const }] : []),
       ],
       existing_exception_ids: [...missingEvidence, ...defectEvidence].map((problem) => problem.receive_exception_id),
     };
@@ -4056,7 +4344,7 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
   };
   type ReviewModel = ReturnType<typeof reviewLine>;
 
-  const setDecisionField = (model: ReviewModel, field: 'missing' | 'later' | 'damaged', raw: string) => {
+  const setDecisionField = (model: ReviewModel, field: ReviewDecisionField, raw: string) => {
     const digits = raw.replace(/\D/g, '');
     const value = digits ? Number.parseInt(digits, 10) : 0;
     if (!Number.isSafeInteger(value)) return;
@@ -4471,10 +4759,10 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
             {model.difference < 0 && (
               <>
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
-                  {(['missing', 'later', 'damaged'] as const).map((field) => (
+                  {REVIEW_DECISION_FIELDS.map(({ field, label }) => (
                     <TextField
                       key={field}
-                      label={field === 'missing' ? 'Missing' : field === 'later' ? 'Coming later' : 'Damaged'}
+                      label={label}
                       type="number"
                       size="small"
                       value={String(model.decision[field])}
@@ -4491,7 +4779,7 @@ function GroupedReceiveCount({ props }: { props: ReceiveSessionPageProps }) {
                 </Box>
                 <ReceiveStatusLine tone={model.settled ? 'ok' : 'warn'}>
                   {model.unsupportedEvidence
-                    ? 'A wrong item was recorded for this product. Ask a lead to review it before finishing.'
+                    ? 'A wrong item or held unit was already recorded for this product. Ask a lead to review it before finishing.'
                     : model.evidenceExceedsDifference
                     ? 'More units were already recorded as missing or damaged than this difference. Ask a lead to review it.'
                     : model.decision.missing < model.recordedMissing
