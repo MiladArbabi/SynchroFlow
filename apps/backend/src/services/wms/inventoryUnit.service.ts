@@ -138,6 +138,81 @@ export async function batchConfirmUnits(
   return created;
 }
 
+export interface MintHeldUnitsInput {
+  shopId: number;
+  receiveJobLineId: string;
+  lasyncroVariantId: string;
+  /** First held sequence: accepted units own 1..accepted, so this is accepted + 1. */
+  firstSequence: number;
+  quantity: number;
+  shopifyBarcode?: string | null;
+}
+
+/**
+ * S4-3B — mints one held LSU per recoverable held unit on a Receive line.
+ *
+ * Held units take sequences firstSequence..firstSequence+quantity-1, after the
+ * accepted range, so accepted and held identities never collide under the
+ * (shop_id, receive_job_line_id, receive_sequence) key. Status 'held',
+ * location NULL: outside inventory_truth, Stow and coverage (S4-2 gates)
+ * until S4-4 custody and S4-5 recovery.
+ *
+ * Replay-safe via ON CONFLICT DO NOTHING; the persisted range is then read
+ * back and must be exactly this held set, or the capture fails closed.
+ */
+export async function mintHeldUnits(
+  trx: Knex.Transaction,
+  input: MintHeldUnitsInput
+): Promise<InventoryUnitRow[]> {
+  const { shopId, receiveJobLineId, lasyncroVariantId, firstSequence, quantity } = input;
+  if (!Number.isSafeInteger(firstSequence) || firstSequence < 1 || !Number.isSafeInteger(quantity) || quantity <= 0) {
+    throw new Error('[INVENTORY_UNIT_HELD_MINT_INVALID] held sequence range must be positive');
+  }
+  const lastSequence = firstSequence + quantity - 1;
+
+  const rows = Array.from({ length: quantity }, (_, i) => {
+    const seq = firstSequence + i;
+    return {
+      lasyncro_unit_id: generateLsuId(shopId, receiveJobLineId, seq),
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      receive_job_line_id: receiveJobLineId,
+      receive_sequence: seq,
+      shopify_barcode: input.shopifyBarcode ?? null,
+      source: 'lasyncro_receive',
+      status: 'held',
+      current_location_code: null,
+      reprint_count: 0,
+      received_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+  });
+
+  await trx('inventory_units')
+    .insert(rows)
+    .onConflict(['shop_id', 'receive_job_line_id', 'receive_sequence'])
+    .ignore();
+
+  const persisted = await trx('inventory_units')
+    .where({ shop_id: shopId, receive_job_line_id: receiveJobLineId })
+    .whereBetween('receive_sequence', [firstSequence, lastSequence])
+    .orderBy('receive_sequence', 'asc')
+    .select('id', 'lasyncro_unit_id', 'receive_sequence', 'status', 'lasyncro_variant_id');
+
+  if (persisted.length !== quantity || persisted.some((u: any, i: number) =>
+    u.receive_sequence !== firstSequence + i
+    || u.status !== 'held'
+    || u.lasyncro_variant_id !== lasyncroVariantId
+    || u.lasyncro_unit_id !== generateLsuId(shopId, receiveJobLineId, firstSequence + i))) {
+    throw new Error(`[INVENTORY_UNIT_HELD_MINT_INVARIANT] held LSU range ${firstSequence}..${lastSequence} mismatch on line ${receiveJobLineId}`);
+  }
+
+  console.info('[INVENTORY_UNIT] held_mint', { shopId, receiveJobLineId, firstSequence, quantity });
+
+  return persisted.map((u: any) => ({ id: u.id, lasyncro_unit_id: u.lasyncro_unit_id, receive_sequence: u.receive_sequence }));
+}
+
 function assertRecountIssuance(
   input: ReconcileUnitIssuanceInput,
   rows: RecountIssuedUnitRow[]

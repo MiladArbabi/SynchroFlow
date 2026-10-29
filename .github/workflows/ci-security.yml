@@ -39,6 +39,7 @@ on:
       - 'tests/integration/wms/receive-held-safety-s4-2.test.ts'
       - 'tests/integration/wms/receive-finalization-held-0225-migration-safety.test.ts'
       - 'tests/integration/wms/receive-grouped-reconciliation-gh1241-s3b.test.ts'
+      - 'tests/integration/wms/receive-held-capture-s4-3.test.ts'
   push:
     branches: [main]
     paths:
@@ -76,6 +77,7 @@ on:
       - 'tests/integration/wms/receive-held-safety-s4-2.test.ts'
       - 'tests/integration/wms/receive-finalization-held-0225-migration-safety.test.ts'
       - 'tests/integration/wms/receive-grouped-reconciliation-gh1241-s3b.test.ts'
+      - 'tests/integration/wms/receive-held-capture-s4-3.test.ts'
 
 jobs:
   rls-security:
@@ -548,6 +550,8 @@ jobs:
       # S4-2 held-unit safety commits held/discarded fixtures, which the 0224
       # rollback guard rightly treats as persisted recovery evidence. It runs in
       # its own disposable database so migration round-trip suites never see them.
+      # S4-3B held capture commits held LSUs and Receive Problem Center tasks too,
+      # so it shares this isolated step and never the migration rollback step.
       - name: Run S4-2 held-unit safety regressions
         timeout-minutes: 20
         env:
@@ -558,7 +562,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'wms/receive-held-safety-s4-2'
+        run: npm run test:integration -- --testPathPatterns 'wms/receive-held-safety-s4-2|wms/receive-held-capture-s4-3'
 
       - name: Restore runner network
         if: always()

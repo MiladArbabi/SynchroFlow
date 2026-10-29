@@ -43,6 +43,12 @@ export interface CreateProblemCenterTaskInput {
    * undefined by callers whose source_exception_id is not a pick_exceptions PK.
    */
   sourcePickExceptionId?: string | null;
+  /**
+   * S4-3B: the held Receive unit this task stands for. Set only by Receive
+   * held capture (source 'receive', quantity 1); backed by the 0224 partial
+   * unique index, so it is the one-task-per-unit replay authority.
+   */
+  lasyncroUnitId?: string | null;
   lasyncroVariantId: string;
   /** Problem quantity — the units that need physical intervention. */
   quantity: number;
@@ -74,6 +80,19 @@ export async function createProblemCenterTask(
 
   if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new Error('PROBLEM_TASK_QUANTITY_INVALID');
+  }
+
+  // Receive tasks always represent exactly one held LSU. Never let an
+  // incomplete Receive request fall through to the generic insertion path.
+  if (source === 'receive') {
+    if (typeof input.lasyncroUnitId !== 'string' || !input.lasyncroUnitId.trim()
+      || typeof sourceExceptionId !== 'string' || !sourceExceptionId.trim() || quantity !== 1) {
+      throw new Error('PROBLEM_TASK_RECEIVE_UNIT_INVALID');
+    }
+    return createReceiveUnitTask(trx, { ...input, lasyncroUnitId: input.lasyncroUnitId });
+  }
+  if (input.lasyncroUnitId != null) {
+    throw new Error('PROBLEM_TASK_RECEIVE_UNIT_INVALID');
   }
 
   const findExisting = async () => {
@@ -183,4 +202,70 @@ export async function createProblemCenterTask(
     created: false,
     problem_bin_location: raced.problem_bin_location ?? null,
   };
+}
+
+/**
+ * S4-3B — one Problem Center task per held Receive unit (K7 / D2).
+ *
+ * - quantity is always 1: the task IS the unit; extra defects on the same
+ *   unit are notes on this task, never another task or held quantity.
+ * - problem_bin_location stays NULL: custody is declared only by S4-4
+ *   placement, never by copying the shop's default bin (S4-3 audit F3).
+ * - Replay of the same unit returns the existing task; the same unit claimed
+ *   by a different exception fails closed.
+ */
+async function createReceiveUnitTask(
+  trx: Knex.Transaction,
+  input: CreateProblemCenterTaskInput & { lasyncroUnitId: string }
+): Promise<CreateProblemCenterTaskResult> {
+  const { shopId, source, sourceExceptionId, lasyncroUnitId, lasyncroVariantId, quantity, exceptionType, notes } = input;
+
+  if (source !== 'receive' || quantity !== 1 || !sourceExceptionId) {
+    throw new Error('PROBLEM_TASK_RECEIVE_UNIT_INVALID');
+  }
+
+  const findExisting = () =>
+    trx('problem_center_tasks')
+      .where({ shop_id: shopId, source: 'receive', lasyncro_unit_id: lasyncroUnitId })
+      .first('problem_task_id', 'problem_bin_location', 'source_exception_id');
+
+  const reuse = (row: any): CreateProblemCenterTaskResult => {
+    if (row.source_exception_id !== sourceExceptionId) {
+      throw new Error(`PROBLEM_TASK_RECEIVE_UNIT_CONFLICT: ${lasyncroUnitId} already belongs to another exception`);
+    }
+    return { problem_task_id: row.problem_task_id, created: false, problem_bin_location: row.problem_bin_location ?? null };
+  };
+
+  const existing = await findExisting();
+  if (existing) return reuse(existing);
+
+  const inserted = await trx('problem_center_tasks')
+    .insert({
+      shop_id: shopId,
+      status: 'open',
+      source: 'receive',
+      source_exception_id: sourceExceptionId,
+      source_pick_exception_id: null,
+      lasyncro_unit_id: lasyncroUnitId,
+      lasyncro_variant_id: lasyncroVariantId,
+      quantity: 1,
+      exception_type: exceptionType,
+      problem_bin_location: null,
+      notes: notes ?? null,
+    })
+    .onConflict(
+      trx.raw(
+        "(shop_id, lasyncro_unit_id) WHERE source = 'receive' AND lasyncro_unit_id IS NOT NULL"
+      ) as unknown as string
+    )
+    .ignore()
+    .returning(['problem_task_id', 'problem_bin_location']);
+
+  if (inserted.length === 1) {
+    return { problem_task_id: inserted[0].problem_task_id, created: true, problem_bin_location: null };
+  }
+
+  const raced = await findExisting();
+  if (!raced) throw new Error('PROBLEM_TASK_CREATE_FAILED');
+  return reuse(raced);
 }

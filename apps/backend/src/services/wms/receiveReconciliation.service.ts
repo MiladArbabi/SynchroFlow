@@ -26,7 +26,7 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  *   creates the group's new discrepancy evidence as canonical receive_exceptions,
  *   links explicitly referenced preexisting evidence, runs the certified per-line
  *   inspection (S3-A1 confirmed count, GH-1245 accounting equality, persisted
- *   overage approval, held = S4 refusal, LSU minting, job counters, audit), and
+ *   overage approval, S4-3B held capture, LSU minting, job counters, audit), and
  *   persists the immutable finalization evidence. Any refusal rolls back all of it.
  * Stock, truth, movements and Stow remain the normal close's responsibility.
  *
@@ -47,11 +47,28 @@ export function reconciliationError(code: string, message: string, statusCode = 
   return Object.assign(receiveError(`${code}: ${message}`, statusCode), { errorCode: code });
 }
 
+/** 0224 / K2: only product and packaging defects may be held for recovery. */
+const RECOVERABLE_HELD_TYPES = new Set(['defect', 'packaging_damage']);
+
 export interface GroupedNewException {
   exception_type: string;
   quantity_affected: number;
   accounting_role: string | null;
   notes: string | null;
+  /**
+   * S4-3B (4b): present only when explicitly 'recoverable_held'. Omitted
+   * otherwise so legacy payloads keep their exact canonical form and hash.
+   */
+  disposition?: 'recoverable_held';
+}
+
+export interface ParseGroupedLinesOptions {
+  /**
+   * S4-3B / D1: recoverable-held intent is refused (409) unless the caller is
+   * the service-layer capture path. Public HTTP entry points never set this;
+   * S4-4 activates held capture together with custody and close.
+   */
+  allowRecoverableHeld?: boolean;
 }
 
 export interface GroupedLine {
@@ -76,7 +93,17 @@ export function isEventId(value: unknown): value is string {
  * line id, evidence and references ordered, explicit defaults. Line order and
  * omitted optional fields therefore never change payload identity.
  */
-export function parseGroupedLines(raw: unknown): GroupedLine[] {
+export function parseGroupedLines(raw: unknown, options: ParseGroupedLinesOptions = {}): GroupedLine[] {
+  const lines = parseCanonicalGroupedLines(raw);
+  if (!options.allowRecoverableHeld && lines.some((l) => l.quantity_held_recoverable > 0
+    || l.new_exceptions.some((e) => e.disposition === 'recoverable_held'))) {
+    throw reconciliationError('RECEIVE_RECOVERABLE_HELD_NOT_ENABLED',
+      'recoverable-held units cannot be captured until held custody and close are available');
+  }
+  return lines;
+}
+
+function parseCanonicalGroupedLines(raw: unknown): GroupedLine[] {
   if (!Array.isArray(raw) || raw.length === 0) {
     throw reconciliationError('RECEIVE_RECONCILIATION_LINES_REQUIRED', 'lines must be a non-empty array', 400);
   }
@@ -123,6 +150,22 @@ function parseNewException(lineId: string, e: any): GroupedNewException {
   if (!Number.isSafeInteger(e.quantity_affected) || e.quantity_affected <= 0) {
     throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: quantity_affected must be a positive integer`, 400);
   }
+  if (e.notes != null && typeof e.notes !== 'string') {
+    throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: notes must be a string`, 400);
+  }
+  if (e.disposition != null) {
+    // 0224: recoverable_held is explicit, defect/packaging only, no accounting role.
+    if (e.disposition !== 'recoverable_held') {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: disposition must be recoverable_held when present`, 400);
+    }
+    if (!RECOVERABLE_HELD_TYPES.has(type)) {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: only defect or packaging_damage can be held for recovery`, 400);
+    }
+    if (e.accounting_role != null) {
+      throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: recoverable-held evidence carries no accounting_role`, 400);
+    }
+    return { exception_type: type, quantity_affected: e.quantity_affected, accounting_role: null, notes: e.notes ?? null, disposition: 'recoverable_held' };
+  }
   const role = e.accounting_role ?? (SHORTFALL_DEFAULT_TYPES.has(type) ? 'shortfall' : null);
   // Overage approval is never inferred from a payload; missing is always shortfall.
   if (role !== null && role !== 'shortfall') {
@@ -130,9 +173,6 @@ function parseNewException(lineId: string, e: any): GroupedNewException {
   }
   if (type === 'missing_item' && role !== 'shortfall') {
     throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: missing_item is shortfall evidence`, 400);
-  }
-  if (e.notes != null && typeof e.notes !== 'string') {
-    throw reconciliationError('RECEIVE_RECONCILIATION_EXCEPTION_INVALID', `line ${lineId}: notes must be a string`, 400);
   }
   return { exception_type: type, quantity_affected: e.quantity_affected, accounting_role: role, notes: e.notes ?? null };
 }
@@ -348,14 +388,17 @@ async function finalizeLine(
     // S8-C5 Recount: superseded allocations are history, never active evidence;
     // referencing one is refused as unknown below.
     .whereNull('superseded_at')
-    .select('receive_exception_id', 'exception_type');
+    .select('receive_exception_id', 'exception_type', 'disposition');
   const evidenceIds = new Set(evidence.map((e: any) => e.receive_exception_id as string));
 
   // Preexisting evidence is reused only by explicit reference; canonical missing
   // evidence that is not referenced would be silently double- or under-counted.
   const foreign = line.existing_exception_ids.find((id) => !evidenceIds.has(id));
   if (foreign) throw reconciliationError('RECEIVE_RECONCILIATION_EVIDENCE_UNKNOWN', `line ${lineId}: exception ${foreign} is not evidence of this line`);
-  const unreferenced = evidence.find((e: any) => e.exception_type === 'missing_item' && !line.existing_exception_ids.includes(e.receive_exception_id));
+  // S4-3B: active recoverable-held evidence also accounts for units, so it too
+  // must be referenced explicitly or the held total would be silently wrong.
+  const unreferenced = evidence.find((e: any) => (e.exception_type === 'missing_item' || e.disposition === 'recoverable_held')
+    && !line.existing_exception_ids.includes(e.receive_exception_id));
   if (unreferenced) {
     throw reconciliationError('RECEIVE_RECONCILIATION_EVIDENCE_UNREFERENCED', `line ${lineId}: reference existing missing evidence ${unreferenced.receive_exception_id} explicitly`);
   }
@@ -375,6 +418,7 @@ async function finalizeLine(
         quantity_affected: e.quantity_affected,
         accounting_role: e.accounting_role,
         counts_toward_shortfall: e.accounting_role === 'shortfall',
+        ...(e.disposition ? { disposition: e.disposition } : {}),
         notes: e.notes ?? 'Reported in grouped Receive reconciliation',
         raised_by: actorId,
         raised_at: new Date(),
@@ -389,7 +433,7 @@ async function finalizeLine(
   }
 
   // The certified per-line finish: count basis, accounting equality, overage
-  // approval, held refusal, LSUs, counters, readiness and audit.
+  // approval, held capture (LSUs + Problem Center tasks), counters, readiness and audit.
   try {
     await inspectReceiveJobLine(trx, {
       shopId,
@@ -411,7 +455,8 @@ async function finalizeLine(
     throw reconciliationError(err.errorCode ?? 'RECEIVE_RECONCILIATION_LINE_INVALID', `line ${lineId}: ${err.message}`, err.statusCode);
   }
 
-  const delivered = line.quantity_accepted + line.quantity_rejected;
+  // Held units were delivered (0225): they join the balance and the overage basis.
+  const delivered = line.quantity_accepted + line.quantity_rejected + line.quantity_held_recoverable;
   await trx('receive_reconciliation_finalization_lines').insert({
     shop_id: shopId,
     reconciliation_id: finalization.reconciliation_id,
@@ -424,6 +469,7 @@ async function finalizeLine(
     quantity_rejected: line.quantity_rejected,
     quantity_missing: line.quantity_missing,
     quantity_deferred: line.quantity_deferred,
+    quantity_held_recoverable: line.quantity_held_recoverable,
     quantity_overage_approved: Math.max(0, delivered - Number(row.quantity_expected)),
   });
 

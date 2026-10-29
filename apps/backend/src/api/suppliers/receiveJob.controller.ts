@@ -29,6 +29,10 @@ import { isActionAllowed } from '../../services/permissions/permissionCache.serv
  * POST   /api/v1/suppliers/receive-jobs/:jobId/close                  — close + create stow tasks
  */
 
+/** S4-3B / D1 — public refusal of recoverable-held capture until S4-4. */
+const HELD_NOT_ENABLED = 'RECEIVE_RECOVERABLE_HELD_NOT_ENABLED';
+const HELD_NOT_ENABLED_MESSAGE = `${HELD_NOT_ENABLED}: recoverable-held units cannot be captured until held custody and close are available`;
+
 async function assertReceiveAssignee(
   shopId: number,
   dispatcherUserId: number,
@@ -325,7 +329,9 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           barcode_ready: lineReadiness?.ready ?? false,
           barcode_readiness_reason: lineReadiness?.reason ?? 'not_inspected',
           awaiting_label_ack: lineReadiness?.reason === 'labels_outstanding'
-            || lineReadiness?.reason === 'unit_evidence_mismatch',
+            || lineReadiness?.reason === 'unit_evidence_mismatch'
+            || lineReadiness?.reason === 'held_labels_outstanding'
+            || lineReadiness?.reason === 'held_unit_evidence_mismatch',
           accepted_unit_count: lineReadiness?.acceptedUnitCount ?? 0,
           labelled_unit_count: lineReadiness?.labelledUnitCount ?? 0,
           reported_problems: lineProblems,
@@ -707,6 +713,11 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
   if (!Number.isSafeInteger(quantity_accepted) || !Number.isSafeInteger(quantity_rejected) || quantity_accepted < 0 || quantity_rejected < 0) {
     return res.status(400).json({ error: 'Quantities must be non-negative' });
   }
+  // S4-3B / D1: held capture exists only at the service layer until S4-4
+  // brings custody and close; refused here before any transaction.
+  if (quantity_held_recoverable != null && quantity_held_recoverable !== 0) {
+    return res.status(409).json({ error: HELD_NOT_ENABLED_MESSAGE, code: HELD_NOT_ENABLED });
+  }
 
   try {
     await db.transaction(async (trx) => {
@@ -789,7 +800,12 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     notes,
     accounting_role,
     device_event_id,
+    disposition,
   } = req.body;
+  // S4-3B / D1: no recoverable-held evidence through the public API until S4-4.
+  if (disposition === 'recoverable_held') {
+    return res.status(409).json({ error: HELD_NOT_ENABLED_MESSAGE, code: HELD_NOT_ENABLED });
+  }
   const affected = quantity_affected ?? 1;
   if (!Number.isSafeInteger(affected) || affected <= 0 || !validEventId(device_event_id)) return res.status(400).json({ error: 'Positive integer quantity and valid device_event_id required' });
   if (accounting_role != null && !['shortfall', 'overage'].includes(accounting_role)) return res.status(400).json({ error: 'Invalid accounting_role' });
