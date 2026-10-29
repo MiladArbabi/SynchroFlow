@@ -41,6 +41,7 @@ import {
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
+  httpPlaceHeldUnitCustody,
 } from './receiveJob.controller.js';
 import {
   httpGetReceiveReconciliation,
@@ -276,6 +277,16 @@ router.post(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpInspectReceiveJobLine
+);
+// S4-4B — held LSU → problem bin custody; inherits inspection and claimed-job ownership.
+router.post(
+  '/receive-jobs/:jobId/held-units/:unitId/custody',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpPlaceHeldUnitCustody
 );
 router.post(
   '/receive-jobs/:jobId/close',

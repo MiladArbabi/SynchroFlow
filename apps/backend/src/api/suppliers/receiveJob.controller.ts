@@ -16,6 +16,7 @@ import {
 } from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
 import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBarcodeReadiness.service.js';
+import { placeHeldUnitInProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
 import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 
@@ -781,6 +782,47 @@ export async function httpCloseReceiveJob(req: Request, res: Response) {
     if (err.message.includes('Already closed')) return res.status(409).json({ error: err.message });
     if (err.message.includes('not yet inspected')) return res.status(409).json({ error: err.message });
     return res.status(500).json({ error: `Failed to close receive job: ${err.message}` });
+  }
+}
+
+// ─────────────────────────────────────────
+// POST /receive-jobs/:jobId/held-units/:unitId/custody
+// ─────────────────────────────────────────
+// S4-4B — place a recoverable held LSU into a problem bin (0226 custody).
+// device_event_id is the replay authority: an identical retry returns the
+// recorded placement (200), a conflicting one is refused (409).
+export async function httpPlaceHeldUnitCustody(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const unitId = req.params.unitId as string;
+  const { location_code, device_event_id } = req.body ?? {};
+  if (typeof location_code !== 'string' || !location_code.trim() || device_event_id === undefined || !validEventId(device_event_id)) {
+    return res.status(400).json({ error: 'location_code and a valid device_event_id are required' });
+  }
+
+  try {
+    const custody = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return placeHeldUnitInProblemBin(trx, {
+        shopId,
+        receiveJobId: jobId,
+        lasyncroUnitId: unitId,
+        locationCode: location_code.trim(),
+        deviceEventId: device_event_id,
+        placedBy: req.user!.userId,
+      });
+    });
+    return res.status(custody.replayed ? 200 : 201).json(custody);
+  } catch (err: any) {
+    console.error('[RECEIVE_HELD_CUSTODY_FAILED]', { shopId, jobId, unitId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    // A same-event race across jobs reaches the 0226 PK; never a second placement.
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT: this placement conflicts with recorded custody', code: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT' });
+    }
+    return res.status(500).json({ error: 'RECEIVE_HELD_CUSTODY_FAILED', code: 'RECEIVE_HELD_CUSTODY_FAILED' });
   }
 }
 

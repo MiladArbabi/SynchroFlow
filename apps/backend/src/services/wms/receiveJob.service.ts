@@ -7,6 +7,7 @@ import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../supplie
 import { suggestStowLocation } from './locationSuggestion.service.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { batchConfirmUnits, mintHeldUnits } from './inventoryUnit.service.js';
+import { assertHeldCustodyComplete } from './receiveHeldCustody.service.js';
 import { createProblemCenterTask } from './problemCenterTask.service.js';
 import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
 import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
@@ -918,10 +919,13 @@ export async function closeReceiveJob(
    * the caller's transaction back whole, so a refused close leaves nothing
    * behind.
    */
-  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable !== 0)) {
+  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable == null)) {
     throw receiveError('Incomplete v2 delivery accounting');
   }
+  // Accepted and held labels (barcode readiness), then held custody (S4-4B):
+  // every held LSU must already be in confirmed problem-bin custody.
   await assertReceiveJobBarcodeReady(trx, shopId, receiveJobId);
+  await assertHeldCustodyComplete(trx, shopId, lines);
 
   // 1. Write quantity_received back to PO line items
   for (const line of lines) {
