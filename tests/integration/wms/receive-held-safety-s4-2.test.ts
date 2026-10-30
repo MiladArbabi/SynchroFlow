@@ -21,7 +21,10 @@ import { computeCoverage } from 'api-src/services/wms/inventoryUnit.service';
  *          stays fail-closed for accepted stock (R5), and neither the
  *          no-accepted nor the external-barcode shortcut bypasses held identity.
  *   S1–S4  ordinary Stow never places a held unit — explicit scan, sibling
- *          sweep, FIFO or a recovery task — and a refusal has no side effects (R10).
+ *          sweep or FIFO; a malformed recovery Stow is refused at creation (0227)
+ *          — and a refusal has no side effects (R10).
+ *   S7     a valid, custody-backed recovery Stow still reaches confirmStow and is
+ *          refused (recovery Stow not enabled until S4-5 I2), with no side effects.
  *   C1     label coverage is not inflated by held / discarded units.
  */
 
@@ -382,17 +385,100 @@ describe('S4-2 — R10: ordinary Stow never places a held unit', () => {
     ]);
   });
 
-  it('S4 — recovery Stow is not enabled: a receive_recovery task is refused with zero side effects', async () => {
+  it('S4 — a malformed receive_recovery Stow is refused at creation with zero inventory, ledger or unit change', async () => {
     const f = await seedFixture(await createFixtureShop(), { quantityAccepted: 0, quantityHeld: 1 }, [
       { status: 'held', labelled: true },
     ]);
-    const taskId = await stowTask(f, 'receive_recovery', 1);
-    const before = await stowEffects(f, taskId);
+    const noTask = crypto.randomUUID();
+    const snapshot = async () => ({
+      effects: await stowEffects(f, noTask),
+      recoveryTasks: await withTenant(f.shopId, (trx) =>
+        trx('stow_tasks').where({ shop_id: f.shopId, trigger: 'receive_recovery' }).count('* as count').first()),
+    });
+    const before = await snapshot();
+    expect(before.recoveryTasks).toEqual({ count: '0' });
+    expect(before.effects.units).toEqual([{ lasyncro_unit_id: f.unitIds[0], status: 'held', current_location_code: null }]);
 
-    await expect(confirm(f, taskId, 1, f.unitIds[0])).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
-    await expect(confirm(f, taskId, 1)).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
+    // In progress, claimed and with no Receive source: never a valid recovery Stow.
+    await expect(stowTask(f, 'receive_recovery', 1)).rejects.toThrow('RECEIVE_RECOVERY_STOW_SOURCE_INVALID');
 
-    expect(await stowEffects(f, taskId)).toEqual(before);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('S7 — a valid, custody-backed recovery Stow is still refused by confirmStow with zero side effects', async () => {
+    const f = await seedFixture(await createFixtureShop(), { quantityAccepted: 0, quantityHeld: 1 }, [
+      { status: 'held', labelled: true },
+    ]);
+    const lsu = f.unitIds[0];
+    const rollback = new Error('__s7_rollback__');
+
+    // Custody, closure and the recovery Stow are never committed: no 0224/0226/0227
+    // evidence outlives this case, so no migration suite's DOWN depends on it.
+    await withTenant(f.shopId, async (trx) => {
+      const warehouse = await trx('warehouses').where({ shop_id: f.shopId }).first('warehouse_id');
+      await trx('warehouse_locations').insert({
+        shop_id: f.shopId, warehouse_id: warehouse.warehouse_id, location_code: PROBLEM_BIN,
+        type: 'bin', parent_location_code: `WH-${f.shopId}-ROOT`, active: true, zone_type: null,
+      });
+      const [task] = await trx('problem_center_tasks').insert({
+        shop_id: f.shopId, status: 'open', source: 'receive', source_exception_id: crypto.randomUUID(),
+        lasyncro_unit_id: lsu, lasyncro_variant_id: f.variantId, quantity: 1, exception_type: 'defect',
+      }).returning('problem_task_id');
+      const problemTaskId = task.problem_task_id as string;
+      // The S4-4 placement write set, then the Receive closes.
+      await trx('receive_held_custody_events').insert({
+        shop_id: f.shopId, device_event_id: crypto.randomUUID(), lasyncro_unit_id: lsu,
+        problem_task_id: problemTaskId, location_code: PROBLEM_BIN, placed_by: null,
+      });
+      await trx('inventory_units').where({ shop_id: f.shopId, lasyncro_unit_id: lsu })
+        .update({ held_placed_at: new Date(), current_location_code: PROBLEM_BIN, updated_at: new Date() });
+      await trx('problem_center_tasks').where({ shop_id: f.shopId, problem_task_id: problemTaskId })
+        .update({ problem_bin_location: PROBLEM_BIN });
+      await trx('receive_jobs').where({ shop_id: f.shopId, receive_job_id: f.receiveJobId })
+        .update({ status: 'closed', closed_at: new Date() });
+
+      // Born pending through the 0227 guard, then claimed: the shape confirmStow receives.
+      const [stow] = await trx('stow_tasks').insert({
+        shop_id: f.shopId, lasyncro_variant_id: f.variantId, quantity: 1, location_code: BIN,
+        status: 'pending', trigger: 'receive_recovery', source_task_id: problemTaskId,
+      }).returning('stow_task_id');
+      const stowTaskId = stow.stow_task_id as string;
+      await trx('stow_tasks').where({ shop_id: f.shopId, stow_task_id: stowTaskId })
+        .update({ status: 'in_progress', claimed_by: f.claimedBy, claimed_at: new Date() });
+
+      const effects = async () => ({
+        movements: await trx('inventory_movements').where({ shop_id: f.shopId, lasyncro_variant_id: f.variantId })
+          .orderBy('location_code').select('movement_type', 'quantity_delta', 'location_code'),
+        truth: await trx('inventory_truth').where({ shop_id: f.shopId, lasyncro_variant_id: f.variantId })
+          .orderBy('location_code').select('location_code', 'on_hand_quantity', 'available_quantity'),
+        unit: await trx('inventory_units').where({ shop_id: f.shopId, lasyncro_unit_id: lsu })
+          .first('status', 'current_location_code', trx.raw('held_placed_at IS NOT NULL AS placed')),
+        stow: await trx('stow_tasks').where({ shop_id: f.shopId, stow_task_id: stowTaskId })
+          .first('status', 'quantity_placed', 'location_code', 'completed_at'),
+        task: await trx('problem_center_tasks').where({ shop_id: f.shopId, problem_task_id: problemTaskId })
+          .first('status', 'problem_bin_location'),
+        recoveryEvents: await trx('receive_held_recovery_events').where({ shop_id: f.shopId }).count('* as count').first(),
+      });
+      const before = await effects();
+      expect(before).toEqual({
+        movements: [],
+        truth: [],
+        unit: { status: 'held', current_location_code: PROBLEM_BIN, placed: true },
+        stow: { status: 'in_progress', quantity_placed: 0, location_code: BIN, completed_at: null },
+        task: { status: 'open', problem_bin_location: PROBLEM_BIN },
+        recoveryEvents: { count: '0' },
+      });
+
+      const attempt = (lasyncroUnitId?: string) => trx.transaction(async (sp) => {
+        await sp.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+        return confirmStow(sp, { stowTaskId, shopId: f.shopId, claimedBy: f.claimedBy, quantityPlaced: 1, lasyncroUnitId });
+      });
+      await expect(attempt(lsu)).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
+      await expect(attempt()).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
+
+      expect(await effects()).toEqual(before);
+      throw rollback;
+    }).catch((err) => { if (err !== rollback) throw err; });
   });
 
   it('S5 — an explicitly scanned discarded LSU is refused with no credit, debit or unit transition', async () => {
