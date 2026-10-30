@@ -25,14 +25,19 @@ import type { Knex } from 'knex';
  *     the incident.
  *
  * Deliberately NOT eligible (no verified safe generic mechanism):
- *   reconciliation, count, stow, receive, returns/return_shortfall, unknown
- *   types; ordinary (in-truth) quarantine — it would rewrite a whole
- *   projection row; in-truth re_stow — confirmStow would debit a problem bin
+ *   reconciliation, count, stow, generic receive incidents,
+ *   returns/return_shortfall, unknown types; ordinary (in-truth) quarantine —
+ *   it would rewrite a whole projection row; in-truth re_stow — confirmStow would debit a problem bin
  *   that never received the unit; ordinary Pick write_off / discard — the
  *   incident's units stay RESERVED at the allocation location
  *   (recordShortPickPhysicalOutcome releases only the units found) and no
  *   resolution path settles that residual reservation yet (GH-1240), so a
  *   debit would consume healthy unreserved units and leave the reservation.
+ *
+ * Receive-held LSU resolution (S4-5 I2) is not decided here: a verified
+ * Receive-held LSU is resolved only by the dedicated receiveHeldResolution
+ * service, which proves its own custody evidence. Generic Receive incidents
+ * stay default-deny through this policy.
  */
 
 export const RESOLVABLE_PROBLEM_STATUSES = ['open', 'investigating'] as const;

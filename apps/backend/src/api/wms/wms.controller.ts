@@ -51,6 +51,11 @@ import {
   RESOLVABLE_PROBLEM_STATUSES,
   type ProblemResolutionAction,
 } from '../../services/wms/problemCenterResolutionPolicy.js';
+import {
+  readReceiveHeldTaskIdentity,
+  ReceiveHeldResolutionError,
+  resolveReceiveHeldTask,
+} from '../../services/wms/receiveHeldResolution.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import {
   getBatchPackEligibility,
@@ -3836,11 +3841,18 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
   const { taskId } = req.params;
-  const { resolution_action, resolution_notes } = req.body;
+  const { resolution_action, resolution_notes, device_event_id } = req.body;
 
   if (!taskId) return res.status(400).json({ error: 'taskId is required' });
   if (!resolution_action || !PROBLEM_RESOLUTION_ACTIONS.includes(resolution_action)) {
     return res.status(400).json({ error: `resolution_action must be one of: ${PROBLEM_RESOLUTION_ACTIONS.join(', ')}` });
+  }
+  if (
+    device_event_id !== undefined &&
+    (typeof device_event_id !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(device_event_id))
+  ) {
+    return res.status(400).json({ error: 'device_event_id must be a UUID' });
   }
   const action = resolution_action as ProblemResolutionAction;
   let ineligibleReason: string | null = null;
@@ -3848,6 +3860,21 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
   try {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // S4-5 I2: a held Receive unit task is resolved by its own service, which
+      // locks unit → task (Addendum A1 D.T4). Its identity is read unlocked here,
+      // before the generic task-first lock below is ever taken.
+      const receiveHeld = await readReceiveHeldTaskIdentity(trx, shopId, String(taskId));
+      if (receiveHeld) {
+        return resolveReceiveHeldTask(trx, {
+          shopId,
+          userId,
+          identity: receiveHeld,
+          action,
+          notes: resolution_notes?.trim() || null,
+          deviceEventId: typeof device_event_id === 'string' ? device_event_id : null,
+        });
+      }
 
       // GH-1202: lock the task row before deciding it is still resolvable, so a
       // resolution that waited behind a concurrent one re-checks the committed
@@ -4119,6 +4146,22 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
 
     return res.status(200).json(result);
   } catch (err: unknown) {
+    if (err instanceof ReceiveHeldResolutionError) {
+      if (err.code === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
+      if (err.code === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });
+      if (err.code === 'DEVICE_EVENT_ID_CONFLICT') {
+        return res.status(409).json({
+          error: 'device_event_id is already used by another resolution',
+          code: err.code,
+          reason: err.reason ?? null,
+        });
+      }
+      return res.status(err.statusCode).json({
+        error: 'This resolution is not supported for this incident',
+        code: err.code,
+        reason: err.reason ?? null,
+      });
+    }
     const message = getErrorMessage(err);
     if (message === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
     if (message === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });

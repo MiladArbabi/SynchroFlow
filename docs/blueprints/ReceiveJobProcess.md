@@ -432,10 +432,32 @@ inventory or missing stock that may be undetectable without a full physical coun
 
 ## 14. Held Recoverable Units — Recovery Database Foundation (S4-5 I1)
 
-**Contract:** SF-RECEIVE-S8C5-S4-CONTRACT-026 (C6/C7, T4/T5, I1/I3/I7, R7–R10).
+**Contract:** SF-RECEIVE-S8C5-S4-CONTRACT-026, amended by Addenda **A1** (SF-S4-5-I2-CONTRACT-001),
+**A2** (SF-S4-5-I2-CONTRACT-CORRECT-001) and **A3** (SF-S4-5-I2-CONTRACT-FINAL-001).
+**Precedence (highest first):**
+
+1. A3: 026 §A recovery row, the C7 movement, I4 and the line-151 risk note.
+2. A2: recovery movement rules.
+3. A1: locking, atomicity and concurrency (026 D.T4, D.T5, G).
+4. 026: every clause not superseded above.
+
+Recovery movement: exactly one +1 `inbound_purchase` per recovered LSU at the recovery Stow destination,
+written only on successful recovery Stow, with no source debit. Disposal writes no movement. The recovery identity
+`uuidv5(stowTaskId:lsu)` never collides with the GH-1243 close receipt. 026 I7 still applies: recovery never
+edits the PO, the Receive job or supplier rows.
+**I3 acceptance (mandatory):** audit every `inbound_purchase` reader (reporting, analytics, supplier and PO
+metrics, exports, Shopify sync, projection rebuild). Prove exact projection replay, unchanged PO, Receive and
+supplier figures, a documented include/exclude rule for receipt reports, and no double counting (A3).
 **Migration:** `apps/backend/migrations/20261029150000_0227_receive_held_recovery_foundation.ts`.
-**Scope:** database authority only. Resolution, recovery Stow confirm and inventory credit are S4-5 I2;
-`confirmStow` still refuses every `receive_recovery` task with `RECEIVE_RECOVERY_STOW_NOT_ENABLED`.
+**Scope:** database authority only (I1). Stage ownership:
+
+- **S4-5 I2:** recovery eligibility and decision handling, pending recovery Stow creation (`re_stow`), disposal
+  (discard / write-off), and resolution concurrency and idempotency.
+- **S4-5 I3:** recovery Stow confirmation, the inventory credit and ledger movement, recovery completion,
+  claim/confirmation concurrency, double-credit prevention, and the `inbound_purchase` reporting and projection
+  verification above.
+
+Until I3, `confirmStow` still refuses every `receive_recovery` task with `RECEIVE_RECOVERY_STOW_NOT_ENABLED`.
 
 A held LSU in confirmed problem-bin custody (0226) leaves custody exactly once, through one row in the
 append-only `receive_held_recovery_events`:
@@ -497,12 +519,13 @@ held, finalization or custody evidence (S4-2, S4-3B, S4-4B, S4-4C). DOWN then co
 behaviour, not a product defect. The failures are identical without 0227, and the suites pass in a fresh database.
 CI keeps them apart: migration suites and evidence-committing S4 suites run in separate disposable-database steps.
 
-### Mandatory I2 concurrency protections (not implemented in I1)
+### Mandatory S4-5 concurrency protections (not implemented in I1; resolution in I2, confirmation and claim in I3)
 
 I1 delivers database guards only. They read without row locks under READ COMMITTED, so on their own they
 cannot serialize (a) a `discarded` event racing creation of a recovery Stow, or (b) a `recovered` event racing
 a competing change to its Stow. They also do not bind event, unit and Stow completion into one transaction.
-This protection is **mandatory S4-5 I2 work** (review finding O1). It is not I1 behaviour.
+This protection is **mandatory S4-5 work** (review finding O1): item 1 below is I2; items 2–3 are I3. It is not
+I1 behaviour.
 
 **Global lock order: `stow_tasks` → `inventory_units` → `problem_center_tasks`.** Every path acquires its locks in
 this order and may skip tables. **A path must never lock a `stow_tasks` row after it has locked an `inventory_units` or
@@ -518,17 +541,23 @@ this order and may skip tables. **A path must never lock a `stow_tasks` row afte
       `discarded` event and the unit's and task's terminal states. Creating the Stow is an insert, not a Stow lock.
 2. **Recovery Stow confirmation:** lock the `stow_tasks` row `FOR UPDATE` → the `inventory_units` row `FOR UPDATE`
    → the `problem_center_tasks` row `FOR UPDATE`. Then, atomically in one transaction: the `recovered` event,
-   +1 credit movement (ON CONFLICT ignore ⇒ 0 inserted ⇒ throw; exactly one credit per LSU, contract I3),
+   +1 `inbound_purchase` credit movement (A2; ON CONFLICT ignore ⇒ 0 inserted ⇒ throw; exactly one credit per LSU, contract I3),
    truth, unit `stowed`, and Stow and task completion.
 3. **Stow claim:** lock the `stow_tasks` row only.
 4. **Cancellation:** unsupported in S4-5; no recovery Stow cancel path is added. Any future implementation must
    serialize against confirmation by following the global order, starting with the `stow_tasks` row lock.
 
-**Mandatory I2 concurrency regressions** (real overlap, disposable PostgreSQL harness, no serialized calls or retries):
+**Mandatory S4-5 concurrency regressions** (real overlap, disposable PostgreSQL harness, no serialized calls or retries).
+
+I2 (resolution):
 
 - Concurrent `re_stow` and discard of the same task: exactly one decision wins, and there is at most one live
   recovery Stow or one `discarded` event, never both.
 - Concurrent duplicate resolutions (same and different device events): exactly one outcome.
+- Every losing resolution leaves zero side effects: movement, truth, unit, Stow, task and event rows unchanged.
+
+I3 (confirmation):
+
 - Concurrent double confirmation of one recovery Stow: exactly one `recovered` event, one +1 credit, one truth
   change (contract R8).
 - Resolution racing confirmation on the same unit and task: completes with no deadlock and a single consistent
