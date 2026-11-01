@@ -228,16 +228,43 @@ describe('S4-5 I4 — migration 0228 Shopify recovery inventory sync', () => {
     });
   });
 
-  it('R1 — another shop neither sees nor writes this shop\'s sync rows', async () => {
+  // PostgreSQL runs BEFORE INSERT row triggers before the RLS WITH CHECK, and
+  // the 0228 trigger reads the ledger under the caller's tenant: shop B cannot
+  // see shop A's credit, so B's insert of A's real credit is refused by the
+  // trigger (RECOVERY_SYNC_CREDIT_INVALID) before the policy is reached. The
+  // policy's USING / WITH CHECK presence stays asserted in F1.
+  it('R1 — another shop neither sees, updates nor creates this shop\'s sync rows', async () => {
     await asRuntimeRolledBack(shopId, async (trx) => {
       const credit = await seedCredit(trx, shopId);
       expect(failure(await inSavepoint(trx, (sp) => sp(SYNCS).insert(syncRow(shopId, credit))))).toBeNull();
+      const where = { shop_id: shopId, credit_movement_id: credit.credit_movement_id };
+      const before = await trx(SYNCS).where(where);
+      expect(before).toHaveLength(1);
 
       await asTenant(trx, otherShopId);
+      // Read: nothing of shop A is visible, neither the sync row nor its credit.
       expect(await trx(SYNCS).where({ credit_movement_id: credit.credit_movement_id })).toEqual([]);
+      expect(await trx(SYNCS).where({ shop_id: shopId })).toEqual([]);
       expect(await trx(HEADERS).where({ shop_id: shopId })).toEqual([]);
-      expect(failure(await inSavepoint(trx, (sp) =>
-        sp(SYNCS).insert(syncRow(shopId, { ...credit, credit_movement_id: crypto.randomUUID() }))))).toMatch(/row-level security/);
+      expect(await trx('inventory_movements').where({ lasyncro_inventory_movement_id: credit.credit_movement_id }))
+        .toEqual([]);
+
+      // Update: the tenant policy hides A's row; nothing is touched.
+      expect(await trx(SYNCS).where(where).update({ hold_reason: 'TENANT_B_WRITE' })).toBe(0);
+      expect(await trx(SYNCS).where({ credit_movement_id: credit.credit_movement_id })
+        .update({ hold_reason: 'TENANT_B_WRITE' })).toBe(0);
+
+      // Create: A's real, valid credit can be registered by neither A's identity
+      // nor B's identity from B's tenant context.
+      expect(failure(await inSavepoint(trx, (sp) => sp(SYNCS).insert(syncRow(shopId, credit)))))
+        .toBe('P0001 RECOVERY_SYNC_CREDIT_INVALID');
+      expect(failure(await inSavepoint(trx, (sp) => sp(SYNCS).insert(syncRow(otherShopId, credit)))))
+        .toBe('P0001 RECOVERY_SYNC_CREDIT_INVALID');
+      expect(await trx(SYNCS).where({ credit_movement_id: credit.credit_movement_id })).toEqual([]);
+
+      // No unauthorized change: A still sees exactly its own original row.
+      await asTenant(trx, shopId);
+      expect(await trx(SYNCS).where({ credit_movement_id: credit.credit_movement_id })).toEqual(before);
     });
   });
 
