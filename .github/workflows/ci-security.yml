@@ -568,6 +568,10 @@ jobs:
       # GH-1262 S1 purchasing regressions share this disposable-DB lifecycle
       # (INFRASTRUCTURE-REUSE-FIRST): PO creation depends on GH-1101 connection
       # truth, and GH-1109 guards the DB-owned po_number on the same writers.
+      # The opening-inventory cutover migration suites (0199, 0201, 0202, 0203)
+      # are migration round-trip suites too: E01-M17a proves 0203 DOWN succeeds
+      # with ZERO Slice-E evidence, so they never share a database with the
+      # behavioural cutover suites that commit executions and verifications.
       - name: Run GH-1101 connection truth, manual recovery and GH-1262 S1 purchasing regressions
         timeout-minutes: 20
         env:
@@ -578,7 +582,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5|wms/receive-recoverable-foundation-0224-migration-safety|wms/receive-delivery-accounting-0208-migration-safety|wms/receive-barcode-readiness-1085|wms/stow-receive-lineage-contract|wms/receive-finalization-held-0225-migration-safety|wms/receive-grouped-reconciliation-gh1241-s3b|wms/receive-held-custody-0226-migration-safety|wms/receive-held-recovery-0227-migration-safety|wms/shopify-recovery-inventory-sync-0228-migration-safety'
+        run: npm run test:integration -- --testPathPatterns 'gh1101-connection-state|gh1101-manual-recovery|auth-admission-01\.db|suppliers/po-create-gh1262-s1|suppliers/purchase-order-display-number-1109|wms/receive-outstanding-gh1245|wms/receive-line-recount-s8c5|wms/receive-recoverable-foundation-0224-migration-safety|wms/receive-delivery-accounting-0208-migration-safety|wms/receive-barcode-readiness-1085|wms/stow-receive-lineage-contract|wms/receive-finalization-held-0225-migration-safety|wms/receive-grouped-reconciliation-gh1241-s3b|wms/receive-held-custody-0226-migration-safety|wms/receive-held-recovery-0227-migration-safety|wms/shopify-recovery-inventory-sync-0228-migration-safety|inventory/opening-inventory-cutover-persistence\.migration|inventory/opening-inventory-cutover-generation-persistence\.migration|inventory/opening-inventory-cutover-shop-gid-migration-safety|inventory/opening-inventory-cutover-execution-persistence\.migration'
 
       # S4-2 held-unit safety commits held/discarded fixtures, which the 0224
       # rollback guard rightly treats as persisted recovery evidence. It runs in
@@ -610,9 +614,10 @@ jobs:
       # generations, executions and 0228 freeze-capture evidence (which the 0228
       # rollback guard treats as persisted evidence), so they run in their own
       # disposable database: never with the migration round-trip step and never
-      # with the held-unit step. Includes all 14 opening-inventory cutover
-      # integration suites (previously not CI-gated) and the Stow push/credit
-      # regressions that bound I4's ordinary-Stow boundary.
+      # with the held-unit step. Holds the 10 behavioural opening-inventory
+      # cutover suites (the 4 cutover migration suites run in the migration
+      # round-trip step above; 14 in total, previously not CI-gated) and the
+      # Stow push/credit regressions that bound I4's ordinary-Stow boundary.
       - name: Run S4-5 I4 cutover inclusion and opening inventory cutover regressions
         timeout-minutes: 30
         env:
@@ -623,7 +628,7 @@ jobs:
           # Synthetic, CI-only executor credential; valid only inside this
           # job's disposable service cluster.
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'inventory/opening-inventory-cutover|inventory/shopify-opening-inventory-cutover\.executor|inventory/shopify-recovery-inventory-sync-i4\.cutover|wms/stow-shopify-push-trigger-contract|wms/stow-inventory-credit-enqueue\.contract'
+        run: npm run test:integration -- --testPathPatterns 'inventory/opening-inventory-cutover\.service|inventory/opening-inventory-cutover-(ambiguity-recovery|continuation|execution|final-convergence|generation|modern-route|orchestration|regeneration)\.service|inventory/shopify-opening-inventory-cutover\.executor|inventory/shopify-recovery-inventory-sync-i4\.cutover|wms/stow-shopify-push-trigger-contract|wms/stow-inventory-credit-enqueue\.contract'
 
       - name: Restore runner network
         if: always()
