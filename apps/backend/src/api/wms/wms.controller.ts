@@ -78,6 +78,10 @@ import {
 } from '../../services/wms/wmsAlerts.service.js';
 import { generateInvoicePdf } from '../../services/wms/invoicePdf.service.js';
 import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
+import {
+  assertRecoveryStowDestination,
+  ReceiveRecoveryStowError,
+} from '../../services/wms/receiveHeldRecoveryStow.service.js';
 import { revalidateOrdersForReceivedVariants } from '../../services/wms/receiveJob.service.js';
 import {
   raisePackDecisionRequest,
@@ -2488,6 +2492,14 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
                      WHEN st.trigger = 'inbound_stock'
                        THEN status = 'received'
                          AND receive_job_line_id = st.receive_job_line_id
+                     -- S4-5 I3: the one held unit of the source Receive task.
+                     WHEN st.trigger = 'receive_recovery'
+                       THEN status = 'held'
+                         AND lasyncro_unit_id = (
+                           SELECT pct.lasyncro_unit_id FROM problem_center_tasks pct
+                            WHERE pct.shop_id = st.shop_id
+                              AND pct.problem_task_id = st.source_task_id
+                              AND pct.source = 'receive')
                      ELSE status = 'received'
                    END
                LIMIT st.quantity
@@ -2704,6 +2716,12 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
       }
     }
 
+    // S4-5 I3: a recovery destination is an active storage bin, never a
+    // problem bin or the unit's custody bin (re-checked at confirmation).
+    if (task.trigger === 'receive_recovery') {
+      await assertRecoveryStowDestination(trx, shopId, task.source_task_id, destination);
+    }
+
     // Same active destination — idempotent success, no destructive side
     // effect. Validation above (location exists, re-stow guards) still ran.
     if (task.location_code === destination) {
@@ -2739,6 +2757,9 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
     console.info('[STOW_LOCATION_ASSIGNED]', { shopId, userId, taskId, location_code });
     return res.json({ success: true });
     } catch (err: unknown) {
+    if (err instanceof ReceiveRecoveryStowError) {
+      return res.status(err.statusCode).json({ error: err.code, code: err.code, reason: err.reason ?? null });
+    }
     const message = getErrorMessage(err);
 
     if (message === 'LOCATION_NOT_FOUND') {
@@ -3039,6 +3060,10 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
       placed_now: confirmResult.placedNow,
     });
   } catch (error) {
+    // S4-5 I3: typed recovery refusals; the transaction has already rolled back.
+    if (error instanceof ReceiveRecoveryStowError) {
+      return res.status(error.statusCode).json({ error: error.code, code: error.code, reason: error.reason ?? null });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
         if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
         if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });

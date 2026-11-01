@@ -23,8 +23,9 @@ import { computeCoverage } from 'api-src/services/wms/inventoryUnit.service';
  *   S1–S4  ordinary Stow never places a held unit — explicit scan, sibling
  *          sweep or FIFO; a malformed recovery Stow is refused at creation (0227)
  *          — and a refusal has no side effects (R10).
- *   S7     a valid, custody-backed recovery Stow still reaches confirmStow and is
- *          refused (recovery Stow not enabled until S4-5 I2), with no side effects.
+ *   S7     a custody-backed recovery Stow without recoverable resolution evidence
+ *          reaches confirmStow and is refused as not eligible (S4-5 I3), with no
+ *          side effects.
  *   C1     label coverage is not inflated by held / discarded units.
  */
 
@@ -405,7 +406,7 @@ describe('S4-2 — R10: ordinary Stow never places a held unit', () => {
     expect(await snapshot()).toEqual(before);
   });
 
-  it('S7 — a valid, custody-backed recovery Stow is still refused by confirmStow with zero side effects', async () => {
+  it('S7 — a custody-backed recovery Stow without recoverable evidence is refused by confirmStow with zero side effects', async () => {
     const f = await seedFixture(await createFixtureShop(), { quantityAccepted: 0, quantityHeld: 1 }, [
       { status: 'held', labelled: true },
     ]);
@@ -473,8 +474,8 @@ describe('S4-2 — R10: ordinary Stow never places a held unit', () => {
         await sp.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
         return confirmStow(sp, { stowTaskId, shopId: f.shopId, claimedBy: f.claimedBy, quantityPlaced: 1, lasyncroUnitId });
       });
-      await expect(attempt(lsu)).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
-      await expect(attempt()).rejects.toThrow('[STOW_CONFIRM] RECEIVE_RECOVERY_STOW_NOT_ENABLED');
+      await expect(attempt(lsu)).rejects.toThrow('RECEIVE_RECOVERY_NOT_ELIGIBLE');
+      await expect(attempt()).rejects.toThrow('RECOVERY_LSU_REQUIRED');
 
       expect(await effects()).toEqual(before);
       throw rollback;
