@@ -1,2496 +1,665 @@
-ENGINEERING WORKFLOW v3.6
+# ENGINEERING WORKFLOW v4.0
 
-Mode: Solo-developer, main-first execution
+- Mode: solo-developer, main-first execution
+- Status: CANDIDATE — not ratified until Milad approves this exact revision
+- Supersedes: v3.6 (origin/main) and the intentional local v3.7 revision
+- Repository: SynchroFlow
+- Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)
+- Operating principle: strongest evidence with the least coordination overhead
 
-Effective: 2026-10-19
+## 0. Conventions
 
-Primary repository: SynchroFlow
+- **MUST** — mandatory; violation invalidates the affected evidence or action.
+- **MUST NOT** — prohibited.
+- **SHOULD** — default; deviation requires a stated reason.
+- **MAY** — permitted, not required.
+- **STOP** — halt the affected action, preserve state and report; continuing requires a lead or owner decision.
+- Rule identifiers (`XXX-NN`) are stable. Each rule is defined once; other text references it by ID.
+- This document governs. The agent guidelines apply these rules to agent execution and MUST NOT contradict them; on conflict, this document wins and the conflict is reported.
+- Rules apply prospectively. Existing certification stays valid where EVIDENCE-REUSE-01 is satisfied; a documentation-only change never restarts certified implementation or PostgreSQL verification.
 
-Operating principle: strongest evidence with the least coordination overhead.
+## 1. Authority, roles and decision ownership
 
-CANONICAL FLOW
+### ROLE-01 — Owner (Milad)
 
-MAIN SYNC + CLEANLINESS GATE
+Milad is the decision maker and code approver. Milad:
 
-→ ELI5
+- approves issue scope, workshop outcomes, architecture and material UX decisions (including wireframes);
+- approves HIGH-risk certification and movement to the next issue;
+- performs or supervises live browser verification by default;
+- owns staging, commit, push and deployment; only staging/commit/push MAY be delegated, and only under SHIP-DELEGATION-01;
+- MAY run any terminal command, and MAY delegate bounded command, verification and documentation execution within explicit permissions.
 
-→ AUDIT
+### ROLE-02 — Engineering lead (ChatGPT or Claude reasoning role)
 
-→ CONTRACT INHERITANCE / PRECEDENT GATE
+The lead owns: issue framing; audit strategy; architecture, product and UX reasoning; implementation scope; acceptance criteria; risk tier; test strategy, test-layer and neighbour selection; regression contract; judging evidence; deciding whether another audit, workshop or review is needed; phase transitions; certification recommendations; and writing exact commands and briefs.
 
-→ WORKSHOP [only when required]
+The lead MUST NOT invent command results, treat intended behaviour as observed, claim a guarantee stronger than the evidence, or silently expand scope.
 
-→ TEST STRATEGY / REGRESSION CONTRACT
+### ROLE-03 — Execution agent
 
-→ IMPLEMENT
+The agent executes one bounded brief. It does not decide architecture, UX, business behaviour, scope, test strategy, risk tier, remediation direction or phase transitions. Its execution contract is `agent_operation_guidelines.md`.
 
-→ TARGETED VERIFY
+### ROLE-04 — Decision boundary
 
-→ IMPLEMENTATION CORRECTION [only if required]
+- A passing test, a GREEN report or a RUN_ID never authorizes commit, push, deployment, a phase transition or the next issue.
+- Owner execution of a command does not transfer owner decisions to the executor.
+- When a decision belongs to the lead or owner and is unresolved, the executor STOPs.
 
-→ TARGETED VERIFY rerun
+## 2. Non-negotiable safety invariants
 
-→ NEIGHBOUR REGRESSION
+These invariants apply at every risk tier and are never relaxed by evidence reuse, delegation, gate economy or deadline pressure. Reuse changes the route to a proof, never the proof required.
 
-→ LIVE / DB / RUNTIME VERIFY [when required]
+- **SAFE-01 Tenant isolation and authorization.** Never bypass tenant context, RLS, authorization or entitlement checks. Application behaviour runs as the restricted application role (`sf_app`, non-superuser, no `BYPASSRLS`). Never disable RLS or guards globally, and never use migration-role access for behaviour expected to run as the application role.
+- **SAFE-02 Inventory and financial truth.** `inventory_movements` is append-only: compensate, never UPDATE or DELETE. Never mutate primary business data without explicit authorization of the exact mutation. Inventory, billing and money effects require post-state proof (VERIFY-03).
+- **SAFE-03 Transactions and concurrency.** Never claim atomicity, idempotency, replay, retry, exactly-once or concurrency safety unless the guaranteeing mechanism is identified and tested (TEST-07). Concurrency proof preserves real overlap.
+- **SAFE-04 Migrations.** Migration history is never rewritten. Migration proof follows VERIFY-04. Production migrations are owner-controlled and never delegated.
+- **SAFE-05 Disposable integration databases.** The normal development database is never an automated integration scratchpad. Integration runs use the canonical disposable harness (TEST-10) with separated migration and runtime roles and proven cleanup.
+- **SAFE-06 External side effects.** Without explicit authorization, never charge Stripe, create Stripe/Shopify billing events, mutate production Shopify stores, send real email/push/Slack messages, register real webhooks or trigger external fulfillment. Never call a live provider merely to prove an internal state-machine contract.
+- **SAFE-07 Secrets.** Never print, log or persist secrets, connection URLs with credentials, or plaintext tokens.
+- **SAFE-08 WIP ownership.** Never clean, reset, stash, checkout, restore, overwrite or delete unrelated tracked or untracked work. A dirty worktree is not a defect. PARALLEL-OWNERSHIP-01 applies.
+- **SAFE-09 Test integrity.** Never weaken, skip, delete or comment out assertions; use `.skip`/`.only`; mark failures expected; add retries or arbitrary timeouts to hide instability; update snapshots or golden files because they differ; swallow errors; mock the code under test; or manufacture RED by reverting verified behaviour.
+- **SAFE-10 Evidence honesty.** Never invent results, approvals, provenance, artifacts or completed verification. Unpersisted evidence is reported as `EVIDENCE_NOT_PERSISTED`.
+- **SAFE-11 Ship control.** Explicit-path staging only; never `git add -A` or `git add .`; no force push; push proof per SHIP-04; deployment and production mutation are owner-controlled.
+- **SAFE-12 Production data.** Production SQL is read-only before any repair; repairs are narrow, tenant-scoped, fail-closed, authorized and post-verified (SHIP-07).
 
-→ WORKFLOW DOCUMENTATION DECISION
+### PARALLEL-OWNERSHIP-01 — One writer per overlapping file set
 
-→ DOC
+At most one active writer owns a file set in a shared worktree. Parallel read-only analysis is allowed. Parallel mutation requires disjoint, explicitly owned file sets and isolated runtime resources (separate disposable databases, containers and ports). Never overwrite another workstream's WIP, evidence or runtime resources.
 
-→ COMMIT PRE-FLIGHT
+## 3. Risk classification
 
-→ COMMIT ON MAIN
+### RISK-TIER-01 — One tier per issue
 
-→ PUSH + SHA CONFIRMATION
+At intake the lead MUST select exactly one tier with a one-line justification.
 
-→ CI / DEPLOY
-
-→ CI FAILURE TRIAGE [only if CI fails]
-
-→ RISK-BASED PRODUCTION CERTIFICATION
-
-→ ISSUE CLOSED
-
-→ NEXT ISSUE
-
-The canonical flow is the complete gate inventory. The issue risk tier (RISK-TIER-01) selects which gates an issue actually runs; it does not create a second workflow.
-
-One issue at a time.
-
-One phase at a time. A brief may combine phases only where the selected risk tier allows it.
-
-Tests belong to the issue they protect.
-
-Not every issue requires automated tests.
-
-Every test decision must be explicit.
-
-Prefer executable invariants over manual memory.
-
-Zero assumptions.
-
-Evidence before conclusions.
-
-MANDATORY ROADMAP POSITION
-
-Every engineering-lead response, agent instruction, agent execution report, and engineering handover MUST show the currently ratified issue-specific roadmap, with exactly one phase marked (CURRENT).
-
-Completed phases require verified evidence. Blocked work remains in its current phase. Phase transitions require engineering-lead authorization. Parallel issues retain independent roadmaps. Update a roadmap only through an explicitly ratified scope or phase decision. Do not invent missing roadmap steps. If no roadmap is established, report the missing roadmap contract instead of inventing one.
-
-End engineering-lead responses, agent instructions, and engineering handovers with:
-
-### Roadmap position
-
-`<approved roadmap with (CURRENT)>`
-
-Agent execution reports retain FINDINGS, RAW, DEVIATIONS, BLOCKED, NOT COMPLETED and STATE_MUTATED inside one four-backtick block and end that block with:
-
-ROADMAP POSITION
-<approved roadmap with (CURRENT)>
-
-Roadmap position is a factual state declaration. It does not authorize the agent to choose the next phase or recommend additional work.
-
-⸻
-
-RISK-TIER-01 — RISK-ADAPTIVE EXECUTION
-
-At issue intake the engineering lead selects exactly one risk tier, states a one-line justification, and builds the issue roadmap from that tier's gates.
-
-LOW — isolated, reversible, low-consequence change.
-
-IMPLEMENT → TARGETED VERIFY → SHIP
-
-MEDIUM — ordinary application / business-logic / API change.
-
-FOCUSED AUDIT or EXISTING CONTRACT → IMPLEMENT + TARGETED VERIFY → SHIP
-
-HIGH — authentication, authorization, tenant isolation, credential security, payments, inventory truth, data migrations, concurrency, or any other consequential irreversible change.
-
-SECURITY / BUSINESS CONTRACT → IMPLEMENT + TARGETED VERIFY → RISK-BASED REVIEW → CERTIFY → SHIP
-
-Gate meanings:
-
-- SHIP = WORKFLOW DOCUMENTATION DECISION → DOC where required → final ship-lineage verification (SHIP-TREE-01) → COMMIT PRE-FLIGHT → COMMIT ON MAIN → PUSH + SHA CONFIRMATION → CI / DEPLOY where required → production certification at the selected level.
-- EXISTING CONTRACT = a contract, invariant set, or prior certified audit that already answers the AUDIT exit condition (8.9); cite it instead of re-auditing.
-- IMPLEMENT + TARGETED VERIFY = one brief covering implementation and its targeted verification, issued as a CLOSED_LOOP_IMPLEMENT_AND_VERIFY brief (13.10.1) when delegated to an agent.
-- RISK-BASED REVIEW = the engineering lead reviews the evidence against the security/business contract. Independent review (a separate reviewer or agent, or Milad) is required when a material security/authorization boundary, migration authority, or irreversible data invariant cannot be adequately certified by the implementing agent's evidence alone.
-- CERTIFY = engineering-lead acceptance of the complete HIGH evidence set, approved by Milad, before SHIP.
+| Tier | Scope | Gates |
+|---|---|---|
+| LOW | isolated, reversible, low-consequence | IMPLEMENT → TARGETED VERIFY → SHIP |
+| MEDIUM | ordinary application, business-logic or API change | EXISTING CONTRACT or FOCUSED AUDIT → IMPLEMENT + TARGETED VERIFY → SHIP |
+| HIGH | authentication, authorization, tenant isolation, credential security, payments, inventory truth, data migrations, concurrency, or any consequential irreversible change | CONTRACT → IMPLEMENT + TARGETED VERIFY → RISK-BASED REVIEW → CERTIFY → SHIP |
 
 Selection rules:
 
-- Use the LOWEST tier adequately supported by actual consequence, reversibility, and uncertainty.
-- Selection must be explicit and justified; an unclassified issue has no ratified roadmap.
-- Escalate the tier as soon as evidence reveals higher risk; the roadmap changes through the normal ratified roadmap update.
-- Never downgrade risk merely to save time. A downgrade requires new evidence and an explicit lead decision.
-- When an issue touches any HIGH category, it is HIGH unless the lead records why that category is not materially affected.
+- Use the LOWEST tier supported by actual consequence, reversibility and uncertainty.
+- An issue touching any HIGH category is HIGH unless the lead records why that category is not materially affected.
+- Escalate as soon as evidence reveals higher risk. Never downgrade to save time; a downgrade requires new evidence and an explicit lead decision.
+- An unclassified issue has no ratified roadmap.
+- Every tier retains section 2, the main-sync gate (FLOW-01), an explicit test strategy (TEST-01), ship-lineage verification (SHIP-03) and the ownership rules in section 1.
 
-Every tier retains:
+### Gate definitions
 
-- MAIN SYNC + CLEANLINESS GATE and protection of all unrelated WIP;
-- the MANDATORY ROADMAP POSITION;
-- an explicit test-strategy decision and test completion state (10.4), stated inline for LOW/MEDIUM;
-- all security, tenant-isolation, RLS, migration, database, test-integrity, and external-side-effect safety rules;
-- the disposable integration DB rule; the development DB is never an integration scratchpad;
-- final ship-lineage verification before commit;
-- lead-owned phase transitions and Milad-owned staging, commit, push, and deployment, with only staging/commit/push delegable under SHIP-DELEGATION-01.
+- **CONTRACT** — an approved security/business contract (ISSUE-CONTRACT-01). It MAY be inherited unchanged.
+- **EXISTING CONTRACT** — an approved contract, invariant set or certified audit that already satisfies the audit exit condition (FLOW-03); cite it instead of re-auditing.
+- **IMPLEMENT + TARGETED VERIFY** — one brief covering implementation and its targeted verification, delegated under AGENT-CLOSED-LOOP-01.
+- **RISK-BASED REVIEW** — REVIEW-01.
+- **CERTIFY** — CERT-01.
+- **SHIP** — SHIP-01 through SHIP-04 (with SHIP-DELEGATION-01 when delegated), DOC-01's documentation decision, DEPLOY-01, and production certification at the selected level (CERT-02).
 
-Gate economy — require a separate gate only when it establishes a material missing contract, security boundary, irreversible operation, or necessary evidence:
+### GATE-ECONOMY-01 — A gate must earn its cost
 
-- no separate AUDIT when the contract is already known;
-- no WORKSHOP unless material decisions remain unresolved;
+A separate gate or round is justified only when it establishes a material missing contract, security boundary, irreversible operation or necessary evidence. By default:
+
+- no separate audit when the contract is already known;
+- no workshop unless material decisions remain unresolved;
 - no standalone agent round for trivial findings;
-- no mandatory independent review for LOW/MEDIUM work;
-- no separate implementation and verification rounds when both are safely executable under one brief;
+- no separate implementation and verification rounds when one brief can safely do both;
 - no splitting related changes into arbitrary slices;
-- no full repository test suite for every correction;
-- no repeated verification that already proves the unchanged contract;
+- no full-repository suite after each correction;
+- no repeated verification of an unchanged contract;
+- no repeated review or certification of an unchanged scope;
 - no standalone documentation-only ship when the update can ride with the next authorized ship.
 
-Evidence efficiency:
+## 4. Execution flow and conditional gates
 
-- establish the Git/WIP baseline once per stable work period and reuse it until state changes;
-- recheck relevant file collisions after source changes;
-- prefer targeted tests first; broaden only when risk or affected neighbouring contracts require it;
-- do not repeat successful expensive tests without a relevant source, environment, or contract change;
-- automate repetitive checks where appropriate;
-- run a final ship-lineage verification before commit.
+The flow below is the complete gate inventory. The risk tier selects which gates run. It is an internal control, not the displayed roadmap (REPORT-02).
 
-Reporting efficiency: agent reports keep every required section but stay concise — decisive findings, relevant raw evidence, actual deviations, blockers and unfinished obligations, mutated state, and the ROADMAP POSITION. Do not repeat unchanged background, full roadmap explanations, or irrelevant logs.
+```
+FLOW-01 MAIN SYNC → FLOW-02 INTAKE → FLOW-03 AUDIT [if no existing contract]
+→ FLOW-04 INHERITANCE [if an existing family is touched] → FLOW-05 WORKSHOP [if decisions open]
+→ TEST-01 STRATEGY → IMPLEMENT + TARGETED VERIFY → correction loop [if needed]
+→ neighbour regression → live/DB/runtime verify [if selected]
+→ REVIEW-01 [HIGH, when required] → CERT-01 [HIGH]
+→ SHIP (doc decision, ship-lineage, commit, push) → CI/deploy → production certification → CLOSE-01
+```
 
-Phase ownership: the engineering lead chooses the risk tier, required evidence, and phase transitions. Agents execute the approved scope. A passing test does not authorize commit, push, deployment, or the next issue.
+### FLOW-01 — Main sync and cleanliness
 
-Transition (effective v3.5): apply prospectively. Already certified work stays certified, and an in-flight issue is not restarted merely to classify it; the lead records its tier and applies the tier to remaining phases. Active agent briefs run to completion under the rules they were issued with.
+Before starting an issue:
 
-GH-1068: Risk = HIGH. Its existing security and migration contracts remain in force; future related implementation and verification may be combined into IMPLEMENT + TARGETED VERIFY briefs where safe.
-
-⸻
-
-EXECUTION CONTRACTS — v3.6
-
-These rules apply prospectively. Existing certification remains valid where EVIDENCE-REUSE-01 is satisfied; documentation-only updates do not restart certified implementation or PostgreSQL verification. HIGH-risk certification and Milad's approval remain required.
-
-RUN-IDENTITY-01 — Execution identity
-
-Every VS Code execution prompt and agent handoff starts on its first line with:
-
-RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
-ATTEMPT: <attempt number>
-
-Examples: SF-GH1101-SHIP-001 and SF-GH1101-VERIFY-002.
-
-Use a unique execution identity and never reuse a completed RUN_ID. Retain the same ID across retries/corrections, increment ATTEMPT for each execution retry, and assign a new ID to a new phase. Reports preserve the invoking RUN_ID on their first content line and state ATTEMPT explicitly. Evidence artifacts record RUN_ID and ATTEMPT; record parent RUN_ID where applicable. Run identity does not imply authorization.
-
-ISSUE-CONTRACT-01 — Persistent issue contract
-
-For substantial issues, maintain one authoritative, approved contract in a GitHub issue or approved repository document. Record scope, architecture decisions, invariants, acceptance criteria, test strategy, exclusions, risk tier, roadmap and open decisions. Prompts reference its identity/revision instead of repeating history. Changes require engineering-lead approval. Trivial tasks do not require a new contract document.
-
-TERMINAL-ROUTING-01 — Cheapest reliable execution route
-
-- Terminal owns Git/WIP truth, environment preflight, deterministic commands, test execution, database proofs, artifact capture and ship-lineage verification.
-- VS Code agents own bounded multi-file reasoning, complex implementation, approved corrections and cross-file regression analysis.
-- The engineering lead owns contracts, architecture, scope, security decisions, risk tier, phase transitions and certification decisions.
-
-Use the cheapest reliable route; simple deterministic terminal tasks do not require an agent.
-
-EVIDENCE-PERSISTENCE-01 — Durable certification evidence
-
-Before removing temporary test resources, persist certification evidence outside the working repository. Capture, where applicable:
-
-- RUN_ID, ATTEMPT and parent RUN_ID;
-- base Git SHA, approved file manifest and exact source-file hashes;
-- executed command identifiers, exit codes and test totals/failures;
-- migration/security proofs and runtime-isolation attestation;
-- known baseline-owned failures, resource-cleanup proof and manifest SHA-256.
-
-Persist pre-cleanup evidence before teardown, then append and verify cleanup proof. Never persist secrets or plaintext tokens. Temporary diagnostic logs may use /tmp; certification-critical evidence must not depend exclusively on disposable /tmp files. Verify artifacts actually exist. Record EVIDENCE_NOT_PERSISTED when evidence was not preserved; never invent its existence.
-
-A local filesystem path alone is not accessible to ChatGPT. Supply a compact redacted handoff and upload artifacts when independent inspection is needed.
-
-EVIDENCE-REUSE-01 — Selective evidence reuse
-
-Reuse successful expensive verification only when relevant file hashes are unchanged, the runtime/test environment remains applicable, the test contract is unchanged, and evidence is available and attributable. Invalidate only affected layers. Documentation-only changes do not normally invalidate certified PostgreSQL execution, migration or concurrency proofs. Security/migration changes require renewed affected authority proofs. Timestamps alone never establish same-source certification.
-
-INFRASTRUCTURE-REUSE-FIRST — Reuse verification infrastructure before adding any
-
-Before proposing new test/runtime infrastructure:
-
-1. Inspect and reuse existing capabilities (Section 11 harnesses, existing CI jobs and steps).
-2. Prefer safe, lightweight local verification.
-3. Where safe local integration execution is unavailable, reuse established CI infrastructure, extending an existing step and database lifecycle before adding another.
-4. Provision new local runners, databases or dependencies only when required proof cannot be obtained through existing resources and Milad approves.
-5. Never substitute shared development databases for disposable integration databases.
-6. Never bypass RLS, migration, isolation, cleanup or external-side-effect safety.
-7. Preserve required HIGH-risk verification; reuse changes the route, not the proof.
-8. CI evidence must be attributable to the exact reviewed source revision before certification.
-9. If verification requires an approved branch push, stop for ship/review authorization (SHIP-DELEGATION-01) first.
-
-This is a standing rule, not a workflow gate. Until CI has actually tested the reviewed revision, CI-dependent results are PENDING, not GREEN.
-
-Bounded agent autonomy
-
-Preserve AGENT-CLOSED-LOOP-01 (13.10.1): explicit file/permission allowlists, at most three correction cycles, unchanged semantics/security/migration contracts and no unrelated fixes. Predictable mechanical corrections already authorized by the brief may proceed within that boundary. Stop for material decisions, unsafe conditions, scope violations or exhausted correction authority; routine authorized corrections do not add approval rounds. Closed-loop implementation does not itself authorize shipping.
-
-PARALLEL-OWNERSHIP-01 — One writer per overlapping file set
-
-At most one active writer owns a given file set in a shared worktree. Parallel read-only analysis is allowed. Parallel mutation requires disjoint, explicitly owned file sets and isolated runtime resources. Preserve other agents' WIP; never overwrite it.
-
-HANDOFF-01 — Compact, attributable handoffs
-
-Keep the required report sections and one four-backtick copyable structure for agent reports. Start the report content with RUN_ID, then ATTEMPT. Prioritize verdict, baseline, source manifest, evidence location/checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Raw logs belong in persistent evidence artifacts; expand only material failures or decisions in the handoff.
-
-SHIP-DELEGATION-01 — Explicit exact-manifest ship delegation
-
-Default: Milad owns staging, commit and push. Exception: Milad may explicitly delegate those actions for one named execution and a fixed, independently certified file manifest. Require all of:
-
-- exact RUN_ID and explicit authorization for that execution;
-- exact file allowlist and certified source hashes;
-- clean index before explicit-path staging;
-- staged manifest equality and staged content hashes matching the approved manifest, with no unauthorized files;
-- no force push; stop on remote divergence without automatic merge, rebase or reset;
-- exact-SHA CI verification and a complete persistent audit trail.
-
-This exception never extends to production deployment, production migrations, secret/credential mutation, GH-1262 integration, other issues or later executions. HIGH-risk independent certification and user approval requirements remain intact. Approval of a passing test or a RUN_ID alone does not delegate shipping. A RED CI result is reported and stops the delegated execution; a correction commit requires separate authorization.
-
-Future terminal automation
-
-Prefer reusable, audited wrappers for repetitive preflight, verification, evidence collection and ship checks. Proposed wrappers are not existing tooling. Documentation-only workflow expansion does not authorize implementation tooling or expand implementation scope to automate terminal commands.
-
-⸻
-
-1. CORE PRINCIPLE
-
-The goal is not maximum test coverage.
-
-The goal is permanent protection around behaviour whose silent regression could materially affect:
-
-- merchant workflows;
-- inventory correctness;
-- fulfillment;
-- billing;
-- money;
-- data integrity;
-- authentication / authorization;
-- tenant isolation;
-- Shopify integrations;
-- migrations;
-- async delivery;
-- launch reliability;
-- critical UX flows.
-
-Tests protect business and system contracts, not merely files.
-
-Do not think:
-
-We changed wms.controller.ts, so test wms.controller.ts.
-
-Think:
-
-We changed Pack behaviour. Which product, transaction, inventory, commercial, authorization, alert, outbox, and user-flow contracts depend on it?
-
-⸻
-
-2. SOLO MAINLINE OPERATING MODE
-
-2.1 Default topology
-
-Normal issue work happens directly on local main and pushes directly to origin/main.
-
-Default:
-
-origin/main
-
-→ local main
-
-→ audit
-
-→ implementation
-
-→ verification
-
-→ commit
-
-→ push main
-
-→ CI/deploy
-
-→ production certification
-
-By default, do not create:
-
-- an issue branch;
-- a worktree;
-- a pull request;
-- a synthetic merge tree.
-
-This repository is operated by one active developer unless explicitly stated otherwise. Isolation machinery must therefore justify its coordination cost.
-
-2.2 Branch/worktree exceptions
-
-A branch or worktree is allowed only when at least one of these is true:
-
-- parallel development is genuinely happening;
-- a risky multi-day experiment must remain isolated;
-- an external reviewer explicitly requires a PR;
-- the work cannot safely exist on main before external approval;
-- a temporary branch is required by a provider, release, or migration process;
-- Milad explicitly chooses isolation for the issue.
-
-A large issue by itself is not enough reason.
-
-If an exception branch is used, record why before creating it.
-
-2.3 Main cleanliness gate
-
-Before starting every issue, require:
-
+```
 BRANCH=main
-
 HEAD aligned with origin/main
-
 UNMERGED_FILES=0
-
 UNEXPLAINED_DIRTY_FILES=0
-
 CURRENT_ISSUE=NONE
+```
 
-If main is dirty:
+- When main is dirty: classify every dirty file, identify its owning issue or process, then finish, intentionally preserve or intentionally revert it. Do not begin the next issue until state is understood.
+- Dirty-main forward sync: fetch; prove whether local main diverged; inventory tracked and untracked WIP; compare WIP paths with incoming paths; require zero unexplained non-generated overlap; preserve pre-sync manifests; remove only disposable generated artifacts that block the fast-forward; `git pull --ff-only`; prove HEAD equals origin/main and that WIP manifests are unchanged.
+- Do not create a worktree merely to escape understood dirty state.
+- Establish this baseline once per stable work period; recheck relevant collisions only when state changes.
 
-1. classify every dirty file;
-2. identify which issue or process owns it;
-3. finish, intentionally preserve, or intentionally revert that state;
-4. do not use a worktree merely to escape unexplained local state;
-5. begin the next issue only after state is understood.
+### SOLO-MAIN-01 — Main-first topology
 
-Never clean, reset, or overwrite unrelated dirty work merely to make the tree look clean.
+Normal work happens on local main and pushes directly to origin/main. By default there is no issue branch, worktree, pull request or synthetic merge tree. A branch or worktree is allowed only when:
 
-2.3.1 Dirty-main forward-sync protocol
+- parallel development is actually happening;
+- a risky multi-day experiment must stay isolated;
+- an external reviewer requires a PR;
+- the work cannot safely exist on main before approval;
+- a provider, release or migration process requires it; or
+- Milad chooses isolation.
 
-If local main is behind origin/main while carrying explained WIP:
+Record the reason before creating it. Size alone is not a reason.
 
-1. fetch origin/main;
-2. prove whether local main has diverged;
-3. inventory tracked and untracked WIP;
-4. compare WIP paths against incoming paths;
-5. require zero unexplained non-generated overlap before fast-forwarding;
-6. preserve pre-sync tracked/untracked WIP manifests;
-7. remove only disposable generated workspace artifacts that block the fast-forward;
-8. use git pull --ff-only;
-9. prove local HEAD == origin/main;
-10. prove tracked and untracked non-generated WIP manifests are unchanged.
+### FLOW-02 — Intake
 
-Do not create a worktree merely because main is dirty when the dirty state is understood and a safe overlap audit can prove that a fast-forward will preserve it.
+State the issue ID, a plain-language problem (what the user expects, what happens, why it matters, what must stay unchanged), the risk tier (RISK-TIER-01) and the approved roadmap (REPORT-02). Run a small environment preflight (ENV-01) when verification will follow. Work discovered outside the issue goes to an existing or new bounded issue; it never drifts the active issue.
 
-2.4 Mainline invariants
+### FLOW-03 — Audit (conditional)
 
-SOLO-MAIN-01
+Runs only when no existing contract answers the exit condition.
 
-Normal issue execution happens directly on main.
+- Levels: RECON (GitHub reconnaissance plus a few local probes); FOCUSED (default: reconnaissance, local source confirmation and targeted executable evidence); DEEP (add an agent only for many cross-file dependencies, unfamiliar domains, concurrency/idempotency or broad architectural impact).
+- Principles: reproduce the defect or requirement; re-audit inherited claims before spending implementation effort; withdrawal is a valid result; audit hypotheses as aggressively as claims; identify what the change could accidentally break; stop once the next decision is supported.
+- HTTP: confirm route registration, middleware and handler; exercise the endpoint with a real token where practical; record status and relevant body.
+- Reopen an audit only for material missing facts. An execution failure is handled by EXEC-01, not by a new audit.
+- **Exit condition:** the lead can state current behaviour, root cause or structural explanation, affected surfaces, regression surface, stable invariant and remaining uncertainty.
 
-SOLO-MAIN-02
+### FLOW-04 — Contract inheritance and precedent (CONTRACT-INHERITANCE-01, PRECEDENT-REUSE-01)
 
-No new issue begins while main contains unexplained dirty state.
+Runs when the work touches an existing product family, UX family, lifecycle, navigation pattern, shared component or workflow. Before production mutation, identify the canonical owner, read the applicable playbooks and blueprints, find sibling flows that solved the same class of problem, and enumerate inherited invariants. Examples: first paint, transitions, error and fail-open behaviour, deep links, reload and restoration, authorization, responsive sizing, overflow, accessibility, mutation boundaries, close/back semantics.
 
-SHIP-TREE-01
+Output:
 
-Final local verification must target the same lineage that will be pushed and deployed.
-
-CI-TRIAGE-01
-
-A red test must be classified against its current invariant before production source is changed.
-
-DEPLOY-GATE-01
-
-Direct-main does not mean uncontrolled production deployment. Required pre-push verification must pass before pushing consequential code, and production deployment should not outrun required CI. If the deployment pipeline can publish a red main commit before required CI finishes, treat that pipeline ordering as infrastructure debt and use the strongest required local gate until it is corrected.
-
-RELEASE-CONTINUITY-01
-
-A multi-slice feature must not be shipped in a configuration that leaves an enabled live journey uncompletable. Release all dependent slices together or preserve a safe feature gate/compatible path.
-
-CONTRACT-INHERITANCE-01
-
-Before mutating an existing product family, UX family, lifecycle, navigation
-pattern, shared component, or workflow, identify:
-
-- the canonical precedent;
-- applicable playbooks / blueprints;
-- already-solved sibling behaviours;
-- inherited invariants that must remain unchanged.
-
-Acceptance criteria and regression contracts must include inherited invariants,
-not only the new feature's intended happy path.
-
-Live/browser verification should primarily confirm the implementation against
-the pre-established contract. It must not be the normal mechanism for
-discovering rules that were already documented or embodied elsewhere in the
-system.
-
-PRECEDENT-REUSE-01
-
-When the same failure class has already been solved elsewhere in the system,
-audit and reuse that solution before designing a new mechanism.
-
-Examples include:
-
-- protected WMS session transitions / no parent-surface flash;
-- EntityDetailModal composition and overflow behaviour;
-- parent / child modal navigation;
-- URL restoration and hard-reload behaviour;
-- loading, error, and fail-open boundaries;
-- role / entitlement gating;
-- responsive layout and constrained-viewport fallbacks.
-
-A new local mechanism requires evidence that the existing precedent does not
-apply.
-
-
-⸻
-
-3. ROLES
-
-3.1 Engineering Lead — ChatGPT / Claude reasoning role
-
-Owns:
-
-- issue framing;
-- audit strategy;
-- architectural reasoning;
-- product / UX reasoning;
-- implementation scope;
-- acceptance criteria;
-- regression-contract definition;
-- test-layer selection;
-- neighbouring regression selection;
-- judging evidence;
-- deciding whether another audit round is necessary;
-- deciding whether WORKSHOP is required;
-- deciding whether tests are required, optional, or skipped;
-- writing deterministic terminal commands;
-- writing deterministic DOC commands;
-- writing explicit staging, commit, push, and verification commands.
-
-Must not:
-
-- invent command results;
-- treat intended behaviour as observed behaviour;
-- strengthen a guarantee beyond what source/evidence proves;
-- silently expand issue scope.
-
-3.2 Code Agent — leverage execution layer
-
-Use the agent when its leverage exceeds coordination cost.
-
-Good agent tasks:
-
-- multi-file source analysis;
-- architecture tracing across many files;
-- multi-file implementation;
-- non-trivial refactors;
-- regression-test implementation with substantial fixtures;
-- cross-domain dependency analysis;
-- large but bounded source audits;
-- migration or worker analysis where autonomous navigation saves meaningful time.
-
-Do not use the agent merely because a phase touches code.
-
-The agent does not decide:
-
-- architecture;
-- UX;
-- business behaviour;
-- issue scope;
-- test strategy;
-- remediation direction.
-
-3.3 Milad — decision maker / code approver
-
-Milad:
-
-- approves issue scope;
-- approves workshop decisions;
-- approves architecture decisions;
-- approves material UX decisions and wireframes;
-- performs or supervises live browser verification by default;
-- runs normal-terminal commands;
-- performs documentation mutation where requested;
-- owns staging, commit, and push, delegating execution only under SHIP-DELEGATION-01;
-- approves movement to the next issue.
-
-⸻
-
-4. EXECUTION ROUTING — RECON FAST → VERIFY LOCAL → ESCALATE WHEN COMPLEX
-
-Use the cheapest, safest, fastest path that gives strong evidence.
-
-The default evidence progression is:
-
-GitHub reconnaissance
-→ local terminal confirmation
-→ agent escalation only when complexity justifies it
-→ executable/runtime proof
-→ live browser where user-facing wiring matters
-
-Discovery and proof are deliberately separated. A tool that efficiently locates likely ownership is not automatically authoritative for the current local worktree or runtime.
-
-4.0 GitHub connector — fast repository reconnaissance
-
-Use the GitHub connector before broad manual scans when the question is primarily:
-
-- where a concept, contract, route, service, test, document, commit, or issue lives;
-- whether an existing GitHub issue already owns a newly surfaced concern;
-- which committed files on current repository main appear relevant;
-- which prior commits or issues establish lineage or terminology;
-- whether a canonical abstraction already exists.
-
-Good GitHub reconnaissance tasks:
-
-- code search across committed source;
-- locating candidate source/tests/docs quickly;
-- issue search before creating a duplicate;
-- commit/history discovery;
-- reading existing issue contracts;
-- narrowing the local terminal audit to a small set of likely files.
-
-GitHub connector findings are reconnaissance evidence, not final local proof.
-
-Do not use GitHub connector results as authoritative proof of:
-
-- current dirty-worktree contents;
-- unstaged or untracked local changes;
-- local migration state;
-- local DB contents;
-- current runtime behaviour;
-- current generated artifacts;
-- staged snapshot contents;
-- test/build/typecheck success;
-- production state unless the specific GitHub artifact itself is the contract under inspection.
-
-Before source mutation, consequential GitHub findings must be confirmed against the local checkout when local state could differ.
-
-Canonical rule:
-
-GitHub tells us where to look.
-The local terminal tells us what is actually true in the working environment.
-
-4.1 VS Code / normal terminal is authoritative for
-
-- Git state;
-- branch/head verification;
-- one to three targeted grep / sed probes;
-- narrow filesystem inspection;
-- SQL/curl evidence;
-- targeted Jest execution;
-- TypeScript checks;
-- migration status;
-- deterministic one-file or two-file edits;
-- documentation edits;
-- staging;
-- commit;
-- push;
-- local/remote SHA verification.
-
-4.2 Agent is preferred only when leverage exceeds coordination cost
-
-Use an agent when at least one of these is true:
-
-- multi-file implementation is required;
-- regression fixtures are complex;
-- bounded source tracing spans many files/domains;
-- a non-trivial refactor is required;
-- cross-domain impact analysis would otherwise require many manual passes;
-- repetitive but bounded edits span many files;
-- migration/worker/concurrency analysis benefits materially from autonomous navigation;
-- local terminal + GitHub reconnaissance cannot answer the question confidently with a small number of targeted probes.
-
-Do not use an agent merely to locate code or repeat reconnaissance already available cheaply through GitHub search plus targeted terminal commands.
-
-Default escalation test:
-
-Can GitHub reconnaissance + roughly 2–5 targeted local terminal probes answer the question confidently?
-
-- YES → do not use an agent.
-- NO → if deeper analysis requires multi-file reasoning, use an agent.
-
-Agents are precision multipliers, not default scanners.
-
-When an agent is used after reconnaissance, feed it the already-established files, invariants, and open questions so it spends effort on the difficult part rather than rediscovering the repository.
-
-4.3 Live browser
-
-Default executor: Milad, guided by the engineering lead.
-
-A browser agent may prove mechanics when explicitly delegated, but cannot replace Milad's product/UX approval.
-
-Reuse the current localhost before provisioning another runtime.
-
-For visual-only acceptance, first inspect the already-running localhost.
-
-If the required visual state is already present or can be reached safely in the current localhost, capture screenshots from that runtime and review them directly. Do not create a new account, seed fixtures, or start a disposable runtime solely to reproduce a visual state that already exists.
-
-Escalate to a dedicated or disposable runtime only when it is needed to prove or safely reach the acceptance state, for example:
-
-\- authentication, role, or tenant gating;
-
-\- state transitions or CTA wiring;
-
-\- persistence or reload behaviour;
-
-\- backend/API/DB integration;
-
-\- destructive or consequential mutations;
-
-\- runtime isolation from parallel work;
-
-\- or a target state that cannot be reproduced reliably in the current localhost.
-
-Screenshots are visual evidence, not behavioural proof. They may satisfy the visual/UX gate when the relevant behaviour has already been proven separately, but they do not replace behavioural verification when wiring, state, persistence, authorization, or integration is the contract under test.
-
-4.4 Agent brief format
-
-Keep briefs small:
-
-RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
-
-ATTEMPT: <attempt number>
-
-CONSTRAINTS
-
-<bounded permissions / read-only or mutation scope>
-
-COMMANDS / MUTATION
-
-<targeted task>
-
-NUMBERED QUESTIONS
-
-1. ...
-
-2. ...
-
-3. ...
-
-Prefer roughly 3–5 decisive questions.
-
-4.5 Three-level audit routing
-
-Use the smallest audit level that can establish the required facts.
-
-LEVEL 1 — RECON
-
-GitHub connector + a few targeted local terminal probes.
-
-Use for:
-
-- ownership discovery;
-- locating source/tests/docs;
-- existing-issue discovery;
-- obvious contract mismatches;
-- commit/lineage discovery.
-
-LEVEL 2 — FOCUSED AUDIT — DEFAULT
-
-GitHub reconnaissance
-* local source confirmation
-* targeted executable evidence where relevant.
-
-Typical evidence:
-
-- source;
-- tests;
-- Git state;
-- API;
-- SQL;
-- runtime.
-
-This is the normal audit depth for most issues.
-
-LEVEL 3 — DEEP AUDIT
-
-Add an agent when the bounded question requires:
-
-- many cross-file dependencies;
-- unfamiliar domain tracing;
-- concurrency/idempotency analysis;
-- broad architectural impact;
-- many manual passes that an agent can replace safely.
-
-Do not jump to Level 3 by default.
-
-4.6 Discovery vs proof rule
-
-Never let efficient discovery silently become proof of consequential behaviour.
-
-For consequential claims, prefer two independent evidence classes where practical:
-
-- static/structural evidence; and
-- executable/runtime evidence.
-
-Examples:
-
-- route source + curl;
-- service logic + targeted test;
-- migration/query contract + SQL;
-- frontend model/component + live browser;
-- staged diff + targeted regression suite.
-
-The second layer need not duplicate the first. It should prove the invariant from a different angle.
-
-4.7 Contract inheritance / precedent gate
-
-Purpose:
-
-Prevent implementation from becoming contract discovery.
-
-For work touching an existing product or UX family, this gate runs after AUDIT
-and before WORKSHOP / TEST STRATEGY / IMPLEMENT.
-
-Before production mutation:
-
-1. Identify the canonical component, lifecycle, navigation model, or workflow
-   that owns the behaviour.
-2. Read the applicable playbooks / blueprints rather than relying on memory.
-3. Search for sibling flows that already solved the same class of problem.
-4. Enumerate inherited invariants, including where applicable:
-   - loading / unresolved first paint;
-   - transition behaviour;
-   - error / fail-open behaviour;
-   - deep-link behaviour;
-   - refresh / restoration behaviour;
-   - authorization / role behaviour;
-   - responsive sizing;
-   - overflow / scrolling;
-   - accessibility;
-   - mutation boundaries;
-   - close / back semantics.
-5. Separate inherited contracts from genuinely new product decisions.
-6. Promote consequential inherited invariants into executable RED regression
-   tests before production code changes whenever practical.
-7. If no valid precedent exists, state that explicitly before designing a new
-   mechanism.
-
-Required gate output should be concise and explicit:
-
-CANONICAL_PRECEDENT=<component / flow / NONE>
-APPLICABLE_DOCS=<playbooks / blueprints>
+```
+CANONICAL_PRECEDENT=<component/flow/NONE>
+APPLICABLE_DOCS=<playbooks/blueprints>
 INHERITED_INVARIANTS=<decisive rules>
-NEW_DECISIONS=<issue-specific decisions only>
+NEW_DECISIONS=<issue-specific only>
 RED_CONTRACT=<tests required before implementation>
+```
 
-If live/browser verification later discovers an existing documented or
-already-implemented rule that this gate should have found, classify that as a
-workflow miss:
+- When the same failure class is already solved, reuse that solution; a new mechanism requires evidence that the precedent does not apply.
+- Acceptance criteria and regression contracts include inherited invariants, not only the new happy path.
+- If later verification discovers a rule this gate should have found, that is a workflow miss: correct the governing doc, strengthen the executable contract, then fix the implementation.
+- Inherit first, implement second, verify third.
 
-1. correct the governing documentation if necessary;
-2. add or strengthen the executable regression contract where practical;
-3. then correct the implementation.
+### FLOW-05 — Workshop (conditional)
 
-Canonical rule:
+Runs only when material decisions remain unresolved: behaviour, architecture, data-flow or transaction boundaries change; UX changes materially; multiple valid patterns exist; domains are being combined; the simple fix creates debt; testing needs a new architectural seam; or Milad asks for one.
 
-**Inherit first. Implement second. Verify third.**
+- Start from what is already wired and present realistic options, trade-offs, a recommendation, risks and non-goals.
+- The workshop outputs the stable invariants that feed TEST-01.
+- For an inconsistent UI element, find the canonical implementation and reuse its typography, spacing, tokens, icons, alignment, borders, hover state and interaction instead of approximating them.
+- Material UI restructuring follows workshop → wireframe → Milad approval → implement. Tiny approved copy or style corrections need only a narrow factual preflight.
+- Never implement in the same response as the audit or workshop that established a material design decision.
 
-Verification confirms the contract; it should not repeatedly rediscover it.
+### ENV-01 — Environment preflight
 
-⸻
+Once per issue, before expensive verification, establish where relevant: repository root, branch, HEAD, origin/main relationship, status, root and touched-workspace dependency resolution, `.env` presence (without printing secrets), database reachability and migration level. Do not reinstall dependencies or build automatically. Do not mutate the environment until a missing prerequisite is proven. A failure caused by a missing dependency is an environment failure, not a code failure.
 
-5. ENVIRONMENT PREFLIGHT
+## 5. Execution routing
 
-Run a small environment preflight once per issue before expensive verification.
+### TERMINAL-ROUTING-01 — Cheapest reliable route
 
-Establish where relevant:
+- Terminal-derived evidence establishes Git/WIP truth, environment state, command results, tests, database proofs and ship lineage. The owner or a permitted agent MAY execute approved commands; the terminal is an evidence channel, not an exclusive executor.
+- Agents handle bounded reasoning, implementation, approved corrections and verification within their brief and actual permissions.
+- Simple deterministic commands need no separate agent round. Unavailable privileges require one bounded owner step (EXEC-01), not a transfer of the whole task.
 
-- correct repository root;
-- expected branch;
-- current HEAD;
-- origin/main relationship;
-- Git status;
-- root dependency resolution;
-- workspace dependency resolution for touched workspace;
-- .env availability without printing secrets;
-- DB reachability where DB work is involved;
-- migration level where schema-dependent work is involved.
+### ROUTE-01 — Discovery versus proof
 
-Do not automatically reinstall dependencies.
+- GitHub reconnaissance SHOULD be used first to locate code, contracts, issues and lineage. It is reconnaissance, not proof of dirty-worktree contents, local migrations, database state, runtime behaviour, generated artifacts, staged contents or test results. Consequential findings MUST be confirmed locally before mutation.
+- For consequential behaviour, SHOULD combine two evidence classes: static/structural and executable/runtime (for example route source plus curl, service logic plus test, migration plus SQL).
 
-Do not automatically build.
+### ROUTE-02 — When to use an agent
 
-### 5.1 Verification-cost routing — targeted evidence first
+Use an agent only when its leverage exceeds the coordination cost: multi-file implementation, complex fixtures, tracing across many files or domains, non-trivial refactors, migration/worker/concurrency analysis, or when reconnaissance plus roughly 2–5 targeted probes cannot answer the question. Agents are precision multipliers, not default scanners. Brief them with the established files, invariants and open questions.
 
-Verification must match the changed boundary and actual regression risk.
-Do not default to full application or monorepo builds.
+### ROUTE-03 — Brief format
 
-- `packages/*` changed → build the touched package. Build dependent packages/modules only when the changed public surface or dependency boundary requires it.
-- `modules/*` changed → build the touched module. Build dependent modules only when the changed public surface requires it.
-- `apps/backend/*` changed → targeted unit/integration/DB/runtime tests are the normal gate. Do not routinely run the full backend build. Run it only when build configuration, TypeScript/package boundaries, application bootstrap, dependency integration, or another specific risk requires it.
-- `apps/frontend/*` changed → targeted frontend tests plus localhost/browser verification are the normal gate. Do not routinely run the full frontend production build. Run it only when bundling, build configuration, routing/application integration, dependency boundaries, or another specific risk requires it.
-- root/shared configuration, workspace dependency, TypeScript configuration, build-system, or cross-cutting contract changes → broaden verification only to the affected dependency graph.
-- full application or monorepo builds are exceptional evidence, not a habitual phase gate.
-- do not rerun expensive verification when the exact certified patch has not changed.
-- after a forward-sync, rerun the smallest evidence necessary to cover the incoming delta plus the current issue; do not automatically repeat unrelated expensive gates.
-- CI/deployment may provide final full-build/runtime evidence where applicable, but does not replace required targeted pre-push behavioural verification.
+```
+RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>
+ATTEMPT: <n>
+MODE / RISK
+AUTHORITY: <contract identity/revision or complete inline scope>
+CONSTRAINTS: <read-only or exact mutation, verification, evidence-write and correction boundaries>
+COMMANDS / MUTATION: <targeted task>
+NUMBERED QUESTIONS: <roughly 3–5 decisive questions>
+ROADMAP POSITION
+```
 
-Canonical rule:
+Use one complete brief per bounded task rather than a chain of small briefs.
 
-**Targeted evidence first. Broaden only when the changed boundary or observed evidence justifies it.**
+### ROUTE-04 — Live browser
 
-Do not mutate environment until the missing prerequisite is proven.
+- Milad is the default executor, guided by the lead. A browser agent MAY prove mechanics when delegated; it never replaces Milad's product/UX approval.
+- For visual-only acceptance, reuse the already-running localhost and capture screenshots. Do not create accounts, seed fixtures or start runtimes to reproduce a visual state that is already available.
+- Escalate to a dedicated runtime only to prove or safely reach auth/role/tenant gating, state transitions, persistence, backend integration, destructive mutations, isolation from parallel work, or an otherwise unreachable state.
+- Screenshots are visual evidence, not behavioural proof. Behavioural PASS and visual PASS are separate; neither overrides a FAIL in the other.
 
-A test failure caused by missing workspace dependencies is an environment failure, not automatically a code failure.
+### CMD-01 — Command safety
 
-⸻
+- Long or noisy output MAY go to a temporary log; surface only exit status, totals, failing names, the decisive error and invariant evidence. Avoid full Jest output, route manifests, large diffs and full-file dumps.
+- Never provide diagnostic commands that terminate the owner's interactive shell; use conditional PASS/FAILED output. A child process MAY fail closed.
+- Command blocks must stay copy/paste safe with embedded heredocs.
+- SQL is supplied in heredoc form with `\pset pager off`, tenant context when required (`SET app.current_tenant = '<id>'`) and `\q`; mutations add `\set ON_ERROR_STOP on`. Never rely on an interactive psql session.
+- Shell facts: `rg` may be unavailable; use grep/sed/ls/find; quote globs (`--include='*.ts'`); zsh expands unquoted globs.
 
-6. COMMAND SAFETY AND OUTPUT BUDGET
+## 6. Contracts, authority and bounded implementation
 
-6.1 Output budget
+### ISSUE-CONTRACT-01 — Persistent issue contract
 
-Temporary diagnostic output from long-running or noisy commands may use:
+Substantial issues keep one approved contract (GitHub issue or repository document) recording scope, architecture decisions, invariants, acceptance criteria, test strategy, exclusions, risk tier, roadmap and open decisions. Briefs reference it by identity and revision instead of repeating history. Changes require lead approval; material changes require owner approval. Trivial tasks need no contract document.
 
-command > /tmp/<issue>-<purpose>.log 2>&1
+### AUTHORITY-CONTINUITY-01 — Independently executable authority
 
-Certification evidence must be persisted and verified under EVIDENCE-PERSISTENCE-01 before disposable resources are removed; /tmp alone is insufficient.
+- Every substantial or cross-session handoff MUST be executable from either complete approved instructions in the brief, or a verified accessible artifact with exact path, identity, revision and checksum.
+- Never assume a chat-only document exists locally; manual download and placement is not the standard workflow.
+- Distinguish original approved authority, approved inline instructions (`OWNER_APPROVED_CONVERSATION_SCOPE`), retrospective reconstruction and agent recommendations awaiting approval. Never present a reconstruction or recommendation as approval.
+- When evidence writes are explicitly authorized, persist `authority.md`, `execution-manifest.json` and `handoff.md` in the attempt-specific evidence directory, proportionate to the task. `READ_ONLY` grants no evidence-write permission.
 
-Surface only:
+### RUN-IDENTITY-01 — Execution identity
 
-- exit status;
-- suite/test totals;
-- failing suite/test names;
-- the decisive error block;
-- relevant invariant evidence.
+Every brief, agent report and handoff starts with `RUN_ID: SF-<ISSUE>-<PHASE>-<SERIAL>` and `ATTEMPT: <n>`.
 
-Avoid by default:
+- Never reuse a completed RUN_ID. Keep the same ID across retries and corrections, incrementing ATTEMPT for each execution retry. Use a new ID for a new phase.
+- Evidence records RUN_ID, ATTEMPT and parent RUN_ID where applicable.
+- Identity never implies authorization.
 
-- entire Jest output;
-- entire route manifests;
-- entire large diffs;
-- hundreds of grep matches;
-- full-file dumps.
+### IMPL-01 — Implementation scope
 
-Expand only the failing or decision-relevant range.
+Every implementation brief states: files and tests allowed to mutate, state that must not mutate, behaviour that must remain unchanged, the exact outcome, and the regression contract.
 
-6.2 Terminal-killing guards
+- Slice only at real dependency, risk or release boundaries; one brief MAY implement and verify a slice. Do not create a separate later testing sprint.
+- Do not combine unrelated fixes. Classify an unrelated defect and route it to a separate issue unless it is a proven blocker.
+- Do not re-audit facts established minutes earlier unless state changed.
+- Prefer precise, deterministic edits over whole-file rewrites.
+- A testability seam is allowed only when explicitly authorized and only when it improves production architecture. No test-only production behaviour, hidden environment bypass, disable-security flag or unapproved provider host override. Production defaults remain unchanged and are proven.
 
-Do not provide diagnostic shell commands that intentionally terminate Milad's interactive shell with a normal exit 1 path.
+### BUILD-01 — Builds fail closed
 
-Prefer:
+- No ad hoc application or module build without explicit authorization for that verification boundary; one authorization never becomes standing permission.
+- A canonical command that owns prerequisite generation (`npm test`, `npm run test:foundation`, `npm run dev`) also authorizes its declared `build:deps`.
+- `tsc --noEmit` is not a build.
+- `modules/*/dist` and `packages/*/dist` are generated-only and ignored, and are never staged. Required invariant: `TRACKED_WORKSPACE_DIST=0`, enforced by `npm run check:generated-artifacts`.
+- Any other version-controlled generated class follows its owning policy; report every generated file and stage only the complete intended set.
 
-if <condition>; then
+### BUILD-02 — Verification-cost routing
 
-  echo "PASS"
+Match verification to the changed boundary:
 
-else
+- `packages/*` or `modules/*` → build the touched workspace; build dependants only when the public surface changes.
+- `apps/backend/*` → targeted unit, integration, DB and runtime tests; the full backend build only for build-config, package-boundary, bootstrap or dependency risk.
+- `apps/frontend/*` → targeted tests plus localhost/browser verification; the full production build only for bundling, routing-integration or dependency risk.
+- Root or shared configuration → broaden only to the affected dependency graph.
 
-  echo "FAILED_CONDITION"
+Full monorepo builds are exceptional evidence. After a forward-sync, verify only the incoming delta plus the current issue. CI/deploy MAY supply final full-build evidence but never replaces targeted pre-push behavioural verification.
 
-fi
+### TSC-01 — TypeScript baseline
 
-A child process such as Python may fail closed with raise SystemExit(...); that must not terminate the surrounding interactive shell.
+Capture a baseline once per issue, or when environment or build state changes. Report `TSC_ERROR_COUNT=<total>` and `TARGET_ERROR_COUNT=<touched surface>`. Pre-existing unrelated errors are not current failures; `TARGET_ERROR_COUNT > 0` is a failure.
 
-6.3 Shell command blocks
+## 7. Testing, evidence reuse and regression selection
 
-Use command blocks that remain copy/paste safe even when they contain embedded Markdown or heredocs.
+### TEST-01 — Explicit test strategy
 
-6.4 SQL command form
+Every issue records a test-strategy decision; for LOW/MEDIUM it MAY be inline in the intake or brief. Classify each relevant layer REQUIRED / OPTIONAL / SKIP: UNIT, API INTEGRATION, DB INVARIANT, MIGRATION, WORKER/OUTBOX, CONCURRENCY, PLAYWRIGHT, ARCHITECTURE/STATIC, LIVE BROWSER, PROVIDER E2E. Select a production certification level (CERT-02).
 
-All SQL supplied for terminal execution must use heredoc form and include:
+Every issue ends with exactly one completion state:
 
-\pset pager off
+- `AUTOMATED_TESTS_ADDED`;
+- `EXISTING_TESTS_EXTENDED`; or
+- `AUTOMATED_TESTS_SKIPPED` with `Reason:` and `Verification replacement:`.
 
-...
+There is no silent omission. Tests belong to the issue they protect and ship with it.
 
-\q
+### TEST-02 — Default layer selection
 
-For mutations also use:
+| Change | Default protection |
+|---|---|
+| Pure calculation or business rule | Unit |
+| HTTP route, middleware or controller | API integration (`createApp()` + supertest when process startup is not the contract) |
+| Transaction, RLS, counters, inventory, alerts | Real PostgreSQL integration |
+| Migration, schema or DB function | Scratch migration (VERIFY-04) |
+| Worker, retry or outbox | Worker integration |
+| Concurrency or atomic claim | Concurrent integration |
+| Important frontend interaction | Playwright or live browser, depending on wiring risk |
+| Pure visual or copy correction | Live browser; automation usually skipped |
+| Canonical architectural rule | Architecture/static contract |
+| Previously working behaviour broke | Regression test strongly expected |
+| Docs-only change | Automated tests normally skipped |
 
-\set ON_ERROR_STOP on
+Use the cheapest layer that proves the invariant; add higher integration only when wiring is materially risky. For a consequential merchant journey that crosses services, authority boundaries or lifecycle states, identify the entry point, the consequential adverse transition (for example, credential expiry before reinstall), the required recovery or invariant, and the cheapest decisive verification. Reuse existing coverage; this does not require a full state matrix, tests at every layer or redundant suites.
 
-Never rely on an interactive psql session as the primary command path.
+### TEST-03 — Defect regression
 
-⸻
+For a confirmed meaningful defect: reproduce → define the regression contract → add a failing test where practical → implement → the same test turns GREEN → selected neighbours stay GREEN.
 
-7. PHASE 1 — ELI5
+- If RED-first is unsuitable, record why.
+- A test that passes before the fix is not proof of the defect.
+- When coverage is added for already-verified behaviour, do not manufacture RED; report it as protecting existing behaviour.
 
-Before technical work, state the issue in simple operational terms:
+### TEST-04 — Contracts, not files
 
-- what the user/operator expects;
-- what currently happens;
-- why that difference matters;
-- what must remain unchanged.
+- Protect business and system contracts: merchant workflows, inventory, fulfillment, billing, data integrity, auth, tenant isolation, Shopify, migrations, async delivery and critical UX.
+- Assert downstream-consumed fields, machine-readable error codes, routing facts, security/tenancy facts and declared provider contracts.
+- Do not freeze debugging metadata, generated IDs, timestamps, serialization order, prose, incidental DOM shape or copy, unless that exact text or structure is itself contractual (accessibility labels, legal disclosures, API errors, security boundaries).
+- Use the minimum decisive cases; do not collapse distinct business branches. Test consequential boundaries at limit−1, limit and limit+1.
+- Parameterized or property tests only where they genuinely improve clarity, or when authorized.
 
-Keep this short.
+### TEST-05 — Legacy and stale tests
 
-ELI5 is not evidence. It defines the problem to audit.
+A red legacy test is not automatically a product defect. Identify the invariant it protects, confirm whether it still exists and matters, then classify the test (ACTIVE, SHARED/INFRA, PAUSED, DEPRECATED or UNCLEAR) before repairing, replacing or removing it. Never restore retired behaviour to satisfy a stale contract. When ownership moved, update the test to protect the current invariant and correct stale documentation that names retired ownership. Obsolete copy and DOM assertions are not release gates.
 
-⸻
+### TEST-06 — Fixtures
 
-8. PHASE 2 — AUDIT
+- Use the smallest deterministic fixture on the real schema with minimum valid state, synthetic identifiers, no provider side effects and deterministic cleanup.
+- Reuse canonical tenant bootstrap and context paths; do not bypass RLS.
+- For guarded or single-writer tables, prove the guard and use the canonical writer or a supported transaction-local mechanism only.
+- Extract reusable builders only when multiple suites share stable semantics.
+- When a critical cross-boundary contract is in scope, the fixtures MUST reach the adverse state the contract names; if they do not, report the gap.
 
-8.1 Goal
+### TEST-07 — Semantic strength
 
-Prove the current state before deciding what to change.
+One successful write does not prove exactly-once; one outbox row does not prove provider idempotency. Retry, replay, uniqueness and concurrency claims require their own contract and evidence.
 
-8.2 Audit principles
+### TEST-08 — Mocks and providers
 
-- use GitHub reconnaissance first when it can cheaply narrow ownership or lineage;
-- confirm consequential repository findings locally before mutation;
-- reproduce the defect or requirement;
-- re-audit inherited issue claims before spending implementation effort;
-- withdrawal is a valid result;
-- do not implement a defect that no longer reproduces from memory;
-- audit hypotheses as aggressively as inherited claims;
-- stop once enough evidence exists for the next decision;
-- identify neighbouring behaviour that could regress;
-- determine whether a meaningful defect can become a permanent regression contract.
+Avoid mocks where safe real local boundaries are practical. Never substitute a mocked proof for a required real DB/API/runtime proof. Provider E2E is separate and runs only when external acceptance is part of the contract and authorized.
 
-8.3 Audit must establish where relevant
+### TEST-09 — Jest ownership
 
-- what is happening;
-- where it happens;
-- why it happens;
-- affected route/service/DB/worker/UI surfaces;
-- stable business invariant;
-- regression surface;
-- remaining uncertainty.
+Every `.test.ts`/`.test.tsx` belongs to exactly one configured project. `npm run test:config` MUST report `UNOWNED=0` and `MULTI_OWNED=0` whenever tests are added or moved. Fixed test counts are not a permanent contract.
 
-8.4 Regression-surface question
+### TEST-10 — Test infrastructure contract
 
-Every material issue should answer:
+- **DB-free foundation:** `npm test` / `npm run test:foundation` / `npm run test:fast` run test:prepare → build:deps → test:config → test:db-safety → test:contract. This path never resets, migrates or seeds the development DB, and never creates tracked dist. The former `test:setup` path no longer exists.
+- **Disposable integration:** `npm run test:integration -- --testPathPatterns <pattern>` (via `scripts/with-test-db.js`) generates `synchroflow_test_*`, validates safety fail-closed, creates the DB with the migration role, migrates from empty, verifies restricted runtime access, runs the selection serially, drops the exact DB and proves removal. Never point it at PGDATABASE, never substitute `db:reset`, and never add an implicit global seed.
+- **Cleanup proof:** the exact generated DB is absent, no `synchroflow_test_*` orphan remains, and the normal PGDATABASE still exists.
+- **Frontend suite** (`npm run test:frontend`) is diagnostic and non-gating; triage it by invariant relevance (TEST-05).
+- **Playwright** (`npm run test:e2e`) is separate from the Jest harness; prepare its environment deliberately.
+- **Open handles:** the existing `--forceExit` is compatibility debt, not proof of healthy lifecycle. Do not remove it without separate proof and authorization, and do not hide a new open handle behind it.
 
-What existing behaviour could this change accidentally break?
+### TEST-11 — Reproducible selection manifests
 
-Examples:
+Any selection used for certification or as protected-regression evidence MUST record: exact test file paths (not only patterns), per-file pass counts, source and test SHA-256, base commit, runner identity and command, and environment identity. A count without a file list is not reusable evidence. Confirm the exact paths with `--listTests` before running when a pattern is used.
 
-- WMS transaction state;
-- inventory counters;
-- usage counters;
-- alerts;
-- billing events;
-- outbox state;
-- auth;
-- tenant isolation;
-- frontend entitlement gates;
-- Shopify installation;
-- migration compatibility.
+### TEST-12 — Regression selection
 
-8.5 HTTP issues
+- **Level 1 — issue gate:** the new or changed contract, the neighbours selected in TEST-01, the affected TypeScript surface, and DB/runtime/browser evidence where selected.
+- **Level 2 — release/CI gate:** broader foundation or deep suites, according to risk.
+- Broaden only to actual affected dependencies. Do not skip a failing neighbour as "unrelated" without evidence; report proven pre-existing baseline failures separately.
+- Run expensive protected selections once on the final candidate, not after every mechanical correction; corrections run the affected targeted contract.
 
-When HTTP is affected:
+### EVIDENCE-PERSISTENCE-01 — Durable evidence
 
-1. inspect relevant route registration;
-2. identify middleware;
-3. identify handler;
-4. exercise affected endpoint with a real token where practical;
-5. test neighbouring affected endpoints where regression risk exists;
-6. record status and relevant body.
+Before removing disposable resources, persist redacted evidence outside the repository, and not only in `/tmp`: RUN_ID/ATTEMPT/parent, base SHA, approved manifest and source hashes, commands and exit codes, test totals and failures (TEST-11), migration/security proofs, runtime-isolation attestation, known baseline failures, and the manifest SHA-256. Persist pre-cleanup evidence, then append and verify cleanup proof.
 
-Do not repeatedly dump the full route manifest when the route is already established.
+- Preserve earlier evidence immutably. Never overwrite an executed runner or hashed artifact; use distinct or versioned records.
+- Use a new attempt directory only when the authority or the immutable harness requires it, not merely because a command failed.
+- A local path is not accessible to a remote reviewer; supply a compact redacted handoff or upload when independent inspection is needed.
 
-8.6 Database issues
+### EVIDENCE-REUSE-01 — Selective reuse
 
-Canonical local environment comes from root ./.env.
+Reuse GREEN evidence only when all of these hold:
 
-Do not print:
+- the relevant file hashes are unchanged;
+- the environment is still applicable;
+- the test contract is unchanged; and
+- the evidence is available and attributable.
 
-- DATABASE_URL;
-- PGPASSWORD;
-- migration credentials;
-- API secrets.
+Invalidate only the affected layers. Documentation-only changes do not invalidate PostgreSQL, migration or concurrency proofs. Security or migration changes require renewed proofs for the affected authority. Timestamps never establish same-source evidence. Inspect existing logs and structured results before any rerun.
 
-For normal tenant queries, set the relevant tenant context.
+### INFRA-REUSE-01 — Infrastructure reuse first
 
-Verify actual schema before querying guessed columns or tables.
+Reuse the existing harnesses, runners and CI jobs before proposing infrastructure. Where safe local execution is unavailable, extend an existing CI step and DB lifecycle. Provision new runners, databases or dependencies only when the proof is otherwise unobtainable and Milad approves. CI evidence counts only when it is attributable to the exact reviewed revision; until then CI-dependent results are PENDING. A required branch push first needs SHIP-DELEGATION-01 authorization.
 
-8.7 Filesystem rules
+### VERIFY-01 — Three verification questions
 
-- rg may be unavailable;
-- use grep, sed, ls, and targeted find where appropriate;
-- quote globs such as --include='*.ts';
-- avoid full-file dumps;
-- prefer exact ranges and exact search terms.
+1. Did the requested behaviour work? Use the strongest appropriate evidence: API, SQL, test, worker, browser, migration rehearsal, or provider sandbox when required.
+2. Did the selected permanent regression contract pass? Report each layer explicitly.
+3. Did the selected neighbouring contracts stay intact?
 
-8.8 Audit rounds
+A flow that stops before its acceptance boundary is `PARTIAL / NOT VERIFIED`. Proof from an old location is not inherited after rewiring.
 
-Default progression:
+### VERIFY-02 — API verification
 
-RECON
-→ evaluate candidate ownership
-→ FOCUSED LOCAL AUDIT
-→ evaluate
-→ DEEP AGENT AUDIT only if material uncertainty remains
+Exercise the real route with real middleware and valid auth; assert status, body and, when side effects matter, DB post-state. For tiered or commercial routes, separately prove the route-gate authority and the business-decision tier authority.
 
-If evidence is incomplete:
+### VERIFY-03 — Database invariants
 
-AUDIT round 1
-→ evaluate
-→ AUDIT round 2 only for missing facts
+Assert state before and after. A rejection path proves its zero-side-effect contract where specified (state, counters and timestamps unchanged; no alert, billing event or outbox row). Scope assertions to the fixture's IDs rather than global counts.
 
-Do not fire one giant speculative audit covering every theory.
+### VERIFY-04 — Migrations
 
-Do not ask an agent to rediscover facts already established through GitHub reconnaissance and local confirmation.
+Where applicable: compile; fresh scratch migration; bounded UP and, when required, DOWN; schema, function, index and grant assertions; restricted-role runtime proof.
 
-8.9 Audit exit condition
+- Production-mode rehearsal sets `DATABASE_URL` (migration role) and `APP_DATABASE_URL` (`sf_app`) against the same scratch DB with `NODE_ENV=production`.
+- Scratch DBs are created, migrated and dropped with the migration role (`PGMIGRATION_USER`), never `sf_app`.
+- Independent shippability of migration N: apply sequentially through N only, then assert N is recorded, N+1 is absent, and schema/grants/runtime are correct. `migrate:latest` alone is not proof.
 
-AUDIT ends when the engineering lead can state:
+### VERIFY-05 — Workers and outbox
 
-- current behaviour;
-- root cause or current structural explanation;
-- affected surfaces;
-- regression surface;
-- stable invariant where applicable;
-- remaining uncertainty.
+Where applicable: claim, success, failure, retry, backoff, concurrency, stale-claim recovery, already-published behaviour and provider-idempotency assumptions. Assert only the delivery fields the dispatcher actually consumes, plus declared business invariants.
 
-If that cannot be stated, AUDIT continues.
+### VERIFY-06 — User-facing work
 
-⸻
+Browser verification is mandatory for user-facing behaviour unless explicitly justified otherwise (ROUTE-04). Milad judges hierarchy, semantics, visual consistency, density and interaction. Never substitute curl when UI wiring is under test.
 
-9. PHASE 3 — WORKSHOP
+## 8. Failure handling and correction loops
 
-WORKSHOP is not mandatory.
+### EXEC-01 — Execution continuity (EXECUTION-CONTINUITY-01)
 
-9.1 Use WORKSHOP when
+Within an approved execution, run:
 
-- behaviour changes;
-- UX changes materially;
-- architecture changes;
-- data-flow boundaries change;
-- transaction boundaries change;
-- multiple valid implementation patterns exist;
-- domains are being combined;
-- the simple fix would create future debt;
-- testing requires a new architectural seam;
-- Milad explicitly requests it.
+APPROVED CONTRACT → IMPLEMENT → TARGETED VERIFY → CLASSIFY FAILURES → CORRECT WITHIN BOUNDARY → VERIFY AFFECTED CONTRACTS → PERSIST EVIDENCE → REPORT
 
-9.2 Workshop rules
+Complete this loop in one execution when permissions permit. It grants no new scope, test-layer choice, privilege, evidence-write permission or phase transition.
 
-Start from what is already wired.
+**Static runner preflight** (before expensive execution, reusing the established infrastructure). Verify:
 
-Inspect sibling/canonical implementations before inventing a new pattern.
+- worktree, HEAD, exact source/test hashes and allowlists, protected WIP, and snapshot ownership;
+- dependencies, including nested workspaces, entry points and native bindings for the target OS/architecture;
+- runtime/tool versions, module-loading configuration and process flags against the last valid run;
+- credential availability and the intended restricted role, tenant and DB targets, without printing secrets;
+- test configuration, project, exact paths, arguments, approved neighbours, resource ownership and cleanup;
+- evidence-write authority and destination.
 
-Present:
+Static preflight is never reported as runtime verification.
 
-- realistic options;
-- trade-offs;
-- recommendation;
-- risks;
-- explicit non-goals.
+**Failure classes:** production implementation; test/assertion; fixture; runner/harness; environment/dependency; existing regression or stale contract; material contract conflict. Classify before correcting. Inspect existing logs before any audit, rerun or new runner; a failing command alone justifies none of them. Restart the issue only when evidence invalidates its approved audit or design.
 
-9.3 Stable contracts
+**Privilege gap:** when Docker or another privilege is unavailable, never bypass it. Hold the dependent operations, prepare one complete owner-executable command for the approved isolated environment, and let the same session inspect the returned results when possible.
 
-When WORKSHOP occurs, identify the invariants future code must preserve.
+**Finish** with attributable results, correction history, WIP integrity and owned-resource cleanup proof, or with explicit blockers and incomplete work.
 
-Examples:
+### AGENT-CLOSED-LOOP-01 — Delegated implement-and-verify
 
-- rejected Pack completion causes zero side effects;
-- only newly over-cap units may be billed;
-- provider delivery remains asynchronous;
-- inventory movements remain append-only;
-- tenant isolation remains enforced.
+An approved brief (`MODE: CLOSED_LOOP_IMPLEMENT_AND_VERIFY`, or an explicitly equivalent brief stating the same permissions and limits) delegates one bounded slice. A single-phase or `READ_ONLY` brief grants no unstated implementation or correction authority.
 
-These become input to TEST STRATEGY.
+**Prerequisites:**
 
-9.4 Canonical UI rule
+- approved architecture, scope, acceptance criteria and regression contract;
+- explicit source/test/fixture allowlists and any runner/evidence paths;
+- approved verification commands and actual permissions;
+- protected WIP and approved neighbours identified;
+- no unresolved material decision.
 
-For an inconsistent UI element:
+**Within its allowlists the agent MAY:**
 
-1. find the canonical implementation;
-2. establish typography, spacing, tokens, icons, alignment, borders, hover state, interaction;
-3. reuse that language instead of approximating it.
+- inspect neighbouring code;
+- fix mechanical path/import and disposable-harness defects, and its own implementation defects;
+- correct mechanically incomplete fixtures without changing business state, execution path or assertions;
+- correct a configured timeout only when an approved bounded longer window is evidenced;
+- verify the affected contracts.
 
-Material restructuring:
+**Correction budget:** at most three correction cycles per delegated slice. A new failure class, runner version or agent session does not reset it. Never rerun until a flaky PASS appears. On exhaustion, STOP.
 
-WORKSHOP
+**Expected TDD RED** is recorded as RED. Continue to GREEN only when the same brief authorizes the implementation.
 
-→ wireframe
+**STOP immediately when:**
 
-→ Milad approval
+- files or privileges outside the boundary are needed;
+- architecture, business contract, product semantics or acceptance criteria would change or are disputed;
+- a security invariant or migration history would change;
+- a destructive or production operation is needed;
+- an unexpected unrelated failure needs source edits;
+- staging, commit, push or deployment would be needed without authorization;
+- passing would require weakening assertions (SAFE-09);
+- isolation, authorization, RLS or data safety would be bypassed;
+- the DB, provider or runtime target cannot be confirmed;
+- WIP or parallel ownership conflicts;
+- the environment is unsafe or cleanup cannot be assured;
+- material unexpected behaviour appears;
+- the budget is exhausted.
 
-→ IMPLEMENT
+Agent-owned verification is preliminary evidence; review, certification and ship decisions stay with the lead and owner.
 
-Tiny approved copy/style corrections may skip full workshop after a narrow factual preflight.
+### CI-TRIAGE-01 — Classify before changing source
 
-⸻
+| Class | Meaning | Default action |
+|---|---|---|
+| CURRENT_ISSUE_REGRESSION | the change broke a relevant invariant | smallest correction loop |
+| STALE_CONTRACT | the test protects retired behaviour | audit the invariant; update or replace the test (TEST-05) |
+| MAINLINE_REGRESSION | existing main is genuinely broken | separate issue or blocker |
+| ENVIRONMENT_FAILURE | a prerequisite failed | correct the environment only |
+| FLAKY_INFRA | the same tree passes and fails | reproduce and track; never relabel without evidence |
+| UNRELATED_ACTIVE_FAILURE | real, but outside this issue | separate issue |
+| UNKNOWN | evidence insufficient | narrow audit |
 
-10. PHASE 4 — TEST STRATEGY / REGRESSION CONTRACT
+Never change production source merely because CI is red. A mainline CI blocker is fixed directly on main (classify → issue → fix → targeted verify → commit → push → rerun) without a worktree/PR chain. A failure is evidence, and a flaky test remains a safety defect until the lead decides otherwise.
 
-This is a required decision for every issue.
+## 9. Documentation, commit, push, CI and deployment
 
-For LOW and MEDIUM issues it may be stated inline with the risk classification or in the implementation brief; it does not require a separate round.
+### DOC-01 — Documentation within the issue
 
-Automated tests are not automatically required.
+- Documentation is part of the issue and rides with its ship. It is not a separate gate or round.
+- At ship the lead records `WORKFLOW_DOC_UPDATE_REQUIRED: YES|NO`: did the issue change how we work, what agents may do, or a standing rule? If YES, update this workflow, and the agent guidelines when agent behaviour changed, in the same ship. Defer only with explicit lead approval and a recorded issue ID.
+- Never rely on chat history for workflow rules.
+- Document only verified contracts, invariants, architecture, important reasoning, traps, deliberate exclusions, deferred issue IDs and verification boundaries. Distinguish runtime acceptance from automated regression evidence. Prefer one authoritative playbook over copies.
+- Mutation pattern: anchor preflight → deterministic edit (Python when appropriate) → unique-anchor and no-duplicate assertions → verify the content exists once → `git diff --check` → status.
+- `git diff` and `git diff --check` do not cover untracked files: verify new files directly. After staging, `git diff --cached --check` is authoritative.
 
-10.1 Classify relevant layers
+### SHIP-01 — Commit preflight
 
-For each issue classify as REQUIRED / OPTIONAL / SKIP:
+Declare exact target files → show their status → stage those paths only → print the staged list and compare it with the expected scope → `git diff --cached --check` → staged stat → list remaining unstaged files. When workspace build state is relevant, run `npm run check:generated-artifacts` and prove `TRACKED_WORKSPACE_DIST=0`.
 
-- UNIT;
-- API INTEGRATION;
-- DB INVARIANT;
-- MIGRATION;
-- WORKER / OUTBOX;
-- CONCURRENCY;
-- PLAYWRIGHT;
-- ARCHITECTURE / STATIC;
-- LIVE BROWSER;
-- PROVIDER E2E.
+### SHIP-02 — Commit content
 
-Also choose a production certification level:
+Tests ship with the feature they protect, normally in the same commit. The message states the issue reference, the merchant or technical outcome, the meaningful boundary and any critical non-goal; it is not the playbook.
 
-- NONE;
-- CI_ONLY;
-- RUNTIME_SMOKE;
-- DB_INVARIANT;
-- LIVE_BROWSER;
-- PROVIDER_E2E.
+### SHIP-03 — Ship lineage (SHIP-TREE-01)
 
-10.2 Default test selection
+Final verification targets the exact tree to be committed, pushed and deployed (`VERIFY_SHA ≈ COMMIT_SHA = PUSH_SHA`). It confirms the tree. It does not repeat unchanged expensive tests that pass EVIDENCE-REUSE-01. Avoid unverified synthetic merge trees.
 
-Change type
+### SHIP-04 — Push proof
 
-Default protection
+Capture `COMMIT_SHA`; push to origin/main; require `LOCAL_SHA == REMOTE_SHA` and `PUSH_CONFIRMED`. A push alone does not close an issue that still requires CI, deploy or certification.
 
-Pure calculation / business rule
+### SHIP-DELEGATION-01 — Exact-manifest ship delegation
 
-Unit
+Default: Milad stages, commits and pushes. Milad MAY delegate those actions for one named RUN_ID and a fixed, certified manifest. All of the following are required:
 
-HTTP route / middleware / controller
+- exact RUN_ID and explicit authorization;
+- exact file allowlist and certified hashes;
+- clean index before explicit-path staging;
+- staged manifest and content hashes equal to the approved manifest, with zero unauthorized files;
+- no force push; STOP on remote divergence, with no automatic merge, rebase or reset;
+- exact-SHA CI verification and a persistent audit trail.
 
-API integration
+The delegation never covers production deployment, production migrations, secret or credential mutation, GH-1262 integration, other issues or later executions. A RED CI result stops the execution; a correction commit needs separate authorization. HIGH-risk certification and owner approval remain required.
 
-Transaction / RLS / counters / inventory / alerts
+### DEPLOY-01 — CI and deployment safety (DEPLOY-GATE-01, RELEASE-CONTINUITY-01)
 
-Real Postgres integration
+- Consequential pushes require the selected local gate to be GREEN first.
+- Deployment should depend on required CI rather than race it. A pipeline that can publish a red main is infrastructure debt; until it is fixed, the pre-push gate is release-critical.
+- CI and deploy build workspace dependencies from source in dependency order and never rely on committed or pre-existing dist. Targeted workflows list their prerequisites explicitly. A missing output in a fresh clone is a build-order gap, not a reason to commit dist; simulate a fresh clone by removing dist and `*.tsbuildinfo`.
+- Never ship a multi-slice feature in a state that leaves an enabled live journey uncompletable; release dependent slices together or keep a safe gate or compatible path.
+- Fast CI prioritises TypeScript, unit/contract, architecture, critical API/DB integration, migration smoke and commercial/security invariants. Deep suites run on main, nightly or release according to cost. New coverage joins an existing job and DB lifecycle where practical.
 
-Migration / schema / DB function
+### SHIP-07 — Production SQL
 
-Scratch migration
+Inspect read-only first; scope narrowly by tenant and predicate; never guess schema; mutate only when evidence proves the repair; fail closed; verify the exact post-state. Owner authorization is required.
 
-Worker / retry / outbox
+## 10. Review, certification, completion and reporting
 
-Worker integration
+### REVIEW-01 — Proportional independent review
 
-Concurrency / atomic claim
+- RISK-BASED REVIEW: the lead reviews HIGH evidence against the contract.
+- Exactly one genuinely independent review (a separate reviewer or agent session, or Milad) is required when a material security/authorization boundary, migration authority or irreversible data invariant cannot be certified from the implementing agent's evidence alone. LOW/MEDIUM work requires none.
+- Independence means a separate session that re-derives conclusions from source and evidence. The reviewer is read-only.
+- Re-review is proportional to the change. A correction that alters behaviour inside a reviewed safety boundary is reviewed as a delta (changed source plus its affected contracts), not as a new full audit. Purely mechanical corrections (harness, fixture mechanics, evidence completion) are confirmed by the lead from evidence without another review round.
 
-Concurrent integration
+### CERT-01 — One certification decision per scope
 
-Important frontend interaction
+- CERTIFY is the lead's acceptance of the complete HIGH evidence set for a named scope, approved by Milad.
+- Component certification and milestone certification are distinct: certifying a component (for example, one recovery path) never certifies the milestone or sprint that contains it, and milestone certification requires its own decision over its integrated evidence.
+- One certification decision is made per scope. Unchanged certified scope is not re-certified. A later change re-opens only the affected scope, and only when EVIDENCE-REUSE-01 fails for it.
+- Certification claims describe exactly the journey and state tested: component GREEN does not prove the full merchant journey, fresh install does not prove reinstall after credential expiry, and mocked provider acceptance is not live acceptance. Require further proof only when the missing scenario is consequential and inside the approved contract.
+- Tested is not certified, and certified is not shipped.
 
-Playwright or live browser depending wiring risk
+### CERT-02 — Production certification levels
 
-Pure visual / copy correction
+Selected at TEST-01; certification is risk-based, not ceremonial.
 
-Live browser; automation usually skipped
+- `NONE` — no runtime or release consequence; justified explicitly.
+- `CI_ONLY` — test ownership, docs-only or non-runtime contract maintenance; no merchant replay.
+- `RUNTIME_SMOKE` — runtime wiring changed without deep state risk.
+- `DB_INVARIANT` — persistence or state-transition correctness in the deployed runtime.
+- `LIVE_BROWSER` — user-facing workflow acceptance.
+- `PROVIDER_E2E` — real provider acceptance is part of the contract.
 
-Canonical architectural rule
+### CLOSE-01 — Issue closure
 
-Architecture/static contract
+An issue closes only when every gate selected for its tier is complete:
 
-Previously working behaviour broke
-
-Regression test strongly expected
-
-Docs-only change
-
-Automated tests normally skipped
-
-Choose the lowest-cost layer that proves the invariant.
-
-Add higher integration only when wiring itself is materially risky.
-
-For a consequential merchant journey that crosses services, authority boundaries, or lifecycle states, identify:
-
-- the entry point;
-- the consequential adverse transition (for example, credential expiry before reinstall);
-- the required recovery or invariant;
-- the cheapest decisive verification.
-
-Reuse existing coverage. This does not require a complete state matrix, tests at every layer, or redundant suites.
-
-10.3 Defect regression rule
-
-For a confirmed meaningful defect:
-
-AUDIT
-
-→ reproduce defect
-
-→ define regression contract
-
-→ add failing regression test where practical
-
-→ IMPLEMENT
-
-→ failing test turns green
-
-→ selected neighbouring contracts remain green
-
-Do not manufacture RED by reverting already-correct verified production behaviour.
-
-If RED-first is unsuitable, record why.
-
-10.4 Test completion state
-
-Every issue ends with one of:
-
-AUTOMATED_TESTS_ADDED
-
-or:
-
-EXISTING_TESTS_EXTENDED
-
-or:
-
-AUTOMATED_TESTS_SKIPPED
-
-Reason: <specific reason>
-
-Verification replacement: <what proves correctness>
-
-No silent omission.
-
-10.5 Permanent contract rule
-
-Good:
-
-- Starter order 51 must not complete;
-- rejected Pack completion must not increment usage;
-- billing/overage must not enter generic dispatch;
-- affected order with unresolved Pick deficit must not become executable Pack work.
-
-Weak:
-
-- function X calls helper Y.
-
-Test implementation shape only when that shape itself is an architectural contract.
-
-10.6 Test value
-
-A red legacy test is not automatically a product defect.
-
-Before repairing it:
-
-1. identify the invariant it protects;
-2. verify the invariant is still relevant;
-3. classify the test;
-4. update/delete/replace the test if it protects obsolete behaviour.
-
-Classifications:
-
-- ACTIVE;
-- SHARED / INFRA;
-- PAUSED;
-- DEPRECATED;
-- UNCLEAR.
-
-Do not revive deprecated product behaviour merely to make Jest green.
-
-10.7 Test-case economy
-
-Protect the invariant with the minimum decisive cases.
-
-Use parameterized tests when assertion semantics genuinely repeat.
-
-Do not collapse distinct business branches merely to reduce test count.
-
-10.8 Contractual vs incidental assertions
-
-Prefer assertions for:
-
-- fields consumed by downstream business behaviour;
-- machine-readable error codes;
-- durable routing facts;
-- security/tenancy facts;
-- values explicitly defined as product/provider contracts.
-
-Avoid freezing:
-
-- debugging metadata;
-- generated IDs;
-- timestamps;
-- serialization order;
-- human-readable prose;
-- incidental fields.
-
-10.9 Semantic strength rule
-
-Do not claim exactly-once, idempotency, replay safety, retry safety, or concurrency safety unless the mechanism that guarantees it is identified and tested.
-
-One successful write is not automatically exactly-once.
-
-One outbox row is not automatically provider idempotency.
-
-10.10 API integration factory rule
-
-Prefer:
-
-createApp()
-
-+ supertest request(app)
-
-when route/middleware behaviour is the contract.
-
-Do not import process bootstrap unless process startup itself is under test.
-
-⸻
-
-11. CURRENT TEST INFRASTRUCTURE CONTRACT
-
-11.1 Safe DB-free foundation
-
-Canonical default:
-
-npm test
-
-Equivalent safe foundation:
-
-npm run test:foundation
-
-Expected foundation:
-
-test:prepare
-
-→ build:deps
-
-→ test:config
-
-→ test:db-safety
-
-→ test:contract
-
-This path must remain DB-free.
-
-test:prepare may generate ignored workspace build output required for package resolution. It must not create tracked modules/*/dist or packages/*/dist artifacts.
-
-It must not reset, migrate, or seed the normal development DB.
-
-11.2 Jest ownership
-
-Every .test.ts / .test.tsx belongs to exactly one configured Jest project.
-
-Required invariant:
-
-UNOWNED=0
-
-MULTI_OWNED=0
-
-Validate when test files are added or moved:
-
-npm run test:config
-
-Do not treat fixed test counts as a permanent contract.
-
-11.2.1 Generated workspace artifact ownership
-
-Canonical invariant:
-
-TRACKED_WORKSPACE_DIST=0
-
-modules/*/dist and packages/*/dist are generated-only, ignored workspace outputs.
-
-Validate with:
-
-npm run check:generated-artifacts
-
-test:config includes this generated-artifact ownership guard.
-
-Source, configuration, tests, and explicit build steps are authoritative. Never use committed workspace dist as a runtime, type-resolution, CI, or deployment fallback.
-
-11.3 Disposable backend integration DB
-
-Canonical targeted path:
-
-npm run test:integration -- --testPathPatterns <pattern>
-
-Expected lifecycle:
-
-generate synchroflow_test_*
-
-→ fail-closed safety validation
-
-→ create with migration role
-
-→ migrate from empty
-
-→ execute application behaviour as restricted role
-
-→ run selected tests serially
-
-→ drop exact generated DB
-
-→ prove cleanup
-
-The normal development DB is never the automated integration scratchpad.
-
-11.4 Cleanup proof
-
-A successful integration run is not complete until cleanup is proven where the harness requires it:
-
-- exact generated DB dropped;
-- zero orphan synchroflow_test_* DBs remain;
-- normal PGDATABASE still exists.
-
-11.5 Frontend suite
-
-Historical frontend failures are triaged by current invariant relevance.
-
-Do not make obsolete copy/DOM-shape assertions a release gate merely because they already exist.
-
-11.6 Playwright
-
-Playwright remains explicit and separate from the disposable Jest integration DB unless deliberately wired otherwise.
-
-Prepare its environment deliberately.
-
-11.7 Open-handle debt
-
-Existing --forceExit compatibility is not proof of healthy process ownership.
-
-Do not hide a newly introduced open handle behind an existing warning.
-
-⸻
-
-12. PHASE 5 — IMPLEMENT
-
-Never implement in the same response as the AUDIT or WORKSHOP that established a material design decision.
-
-12.1 Small-slice rule
-
-Large issues may use manageable slices under one issue:
-
-Slice A
-
-→ verify
-
-Slice B
-
-→ verify
-
-Slice C
-
-→ verify
-
-→ DOC once
-
-→ COMMIT once unless there is a specific reason otherwise
-
-Do not create a separate later testing sprint.
-
-Slice only at real dependency, risk, or release boundaries. Do not split related changes into arbitrary slices; one brief may implement and verify a slice together (RISK-TIER-01).
-
-12.2 Implementation scope
-
-Every implementation brief states:
-
-- files allowed to mutate;
-- tests allowed to mutate;
-- state that must not mutate;
-- behaviour that must remain unchanged;
-- exact requested outcome;
-- regression contract being implemented.
-
-12.3 No unrelated cleanup
-
-Do not combine unrelated fixes.
-
-When an unrelated defect is discovered:
-
-- classify it;
-- create/defer to a separate issue when needed;
-- do not contaminate the current implementation unless it is a proven blocker.
-
-12.4 Source preflight
-
-Before mutation, establish the exact boundary if not already known.
-
-Do not re-audit facts established minutes earlier unless state changed.
-
-12.5 Mutation mechanism
-
-Prefer:
-
-- precise Python heredoc;
-- precise agent edit;
-- another deterministic bounded method.
-
-Avoid whole-file rewriting when narrow replacement is enough.
-
-12.6 Testability seams
-
-A small seam is allowed when it improves production architecture and enables safe verification.
-
-No test-only production behaviour.
-
-No hidden environment bypass unless explicitly designed.
-
-12.7 Builds — fail closed
-
-Do not run ad hoc application/module builds unless explicitly authorised for that specific verification boundary.
-
-There is no standing permission for manual build commands.
-
-Invoking a canonical repository command that explicitly owns prerequisite generation — for example npm test, npm run test:foundation, or npm run dev — also authorizes the prerequisite workspace build declared by that command (test:prepare / dev:prepare → build:deps). Do not separately ask for permission for the build that is part of the already-authorized canonical command.
-
-Approval of one ad hoc dev-runtime build does not authorize another later in the issue.
-
-TypeScript --noEmit checks are not treated as builds.
-
-Workspace build output under modules/*/dist and packages/*/dist is generated-only and ignored. Never stage it.
-
-If another authorised build changes a different class of committed generated output, report that set and apply the owning artifact policy before staging.
-
-12.8 TypeScript baseline
-
-Capture a baseline once per issue or when environment/build state changes.
-
-For subsequent checks report:
-
-TSC_ERROR_COUNT=<current total>
-
-TARGET_ERROR_COUNT=<errors in touched surface>
-
-Existing unrelated errors are not current issue failures.
-
-TARGET_ERROR_COUNT > 0 is a failure.
-
-⸻
-
-13. PHASE 6 — VERIFY + REGRESSION
-
-Verification answers three questions.
-
-13.1 A — Did the requested behaviour work?
-
-Use the strongest appropriate evidence:
-
-- API;
-- SQL;
-- test;
-- worker execution;
-- browser;
-- migration rehearsal;
-- provider sandbox when required.
-
-13.2 B — Did the permanent regression contract pass?
-
-Run selected tests from TEST STRATEGY.
-
-Report explicit layer results.
-
-13.3 C — Did neighbouring consequential contracts remain intact?
-
-Run only the neighbouring suites selected during TEST STRATEGY.
-
-Do not run the whole repository after every small correction.
-
-13.4 Two-level verification model
-
-Level 1 — issue gate
-
-Run:
-
-- new/changed contract;
-- relevant neighbouring regressions;
-- affected TSC;
-- DB/runtime/browser evidence where applicable.
-
-Level 2 — release/CI gate
-
-Run broader foundation/deep suites according to risk or CI requirements.
-
-The full repository suite is not a ritual after every targeted pass.
-
-13.5 Database invariants
-
-For transaction-sensitive work, assert post-state, not only HTTP status.
-
-A rejected request may require proving:
-
-- state unchanged;
-- counters unchanged;
-- timestamps unchanged;
-- no alert;
-- no billing event;
-- no outbox row.
-
-13.6 Migration verification
-
-Where applicable verify:
-
-- compile;
-- fresh scratch migration;
-- bounded UP;
-- bounded DOWN when required;
-- schema assertions;
-- grants;
-- restricted-role runtime proof.
-
-migrate:latest does not prove independent shippability of a specific migration.
-
-13.7 Worker/outbox verification
-
-Where applicable verify:
-
-- claim;
-- success;
-- failure;
-- retry;
-- backoff;
-- concurrency;
-- stale-claim recovery;
-- already-published behaviour;
-- provider idempotency assumptions.
-
-13.8 Live user-facing verification
-
-For user-facing work, browser verification is mandatory unless explicitly justified otherwise.
-
-Milad verifies:
-
-- hierarchy;
-- semantics;
-- visual consistency;
-- information density;
-- interaction;
-- whether the UX actually feels correct.
-
-Do not substitute curl for UI wiring when UI wiring itself is under test.
-
-For visual verification, prefer the lowest-cost faithful evidence:
-
-1\. reuse the current localhost when it already exposes the required state;
-
-2\. capture screenshots for visual/UX review;
-
-3\. provision additional fixtures, accounts, or disposable runtimes only when the required state cannot be reached safely/reliably or when behavioural mechanics must also be proven.
-
-Do not rebuild an environment merely to obtain a screenshot of a state that is already available in a trustworthy localhost runtime.
-
-Behavioural PASS and visual PASS are separate. A screenshot can prove visual composition; it does not by itself prove state transitions, persistence, authorization, API wiring, or other behavioural contracts.
-
-13.9 Partial verification
-
-If a flow stops before the acceptance boundary:
-
-PARTIAL / NOT VERIFIED
-
-Do not inherit proof from an old location after rewiring a control unless the new wiring has been exercised.
-
-13.10 Correction loop
-
-A VERIFY failure returns to the smallest necessary loop:
-
-VERIFY failure
-
-→ isolate failing fact
-
-→ narrow read-only audit
-
-→ IMPLEMENT correction
-
-→ TARGETED VERIFY
-
-Do not restart the entire issue unless evidence invalidated the original audit/design.
-
-13.10.1 AGENT-CLOSED-LOOP-01 — Bounded autonomous verification
-
-An approved CLOSED_LOOP_IMPLEMENT_AND_VERIFY brief delegates the
-complete implementation and targeted-verification loop to the
-execution agent for one explicitly bounded issue slice.
-
-Prerequisites:
-- Approved architecture, scope, acceptance criteria and regression contract.
-- Explicit source/test/fixture mutation allowlist.
-- Approved verification commands and safe execution environment.
-- Identified protected WIP and neighboring regression requirements.
-- No material unresolved product or architecture decision.
-
-This brief is the vehicle for the IMPLEMENT + TARGETED VERIFY gate of
-every risk tier (RISK-TIER-01). Within its allowlist the agent may
-inspect relevant neighbouring code, resolve mechanical path/import
-errors, fix self-introduced implementation defects, correct disposable
-test-harness errors, and rerun affected targeted tests, reporting every
-correction with evidence.
-
-Execution:
-1. Verify Git baseline, allowed files and protected WIP (reuse a proven
-   baseline when state has not changed since it was established).
-2. Inspect canonical implementation, fixtures and test infrastructure.
-3. Implement the approved change.
-4. Execute the approved targeted test commands in the VS Code terminal.
-5. Classify failures before editing: production, fixture, test harness,
-   environment, stale contract, or material specification conflict.
-6. For repairable defects within the approved scope, preserve the
-   original invariant, make the smallest justified correction, and
-   rerun the same failing contract.
-7. After targeted GREEN, run approved neighboring tests and typechecks.
-8. Verify file scope, WIP integrity, disposable resource cleanup and
-   completion evidence.
-9. Return one report containing final results and correction history.
-
-Correction budget:
-- Maximum three correction cycles per delegated slice.
-- Never use unlimited retries or repeated execution until a flaky PASS.
-- A new failure class does not reset the slice-wide budget.
-- On exhaustion, stop and report the remaining failure.
-
-A mechanical fixture or test-harness correction is permitted only
-within explicitly approved test/fixture files and only when it
-preserves the same business state, execution path and assertions.
-An expected TDD RED must be recorded as RED, not concealed.
-Continue from RED to GREEN only when the same brief explicitly
-authorizes the corresponding implementation.
-
-Stop immediately when:
-- A change needs files or privileges outside the approved boundary.
-- Architecture, business contract, product semantics or acceptance
-  criteria would change or are disputed.
-- A security invariant or migration history would change.
-- A destructive or production operation would be required.
-- An unexpected unrelated failure would require source edits.
-- Staging, commit or push would be required without SHIP-DELEGATION-01 authorization, or a deployment would be required.
-- Passing would require weakening, skipping or replacing assertions.
-- Tenant isolation, authorization, RLS or data safety would be bypassed.
-- The database/provider/runtime safety target cannot be confirmed.
-- Unrelated WIP or parallel file ownership conflicts.
-- The environment is unsafe, cleanup cannot be assured, or material
-  unexpected behavior appears.
-- The correction budget is exhausted.
-
-Never use --forceExit as proof that Jest open handles are resolved.
-Never arbitrarily increase timeouts to conceal deadlocks. A test-runner
-timeout may be corrected only when an approved longer contention
-window or teardown requirement is evidenced and bounded.
-
-Agent-owned verification is preliminary evidence. Independent final
-terminal verification, documentation acceptance, CI, release and production
-certification remain lead/user-owned decisions. Staging/commit/push execution
-may be delegated only under SHIP-DELEGATION-01 after independent certification.
-Final terminal verification is the ship-lineage verification
-(SHIP-TREE-01): it must confirm the exact tree being shipped, but it
-need not repeat expensive tests whose source, environment and contract
-are unchanged since they passed.
-
-13.11 Exit to WORKFLOW DOCUMENTATION DECISION
-
-Do not advance to WORKFLOW DOCUMENTATION DECISION until:
-
-- requested behaviour passes;
-- selected permanent tests pass;
-- relevant neighbouring regressions pass;
-- required live browser acceptance passes;
-- no unresolved acceptance failure remains.
-
-13.12 Agent directive completion accounting
-
-Every agent report must explicitly account for requested directives that were not fully completed.
-
-Use a mandatory NOT COMPLETED section, separate from BLOCKED and STATE_MUTATED.
-
-For each unfinished directive record:
-
-- the exact brief item or objective;
-- status: NOT_STARTED, PARTIAL, FAILED, or SKIPPED;
-- the specific reason it remains unfinished;
-- the approval, evidence, correction, or action required to resume.
-
-Include dependent verification that was not run. Do not silently omit an unfinished directive or count an attempted but unsuccessful action as completed.
-
-If everything requested was completed and evidenced, report NOT COMPLETED: NONE.
-
-The engineering lead must reconcile this section against the original brief before authorizing the next phase. An explicitly deferred item remains visible until its disposition is decided.
-
-BLOCKED describes obstacles; NOT COMPLETED describes unfinished obligations. They are not interchangeable.
-
-⸻
-
-14. PHASE 7 — WORKFLOW DOCUMENTATION DECISION
-
-Before entering DOC, the engineering lead must explicitly decide whether the current issue introduced or changed any workflow preference, rule, or agent behavior.
-
-14.1 Required decision
-
-For every issue, answer:
-
-- Did this issue change how we work (workflow)?
-- Did this issue change what the agent is allowed or expected to do?
-- Did this issue introduce a new standing rule or preference?
-
-If the answer to any is YES:
-
-1. Update `docs/agent_directives/engineering_workflow.md` in the same issue/ship.
-2. If agent behavior changed, also update `docs/agent_directives/agent_operation_guidelines.md`.
-3. These updates must be committed and pushed under the next ship (normally the same commit as the issue’s implementation, unless the issue is documentation-only and the update is itself the issue).
-4. Do not rely on chat history or memory for workflow rules.
-
-If the answer to all is NO:
-
-- Explicitly record: `WORKFLOW_DOC_UPDATE_REQUIRED: NO`
-- Proceed to DOC.
-
-If YES:
-
-- Explicitly record: `WORKFLOW_DOC_UPDATE_REQUIRED: YES`
-- Perform the updates before DOC, or defer them to a dedicated documentation issue only if the engineering lead explicitly approves deferral and records the issue ID.
-
-14.2 Prohibition
-
-Do not proceed to DOC without making and recording this decision.
-
-Failure to make this decision blocks DOC.
-
-14.3 Rationale
-
-Workflow and agent directives are the single source of truth. Keeping them current prevents repeatedly setting the same preferences and ensures every future issue inherits the latest agreed process.
-
-⸻
-
-15. PHASE 8 — DOC
-
-Documentation happens after implementation and verification are accepted.
-
-15.1 Default executor
-
-Normal terminal.
-
-Use deterministic Python for mutation when appropriate.
-
-15.2 Documentation mutation pattern
-
-1. read-only anchor preflight;
-2. deterministic mutation;
-3. assert unique anchor;
-4. refuse duplicate section;
-5. write;
-6. confirm section exists once;
-7. report location;
-8. run whitespace/diff checks;
-9. verify status.
-
-15.3 Untracked file caveat
-
-git diff and git diff --check do not inspect untracked files.
-
-Before staging a new file, verify its content directly.
-
-After explicit staging, git diff --cached --check becomes authoritative for staged whitespace.
-
-15.4 Documentation content
-
-Capture only verified facts:
-
-- stable contract;
-- invariant;
-- architecture;
-- important reasoning;
-- traps future engineers could repeat;
-- deliberate exclusions;
-- deferred issue IDs;
-- verification boundary;
-- regression protection.
-
-Distinguish runtime acceptance from automated regression evidence.
-
-Do not document intended behaviour that failed verification.
-
-Prefer one authoritative playbook over redundant updates across many docs.
-
-⸻
-
-16. PHASE 9 — COMMIT & PUSH ON MAIN
-
-By default, agent involvement ends before staging/commit/push. Only an explicit SHIP-DELEGATION-01 brief authorizes exact-manifest ship execution for its named RUN_ID; it never authorizes production deployment.
-
-16.1 Commit preflight
-
-Before staging:
-
-1. declare exact target filenames;
-2. show their status;
-3. stage those filenames only;
-4. print the full staged file list;
-5. compare staged scope against expected scope;
-6. run git diff --cached --check;
-7. show staged stat;
-8. show remaining unstaged files.
-
-Never use:
-
-git add -A
-
-or:
-
-git add .
-
-16.2 Tests ship with the feature
-
-Regression tests belong in the same issue and normally the same intended commit as the feature/fix they protect.
-
-16.3 Generated output
-
-modules/*/dist and packages/*/dist are generated-only and must never be staged or committed.
-
-Before commit, require:
-
-npm run check:generated-artifacts
-
-and prove:
-
-TRACKED_WORKSPACE_DIST=0
-
-A local build may recreate ignored workspace dist; that does not expand commit scope.
-
-For any other generated artifact class that is intentionally version-controlled, follow its explicit owning policy and stage only the complete intended generated set.
-
-16.4 Commit message
-
-Include what is useful:
-
-- issue ID/reference;
-- merchant/technical outcome;
-- meaningful boundary;
-- critical non-goal when necessary.
-
-Do not turn the commit body into the entire playbook.
-
-16.5 Ship-tree proof
-
-Immediately before commit, the verified tree must be the tree intended to ship.
-
-After commit capture:
-
-COMMIT_SHA=<sha>
-
-Push that commit directly to origin/main in normal solo-main mode.
-
-After push require:
-
-LOCAL_SHA=<sha>
-
-REMOTE_SHA=<sha>
-
-LOCAL_SHA  REMOTE_SHA
-
-PUSH_CONFIRMED
-
-A push alone is not issue closure when CI/deploy/certification remain required.
-
-⸻
-
-17. PHASE 10 — CI / DEPLOY
-
-CI is a verification layer, not an instruction to blindly repair anything red.
-
-17.1 CI failure triage — classify first
-
-Every CI failure must be classified before source mutation.
-
-Classification
-
-Meaning
-
-Default action
-
-CURRENT_ISSUE_REGRESSION
-
-Current change broke a relevant invariant
-
-Return to smallest correction loop
-
-STALE_CONTRACT
-
-Test protects retired implementation/behaviour
-
-Audit invariant; update/delete/replace contract
-
-MAINLINE_REGRESSION
-
-Existing main behaviour is genuinely broken
-
-Separate issue/blocker
-
-ENVIRONMENT_FAILURE
-
-Dependency/config/runtime prerequisite failed
-
-Correct environment only
-
-FLAKY_INFRA
-
-Same tree passes/fails nondeterministically
-
-Reproduce and track infra
-
-UNRELATED_ACTIVE_FAILURE
-
-Real but outside current issue
-
-Separate issue; do not contaminate scope
-
-UNKNOWN
-
-Evidence insufficient
-
-Narrow audit
-
-Never change production source merely because CI is red.
-
-17.2 Stale contract rule
-
-For a failing historical contract:
-
-1. identify the invariant;
-2. identify the current canonical owner;
-3. determine whether behaviour or only ownership changed;
-4. update the test to protect the current invariant;
-5. update stale documentation if it names retired ownership;
-6. avoid restoring retired source merely to satisfy a stale assertion.
-
-17.3 Mainline CI blocker rule
-
-If CI discovers an unrelated active blocker after a direct-main push:
-
-The lead owns the following remediation decision. A SHIP-DELEGATION-01 execution stops and reports RED; it does not authorize an automatic correction commit.
-
-classify blocker
-
-→ create separate blocker issue when appropriate
-
-→ fix directly on main
-
-→ targeted verify
-
-→ commit
-
-→ push
-
-→ CI rerun
-
-Do not create a worktree/PR chain solely to repair a mainline CI blocker.
-
-History may simply become:
-
-A — feature/fix
-
-B — CI contract/infrastructure correction
-
-17.4 Same-tree principle
-
-Direct-main development should keep:
-
-VERIFY_SHA ≈ COMMIT_SHA = PUSH_SHA
-
-Avoid unnecessary synthetic merge trees that were never locally verified.
-
-17.5 Deployment ordering
-
-For consequential runtime changes, deployment should depend on the required CI gate rather than racing it.
-
-If current infrastructure deploys every push to main immediately, the pre-push issue gate becomes release-critical: do not push until all locally selected consequential checks are green. Track CI-before-deploy ordering as infrastructure work rather than reintroducing routine PR/worktree overhead solely to compensate.
-
-17.6 Source-authoritative CI / deploy
-
-CI and deployment must build required workspace dependencies from source in dependency order. They must not rely on pre-existing or committed workspace dist.
-
-Where a targeted workflow bypasses the repository-wide build:deps path, every required prerequisite workspace must be explicit in that workflow.
-
-A missing generated package output in a fresh clone is evidence of a dependency-order/build-contract gap, not a reason to recommit dist.
-
-When simulating fresh-clone artifact state locally, remove both generated workspace dist and stale incremental TypeScript build metadata (*.tsbuildinfo) before judging whether the source-authoritative build is valid.
-
-17.7 CI scope
-
-Fast gates should prioritize:
-
-- TypeScript;
-- unit/contract tests;
-- architecture checks;
-- critical API/DB integration;
-- migration smoke;
-- commercial/security invariants;
-- other high-value targeted contracts.
-
-Deep suites belong on main/nightly/release candidate/pre-submission according to cost and risk.
-
-New coverage joins an existing job/step and its disposable-database lifecycle where practical (INFRASTRUCTURE-REUSE-FIRST).
-
-⸻
-
-18. PHASE 11 — RISK-BASED PRODUCTION CERTIFICATION
-
-Certification level is selected during TEST STRATEGY.
-
-18.1 Levels
-
-NONE
-
-Use for changes with no runtime or release consequence, when explicitly justified.
-
-CI_ONLY
-
-Use for examples such as:
-
-- stale test ownership correction;
-- docs-only correction;
-- non-runtime architecture contract maintenance.
-
-Do not replay merchant workflows for a test-only change unless another reason requires it.
-
-RUNTIME_SMOKE
-
-Use when runtime wiring changed but deep state verification is unnecessary.
-
-DB_INVARIANT
-
-Use when persistence/state-transition correctness must be certified in deployed runtime.
-
-LIVE_BROWSER
-
-Use for user-facing workflow changes requiring real UI acceptance.
-
-PROVIDER_E2E
-
-Use only when real provider acceptance is part of the contract.
-
-Certification claims must describe the journey and state actually tested:
-
-- component GREEN does not by itself prove the complete merchant journey;
-- fresh install does not prove reinstall after credential expiry;
-- mocked provider acceptance is not live provider acceptance.
-
-Require additional proof only when the missing scenario is consequential and within the approved issue contract.
-
-18.2 Production SQL
-
-Before any production repair:
-
-- read-only inspection first;
-- narrow tenant/predicate scope;
-- no guessed schema;
-- mutation only after evidence proves the required repair;
-- mutation must fail closed;
-- verify exact post-state.
-
-18.3 Issue closure
-
-An issue closes only when every selected gate is complete:
-
-IMPLEMENTATION_ACCEPTED
-
-+ TEST_CONTRACT_SATISFIED
-
-+ TARGETED_REGRESSION_ACCEPTED
-
-+ LIVE/DB/RUNTIME ACCEPTED where required
-
-+ DOC COMPLETE
-
-+ COMMIT COMPLETE
-
-+ PUSH_CONFIRMED
-
-+ CI ACCEPTED where required
-
-+ DEPLOY ACCEPTED where required
-
-+ PRODUCTION_CERTIFICATION ACCEPTED at selected level
-
-Then:
-
-ISSUE CLOSED
-
-→ NEXT ISSUE
-
-⸻
-
-19. FIXTURE STRATEGY
-
-Prefer the smallest deterministic fixture that proves the contract.
-
-Extract reusable fixture builders only when multiple suites genuinely share stable semantics.
-
-Fixtures should:
-
-- use real schema;
-- create minimum valid state;
-- avoid provider side effects unless required;
-- expose meaningful defaults;
-- support boundary testing;
-- clean up deterministically.
-
-19.1 RLS-safe bootstrap
-
-Respect real tenant protections.
-
-Reuse canonical tenant bootstrap/context paths.
-
-Do not disable RLS globally for test convenience.
-
-Do not use migration-role bypass for application behaviour expected to run as restricted application role.
-
-19.2 Guarded/single-writer tables
-
-If a fixture touches a guarded table:
-
-- prove the guard and sanctioned write path;
-- prefer canonical writer;
-- use transaction-local fixture mechanisms only when explicitly supported;
-- never disable guards globally;
-- do not change business semantics merely to satisfy fixture mechanics.
-
-19.3 Thresholds
-
-Test around consequential boundaries where relevant:
-
-limit - 1
-
-limit
-
-limit + 1
-
-Use parameterization only when it improves clarity.
-
-Property/mutation testing remains optional advanced protection for high-value rules.
-
-⸻
-
-20. DATABASE STANDING RULES
-
-20.1 Normal standalone DB queries
-
-Source root .env without printing secrets.
-
-Construct connection material only in-process/local shell where required.
-
-Application behaviour uses the restricted application role.
-
-Every terminal SQL command uses heredoc with:
-
-\pset pager off
-
-<tenant context when required>
-
-...
-
-\q
-
-Mutation commands additionally use:
-
-\set ON_ERROR_STOP on
-
-20.2 Disposable integration DBs
-
-For backend API/DB integration use the canonical disposable harness.
-
-Safety expectations:
-
-- NODE_ENV=test;
-- generated DB differs from normal PGDATABASE;
-- migration/runtime roles are separated;
-- DB administration uses migration role;
-- application execution uses restricted role;
-- migrations run from empty;
-- no implicit global seed;
-- cleanup proves exact removal and zero orphans.
-
-20.3 Scratch migration rehearsals
-
-Use privileged migration URL and restricted application URL against the same scratch DB where required.
-
-Create/drop/migrate scratch databases with migration role, never the restricted application role.
-
-20.4 Bounded migration proof
-
-To prove migration N independently:
-
-- use isolated scratch DB;
-- apply migrations sequentially only through N;
-- assert N recorded;
-- assert later migration absent;
-- assert schema/grants/runtime behaviour.
-
-Do not use only migrate:latest as proof of independent shippability.
-
-⸻
-
-21. STANDING RULES
-
-1. One issue at a time.
-2. One phase at a time; combined phases only when the engineering lead explicitly authorizes them under the selected risk tier (RISK-TIER-01).
-3. Phase separation is mandatory for material decisions.
-4. Normal solo-development work happens directly on main.
-5. No branch/worktree/PR by default.
-6. Isolation requires an explicit reason.
-7. No new issue begins with unexplained dirty main state.
-8. Tests are part of the issue they protect.
-9. Every issue gets an explicit test-strategy decision.
-10. Automated tests are not mandatory for every issue.
-11. Skipping automation requires a reason and replacement verification.
-12. Protect invariants, not files.
-13. Prefer the cheapest test layer that proves the invariant.
-14. Add higher-level tests when wiring itself is risky.
-15. Meaningful regressions should leave permanent protection where practical.
-16. Historical red tests are triaged by current invariant relevance before repair.
-17. A red CI job is classified before source mutation.
-18. Never restore retired product behaviour merely to satisfy a stale contract.
-19. Environment failures are not automatically product failures.
-20. Run a small environment preflight once per issue before expensive verification.
-21. Use terminal first; use agents when leverage exceeds coordination cost.
-22. Keep agent rounds small and decisive.
-23. Do not use agents for trivial one/two-file deterministic work when terminal is stronger.
-24. Live UI verification is Milad-driven by default.
-25. Do not substitute curl for UI wiring when UI wiring is under test.
-26. Behavioural PASS does not override visual FAIL.
-27. A failed verification returns to the smallest necessary correction loop.
-28. Do not rerun the entire repository after every small correction.
-29. Use targeted issue gate first; broader release/CI gate second.
-30. Temporary diagnostics may use /tmp; persist certification evidence under EVIDENCE-PERSISTENCE-01 and surface only decisive evidence.
-31. Avoid terminal-killing diagnostic guards.
-32. All supplied SQL is heredoc-based with pager off and explicit quit.
-33. Production SQL is read-only before repair and mutations are narrow/fail-closed.
-34. Ad hoc builds require explicit per-build authorization; canonical commands may own prerequisite build:deps generation.
-35. Ad hoc build authorization never becomes standing permission.
-36. TypeScript --noEmit is not a build.
-37. Never clean/reset unrelated dirty state.
-38. Never stage implicitly.
-39. Never use git add -A or git add . in issue preflight.
-40. New untracked docs/tests require direct pre-stage verification.
-41. Tests ship with the feature they protect.
-42. Final local verification targets the lineage intended to ship.
-43. Push proof requires local SHA  remote SHA and PUSH_CONFIRMED.
-44. Push alone does not close an issue when CI/deploy/certification remain.
-45. Certification level is risk-based, not ceremonial.
-46. Test-only/docs-only changes normally do not require merchant workflow replay.
-47. User-facing behavioural changes normally require live browser certification.
-48. Transaction-sensitive changes require post-state evidence, not only HTTP status.
-49. inventory_movements remains append-only; compensate, never delete.
-50. Avoid mocks where safe real local boundaries are practical.
-51. Never call live Stripe/Shopify merely to prove an internal state-machine contract.
-52. Provider E2E is separate when external acceptance is actually required.
-53. Every Jest test has exactly one configured owner.
-54. Disposable backend integration uses synchroflow_test_*, never normal development DB.
-55. Disposable integration cleanup must be proven.
-56. Do not claim exactly-once/idempotency/concurrency guarantees without testing the mechanism.
-57. Prefer createApp() + supertest for route integration when process startup is not the contract.
-58. Protect contractual payload/state fields, not incidental metadata.
-59. Use minimum decisive test cases.
-60. Deferred consequential work receives an issue ID and reason.
-61. Documentation describes verified contracts, not intended ones.
-62. Prefer one authoritative playbook over redundant copies.
-63. Merchant vocabulary is intentional; prefer merchant goals over internal object names.
-64. For UI consistency, find the canonical pattern before inventing another.
-65. One developer does not justify multi-developer coordination machinery by default.
-66. Direct-main does not waive CI/deployment safety; consequential pushes require the selected local gate to be green before push.
-67. Production deployment should not outrun required CI; pipeline ordering that allows this is infrastructure debt.
-68. modules/*/dist and packages/*/dist are generated-only, ignored, and never committed.
-69. TRACKED_WORKSPACE_DIST=0 is a repository invariant enforced by npm run check:generated-artifacts.
-70. CI/deploy must build workspace dependencies from source and must not rely on committed dist.
-71. Dirty-main fast-forward is allowed only after an overlap audit proves explained WIP will be preserved.
-72. Use GitHub connector for fast committed-repository reconnaissance when it can reduce manual scanning.
-73. GitHub connector findings do not supersede the local dirty worktree; consequential findings are locally confirmed before mutation.
-74. Default audit depth is focused: GitHub recon + targeted terminal proof.
-75. Escalate to an agent only when multi-file reasoning materially saves effort or local probes are insufficient.
-76. Agents are not default scanners.
-77. Feed agents established files, invariants, and unanswered questions instead of paying them to rediscover repository context.
-78. Separate discovery from proof.
-79. For consequential behaviour, prefer static evidence plus executable/runtime evidence where practical.
-80. New attention-needing work discovered outside the current issue is routed to an existing GitHub issue or a new bounded issue; it does not drift the active issue.
-81. Every issue must make an explicit WORKFLOW DOCUMENTATION DECISION before DOC: determine whether `docs/agent_directives/engineering_workflow.md` and/or `docs/agent_directives/agent_operation_guidelines.md` require updates, and record the decision.
-
-82. Prefer screenshots from an already-running localhost for visual-only acceptance when it faithfully exposes the target state; do not provision accounts, fixtures, or disposable runtimes solely to reproduce visual evidence that is already available.
-83. Every issue receives an explicit, justified LOW / MEDIUM / HIGH risk tier at intake (RISK-TIER-01); the tier selects the gates.
-84. Use the lowest tier supported by consequence, reversibility, and uncertainty; escalate on evidence; never downgrade to save time.
-85. A separate gate exists only to establish a missing contract, security boundary, irreversible operation, or necessary evidence.
-86. Independent review is not mandatory for LOW/MEDIUM; for HIGH it is required when the implementing agent's evidence alone cannot certify a material security/authorization boundary, migration authority, or irreversible data invariant.
-87. Final ship-lineage verification confirms the exact tree to ship; it does not automatically repeat unchanged, previously successful expensive tests.
-
-⸻
-
-22. STARTING A NEW ISSUE
-
-1. Confirm local branch is main.
-2. Fetch/verify origin/main alignment.
-3. Confirm no unmerged files.
-4. Classify any dirty files; require no unexplained dirty state.
-5. State issue ID.
-6. State one-paragraph problem statement.
-7. Run ELI5.
-8. Run the small environment preflight relevant to the issue.
-8a. Select and justify the risk tier (RISK-TIER-01) and ratify the issue roadmap from that tier's gates. Steps 9–41 apply only where the selected tier includes the corresponding gate.
-9. Enter AUDIT.
-10. Use GitHub reconnaissance first when it can cheaply narrow source/issue/commit ownership.
-11. Confirm consequential findings with targeted local terminal probes.
-12. Judge evidence.
-13. Escalate to a bounded agent audit only if material uncertainty remains.
-14. Run another narrow audit only for missing facts.
-15. Run WORKSHOP only when required.
-16. Define stable contracts/invariants.
-17. Enter TEST STRATEGY.
-18. Classify relevant test layers REQUIRED / OPTIONAL / SKIP.
-19. Select production certification level.
-20. For confirmed defects, add RED regression first where practical.
-21. IMPLEMENT one manageable slice.
-22. Add/extend selected tests in the same issue.
-23. Run targeted technical checks.
-24. VERIFY requested behaviour.
-25. Run selected neighbouring regressions.
-26. Run browser/DB/runtime verification where selected.
-27. If anything fails, use the smallest correction loop.
-28. Make WORKFLOW DOCUMENTATION DECISION: update `docs/agent_directives/engineering_workflow.md` and/or `docs/agent_directives/agent_operation_guidelines.md` if required, or explicitly record NO update needed.
-29. When accepted, run one DOC pass.
-30. Record test completion state.
-31. Run generated-artifact ownership guard when workspace/package build state is relevant.
-32. Run commit preflight with exact intended files only.
-33. COMMIT on main.
-34. Capture commit SHA.
-35. PUSH main.
-36. Confirm local SHA  remote SHA.
-37. Require PUSH_CONFIRMED.
-38. Observe CI/deploy where required.
-39. If CI fails, classify before changing source.
-40. Complete selected production certification.
-41. Close issue only after all selected gates pass.
-42. Begin the next issue.
-
-⸻
-
-23. FINAL ISSUE-CLOSE CHECKLIST
-
-Before an issue may be marked CLOSED:
-
-- main cleanliness/start gate was satisfied;
-- ELI5 complete;
-- environment preflight completed where relevant;
-- risk tier selected and justified; escalations recorded;
-- AUDIT complete, or an existing contract cited, or not required by the risk tier;
-- WORKSHOP complete or explicitly unnecessary;
-- RISK-BASED REVIEW and CERTIFY complete for HIGH, including independent review where required;
-- stable invariants identified;
-- TEST STRATEGY decided;
-- certification level selected;
-- required automated tests added/extended, or explicitly skipped with reason;
 - implementation accepted;
-- targeted TSC/build checks accepted;
-- requested runtime behaviour verified;
-- DB invariants verified where relevant;
-- migration behaviour verified where relevant;
-- worker/concurrency behaviour verified where relevant;
-- neighbouring regression suite passes;
-- Jest ownership valid when tests were added/moved;
-- disposable integration DB cleanup proved when harness used;
-- live browser verification accepted where applicable;
-- behavioural and visual acceptance both pass where applicable;
-- WORKFLOW DOCUMENTATION DECISION made and recorded (update applied or explicit NO);
-- documentation describes verified final contract;
-- generated workspace artifact ownership valid where relevant (TRACKED_WORKSPACE_DIST=0);
-- staged scope exact;
-- staged diff check clean;
-- commit complete;
-- push complete;
-- local SHA  remote SHA;
-- PUSH_CONFIRMED;
-- CI/deploy accepted where selected;
-- CI failures, if any, were classified rather than blindly repaired;
-- selected production certification completed.
+- test strategy satisfied with its completion state recorded;
+- targeted and neighbour regressions accepted;
+- live/DB/runtime acceptance where selected;
+- review and certification for HIGH;
+- documentation decision recorded and applied;
+- commit and `PUSH_CONFIRMED`;
+- CI and deploy accepted where required;
+- production certification at the selected level.
 
-Only then:
+Then: ISSUE CLOSED → next issue. Deferred consequential work carries an issue ID and reason.
 
-ISSUE CLOSED
+### REPORT-01 — Reports and handoffs (HANDOFF-01)
 
-→ NEXT ISSUE
+- Agent reports use one four-backtick block starting with RUN_ID and ATTEMPT, then FINDINGS, RAW, DEVIATIONS, BLOCKED, NOT COMPLETED, STATE_MUTATED and ROADMAP POSITION.
+- NOT COMPLETED lists every unfinished directive as `ITEM / STATUS (NOT_STARTED|PARTIAL|FAILED|SKIPPED) / REASON / TO_RESUME`, including dependent verification not run. It is distinct from BLOCKED, which names obstacles. NONE only when everything was completed and evidenced.
+- The lead reconciles NOT COMPLETED against the brief before authorizing the next phase; an explicitly deferred item stays visible until its disposition is decided.
+- Keep reports concise: verdict, baseline, manifest, evidence path and checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Raw logs live in evidence artifacts. Do not repeat unchanged background.
+
+### REPORT-02 — Problem-specific roadmap (ROADMAP-PLAIN-ENGLISH-01)
+
+Every lead response, brief, agent report and handover ends with the approved roadmap. It states:
+
+- the issue/sprint ID;
+- the actual merchant or engineering problem and its intended outcome;
+- ordered, approved milestones in plain English, with exactly one marked `(CURRENT)`;
+- verified progress, dependencies and blockers;
+- status per milestone: GREEN (the stated verification passed), CERTIFIED (the required reviewer/owner accepted the stated evidence and scope), BLOCKED, PENDING or NOT AUTHORIZED.
+
+Format:
+
+```
+<ID> — <title>
+Problem/outcome: <one sentence>
+1. <milestone> — CERTIFIED
+2. <milestone> — GREEN; certification pending
+3. <milestone> — (CURRENT)
+4. <milestone> — PENDING | NOT AUTHORIZED
+```
+
+- A generic gate sequence alone is not a sufficient displayed roadmap; MAY be shown alongside the milestones.
+- Never invent milestones or change approved order, scope or phase without lead/owner approval. Completed milestones need verified evidence; blocked work stays at its milestone. Parallel issues keep independent roadmaps.
+- If no roadmap is approved, report the missing contract.
+- A roadmap is a factual declaration, never authorization to continue.
+
+### EXCEPT-01 — Exceptions
+
+Any deviation from a MUST in this document requires an explicit, recorded owner decision naming the rule ID, scope and duration. Exceptions never extend to section 2 without that decision, and never apply to later issues by implication.
