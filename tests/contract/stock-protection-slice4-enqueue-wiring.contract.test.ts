@@ -102,9 +102,24 @@ describe('Slice 4 — enqueueShopSnapshotJob function-scoped wiring', () => {
       expect(countEnqueueCalls(source, 'commitRecount')).toBe(1);
     });
 
-    it('stow.service.ts: confirmStow contains exactly one enqueue call (the inventory-credit branch — conditional correctness proven separately by the DB-backed stow contract test)', () => {
+    it('stow.service.ts: confirmStow enqueues once per mutually exclusive credit path', () => {
       const source = readSource('apps/backend/src/services/wms/stow.service.ts');
-      expect(countEnqueueCalls(source, 'confirmStow')).toBe(1);
+      const body = extractFunctionSource(source, 'confirmStow');
+      const recoveryStart = body.indexOf("if (task.trigger === 'receive_recovery') {");
+      const normalStart = body.indexOf("\n  if (lasyncroUnitId) {", recoveryStart);
+      const creditStart = body.lastIndexOf("if (isInventoryCredit) {");
+
+      expect(recoveryStart).toBeGreaterThan(-1);
+      expect(normalStart).toBeGreaterThan(recoveryStart);
+      expect(creditStart).toBeGreaterThan(normalStart);
+
+      const recovery = body.slice(recoveryStart, normalStart);
+      const ordinaryCredit = body.slice(creditStart);
+
+      expect(recovery).toContain('return recovered;');
+      expect((recovery.match(CALL_PATTERN) ?? []).length).toBe(1);
+      expect((ordinaryCredit.match(CALL_PATTERN) ?? []).length).toBe(1);
+      expect(countEnqueueCalls(source, 'confirmStow')).toBe(2);
     });
   });
 

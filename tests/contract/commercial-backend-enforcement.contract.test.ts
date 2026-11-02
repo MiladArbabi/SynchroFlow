@@ -358,6 +358,8 @@ const BASIC_PURCHASING_ROUTES = [
   'PUT /receive-jobs/:jobId/reconciliation/draft',
   'POST /receive-jobs/:jobId/reconciliation/finalize',
   'POST /receive-jobs/:jobId/inspect',
+  'POST /receive-jobs/:jobId/held-units/:unitId/custody',
+  'GET /receive-jobs/:jobId/problem-bins/resolve',
   'POST /receive-jobs/:jobId/close',
   'POST /receive-jobs/:jobId/exception',
 ] as const;
