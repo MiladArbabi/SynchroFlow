@@ -1,7 +1,7 @@
-# ENGINEERING WORKFLOW v4.0
+# ENGINEERING WORKFLOW v4.1
 
 - Mode: solo-developer, main-first execution
-- Status: RATIFIED — owner approved 2026-11-02
+- Status: v4.0 RATIFIED — owner approved 2026-11-02; v4.1 amendment (FLOW-02/FLOW-05 workshop decision) CANDIDATE pending owner approval
 - Supersedes: v3.6 (origin/main) and the intentional local v3.7 revision
 - Repository: SynchroFlow
 - Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)
@@ -101,7 +101,7 @@ Selection rules:
 A separate gate or round is justified only when it establishes a material missing contract, security boundary, irreversible operation or necessary evidence. By default:
 
 - no separate audit when the contract is already known;
-- no workshop unless material decisions remain unresolved;
+- no workshop unless FLOW-05 selection is met (open material decisions or a material merchant-outcome opportunity);
 - no standalone agent round for trivial findings;
 - no separate implementation and verification rounds when one brief can safely do both;
 - no splitting related changes into arbitrary slices;
@@ -116,7 +116,7 @@ The flow below is the complete gate inventory. The risk tier selects which gates
 
 ```
 FLOW-01 MAIN SYNC → FLOW-02 INTAKE → FLOW-03 AUDIT [if no existing contract]
-→ FLOW-04 INHERITANCE [if an existing family is touched] → FLOW-05 WORKSHOP [if decisions open]
+→ FLOW-04 INHERITANCE [if an existing family is touched] → FLOW-05 WORKSHOP [per WORKSHOP_DECISION]
 → TEST-01 STRATEGY → IMPLEMENT + TARGETED VERIFY → correction loop [if needed]
 → neighbour regression → live/DB/runtime verify [if selected]
 → REVIEW-01 [HIGH, when required] → CERT-01 [HIGH]
@@ -157,6 +157,15 @@ Record the reason before creating it. Size alone is not a reason.
 
 State the issue ID, a plain-language problem (what the user expects, what happens, why it matters, what must stay unchanged), the risk tier (RISK-TIER-01) and the approved roadmap (REPORT-02). Run a small environment preflight (ENV-01) when verification will follow. Work discovered outside the issue goes to an existing or new bounded issue; it never drifts the active issue.
 
+Record one workshop decision inline, with a one-line reason, using the FLOW-05 selection rule:
+
+```
+WORKSHOP_DECISION=RUN_FRONTEND | RUN_BACKEND | RUN_COMBINED | SKIP
+WORKSHOP_REASON=<one line>
+```
+
+This is a lead decision made at intake, not a separate approval gate. It MAY be revised when audit evidence changes the picture.
+
 ### FLOW-03 — Audit (conditional)
 
 Runs only when no existing contract answers the exit condition.
@@ -186,11 +195,54 @@ RED_CONTRACT=<tests required before implementation>
 - If later verification discovers a rule this gate should have found, that is a workflow miss: correct the governing doc, strengthen the executable contract, then fix the implementation.
 - Inherit first, implement second, verify third.
 
-### FLOW-05 — Workshop (conditional)
+### FLOW-05 — Workshop (conditional, merchant-value driven)
 
-Runs only when material decisions remain unresolved: behaviour, architecture, data-flow or transaction boundaries change; UX changes materially; multiple valid patterns exist; domains are being combined; the simple fix creates debt; testing needs a new architectural seam; or Milad asks for one.
+**Selection.** RUN a workshop when either of these holds:
 
-- Start from what is already wired and present realistic options, trade-offs, a recommendation, risks and non-goals.
+1. Material decisions remain unresolved: behaviour, architecture, data-flow or transaction boundaries change; UX changes materially; multiple valid patterns exist; domains are being combined; the simple fix creates debt; testing needs a new architectural seam; or Milad asks for one.
+2. There is a credible opportunity to materially improve merchant operational outcomes that no existing approved solution or precedent (FLOW-04) adequately resolves.
+
+SKIP when:
+
+- an approved precedent already solves the problem;
+- the change is straightforward and bounded;
+- no material UX, product or architectural decision remains; or
+- further exploration would not meaningfully improve the outcome.
+
+Never run a workshop solely for procedural compliance.
+
+**Merchant lens.** Judge merchant value against LaSyncro's target merchants:
+
+- Shopify-first, running their own warehouse or stockroom.
+- Core ICP: roughly $500K–$10M revenue, about 2–10 operators and 20–200 daily orders.
+- Broader segment: roughly $100K–$20M revenue and about 1–10 warehouse operators.
+- Common conditions: high SKU complexity, fragmented data, disconnected systems, spreadsheet dependency and operational firefighting.
+
+These are context for judgement, not eligibility criteria.
+
+**Types:**
+
+- **FRONTEND** — user journeys, task efficiency, information hierarchy, interaction design, responsiveness, accessibility and exception handling.
+- **BACKEND** — data ownership, integration boundaries, inventory truth, lifecycle rules, transaction integrity, automation, synchronization and reliability.
+- **COMBINED** — end-to-end merchant workflows spanning frontend interaction and backend behaviour.
+
+**Outcome.** A workshop ends with one concise decision covering:
+
+- the merchant problem and current friction;
+- the relevant evidence and assumptions, labelled as such;
+- viable solutions and their trade-offs;
+- the recommended solution;
+- the expected operational improvement (qualitative unless backed by evidence; never invent quantified benefits);
+- affected frontend and backend contracts;
+- acceptance criteria;
+- risks and non-goals;
+- Milad's approval of the material decisions.
+
+Rules:
+
+- The decision MAY live inline in the issue contract (ISSUE-CONTRACT-01). Trivial decisions need no separate workshop document.
+- A workshop adds no certification or verification gate.
+- Start from what is already wired.
 - The workshop outputs the stable invariants that feed TEST-01.
 - For an inconsistent UI element, find the canonical implementation and reuse its typography, spacing, tokens, icons, alignment, borders, hover state and interaction instead of approximating them.
 - Material UI restructuring follows workshop → wireframe → Milad approval → implement. Tiny approved copy or style corrections need only a narrow factual preflight.

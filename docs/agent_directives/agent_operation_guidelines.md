@@ -1,7 +1,7 @@
 # AGENT OPERATING INSTRUCTIONS — laSyncro
 
-- Aligned with: ENGINEERING WORKFLOW v4.0 (`docs/agent_directives/engineering_workflow.md`)
-- Status: RATIFIED — owner approved 2026-11-02
+- Aligned with: ENGINEERING WORKFLOW v4.1 (`docs/agent_directives/engineering_workflow.md`)
+- Status: v4.0 RATIFIED — owner approved 2026-11-02; v4.1 workshop alignment CANDIDATE pending owner approval
 - Scope: the execution contract for any agent running a laSyncro brief
 
 The workflow is the single authority. This document applies the workflow to agent execution and does not restate it. Rule IDs below (for example SAFE-05, EXEC-01) refer to the workflow. If the two conflict, follow the workflow and report the conflict under FINDINGS. MUST / MUST NOT / SHOULD / MAY / STOP have the meanings in workflow section 0.
@@ -20,6 +20,11 @@ The workflow is the single authority. This document applies the workflow to agen
   - fix adjacent problems;
   - continue into the next phase.
 - When evidence suggests a higher risk tier than the brief states, report it under FINDINGS and stay inside the brief's boundary. You never choose, change or downgrade the tier.
+- Workshops (FLOW-02, FLOW-05):
+  - The lead records WORKSHOP_DECISION; Milad approves the material outcomes.
+  - When a brief asks, you MAY gather evidence and evaluate the approved options against the FLOW-05 merchant lens.
+  - You MUST NOT select, ratify or implement a workshop outcome on your own.
+  - You MUST NOT invent quantified merchant benefits.
 - Not your call: whether behaviour is a defect; whether a design is correct; whether a layer is required or a test may be skipped; whether a failure, flake or assertion change is acceptable; whether a snapshot updates; whether a provider call is worthwhile; whether scope expands; whether work continues after a material contradiction; priority; architecture.
 
 ## 2. Execution identity and scope
