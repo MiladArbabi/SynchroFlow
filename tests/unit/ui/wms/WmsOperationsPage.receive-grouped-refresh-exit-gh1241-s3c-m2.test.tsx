@@ -211,7 +211,7 @@ function expectOperationsBoard() {
     receiveJobId: params.get('receiveJobId'),
     warehouseFocus: params.get('warehouseFocus'),
     receiveSessionVisible: screen.queryByTestId('receive-session-mode') !== null,
-    backToWmsVisible: screen.queryByRole('button', { name: 'Back to WMS' }) !== null,
+    backToWmsVisible: screen.queryByRole('button', { name: 'Exit' }) !== null,
     boardWorkCardVisible: workCard() !== null,
   }).toEqual({
     receiveJobId: null,
@@ -292,7 +292,11 @@ describe('GH-1241 S3C-M2 — host-level grouped Receive regressions', () => {
       expect(screen.getByTestId(`receive-count-line-${LINE_ID}`)).toHaveAttribute('data-count-state', 'confirmed')
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back to WMS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+    // S7-CORRECT: a clean exit asks first (V3.1 Saved sheet), then exits on its Back to WMS.
+    const leaveSheet = await screen.findByRole('dialog', { name: /leave this receive/i });
+    expect(screen.getByTestId('receive-session-mode')).toBeInTheDocument();
+    fireEvent.click(within(leaveSheet).getByRole('button', { name: 'Back to WMS' }));
     await waitFor(() => expect(new URLSearchParams(search).get('receiveJobId')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('receive-session-mode')).not.toBeInTheDocument());
 

@@ -40,7 +40,7 @@ const M2 = {
   confirm: /confirm count/i,
   noneArrived: /none arrived/i,
   edit: /edit count/i,
-  exit: 'Back to WMS',
+  exit: 'Exit',
   /** One row per applicable line: data-count-state, data-count ('' when uncounted), data-current. */
   lineTestId: (lineId: string) => `receive-count-line-${lineId}`,
   states: { notCounted: 'not_counted', unconfirmed: 'unconfirmed', confirmed: 'confirmed' },
@@ -364,6 +364,16 @@ afterEach(() => {
 
 // ── cases ────────────────────────────────────────────────────────────────────
 
+/**
+ * WS-UX-RECEIVE-D4R S7-CORRECT — once everything is saved, Exit shows the
+ * V3.1 Saved sheet without leaving; its Back to WMS performs the exit.
+ */
+async function confirmCleanExit(props: any) {
+  const sheet = await screen.findByRole('dialog', { name: /leave this receive/i });
+  expect(props.onSessionExit).not.toHaveBeenCalled();
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Back to WMS' }));
+}
+
 describe('GH-1241 S3C-M2 — grouped Receive counting', () => {
   it('G1 — a pending grouped Receive starts only through Start/claim, which writes no count; counting is focused, the brief is not', async () => {
     const store = canonicalStore(deliveryLines(), { job: { status: 'pending' } });
@@ -563,6 +573,7 @@ describe('GH-1241 S3C-M2 — grouped Receive counting', () => {
     expectNoWrites(props);
 
     fireEvent.click(screen.getByRole('button', { name: M2.exit }));
+    await confirmCleanExit(props);
     await waitFor(() => expect(props.onSessionExit).toHaveBeenCalledTimes(1));
     await settle();
     expectNoWrites(props);
@@ -718,6 +729,7 @@ describe('GH-1241 S3C-M2 — grouped Receive counting', () => {
     expect(props.onSessionExit).not.toHaveBeenCalled();
 
     await act(async () => { save.resolve(); });
+    await confirmCleanExit(props);
     await waitFor(() => expect(props.onSessionExit).toHaveBeenCalledTimes(1));
     expect(store.confirm).not.toHaveBeenCalled();
     expectNoForbiddenWrites(props);

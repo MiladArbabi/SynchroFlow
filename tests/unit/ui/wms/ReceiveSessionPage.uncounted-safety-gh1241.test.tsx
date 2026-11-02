@@ -56,6 +56,7 @@ function line(overrides: Partial<ReceiveJobLine> = {}): ReceiveJobLine {
 function renderSession(lines: ReceiveJobLine[], options: {
   onConfirmLineCount?: jest.Mock;
   onResolveBarcode?: jest.Mock;
+  onRecountLine?: jest.Mock;
 } = {}) {
   const onInspectLine = jest.fn().mockResolvedValue(undefined);
   const onPersistLineProgress = jest.fn().mockResolvedValue(undefined);
@@ -78,6 +79,7 @@ function renderSession(lines: ReceiveJobLine[], options: {
     onPrintUnitLabels: jest.fn().mockResolvedValue(undefined),
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
     onResolveBarcode: options.onResolveBarcode,
+    onRecountLine: options.onRecountLine,
     onRefresh: jest.fn().mockResolvedValue(undefined),
   };
   render(<ReceiveSessionPage {...(props as any)} />);
@@ -173,6 +175,9 @@ it('U2 — an explicitly confirmed zero count enters reconciliation without insp
   await startCount();
   // Start Receive and opening Count never confirm.
   expect(onConfirmLineCount).not.toHaveBeenCalled();
+  fireEvent.change(await screen.findByRole('textbox', { name: /sellable count/i }), {
+    target: { value: '0' },
+  });
   await finishCount();
 
   expect(await screen.findByText(/account for the remaining 10 units/i)).toBeTruthy();
@@ -240,7 +245,7 @@ it('U5 — Scan → Finish Count confirms the scanned quantity before inspecting
 // never confirms anything itself.
 async function keepExtraInCount() {
   fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 }
 
 function expectConfirmApproveInspectOrder(onConfirmLineCount: jest.Mock, onApproveOverDelivery: jest.Mock, onInspectLine: jest.Mock) {
@@ -255,7 +260,7 @@ it('U6 — manual count past expected: the live warning never approves or confir
 
   await startCount();
   await plus(3);
-  const warning = await screen.findByRole('dialog', { name: /extra unit detected/i });
+  const warning = await screen.findByRole('region', { name: /extra unit detected/i });
   expect(warning).toBeTruthy();
   // An unconfirmed live count offers no approval.
   expect(screen.queryByRole('button', { name: /accept extra/i })).toBeNull();
@@ -289,7 +294,7 @@ it('U11 — scan count past expected: the scanned extra is kept as a draft, conf
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
     if (i === 0) await waitFor(() => expect(screen.getByText(/1\/1/)).toBeTruthy());
   }
-  await screen.findByRole('dialog', { name: /extra unit detected/i });
+  await screen.findByRole('region', { name: /extra unit detected/i });
   expect(screen.queryByRole('button', { name: /accept extra/i })).toBeNull();
   await keepExtraInCount();
   await waitFor(() => expect(onPersistLineProgress).toHaveBeenCalledWith(LINE_ID, { quantity_sellable_provisional: 2 }));
@@ -347,13 +352,13 @@ it('U13 — a confirmed over-expected count with a failed approval keeps the dec
   expect(onApproveOverDelivery).toHaveBeenCalledTimes(2);
 });
 
-it('U7 — "I miscounted" returns to counting; the corrected count is re-confirmed before inspection', async () => {
+it('U7 — "Recount" (nothing allocated) returns to counting; the corrected count is re-confirmed before inspection', async () => {
   const { onInspectLine, onConfirmLineCount, onPersistLineProgress } = renderSession([line({ quantity_expected: 2 })]);
 
   await startCount();
   await plus(1);
   await finishCount();
-  fireEvent.click(await screen.findByRole('button', { name: /i miscounted/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /^recount$/i }));
 
   expect(onInspectLine).not.toHaveBeenCalled();
   await plus(1);
@@ -438,4 +443,50 @@ it('U10 — refresh with an overage draft and approval but no confirmed count ne
   expect(onConfirmLineCount.mock.calls).toEqual([[LINE_ID, { quantity_confirmed: 3 }]]);
   expect(onApproveOverDelivery).not.toHaveBeenCalled();
   expectInspectedOnlyConfirmedCounts(onConfirmLineCount, onInspectLine);
+});
+
+// ── S8-C5 — Recount resume ─────────────────────────────────────────────────
+
+it('U-R2 — re-entry before a Recount resumes reconciliation with Recount; after a Recount it resumes in Count, never reconciliation', async () => {
+  const defect = {
+    receive_exception_id: 'rx-s8c5-defect',
+    exception_type: 'defect',
+    quantity_affected: 2,
+    notes: '2 defect during receive',
+    resolved: false,
+    raised_at: '2026-10-27T12:00:00.000Z',
+    accounting_role: 'shortfall',
+    counts_toward_shortfall: true,
+  };
+  const onRecountLine = jest.fn().mockResolvedValue(undefined);
+  renderSession([line({
+    quantity_sellable_provisional: 6,
+    quantity_count_confirmed: 6,
+    reconciliation_started_at: '2026-10-27T12:00:00.000Z',
+    reported_problems: [defect],
+    reconciliation: { expected: 10, sellable: 6, accounted: 2, unaccounted: 2, allocations: [defect], overage_approved: false },
+  } as any)], { onRecountLine });
+  expect(await screen.findByText(/^to account for$/i)).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^recount$/i })).toBeTruthy();
+  cleanup();
+
+  // Persisted post-Recount state: no confirmation, no active allocation, provisional count kept.
+  const { onInspectLine, onConfirmLineCount } = renderSession([line({
+    quantity_sellable_provisional: 6,
+    quantity_count_confirmed: null,
+    quantity_deferred: 0,
+    reconciliation_started_at: null,
+    reported_problems: [],
+    reconciliation: { expected: 10, sellable: 6, accounted: 0, unaccounted: 4, allocations: [], overage_approved: false },
+  } as any)], { onRecountLine });
+  const start = screen.queryByRole('button', { name: /start receive/i });
+  if (start) fireEvent.click(start);
+  const countMode = screen.queryByRole('button', { name: /^count$/i });
+  if (countMode) fireEvent.click(countMode);
+  const input = await screen.findByRole('textbox', { name: /sellable count/i }) as HTMLInputElement;
+  expect(input.value).toBe('6');
+  expect(screen.queryByText(/^to account for$/i)).toBeNull();
+  expect(onInspectLine).not.toHaveBeenCalled();
+  expect(onConfirmLineCount).not.toHaveBeenCalled();
+  expect(onRecountLine).not.toHaveBeenCalled();
 });

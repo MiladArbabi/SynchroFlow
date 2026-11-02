@@ -24,6 +24,8 @@ import {
   resolveOpeningInventoryParticipatingWarehouse,
 } from './openingInventoryPhysicalTarget.service.js';
 
+import { captureRecoveryCreditsForGeneration } from './openingInventoryRecoveryCapture.service.js';
+
 import {
   buildShopifyItemIdentities,
   collectOpeningInventoryLocationEvidence,
@@ -1933,6 +1935,19 @@ async function freezeOpeningInventoryCutoverGeneration(
           batchRows
         );
       }
+
+      // S4-5 I4 CB1: per-credit recovery inclusion evidence from this same
+      // REPEATABLE READ snapshot as the frozen target; a failure rolls the
+      // freeze back.
+      await captureRecoveryCreditsForGeneration(
+        trx,
+        {
+          shopId,
+          generationId,
+          warehouseId:
+            scope.warehouseId,
+        }
+      );
 
       await trx(
         GENERATIONS

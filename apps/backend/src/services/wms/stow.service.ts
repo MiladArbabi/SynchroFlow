@@ -3,6 +3,8 @@ import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
+import { HELD_UNIT_STATUSES } from './receiveBarcodeReadiness.service.js';
+import { confirmReceiveRecoveryStow } from './receiveHeldRecoveryStow.service.js';
 
 /**
  * STOW SERVICE (WM-05)
@@ -320,6 +322,37 @@ export async function confirmStow(
   if (task.status !== 'in_progress') throw new Error(`[STOW_CONFIRM] Task not in progress: ${task.status}`);
   if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
+
+  // S4-5 I3 — a held Receive unit leaves custody only through its own
+  // receive_recovery Stow (Stow row locked above, then unit → task inside).
+  // S4-2 — no other trigger may place a held or discarded unit: refused below,
+  // before any truth, ledger or unit write.
+  if (task.trigger === 'receive_recovery') {
+    const recovered = await confirmReceiveRecoveryStow(trx, {
+      shopId,
+      claimedBy,
+      task: {
+        stow_task_id: stowTaskId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        quantity: task.quantity,
+        location_code: task.location_code,
+        source_task_id: task.source_task_id,
+      },
+      lasyncroUnitId,
+      quantityPlaced,
+    });
+    await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
+    await enqueueShopSnapshotJob(trx, shopId);
+    return recovered;
+  }
+  if (lasyncroUnitId) {
+    const scanned = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .first('status');
+    if (scanned && (HELD_UNIT_STATUSES as readonly string[]).includes(scanned.status)) {
+      throw new Error(`[STOW_CONFIRM] HELD_UNIT_NOT_STOWABLE: ${lasyncroUnitId}`);
+    }
+  }
 
     const completedAt = new Date();
     const qty = quantityPlaced ?? task.quantity; // support partial stow
@@ -772,59 +805,8 @@ export async function confirmStow(
       updated_at: completedAt,
     });
 
-  {
-    // 4d. Soft capacity check — count all stowed units at this location.
-    // If over max_capacity, create a Problem Center task for bin audit.
-    const location = await trx('warehouse_locations')
-      .where({ shop_id: shopId, location_code: task.location_code })
-      .select('max_capacity')
-      .first();
-
-    if (location?.max_capacity != null) {
-      const stowedCount = await trx('inventory_units')
-        .where({
-          shop_id: shopId,
-          current_location_code: task.location_code,
-          status: 'stowed',
-        })
-        .count('* as count')
-        .first();
-
-      const currentCount = Number(stowedCount?.count ?? 0);
-
-      if (currentCount > location.max_capacity) {
-        const seqResult = await trx.raw<{ rows: { prob_label_sequence: number; problem_bin_location: string }[] }>(
-          `UPDATE shop_wms_settings
-           SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
-           WHERE shop_id = ?
-           RETURNING prob_label_sequence, problem_bin_location`,
-          [shopId]
-        );
-        const seqRow = seqResult.rows[0];
-        const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
-
-        await trx('problem_center_tasks').insert({
-          shop_id: shopId,
-          status: 'open',
-          source: 'stow',
-          source_exception_id: stowTaskId,
-          lasyncro_variant_id: task.lasyncro_variant_id,
-          quantity: currentCount,
-          exception_type: 'bin_over_capacity',
-          problem_bin_location: task.location_code,
-          notes: `${probLabel} — Bin ${task.location_code} has ${currentCount} units, max is ${location.max_capacity}. Audit required.`,
-        });
-
-        console.warn('[STOW_BIN_OVER_CAPACITY]', {
-          shopId,
-          locationCode: task.location_code,
-          currentCount,
-          maxCapacity: location.max_capacity,
-          probLabel,
-        });
-      }
-    }
-  }
+  // 4d. Soft capacity check.
+  await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
 
  // 5. Record placement; complete only when the task's full quantity is placed.
   //
@@ -905,6 +887,67 @@ export async function confirmStow(
     // reflect a later location switch.
     locationCode: task.location_code,
   };
+}
+
+/**
+ * Soft capacity check — count all stowed units at this location. If over
+ * max_capacity, create a Problem Center task for bin audit.
+ */
+async function checkStowBinCapacity(
+  trx: Knex.Transaction,
+  shopId: number,
+  stowTaskId: string,
+  locationCode: string,
+  lasyncroVariantId: string
+): Promise<void> {
+  const location = await trx('warehouse_locations')
+    .where({ shop_id: shopId, location_code: locationCode })
+    .select('max_capacity')
+    .first();
+
+  if (location?.max_capacity == null) return;
+
+  const stowedCount = await trx('inventory_units')
+    .where({
+      shop_id: shopId,
+      current_location_code: locationCode,
+      status: 'stowed',
+    })
+    .count('* as count')
+    .first();
+
+  const currentCount = Number(stowedCount?.count ?? 0);
+  if (currentCount <= location.max_capacity) return;
+
+  const seqResult = await trx.raw<{ rows: { prob_label_sequence: number; problem_bin_location: string }[] }>(
+    `UPDATE shop_wms_settings
+     SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
+     WHERE shop_id = ?
+     RETURNING prob_label_sequence, problem_bin_location`,
+    [shopId]
+  );
+  const seqRow = seqResult.rows[0];
+  const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
+
+  await trx('problem_center_tasks').insert({
+    shop_id: shopId,
+    status: 'open',
+    source: 'stow',
+    source_exception_id: stowTaskId,
+    lasyncro_variant_id: lasyncroVariantId,
+    quantity: currentCount,
+    exception_type: 'bin_over_capacity',
+    problem_bin_location: locationCode,
+    notes: `${probLabel} — Bin ${locationCode} has ${currentCount} units, max is ${location.max_capacity}. Audit required.`,
+  });
+
+  console.warn('[STOW_BIN_OVER_CAPACITY]', {
+    shopId,
+    locationCode,
+    currentCount,
+    maxCapacity: location.max_capacity,
+    probLabel,
+  });
 }
 
 export interface StowTaskPlacement {

@@ -192,8 +192,10 @@ describe('GH-1068 T3 disposable harness — inherited configuration and lifecycl
     return `postgresql://${user}:${encodeURIComponent(password)}@isolated-postgres:5432/synchroflow_db?sslmode=disable`;
   }
 
-  function fakes(options: { baselineExists?: boolean; provisionFails?: boolean; orphan?: boolean } = {}) {
+  function fakes(options: { baselineExists?: boolean; provisionFails?: boolean; orphan?: boolean;
+    revokeFails?: boolean; publicOpen?: boolean; runtimeTemp?: boolean; migrate?: boolean } = {}) {
     const queries: string[] = [];
+    const params: unknown[][] = [];
     const output: string[] = [];
     const clients: { config: any; ended: boolean }[] = [];
     const state = { databases: new Set(['postgres', ...(options.baselineExists === false ? [] : ['synchroflow_db'])]) };
@@ -202,12 +204,26 @@ describe('GH-1068 T3 disposable harness — inherited configuration and lifecycl
       constructor(config: any) { this.record = { config, ended: false }; clients.push(this.record); }
       async connect() {}
       async end() { this.record.ended = true; }
-      async query(sql: string, params: unknown[] = []) {
+      async query(sql: string, values: unknown[] = []) {
         queries.push(sql.replace(/\s+/g, ' ').trim());
+        params.push(values);
         if (sql === 'SELECT current_user') return { rows: [{ current_user: 'isolated_admin' }] };
         if (sql.includes('pg_control_system')) return { rows: [{ id: '42' }] };
         const create = /^CREATE DATABASE "(.+)"$/.exec(sql);
         if (create) { state.databases.add(create[1]); return { rows: [] }; }
+        if (/^REVOKE TEMPORARY ON DATABASE "(.+)" FROM PUBLIC$/.test(sql)) {
+          if (options.revokeFails) throw new Error(`REVOKE_FAILED ${SECRET}`);
+          return { rows: [] };
+        }
+        if (sql.includes('aclexplode')) return { rows: [{ public_open: options.publicOpen === true }] };
+        if (sql.includes('session_role')) {
+          return { rows: [{ session_role: 'sf_shopify_reconnect_executor', role: 'sf_shopify_reconnect_executor', db: GENERATED }] };
+        }
+        if (sql.includes('rolbypassrls')) {
+          return { rows: [{ db: GENERATED, usr: 'sf_app', rolsuper: false, rolbypassrls: false,
+            can_temp: options.runtimeTemp === true, can_create: false }] };
+        }
+        if (sql.includes('has_migrations_table')) return { rows: [{ has_migrations_table: true, has_shops_table: true }] };
         const drop = /^DROP DATABASE IF EXISTS "(.+)"$/.exec(sql);
         if (drop) { state.databases.delete(drop[1]); return { rows: [] }; }
         if (sql.includes("LIKE 'synchroflow_test")) {
@@ -215,7 +231,7 @@ describe('GH-1068 T3 disposable harness — inherited configuration and lifecycl
             .concat(options.orphan ? ['synchroflow_test_orphan'] : []).map(datname => ({ datname })) };
         }
         if (/pg_database WHERE datname ?= ?\$1/.test(sql)) {
-          return { rows: state.databases.has(String(params[0])) ? [{ '?column?': 1 }] : [] };
+          return { rows: state.databases.has(String(values[0])) ? [{ '?column?': 1 }] : [] };
         }
         if (sql.startsWith('GRANT CONNECT') || sql.includes('pg_terminate_backend')) return { rows: [] };
         throw new Error('UNEXPECTED_FAKE_QUERY');
@@ -225,15 +241,71 @@ describe('GH-1068 T3 disposable harness — inherited configuration and lifecycl
     const verifyContext = jest.fn(async (target: any) => ({ ...target, administrator: 'isolated_admin',
       isolated: true, disposable: true }));
     const provision = jest.fn(async () => {
+      queries.push('PROVISION');
       if (options.provisionFails) throw new Error(`PROVISION_FAILED ${SECRET}`);
       return { created: [] };
     });
-    const spawn = jest.fn(() => { throw new Error('SPAWN_NOT_EXPECTED'); });
+    const spawn = jest.fn((cmd: string, args: string[]) => {
+      if (!options.migrate) throw new Error('SPAWN_NOT_EXPECTED');
+      queries.push(`SPAWN ${cmd} ${args.join(' ')}`);
+      return { status: 0 };
+    });
     const deps = { Client: FakeClient, verifyTopology, verifyContext, provision, spawn,
       generateName: () => GENERATED, log: (line: string) => output.push(line),
       error: (line: string) => output.push(line) };
-    return { deps, queries, output, clients, state, verifyTopology, verifyContext, provision, spawn };
+    return { deps, queries, params, output, clients, state, verifyTopology, verifyContext, provision, spawn };
   }
+
+  const REVOKE = `REVOKE TEMPORARY ON DATABASE "${GENERATED}" FROM PUBLIC`;
+  const MIGRATE = 'SPAWN npm run migrate --workspace ./apps/backend';
+  const indexOf = (queries: string[], fragment: string) => queries.findIndex(q => q.includes(fragment));
+
+  it('S8-C5: revokes PUBLIC TEMPORARY on exactly the generated database and proves the ACL before provisioning and migration', async () => {
+    const f = fakes({ migrate: true });
+    const code = await runLifecycle({ env: harnessEnv(), argv: [], deps: f.deps });
+    expect(code).toBe(0);
+    expect(f.queries.filter(q => q.startsWith('REVOKE'))).toEqual([REVOKE]);
+    const acl = indexOf(f.queries, 'aclexplode');
+    expect(f.params[acl]).toEqual([GENERATED]);
+    const order = [`CREATE DATABASE "${GENERATED}"`, REVOKE, 'aclexplode', 'PROVISION', MIGRATE,
+      'can_temp', `DROP DATABASE IF EXISTS "${GENERATED}"`].map(fragment => indexOf(f.queries, fragment));
+    expect(order.every(index => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(f.output).toContain(`TEST_DB_RUNTIME_OK=${GENERATED}`);
+    expect(f.output).toContain('TEST_DB_CLEANUP_OK=zero_orphans_baseline_preserved');
+    expect(f.state.databases.has('synchroflow_db')).toBe(true);
+    expect(f.clients.every(c => c.ended)).toBe(true);
+  });
+
+  it.each([
+    ['the REVOKE fails', { revokeFails: true }],
+    ['PUBLIC still holds TEMPORARY or CREATE', { publicOpen: true }],
+  ])('S8-C5: when %s, nothing is provisioned or migrated and the generated database is still dropped', async (_label, option) => {
+    const f = fakes({ migrate: true, ...option });
+    const code = await runLifecycle({ env: harnessEnv(), argv: [], deps: f.deps });
+    expect(code).toBe(1);
+    expect(f.provision).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+    expect(f.queries.filter(q => q.startsWith('DROP DATABASE'))).toEqual([`DROP DATABASE IF EXISTS "${GENERATED}"`]);
+    expect(f.state.databases.has(GENERATED)).toBe(false);
+    expect(f.output).toEqual([`TEST_DB_CREATED=${GENERATED}`, `TEST_DB_DROPPED=${GENERATED}`,
+      'TEST_DB_CLEANUP_OK=zero_orphans_baseline_preserved', 'LIFECYCLE_ERROR=DISPOSABLE_TEST_LIFECYCLE_FAILED']);
+    expect(f.output.join('\n')).not.toContain(SECRET);
+    expect(f.clients.every(c => c.ended)).toBe(true);
+  });
+
+  it('S8-C5: a runtime role that can still create temporary objects after migration fails closed before any child command', async () => {
+    const f = fakes({ migrate: true, runtimeTemp: true });
+    const code = await runLifecycle({ env: harnessEnv(), argv: ['--', 'npx', 'jest'], deps: f.deps });
+    expect(code).toBe(1);
+    expect(f.spawn).toHaveBeenCalledTimes(1);
+    expect(f.queries.some(q => q.startsWith('SPAWN npx'))).toBe(false);
+    expect(f.output).not.toContain(`TEST_DB_RUNTIME_OK=${GENERATED}`);
+    expect(f.output).toContain(`TEST_DB_DROPPED=${GENERATED}`);
+    expect(f.output).toContain('LIFECYCLE_ERROR=DISPOSABLE_TEST_LIFECYCLE_FAILED');
+    expect(f.state.databases.has(GENERATED)).toBe(false);
+    expect(f.clients.every(c => c.ended)).toBe(true);
+  });
 
   it('assertNoInheritedDatabaseUrls rejects every inherited harness URL, including empty values', () => {
     expect([...HARNESS_DATABASE_URL_KEYS].sort()).toEqual(['APP_DATABASE_URL', 'DATABASE_URL',

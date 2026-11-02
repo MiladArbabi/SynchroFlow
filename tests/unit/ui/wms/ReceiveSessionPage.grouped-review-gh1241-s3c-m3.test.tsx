@@ -45,13 +45,13 @@ const M3 = {
   keepExtra: /keep extra units/i,
   editCount: /edit count/i,
   confirm: /confirm and continue/i,
-  exit: 'Back to WMS',
+  exit: 'Exit',
   copy: {
     remaining: (n: number) => new RegExp(`assign ${n} more`, 'i'),
     matching: /\d+ products? match/i,
     countChanged: /count changed/i,
     changedElsewhere: /changed.*check again/i,
-    goodUnits: /good/i,
+    goodUnits: /ready to sell/i,
   },
 };
 
@@ -356,7 +356,18 @@ async function openReview() {
   return screen.findByTestId(M3.reviewTestId);
 }
 
-const row = (lineId: string) => screen.getByTestId(M3.rowTestId(lineId));
+/**
+ * WS-UX-RECEIVE-D4R S5 (UX-14) — Check differences shows one difference at a
+ * time. Reach a row the way an operator does: select its difference in the
+ * pager (the pager is absent when there is a single difference).
+ */
+function row(lineId: string) {
+  const mounted = screen.queryByTestId(M3.rowTestId(lineId));
+  if (mounted) return mounted;
+  const page = screen.queryByTestId(`receive-review-page-${lineId}`);
+  if (page) fireEvent.click(page);
+  return screen.getByTestId(M3.rowTestId(lineId));
+}
 const allocation = (lineId: string, name: RegExp) =>
   within(row(lineId)).getByRole('spinbutton', { name }) as HTMLInputElement;
 function assign(lineId: string, name: RegExp, value: number) {
@@ -762,13 +773,18 @@ describe('GH-1241 S3C-M3 — grouped Receive review and finalization', () => {
     expect(store.finalized()).toBeNull();
   });
 
-  it('R14b — with no unsaved review choice, Back to WMS leaves at once and writes nothing', async () => {
+  it('R14b — with no unsaved review choice, Back to WMS shows the Saved sheet; its Back to WMS leaves and writes nothing', async () => {
     const store = reviewStore([line(LINE_P, 3, 3), line(LINE_M, 2, 2)]);
     const props = await renderGrouped(store);
     await openReview();
     await settle();
 
     fireEvent.click(screen.getByRole('button', { name: M3.exit }));
+    // S7-CORRECT: V3.1 Saved sheet first; nothing has left yet.
+    const sheet = await screen.findByRole('dialog', { name: /leave this receive/i });
+    expect(sheet).toHaveTextContent(/your counts are saved/i);
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Back to WMS' }));
     await waitFor(() => expect(props.onSessionExit).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('button', { name: /leave without saving/i })).toBeNull();
     await settle();
@@ -826,5 +842,214 @@ describe('GH-1241 S3C-M3 — grouped Receive review and finalization', () => {
     fireEvent.click(confirmButton());
     await settle();
     expectNoWrites(props);
+  });
+});
+
+// ── WS-UX-RECEIVE-D4R S5 (UX-14) — Check differences pager ───────────────────
+// One difference at a time. The pager is navigation only: decisions for every
+// line survive paging, finalization submits the whole review model, and the
+// confirm gate still covers differences that are not on screen.
+
+const LINE_Q = '11111111-1006-4000-8000-000000000005'; // expected 4, counted 2
+const evidence = (id: string, type: string, quantity: number) => ({
+  receive_exception_id: id, exception_type: type, quantity_affected: quantity, accounting_role: 'shortfall',
+  counts_toward_shortfall: true, resolved: false, notes: null, raised_at: '2026-10-13T11:00:00.000Z',
+});
+const pager = () => screen.queryByRole('navigation', { name: /differences/i });
+const position = () => within(pager()!).getByRole('status');
+const next = () => fireEvent.click(screen.getByRole('button', { name: /next difference/i }));
+const previous = () => fireEvent.click(screen.getByRole('button', { name: /previous difference/i }));
+const mountedRows = () => screen.queryAllByTestId(/^receive-review-line-/);
+
+/** Three differences (two shortfalls and an over-count) and one matching line. */
+const threeDifferences = (overrides: { q?: Record<string, unknown> } = {}) => reviewStore([
+  line(LINE_P, 3, 1), line(LINE_Q, 4, 2, overrides.q ?? {}), line(LINE_X, 2, 3), line(LINE_M, 2, 2),
+]);
+
+describe('WS-UX-RECEIVE-D4R S5 — Check differences pager', () => {
+  it('S5-1/2 — first, middle and last differences are reachable one at a time, with an accurate position', async () => {
+    await renderGrouped(threeDifferences());
+    await openReview();
+
+    expect(position()).toHaveTextContent('Difference 1 of 3');
+    expect(mountedRows()).toHaveLength(1);
+    expect(screen.getByTestId(M3.rowTestId(LINE_P))).toBeTruthy();
+    expect(screen.getByRole('button', { name: /previous difference/i })).toBeDisabled();
+
+    next();
+    expect(position()).toHaveTextContent('Difference 2 of 3');
+    expect(screen.getByTestId(M3.rowTestId(LINE_Q))).toBeTruthy();
+    next();
+    expect(position()).toHaveTextContent('Difference 3 of 3');
+    expect(screen.getByTestId(M3.rowTestId(LINE_X))).toBeTruthy();
+    expect(screen.getByRole('button', { name: /next difference/i })).toBeDisabled();
+
+    previous();
+    expect(position()).toHaveTextContent('Difference 2 of 3');
+    expect(screen.getByTestId(`receive-review-page-${LINE_Q}`)).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByTestId(`receive-review-page-${LINE_P}`)).toHaveAccessibleName(/difference 1: widget 1 — needs a decision/i);
+  });
+
+  it('S5-3 — decisions survive forward and backward navigation', async () => {
+    await renderGrouped(threeDifferences());
+    await openReview();
+
+    assign(LINE_P, M3.missing, 1);
+    assign(LINE_P, M3.later, 1);
+    next();
+    assign(LINE_Q, M3.damaged, 2);
+    next();
+    previous();
+    previous();
+
+    expect(allocation(LINE_P, M3.missing).value).toBe('1');
+    expect(allocation(LINE_P, M3.later).value).toBe('1');
+    expect(row(LINE_P)).toHaveAttribute('data-settled', 'true');
+    expect(allocation(LINE_Q, M3.damaged).value).toBe('2');
+    expect(row(LINE_Q)).toHaveAttribute('data-settled', 'true');
+    expect(screen.getByTestId(`receive-review-page-${LINE_P}`)).toHaveAccessibleName(/settled/i);
+  });
+
+  it('S5-4 — a count corrected from another page recalculates that difference and drops its stale decision', async () => {
+    const store = threeDifferences();
+    await renderGrouped(store);
+    await openReview();
+    assign(LINE_Q, M3.missing, 2);
+
+    fireEvent.click(within(row(LINE_Q)).getByRole('button', { name: M3.editCount }));
+    const counted = await waitFor(() =>
+      within(screen.getByTestId('receive-count-current')).getByRole('spinbutton', { name: /count/i }) as HTMLInputElement);
+    await waitFor(() => expect(counted).not.toBeDisabled());
+    fireEvent.change(counted, { target: { value: '3' } });
+    fireEvent.click(within(screen.getByTestId('receive-count-current')).getByRole('button', { name: /confirm count/i }));
+    await waitFor(() => expect(store.confirm).toHaveBeenCalledWith(JOB_ID, LINE_Q, { quantity_confirmed: 3 }));
+
+    await openReview();
+    expect(row(LINE_Q)).toHaveAttribute('data-difference', '-1');
+    expect(row(LINE_Q)).toHaveAttribute('data-settled', 'false');
+    expect(row(LINE_Q)).toHaveTextContent(M3.copy.remaining(1));
+  });
+
+  it('S5-5 — an unresolved difference on another page blocks finalization and is named', async () => {
+    const store = threeDifferences();
+    await renderGrouped(store);
+    await openReview();
+
+    assign(LINE_P, M3.missing, 2);
+    assign(LINE_Q, M3.missing, 2);
+    previous();
+    expect(position()).toHaveTextContent('Difference 1 of 3');
+    expect(position()).toHaveTextContent('1 to settle');
+    expect(confirmButton()).toBeDisabled();
+    expect(screen.getByText(/1 difference still needs a decision/i)).toBeTruthy();
+    fireEvent.click(confirmButton());
+    await settle();
+    expect(store.saveDraft).not.toHaveBeenCalled();
+    expect(store.finalize).not.toHaveBeenCalled();
+  });
+
+  it('S5-6 — already-recorded evidence on a later page cannot be reduced', async () => {
+    const store = threeDifferences({ q: { reported_problems: [evidence(EXISTING_MISSING, 'missing_item', 1)] } });
+    await renderGrouped(store);
+    await openReview();
+
+    expect(allocation(LINE_Q, M3.missing).value).toBe('1');
+    assign(LINE_Q, M3.missing, 0);
+    expect(row(LINE_Q)).toHaveTextContent(/1 already recorded as missing must stay missing/i);
+    expect(row(LINE_Q)).toHaveAttribute('data-settled', 'false');
+    expect(confirmButton()).toBeDisabled();
+  });
+
+  it('S5-7 — a lead-review difference stays blocking from any page', async () => {
+    const store = threeDifferences({ q: { reported_problems: [evidence(EXISTING_DEFECT, 'wrong_item', 1)] } });
+    await renderGrouped(store);
+    await openReview();
+
+    assign(LINE_P, M3.missing, 2);
+    assign(LINE_Q, M3.missing, 2);
+    expect(row(LINE_Q)).toHaveTextContent(/ask a lead/i);
+    expect(row(LINE_Q)).toHaveAttribute('data-settled', 'false');
+    fireEvent.click(within(row(LINE_X)).getByRole('button', { name: M3.keepExtra }));
+    await waitFor(() => expect(row(LINE_X)).toHaveAttribute('data-settled', 'true'));
+    expect(confirmButton()).toBeDisabled();
+  });
+
+  it('S5-8/9 — the over-count needs its canonical approval, and finalization submits every page', async () => {
+    const store = threeDifferences();
+    const props = await renderGrouped(store);
+    await openReview();
+
+    assign(LINE_P, M3.missing, 2);
+    assign(LINE_Q, M3.later, 1);
+    assign(LINE_Q, M3.damaged, 1);
+    expect(row(LINE_X)).toHaveAttribute('data-settled', 'false');
+    expect(confirmButton()).toBeDisabled();
+    fireEvent.click(within(row(LINE_X)).getByRole('button', { name: M3.keepExtra }));
+    await waitFor(() => expect(store.approveOverDelivery).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(confirmButton()).toBeEnabled());
+
+    previous();
+    previous();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(store.finalize).toHaveBeenCalledTimes(1));
+    expect(savedLine(store, LINE_P)).toMatchObject({ quantity_accepted: 1, quantity_missing: 2, quantity_deferred: 0, quantity_rejected: 0 });
+    expect(savedLine(store, LINE_Q)).toMatchObject({ quantity_accepted: 2, quantity_missing: 0, quantity_deferred: 1, quantity_rejected: 1 });
+    expect(savedLine(store, LINE_X)).toMatchObject({ quantity_accepted: 3, quantity_missing: 0, quantity_deferred: 0, quantity_rejected: 0 });
+    expect(savedLine(store, LINE_M)).toMatchObject({ quantity_accepted: 2 });
+    expectFinalizedAgainstSavedRevision(store);
+    expectNoForbiddenWrites(props);
+  });
+
+  it('S5-10 — a failed save keeps every page decision; retry saves and finalizes them', async () => {
+    const store = threeDifferences();
+    await renderGrouped(store);
+    await openReview();
+    assign(LINE_P, M3.missing, 2);
+    assign(LINE_Q, M3.missing, 2);
+    fireEvent.click(within(row(LINE_X)).getByRole('button', { name: M3.keepExtra }));
+    await waitFor(() => expect(confirmButton()).toBeEnabled());
+
+    store.saveDraft.mockImplementationOnce(async () => { throw new Error('offline'); });
+    fireEvent.click(confirmButton());
+    expect(await screen.findByText(/couldn't reach the server/i)).toBeTruthy();
+    expect(store.finalize).not.toHaveBeenCalled();
+    expect(allocation(LINE_P, M3.missing).value).toBe('2');
+    expect(allocation(LINE_Q, M3.missing).value).toBe('2');
+
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(store.finalize).toHaveBeenCalledTimes(1));
+    expect(savedLine(store, LINE_Q)).toMatchObject({ quantity_missing: 2 });
+    expectFinalizedAgainstSavedRevision(store);
+  });
+
+  it('S5-11 — Back to WMS from a later page still warns about unsaved choices and writes nothing', async () => {
+    const store = threeDifferences();
+    const props = await renderGrouped(store);
+    await openReview();
+    next();
+    assign(LINE_Q, M3.missing, 2);
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: M3.exit }));
+    expect(await screen.findByRole('button', { name: /leave without saving/i })).toBeTruthy();
+    expect(props.onSessionExit).not.toHaveBeenCalled();
+    expect(store.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it('S5-12 — a single difference needs no pager; no differences finalizes directly', async () => {
+    await renderGrouped(reviewStore([line(LINE_P, 3, 1), line(LINE_M, 2, 2)]));
+    await openReview();
+    expect(pager()).toBeNull();
+    expect(mountedRows()).toHaveLength(1);
+    cleanup();
+
+    const store = reviewStore([line(LINE_P, 3, 3), line(LINE_M, 2, 2)]);
+    await renderGrouped(store);
+    await openReview();
+    expect(pager()).toBeNull();
+    expect(mountedRows()).toHaveLength(0);
+    expect(screen.getByText(/every product matches/i)).toBeTruthy();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(store.finalize).toHaveBeenCalledTimes(1));
   });
 });

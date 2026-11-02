@@ -113,10 +113,20 @@ async function enterReceiveExecution(mode: 'count' | 'scan' = 'count') {
   await screen.findByPlaceholderText(/scan barcode/i);
 }
 
-/** Accept every expected unit, then confirm the batch. */
-async function completeCountInspection() {
+/**
+ * WS-UX-RECEIVE-D4R S2 — the operator counts each physical unit deliberately
+ * (one + per unit); expected quantity is never used as a count shortcut.
+ */
+async function countPhysicalUnits(units: number) {
+  for (let unit = 0; unit < units; unit += 1) {
+    fireEvent.click(await screen.findByRole('button', { name: /^\+$/ }));
+  }
+}
+
+/** Count the line's units one by one, then confirm the line with Finish Count. */
+async function countAndConfirmLine(units: number) {
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  await countPhysicalUnits(units);
   fireEvent.click(screen.getByRole('button', { name: /confirm line/i }));
 }
 
@@ -147,7 +157,7 @@ it('B8a — a variant with a real external barcode is never forced through LSU- 
     onConfirmUnitLabelsPrinted,
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
 
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledTimes(1));
   expect(onInspectLine).toHaveBeenCalledWith(
@@ -181,7 +191,7 @@ it('B8b — barcode-less stock prints LSU- labels and requires an explicit opera
     onConfirmUnitLabelsPrinted,
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
 
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledTimes(1));
 
@@ -220,7 +230,7 @@ it('B8c — a failed acknowledgement keeps the line pending and does not advance
     onConfirmUnitLabelsPrinted,
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
   await waitFor(() => expect(onPrintUnitLabels).toHaveBeenCalledWith(LINE_ID));
 
   fireEvent.click(await screen.findByTestId(ACK_TESTID));
@@ -318,7 +328,7 @@ it('R3 — switching receive treatment is local to the current line', async () =
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(screen.getByRole('button', { name: /^all \d+$/i }));
+  await countPhysicalUnits(1);
   fireEvent.click(screen.getByRole('button', { name: /confirm line/i }));
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledTimes(1));
 
@@ -361,7 +371,7 @@ it('R4 — completed lines cannot reopen through scan or count transitions', asy
   await enterReceiveExecution('scan');
 
   await scan('5012345678900');
-  await waitFor(() => expect(screen.getByText(/different receive line/i)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/different receive line\. Nothing was counted\./i)).toBeTruthy());
   expect(onInspectLine).not.toHaveBeenCalled();
 
   await scan('5099999999999');
@@ -415,7 +425,7 @@ it('R6 — human-decision states release scanner capture and do not autofocus co
   await enterReceiveExecution('scan');
   const input = await scan('5012345678900');
 
-  expect(await screen.findByRole('dialog')).toBeTruthy();
+  expect(await screen.findByRole('region', { name: /extra unit detected/i })).toBeTruthy();
   expect(document.activeElement).not.toBe(input);
   // GH-1241 S3-A1 G2: an unconfirmed live over-count offers "Keep extra in
   // count" (approval follows Finish Count); it is the consequential CTA here.
@@ -430,7 +440,7 @@ it('R7 — label hold preserves accepted quantity and removes conflicting inspec
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
   await screen.findByTestId(ACK_TESTID);
 
   expect(screen.getByText(/1\/1/)).toBeTruthy();
@@ -454,7 +464,7 @@ it('R8 — the miscount path cannot bypass label acknowledgement', async () => {
   await enterReceiveExecution('count');
   fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
   fireEvent.click(screen.getByRole('button', { name: /confirm line/i }));
-  fireEvent.click(await screen.findByText(/miscounted/i));
+  fireEvent.click(await screen.findByText(/^recount$/i));
 
   // GH-1241 S3-A1: "I miscounted" returns to counting instead of accepting
   // every expected unit uncounted. The corrected recount is confirmed and
@@ -489,7 +499,7 @@ it('R9 — barcode-less lines are count-only and cannot reach Review before LSU 
   expect(screen.queryByPlaceholderText(/scan barcode/i)).toBeNull();
   expect(screen.queryByRole('button', { name: /^scan$/i })).toBeNull();
 
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  await countPhysicalUnits(1);
   fireEvent.click(await screen.findByRole('button', { name: /confirm line/i }));
 
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledWith(expect.objectContaining({
@@ -546,10 +556,12 @@ it('R11 — failed problem reporting keeps the dialog context and entered values
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
   fireEvent.click(await screen.findByRole('button', { name: /report problem/i }));
-  fireEvent.click(screen.getByRole('button', { name: /barcode problem/i }));
+  // S3-B: the problem form opens only after the count reset is saved.
+  fireEvent.click(await screen.findByRole('button', { name: /barcode problem/i }));
   fireEvent.change(screen.getByLabelText(/qty affected/i), { target: { value: '3' } });
   fireEvent.change(screen.getByLabelText(/barcode value/i), { target: { value: 'BAD-CODE' } });
   fireEvent.click(screen.getByRole('button', { name: /^report problem$/i }));
@@ -608,16 +620,18 @@ it('R11c — successful problem reporting refreshes from canonical receive-job s
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
   fireEvent.click(await screen.findByRole('button', { name: /report problem/i }));
-  fireEvent.click(screen.getByRole('button', { name: /wrong product/i }));
+  // S3-B: the problem form opens only after the count reset is saved.
+  fireEvent.click(await screen.findByRole('button', { name: /wrong product/i }));
   await screen.findByLabelText(/qty affected/i);
   fireEvent.click(screen.getByRole('button', { name: /^report problem$/i }));
 
   await waitFor(() => expect(onReportException).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 });
 
 it('R12 — expected plus one over-delivery persists canonical overage approval before inspection in count and scan paths', async () => {
@@ -637,13 +651,14 @@ it('R12 — expected plus one over-delivery persists canonical overage approval 
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
   // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
   fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 
   expect(countApprove).toHaveBeenCalledWith(expect.objectContaining({
     lasyncro_variant_id: VARIANT_ID,
@@ -682,7 +697,7 @@ it('R12 — expected plus one over-delivery persists canonical overage approval 
   fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 
   expect(scanApprove).toHaveBeenCalledWith(expect.objectContaining({
     lasyncro_variant_id: VARIANT_ID,
@@ -709,8 +724,9 @@ it('R12b — a rejected overage approval keeps the decision open, preserves the 
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
   // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
   fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
@@ -720,7 +736,7 @@ it('R12b — a rejected overage approval keeps the decision open, preserves the 
 
   // No optimistic completion: the decision dialog stays open with the
   // counted quantity intact, and inspect was never attempted.
-  const dialog = screen.getByRole('dialog', { name: /extra unit detected/i });
+  const dialog = screen.getByRole('region', { name: /extra unit detected/i });
   expect(within(dialog).getByText('2')).toBeTruthy();
   expect(inspect).not.toHaveBeenCalled();
 
@@ -742,13 +758,14 @@ it('R12c — "Do not receive extra" restores provisional quantity to expected an
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
-  await screen.findByRole('dialog', { name: /extra unit detected/i });
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
+  await screen.findByRole('region', { name: /extra unit detected/i });
 
   fireEvent.click(screen.getByRole('button', { name: /do not receive extra/i }));
 
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
   await waitFor(() => expect(persistProgress).toHaveBeenCalledWith(
     LINE_ID,
     expect.objectContaining({ quantity_sellable_provisional: 1 }),
@@ -771,13 +788,14 @@ it('R12d — "Report problem" opens the explicit Problem Center report and never
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
-  await screen.findByRole('dialog', { name: /extra unit detected/i });
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
+  await screen.findByRole('region', { name: /extra unit detected/i });
 
   fireEvent.click(screen.getByRole('button', { name: /report problem/i }));
 
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: /extra unit detected/i })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
   expect(approve).not.toHaveBeenCalled();
   expect(inspect).not.toHaveBeenCalled();
 
@@ -835,11 +853,11 @@ it('R12f — refresh/re-entry with a persisted overage approval reconstructs the
 
   // The approved over-delivery decision is restored on render, not left
   // null awaiting a fresh over-count in this session.
-  const dialog = await screen.findByRole('dialog', { name: /extra unit detected/i });
+  const dialog = await screen.findByRole('region', { name: /extra unit detected/i });
   expect(within(dialog).getByText('2')).toBeTruthy();
 
   fireEvent.click(within(dialog).getByRole('button', { name: /accept extra/i }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 
   // Already-persisted approval must not be persisted again, and the
   // already-persisted confirmed count is not re-manufactured.
@@ -864,13 +882,14 @@ it('R12e — Review truthfully reports expected, accepted, and extra for an appr
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(screen.getByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
   // GH-1241 S3-A1 G2: physical count → Finish Count (confirmation) → approve → inspect.
   fireEvent.click(await screen.findByRole('button', { name: /keep extra in count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /finish count/i }));
   fireEvent.click(await screen.findByRole('button', { name: /accept extra/i }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('region', { name: /extra unit detected/i })).toBeNull());
 
   expect(await screen.findByText(/review receive/i)).toBeTruthy();
 
@@ -894,7 +913,7 @@ it('R13 — count and scan converge on equivalent review semantics', async () =>
     onConfirmUnitLabelsPrinted: jest.fn().mockResolvedValue(undefined),
     onCloseJob: countClose,
   });
-  await completeCountInspection();
+  await countAndConfirmLine(1);
   expect(await screen.findByText(/review receive/i)).toBeTruthy();
   expect(screen.getByRole('button', { name: /close receive/i })).toBeTruthy();
 
@@ -998,7 +1017,7 @@ it('R13c — Review requires an actual delivery date before Receive can close', 
     onCloseJob,
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
 
   const closeButton = await screen.findByRole('button', { name: /^close receive$/i });
   expect((closeButton as HTMLButtonElement).disabled).toBe(true);
@@ -1029,7 +1048,7 @@ it('R14 — receive close produces the approved handoff without fabricated Stow 
     onCloseJob,
   });
 
-  await completeCountInspection();
+  await countAndConfirmLine(1);
 
   fireEvent.change(await screen.findByLabelText(/actual delivery date/i), {
     target: { value: '2026-09-14' },
@@ -1160,7 +1179,7 @@ it('R18 — Finish count with sellable equal to expected follows normal completi
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
+  await countPhysicalUnits(1);
   await finishCount();
 
   await waitFor(() => expect(onInspectLine).toHaveBeenCalledWith(expect.objectContaining({
@@ -1257,12 +1276,22 @@ it('R22a — reconciliation choices use neutral semantic selection without defau
   expect(missingItem).toHaveAttribute('aria-pressed', 'false');
   expect(damagedUnit.className).not.toContain('Primary');
   expect(missingItem.className).not.toContain('Primary');
-  expect(other).toHaveStyle({ gridColumn: '1 / -1' });
+  // WS-UX-RECEIVE-D4R S3 — "Other" is a regular reason (V3.1 two-column
+  // grid): it is identified by its accessible name and selects like the rest.
+  expect(other).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('button', { name: /^other\b/i })).toBe(other);
 
   fireEvent.click(missingItem);
 
   expect(missingItem).toHaveAttribute('aria-pressed', 'true');
   expect(damagedUnit).toHaveAttribute('aria-pressed', 'false');
+  expect(other).toHaveAttribute('aria-pressed', 'false');
+
+  // Selecting Other moves the single selection and asks for notes.
+  fireEvent.click(other);
+  expect(other).toHaveAttribute('aria-pressed', 'true');
+  expect(missingItem).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('textbox', { name: /notes/i })).toBeTruthy();
 });
 
 it('R22b — reconciliation quantity stepper stays neutral and allocation CTA is Tier-1', async () => {
@@ -1316,7 +1345,7 @@ it('R22c — canonical shortfall projection restores reconciliation on initial r
   });
 
   expect(screen.queryByRole('button', { name: /start receive/i })).toBeNull();
-  expect(await screen.findByText(/account for the remaining 1 units/i)).toBeTruthy();
+  expect(await screen.findByText(/account for the remaining 1 unit before/i)).toBeTruthy();
   expect(screen.getByText(/^expected$/i)).toBeTruthy();
   expect(screen.getByText(/^sellable$/i)).toBeTruthy();
   expect(screen.getByText(/^to account for$/i)).toBeTruthy();
@@ -1455,7 +1484,7 @@ it('R22f — active Count progress restores provisional sellable 7 without enter
   expect(screen.queryByText(/account for the remaining/i)).toBeNull();
 });
 
-it('R22g — active Count progress restores provisional sellable 0 without falling back to expected', async () => {
+it('R22g — unconfirmed provisional zero remains not counted without falling back to expected', async () => {
   renderSession({
     barcode: '5012345678900',
     onInspectLine: jest.fn().mockResolvedValue(undefined),
@@ -1476,7 +1505,10 @@ it('R22g — active Count progress restores provisional sellable 0 without falli
   });
 
   expect(screen.queryByRole('button', { name: /start receive/i })).toBeNull();
-  expect(screen.getByDisplayValue('0')).toBeTruthy();
+  const count = screen.getByRole('textbox', { name: /sellable count/i });
+  expect(count).toHaveValue('');
+  expect(count).toHaveAttribute('placeholder', 'Not counted');
+  expect(screen.getByRole('button', { name: /finish count/i })).toBeDisabled();
   expect(screen.queryByText(/account for the remaining/i)).toBeNull();
 });
 
@@ -1504,7 +1536,7 @@ it('R22h — short post-Finish count restores reconciliation from canonical 9 / 
   });
 
   expect(screen.queryByRole('button', { name: /start receive/i })).toBeNull();
-  expect(await screen.findByText(/account for the remaining 1 units/i)).toBeTruthy();
+  expect(await screen.findByText(/account for the remaining 1 unit before/i)).toBeTruthy();
   expect(screen.getByText(/9\/10, 1 unaccounted/i)).toBeTruthy();
   expect(screen.getByText(/to account for\s+1/i)).toBeTruthy();
 });
@@ -1675,10 +1707,11 @@ it('R28 — existing overdelivery UI still activates when sellable exceeds expec
   });
 
   await enterReceiveExecution('count');
-  fireEvent.click(await screen.findByRole('button', { name: /^all \d+$/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /^\+$/i }));
+  await countPhysicalUnits(1);
+  // The physical unit beyond expected: over-delivery.
+  await countPhysicalUnits(1);
 
-  expect(await screen.findByRole('dialog', { name: /extra unit detected/i })).toBeTruthy();
+  expect(await screen.findByRole('region', { name: /extra unit detected/i })).toBeTruthy();
 });
 
 // ── B9 — the real module seam ───────────────────────────────────────────────
@@ -1892,7 +1925,7 @@ it('R31 — asynchronous LSU label generation cannot advance to Review before at
 
   await enterReceiveExecution('count');
 
-  fireEvent.click(await screen.findByRole('button', { name: /^all 1$/i }));
+  await countPhysicalUnits(1);
   fireEvent.click(screen.getByRole('button', { name: /finish count/i }));
 
   await waitFor(() => {

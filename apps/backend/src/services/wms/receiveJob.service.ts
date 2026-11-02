@@ -2,11 +2,13 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { createStowTask } from './stow.service.js';
-import { fireStowTaskAlert, fireReceiveArrivedAlert } from './wmsAlerts.service.js';
+import { fireStowTaskAlert, fireReceiveArrivedAlert, clearReceiveExceptionAlertIfNoneActive } from './wmsAlerts.service.js';
 import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../suppliers/supplierRating.service.js';
 import { suggestStowLocation } from './locationSuggestion.service.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
-import { batchConfirmUnits } from './inventoryUnit.service.js';
+import { batchConfirmUnits, mintHeldUnits } from './inventoryUnit.service.js';
+import { assertHeldCustodyComplete } from './receiveHeldCustody.service.js';
+import { createProblemCenterTask } from './problemCenterTask.service.js';
 import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
 import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
 import {
@@ -30,7 +32,14 @@ function receiveCodedError(errorCode: string, message: string, statusCode = 409)
   return Object.assign(receiveError(`${errorCode}: ${message}`, statusCode), { errorCode });
 }
 
+/** S4-3B (0224): explicit recoverable-held evidence — delivered units held for recovery. */
+function isRecoverableHeld(exception: any): boolean {
+  return exception.disposition === 'recoverable_held';
+}
+
 function shouldCountTowardShortfall(exception: any): boolean {
+  // Held units were delivered; never shortfall, whatever the type (S4-3 audit F1).
+  if (isRecoverableHeld(exception)) return false;
   if (exception.counts_toward_shortfall === true) return true;
   if (exception.accounting_role === 'shortfall') return true;
   return SHORTFALL_ACCOUNTING_TYPES.has(exception.exception_type)
@@ -57,12 +66,14 @@ export async function receiveLineReconciliationState(
     sellable?: number;
   }
 ) {
+  // S8-C5 Recount: superseded allocations are history, not accounting evidence.
   const exceptions = await trx('receive_exceptions')
     .where({
       shop_id: input.shopId,
       receive_job_id: input.receiveJobId,
       receive_job_line_id: input.receiveJobLineId,
     })
+    .whereNull('superseded_at')
     .select(
       'receive_exception_id',
       'exception_type',
@@ -72,6 +83,7 @@ export async function receiveLineReconciliationState(
       'raised_at',
       'accounting_role',
       'counts_toward_shortfall',
+      'disposition',
     )
     .orderBy('raised_at', 'asc');
 
@@ -397,6 +409,144 @@ async function receiveLineCountState(trx: Knex.Transaction, shopId: number, rece
   };
 }
 
+export interface RecountReceiveLineInput {
+  shopId: number;
+  receiveJobId: string;
+  receiveJobLineId: string;
+  recountEventId: string;
+  recountedBy: number;
+}
+
+/**
+ * S8-C5 — per-line Recount before inspection. The operator found the confirmed
+ * count was wrong after shortfall allocations were persisted. Atomically:
+ * supersede (never delete) every active shortfall allocation on the line,
+ * reset the later-delivery quantity, and void the count confirmation and
+ * reconciliation marker. The provisional count is kept for correction; the
+ * next Finish Count re-confirms. Overage approvals, non-accounting problems
+ * and other lines are untouched. A Recount event is consumed once: an exact
+ * replay is a no-op, any other reuse fails closed.
+ */
+export async function recountReceiveJobLine(trx: Knex.Transaction, input: RecountReceiveLineInput) {
+  const { shopId, receiveJobId, receiveJobLineId, recountEventId, recountedBy } = input;
+
+  const { job } = await lockReceiveJob(trx, shopId, receiveJobId);
+  const line = await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .forUpdate().first();
+  if (!line) throw receiveCodedError('RECEIVE_LINE_NOT_FOUND', 'Receive line not found', 404);
+
+  const consumed = await trx('receive_line_recount_events')
+    .where({ shop_id: shopId, event_id: recountEventId })
+    .first('receive_job_id', 'receive_job_line_id');
+  if (consumed) {
+    if (consumed.receive_job_id === receiveJobId && consumed.receive_job_line_id === receiveJobLineId) {
+      return recountState(trx, shopId, receiveJobId, receiveJobLineId, recountEventId, true);
+    }
+    throw receiveCodedError('RECEIVE_RECOUNT_REPLAY_CONFLICT', 'this Recount event was already used for another line');
+  }
+
+  if (!ACTIVE_RECEIVE_STATUSES.includes(job.status)) {
+    throw receiveCodedError('RECEIVE_JOB_TERMINAL', 'this Receive job is finished; its counts cannot change');
+  }
+  await assertReceiveNotGroupFinalized(trx, shopId, receiveJobId);
+  const groupedDraft = await trx('receive_reconciliation_revisions')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId }).first('revision_id');
+  if (groupedDraft) {
+    throw receiveCodedError('RECEIVE_RECOUNT_GROUPED', 'this Receive is reconciled as a group; edit the count in its review');
+  }
+  if (line.inspection_complete) {
+    throw receiveCodedError('RECEIVE_LINE_ALREADY_INSPECTED', 'the count of a finished line cannot change');
+  }
+
+  const active = (await trx('receive_exceptions')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .whereNull('superseded_at')
+    .select('receive_exception_id', 'exception_type', 'accounting_role', 'counts_toward_shortfall', 'disposition'))
+    // S4-3B D3: active recoverable-held evidence is superseded too, so no
+    // stale held accounting survives the Recount.
+    .filter((exception: any) => (shouldCountTowardShortfall(exception) && !isPersistedOverageApproval(exception))
+      || isRecoverableHeld(exception));
+  const supersededIds = active.map((exception: any) => exception.receive_exception_id as string);
+
+  await trx('receive_line_recount_events').insert({
+    shop_id: shopId,
+    event_id: recountEventId,
+    receive_job_id: receiveJobId,
+    receive_job_line_id: receiveJobLineId,
+    superseded_count: supersededIds.length,
+    previous_quantity_count_confirmed: line.quantity_count_confirmed ?? null,
+    previous_quantity_deferred: line.quantity_deferred ?? null,
+    previous_quantity_sellable_provisional: line.quantity_sellable_provisional ?? null,
+    recounted_by: recountedBy,
+  });
+
+  const now = new Date();
+  if (supersededIds.length > 0) {
+    await trx('receive_exceptions')
+      .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+      .whereIn('receive_exception_id', supersededIds)
+      .whereNull('superseded_at')
+      .update({
+        superseded_at: now,
+        superseded_by: recountedBy,
+        superseded_by_recount_event_id: recountEventId,
+        updated_at: now,
+      });
+  }
+
+  await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .update({
+      // v1 lines never carried a later-delivery draft; keep NULL there.
+      ...(line.quantity_deferred != null ? { quantity_deferred: 0 } : {}),
+      reconciliation_started_at: null,
+      ...CLEARED_COUNT_CONFIRMATION,
+      updated_at: now,
+    });
+
+  if (supersededIds.length > 0) {
+    await clearReceiveExceptionAlertIfNoneActive(trx, {
+      shopId,
+      receiveJobId,
+      lasyncroVariantId: line.lasyncro_variant_id,
+    });
+  }
+
+  return recountState(trx, shopId, receiveJobId, receiveJobLineId, recountEventId, false);
+}
+
+async function recountState(
+  trx: Knex.Transaction,
+  shopId: number,
+  receiveJobId: string,
+  receiveJobLineId: string,
+  recountEventId: string,
+  replayed: boolean,
+) {
+  const line = await trx('receive_job_lines')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: receiveJobLineId })
+    .first('quantity_expected', 'quantity_sellable_provisional', 'quantity_count_confirmed');
+  const superseded = await trx('receive_exceptions')
+    .where({ shop_id: shopId, superseded_by_recount_event_id: recountEventId })
+    .select('receive_exception_id');
+  const provisional = line.quantity_sellable_provisional == null ? null : Number(line.quantity_sellable_provisional);
+  return {
+    recount_event_id: recountEventId,
+    replayed,
+    superseded_exception_ids: superseded.map((row: any) => row.receive_exception_id as string),
+    quantity_sellable_provisional: provisional,
+    quantity_count_confirmed: line.quantity_count_confirmed == null ? null : Number(line.quantity_count_confirmed),
+    reconciliation: await receiveLineReconciliationState(trx, {
+      shopId,
+      receiveJobId,
+      receiveJobLineId,
+      expected: Number(line.quantity_expected ?? 0),
+      sellable: provisional ?? 0,
+    }),
+  };
+}
+
 /**
  * Records inspection result for a single variant batch.
  * Marks the line as inspection_complete.
@@ -423,7 +573,8 @@ export async function inspectReceiveJobLine(
   if (!line) throw receiveError(`[RECEIVE_INSPECT] Line not found on job ${receiveJobId}`, 404);
   if (lasyncroVariantId && line.lasyncro_variant_id !== lasyncroVariantId) throw receiveError('Receive line variant mismatch', 400);
   const expected = Number(line.quantity_expected ?? 0);
-  const evidence = await trx('receive_exceptions').where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: line.receive_job_line_id });
+  const evidence = await trx('receive_exceptions').where({ shop_id: shopId, receive_job_id: receiveJobId, receive_job_line_id: line.receive_job_line_id })
+    .whereNull('superseded_at');
   const canonicalMissing = evidence.filter((e: any) => e.exception_type === 'missing_item').reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
   const explicit = input.quantityMissing !== undefined && input.quantityDeferred !== undefined;
   if ((input.quantityMissing !== undefined) !== (input.quantityDeferred !== undefined)) throw receiveError('Both missing and later-delivery quantities are required', 400);
@@ -439,18 +590,31 @@ export async function inspectReceiveJobLine(
   for (const q of [quantityAccepted, quantityRejected, missing, deferred, held]) {
     if (!Number.isSafeInteger(q) || q < 0) throw receiveError('Disposition quantities must be non-negative integers', 400);
   }
-  if (held !== 0) throw receiveError('Recoverable-held disposition requires S4 atomic capture', 409);
-  const delivered = quantityAccepted + quantityRejected;
+  // S4-3B (4a): held is exactly the active primary recoverable-held evidence,
+  // assigned to held LSUs in raised_at, then receive_exception_id, order.
+  const heldEvidence = evidence.filter(isRecoverableHeld).sort((a: any, b: any) =>
+    (new Date(a.raised_at).getTime() - new Date(b.raised_at).getTime())
+    || String(a.receive_exception_id).localeCompare(String(b.receive_exception_id)));
+  const evidencedHeld = heldEvidence.reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
+  if (evidencedHeld !== held) {
+    throw receiveCodedError('RECEIVE_HELD_EVIDENCE_MISMATCH', `held ${held} must equal active recoverable-held evidence ${evidencedHeld}`);
+  }
+  if (held > 0 && (job.delivery_accounting_version !== 2 || !line.lasyncro_variant_id)) {
+    throw receiveCodedError('RECEIVE_HELD_UNSUPPORTED', 'recoverable-held units require a linked line on a v2 Receive');
+  }
+  // F2: held units were delivered (0208/0224 identity delivered = accepted + rejected + held).
+  const delivered = quantityAccepted + quantityRejected + held;
   const approvedExtra = evidence.filter((e: any) => e.accounting_role === 'overage' && e.exception_type === 'extra_item')
     .reduce((n: number, e: any) => n + Number(e.quantity_affected), 0);
   const actualExtra = Math.max(0, delivered - expected);
   if (actualExtra > approvedExtra) throw receiveError('[RECEIVE_INSPECT] physical overdelivery exceeds persisted overage approval', 409);
   if (missing !== canonicalMissing) throw receiveError('Missing quantity must match canonical missing-item exceptions', 409);
-  if (delivered + missing + deferred !== expected + actualExtra) throw receiveError('[RECEIVE_INSPECT] shortfall accounting must reconcile accepted, rejected, missing and deferred quantities', 409);
+  if (delivered + missing + deferred !== expected + actualExtra) throw receiveError('[RECEIVE_INSPECT] shortfall accounting must reconcile accepted, rejected, held, missing and deferred quantities', 409);
   if (line.inspection_complete) {
     if (input.deviceEventId && line.inspection_device_event_id === input.deviceEventId
       && Number(line.quantity_accepted) === quantityAccepted && Number(line.quantity_rejected) === quantityRejected
-      && Number(line.quantity_missing) === missing && Number(line.quantity_deferred) === deferred) return;
+      && Number(line.quantity_missing) === missing && Number(line.quantity_deferred) === deferred
+      && Number(line.quantity_held_recoverable ?? 0) === held) return;
     throw receiveError(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`, 409);
   }
   assertReceiveMutable(job);
@@ -485,7 +649,7 @@ export async function inspectReceiveJobLine(
   await trx('receive_jobs')
     .where({ receive_job_id: receiveJobId })
     .update({
-      units_inspected: trx.raw('units_inspected + ?', [quantityAccepted + quantityRejected]),
+      units_inspected: trx.raw('units_inspected + ?', [delivered]),
       units_accepted: trx.raw('units_accepted + ?', [quantityAccepted]),
       units_rejected: trx.raw('units_rejected + ?', [quantityRejected]),
       updated_at: new Date(),
@@ -493,13 +657,15 @@ export async function inspectReceiveJobLine(
 
   console.info('[RECEIVE_LINE_INSPECTED]', { receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected });
 
-  // WM-46 — generate LSU- unit barcodes for all accepted units
-  if (quantityAccepted > 0) {
-    const variantRow = await trx('variants')
+  const variantRow = quantityAccepted > 0 || held > 0
+    ? await trx('variants')
       .where({ lasyncro_variant_id: line.lasyncro_variant_id, shop_id: shopId })
       .select('barcode')
-      .first();
+      .first()
+    : null;
 
+  // WM-46 — generate LSU- unit barcodes for all accepted units
+  if (quantityAccepted > 0) {
     await batchConfirmUnits(trx, {
       shopId,
       receiveJobLineId: line.receive_job_line_id,
@@ -508,6 +674,38 @@ export async function inspectReceiveJobLine(
       shopifyBarcode: variantRow?.barcode ?? null,
       createdBy: inspectedBy,
     });
+  }
+
+  /**
+   * S4-3B held capture (T1, same transaction). One held LSU per held unit at
+   * sequences accepted+1..accepted+held, and one quantity-1 Problem Center
+   * task per LSU carrying its primary exception (K7 / D2). No movement, truth,
+   * Stow or problem bin: those belong to S4-4 custody and S4-5 recovery.
+   */
+  if (held > 0) {
+    const heldUnits = await mintHeldUnits(trx, {
+      shopId,
+      receiveJobLineId: line.receive_job_line_id,
+      lasyncroVariantId: line.lasyncro_variant_id,
+      firstSequence: quantityAccepted + 1,
+      quantity: held,
+      shopifyBarcode: variantRow?.barcode ?? null,
+    });
+    let next = 0;
+    for (const exception of heldEvidence) {
+      for (let i = 0; i < Number(exception.quantity_affected); i += 1) {
+        await createProblemCenterTask(trx, {
+          shopId,
+          source: 'receive',
+          sourceExceptionId: exception.receive_exception_id,
+          lasyncroUnitId: heldUnits[next++].lasyncro_unit_id,
+          lasyncroVariantId: line.lasyncro_variant_id,
+          quantity: 1,
+          exceptionType: exception.exception_type,
+          notes: exception.notes ?? null,
+        });
+      }
+    }
   }
 
   /**
@@ -534,7 +732,7 @@ export async function inspectReceiveJobLine(
     actionType: 'receive_inspect',
     entityType: 'receive_job',
     entityId: receiveJobId,
-    metadata: { lasyncro_variant_id: lasyncroVariantId, quantity_accepted: quantityAccepted, quantity_rejected: quantityRejected },
+    metadata: { lasyncro_variant_id: lasyncroVariantId, quantity_accepted: quantityAccepted, quantity_rejected: quantityRejected, quantity_held_recoverable: held },
   });
 }
 
@@ -721,10 +919,13 @@ export async function closeReceiveJob(
    * the caller's transaction back whole, so a refused close leaves nothing
    * behind.
    */
-  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable !== 0)) {
+  if (job.delivery_accounting_version === 2 && lines.some((l: any) => l.quantity_delivered == null || l.quantity_missing == null || l.quantity_deferred == null || l.quantity_held_recoverable == null)) {
     throw receiveError('Incomplete v2 delivery accounting');
   }
+  // Accepted and held labels (barcode readiness), then held custody (S4-4B):
+  // every held LSU must already be in confirmed problem-bin custody.
   await assertReceiveJobBarcodeReady(trx, shopId, receiveJobId);
+  await assertHeldCustodyComplete(trx, shopId, lines);
 
   // 1. Write quantity_received back to PO line items
   for (const line of lines) {
