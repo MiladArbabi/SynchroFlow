@@ -16,6 +16,8 @@ jest.mock('api-src/services/shopify/shopifyClient.service', () => ({
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import { transitionShopSubscription } from 'api-src/services/billing/subscriptionTransition.service';
+import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 import { issueTestToken } from '../../unit/helpers/auth';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -3000,13 +3002,29 @@ describe('GH-1179 RED-A — opening inventory start / Shopify scope safety', () 
   it('GH1179-A3 — once opening inventory has started, the warehouse Shopify Location mapping cannot be changed or cleared', async () => {
     const fixture = await createFixture({ installation: false });
 
-    await withTenant(fixture.shopId, (trx) =>
-      trx('shopify_app_installations').insert({
+    await withTenant(fixture.shopId, async (trx) => {
+      const [installation] = await trx('shopify_app_installations')
+        .insert({
+          shop_id: fixture.shopId,
+          shop_domain: `gh1179-a3-${fixture.shopId}.myshopify.com`,
+          scopes: 'read_locations,write_inventory',
+        })
+        .returning('id');
+
+      // Canonical admin credential authority; the provider stays mocked.
+      const now = Date.now();
+      await trx('shopify_admin_credentials').insert({
         shop_id: fixture.shopId,
-        shop_domain: `gh1179-a3-${fixture.shopId}.myshopify.com`,
-        scopes: 'read_locations,write_inventory',
-      })
-    );
+        installation_id: installation.id,
+        access_token_encrypted: encrypt('gh1179-a3-offline-token-no-network-call'),
+        refresh_token_encrypted: encrypt('gh1179-a3-refresh-token-no-network-call'),
+        access_expires_at: new Date(now + 86_400_000),
+        refresh_expires_at: new Date(now + 2_592_000_000),
+        granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+        credential_generation: '1',
+        credential_state: 'ACTIVE',
+      });
+    });
 
     mockShopifyRequest.mockImplementation(async (_query: string, options: any) => ({
       data: {

@@ -19,6 +19,8 @@ import {
 } from '@lasyncro/backend-core/db.js';
 
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
+import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 
 
 import {
@@ -82,16 +84,48 @@ async function createFixture(): Promise<Fixture> {
 
   await withTenant(
     shopId,
-    (trx) =>
-      trx(
-        'shopify_app_installations'
+    async (trx) => {
+      const [installation] =
+        await trx(
+          'shopify_app_installations'
+        )
+          .insert({
+            shop_id: shopId,
+            shop_domain:
+              shopDomain,
+            scopes:
+              'write_inventory',
+          })
+          .returning('id');
+
+      // Canonical admin credential authority; the provider stays mocked.
+      const now = Date.now();
+      await trx(
+        'shopify_admin_credentials'
       ).insert({
         shop_id: shopId,
-        shop_domain:
-          shopDomain,
-        scopes:
-          'write_inventory',
-      })
+        installation_id:
+          installation.id,
+        access_token_encrypted:
+          encrypt(
+            'opening-executor-offline-token'
+          ),
+        refresh_token_encrypted:
+          encrypt(
+            'opening-executor-refresh-token-no-network-call'
+          ),
+        access_expires_at:
+          new Date(now + 86_400_000),
+        refresh_expires_at:
+          new Date(now + 2_592_000_000),
+        granted_scopes:
+          normalizeAndValidateShopifyGrantedScopes(
+            SHOPIFY_REQUIRED_SCOPE_STRING
+          ),
+        credential_generation: '1',
+        credential_state: 'ACTIVE',
+      });
+    }
   );
 
   return {

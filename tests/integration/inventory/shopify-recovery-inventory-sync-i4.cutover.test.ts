@@ -740,7 +740,7 @@ describe('CB1 — per-credit capture in the freeze snapshot', () => {
     ).rejects.toThrow(/RECOVERY_CAPTURE_GENERATION_NOT_ASSEMBLING/);
     await expect(
       coordTenant(fixture.shopId, (trx) => trx(HEADERS).where({ shop_id: fixture.shopId }).del())
-    ).rejects.toThrow(/insert-only/);
+    ).rejects.toThrow(/permission denied for table opening_inventory_recovery_capture_headers/);
   });
 });
 
