@@ -1,7 +1,7 @@
 # ENGINEERING WORKFLOW v4.1
 
 - Mode: solo-developer, main-first execution
-- Status: v4.0 RATIFIED — owner approved 2026-11-02; v4.1 amendment (FLOW-02/FLOW-05 workshop decision) CANDIDATE pending owner approval
+- Status: RATIFIED — v4.1 owner approved 2026-11-02
 - Supersedes: v3.6 (origin/main) and the intentional local v3.7 revision
 - Repository: SynchroFlow
 - Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)

@@ -1,7 +1,7 @@
 # AGENT OPERATING INSTRUCTIONS — laSyncro
 
 - Aligned with: ENGINEERING WORKFLOW v4.1 (`docs/agent_directives/engineering_workflow.md`)
-- Status: v4.0 RATIFIED — owner approved 2026-11-02; v4.1 workshop alignment CANDIDATE pending owner approval
+- Status: RATIFIED — v4.1 owner approved 2026-11-02
 - Scope: the execution contract for any agent running a laSyncro brief
 
 The workflow is the single authority. This document applies the workflow to agent execution and does not restate it. Rule IDs below (for example SAFE-05, EXEC-01) refer to the workflow. If the two conflict, follow the workflow and report the conflict under FINDINGS. MUST / MUST NOT / SHOULD / MAY / STOP have the meanings in workflow section 0.
