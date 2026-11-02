@@ -3034,7 +3034,13 @@ describe('GH-1179 RED-A — opening inventory start / Shopify scope safety', () 
     // Control: before Opening Inventory starts, the real route can remap.
     const lockedLocationId = `31${fixture.shopId}`;
     const preStart = await patchMapping(lockedLocationId);
-    expect(preStart.status).toBe(200);
+    expect({
+      status: preStart.status,
+      error: preStart.body?.error,
+    }).toEqual({
+      status: 200,
+      error: undefined,
+    });
     expect(await readMapping(fixture)).toBe(lockedLocationId);
 
     await startShop(fixture);

@@ -2,6 +2,14 @@ name: CI / RLS Security Boundary
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Manual run scope: all steps, or cutover regressions without sibling integration suites'
+        type: choice
+        options:
+          - all
+          - cutover
+        default: all
   pull_request:
     branches: [main]
     paths:
@@ -454,6 +462,7 @@ jobs:
       # bin-rich tenant rebuild runs — the root-only fresh-install fixture stays
       # owned by tests/integration/fresh-install-release-path.test.ts.
       - name: Run fresh-install release path
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -465,6 +474,7 @@ jobs:
         run: npm run test:integration -- --testPathPatterns fresh-install-release-path
 
       - name: Run GH-1242 locked-action runtime regression
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -476,6 +486,7 @@ jobs:
         run: npm run test:integration -- --testPathPatterns locked-action-runtime-gh1242.test.ts
 
       - name: Run OAuth callback regression with external egress blocked
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         shell: bash
         timeout-minutes: 20
         env:
@@ -544,6 +555,7 @@ jobs:
           npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
 
       - name: Run GH-1046 credential lifecycle regressions
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -554,6 +566,7 @@ jobs:
         run: npm run test:integration -- --testPathPatterns 'shopify-admin-credential-(lifecycle-state-red3|resolution-red3b|final-architecture)'
 
       - name: Run GH-1068 reconnect executor regressions with real principals
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -573,6 +586,7 @@ jobs:
       # with ZERO Slice-E evidence, so they never share a database with the
       # behavioural cutover suites that commit executions and verifications.
       - name: Run GH-1101 connection truth, manual recovery and GH-1262 S1 purchasing regressions
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -599,6 +613,7 @@ jobs:
       # S4-5 I4 discovery commits the same recovery evidence through the real
       # Receive flow (plus 0228 sync rows), so it runs here too.
       - name: Run S4-2 held-unit safety regressions
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
