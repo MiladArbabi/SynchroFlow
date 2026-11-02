@@ -215,6 +215,8 @@ OAuth is the connection method that lets a Shopify merchant approve scoped acces
 
 Webhooks support the operational handoff. When Shopify receives an order, the warehouse system can receive the work event and place it into the right workflow: block check, orders pool, pick queue, packing, or fulfillment update. In the other direction, verified warehouse actions can trigger inventory or fulfillment updates back to Shopify.
 
+For most Shopify merchants, using an existing integration is more practical than building one from scratch. Custom development becomes relevant when a legacy ERP, proprietary warehouse system, or unusual business process cannot be supported by standard connectors. [Arch's guide to API integration](https://wearearch.com/blog/what-is-api-integration) explains the differences between direct connections, middleware, webhooks, and custom-built integrations.
+
 ### A single inventory writer
 
 The single-writer principle still matters. If multiple apps write inventory quantities independently, Shopify can end up reflecting whichever update arrived last rather than the physical event that should control the count. The operational contract is simple: one system should control inventory-changing warehouse events, and other systems should read from that truth.
