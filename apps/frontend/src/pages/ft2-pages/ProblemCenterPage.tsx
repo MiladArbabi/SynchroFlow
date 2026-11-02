@@ -1,213 +1,87 @@
 // apps/frontend/src/pages/ft2-pages/ProblemCenterPage.tsx
-import { useCallback, useState } from 'react';
-import {
-  Box, Typography, Chip, Dialog, DialogTitle, DialogContent,
-  DialogActions, Button, TextField,
-} from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import { AlertTriangle, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { ProblemCenterModuleFT2 } from '@lasyncro/problem-center';
+import { useCallback, useMemo } from 'react';
+import { Box } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { ProblemCenterModuleFT2, type PackDecisionCopy, type PackDecisionItem } from '@lasyncro/problem-center';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
 import { usePackDecisions, useResolvePackDecision } from '../problem-center/usePackDecisions';
-import { useAppTheme } from '../../hooks/useAppTheme';
 import { axiosInstance } from 'api/axiosConfig';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { CommercialGate } from '../../components/CommercialGate';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
 import { useAuth } from 'contexts/AuthContext';
 
-function relativeAge(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 2) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+/** Problem Center polls so floor progress (e.g. a confirmed recovery Stow) appears without reload. */
+const PROBLEM_CENTER_POLL_MS = 15_000;
 
-/**
- * PendingDecisionsStrip
- * ----------------------
- * Surfaces pack decision requests awaiting owner/admin approval.
- * Packer is blocked — each row shows context + Approve/Reject.
- * Polls every 10s — packer is waiting in real time.
- */
-function PendingDecisionsStrip() {
-  const pal   = useAppTheme();
-  const theme = useTheme();
-  const { data, isLoading } = usePackDecisions('pending');
-  const { mutate: resolve, isPending } = useResolvePackDecision();
-
-  const [dialog, setDialog] = useState<{
-    requestId: string;
-    action: 'approved' | 'rejected';
-    orderRef: string;
-    exceptionType: string;
-  } | null>(null);
-  const [note, setNote] = useState('');
-
-  const requests = data?.requests ?? [];
-  if (isLoading || requests.length === 0) return null;
-
-  const handleConfirm = () => {
-    if (!dialog) return;
-    resolve({
-      requestId:       dialog.requestId,
-      status:          dialog.action,
-      partialShipment: dialog.action === 'approved' ? true : undefined,
-      note:            note || undefined,
-    }, {
-      onSuccess: () => { setDialog(null); setNote(''); },
-    });
-  };
-
-  return (
-    <>
-      <Box sx={{
-        mb: 2.5, border: `0.5px solid ${theme.palette.warning.main}44`,
-        borderRadius: '10px', overflow: 'hidden',
-        bgcolor: pal.surface,
-      }}>
-        {/* Header */}
-        <Box sx={{
-          px: 2, py: 1.25, display: 'flex', alignItems: 'center', gap: 1,
-          bgcolor: `${theme.palette.warning.main}0D`,
-          borderBottom: `0.5px solid ${theme.palette.warning.main}33`,
-        }}>
-          <AlertTriangle size={14} color={theme.palette.warning.main} />
-          <Typography sx={{ fontSize: 12, fontWeight: 500, color: theme.palette.warning.main }}>
-            {requests.length} pack decision{requests.length > 1 ? 's' : ''} pending — packer{requests.length > 1 ? 's are' : ' is'} waiting
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: pal.ink4, ml: 'auto' }}>
-            Refreshes every 10s
-          </Typography>
-        </Box>
-
-        {/* Decision rows */}
-        {requests.map((req, idx) => {
-          const exLabel = req.exception_type.replace(/_/g, ' ');
-          const orderRef = req.external_order_id ? `#${req.external_order_id}` : req.lasyncro_order_id.slice(0, 8).toUpperCase();
-          const itemLabel = req.variant_title ?? req.sku ?? req.lasyncro_line_item_id.slice(0, 8).toUpperCase();
-          const batchShort = req.pick_batch_id.slice(0, 8).toUpperCase();
-
-          return (
-            <Box key={req.id} sx={{
-              px: 2, py: 1.5,
-              borderTop: idx > 0 ? `0.5px solid ${pal.rule}` : 'none',
-              display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
-            }}>
-              {/* Context */}
-              <Box sx={{ flex: 1, minWidth: 200 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.4 }}>
-                  <Chip label={exLabel} size="small" sx={{
-                    fontSize: 10, height: 18, fontWeight: 500,
-                    bgcolor: `${theme.palette.warning.main}1A`,
-                    color: theme.palette.warning.main,
-                    border: `0.5px solid ${theme.palette.warning.main}44`,
-                  }} />
-                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: pal.ink }}>
-                    Order {orderRef}
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: pal.ink4 }}>
-                    Batch {batchShort}
-                  </Typography>
-                </Box>
-                <Typography sx={{ fontSize: 12, color: pal.ink3 }}>
-                  {itemLabel} · Raised <Clock size={10} style={{ verticalAlign: 'middle' }} /> {relativeAge(req.raised_at)}
-                </Typography>
-              </Box>
-
-              {/* Actions */}
-              <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                <Box
-                  onClick={() => { setDialog({ requestId: req.id, action: 'approved', orderRef, exceptionType: req.exception_type }); setNote(''); }}
-                  sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                    px: 1.25, py: 0.5, fontSize: 12, fontWeight: 500,
-                    bgcolor: `${theme.palette.success.main}1A`,
-                    border: `0.5px solid ${theme.palette.success.main}44`,
-                    color: theme.palette.success.main,
-                    borderRadius: '6px', cursor: isPending ? 'wait' : 'pointer',
-                    '&:hover': { bgcolor: `${theme.palette.success.main}2A` },
-                  }}
-                >
-                  <CheckCircle2 size={12} /> Ship partial
-                </Box>
-                <Box
-                  onClick={() => { setDialog({ requestId: req.id, action: 'rejected', orderRef, exceptionType: req.exception_type }); setNote(''); }}
-                  sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                    px: 1.25, py: 0.5, fontSize: 12, fontWeight: 500,
-                    bgcolor: `${theme.palette.error.main}1A`,
-                    border: `0.5px solid ${theme.palette.error.main}44`,
-                    color: theme.palette.error.main,
-                    borderRadius: '6px', cursor: isPending ? 'wait' : 'pointer',
-                    '&:hover': { bgcolor: `${theme.palette.error.main}2A` },
-                  }}
-                >
-                  <XCircle size={12} /> Hold order
-                </Box>
-              </Box>
-            </Box>
-          );
-        })}
-      </Box>
-
-      {/* Confirmation dialog */}
-      <Dialog open={!!dialog} onClose={() => setDialog(null)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontSize: 15, fontWeight: 500 }}>
-          {dialog?.action === 'approved' ? 'Approve partial shipment?' : 'Hold order?'}
-        </DialogTitle>
-        <DialogContent sx={{ pt: '8px !important' }}>
-          <Typography sx={{ fontSize: 13, color: pal.ink3, mb: 2 }}>
-            {dialog?.action === 'approved'
-              ? `Order ${dialog?.orderRef} will ship without the missing item. The packer will be notified.`
-              : `Order ${dialog?.orderRef} will remain on hold and will not move to packing. The packer will be notified.`}
-          </Typography>
-          <TextField
-            label="Note to packer (optional)"
-            fullWidth size="small" multiline rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder={dialog?.action === 'approved'
-              ? 'e.g. Ship — customer notified about missing item'
-              : 'e.g. Wait for restock — ETA 2 days'}
-            InputProps={{ sx: { fontSize: 13 } }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialog(null)} sx={{ fontSize: 13 }}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleConfirm}
-            disabled={isPending}
-            color={dialog?.action === 'approved' ? 'success' : 'error'}
-            sx={{ fontSize: 13 }}
-          >
-            {isPending ? 'Saving…' : dialog?.action === 'approved' ? 'Approve' : 'Hold order'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
-  );
-}
+// GH-1086: pack decision copy is a protected contract
+// (tests/contract/pack-decision-hold-semantics-1086). A held order stays held
+// and is never re-queued, so the owner is told exactly that.
+const PACK_DECISION_COPY: PackDecisionCopy = {
+  approveLabel: 'Ship partial',
+  approveConfirm: (orderRef) => `Order ${orderRef} will ship without the missing item. The packer will be notified.`,
+  holdLabel: 'Hold order',
+  holdConfirm: (orderRef) => `Order ${orderRef} will remain on hold and will not move to packing. The packer will be notified.`,
+};
 
 export default function ProblemCenterPage() {
-  const { data, isLoading, isError, refetch } = useProblemCenter();
+  const navigate = useNavigate();
   // GH-1222: pack approve/hold decisions (wms:batch:release) and problem
-  // resolution (wms:problem:resolve) are owner/admin management. The strip is
-  // not mounted for operators, so its pending-decisions query never runs for
-  // them, and the module hides resolution controls. Advisory UI gate only.
+  // resolution (wms:problem:resolve) are owner/admin management. The pending
+  // pack-decision query never runs for operators, and the module hides
+  // decision controls. Advisory UI gate only — the backend stays authoritative.
   const { user } = useAuth();
   const canManage = user?.role === 'owner' || user?.role === 'admin';
 
-  const handleResolve = useCallback(async (exceptionId: string, action: string, note: string) => {
-    await axiosInstance.post(`/api/v1/wms/problem-center/${exceptionId}/resolve`, {
+  const problems = useProblemCenter(true, PROBLEM_CENTER_POLL_MS, { includeRecentResolved: true });
+  const packDecisions = usePackDecisions('pending', canManage);
+  const { mutateAsync: resolvePackDecision } = useResolvePackDecision();
+
+  const decisions = useMemo<PackDecisionItem[]>(
+    () => (canManage ? packDecisions.data?.requests ?? [] : []).map((req) => ({
+      id: req.id,
+      exception_type: req.exception_type,
+      order_ref: req.external_order_id ? `#${req.external_order_id}` : req.lasyncro_order_id.slice(0, 8).toUpperCase(),
+      item_label: req.variant_title ?? req.sku ?? req.lasyncro_line_item_id.slice(0, 8).toUpperCase(),
+      sku: req.sku,
+      batch_ref: req.pick_batch_id.slice(0, 8).toUpperCase(),
+      raised_at: req.raised_at,
+    })),
+    [canManage, packDecisions.data],
+  );
+
+  const { refetch: refetchProblems } = problems;
+  const { refetch: refetchDecisions } = packDecisions;
+
+  const handleResolve = useCallback(async (taskId: string, action: string, note: string) => {
+    const { data } = await axiosInstance.post(`/api/v1/wms/problem-center/${taskId}/resolve`, {
       resolution_action: action,
       resolution_notes: note || undefined,
     });
+    return data;
   }, []);
+
+  const handlePackDecision = useCallback(
+    (requestId: string, status: 'approved' | 'rejected', note: string) =>
+      resolvePackDecision({
+        requestId,
+        status,
+        partialShipment: status === 'approved' ? true : undefined,
+        note: note || undefined,
+      }),
+    [resolvePackDecision],
+  );
+
+  const handleRefresh = useCallback(
+    () => Promise.all([refetchProblems(), canManage ? refetchDecisions() : Promise.resolve()]),
+    [canManage, refetchDecisions, refetchProblems],
+  );
+
+  // S4-5 I5: the recovery is completed only by the actual Stow task — open it.
+  const openStowTask = useCallback(
+    (stowTaskId: string) => navigate(`/wms?stowTaskId=${encodeURIComponent(stowTaskId)}`),
+    [navigate],
+  );
 
   return (
     // GH-1222: the BASE page is the operational exception queue and follows
@@ -216,22 +90,31 @@ export default function ProblemCenterPage() {
     // surface, never entry to it. A direct URL into /problem-center/* must not
     // bypass this gate.
     <CommercialGate capabilityId="warehouse.operations">
-      {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts. */}
-      <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
-      {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
-      {canManage && (
-        <Box sx={{ px: '40px', pt: '24px' }}>
-          <PendingDecisionsStrip />
+      {/* At desktop widths the page fills the AppLayout content area so only
+          the queue and detail panels scroll — never the document. */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%', '@media (min-width:900px)': { height: '100%' } }}>
+        {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts. */}
+        <Box sx={{ flex: 'none' }}>
+          <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
         </Box>
-      )}
-      <ProblemCenterModuleFT2
-        data={data ?? null}
-        isLoading={isLoading}
-        isError={isError}
-        onResolve={handleResolve}
-        onRefresh={refetch}
-        canResolve={canManage}
-      />
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <ProblemCenterModuleFT2
+            data={problems.data ?? null}
+            isLoading={problems.isLoading}
+            isError={problems.isError}
+            isRefreshing={problems.isFetching && !problems.isLoading}
+            updatedAt={problems.dataUpdatedAt || undefined}
+            onResolve={handleResolve}
+            onRefresh={handleRefresh}
+            canResolve={canManage}
+            currentUserId={user?.id ?? null}
+            packDecisions={decisions}
+            onPackDecision={handlePackDecision}
+            packDecisionCopy={PACK_DECISION_COPY}
+            onOpenStowTask={openStowTask}
+          />
+        </Box>
+      </Box>
     </CommercialGate>
   );
 }

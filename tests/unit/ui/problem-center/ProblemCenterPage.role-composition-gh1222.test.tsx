@@ -17,6 +17,11 @@
 // reaches the module however the implementation wires it — no prop name is
 // frozen here.
 //
+// S4-5 I5 (Problem Center V2): the table + Resolve → dialog became a queue and
+// a detail panel with explicit decision buttons. Only the presentation helpers
+// below changed (rows are found by name in the queue, management controls are
+// the detail panel's decision buttons); every role/commercial assertion is kept.
+//
 // Harness: REAL ProblemCenterPage, CommercialGate, ModuleTabBar,
 // EntitlementsProvider (driven through /api/v1/entitlements/me), react-query
 // hooks and ProblemCenterModuleFT2 source. Stubbed: AuthContext role, the
@@ -181,20 +186,28 @@ async function settle() {
 const packDecisionQueries = () =>
   mockGet.mock.calls.filter(([url]) => PACK_DECISIONS_URL.test(String(url)));
 
-const taskRowsVisible = () =>
-  screen.queryByText('PROB-1222-0001') !== null && screen.queryByText('PROB-1222-0002') !== null;
+/** Queue rows (native <select> options share the "option" role). */
+const queueRows = (): HTMLElement[] => {
+  const list = screen.queryByRole('listbox', { name: 'Exceptions' });
+  return list ? within(list).queryAllByRole('option') : [];
+};
+const rowFor = (name: string) => queueRows().find((r) => r.textContent?.includes(name)) ?? null;
 
-const resolveCtas = () => screen.queryAllByText(/Resolve\s*→/);
+const taskRowsVisible = () => rowFor('Missing Widget') !== null && rowFor('Cancelled Gadget') !== null;
 
-/** The Resolve CTA inside the row that shows a given PROB label. */
-function resolveCtaForTask(probLabel: string): HTMLElement {
-  let el: HTMLElement | null = screen.getByText(probLabel);
-  while (el && within(el).queryAllByText(/Resolve\s*→/).length === 0) el = el.parentElement;
-  expect(el).not.toBeNull();
-  const ctas = within(el as HTMLElement).getAllByText(/Resolve\s*→/);
-  expect(ctas).toHaveLength(1);
-  return ctas[0];
+const detail = () => screen.getByRole('region', { name: 'Exception detail' });
+
+/** Select a task's row and return the management decision buttons in its detail. */
+function decisionControlsFor(name: string): string[] {
+  const row = rowFor(name);
+  expect(row).not.toBeNull();
+  fireEvent.click(row as HTMLElement);
+  return within(detail()).queryAllByRole('button').map((b) => (b.textContent ?? '').trim());
 }
+
+/** Any task in the queue offers a management decision. */
+const anyManagementControl = () =>
+  ['Missing Widget', 'Cancelled Gadget', 'Defective Gadget'].some((n) => decisionControlsFor(n).length > 0);
 
 /**
  * Commercial denial rendered in place of the page body. CommercialGate's deny
@@ -240,7 +253,7 @@ describe('GH-1222 E2 — OWNER / ADMIN keep management eligibility', () => {
       await waitFor(() => expect(taskRowsVisible()).toBe(true));
 
       expect(packDecisionQueries().length).toBeGreaterThan(0);
-      expect(resolveCtas().length).toBeGreaterThan(0);
+      expect(anyManagementControl()).toBe(true);
     },
   );
 
@@ -251,7 +264,7 @@ describe('GH-1222 E2 — OWNER / ADMIN keep management eligibility', () => {
 
       expect(pageCommerciallyBlocked()).toBe(false);
       await waitFor(() => expect(taskRowsVisible()).toBe(true));
-      expect(resolveCtas().length).toBeGreaterThan(0);
+      expect(anyManagementControl()).toBe(true);
     },
   );
 });
@@ -265,10 +278,11 @@ describe('GH-1222 F — Problem Center resolution UI role parity', () => {
     await renderPage('operator', 'growth');
     await waitFor(() => expect(taskRowsVisible()).toBe(true));
 
-    expect(resolveCtas()).toHaveLength(0);
-    expect(screen.queryByText('Resolve Exception')).toBeNull();
-    expect(screen.queryByText('Discard')).toBeNull();
-    expect(screen.queryByText('Write Off')).toBeNull();
+    for (const name of ['Missing Widget', 'Cancelled Gadget', 'Defective Gadget']) {
+      expect(decisionControlsFor(name)).toEqual([]);
+      expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Write off' })).toBeNull();
+    }
   });
 
   it.each(['owner', 'admin'] as const)(
@@ -277,25 +291,17 @@ describe('GH-1222 F — Problem Center resolution UI role parity', () => {
       await renderPage(role, 'growth');
       await waitFor(() => expect(taskRowsVisible()).toBe(true));
 
-      const rowCtas = resolveCtas();
-      expect(rowCtas.length).toBeGreaterThanOrEqual(2);
+      // pick/item_missing → investigation-only management decision.
+      expect(decisionControlsFor('Missing Widget')).toEqual(['Find replacement']);
 
-      // pick/order_cancelled task → Write Off and Discard are offered actions.
-      fireEvent.click(resolveCtaForTask('PROB-1222-0002'));
-      expect(await screen.findByText('Resolve Exception')).toBeInTheDocument();
-      expect(screen.getByText('Write Off')).toBeInTheDocument();
-      expect(screen.getByText('Discard')).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByText('Resolve Exception')).toBeNull());
+      // pick/order_cancelled task → Write off and Discard are offered actions.
+      const cancelled = decisionControlsFor('Cancelled Gadget');
+      expect(cancelled).toEqual(expect.arrayContaining(['Write off', 'Discard']));
 
-      // receive/product_defect task → no Resolve CTA in its row; it reads
-      // "Needs investigation" instead.
-      let receiveRow: HTMLElement | null = screen.getByText('PROB-1222-0003');
-      while (receiveRow && within(receiveRow).queryAllByText('Needs investigation').length === 0) {
-        receiveRow = receiveRow.parentElement;
-      }
-      expect(receiveRow).not.toBeNull();
-      expect(within(receiveRow as HTMLElement).queryAllByText(/Resolve\s*→/)).toHaveLength(0);
+      // receive/product_defect task (no held LSU) → no decision control; it
+      // reads "Needs investigation" instead.
+      expect(decisionControlsFor('Defective Gadget')).toEqual([]);
+      expect(within(rowFor('Defective Gadget') as HTMLElement).getByText('Needs investigation')).toBeInTheDocument();
     },
   );
 });

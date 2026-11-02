@@ -26,16 +26,17 @@ export type PackDecisionRequest = {
   sku: string | null;
 };
 
-export function usePackDecisions(status = 'pending') {
+export function usePackDecisions(status = 'pending', enabled = true) {
   return useQuery<{ requests: PackDecisionRequest[]; total: number }>({
     queryKey: ['pack-decisions', status],
+    enabled,
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         `/api/v1/wms/pack/decision-requests?status=${status}`
       );
       return data;
     },
-    refetchInterval: status === 'pending' ? 10_000 : false,
+    refetchInterval: enabled && status === 'pending' ? 10_000 : false,
   });
 }
 

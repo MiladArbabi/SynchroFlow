@@ -12,6 +12,12 @@
 //
 // Harness: REAL ProblemCenterModuleFT2 source with canResolve (owner/admin
 // presentation, GH-1222). onResolve is the captured submission boundary.
+//
+// S4-5 I5 (Problem Center V2): the Resolve → dialog was replaced by explicit
+// per-action buttons in the detail panel (destructive ones confirm inline).
+// Only the presentation helpers changed; every safety contract above is kept:
+// default-deny action sets, no submission of an unoffered action, no false
+// inventory claim, no ordinary Pick disposition.
 
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -19,9 +25,9 @@ import ProblemCenterModuleFT2 from '../../../../modules/problem-center/src/ui/pa
 
 const ACTION_BY_LABEL: Record<string, string> = {
   'Re-stow': 're_stow',
-  'Find Replacement': 'find_replacement',
+  'Find replacement': 'find_replacement',
   Discard: 'discard',
-  'Write Off': 'write_off',
+  'Write off': 'write_off',
   Quarantine: 'quarantine',
 };
 
@@ -54,7 +60,7 @@ const PROB_LABEL = 'PROB-1238-0001';
 
 function renderTask({ source, exceptionType }: Case) {
   const onResolve = jest.fn().mockResolvedValue(undefined);
-  render(
+  const { unmount } = render(
     <ProblemCenterModuleFT2
       data={{
         tasks: [
@@ -81,17 +87,28 @@ function renderTask({ source, exceptionType }: Case) {
       canResolve
     />,
   );
-  return { onResolve };
+  return { onResolve, unmount };
 }
 
-const resolveCtas = () => screen.queryAllByText(/Resolve\s*→/);
+const detail = () => screen.getByRole('region', { name: 'Exception detail' });
 
-/** Offered option labels inside the open dialog. */
+/** Every button in the detail panel (V2 decision controls). */
+const detailButtons = () => within(detail()).queryAllByRole('button');
+
+/** Offered resolution actions, in their visible order. Fails on an unknown control. */
 function offeredActions(): string[] {
-  const dialog = screen.getByRole('dialog');
-  return Object.entries(ACTION_BY_LABEL)
-    .filter(([label]) => within(dialog).queryByText(label) !== null)
-    .map(([, action]) => action);
+  return detailButtons().map((b) => {
+    const label = (b.textContent ?? '').trim();
+    expect(Object.keys(ACTION_BY_LABEL)).toContain(label);
+    return ACTION_BY_LABEL[label];
+  });
+}
+
+/** Click an offered action and, if it asks for confirmation, confirm it. */
+async function submitOffered(label: string) {
+  fireEvent.click(within(detail()).getByRole('button', { name: label }));
+  const group = within(detail()).queryByRole('group', { name: 'Confirm action' });
+  if (group) fireEvent.click(within(group).getByRole('button', { name: label }));
 }
 
 describe('GH-1238 E1 — no actionable generic Resolve for types without a verified safe action', () => {
@@ -100,39 +117,37 @@ describe('GH-1238 E1 — no actionable generic Resolve for types without a verif
     (_label, c) => {
       renderTask(c);
 
-      expect(screen.getByText(PROB_LABEL)).toBeInTheDocument();
-      expect(resolveCtas()).toHaveLength(0);
+      expect(within(detail()).getByText(PROB_LABEL)).toBeInTheDocument();
+      expect(detailButtons()).toHaveLength(0);
     },
   );
 });
 
 describe('GH-1238 E2 — the dialog never submits an action that is not visibly offered', () => {
   it.each(ALL_TYPES.map((c) => [`${c.source}/${c.exceptionType}`, c] as const))(
-    'E2 %s — Confirm without re-selecting submits only an offered action',
+    'E2 %s — each offered control submits exactly its own offered action',
     async (_label, c) => {
-      const { onResolve } = renderTask(c);
-      const ctas = resolveCtas();
-      if (ctas.length === 0) return; // non-destructive state: nothing can be submitted
-
-      fireEvent.click(ctas[0]);
-      await screen.findByRole('dialog');
+      const probe = renderTask(c);
       const offered = offeredActions();
+      probe.unmount();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-      await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
+      for (const action of offered) {
+        const { onResolve, unmount } = renderTask(c);
+        const label = Object.keys(ACTION_BY_LABEL).find((l) => ACTION_BY_LABEL[l] === action)!;
+        await submitOffered(label);
+        await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
 
-      const submitted = onResolve.mock.calls[0][1];
-      expect({ submitted, offered: offered.includes(submitted) }).toEqual({ submitted, offered: true });
+        const submitted = onResolve.mock.calls[0][1];
+        expect({ submitted, offered: offered.includes(submitted) }).toEqual({ submitted: action, offered: true });
+        unmount();
+      }
     },
   );
 
   it('E2 GREEN CONTROL: pick/item_missing — an explicitly selected offered action is the one submitted', async () => {
     const { onResolve } = renderTask({ source: 'pick', exceptionType: 'item_missing' });
 
-    fireEvent.click(resolveCtas()[0]);
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByText('Find Replacement'));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await submitOffered('Find replacement');
 
     await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
     expect(onResolve.mock.calls[0][1]).toBe('find_replacement');
@@ -140,13 +155,10 @@ describe('GH-1238 E2 — the dialog never submits an action that is not visibly 
 });
 
 describe('GH-1238 E3 — no false inventory claim for Quarantine', () => {
-  it('E3 EXPECTED RED: pick/item_missing — the dialog does not claim Quarantine makes "No inventory change"', async () => {
+  it('E3 EXPECTED RED: pick/item_missing — the detail does not claim Quarantine makes "No inventory change"', async () => {
     renderTask({ source: 'pick', exceptionType: 'item_missing' });
 
-    fireEvent.click(resolveCtas()[0]);
-    const dialog = await screen.findByRole('dialog');
-
-    expect(within(dialog).queryByText(/No inventory change/i)).toBeNull();
+    expect(within(detail()).queryByText(/No inventory change/i)).toBeNull();
   });
 });
 
@@ -155,12 +167,9 @@ describe('GH-1238 E3 — no false inventory claim for Quarantine', () => {
 // yet (GH-1240). Write Off / Discard are therefore not offered for them.
 describe('GH-1238 E4 — no ordinary Pick disposition while the residual reservation is unsettled', () => {
   it.each(['item_missing', 'short_pick'])(
-    'E4 pick/%s — the dialog offers Find Replacement only (investigation), never Write Off or Discard',
+    'E4 pick/%s — only Find replacement (investigation) is offered, never Write off or Discard',
     async (exceptionType) => {
       renderTask({ source: 'pick', exceptionType });
-
-      fireEvent.click(resolveCtas()[0]);
-      await screen.findByRole('dialog');
 
       expect(offeredActions()).toEqual(['find_replacement']);
     },
@@ -171,8 +180,8 @@ describe('GH-1238 E4 — no ordinary Pick disposition while the residual reserva
     (exceptionType) => {
       renderTask({ source: 'pick', exceptionType });
 
-      expect(resolveCtas()).toHaveLength(0);
-      expect(screen.getByText('Needs investigation')).toBeInTheDocument();
+      expect(detailButtons()).toHaveLength(0);
+      expect(within(detail()).getAllByText('Needs investigation').length).toBeGreaterThan(0);
     },
   );
 });
