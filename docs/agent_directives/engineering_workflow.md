@@ -1,7 +1,7 @@
 # ENGINEERING WORKFLOW v4.0
 
 - Mode: solo-developer, main-first execution
-- Status: CANDIDATE — not ratified until Milad approves this exact revision
+- Status: RATIFIED — owner approved 2026-11-02
 - Supersedes: v3.6 (origin/main) and the intentional local v3.7 revision
 - Repository: SynchroFlow
 - Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)
