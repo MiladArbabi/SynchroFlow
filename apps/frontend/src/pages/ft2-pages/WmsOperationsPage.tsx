@@ -546,6 +546,30 @@ export default function WmsOperationsPage() {
     receiveEvents.current.delete(key);
   }, []);
 
+  // S4-4C — problem-bin scan resolution for held-unit custody (read-only).
+  const handleResolveReceiveProblemBin = useCallback(async (jobId: string, scannedValue: string) => {
+    const { data } = await axiosInstance.get(
+      `/api/v1/suppliers/receive-jobs/${jobId}/problem-bins/resolve`,
+      { params: { scanned_value: scannedValue } }
+    );
+    return data as { location_code: string; barcode: string | null };
+  }, []);
+
+  // S4-4C — one held LSU into a problem bin. Same event discipline as
+  // postReceiveEvent: the event survives a failed request, so a retry replays.
+  const handlePlaceReceiveHeldUnit = useCallback(async (
+    jobId: string,
+    params: { lasyncro_unit_id: string; location_code: string }
+  ) => {
+    const url = `/api/v1/suppliers/receive-jobs/${jobId}/held-units/${encodeURIComponent(params.lasyncro_unit_id)}/custody`;
+    const key = JSON.stringify([url, params.location_code]);
+    const eventId = receiveEvents.current.get(key) ?? newReceiveEventId();
+    receiveEvents.current.set(key, eventId);
+    const { data } = await axiosInstance.post(url, { location_code: params.location_code, device_event_id: eventId });
+    receiveEvents.current.delete(key);
+    return data as { replayed: boolean };
+  }, []);
+
   const handleInspectReceiveLine = useCallback(async (
     jobId: string,
     params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number; quantity_missing?: number; quantity_deferred?: number }
@@ -594,6 +618,35 @@ export default function WmsOperationsPage() {
       throw err;
     }
     pendingCountConfirmations.current.delete(pendingKey);
+  }, []);
+
+  // S8-C5 Recount: same event discipline as count confirmation — an unanswered
+  // request keeps its event id so a retry replays (never supersedes twice).
+  const pendingRecounts = useRef(new Map<string, string>());
+  const handleRecountReceiveLine = useCallback(async (jobId: string, lineId: string) => {
+    const pendingKey = `${jobId}:${lineId}`;
+    const send = async (eventId: string) => {
+      pendingRecounts.current.set(pendingKey, eventId);
+      try {
+        const response = await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/lines/${lineId}/recount`, { device_event_id: eventId });
+        pendingRecounts.current.delete(pendingKey);
+        return response?.data;
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status >= 400 && status < 500) pendingRecounts.current.delete(pendingKey);
+        throw err;
+      }
+    };
+    // Server truth after the Recount: no confirmed count, no active shortfall allocation.
+    const stillCounted = (result: any) => result?.quantity_count_confirmed != null
+      || (result?.reconciliation?.allocations ?? []).some((a: any) => a.counts_toward_shortfall && a.accounting_role !== 'overage');
+
+    let result = await send(pendingRecounts.current.get(pendingKey) ?? newReceiveEventId());
+    // A replay that still shows a count or allocations means the pending event
+    // already applied (its response was lost) and the line changed since: that
+    // event is spent, so this Recount is a new intent with a new event.
+    if (result?.replayed === true && stillCounted(result)) result = await send(newReceiveEventId());
+    if (stillCounted(result)) throw new Error('Recount was not applied; the line still has a count or allocations');
   }, []);
 
   const handleReportReceiveException = useCallback(async (
@@ -1090,6 +1143,7 @@ export default function WmsOperationsPage() {
       onInspectReceiveLine={handleInspectReceiveLine}
       onPersistReceiveLineProgress={handlePersistReceiveLineProgress}
       onConfirmReceiveLineCount={handleConfirmReceiveLineCount}
+      onRecountReceiveLine={handleRecountReceiveLine}
       onReportReceiveException={handleReportReceiveException}
       onApproveOverDelivery={handleApproveOverDelivery}
       onCloseReceiveJob={handleCloseReceiveJob}
@@ -1124,6 +1178,8 @@ export default function WmsOperationsPage() {
       operationsShell={operationsShell}
       onPrintUnitLabels={handlePrintUnitLabels}
       onConfirmUnitLabelsPrinted={handleConfirmUnitLabelsPrinted}
+      onResolveReceiveProblemBin={handleResolveReceiveProblemBin}
+      onPlaceReceiveHeldUnit={handlePlaceReceiveHeldUnit}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRaisePackDecision={handleRaisePackDecision}
@@ -1193,7 +1249,11 @@ export default function WmsOperationsPage() {
       open={recountUpgradeOpen}
       onClose={() => setRecountUpgradeOpen(false)}
     />
-   { showQzPrompt && (
+   {/* S4-4D F3 — onboarding is deferred while a Receive session is active
+       (?receiveJobId stays until explicit exit) so the fixed prompt never
+       covers label acknowledgement, scanning, custody or Close. Printing and
+       its browser fallback are unaffected; the prompt shows once they leave. */}
+   { showQzPrompt && !requestedReceiveJobId && (
     <QzTrayOnboardingPrompt
       onDismiss={() => {
         dismissQzPrompt();

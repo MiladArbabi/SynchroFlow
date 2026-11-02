@@ -11,10 +11,12 @@ import {
   closeReceiveJob,
   confirmReceiveJobLineCount,
   receiveLineReconciliationState,
+  recountReceiveJobLine,
   updateReceiveJobLineProgress,
 } from '../../services/wms/receiveJob.service.js';
 import { fireReceiveExceptionAlert } from '../../services/wms/wmsAlerts.service.js';
 import { evaluateReceiveJobBarcodeReadiness } from '../../services/wms/receiveBarcodeReadiness.service.js';
+import { placeHeldUnitInProblemBin, resolveProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
 import { resolveShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { isActionAllowed } from '../../services/permissions/permissionCache.service.js';
 
@@ -27,6 +29,10 @@ import { isActionAllowed } from '../../services/permissions/permissionCache.serv
  * POST   /api/v1/suppliers/receive-jobs/:jobId/inspect                — inspect one line
  * POST   /api/v1/suppliers/receive-jobs/:jobId/close                  — close + create stow tasks
  */
+
+/** S4-3B / D1 — public refusal of recoverable-held capture until S4-4. */
+const HELD_NOT_ENABLED = 'RECEIVE_RECOVERABLE_HELD_NOT_ENABLED';
+const HELD_NOT_ENABLED_MESSAGE = `${HELD_NOT_ENABLED}: recoverable-held units cannot be captured until held custody and close are available`;
 
 async function assertReceiveAssignee(
   shopId: number,
@@ -255,6 +261,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
 
       const reportedProblems = await trx('receive_exceptions')
         .where({ shop_id: shopId, receive_job_id: jobId })
+        .whereNull('superseded_at')
         .select(
           'receive_exception_id',
           'receive_job_line_id',
@@ -265,6 +272,7 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           'raised_at',
           'accounting_role',
           'counts_toward_shortfall',
+          'disposition',
         )
         .orderBy('raised_at', 'asc');
 
@@ -280,8 +288,42 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           raised_at: problem.raised_at,
           accounting_role: problem.accounting_role ?? null,
           counts_toward_shortfall: Boolean(problem.counts_toward_shortfall),
+          // S4-4C: 'recoverable_held' separates held evidence from damage; null = legacy.
+          disposition: problem.disposition ?? null,
         });
         reportedProblemsByLine.set(problem.receive_job_line_id, lineProblems);
+      }
+
+      // S4-4C — held LSUs and their problem-bin custody, server-authoritative.
+      // Placement is confirmed only when the 0226 custody event, the unit and
+      // its location agree (same rule as the close gate).
+      const heldUnits = await trx('inventory_units as iu')
+        .join('receive_job_lines as hl', 'hl.receive_job_line_id', 'iu.receive_job_line_id')
+        .leftJoin('receive_held_custody_events as ce', function joinCustody() {
+          this.on('ce.shop_id', 'iu.shop_id').andOn('ce.lasyncro_unit_id', 'iu.lasyncro_unit_id');
+        })
+        .where({ 'iu.shop_id': shopId, 'hl.shop_id': shopId, 'hl.receive_job_id': jobId, 'iu.status': 'held' })
+        .orderBy('iu.receive_job_line_id').orderBy('iu.receive_sequence')
+        .select(
+          'iu.receive_job_line_id',
+          'iu.lasyncro_unit_id',
+          'iu.label_printed_at',
+          'iu.current_location_code',
+          'iu.held_placed_at',
+          'ce.location_code as custody_location_code',
+        );
+      const heldUnitsByLine = new Map<string, any[]>();
+      for (const unit of heldUnits) {
+        const lineUnits = heldUnitsByLine.get(unit.receive_job_line_id) ?? [];
+        lineUnits.push({
+          lasyncro_unit_id: unit.lasyncro_unit_id,
+          label_acknowledged: unit.label_printed_at != null,
+          location_code: unit.current_location_code ?? null,
+          placed: unit.held_placed_at != null
+            && unit.custody_location_code != null
+            && unit.current_location_code === unit.custody_location_code,
+        });
+        heldUnitsByLine.set(unit.receive_job_line_id, lineUnits);
       }
 
       const linesWithReadiness = await Promise.all(lines.map(async (line: any) => {
@@ -323,10 +365,13 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
           barcode_ready: lineReadiness?.ready ?? false,
           barcode_readiness_reason: lineReadiness?.reason ?? 'not_inspected',
           awaiting_label_ack: lineReadiness?.reason === 'labels_outstanding'
-            || lineReadiness?.reason === 'unit_evidence_mismatch',
+            || lineReadiness?.reason === 'unit_evidence_mismatch'
+            || lineReadiness?.reason === 'held_labels_outstanding'
+            || lineReadiness?.reason === 'held_unit_evidence_mismatch',
           accepted_unit_count: lineReadiness?.acceptedUnitCount ?? 0,
           labelled_unit_count: lineReadiness?.labelledUnitCount ?? 0,
           reported_problems: lineProblems,
+          held_units: heldUnitsByLine.get(line.receive_job_line_id) ?? [],
           reconciliation: { ...reconciliation, sellable_basis: sellableBasis },
         };
       }));
@@ -651,6 +696,42 @@ export async function httpConfirmReceiveJobLineCount(req: Request, res: Response
 }
 
 // ─────────────────────────────────────────
+// POST /receive-jobs/:jobId/lines/:lineId/recount
+// ─────────────────────────────────────────
+/** S8-C5 — supersede the line's shortfall allocations and void its count before inspection. */
+export async function httpRecountReceiveJobLine(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const lineId = req.params.lineId as string;
+  const { device_event_id } = req.body ?? {};
+  if (device_event_id === undefined || !validEventId(device_event_id)) {
+    return res.status(400).json({ error: 'A valid device_event_id is required', code: 'RECEIVE_RECOUNT_EVENT_REQUIRED' });
+  }
+
+  try {
+    const recounted = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return recountReceiveJobLine(trx, {
+        shopId,
+        receiveJobId: jobId,
+        receiveJobLineId: lineId,
+        recountEventId: device_event_id,
+        recountedBy: req.user!.userId,
+      });
+    });
+
+    return res.json({ success: true, receive_job_id: jobId, receive_job_line_id: lineId, ...recounted });
+  } catch (err: any) {
+    console.error('[RECEIVE_JOB_RECOUNT_FAILED]', { shopId, jobId, lineId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    if (err.code === '23505') return res.status(409).json({ error: 'Recount event conflicts with existing evidence', code: 'RECEIVE_RECOUNT_REPLAY_CONFLICT' });
+    return res.status(500).json({ error: `Recount failed: ${err.message}` });
+  }
+}
+
+// ─────────────────────────────────────────
 // POST /receive-jobs/:jobId/inspect
 // ─────────────────────────────────────────
 export async function httpInspectReceiveJobLine(req: Request, res: Response) {
@@ -668,6 +749,11 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
   }
   if (!Number.isSafeInteger(quantity_accepted) || !Number.isSafeInteger(quantity_rejected) || quantity_accepted < 0 || quantity_rejected < 0) {
     return res.status(400).json({ error: 'Quantities must be non-negative' });
+  }
+  // S4-3B / D1: held capture exists only at the service layer until S4-4
+  // brings custody and close; refused here before any transaction.
+  if (quantity_held_recoverable != null && quantity_held_recoverable !== 0) {
+    return res.status(409).json({ error: HELD_NOT_ENABLED_MESSAGE, code: HELD_NOT_ENABLED });
   }
 
   try {
@@ -736,6 +822,76 @@ export async function httpCloseReceiveJob(req: Request, res: Response) {
 }
 
 // ─────────────────────────────────────────
+// POST /receive-jobs/:jobId/held-units/:unitId/custody
+// ─────────────────────────────────────────
+// S4-4B — place a recoverable held LSU into a problem bin (0226 custody).
+// device_event_id is the replay authority: an identical retry returns the
+// recorded placement (200), a conflicting one is refused (409).
+export async function httpPlaceHeldUnitCustody(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const unitId = req.params.unitId as string;
+  const { location_code, device_event_id } = req.body ?? {};
+  if (typeof location_code !== 'string' || !location_code.trim() || device_event_id === undefined || !validEventId(device_event_id)) {
+    return res.status(400).json({ error: 'location_code and a valid device_event_id are required' });
+  }
+
+  try {
+    const custody = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return placeHeldUnitInProblemBin(trx, {
+        shopId,
+        receiveJobId: jobId,
+        lasyncroUnitId: unitId,
+        locationCode: location_code.trim(),
+        deviceEventId: device_event_id,
+        placedBy: req.user!.userId,
+      });
+    });
+    return res.status(custody.replayed ? 200 : 201).json(custody);
+  } catch (err: any) {
+    console.error('[RECEIVE_HELD_CUSTODY_FAILED]', { shopId, jobId, unitId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    // A same-event race across jobs reaches the 0226 PK; never a second placement.
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT: this placement conflicts with recorded custody', code: 'RECEIVE_HELD_CUSTODY_REPLAY_CONFLICT' });
+    }
+    return res.status(500).json({ error: 'RECEIVE_HELD_CUSTODY_FAILED', code: 'RECEIVE_HELD_CUSTODY_FAILED' });
+  }
+}
+
+// ─────────────────────────────────────────
+// GET /receive-jobs/:jobId/problem-bins/resolve?scanned_value=
+// ─────────────────────────────────────────
+// S4-4C — resolve a scanned problem-bin barcode or typed location code to its
+// Floor Planning location, with the certified custody bin rule. Read-only.
+export async function httpResolveReceiveProblemBin(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const jobId = req.params.jobId as string;
+  const raw = req.query.scanned_value;
+  const scannedValue = typeof raw === 'string' ? raw.trim() : '';
+  if (!scannedValue || scannedValue.length > 255) {
+    return res.status(400).json({ error: 'scanned_value is required' });
+  }
+
+  try {
+    const bin = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return resolveProblemBin(trx, { shopId, receiveJobId: jobId, scannedValue });
+    });
+    return res.json(bin);
+  } catch (err: any) {
+    console.error('[RECEIVE_PROBLEM_BIN_RESOLVE_FAILED]', { shopId, jobId, error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+    return res.status(500).json({ error: 'RECEIVE_PROBLEM_BIN_RESOLVE_FAILED', code: 'RECEIVE_PROBLEM_BIN_RESOLVE_FAILED' });
+  }
+}
+
+// ─────────────────────────────────────────
 // POST /receive-jobs/:jobId/exception
 // ─────────────────────────────────────────
 export async function httpReportReceiveException(req: Request, res: Response) {
@@ -751,7 +907,12 @@ export async function httpReportReceiveException(req: Request, res: Response) {
     notes,
     accounting_role,
     device_event_id,
+    disposition,
   } = req.body;
+  // S4-3B / D1: no recoverable-held evidence through the public API until S4-4.
+  if (disposition === 'recoverable_held') {
+    return res.status(409).json({ error: HELD_NOT_ENABLED_MESSAGE, code: HELD_NOT_ENABLED });
+  }
   const affected = quantity_affected ?? 1;
   if (!Number.isSafeInteger(affected) || affected <= 0 || !validEventId(device_event_id)) return res.status(400).json({ error: 'Positive integer quantity and valid device_event_id required' });
   if (accounting_role != null && !['shortfall', 'overage'].includes(accounting_role)) return res.status(400).json({ error: 'Invalid accounting_role' });

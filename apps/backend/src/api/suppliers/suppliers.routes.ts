@@ -37,9 +37,12 @@ import {
   httpAssignReceiveJob,
   httpUpdateReceiveJobLineProgress,
   httpConfirmReceiveJobLineCount,
+  httpRecountReceiveJobLine,
   httpInspectReceiveJobLine,
   httpCloseReceiveJob,
   httpReportReceiveException,
+  httpPlaceHeldUnitCustody,
+  httpResolveReceiveProblemBin,
 } from './receiveJob.controller.js';
 import {
   httpGetReceiveReconciliation,
@@ -229,6 +232,16 @@ router.post(
   requireReceiveJobOwner,
   httpConfirmReceiveJobLineCount
 );
+// S8-C5 — per-line Recount before inspection: supersede allocations, void the count.
+router.post(
+  '/receive-jobs/:jobId/lines/:lineId/recount',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpRecountReceiveJobLine
+);
 // GH-1241 S3-B — opt-in grouped reconciliation. Reads inherit job reads;
 // draft/finalize inherit inspection and claimed-job ownership.
 router.get(
@@ -265,6 +278,26 @@ router.post(
   requireAction('receive-job:inspect'),
   requireReceiveJobOwner,
   httpInspectReceiveJobLine
+);
+// S4-4B — held LSU → problem bin custody; inherits inspection and claimed-job ownership.
+router.post(
+  '/receive-jobs/:jobId/held-units/:unitId/custody',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpPlaceHeldUnitCustody
+);
+// S4-4C — problem-bin scan resolution for custody; same chain as placement.
+router.get(
+  '/receive-jobs/:jobId/problem-bins/resolve',
+  authenticateToken,
+  requireFt2,
+  requireCapability('purchasing.core'),
+  requireAction('receive-job:inspect'),
+  requireReceiveJobOwner,
+  httpResolveReceiveProblemBin
 );
 router.post(
   '/receive-jobs/:jobId/close',

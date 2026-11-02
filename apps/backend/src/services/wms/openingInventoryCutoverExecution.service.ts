@@ -41,6 +41,7 @@ import { withTenant } from '@lasyncro/backend-core/db.js';
 
 import { resolveShopifyAdminCredentialForConsumer } from '../shopify/shopifyAdminCredentialConsumer.service.js';
 import { generationFingerprint } from './openingInventoryCutoverGeneration.service.js';
+import { compareRecoveryCreditsWithCapture } from './openingInventoryRecoveryCapture.service.js';
 import {
   assertOpeningInventoryPhysicalReadiness,
   buildOpeningInventoryPhysicalTarget,
@@ -652,6 +653,20 @@ async function captureCurrentAuthorityInTrx(
 
     if (targetFingerprint !== generation.target_fingerprint) {
       return drift('PHYSICAL_TARGET_CHANGED');
+    }
+
+    // S4-5 I4 CB2: the fingerprint is per-variant net quantity, so a recovery
+    // credit offset by another movement can hide from it. Per-credit drift
+    // against the freeze capture forces regeneration instead. No header =
+    // historical generation without evidence; its credits HOLD in I4.
+    const recoveryCapture = await compareRecoveryCreditsWithCapture(trx, {
+      shopId,
+      generationId,
+      warehouseId: scope.warehouseId,
+    });
+
+    if (recoveryCapture.kind === 'changed') {
+      return drift('RECOVERY_CREDITS_CHANGED');
     }
   } catch (error) {
     if (error instanceof OpeningInventoryPhysicalScopeError) {

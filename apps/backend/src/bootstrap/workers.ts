@@ -353,6 +353,30 @@ async function startWorkersInternal(): Promise<void> {
     );
   }
 
+  // start S4-5 I4 Shopify recovery inventory sync worker (default OFF:
+  // SHOPIFY_RECOVERY_INVENTORY_SYNC_ENABLED must be exactly 'true')
+  try {
+    const recoveryInventorySync = await import('../workers/shopifyRecoveryInventorySync.worker.js');
+    if (stopRequested) return;
+    if (!recoveryInventorySync.isShopifyRecoveryInventorySyncEnabled()) {
+      console.log('[bootstrap/workers] Shopify recovery inventory sync worker disabled');
+    } else if (typeof recoveryInventorySync.startShopifyRecoveryInventorySyncWorker === 'function') {
+      superviseWorker(
+        'shopify-recovery-inventory-sync',
+        () => recoveryInventorySync.startShopifyRecoveryInventorySyncWorker()
+      );
+      if (typeof recoveryInventorySync.stopShopifyRecoveryInventorySyncWorker === 'function') {
+        workerStopFns.push(async () => await recoveryInventorySync.stopShopifyRecoveryInventorySyncWorker());
+      }
+      console.log('[bootstrap/workers] Shopify recovery inventory sync worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Shopify recovery inventory sync worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+
   // start Shopify product reconciliation worker (GH-1262 A2.2 B1)
   try {
     const productReconciliation = await import('../workers/shopifyProductReconciliation.worker.js');

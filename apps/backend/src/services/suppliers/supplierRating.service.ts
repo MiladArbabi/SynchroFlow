@@ -113,6 +113,8 @@ export async function recomputeSupplierDefectRate(
       're.exception_type': 'defect',
       're.resolved': false,
     })
+    // S8-C5 Recount: a superseded defect allocation was a miscount, not supplier quality.
+    .whereNull('re.superseded_at')
     .sum('re.quantity_affected as total_defective')
     .first();
 

@@ -237,7 +237,7 @@ async function expectGroupedSession() {
   const marker = await screen.findByTestId('receive-session-mode');
   await waitFor(() => expect(marker).toHaveAttribute('data-receive-mode', 'grouped'));
   expect(marker).toHaveAttribute('data-current-revision-id', '');
-  expect(screen.getByRole('button', { name: 'Back to WMS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Exit' })).toBeInTheDocument();
 }
 
 /** Exit contract: clean URL, no Receive session, Operations board back. */
@@ -247,7 +247,7 @@ function expectOperationsBoard() {
     receiveJobId: params.get('receiveJobId'),
     warehouseFocus: params.get('warehouseFocus'),
     receiveSessionVisible: screen.queryByTestId('receive-session-mode') !== null,
-    backToWmsVisible: screen.queryByRole('button', { name: 'Back to WMS' }) !== null,
+    backToWmsVisible: screen.queryByRole('button', { name: 'Exit' }) !== null,
     boardWorkCardVisible: workCard() !== null,
   }).toEqual({
     receiveJobId: null,
@@ -268,8 +268,16 @@ function expectNoWrites() {
   }).toEqual({ post: [], patch: [], put: [], delete: [] });
 }
 
-function clickBackToWms() {
-  fireEvent.click(screen.getByRole('button', { name: 'Back to WMS' }));
+/**
+ * WS-UX-RECEIVE-D4R S7-CORRECT — a clean grouped exit first shows the V3.1
+ * Saved sheet and navigates nowhere; its Back to WMS performs the exit.
+ */
+async function clickBackToWms() {
+  fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+  const sheet = await screen.findByRole('dialog', { name: /leave this receive/i });
+  expect(new URLSearchParams(search).get('receiveJobId')).toBe(JOB_ID);
+  expect(screen.getByTestId('receive-session-mode')).toBeInTheDocument();
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Back to WMS' }));
 }
 
 beforeEach(() => {
@@ -296,7 +304,7 @@ describe('GH-1241 S3C-M1/E1 — Back to WMS leaves a grouped Receive session', (
     await settle();
 
     // 4–7. Back to WMS.
-    clickBackToWms();
+    await clickBackToWms();
     await waitFor(() => expect(new URLSearchParams(search).get('receiveJobId')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('receive-session-mode')).not.toBeInTheDocument());
     expectOperationsBoard();
@@ -324,7 +332,7 @@ describe('GH-1241 S3C-M1/E1 — Back to WMS leaves a grouped Receive session', (
     await expectGroupedSession();
     expect(reads.jobReads()).toBeGreaterThanOrEqual(2);
 
-    clickBackToWms();
+    await clickBackToWms();
     await waitFor(() => expect(new URLSearchParams(search).get('receiveJobId')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('receive-session-mode')).not.toBeInTheDocument());
 
@@ -345,7 +353,7 @@ describe('GH-1241 S3C-M1/E1 — Back to WMS leaves a grouped Receive session', (
     await expectGroupedSession();
     await waitFor(() => expect(reads.jobReads()).toBeGreaterThanOrEqual(2));
 
-    clickBackToWms();
+    await clickBackToWms();
     await waitFor(() => expect(new URLSearchParams(search).get('receiveJobId')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('receive-session-mode')).not.toBeInTheDocument());
 
@@ -365,7 +373,7 @@ describe('GH-1241 S3C-M1/E1 — Back to WMS leaves a grouped Receive session', (
     expect(new URLSearchParams(search).get('receiveJobId')).toBe(JOB_ID);
     await settle();
 
-    clickBackToWms();
+    await clickBackToWms();
     await waitFor(() => expect(new URLSearchParams(search).get('receiveJobId')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('receive-session-mode')).not.toBeInTheDocument());
     expectOperationsBoard();

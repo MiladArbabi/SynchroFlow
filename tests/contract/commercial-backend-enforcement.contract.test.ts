@@ -352,6 +352,7 @@ const BASIC_PURCHASING_ROUTES = [
   'PATCH /receive-jobs/:jobId/lines/:lineId/progress',
   // GH-1241 S3-A1 — operator physical-count confirmation (required before inspect).
   'POST /receive-jobs/:jobId/lines/:lineId/confirm-count',
+  'POST /receive-jobs/:jobId/lines/:lineId/recount',
   // GH-1241 S3-B — opt-in grouped Receive reconciliation.
   'GET /receive-jobs/:jobId/reconciliation',
   'PUT /receive-jobs/:jobId/reconciliation/draft',

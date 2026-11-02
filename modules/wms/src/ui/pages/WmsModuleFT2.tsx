@@ -30,10 +30,12 @@ import PackSessionPage, {
 } from './PackSessionPage.js';
 import ReceiveSessionPage, {
 type ReceiveJobLine,
+type ReceiveProblemBin,
 type ReceiveReconciliationEvidence,
 type ReceiveReconciliationDraftPayload,
 type ReceiveReconciliationFinalizePayload,
 type ReceiveReconciliationRevisionResult,
+type ReceiveRefreshResult,
 type ReceiveSessionMode,
 resolveReceiveSessionMode,
 } from './ReceiveSessionPage.js';
@@ -47,6 +49,7 @@ import CountingSessionPage, {
   type CountingSessionPageProps,
   WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
+import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
 import { EntityDetailModal, IsometricCanvas, ModuleErrorBoundary, SpotlightCoachMark } from '@lasyncro/shared/ui';
 import {
   classifyRecountBinAvailability,
@@ -198,6 +201,8 @@ export type WmsModuleFT2Props = {
   onPersistReceiveLineProgress?: (jobId: string, lineId: string, params: { quantity_sellable_provisional: number; reconciliation_required?: boolean; quantity_deferred?: number }) => Promise<void>;
   /** GH-1241 S3-A1 — operator physical-count confirmation; absent → Receive lines fail closed. */
   onConfirmReceiveLineCount?: (jobId: string, lineId: string, params: { quantity_confirmed: number }) => Promise<void>;
+  /** S8-C5 — per-line Recount before inspection (supersedes the line's shortfall allocations). */
+  onRecountReceiveLine?: (jobId: string, lineId: string) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; accounting_role?: string; notes?: string }) => Promise<void>;
   /**
    * GH-1108 / RECEIVE-OVERCOUNT-01 — REQUIRED, deliberately not optional,
@@ -229,6 +234,10 @@ export type WmsModuleFT2Props = {
    * be treated as ready with nothing recorded in the backend.
    */
   onConfirmUnitLabelsPrinted: (receiveJobLineId: string) => Promise<void>;
+  /** S4-4C — Receive-scoped problem-bin scan resolution (pass-through to ReceiveSessionPage). */
+  onResolveReceiveProblemBin?: (jobId: string, scannedValue: string) => Promise<ReceiveProblemBin>;
+  /** S4-4C — held LSU → problem bin custody (pass-through; the host owns the device event). */
+  onPlaceReceiveHeldUnit?: (jobId: string, params: { lasyncro_unit_id: string; location_code: string }) => Promise<{ replayed: boolean }>;
 
   onClaimBatch: (batchId: string) => Promise<void>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
@@ -2015,12 +2024,15 @@ function WmsModuleFT2Inner({
   onInspectReceiveLine,
   onPersistReceiveLineProgress,
   onConfirmReceiveLineCount,
+  onRecountReceiveLine,
   onReportReceiveException,
   onApproveOverDelivery,
   onCloseReceiveJob,
   onReceiveSessionFocusChange,
   onPrintUnitLabels,
   onConfirmUnitLabelsPrinted,
+  onResolveReceiveProblemBin,
+  onPlaceReceiveHeldUnit,
 
   onClaimBatch,
   onFetchLineItems,
@@ -2625,7 +2637,10 @@ function WmsModuleFT2Inner({
   const ownReceiveWorkJobs = (openReceiveJobs ?? []).filter(
     (job) =>
       job.assigned_operator_id === currentUserId &&
-      (job.status === 'pending' || job.status === 'in_progress') &&
+      // S4-4D F2 — the shared open-status contract, not a local subset: a
+      // finalized-but-unclosed job (inspection/barcode_assignment/stow_ready)
+      // must stay visible and resumable for its assigned operator.
+      (RECEIVE_JOB_OPEN_STATUSES as readonly string[]).includes(job.status) &&
       !job.closed_at
   );
 
@@ -2990,8 +3005,10 @@ function WmsModuleFT2Inner({
 
   // Active receive session
   if (activeSession?.type === 'receive') {
-    const refreshReceiveSession = async () => {
-      if (!onFetchReceiveJob) return;
+    // WS-UX-RECEIVE-D4R S8-C3 — reports whether this read was applied, so a
+    // close outcome is decided only by a canonical read that actually landed.
+    const refreshReceiveSession = async (): Promise<ReceiveRefreshResult> => {
+      if (!onFetchReceiveJob) return { applied: false };
       // GH-1241 S3C-M2 — same authority as E1 entry reads: a refresh started
       // before exit, before a (re)open, or before a newer refresh never lands.
       const generation = receiveEntryGenerationRef.current;
@@ -3005,7 +3022,7 @@ function WmsModuleFT2Inner({
         || current?.type !== 'receive'
         || current.receiveJobId !== receiveJobId
       ) {
-        return;
+        return { applied: false };
       }
       setActiveSession({
         type: 'receive',
@@ -3020,6 +3037,7 @@ function WmsModuleFT2Inner({
         deliveryAccountingVersion: latest.job.delivery_accounting_version ?? null,
         lines: latest.lines,
       });
+      return { applied: true, jobStatus: latest.job.status ?? null, closedAt: latest.job.closed_at ?? null };
     };
     const resolvedReceiveMode = receiveMode?.receiveJobId === activeSession.receiveJobId ? receiveMode : null;
     // Missing host writers fail closed rather than reporting a write that never happened.
@@ -3049,6 +3067,9 @@ function WmsModuleFT2Inner({
         onConfirmLineCount={onConfirmReceiveLineCount
           ? (lineId, params) => onConfirmReceiveLineCount(activeSession.receiveJobId, lineId, params)
           : undefined}
+        onRecountLine={onRecountReceiveLine
+          ? (lineId) => onRecountReceiveLine(activeSession.receiveJobId, lineId)
+          : undefined}
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? unavailableReceiveWrite('Reporting a problem')}
         onApproveOverDelivery={(params) => onApproveOverDelivery(activeSession.receiveJobId, params)}
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? unavailableReceiveWrite('Closing this Receive')}
@@ -3056,6 +3077,8 @@ function WmsModuleFT2Inner({
         onResolveBarcode={onResolveBarcode}
         onPrintUnitLabels={onPrintUnitLabels}
         onConfirmUnitLabelsPrinted={onConfirmUnitLabelsPrinted}
+        onResolveProblemBin={onResolveReceiveProblemBin ? (value) => onResolveReceiveProblemBin(activeSession.receiveJobId, value) : undefined}
+        onPlaceHeldUnit={onPlaceReceiveHeldUnit ? (params) => onPlaceReceiveHeldUnit(activeSession.receiveJobId, params) : undefined}
         onRefresh={refreshReceiveSession}
         onExecutionFocusChange={handleReceiveExecutionFocusChange}
         sessionMode={resolvedReceiveMode?.mode ?? 'resolving'}
