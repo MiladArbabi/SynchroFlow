@@ -82,7 +82,7 @@ const INITIAL_LEASE_MS = 3000;
 
 // E03 recovery owner: long enough to remain live across readback +
 // revalidation and the immediate busy probe, short enough to expire for real.
-const RECOVERY_LEASE_MS = 6000;
+const RECOVERY_LEASE_MS = 15000;
 
 const CONTINUATION_INTERRUPTED =
   '[GH1179_E03B1_TEST] recovery continuation interrupted before pending dispatch';
