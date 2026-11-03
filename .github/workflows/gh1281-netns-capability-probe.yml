@@ -1,0 +1,401 @@
+name: GH-1281 network namespace capability probe
+
+# Local preparation only: publishing this file to this exact branch will trigger it.
+# This job neither checks out repository code nor runs application/integration tests.
+on:
+  push:
+    branches:
+      - fix/gh1281-ci-cancellations-20261102
+    paths:
+      - .github/workflows/gh1281-netns-capability-probe.yml
+
+permissions: {}
+
+jobs:
+  capability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROBE_CONTAINER: gh1281-netns-${{ github.run_id }}-${{ github.run_attempt }}
+      # Official library/postgres:16 OCI index (PG 16.15), reviewed 2026-11-03 from
+      # registry-1.docker.io. linux/amd64 child manifest:
+      # sha256:b95b87e93ceb7594715d5c71fb6e09f6fc878851ab537735d617325eb9ba8b1b
+      PROBE_IMAGE_DIGEST: sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a
+      PROBE_IMAGE: postgres@sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a
+    steps:
+      - name: Probe isolated namespace capabilities
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          probe_stage=P01
+          trap 'echo "::error::PROBE_RESULT=FAIL stage=$probe_stage line=$LINENO"' ERR
+
+          blocked() {
+            echo "::error::$1=BLOCKED $2"
+            echo "$1=BLOCKED $2"
+            exit 1
+          }
+
+          test "${GITHUB_ACTIONS:-}" = true || blocked P01_PREREQ not_github_actions
+          test "$(uname -s)" = Linux || blocked P01_PREREQ not_linux
+          test "$(uname -m)" = x86_64 || blocked P01_PREREQ unsupported_architecture
+          for tool in docker nsenter ip nft setpriv python3 psql curl sysctl readlink stat findmnt; do
+            command -v "$tool" >/dev/null || blocked P01_PREREQ "missing $tool"
+          done
+          sudo -n true 2>/dev/null || blocked P01_PREREQ sudo_unavailable
+          uname -sr
+          cat /etc/os-release
+          echo "CGROUP_FILESYSTEM=$(stat -fc '%T' /sys/fs/cgroup)"
+          findmnt -n -o FSTYPE,OPTIONS /sys/fs/cgroup
+          cat /proc/self/cgroup
+          host_net=$(readlink /proc/self/ns/net)
+          echo P01_LINUX_TOOLS=PASS
+
+          probe_stage=P02
+          # Never contact a remote Docker daemon or acquire/install missing software.
+          test -z "${DOCKER_HOST:-}" || blocked P02_DOCKER_DAEMON docker_host_set
+          test -z "${DOCKER_CONTEXT:-}" || blocked P02_DOCKER_DAEMON docker_context_set
+          endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
+            || blocked P02_DOCKER_DAEMON context_unreadable
+          case "$endpoint" in
+            unix:///var/run/docker.sock|unix:///run/docker.sock) ;;
+            *) blocked P02_DOCKER_DAEMON unexpected_endpoint ;;
+          esac
+          test -S /var/run/docker.sock || blocked P02_DOCKER_DAEMON socket_missing
+          docker_os=$(docker info --format '{{.OSType}}') || blocked P02_DOCKER_DAEMON daemon_unreachable
+          test "$docker_os" = linux || blocked P02_DOCKER_DAEMON not_linux_daemon
+          docker version --format 'DOCKER_CLIENT={{.Client.Version}} DOCKER_SERVER={{.Server.Version}}'
+          # Exactly one explicit pull of the reviewed digest, before any isolation.
+          # Every later reference is digest-pinned and uses --pull=never.
+          case "$PROBE_IMAGE" in
+            "postgres@$PROBE_IMAGE_DIGEST") ;;
+            *) blocked P02_DOCKER_IMAGE image_reference_not_digest_pinned ;;
+          esac
+          docker pull --quiet --platform linux/amd64 "$PROBE_IMAGE" >/dev/null \
+            || blocked P02_DOCKER_IMAGE pinned_image_pull_failed
+          repo_digests=$(docker image inspect "$PROBE_IMAGE" --format '{{json .RepoDigests}}') \
+            || blocked P02_DOCKER_IMAGE pinned_image_missing_after_pull
+          case "$repo_digests" in
+            *"postgres@$PROBE_IMAGE_DIGEST"*) ;;
+            *) blocked P02_DOCKER_IMAGE pinned_digest_mismatch ;;
+          esac
+          image_platform=$(docker image inspect "$PROBE_IMAGE" --format '{{.Os}}/{{.Architecture}}')
+          test "$image_platform" = linux/amd64 || blocked P02_DOCKER_IMAGE "unexpected_platform $image_platform"
+          echo "POSTGRES_IMAGE_DIGEST=$PROBE_IMAGE_DIGEST PLATFORM=$image_platform"
+          test -z "$(docker container ls -aq --filter "name=^/${PROBE_CONTAINER}$")" \
+            || blocked P02_DOCKER_IMAGE container_name_collision
+          echo P02_DOCKER_IMAGE=PASS
+
+          probe_stage=P03
+          # Record ownership intent only after proving the name was absent.
+          # The always() step must never delete a pre-existing preflight collision.
+          echo "PROBE_CREATE_AUTHORIZED=true" >> "$GITHUB_ENV"
+          docker create --pull=never --name "$PROBE_CONTAINER" \
+            --network none --tmpfs /var/lib/postgresql/data \
+            --label synchroflow.disposable-test=1 \
+            --label "gh1281.run=$GITHUB_RUN_ID" \
+            --label "gh1281.attempt=$GITHUB_RUN_ATTEMPT" \
+            -e POSTGRES_USER=probe_owner -e POSTGRES_DB=probe_db \
+            -e POSTGRES_PASSWORD=gh1281-synthetic-probe-only \
+            -e POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 \
+            "$PROBE_IMAGE" >/dev/null
+          docker start "$PROBE_CONTAINER" >/dev/null
+          # Inspect only non-secret topology fields, never Config.Env or full logs.
+          docker inspect --format '{{json .NetworkSettings.Networks}} {{json .HostConfig.PortBindings}} {{json .HostConfig.Tmpfs}}' "$PROBE_CONTAINER"
+          probe_pid=$(docker inspect --format '{{.State.Pid}}' "$PROBE_CONTAINER")
+          test "$probe_pid" -gt 1
+          test "$host_net" != "$(sudo readlink "/proc/$probe_pid/ns/net")"
+
+          # Startup readiness is bounded; no failed capability assertion is retried.
+          # TCP only: the entrypoint's init server uses listen_addresses='', so a
+          # 127.0.0.1:5432 answer can only come from the final server.
+          ready=0
+          for attempt in {1..30}; do
+            if docker exec "$PROBE_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 \
+                -U probe_owner -d probe_db >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+
+          sudo nsenter -t "$probe_pid" -n -- \
+            env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin bash -seu -o pipefail <<'NAMESPACE'
+          python3 -I - <<'PY'
+          import json, subprocess
+          def ip(*args):
+              return json.loads(subprocess.check_output(["ip", "-j", *args]))
+          assert [link["ifname"] for link in ip("link", "show")] == ["lo"]
+          for family in ("-4", "-6"):
+              assert not any(route.get("dst") == "default"
+                             for route in ip(family, "route", "show", "table", "all"))
+          print("P03_LOOPBACK_ONLY_NAMESPACE=PASS")
+          PY
+          # Docker's none driver does not configure IPv6 loopback automatically.
+          sysctl -qw net.ipv6.conf.all.disable_ipv6=0
+          sysctl -qw net.ipv6.conf.default.disable_ipv6=0
+          sysctl -qw net.ipv6.conf.lo.disable_ipv6=0
+          ip link set lo up
+          ip -6 address replace ::1/128 dev lo
+          test "$(sysctl -n net.ipv6.conf.lo.disable_ipv6)" = 0
+          # Documentation-only routes force negative probes through this namespace's
+          # OUTPUT hook. There is no external interface or default route.
+          ip route add 192.0.2.1/32 dev lo
+          # Linux promotes IPv6 non-loopback routes via lo to reject routes, so IPv6
+          # uses a peerless dummy device created only inside this namespace.
+          ip link add gh1281dummy0 type dummy
+          ip link set gh1281dummy0 up
+          ip -6 address add 2001:db8:1281::2/128 dev gh1281dummy0 nodad
+          ip -6 route add 2001:db8::1/128 dev gh1281dummy0
+          python3 -I - <<'PY'
+          import json, subprocess
+          def ip(*args):
+              return json.loads(subprocess.check_output(["ip", "-j", *args]))
+          links = {link["ifname"]: link for link in ip("-d", "link", "show")}
+          assert set(links) == {"lo", "gh1281dummy0"}
+          assert links["gh1281dummy0"]["linkinfo"]["info_kind"] == "dummy"
+          assert "link_netnsid" not in links["gh1281dummy0"]
+          for family in ("-4", "-6"):
+              assert not any(route.get("dst") == "default"
+                             for route in ip(family, "route", "show", "table", "all"))
+          routes = ip("-6", "route", "show", "table", "all", "2001:db8::1/128")
+          assert len(routes) == 1
+          assert routes[0].get("type", "unicast") == "unicast"
+          assert routes[0]["dev"] == "gh1281dummy0"
+          assert not set(routes[0].get("flags", [])) & {"reject", "unreachable", "prohibit", "blackhole"}
+          selected = ip("-6", "route", "get", "2001:db8::1")
+          assert len(selected) == 1
+          assert selected[0].get("type", "unicast") == "unicast"
+          assert selected[0]["dev"] == "gh1281dummy0"
+          assert selected[0]["prefsrc"] == "2001:db8:1281::2"
+          print("P03_IPV6_DOCUMENTATION_ROUTE_UNICAST_DUMMY=PASS")
+          PY
+          nft -f - <<'RULES'
+          add table inet gh1281_probe
+          add chain inet gh1281_probe output { type filter hook output priority -300; policy drop; }
+          add rule inet gh1281_probe output oifname "lo" ip daddr 127.0.0.0/8 accept
+          add rule inet gh1281_probe output oifname "lo" ip6 daddr ::1 accept
+          RULES
+          for family in ipv4 ipv6; do
+            if [ "$family" = ipv4 ]; then
+              address_match='ip daddr 192.0.2.1'
+            else
+              address_match='ip6 daddr 2001:db8::1'
+            fi
+            for pair in udp:53 tcp:53 tcp:443 udp:443 tcp:853; do
+              protocol=${pair%:*}
+              port=${pair#*:}
+              # All expansions below are fixed literals from the loops above.
+              nft "add rule inet gh1281_probe output $address_match $protocol dport $port counter drop comment \"probe_${family}_${protocol}_${port}\""
+            done
+          done
+          nft add rule inet gh1281_probe output meta nfproto ipv4 counter drop
+          nft add rule inet gh1281_probe output meta nfproto ipv6 counter drop
+          NAMESPACE
+
+          probe_stage=P11
+          # Host-side read-only request while the namespace firewall is installed.
+          # No token, authorization header, provider endpoint or broad allow rule.
+          curl --noproxy '*' --fail --silent --show-error --max-time 10 \
+            --output /dev/null https://api.github.com/zen
+          echo P11_HOST_GITHUB_DURING_ISOLATION=PASS
+
+          probe_stage=P04_P10
+          sudo nsenter -t "$probe_pid" -n -- \
+            env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+            setpriv --reuid=65534 --regid=65534 --clear-groups \
+              --bounding-set=-all --inh-caps=-all --ambient-caps=-all \
+              --no-new-privs python3 -I - <<'PY'
+          import ctypes, errno, json, os, socket, stat, subprocess, sys
+
+          def marker(name):
+              print(name + "=PASS", flush=True)
+          status = dict(line.split(":", 1) for line in open("/proc/self/status") if ":" in line)
+          assert os.getresuid() == (65534, 65534, 65534)
+          assert os.getresgid() == (65534, 65534, 65534)
+          assert not os.getgroups()
+          assert int(status["NoNewPrivs"]) == 1
+          for key in ("CapEff", "CapPrm", "CapInh", "CapBnd", "CapAmb"):
+              assert int(status[key].strip(), 16) == 0
+
+          # Actual denied syscalls distinguish privilege enforcement from a missing tool.
+          libc = ctypes.CDLL(None, use_errno=True)
+          assert libc.unshare(0x40000000) == -1  # CLONE_NEWNET
+          assert ctypes.get_errno() == errno.EPERM
+          try:
+              host_namespace = os.open("/proc/1/ns/net", os.O_RDONLY)
+          except OSError as error:
+              assert error.errno in (errno.EACCES, errno.EPERM)
+          else:
+              try:
+                  assert libc.setns(host_namespace, 0x40000000) == -1
+                  assert ctypes.get_errno() == errno.EPERM
+              finally:
+                  os.close(host_namespace)
+          result = subprocess.run(["sudo", "-n", "true"], capture_output=True)
+          assert result.returncode != 0
+          # The protected process cannot alter the probe's interfaces, routes or firewall.
+          for command in (["ip", "link", "set", "gh1281dummy0", "down"],
+                          ["ip", "-6", "route", "del", "2001:db8::1/128"],
+                          ["nft", "flush", "table", "inet", "gh1281_probe"]):
+              result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+              assert result.returncode != 0
+              assert "Operation not permitted" in result.stderr
+          marker("P09_PRIVILEGES_AND_NAMESPACE_ESCAPE_DENIED")
+
+          # The required daemon socket must exist and deny connection, not merely
+          # fail because its path is missing. No API request is sent.
+          assert stat.S_ISSOCK(os.stat("/var/run/docker.sock").st_mode)
+          for path in ("/var/run/docker.sock", "/run/docker.sock",
+                       "/run/containerd/containerd.sock", "/run/podman/podman.sock"):
+              if not os.path.exists(path):
+                  continue
+              with socket.socket(socket.AF_UNIX) as control:
+                  try:
+                      control.connect(path)
+                  except OSError as error:
+                      assert error.errno in (errno.EACCES, errno.EPERM)
+                  else:
+                      raise AssertionError("control socket connection permitted")
+          marker("P10_DOCKER_CONTROL_DENIED")
+
+          for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+              with socket.socket(family, socket.SOCK_STREAM) as server:
+                  server.settimeout(2)
+                  server.bind((address, 0))
+                  server.listen(1)
+                  with socket.create_connection((address, server.getsockname()[1]), 2):
+                      connection, _ = server.accept()
+                      connection.close()
+          marker("P04_IPV4_IPV6_LOOPBACK")
+
+          def psql(password):
+              return subprocess.run(
+                  ["psql", "-X", "-w", "-h", "127.0.0.1", "-p", "5432", "-U", "probe_owner",
+                   "-d", "probe_db", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c",
+                   "SELECT current_user, current_database()"],
+                  env={"PATH": os.environ["PATH"], "PGPASSWORD": password,
+                       "PGCONNECT_TIMEOUT": "3", "PGSSLMODE": "disable", "LC_ALL": "C"},
+                  capture_output=True, text=True, timeout=5)
+          database = psql("gh1281-synthetic-probe-only")
+          assert database.returncode == 0, "synthetic PostgreSQL authentication failed"
+          assert database.stdout.strip() == "probe_owner|probe_db"
+          # A wrong password must be rejected by password authentication itself
+          # (SQLSTATE 28P01), proving TCP clients cannot pass through trust.
+          rejected = psql("gh1281-synthetic-wrong-password")
+          assert rejected.returncode == 2, "wrong password was not rejected"
+          assert rejected.stdout.strip() == ""
+          assert 'password authentication failed for user "probe_owner"' in rejected.stderr, \
+              "wrong-password failure was not an authentication rejection"
+          print("P05_AUTH_IDENTITY=probe_owner|probe_db", flush=True)
+          marker("P05_POSTGRES_PASSWORD_ENFORCED")
+          marker("P05_POSTGRES_AUTHENTICATED")
+
+          # Each generation verifies namespace, privileges and actual denied traffic.
+          check = """
+          import ctypes, errno, json, os, socket
+          status = dict(line.split(":", 1) for line in open("/proc/self/status") if ":" in line)
+          assert os.getuid() == 65534 and int(status["NoNewPrivs"]) == 1
+          assert all(int(status[k].strip(),16) == 0 for k in ("CapEff","CapPrm","CapBnd","CapAmb","CapInh"))
+          libc = ctypes.CDLL(None, use_errno=True)
+          assert libc.unshare(0x40000000) == -1 and ctypes.get_errno() == errno.EPERM
+          for family,address in ((socket.AF_INET,"192.0.2.1"),(socket.AF_INET6,"2001:db8::1")):
+              with socket.socket(family, socket.SOCK_STREAM) as s:
+                  s.settimeout(0.25)
+                  try:
+                      s.connect((address,443))
+                  except OSError as error:
+                      assert isinstance(error,TimeoutError) or error.errno in (errno.EPERM,errno.EACCES)
+                  else:
+                      raise AssertionError("descendant external TCP permitted")
+          print(json.dumps({"net":os.readlink("/proc/self/ns/net")}))
+          """
+          child = (
+              "import subprocess,sys; exec(" + repr(check) + "); "
+              "print(subprocess.check_output([sys.executable,'-I','-c'," + repr(check) +
+              "],text=True).strip())")
+          generations = subprocess.check_output([sys.executable, "-I", "-c", child], text=True, timeout=5)
+          reports = [json.loads(line) for line in generations.splitlines()]
+          assert len(reports) == 2
+          assert all(report["net"] == os.readlink("/proc/self/ns/net") for report in reports)
+          marker("P08_CHILD_GRANDCHILD_INHERITANCE")
+
+          for family, address in ((socket.AF_INET, "192.0.2.1"), (socket.AF_INET6, "2001:db8::1")):
+              for kind, port in ((socket.SOCK_DGRAM, 53), (socket.SOCK_STREAM, 53),
+                                 (socket.SOCK_STREAM, 443), (socket.SOCK_DGRAM, 443),
+                                 (socket.SOCK_STREAM, 853)):
+                  with socket.socket(family, kind) as connection:
+                      connection.settimeout(0.25)
+                      try:
+                          connection.connect((address, port))
+                          if kind == socket.SOCK_DGRAM:
+                              connection.send(b"gh1281-documentation-address-probe")
+                              connection.recv(1)
+                      except OSError as error:
+                          assert isinstance(error, TimeoutError) or error.errno in (
+                              errno.EPERM, errno.EACCES)
+                      else:
+                          raise AssertionError("external traffic returned successfully")
+          print("NEGATIVE_SOCKET_ATTEMPTS=COMPLETE", flush=True)
+          PY
+
+          probe_stage=P06_P07
+          # Every family/protocol/port must hit its own DROP counter. Routing errors
+          # or aggregate counters alone cannot satisfy these assertions.
+          sudo nsenter -t "$probe_pid" -n -- nft -j list table inet gh1281_probe | python3 -I -c '
+          import json,sys
+          entries=json.load(sys.stdin)["nftables"]
+          chains=[x["chain"] for x in entries if "chain" in x]
+          assert len(chains)==1 and chains[0]["policy"]=="drop" and chains[0]["hook"]=="output"
+          counts={}
+          for entry in entries:
+              rule=entry.get("rule",{})
+              if rule.get("comment","").startswith("probe_"):
+                  assert rule["expr"][-1]=={"drop":None}
+                  counts[rule["comment"]]=rule["expr"][-2]["counter"]["packets"]
+          expected={"probe_"+family+"_"+protocol+"_"+str(port)
+              for family in ("ipv4","ipv6")
+              for protocol,port in (("udp",53),("tcp",53),("tcp",443),("udp",443),("tcp",853))}
+          assert set(counts)==expected and all(counts[key]>0 for key in expected)
+          print("P06_EXTERNAL_IPV4_IPV6_BLOCKED=PASS")
+          print("P07_DNS_HTTPS_DOT_QUIC_BLOCKED=PASS")
+          '
+          probe_stage=P11
+          test "$(readlink /proc/self/ns/net)" = "$host_net"
+          curl --noproxy '*' --fail --silent --show-error --max-time 10 \
+            --output /dev/null https://api.github.com/zen
+          echo P11_HOST_GITHUB_AFTER_PROBES=PASS
+          echo BASIC_CAPABILITY_ASSERTIONS=PASS
+
+      - name: Clean up only this run's disposable container
+        if: always()
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          set -Eeuo pipefail
+          trap 'echo "::error::P12_CLEANUP=FAIL line=$LINENO"' ERR
+          if [ "${PROBE_CREATE_AUTHORIZED:-}" != true ]; then
+            echo P12_CLEANUP=PASS_NO_CREATE_ATTEMPT
+            exit 0
+          fi
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
+          case "$endpoint" in
+            unix:///var/run/docker.sock|unix:///run/docker.sock) ;;
+            *) echo "::error::P12_CLEANUP=BLOCKED unexpected Docker endpoint"; exit 1 ;;
+          esac
+          owned_id=$(docker container ls -aq --filter "name=^/${PROBE_CONTAINER}$")
+          if [ -z "$owned_id" ]; then
+            echo P12_CLEANUP=PASS_NO_RESOURCE
+            exit 0
+          fi
+          ownership=$(docker inspect --format '{{index .Config.Labels "gh1281.run"}}:{{index .Config.Labels "gh1281.attempt"}}:{{index .Config.Labels "synchroflow.disposable-test"}}' "$owned_id")
+          test "$ownership" = "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:1"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$owned_id")" = none
+          # No pruning, host firewall changes, shared-volume deletion or foreign cleanup.
+          docker rm -f "$owned_id" >/dev/null
+          test -z "$(docker container ls -aq --filter "name=^/${PROBE_CONTAINER}$")"
+          echo P12_CLEANUP=PASS
