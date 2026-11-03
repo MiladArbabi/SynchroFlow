@@ -9,6 +9,7 @@ import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
 import { inspectReceiveJobLine } from 'api-src/services/wms/receiveJob.service';
 import { issueTestToken } from '../../unit/helpers/auth';
+import { makeRecoverySyncEligible, provisionLinkedShopifyIntegration, RECOVERY_SYNC_FLAG, withRecoverySyncFlag } from './receive-recovery-sync-eligibility.fixture';
 
 /**
  * Fixtures follow the S4-4B suite: held capture as sf_app (public capture keeps
@@ -34,6 +35,20 @@ import { issueTestToken } from '../../unit/helpers/auth';
  *   F1  a device_event_id owned by another task's outcome → 409
  *       DEVICE_EVENT_ID_CONFLICT, no SQL detail, nothing written.
  *   A1  unauthenticated 401, operator 403, other shop 404 and sees nothing.
+ *
+ * SF-RECEIVE-PC-RELEASE-SAFETY-015: Shopify-linked fixture shops are made
+ * genuinely recovery-eligible (offline credential, mapped location, real empty
+ * converged cutover, I4 flag ON). The G-cases prove the approval guard:
+ *   G1  flag OFF → 409 SYNC_DISABLED; zero side effects.
+ *   G2  linked + connected, no converged cutover → 409 NO_CONVERGED_CUTOVER,
+ *       while an eligible shop in the same flag state is approved (per shop).
+ *   G3  integration-only legacy shop → 409 SHOPIFY_NOT_CONNECTED; uninstalled
+ *       → 409 SHOPIFY_DISCONNECTED.
+ *   G5  variant without a Shopify inventory item → 409 VARIANT_NOT_MAPPED.
+ *   G6  an existing live recovery Stow replays (200, same Stow) after
+ *       eligibility is lost; a completed task stays TASK_ALREADY_RESOLVED.
+ *   G7  concurrent re_stow while ineligible → both 409, no Stow.
+ *   G8  discard / write_off are unaffected by the guard.
  *
  * Commits held units, custody, recovery Stows and outcome events: runs only in
  * the isolated held-unit CI step, never with the 0224–0227 rollback suites.
@@ -83,15 +98,32 @@ async function hmacInstall(shopDomain: string): Promise<{ shopId: number; userId
 
 interface Shop { shopId: number; userId: number; token: string; problemBin: string }
 
-async function provisionFt2Shop(label: string): Promise<Shop> {
+/**
+ * `shopify`: 'eligible' (default) — linked and recovery-eligible (SAFETY-015
+ * fixture); 'integration_only' — legacy linked shop, no installation;
+ * 'linked_no_baseline' — connected but never cut over. (FT2 requires the
+ * shopify integration, so a shop without any Shopify link cannot exist here.)
+ */
+async function provisionFt2Shop(
+  label: string,
+  shopify: 'eligible' | 'integration_only' | 'linked_no_baseline' = 'eligible'
+): Promise<Shop> {
   const shopDomain = `rcvs45i2-${label}-${crypto.randomBytes(3).toString('hex')}-${Date.now()}.myshopify.com`;
   const { shopId, userId } = await hmacInstall(shopDomain);
-  await seedFreshInstall(shopId);
-  await withTenant(shopId, (trx) =>
-    trx('integrations').insert({
-      shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      sync_status: 'COMPLETED', updated_at: new Date(),
-    }));
+  if (shopify === 'integration_only') {
+    // Legacy linked shop: integration only, no installation. Reaches FT1
+    // through the seeded orders path as before; never cut over.
+    await seedFreshInstall(shopId);
+    await withTenant(shopId, (trx) =>
+      trx('integrations').insert({
+        shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
+        sync_status: 'COMPLETED', updated_at: new Date(),
+      }));
+  } else {
+    // SAFETY-015/C6: real zero-order Shopify link (no seed_fresh_install ROOT
+    // stock); physical stock arrives only through real Receive flows.
+    await provisionLinkedShopifyIntegration(shopId, shopDomain);
+  }
   let c = 0;
   c = await pumpEvents(shopId, c);
   c = await pumpEvents(shopId, c);
@@ -111,6 +143,7 @@ async function provisionFt2Shop(label: string): Promise<Shop> {
       parent_location_code: warehouse.root_location_code, active: true, type: 'bin', zone_type: 'problem',
     });
   });
+  if (shopify === 'eligible') await makeRecoverySyncEligible(shopId, userId);
   return { shopId, userId, token, problemBin };
 }
 
@@ -264,13 +297,19 @@ const taskOf = (s: Snap, id: string) => s.tasks.find((t: any) => t.problem_task_
 
 let shopA: Shop;
 let shopB: Shop;
+const previousFlag = process.env[RECOVERY_SYNC_FLAG];
 
 beforeAll(async () => {
+  // SAFETY-015: eligible fixtures run with the I4 flag ON (no worker runs in
+  // this process; the flag only satisfies the approval guard).
+  process.env[RECOVERY_SYNC_FLAG] = 'true';
   shopA = await provisionFt2Shop('a');
   shopB = await provisionFt2Shop('b');
 });
 
 afterAll(async () => {
+  if (previousFlag === undefined) delete process.env[RECOVERY_SYNC_FLAG];
+  else process.env[RECOVERY_SYNC_FLAG] = previousFlag;
   await db.destroy();
 });
 
@@ -599,5 +638,105 @@ describe('S4-5 I2 — authorization and tenant isolation', () => {
 
     // Positive control: the owner's decision succeeds on the same task.
     expect((await resolve(j, 0, 're_stow')).status).toBe(200);
+  });
+});
+
+// ── SAFETY-015 recovery sync eligibility guard ─────────────────────────────
+
+describe('SAFETY-015 — recovery approval requires synchronisable Shopify state', () => {
+  const refusedWith = (res: request.Response, reason: string) => {
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: 'Recovery to stock is unavailable until Shopify inventory sync is ready',
+      code: 'RECEIVE_RECOVERY_SYNC_UNAVAILABLE',
+      reason,
+    });
+  };
+
+  it('G1 — flag OFF: 409 SYNC_DISABLED with zero side effects; flag ON: the same task is approved', async () => {
+    const j = await heldJob(shopA, 1);
+    const before = await snapshot(j);
+    const refused = await withRecoverySyncFlag('false', () => resolve(j, 0, 're_stow'));
+    refusedWith(refused, 'SYNC_DISABLED');
+    expect(await withRecoverySyncFlag(undefined, () => resolve(j, 0, 're_stow')).then((r) => r.body.reason)).toBe('SYNC_DISABLED');
+    expect(await snapshot(j)).toEqual(before);
+
+    expect((await resolve(j, 0, 're_stow')).status).toBe(200);
+  });
+
+  it('G2 — connected shop without a converged cutover is refused while an eligible shop is approved (per shop)', async () => {
+    const unbaselined = await provisionFt2Shop('g2', 'linked_no_baseline');
+    const j = await heldJob(unbaselined, 1);
+    const before = await snapshot(j);
+    refusedWith(await resolve(j, 0, 're_stow'), 'NO_CONVERGED_CUTOVER');
+    expect(await snapshot(j)).toEqual(before);
+
+    const eligible = await heldJob(shopA, 1);
+    expect((await resolve(eligible, 0, 're_stow')).status).toBe(200);
+  });
+
+  it('G3 — integration-only legacy shop and an uninstalled shop fail closed', async () => {
+    const legacy = await provisionFt2Shop('g3l', 'integration_only');
+    const jl = await heldJob(legacy, 1);
+    const beforeLegacy = await snapshot(jl);
+    refusedWith(await resolve(jl, 0, 're_stow'), 'SHOPIFY_NOT_CONNECTED');
+    expect(await snapshot(jl)).toEqual(beforeLegacy);
+
+    const uninstalled = await provisionFt2Shop('g3u');
+    const ju = await heldJob(uninstalled, 1);
+    await withTenant(uninstalled.shopId, (trx) =>
+      trx('shopify_app_installations').where({ shop_id: uninstalled.shopId }).update({ uninstalled_at: new Date() }));
+    const beforeUninstalled = await snapshot(ju);
+    refusedWith(await resolve(ju, 0, 're_stow'), 'SHOPIFY_DISCONNECTED');
+    expect(await snapshot(ju)).toEqual(beforeUninstalled);
+  });
+
+  it('G5 — a variant without a Shopify inventory item is refused with zero side effects', async () => {
+    const j = await heldJob(shopA, 1);
+    await withTenant(shopA.shopId, (trx) =>
+      trx('external_product_identity_map').where({ shop_id: shopA.shopId, lasyncro_variant_id: j.variantId })
+        .update({ external_inventory_item_id: null }));
+    const before = await snapshot(j);
+    refusedWith(await resolve(j, 0, 're_stow'), 'VARIANT_NOT_MAPPED');
+    expect(await snapshot(j)).toEqual(before);
+  });
+
+  it('G6 — an approved recovery replays after eligibility is lost; a completed task stays resolved', async () => {
+    const j = await heldJob(shopA, 2);
+    const approved = await resolve(j, 0, 're_stow');
+    expect(approved.status).toBe(200);
+    const afterApproval = await snapshot(j);
+
+    const replay = await withRecoverySyncFlag('false', () => resolve(j, 0, 're_stow'));
+    expect(replay.status).toBe(200);
+    expect(replay.body).toMatchObject({ replayed: true, stow_task_id: approved.body.stow_task_id });
+    expect(await snapshot(j)).toEqual(afterApproval);
+
+    expect((await resolve(j, 1, 'discard')).status).toBe(200);
+    const afterDiscard = await snapshot(j);
+    const completed = await withRecoverySyncFlag('false', () => resolve(j, 1, 're_stow'));
+    expect(completed.status).toBe(409);
+    expect(completed.body).toEqual({ error: 'Task already resolved' });
+    expect(await snapshot(j)).toEqual(afterDiscard);
+  });
+
+  it('G7 — concurrent re_stow while ineligible: both refused, no recovery Stow', async () => {
+    const j = await heldJob(shopA, 1);
+    const before = await snapshot(j);
+    const results = await withRecoverySyncFlag('false', () =>
+      Promise.all([resolve(j, 0, 're_stow'), resolve(j, 0, 're_stow')]));
+    for (const res of results) refusedWith(res, 'SYNC_DISABLED');
+    expect(await snapshot(j)).toEqual(before);
+  });
+
+  it.each(['discard', 'write_off'])('G8 — %s is unaffected by the guard (flag OFF, legacy shop)', async (action) => {
+    const legacy = await provisionFt2Shop(`g8${action === 'discard' ? 'd' : 'w'}`, 'integration_only');
+    const j = await heldJob(legacy, 1);
+    const res = await withRecoverySyncFlag('false', () => resolve(j, 0, action));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ resolution_action: action, status: 'resolved', resolved: true });
+    const after = await snapshot(j);
+    expect(after.outcomes).toHaveLength(1);
+    expect(after.recoveryStows).toEqual([]);
   });
 });

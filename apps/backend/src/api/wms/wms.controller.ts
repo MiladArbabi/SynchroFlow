@@ -56,6 +56,10 @@ import {
   ReceiveHeldResolutionError,
   resolveReceiveHeldTask,
 } from '../../services/wms/receiveHeldResolution.service.js';
+import {
+  evaluateRecoverySyncEligibility,
+  RECOVERY_SYNC_UNAVAILABLE,
+} from '../../services/wms/receiveRecoverySyncEligibility.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import {
   getBatchPackEligibility,
@@ -4181,6 +4185,13 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           reason: err.reason ?? null,
         });
       }
+      if (err.code === RECOVERY_SYNC_UNAVAILABLE) {
+        return res.status(409).json({
+          error: 'Recovery to stock is unavailable until Shopify inventory sync is ready',
+          code: err.code,
+          reason: err.reason ?? null,
+        });
+      }
       return res.status(err.statusCode).json({
         error: 'This resolution is not supported for this incident',
         code: err.code,
@@ -5182,11 +5193,30 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
 // ─────────────────────────────────────────
 // GET /api/v1/wms/problem-center
 // ─────────────────────────────────────────
+// Problem Center V2 (S4-5 I5) — read-only projection additions. Every field
+// below is read from persisted rows; nothing here decides eligibility (the
+// resolve endpoint stays authoritative):
+//   lasyncro_variant_id / lasyncro_unit_id  real variant and Receive LSU identity
+//   unit_status / unit_location_code        the held LSU's current custody
+//   receive_job_id / receive_job_status     the held LSU's originating Receive
+//                                           job; I2 refuses every decision until
+//                                           it is closed (receive_not_closed)
+//   receive_custody_verified                the I2 custody proof the resolve
+//                                           service re-checks under its locks
+//   recovery_stow_*                         the one non-cancelled receive_recovery
+//                                           Stow of this task, if any
+// ?include=recent_resolved additionally returns tasks closed in the last 7
+// days so a recovery shows as completed only after its Stow confirmed. Without
+// it the response is unchanged in scope (open / investigating only).
+const PROBLEM_CENTER_RECENT_RESOLVED_DAYS = 7;
+
 export const httpGetProblemTasks = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
   const roles = req.user?.roles ?? [];
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const includeRecentResolved = req.query.include === 'recent_resolved';
 
   try {
     const tasks = await db.transaction(async (trx) => {
@@ -5194,8 +5224,42 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
 
       let query = trx('problem_center_tasks as pct')
         .join('variants as v', 'v.lasyncro_variant_id', 'pct.lasyncro_variant_id')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .leftJoin('inventory_units as iu', function joinHeldUnit() {
+          this.on('iu.lasyncro_unit_id', '=', 'pct.lasyncro_unit_id').andOn('iu.shop_id', '=', 'pct.shop_id');
+        })
+        // The held unit's originating Receive job, through the same unit →
+        // line → job lineage the I2 resolve service checks. Unique keys only
+        // (unit id, line PK, job PK): at most one row each, cardinality unchanged.
+        .leftJoin('receive_job_lines as rjl', function joinReceiveLine() {
+          this.on('rjl.receive_job_line_id', '=', 'iu.receive_job_line_id').andOn('rjl.shop_id', '=', 'iu.shop_id');
+        })
+        .leftJoin('receive_jobs as rj', function joinReceiveJob() {
+          this.on('rj.receive_job_id', '=', 'rjl.receive_job_id').andOn('rj.shop_id', '=', 'rjl.shop_id');
+        })
+        .joinRaw(`
+          LEFT JOIN LATERAL (
+            SELECT st.stow_task_id, st.status::text AS status, st.location_code, st.claimed_by, st.created_at
+              FROM stow_tasks st
+             WHERE st.shop_id = pct.shop_id
+               AND st.trigger = 'receive_recovery'
+               AND st.source_task_id = pct.problem_task_id
+               AND st.status::text <> 'cancelled'
+             ORDER BY st.created_at DESC
+             LIMIT 1
+          ) rs ON true
+        `)
         .where('pct.shop_id', shopId)
-        .whereIn('pct.status', ['open', 'investigating'])
+        .where((scope) => {
+          scope.whereIn('pct.status', ['open', 'investigating']);
+          if (includeRecentResolved) {
+            scope.orWhere((closed) => {
+              closed
+                .whereNotIn('pct.status', ['open', 'investigating'])
+                .where('pct.resolved_at', '>=', trx.raw(`now() - interval '${PROBLEM_CENTER_RECENT_RESOLVED_DAYS} days'`));
+            });
+          }
+        })
         .orderBy('pct.created_at', 'desc')
         .select(
           'pct.problem_task_id',
@@ -5210,6 +5274,46 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
           'pct.created_at',
           'v.title as variant_title',
           'v.sku',
+          'pct.lasyncro_variant_id',
+          'pct.lasyncro_unit_id',
+          'p.title as product_title',
+          'pct.resolution_action',
+          'pct.resolution_notes',
+          'pct.resolved_at',
+          'iu.status as unit_status',
+          'iu.current_location_code as unit_location_code',
+          'rj.receive_job_id as receive_job_id',
+          trx.raw('rj.status::text AS receive_job_status'),
+          trx.raw(`
+            (pct.lasyncro_unit_id IS NOT NULL AND EXISTS (
+              SELECT 1 FROM receive_held_custody_events c
+               WHERE c.shop_id = pct.shop_id
+                 AND c.problem_task_id = pct.problem_task_id
+                 AND c.lasyncro_unit_id = pct.lasyncro_unit_id
+                 AND c.location_code = iu.current_location_code
+                 AND c.location_code = pct.problem_bin_location
+            )) AS receive_custody_verified
+          `),
+          'rs.stow_task_id as recovery_stow_task_id',
+          'rs.status as recovery_stow_status',
+          'rs.location_code as recovery_stow_location_code',
+          'rs.claimed_by as recovery_stow_claimed_by',
+          'rs.created_at as recovery_stow_created_at',
+          // SAFETY-015: the recovered credit's I4 row (unique per shop + unit),
+          // so the queue never presents pending Shopify sync as done.
+          trx.raw(`
+            (SELECT s.status FROM shopify_recovery_inventory_syncs s
+              WHERE s.shop_id = pct.shop_id AND s.lasyncro_unit_id = pct.lasyncro_unit_id) AS recovery_sync_status
+          `),
+          // SAFETY-015: the variant-scoped half of recovery eligibility.
+          trx.raw(`
+            EXISTS (
+              SELECT 1 FROM external_product_identity_map m
+               WHERE m.shop_id = pct.shop_id
+                 AND m.lasyncro_variant_id = pct.lasyncro_variant_id
+                 AND m.external_inventory_item_id IS NOT NULL
+            ) AS variant_sync_mapped
+          `),
         );
 
       // Operators see pool + assigned to them only
@@ -5221,10 +5325,13 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
         });
       }
 
-      return query;
+      // SAFETY-015: shop-scoped recovery eligibility, read in the same tenant
+      // transaction. Display only — the resolve endpoint re-checks under locks.
+      const sync = await evaluateRecoverySyncEligibility(trx, shopId);
+      return { rows: await query, recoverySync: { available: sync.available, reason: sync.reason } };
     });
 
-    return res.json({ problem_tasks: tasks });
+    return res.json({ problem_tasks: tasks.rows, recovery_sync: tasks.recoverySync });
   } catch (err: unknown) {
     console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to fetch problem tasks: ${getErrorMessage(err)}` });

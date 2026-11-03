@@ -116,6 +116,7 @@ function triggerLabel(trigger: string): string {
   if (trigger === 'order_cancelled_mid_pick') return 'Cancelled pick';
   if (trigger === 'return_restock') return 'Return restock';
   if (trigger === 'problem_center') return 'Problem center';
+  if (trigger === 'receive_recovery') return 'Receive recovery';
   return trigger.replace(/_/g, ' ');
 }
 
@@ -766,9 +767,16 @@ export default function StowSessionPage({
     // is the task's declaration of which physical unit satisfies it. The
     // backend guard in confirmStow remains authoritative; this check exists
     // to fail fast at scan time with a message naming the required LSU.
+    //
+    // S4-5 I5 — a receive_recovery Stow recovers exactly one held LSU
+    // (unit_ids = that LSU, server-side). A generic product barcode or a
+    // sibling LSU never substitutes for it, and with no declared LSU the scan
+    // fails closed. confirmStow re-checks the exact LSU and stays authoritative.
+    const exactUnitRequired =
+      currentTask.trigger === 'receive_recovery' ||
+      (currentTask.trigger === 'order_cancelled_mid_pick' && (currentTask.unit_ids ?? []).length > 0);
     if (
-      currentTask.trigger === 'order_cancelled_mid_pick' &&
-      (currentTask.unit_ids ?? []).length > 0 &&
+      exactUnitRequired &&
       (!resolved.lasyncro_unit_id ||
         !(currentTask.unit_ids ?? []).includes(resolved.lasyncro_unit_id))
     ) {
@@ -1009,6 +1017,24 @@ export default function StowSessionPage({
           {nextAction}
         </Typography>
       </Box>
+      {/* S4-5 I5 — exact-LSU recovery guidance. The held unit was never in
+          inventory; it is credited once, only by this confirmed scan. */}
+      {currentTask.trigger === 'receive_recovery' && (
+        <Box
+          data-testid="stow-recovery-guidance"
+          sx={{ gridColumn: '1 / -1', mt: 0.5, pt: 1, borderTop: '0.5px solid var(--rule)' }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
+            Required unit
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+            {(currentTask.unit_ids ?? []).length > 0 ? (currentTask.unit_ids ?? []).join(', ') : 'Unavailable'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Scan an eligible storage bin, then this exact unit label. A product barcode is not accepted. Inventory is credited only when this scan is confirmed.
+          </Typography>
+        </Box>
+      )}
     </Paper>
   ) : null;
 

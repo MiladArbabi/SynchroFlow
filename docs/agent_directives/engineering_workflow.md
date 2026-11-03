@@ -1,8 +1,9 @@
-# ENGINEERING WORKFLOW v4.1
+# ENGINEERING WORKFLOW v5.0
 
 - Mode: solo-developer, main-first execution
-- Status: RATIFIED — v4.1 owner approved 2026-11-02
-- Supersedes: v3.6 (origin/main) and the intentional local v3.7 revision
+- Status: OWNER-APPROVED CHANGES 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001); ratified on owner diff review
+- Supersedes: v4.1 (ratified 2026-11-02), which superseded v3.6 and the local v3.7 revision
+- v5.0 changes: seven-stage lifecycle (LIFECYCLE-01), simplification rules (SIMPLIFY-01), two-column roadmap (REPORT-02), issue-scope ship delegation (SHIP-DELEGATION-01), release-before-close housekeeping (CLOSE-01)
 - Repository: SynchroFlow
 - Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)
 - Operating principle: strongest evidence with the least coordination overhead
@@ -25,7 +26,9 @@
 Milad is the decision maker and code approver. Milad:
 
 - approves issue scope, workshop outcomes, architecture and material UX decisions (including wireframes);
-- approves HIGH-risk certification and movement to the next issue;
+- approves HIGH-risk certification and movement to the next issue (REPEAT);
+- explicitly authorizes every production deployment and production migration;
+- restricts agent use and concurrent worktrees; those restrictions bind every lead and agent;
 - performs or supervises live browser verification by default;
 - owns staging, commit, push and deployment; only staging/commit/push MAY be delegated, and only under SHIP-DELEGATION-01;
 - MAY run any terminal command, and MAY delegate bounded command, verification and documentation execution within explicit permissions.
@@ -79,6 +82,8 @@ At intake the lead MUST select exactly one tier with a one-line justification.
 | MEDIUM | ordinary application, business-logic or API change | EXISTING CONTRACT or FOCUSED AUDIT → IMPLEMENT + TARGETED VERIFY → SHIP |
 | HIGH | authentication, authorization, tenant isolation, credential security, payments, inventory truth, data migrations, concurrency, or any consequential irreversible change | CONTRACT → IMPLEMENT + TARGETED VERIFY → RISK-BASED REVIEW → CERTIFY → SHIP |
 
+Every tier runs inside the seven-stage lifecycle (LIFECYCLE-01); the tier only sets how deep each stage goes. CONTRACT/AUDIT gates belong to AUDIT and WORKSHOP; RISK-BASED REVIEW and CERTIFY belong to REVIEW/VERIFY (CERTIFY is its recorded outcome, not a separate stage); SHIP belongs to RELEASE.
+
 Selection rules:
 
 - Use the LOWEST tier supported by actual consequence, reversibility and uncertainty.
@@ -110,17 +115,59 @@ A separate gate or round is justified only when it establishes a material missin
 - no repeated review or certification of an unchanged scope;
 - no standalone documentation-only ship when the update can ride with the next authorized ship.
 
-## 4. Execution flow and conditional gates
+## 4. Lifecycle, execution flow and conditional gates
 
-The flow below is the complete gate inventory. The risk tier selects which gates run. It is an internal control, not the displayed roadmap (REPORT-02).
+### LIFECYCLE-01 — Seven-stage engineering lifecycle
+
+Every issue moves through one lifecycle:
+
+**AUDIT → WORKSHOP → IMPLEMENT → REVIEW/VERIFY → RELEASE → HOUSEKEEPING → REPEAT**
+
+| Stage | Purpose | Work | Exit |
+|---|---|---|---|
+| 1. AUDIT | Understand the problem | Examine relevant code and behaviour; identify root cause, risks and dependencies; set a bounded scope; reuse existing evidence (FLOW-03, FLOW-04) | Problem and scope understood |
+| 2. WORKSHOP | Decide how to solve it | Evaluate feasible solutions; choose the simplest safe approach; set acceptance criteria; get owner decisions for material architecture or scope changes. Proportional to complexity; MAY be a one-line SKIP (FLOW-05) | Solution and implementation boundaries set |
+| 3. IMPLEMENT | Build the agreed solution | Scoped changes; targeted tests; necessary technical docs; no unrelated refactoring (IMPL-01, TEST-01) | Implementation complete with relevant local evidence |
+| 4. REVIEW/VERIFY | Prove it is correct | One risk-based review; relevant automated verification; security, tenant isolation, inventory correctness and regression safety where applicable; resolve genuine blockers; reuse valid evidence (VERIFY-01, REVIEW-01). Independent review only when risk justifies it | Required checks pass; no unresolved release blockers |
+| 5. RELEASE | Deliver safely | Integrate the intended changes; verify the final release SHA and required gates; rehearse migrations when relevant; get production deployment authorization; deploy; verify production (SHIP-01–04, DEPLOY-01, CERT-02) | Intended changes released and production verification successful |
+| 6. HOUSEKEEPING | Close properly | Update docs and roadmap status; record decisions and final evidence; close completed issues/PRs; clean up completed branches when safe; record genuinely necessary follow-ups (DOC-01, CLOSE-01). Not another certification pass | Issue closed; no unresolved work hidden behind a Done label |
+| 7. REPEAT | Move on | Select the next bounded scope from the project roadmap and begin its AUDIT; never restart completed work | Next issue's AUDIT started |
+
+- **Certification is the recorded outcome of a successful REVIEW/VERIFY, not an additional stage** (CERT-01).
+- Committed or merged is not finished: an issue is finished only after RELEASE, unless it is explicitly designated a non-release milestone (CLOSE-01).
+- A failure returns only to the earliest stage it actually invalidates (for example a test failure returns to IMPLEMENT, a disproved root cause to AUDIT), never automatically to the beginning (EXEC-01).
+- The gate inventory below is the detailed control inside these stages; the stage names are the shared vocabulary for reports and roadmaps (REPORT-02).
+
+### SIMPLIFY-01 — Process overhead rules
+
+1. **One issue at a time.** No unrelated scope expansion (FLOW-02, IMPL-01).
+2. **Risk-based verification.** Depth follows actual risk (RISK-TIER-01).
+3. **No duplicate evidence gathering.** Reuse applicable successful tests and reviews (EVIDENCE-REUSE-01).
+4. **No unnecessary approval loops.** After scope authorization, routine implementation, corrections inside the boundary and authorized Git operations proceed without repeated approval (AGENT-CLOSED-LOOP-01, SHIP-DELEGATION-01).
+5. **Safety gates stay.** Section 2, migrations (VERIFY-04) and production deployment (DEPLOY-01) are never simplified away.
+6. **No redundant certification phases.** REVIEW/VERIFY owns certification evidence (CERT-01).
+7. **No unnecessary full test runs.** Prefer targeted tests and the applicable automated CI (BUILD-02, TEST-12).
+8. **Release before closing.** Work is complete only after its intended release, unless designated a non-release milestone (CLOSE-01).
+9. **No workflow drift.** Each new finding is either a blocker of the current issue or a separately tracked follow-up.
+10. **Progress forward.** Failures return only to the relevant earlier stage (LIFECYCLE-01).
+
+GATE-ECONOMY-01 applies these rules gate by gate.
+
+### Gate inventory
+
+The flow below is the complete gate inventory, grouped by lifecycle stage. The risk tier selects which gates run. It is an internal control, not the displayed roadmap (REPORT-02).
 
 ```
-FLOW-01 MAIN SYNC → FLOW-02 INTAKE → FLOW-03 AUDIT [if no existing contract]
-→ FLOW-04 INHERITANCE [if an existing family is touched] → FLOW-05 WORKSHOP [per WORKSHOP_DECISION]
-→ TEST-01 STRATEGY → IMPLEMENT + TARGETED VERIFY → correction loop [if needed]
-→ neighbour regression → live/DB/runtime verify [if selected]
-→ REVIEW-01 [HIGH, when required] → CERT-01 [HIGH]
-→ SHIP (doc decision, ship-lineage, commit, push) → CI/deploy → production certification → CLOSE-01
+AUDIT          FLOW-01 MAIN SYNC → FLOW-02 INTAKE → FLOW-03 AUDIT [if no existing contract]
+               → FLOW-04 INHERITANCE [if an existing family is touched]
+WORKSHOP       FLOW-05 WORKSHOP [per WORKSHOP_DECISION] → TEST-01 STRATEGY
+IMPLEMENT      IMPLEMENT + TARGETED VERIFY → correction loop [if needed]
+REVIEW/VERIFY  neighbour regression → live/DB/runtime verify [if selected]
+               → REVIEW-01 [HIGH, when required] → CERT-01 recorded [HIGH]
+RELEASE        SHIP (DOC-01 doc decision, ship-lineage, commit, push) → CI/deploy [owner-authorized]
+               → production certification
+HOUSEKEEPING   roadmap/status and evidence records → CLOSE-01
+REPEAT         next issue → FLOW-01
 ```
 
 ### FLOW-01 — Main sync and cleanliness
@@ -521,7 +568,7 @@ Complete this loop in one execution when permissions permit. It grants no new sc
 
 Static preflight is never reported as runtime verification.
 
-**Failure classes:** production implementation; test/assertion; fixture; runner/harness; environment/dependency; existing regression or stale contract; material contract conflict. Classify before correcting. Inspect existing logs before any audit, rerun or new runner; a failing command alone justifies none of them. Restart the issue only when evidence invalidates its approved audit or design.
+**Failure classes:** production implementation; test/assertion; fixture; runner/harness; environment/dependency; existing regression or stale contract; material contract conflict. Classify before correcting. Inspect existing logs before any audit, rerun or new runner; a failing command alone justifies none of them. Return only to the lifecycle stage the failure invalidates (LIFECYCLE-01): restart AUDIT or WORKSHOP only when evidence invalidates the approved audit or design.
 
 **Privilege gap:** when Docker or another privilege is unavailable, never bypass it. Hold the dependent operations, prepare one complete owner-executable command for the approved isolated environment, and let the same session inspect the returned results when possible.
 
@@ -612,16 +659,16 @@ Capture `COMMIT_SHA`; push to origin/main; require `LOCAL_SHA == REMOTE_SHA` and
 
 ### SHIP-DELEGATION-01 — Exact-manifest ship delegation
 
-Default: Milad stages, commits and pushes. Milad MAY delegate those actions for one named RUN_ID and a fixed, certified manifest. All of the following are required:
+Default: Milad stages, commits and pushes. Milad MAY delegate those actions for one named RUN_ID, or once for a whole named issue scope, against a fixed, certified manifest or approved file allowlist. An issue-scope delegation covers that issue's routine commits and pushes, including correction commits inside the approved allowlist, without per-commit re-approval (SIMPLIFY-01 rule 4). All of the following are required:
 
-- exact RUN_ID and explicit authorization;
-- exact file allowlist and certified hashes;
+- exact RUN_ID or issue scope and explicit authorization;
+- exact file allowlist and, for each commit, verified hashes of the staged content;
 - clean index before explicit-path staging;
 - staged manifest and content hashes equal to the approved manifest, with zero unauthorized files;
 - no force push; STOP on remote divergence, with no automatic merge, rebase or reset;
 - exact-SHA CI verification and a persistent audit trail.
 
-The delegation never covers production deployment, production migrations, secret or credential mutation, GH-1262 integration, other issues or later executions. A RED CI result stops the execution; a correction commit needs separate authorization. HIGH-risk certification and owner approval remain required.
+The delegation never covers production deployment, production migrations, secret or credential mutation, GH-1262 integration, other issues, files outside the allowlist, or work after the issue closes. A RED CI result stops the execution until it is classified (CI-TRIAGE-01); a correction commit inside the allowlist is covered only by an issue-scope delegation, otherwise it needs separate authorization. HIGH-risk certification and owner approval remain required.
 
 ### DEPLOY-01 — CI and deployment safety (DEPLOY-GATE-01, RELEASE-CONTINUITY-01)
 
@@ -646,7 +693,7 @@ Inspect read-only first; scope narrowly by tenant and predicate; never guess sch
 
 ### CERT-01 — One certification decision per scope
 
-- CERTIFY is the lead's acceptance of the complete HIGH evidence set for a named scope, approved by Milad.
+- CERTIFY is the lead's acceptance of the complete HIGH evidence set for a named scope, approved by Milad. It is the recorded outcome of a successful REVIEW/VERIFY stage, not a separate lifecycle stage, and it needs no extra artifacts beyond the evidence already gathered.
 - Component certification and milestone certification are distinct: certifying a component (for example, one recovery path) never certifies the milestone or sprint that contains it, and milestone certification requires its own decision over its integrated evidence.
 - One certification decision is made per scope. Unchanged certified scope is not re-certified. A later change re-opens only the affected scope, and only when EVIDENCE-REUSE-01 fails for it.
 - Certification claims describe exactly the journey and state tested: component GREEN does not prove the full merchant journey, fresh install does not prove reinstall after credential expiry, and mocked provider acceptance is not live acceptance. Require further proof only when the missing scenario is consequential and inside the approved contract.
@@ -663,9 +710,11 @@ Selected at TEST-01; certification is risk-based, not ceremonial.
 - `LIVE_BROWSER` — user-facing workflow acceptance.
 - `PROVIDER_E2E` — real provider acceptance is part of the contract.
 
-### CLOSE-01 — Issue closure
+### CLOSE-01 — Issue closure (HOUSEKEEPING)
 
-An issue closes only when every gate selected for its tier is complete:
+Closure is the HOUSEKEEPING stage: update docs and roadmap status, record decisions and final evidence, close completed GitHub issues/PRs, delete completed branches/worktrees when safe (SAFE-08 still applies), and record genuinely necessary follow-ups with issue IDs. It reuses existing evidence and is never another certification pass.
+
+An issue is complete only after its intended release, unless the issue contract explicitly designates it a non-release milestone. An issue closes only when every gate selected for its tier is complete:
 
 - implementation accepted;
 - test strategy satisfied with its completion state recorded;
@@ -677,7 +726,7 @@ An issue closes only when every gate selected for its tier is complete:
 - CI and deploy accepted where required;
 - production certification at the selected level.
 
-Then: ISSUE CLOSED → next issue. Deferred consequential work carries an issue ID and reason.
+Then: ISSUE CLOSED → REPEAT (next issue). Deferred consequential work carries an issue ID and reason.
 
 ### REPORT-01 — Reports and handoffs (HANDOFF-01)
 
@@ -686,31 +735,39 @@ Then: ISSUE CLOSED → next issue. Deferred consequential work carries an issue 
 - The lead reconciles NOT COMPLETED against the brief before authorizing the next phase; an explicitly deferred item stays visible until its disposition is decided.
 - Keep reports concise: verdict, baseline, manifest, evidence path and checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Raw logs live in evidence artifacts. Do not repeat unchanged background.
 
-### REPORT-02 — Problem-specific roadmap (ROADMAP-PLAIN-ENGLISH-01)
+### REPORT-02 — Two-column roadmap (ROADMAP-PLAIN-ENGLISH-01)
 
-Every lead response, brief, agent report and handover ends with the approved roadmap. It states:
+Every lead response, brief, agent report, progress report, handoff and issue summary ends with one compact two-column roadmap, readable in a few seconds:
 
-- the issue/sprint ID;
-- the actual merchant or engineering problem and its intended outcome;
-- ordered, approved milestones in plain English, with exactly one marked `(CURRENT)`;
-- verified progress, dependencies and blockers;
-- status per milestone: GREEN (the stated verification passed), CERTIFIED (the required reviewer/owner accepted the stated evidence and scope), BLOCKED, PENDING or NOT AUTHORIZED.
+| 🗺️ PROJECT ROADMAP | 🔧 CURRENT ISSUE — <issue ID / short title> |
+|---|---|
+| <larger product milestone> | <smaller actionable step> |
 
-Format:
-
-```
-<ID> — <title>
-Problem/outcome: <one sentence>
-1. <milestone> — CERTIFIED
-2. <milestone> — GREEN; certification pending
-3. <milestone> — (CURRENT)
-4. <milestone> — PENDING | NOT AUTHORIZED
-```
-
-- A generic gate sequence alone is not a sufficient displayed roadmap; MAY be shown alongside the milestones.
-- Never invent milestones or change approved order, scope or phase without lead/owner approval. Completed milestones need verified evidence; blocked work stays at its milestone. Parallel issues keep independent roadmaps.
+- **LEFT — Where are we in building LaSyncro?** Larger product milestones (for example product category ingestion; purchasing; Receive and Problem Center; Stow / Put Away; Pick, Pack and Ship). Show completed milestones, the current one and the relevant upcoming ones; never an exhaustive backlog.
+- **RIGHT — What exactly are we doing now?** The concrete steps of the current issue (for example "Integrate I5 + SAFETY-015", "Verify combined CI", "Obtain release approval", "Deploy"). Prefer concrete tasks over generic labels when they say more; the current step MUST be identifiable as one of the LIFECYCLE-01 stages.
+- The columns are independent roadmaps. Rows do NOT imply a relationship or dependency between the left and right cells. When the columns have different lengths, leave cells blank; never invent work to fill rows.
+- Cells are short, plain English, with exactly one status icon each:
+  - ✅ **Done** — completed and verified at the appropriate level;
+  - 🟡 **In progress** — currently being worked on;
+  - 🔵 **Next** — next planned step;
+  - 🔴 **Blocked** — cannot proceed until a named issue is resolved (name it briefly);
+  - ⚪ **Later** — planned, not active.
+- Do not use APPROVED, CERTIFIED, GREEN or SHIPPED in the roadmap where the meaning is simply Done or In progress. Those terms keep their precise meaning in detailed evidence, certification and release records (CERT-01, VERIFY-01, SHIP-04).
+- Never mark a project milestone ✅ while its required production release is outstanding (CLOSE-01).
+- The right column changes as the issue progresses; the table is never a hardcoded roadmap.
+- Never invent milestones or change approved order, scope or phase without lead/owner approval. Done items need verified evidence; blocked work stays at its step. Parallel issues keep independent right columns.
 - If no roadmap is approved, report the missing contract.
 - A roadmap is a factual declaration, never authorization to continue.
+
+Illustrative example (presentation only; not the current authoritative roadmap):
+
+| 🗺️ PROJECT ROADMAP | 🔧 CURRENT ISSUE — I5 + SAFETY-015 |
+|---|---|
+| ✅ Product categories — Done | ✅ Audit and solution — Done |
+| ✅ Purchasing S1 — Done | ✅ Implementation — Done |
+| 🟡 Receive + Problem Center — Releasing | 🟡 Review / Verify — Current |
+| 🔵 Stow / Put Away — Next | 🔵 Release — Next |
+| ⚪ Pick / Pack / Ship — Later | ⚪ Housekeeping — Later |
 
 ### EXCEPT-01 — Exceptions
 

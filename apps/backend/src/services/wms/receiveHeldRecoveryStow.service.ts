@@ -4,6 +4,7 @@ import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { RESOLVABLE_PROBLEM_STATUSES } from './problemCenterResolutionPolicy.js';
 import { RECOVERABLE_HELD_EXCEPTION_TYPES } from './receiveHeldResolution.service.js';
+import { recoveryDestinationSyncRefusal } from './receiveRecoverySyncEligibility.service.js';
 
 /**
  * S8-C5 / S4-5 I3 — recovery Stow of a held Receive unit
@@ -77,6 +78,11 @@ export async function assertRecoveryDestination(
   if (!custodyLocation || custodyLocation === destination) {
     throw new ReceiveRecoveryStowError('RECEIVE_RECOVERY_DESTINATION_INVALID', 409, 'custody_bin');
   }
+
+  // SAFETY-015: a recovered unit must land where its credit can be pushed to
+  // Shopify (applies to every shop). Recoverable: the operator picks another bin.
+  const syncRefusal = await recoveryDestinationSyncRefusal(trx, shopId, destination);
+  if (syncRefusal) throw new ReceiveRecoveryStowError('RECEIVE_RECOVERY_DESTINATION_INVALID', 409, syncRefusal);
 }
 
 /** Destination check for a pre-claim or mid-task location assignment (Stow row already locked). */

@@ -107,20 +107,26 @@ const held = (
   holdReason: string
 ): RecoveryClassification => ({ status, holdReason, baselineGenerationId: null });
 
+export type RecoveryBaseline =
+  | { kind: 'valid'; generationId: string; warehouseId: string }
+  | {
+      kind: 'held';
+      status: 'held_no_baseline' | 'held_legacy_baseline' | 'held_no_capture';
+      holdReason: 'NO_CONVERGED_CUTOVER' | 'MARKER_WITHOUT_CONVERGED_GENERATION' | 'BASELINE_WITHOUT_RECOVERY_CAPTURE';
+    };
+
 /**
- * Baseline decision for one credit, inside the caller's REPEATABLE READ
- * transaction (cutover lock already held). A stale snapshot can only HOLD.
+ * The shop's push baseline (marker → exactly one converged generation → CB1
+ * capture header). Shared by the classifier and the recovery eligibility
+ * guard (SF-RECEIVE-PC-RELEASE-SAFETY-015) so both read one definition.
+ * Pure tenant-scoped read: no lock, no write.
  */
-export async function classifyRecoveryCredit(
-  trx: Knex.Transaction,
-  shopId: number,
-  credit: Pick<RecoveryCreditIdentity, 'creditMovementId' | 'locationCode'>
-): Promise<RecoveryClassification> {
+export async function readRecoveryBaseline(trx: Knex.Transaction, shopId: number): Promise<RecoveryBaseline> {
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .first('opening_inventory_shopify_synced_at');
   if (!settings?.opening_inventory_shopify_synced_at) {
-    return held('held_no_baseline', 'NO_CONVERGED_CUTOVER');
+    return { kind: 'held', status: 'held_no_baseline', holdReason: 'NO_CONVERGED_CUTOVER' };
   }
 
   const converged = await trx('opening_inventory_cutover_executions as e')
@@ -130,7 +136,7 @@ export async function classifyRecoveryCredit(
     .where({ 'e.shop_id': shopId, 'e.status': 'converged' })
     .select('g.generation_id', 'g.warehouse_id');
   if (converged.length !== 1) {
-    return held('held_legacy_baseline', 'MARKER_WITHOUT_CONVERGED_GENERATION');
+    return { kind: 'held', status: 'held_legacy_baseline', holdReason: 'MARKER_WITHOUT_CONVERGED_GENERATION' };
   }
 
   const generationId = String(converged[0].generation_id);
@@ -140,8 +146,24 @@ export async function classifyRecoveryCredit(
     .where({ shop_id: shopId, generation_id: generationId })
     .first('warehouse_id');
   if (!header) {
-    return held('held_no_capture', 'BASELINE_WITHOUT_RECOVERY_CAPTURE');
+    return { kind: 'held', status: 'held_no_capture', holdReason: 'BASELINE_WITHOUT_RECOVERY_CAPTURE' };
   }
+
+  return { kind: 'valid', generationId, warehouseId };
+}
+
+/**
+ * Baseline decision for one credit, inside the caller's REPEATABLE READ
+ * transaction (cutover lock already held). A stale snapshot can only HOLD.
+ */
+export async function classifyRecoveryCredit(
+  trx: Knex.Transaction,
+  shopId: number,
+  credit: Pick<RecoveryCreditIdentity, 'creditMovementId' | 'locationCode'>
+): Promise<RecoveryClassification> {
+  const baseline = await readRecoveryBaseline(trx, shopId);
+  if (baseline.kind === 'held') return held(baseline.status, baseline.holdReason);
+  const { generationId, warehouseId } = baseline;
 
   const location = await trx('warehouse_locations')
     .where({ shop_id: shopId, location_code: credit.locationCode })
