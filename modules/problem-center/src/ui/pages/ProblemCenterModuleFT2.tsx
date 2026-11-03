@@ -193,6 +193,7 @@ function receiveBlockReason(t: ProblemTask): string | null {
   if (!isReceiveUnitTask(t)) return null;
   if (t.unit_status && t.unit_status !== 'held') return `The unit is ${t.unit_status.replace(/_/g, ' ')}, not held — recovery is not available.`;
   if (t.receive_custody_verified !== true) return 'The unit\'s problem-bin placement is not verified, so recovery cannot be approved yet.';
+  if (t.receive_job_status !== 'closed') return 'The originating Receive status could not be confirmed, so no recovery decision is offered. Refresh, or check the Receive job.';
   return 'This classification is not recoverable. Investigate on the floor.';
 }
 
@@ -260,18 +261,23 @@ function ProblemCenterModuleFT2Inner({
   }, []);
   const now = Date.now();
 
+  const hasData = data != null;
+  // The queue exists only once the Problem Center projection has loaded. Pack
+  // decisions load independently and join it then — never before, so loading
+  // and error states cannot select or offer an item the queue does not show.
   const allItems = useMemo(() => {
+    if (data == null) return [];
     const opts = { canResolve, currentUserId };
     return [
-      ...(data?.tasks ?? []).map((t) => taskToItem(t, opts)),
+      ...data.tasks.map((t) => taskToItem(t, opts)),
       ...(packDecisions ?? []).map((d) => decisionToItem(d, opts, packDecisionCopy)),
     ];
   }, [data, packDecisions, packDecisionCopy, canResolve, currentUserId]);
-  const itemsRef = useRef(allItems);
-  itemsRef.current = allItems;
 
   const visible = useMemo(() => filterAndSort(allItems, filters), [allItems, filters]);
-  const hasData = data != null;
+  // Actions are submitted only for an item visible in the CURRENT queue.
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   // Select the most urgent exception once data arrives; never silently
   // replace a selection that disappeared (that is the stale notice below).
@@ -290,8 +296,8 @@ function ProblemCenterModuleFT2Inner({
   }, []);
 
   const execute = useCallback(async (item: QueueItem, action: ItemAction) => {
-    // Never submit an action that is not offered on the CURRENT projection.
-    const live = itemsRef.current.find((i) => i.key === item.key);
+    // Never submit an action that is not offered on a visible item of the CURRENT projection.
+    const live = visibleRef.current.find((i) => i.key === item.key);
     if (!live || !live.actions.some((a) => sameAction(a, action))) return;
     if (action.kind === 'open_stow') { onOpenStowTask?.(action.stowTaskId); return; }
     if (!canResolve) return;
@@ -351,12 +357,13 @@ function ProblemCenterModuleFT2Inner({
 
   const keepOpenRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (confirm) keepOpenRef.current?.focus(); }, [confirm]);
-  // A refetch that no longer offers the action under confirmation closes it.
+  // A refetch or filter that no longer shows or offers the action under
+  // confirmation closes it.
   useEffect(() => {
     if (!confirm || pending) return;
-    const live = allItems.find((i) => i.key === confirm.key);
+    const live = visible.find((i) => i.key === confirm.key);
     if (!live || !live.actions.some((a) => sameAction(a, confirm.action))) setConfirm(null);
-  }, [allItems, confirm, pending]);
+  }, [visible, confirm, pending]);
 
   // ── Detail panel ──────────────────────────────────────────────────────────
   const renderDetail = (item: QueueItem) => {
@@ -370,6 +377,8 @@ function ProblemCenterModuleFT2Inner({
     const wait =
       (item.state === 'awaiting_stow' || item.state === 'stow_in_progress') && t
         ? `Waiting on an operator to scan ${t.lasyncro_unit_id} into an eligible storage bin. Inventory credits on the confirmed scan, not before.`
+        : item.state === 'awaiting_receive_close'
+          ? 'Recovery decisions become available after the Receive closes. The unit stays held in the problem bin and is not in inventory until then.'
         : item.awaitingManager
           ? 'An owner or admin decides how this exception is resolved.'
           : item.state === 'investigating'
@@ -611,7 +620,7 @@ function ProblemCenterModuleFT2Inner({
               component="button"
               type="button"
               aria-pressed={active}
-              aria-label={`${label}: ${hasData ? c.count : 'loading'}`}
+              aria-label={`${label}: ${hasData ? c.count : isError && !isRefreshing ? 'unavailable' : 'loading'}`}
               onClick={() => setFilters((f) => ({ ...f, status: active ? 'open' : key }))}
               sx={{
                 display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, height: 44, px: 1.75, borderRadius: '8px',
@@ -620,8 +629,10 @@ function ProblemCenterModuleFT2Inner({
               }}
             >
               <Box component="span" aria-hidden sx={{ flex: 'none', width: 7, height: 7, borderRadius: '50%', bgcolor: dot }} />
-              <Box component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</Box>
-              <Box component="span" sx={{ flex: 'none', fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{hasData ? c.sub : ''}</Box>
+              {/* The label keeps its width; the secondary "oldest …" age yields
+                  first at narrow widths (full value in its title). */}
+              <Box component="span" sx={{ flexGrow: 0, flexShrink: { xs: 1, md: 0 }, flexBasis: 'auto', minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</Box>
+              <Box component="span" title={hasData ? c.sub : undefined} sx={{ flex: '0 100 auto', minWidth: 0, ml: 'auto', fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{hasData ? c.sub : ''}</Box>
               <Box component="span" sx={{ flex: 'none', fontSize: 20, fontWeight: 600, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{hasData ? c.count : '–'}</Box>
             </Box>
           );
@@ -681,21 +692,26 @@ function ProblemCenterModuleFT2Inner({
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-                        <Box component="span" sx={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {it.name}
-                          {it.sku && <Box component="span" sx={{ fontWeight: 400, fontSize: 12, color: 'var(--ink-4)', ml: 1 }}>{it.sku}</Box>}
+                        {/* A long name truncates before the SKU does; full name on hover. */}
+                        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 1, whiteSpace: 'nowrap' }}>
+                          <Box component="span" title={it.name} sx={{ flex: '0 1 auto', minWidth: 0, fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {it.name}
+                          </Box>
+                          {it.sku && it.sku !== it.name && <Box component="span" title={it.sku} sx={{ flex: '0 0 auto', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 400, fontSize: 12, color: 'var(--ink-3)' }}>{it.sku}</Box>}
                         </Box>
                         <StateChip item={it} />
                       </Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, fontSize: 12, lineHeight: 1.4, color: 'var(--ink-3)' }}>
-                        <Box component="span" sx={{ flex: 1, minWidth: 0, display: 'flex', gap: 1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        {/* Facts and next action share the line by content width; the
+                            next action yields faster only when both cannot fit. */}
+                        <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0, display: 'flex', gap: 1, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           <Box component="span" sx={{ flex: 'none', color: 'var(--ink-2)', fontWeight: 500 }}>{it.stageLabel}</Box>
                           <Box component="span" sx={{ flex: 'none', fontVariantNumeric: 'tabular-nums', color: aged ? 'var(--accent-text)' : 'var(--ink-3)' }}>{fmtAge(it.createdAt, now)}</Box>
                           <Box component="span" sx={{ flex: 'none', fontVariantNumeric: 'tabular-nums' }}>Qty {it.qty}</Box>
                           {it.location && <Box component="span" sx={{ flex: 'none', color: 'var(--ink-2)' }}>{it.location}</Box>}
                           <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.type}</Box>
                         </Box>
-                        <Box component="span" sx={{ flex: '0 1 auto', minWidth: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.next}</Box>
+                        <Box component="span" title={it.next} sx={{ flex: '0 3 auto', minWidth: 0, maxWidth: '60%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.next}</Box>
                       </Box>
                     </Box>
                   );

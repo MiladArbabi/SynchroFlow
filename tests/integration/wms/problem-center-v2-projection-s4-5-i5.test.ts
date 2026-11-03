@@ -16,6 +16,12 @@
 //       include.
 //   R1  operator scope unchanged: a task assigned to another user stays hidden
 //       from the operator, visible to the owner; each task projects its own LSU.
+//   J1  (M1-CORRECT-006) open Receive: custody verified but the originating job
+//       is not closed — the projection reports the job status, the I2 service
+//       refuses recovery (409 receive_not_closed) and nothing is written; after
+//       the real close the same task reports 'closed'.
+//   J2  Receive lineage: held LSUs of two jobs (one open, one closed) each
+//       project their own job through the unit's Receive line; one row per task.
 //
 // Reuses the I3 suite's real-route held-unit provisioning verbatim. Commits
 // held units, custody, recovery Stows and credits: isolated held-unit step only.
@@ -167,8 +173,8 @@ interface Job {
   acceptedIds: string[]; heldIds: string[]; taskIds: string[];
 }
 
-/** One accepted unit plus `held` recoverable (defect) units, labelled, placed and closed. */
-async function heldJob(shop: Shop, held: number): Promise<Job> {
+/** One accepted unit plus `held` recoverable (defect) units, labelled, placed and (by default) closed. */
+async function heldJob(shop: Shop, held: number, { close = true }: { close?: boolean } = {}): Promise<Job> {
   expect(process.env.PGDATABASE).toMatch(/^synchroflow_test_[A-Za-z0-9_]+$/);
   const accepted = 1;
   const variantId = await seedMappedVariant(shop.shopId);
@@ -224,9 +230,7 @@ async function heldJob(shop: Shop, held: number): Promise<Job> {
       .set(auth(shop.token)).send({ location_code: shop.problemBin, device_event_id: crypto.randomUUID() });
     expect(placed.status).toBe(201);
   }
-  const closed = await request(app).post(`/api/v1/suppliers/receive-jobs/${receiveJobId}/close`)
-    .set(auth(shop.token)).send({ actual_delivery_date: DELIVERY_DATE });
-  expect(closed.status).toBe(200);
+  if (close) expect((await closeJob(shop, receiveJobId)).status).toBe(200);
 
   const taskIds: string[] = [];
   for (const unitId of heldIds) {
@@ -237,6 +241,10 @@ async function heldJob(shop: Shop, held: number): Promise<Job> {
   }
   return { shop, poId, supplierId, receiveJobId, lineId, variantId, acceptedIds, heldIds, taskIds };
 }
+
+const closeJob = (shop: Shop, receiveJobId: string) =>
+  request(app).post(`/api/v1/suppliers/receive-jobs/${receiveJobId}/close`)
+    .set(auth(shop.token)).send({ actual_delivery_date: DELIVERY_DATE });
 
 // ── recovery Stow helpers ──────────────────────────────────────────────────
 
@@ -303,6 +311,7 @@ describe('S4-5 I5 — Problem Center V2 projection', () => {
       status: 'open', source: 'receive', lasyncro_variant_id: j.variantId, lasyncro_unit_id: lsu,
       unit_status: 'held', unit_location_code: shopA.problemBin, problem_bin_location: shopA.problemBin,
       receive_custody_verified: true, recovery_stow_task_id: null, recovery_stow_status: null,
+      receive_job_id: j.receiveJobId, receive_job_status: 'closed',
     }));
 
     // P2
@@ -362,7 +371,9 @@ describe('S4-5 I5 — Problem Center V2 projection', () => {
 
     const asOperator = await list(operatorToken, 'recent_resolved');
     expect(asOperator.status).toBe(200);
-    expect(rowOf(asOperator, j.taskIds[0])).toEqual(expect.objectContaining({ lasyncro_unit_id: j.heldIds[0] }));
+    expect(rowOf(asOperator, j.taskIds[0])).toEqual(expect.objectContaining({
+      lasyncro_unit_id: j.heldIds[0], receive_job_id: j.receiveJobId, receive_job_status: 'closed',
+    }));
     expect(rowOf(asOperator, j.taskIds[1])).toBeUndefined();
 
     // Exact LSU identity: each held unit's task projects that unit, and only it.
@@ -371,5 +382,62 @@ describe('S4-5 I5 — Problem Center V2 projection', () => {
     expect(rowOf(asOwner, j.taskIds[1])?.lasyncro_unit_id).toBe(j.heldIds[1]);
     expect(j.heldIds[0]).not.toBe(j.heldIds[1]);
     await expectReadOnly(shopA, j.variantId, [shopA.token, operatorToken]);
+  });
+  it('J1 — open Receive: status projected, recovery refused and nothing written; closed after the real close', async () => {
+    const j = await heldJob(shopA, 1, { close: false });
+    const taskId = j.taskIds[0];
+
+    const open = rowOf(await list(shopA.token), taskId);
+    expect(open).toEqual(expect.objectContaining({
+      status: 'open', unit_status: 'held', receive_custody_verified: true,
+      receive_job_id: j.receiveJobId, recovery_stow_task_id: null,
+    }));
+    expect(typeof open.receive_job_status).toBe('string');
+    expect(open.receive_job_status).not.toBe('closed');
+
+    // The backend is the authority the UI now mirrors: no decision before close.
+    const before = await accounting(shopA, j.variantId);
+    for (const resolution_action of ['re_stow', 'discard', 'write_off']) {
+      const res = await request(app).post(`/api/v1/wms/problem-center/${taskId}/resolve`)
+        .set(auth(shopA.token)).send({ resolution_action });
+      expect(res.status).toBe(409);
+      expect(res.body.reason).toBe('receive_not_closed');
+    }
+    const stows = await withTenant(shopA.shopId, (trx) =>
+      trx('stow_tasks').where({ shop_id: shopA.shopId, trigger: 'receive_recovery', source_task_id: taskId }).select('stow_task_id'));
+    expect(stows).toEqual([]);
+    expect(await accounting(shopA, j.variantId)).toEqual(before);
+    await expectReadOnly(shopA, j.variantId, [shopA.token]);
+
+    expect((await closeJob(shopA, j.receiveJobId)).status).toBe(200);
+    expect(rowOf(await list(shopA.token), taskId)).toEqual(expect.objectContaining({
+      status: 'open', unit_status: 'held', receive_custody_verified: true,
+      receive_job_id: j.receiveJobId, receive_job_status: 'closed', recovery_stow_task_id: null,
+    }));
+  });
+
+  it('J2 — each held LSU projects its own Receive job; one row per task', async () => {
+    const open = await heldJob(shopA, 2, { close: false });
+    const closed = await heldJob(shopA, 1);
+    const res = await list(shopA.token, 'recent_resolved');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.problem_tasks as any[]).map((t) => t.problem_task_id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    open.taskIds.forEach((taskId, i) => {
+      expect(rowOf(res, taskId)).toEqual(expect.objectContaining({
+        lasyncro_unit_id: open.heldIds[i], receive_job_id: open.receiveJobId,
+      }));
+      expect(rowOf(res, taskId).receive_job_status).not.toBe('closed');
+    });
+    expect(rowOf(res, closed.taskIds[0])).toEqual(expect.objectContaining({
+      lasyncro_unit_id: closed.heldIds[0], receive_job_id: closed.receiveJobId, receive_job_status: 'closed',
+    }));
+    expect(open.receiveJobId).not.toBe(closed.receiveJobId);
+
+    // Tenant boundary: the other shop sees neither job's tasks.
+    const other = await list(shopB.token, 'recent_resolved');
+    for (const taskId of [...open.taskIds, ...closed.taskIds]) expect(rowOf(other, taskId)).toBeUndefined();
   });
 });

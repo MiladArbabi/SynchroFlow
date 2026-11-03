@@ -33,6 +33,9 @@ export type ProblemTask = {
   unit_status?: string | null;
   unit_location_code?: string | null;
   receive_custody_verified?: boolean | null;
+  /** The held unit's originating Receive job (unit → line → job). */
+  receive_job_id?: string | null;
+  receive_job_status?: string | null;
   recovery_stow_task_id?: string | null;
   recovery_stow_status?: 'pending' | 'in_progress' | 'completed' | null;
   recovery_stow_location_code?: string | null;
@@ -66,6 +69,7 @@ export type OperationalState =
   | 'needs_decision'
   | 'awaiting_pack_decision'
   | 'awaiting_stow'
+  | 'awaiting_receive_close'
   | 'stow_in_progress'
   | 'needs_investigation'
   | 'investigating'
@@ -78,6 +82,7 @@ export const BUCKET_OF: Record<OperationalState, Bucket> = {
   needs_decision: 'decision',
   awaiting_pack_decision: 'decision',
   awaiting_stow: 'awaiting',
+  awaiting_receive_close: 'awaiting',
   needs_investigation: 'awaiting',
   stow_in_progress: 'progress',
   investigating: 'progress',
@@ -89,6 +94,7 @@ export const STATE_LABEL: Record<OperationalState, string> = {
   needs_decision: 'Needs decision',
   awaiting_pack_decision: 'Awaiting pack decision',
   awaiting_stow: 'Awaiting Stow',
+  awaiting_receive_close: 'Awaiting Receive close',
   stow_in_progress: 'Stow in progress',
   needs_investigation: 'Needs investigation',
   investigating: 'Investigating',
@@ -174,6 +180,16 @@ const isOpen = (t: ProblemTask) => OPEN_STATUSES.includes(t.status);
 export const isReceiveUnitTask = (t: ProblemTask) => t.source === 'receive' && !!t.lasyncro_unit_id;
 
 const LIVE_STOW = ['pending', 'in_progress'];
+
+/**
+ * M1-CORRECT-006: the I2 service refuses every held-unit decision until the
+ * unit's Receive job is closed (receive_not_closed). These are the job's
+ * not-yet-closed states; 'closed' is the only state that allows a decision,
+ * and anything else — absent, cancelled, unknown — fails closed.
+ */
+export const RECEIVE_JOB_OPEN_STATUSES = ['pending', 'in_progress', 'inspection', 'barcode_assignment', 'stow_ready'];
+const receiveJobClosed = (t: ProblemTask) => t.receive_job_status === 'closed';
+export const receiveJobOpen = (t: ProblemTask) => RECEIVE_JOB_OPEN_STATUSES.includes(t.receive_job_status ?? '');
 const hasLiveRecoveryStow = (t: ProblemTask) =>
   !!t.recovery_stow_task_id && LIVE_STOW.includes(t.recovery_stow_status ?? '');
 
@@ -209,6 +225,7 @@ export function genericResolutionActions(source: string, exceptionType: string):
 export function receiveUnitActions(t: ProblemTask): ResolutionAction[] {
   if (!isReceiveUnitTask(t) || !isOpen(t) || hasLiveRecoveryStow(t)) return [];
   if (t.recovery_stow_status === 'completed') return [];
+  if (!receiveJobClosed(t)) return [];
   if (t.unit_status !== 'held' || t.receive_custody_verified !== true) return [];
   if (!RECOVERABLE_HELD_TYPES.includes(t.exception_type)) return [];
   return ['re_stow', 'discard', 'write_off'];
@@ -299,6 +316,7 @@ function taskState(t: ProblemTask, offered: ResolutionAction[]): OperationalStat
   if (isReceiveUnitTask(t) && hasLiveRecoveryStow(t)) {
     return t.recovery_stow_status === 'in_progress' ? 'stow_in_progress' : 'awaiting_stow';
   }
+  if (isReceiveUnitTask(t) && receiveJobOpen(t)) return 'awaiting_receive_close';
   if (t.status === 'investigating') return 'investigating';
   return offered.length > 0 ? 'needs_decision' : 'needs_investigation';
 }
@@ -356,6 +374,7 @@ export function taskToItem(t: ProblemTask, opts: BuildOptions): QueueItem {
       : state === 'resolved' ? resolutionLabel(t.resolution_action)
         : state === 'awaiting_stow' ? 'Next: scan the exact unit into a storage bin'
           : state === 'stow_in_progress' ? 'Stow claimed by an operator'
+            : state === 'awaiting_receive_close' ? 'Waiting for the Receive to close'
             : awaitingManager ? 'Waiting on owner/admin decision'
               : first ? `Next: ${first.label}`
                 : state === 'investigating' ? 'Replacement search underway'

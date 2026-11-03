@@ -5187,6 +5187,9 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
 // resolve endpoint stays authoritative):
 //   lasyncro_variant_id / lasyncro_unit_id  real variant and Receive LSU identity
 //   unit_status / unit_location_code        the held LSU's current custody
+//   receive_job_id / receive_job_status     the held LSU's originating Receive
+//                                           job; I2 refuses every decision until
+//                                           it is closed (receive_not_closed)
 //   receive_custody_verified                the I2 custody proof the resolve
 //                                           service re-checks under its locks
 //   recovery_stow_*                         the one non-cancelled receive_recovery
@@ -5213,6 +5216,15 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
         .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .leftJoin('inventory_units as iu', function joinHeldUnit() {
           this.on('iu.lasyncro_unit_id', '=', 'pct.lasyncro_unit_id').andOn('iu.shop_id', '=', 'pct.shop_id');
+        })
+        // The held unit's originating Receive job, through the same unit →
+        // line → job lineage the I2 resolve service checks. Unique keys only
+        // (unit id, line PK, job PK): at most one row each, cardinality unchanged.
+        .leftJoin('receive_job_lines as rjl', function joinReceiveLine() {
+          this.on('rjl.receive_job_line_id', '=', 'iu.receive_job_line_id').andOn('rjl.shop_id', '=', 'iu.shop_id');
+        })
+        .leftJoin('receive_jobs as rj', function joinReceiveJob() {
+          this.on('rj.receive_job_id', '=', 'rjl.receive_job_id').andOn('rj.shop_id', '=', 'rjl.shop_id');
         })
         .joinRaw(`
           LEFT JOIN LATERAL (
@@ -5259,6 +5271,8 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
           'pct.resolved_at',
           'iu.status as unit_status',
           'iu.current_location_code as unit_location_code',
+          'rj.receive_job_id as receive_job_id',
+          trx.raw('rj.status::text AS receive_job_status'),
           trx.raw(`
             (pct.lasyncro_unit_id IS NOT NULL AND EXISTS (
               SELECT 1 FROM receive_held_custody_events c

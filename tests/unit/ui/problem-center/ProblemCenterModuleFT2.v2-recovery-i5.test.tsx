@@ -63,6 +63,10 @@ const base = (over: Partial<ProblemTask>): ProblemTask => ({
   unit_status: 'held',
   unit_location_code: 'PROB-BIN-01',
   receive_custody_verified: true,
+  // M1-CORRECT-006: the projection reports the originating Receive job; a
+  // decision exists only once it is closed (open/unknown: see receive-close-m1).
+  receive_job_id: 'cccccccc-1515-4515-8515-151515151515',
+  receive_job_status: 'closed',
   recovery_stow_task_id: null,
   recovery_stow_status: null,
   ...over,

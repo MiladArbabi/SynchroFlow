@@ -58,6 +58,8 @@ export function useProblemCenter(
         unit_status:                 t.unit_status ?? null,
         unit_location_code:          t.unit_location_code ?? null,
         receive_custody_verified:    t.receive_custody_verified ?? null,
+        receive_job_id:              t.receive_job_id ?? null,
+        receive_job_status:          t.receive_job_status ?? null,
         recovery_stow_task_id:       t.recovery_stow_task_id ?? null,
         recovery_stow_status:        t.recovery_stow_status ?? null,
         recovery_stow_location_code: t.recovery_stow_location_code ?? null,
