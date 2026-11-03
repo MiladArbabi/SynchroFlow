@@ -1470,3 +1470,122 @@ describe('GH-1262 S1b R10 — reorder conversion enforces canonical eligibility'
     },
   );
 });
+
+// ── PURCHASING LIFECYCLE S1 — SAFETY PARITY ────────────────────────────────
+// SF-PURCHASING-LIFECYCLE-S1-IMPLEMENT-001: both PO writers refuse an
+// inactive (soft-deleted) supplier with 422; conversion keeps refusing an
+// uninstalled Shopify connection with 422; an already-created PO still
+// replays by Idempotency-Key after its supplier is deactivated.
+
+async function setSupplierActive(shopId: number, supplierId: number, active: boolean): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    trx('suppliers').where({ shop_id: shopId, id: supplierId }).update({ active }),
+  );
+}
+
+describe('Purchasing lifecycle S1 — supplier and connection parity', () => {
+  it('S1-1: a supplier deactivated after queueing is refused 422 at conversion with zero side effects; reactivating converts', async () => {
+    const tenant = await createTenant('plc-s1-1-inactive-convert');
+    const supplierId = await createSupplier(tenant.shopId, { moq: null });
+    const variantId = await createShopifyVariant(tenant.shopId, 'active');
+    await queueReorder(tenant.ownerToken, supplierId, variantId, 2);
+
+    await setSupplierActive(tenant.shopId, supplierId, false);
+    const before = await purchasingState(tenant.shopId);
+    const inventoryBefore = await inventoryState(tenant.shopId);
+
+    const refused = await convert(tenant.ownerToken, { supplier_id: supplierId });
+
+    expect(refused.status).toBe(422);
+    expectBusinessRejection(refused);
+    expect(refused.body.error).toMatch(/inactive/i);
+    const after = await purchasingState(tenant.shopId);
+    expect(after).toEqual(before);
+    expect(after.purchaseOrders).toBe(0);
+    expect(after.reorderRequests).toEqual([expect.objectContaining({ status: 'pending', converted_po_id: null })]);
+    expect(await inventoryState(tenant.shopId)).toEqual(inventoryBefore);
+
+    await setSupplierActive(tenant.shopId, supplierId, true);
+    const control = await convert(tenant.ownerToken, { supplier_id: supplierId });
+    expect(control.status).toBe(201);
+  });
+
+  it('S1-2: Shopify uninstalled at conversion is refused 422 with zero side effects; reinstalling converts', async () => {
+    const tenant = await createTenant('plc-s1-2-uninstalled-convert');
+    const supplierId = await createSupplier(tenant.shopId, { moq: null });
+    const variantId = await createShopifyVariant(tenant.shopId, 'active');
+    await queueReorder(tenant.ownerToken, supplierId, variantId, 2);
+
+    await uninstallShopify(tenant.shopId);
+    const before = await purchasingState(tenant.shopId);
+    const inventoryBefore = await inventoryState(tenant.shopId);
+
+    const refused = await convert(tenant.ownerToken, { supplier_id: supplierId });
+
+    expect(refused.status).toBe(422);
+    expectBusinessRejection(refused);
+    expect(refused.body.error).toMatch(/Shopify is not installed/);
+    const after = await purchasingState(tenant.shopId);
+    expect(after).toEqual(before);
+    expect(after.reorderRequests).toEqual([expect.objectContaining({ status: 'pending', converted_po_id: null })]);
+    expect(await inventoryState(tenant.shopId)).toEqual(inventoryBefore);
+
+    await withTenant(tenant.shopId, (trx) =>
+      trx('shopify_app_installations').where({ shop_id: tenant.shopId }).update({ uninstalled_at: null }),
+    );
+    const control = await convert(tenant.ownerToken, { supplier_id: supplierId });
+    expect(control.status).toBe(201);
+  });
+
+  it('S1-3: a manual PO for an inactive supplier is refused 422 with zero side effects; reactivating creates it', async () => {
+    const tenant = await createTenant('plc-s1-3-inactive-manual');
+    const supplierId = await createSupplier(tenant.shopId);
+    const variantId = await createShopifyVariant(tenant.shopId, 'active');
+    const body = { supplier_id: supplierId, line_items: [line(variantId)] };
+
+    await setSupplierActive(tenant.shopId, supplierId, false);
+    const before = await purchasingState(tenant.shopId);
+    const inventoryBefore = await inventoryState(tenant.shopId);
+
+    const refused = await postPo(tenant.ownerToken, body);
+
+    expect(refused.status).toBe(422);
+    expectBusinessRejection(refused);
+    expect(refused.body.error).toMatch(/inactive/i);
+    const after = await purchasingState(tenant.shopId);
+    expect(after).toEqual(before);
+    expect(after).toMatchObject({ purchaseOrders: 0, lines: 0, idempotencyKeys: 0 });
+    expect(await inventoryState(tenant.shopId)).toEqual(inventoryBefore);
+
+    await setSupplierActive(tenant.shopId, supplierId, true);
+    const control = await postPo(tenant.ownerToken, body);
+    expect(control.status).toBe(201);
+  });
+
+  it('S1-4: a successfully created PO still replays by its key after the supplier is deactivated', async () => {
+    const tenant = await createTenant('plc-s1-4-replay-inactive');
+    const supplierId = await createSupplier(tenant.shopId);
+    const variantId = await createShopifyVariant(tenant.shopId, 'active');
+    const key = newKey();
+    const body = { supplier_id: supplierId, line_items: [line(variantId)] };
+
+    const first = await postPo(tenant.ownerToken, body, key);
+    expect(first.status).toBe(201);
+
+    await setSupplierActive(tenant.shopId, supplierId, false);
+    const afterDeactivation = await purchasingState(tenant.shopId);
+    const inventoryBefore = await inventoryState(tenant.shopId);
+
+    const replay = await postPo(tenant.ownerToken, body, key);
+
+    expect([200, 201]).toContain(replay.status);
+    expect(replay.body.purchase_order.id).toBe(first.body.purchase_order.id);
+    expect(await purchasingState(tenant.shopId)).toEqual(afterDeactivation);
+    expect(await inventoryState(tenant.shopId)).toEqual(inventoryBefore);
+
+    // A NEW key for the same request is a new creation and is refused.
+    const fresh = await postPo(tenant.ownerToken, body, newKey());
+    expect(fresh.status).toBe(422);
+    expect(await purchasingState(tenant.shopId)).toEqual(afterDeactivation);
+  });
+});

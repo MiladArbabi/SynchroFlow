@@ -318,8 +318,11 @@ export async function createPurchaseOrderIdempotently(
   if (input.supplier_id !== null) {
     const supplier = await trx('suppliers')
       .where({ id: input.supplier_id, shop_id: shopId })
-      .first('id');
+      .first('id', 'active');
     if (!supplier) reject(404, 'Supplier not found');
+    // Purchasing lifecycle S1: a soft-deleted supplier takes no NEW orders.
+    // Replays of an already-created PO returned above and are unaffected.
+    if (!supplier.active) reject(422, 'Supplier is inactive — reactivate it before ordering');
   }
 
   const variantIds = input.line_items.map((l) => l.lasyncro_variant_id);
