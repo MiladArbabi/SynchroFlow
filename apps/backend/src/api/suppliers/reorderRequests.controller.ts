@@ -451,6 +451,13 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
 
       if (!pending.length) return; // null poId + null gateFailure signals 400 below
 
+      // Purchasing lifecycle S1: a supplier soft-deleted after queueing takes
+      // no new PO. Hard gate, checked under the supplier lock above.
+      if (!supplier.active) {
+        gateFailure = 'Supplier is inactive — reactivate it before ordering';
+        return;
+      }
+
       // ── GATES (workshop SRC-01, Decision 2) ─────────────────────────────
       // G3 lead time and G4 SKU are hard: neither can be overridden, because a
       // PO without an ETA cannot be projected and a line without a SKU cannot
