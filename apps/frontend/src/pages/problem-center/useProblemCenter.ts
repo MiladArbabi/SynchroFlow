@@ -17,6 +17,9 @@ type RawProblemTask = Omit<ProblemTask, 'prob_label' | 'lasyncro_variant_id'> & 
   prob_label?: string | null;
   /** Legacy key some callers/fixtures still send for the same label. */
   notes?: string | null;
+  /** SAFETY-015 projection fields (declared here as well as on ProblemTask). */
+  variant_sync_mapped?: boolean | null;
+  recovery_sync_status?: string | null;
 };
 
 export function useProblemCenter(
@@ -64,12 +67,16 @@ export function useProblemCenter(
         recovery_stow_status:        t.recovery_stow_status ?? null,
         recovery_stow_location_code: t.recovery_stow_location_code ?? null,
         recovery_stow_created_at:    t.recovery_stow_created_at ?? null,
+        variant_sync_mapped:         t.variant_sync_mapped ?? null,
+        recovery_sync_status:        t.recovery_sync_status ?? null,
       }));
       return {
         tasks,
         total_unresolved: tasks.filter((t) =>
           t.status === 'open' || t.status === 'investigating'
         ).length,
+        // SAFETY-015: shop-scoped recovery eligibility (display only).
+        recovery_sync: data.recovery_sync ?? null,
       };
     },
   });

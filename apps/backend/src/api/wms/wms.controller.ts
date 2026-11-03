@@ -56,6 +56,10 @@ import {
   ReceiveHeldResolutionError,
   resolveReceiveHeldTask,
 } from '../../services/wms/receiveHeldResolution.service.js';
+import {
+  evaluateRecoverySyncEligibility,
+  RECOVERY_SYNC_UNAVAILABLE,
+} from '../../services/wms/receiveRecoverySyncEligibility.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import {
   getBatchPackEligibility,
@@ -4181,6 +4185,13 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           reason: err.reason ?? null,
         });
       }
+      if (err.code === RECOVERY_SYNC_UNAVAILABLE) {
+        return res.status(409).json({
+          error: 'Recovery to stock is unavailable until Shopify inventory sync is ready',
+          code: err.code,
+          reason: err.reason ?? null,
+        });
+      }
       return res.status(err.statusCode).json({
         error: 'This resolution is not supported for this incident',
         code: err.code,
@@ -5288,6 +5299,21 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
           'rs.location_code as recovery_stow_location_code',
           'rs.claimed_by as recovery_stow_claimed_by',
           'rs.created_at as recovery_stow_created_at',
+          // SAFETY-015: the recovered credit's I4 row (unique per shop + unit),
+          // so the queue never presents pending Shopify sync as done.
+          trx.raw(`
+            (SELECT s.status FROM shopify_recovery_inventory_syncs s
+              WHERE s.shop_id = pct.shop_id AND s.lasyncro_unit_id = pct.lasyncro_unit_id) AS recovery_sync_status
+          `),
+          // SAFETY-015: the variant-scoped half of recovery eligibility.
+          trx.raw(`
+            EXISTS (
+              SELECT 1 FROM external_product_identity_map m
+               WHERE m.shop_id = pct.shop_id
+                 AND m.lasyncro_variant_id = pct.lasyncro_variant_id
+                 AND m.external_inventory_item_id IS NOT NULL
+            ) AS variant_sync_mapped
+          `),
         );
 
       // Operators see pool + assigned to them only
@@ -5299,10 +5325,13 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
         });
       }
 
-      return query;
+      // SAFETY-015: shop-scoped recovery eligibility, read in the same tenant
+      // transaction. Display only — the resolve endpoint re-checks under locks.
+      const sync = await evaluateRecoverySyncEligibility(trx, shopId);
+      return { rows: await query, recoverySync: { available: sync.available, reason: sync.reason } };
     });
 
-    return res.json({ problem_tasks: tasks });
+    return res.json({ problem_tasks: tasks.rows, recovery_sync: tasks.recoverySync });
   } catch (err: unknown) {
     console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to fetch problem tasks: ${getErrorMessage(err)}` });

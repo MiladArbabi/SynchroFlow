@@ -36,15 +36,18 @@ import {
   type PackDecisionItem,
   type ProblemTask,
   type QueueItem,
+  type RecoverySync,
   type StageKey,
   type StatusFilter,
 } from './problemCenterModel.js';
 
-export type { ProblemTask, PackDecisionItem, PackDecisionCopy } from './problemCenterModel.js';
+export type { ProblemTask, PackDecisionItem, PackDecisionCopy, RecoverySync } from './problemCenterModel.js';
 
 export type ProblemCenterData = {
   tasks: ProblemTask[];
   total_unresolved: number;
+  /** SAFETY-015 shop-scoped recovery eligibility (absent on older responses). */
+  recovery_sync?: RecoverySync | null;
 } | null;
 
 export type ProblemCenterModuleFT2Props = {
@@ -267,7 +270,7 @@ function ProblemCenterModuleFT2Inner({
   // and error states cannot select or offer an item the queue does not show.
   const allItems = useMemo(() => {
     if (data == null) return [];
-    const opts = { canResolve, currentUserId };
+    const opts = { canResolve, currentUserId, recoverySync: data.recovery_sync ?? null };
     return [
       ...data.tasks.map((t) => taskToItem(t, opts)),
       ...(packDecisions ?? []).map((d) => decisionToItem(d, opts, packDecisionCopy)),
@@ -300,6 +303,7 @@ function ProblemCenterModuleFT2Inner({
     const live = visibleRef.current.find((i) => i.key === item.key);
     if (!live || !live.actions.some((a) => sameAction(a, action))) return;
     if (action.kind === 'open_stow') { onOpenStowTask?.(action.stowTaskId); return; }
+    if (action.kind === 'resolve' && action.unavailable) return;
     if (!canResolve) return;
     setPending(item.key);
     setErrors(({ [item.key]: _cleared, ...rest }) => rest);
@@ -503,10 +507,12 @@ function ProblemCenterModuleFT2Inner({
               )}
               {primary && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                  <ActionButton tone="primary" size="lg" disabled={!!pending} onClick={() => run(item, primary)}>
+                  <ActionButton tone="primary" size="lg" disabled={!!pending || (primary.kind === 'resolve' && !!primary.unavailable)} onClick={() => run(item, primary)}>
                     {primary.label}<ArrowRight size={14} aria-hidden />
                   </ActionButton>
-                  {primary.hint && <Box component="span" sx={{ fontSize: 12, fontWeight: 300, lineHeight: 1.45, color: 'var(--ink-3)' }}>{primary.hint}</Box>}
+                  {primary.kind === 'resolve' && primary.unavailable
+                    ? <Box component="span" data-testid="pc-recovery-unavailable" sx={{ fontSize: 12, lineHeight: 1.45, color: 'var(--ink-2)' }}>{primary.unavailable}</Box>
+                    : primary.hint && <Box component="span" sx={{ fontSize: 12, fontWeight: 300, lineHeight: 1.45, color: 'var(--ink-3)' }}>{primary.hint}</Box>}
                 </Box>
               )}
               {others.length > 0 && (

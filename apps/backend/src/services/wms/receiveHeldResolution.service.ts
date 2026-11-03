@@ -2,6 +2,7 @@ import type { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 
 import { RESOLVABLE_PROBLEM_STATUSES, type ProblemResolutionAction } from './problemCenterResolutionPolicy.js';
+import { RECOVERY_SYNC_UNAVAILABLE, evaluateRecoverySyncEligibility } from './receiveRecoverySyncEligibility.service.js';
 
 /**
  * S8-C5 / S4-5 I2 — Problem Center resolution of a held Receive unit
@@ -214,6 +215,16 @@ export async function resolveReceiveHeldTask(
 
   // ── Apply ───────────────────────────────────────────────────────────────
   if (action === 're_stow') {
+    // SAFETY-015: a new recovery is approved only when its credit can reach
+    // Shopify; every shop must have a ready Shopify connection (no exception
+    // for shops without one, owner decision C4). After the replay return above, so
+    // an existing approval is never revoked; before the insert, so a refusal
+    // writes nothing. Disposal never reaches this check.
+    const sync = await evaluateRecoverySyncEligibility(trx, shopId, { variantId: task.lasyncro_variant_id });
+    if (!sync.available) {
+      throw new ReceiveHeldResolutionError(RECOVERY_SYNC_UNAVAILABLE, 409, sync.reason);
+    }
+
     const [stow] = await trx('stow_tasks')
       .insert({
         shop_id: shopId,

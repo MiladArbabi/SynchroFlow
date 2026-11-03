@@ -9,12 +9,12 @@ import crypto from 'crypto';
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/backend-core/db.js';
-import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
 import { inspectReceiveJobLine } from 'api-src/services/wms/receiveJob.service';
 import { rebuildInventoryProjectionForVariants } from 'api-src/services/inventory/rebuildInventoryProjection';
 import { recoveryCreditIdentity } from 'api-src/services/wms/receiveHeldRecoveryStow.service';
+import { makeRecoverySyncEligible, provisionLinkedShopifyIntegration, RECOVERY_SYNC_FLAG, withRecoverySyncFlag } from './receive-recovery-sync-eligibility.fixture';
 import { issueTestToken } from '../../unit/helpers/auth';
 
 /**
@@ -43,6 +43,15 @@ import { issueTestToken } from '../../unit/helpers/auth';
  *       ordinary Stow to the same bin pushes only its own +1 (I4 boundary).
  *   CAP1 the recovered unit counts toward bin capacity: at the limit no audit
  *       task; over it one bin_over_capacity task, the recovery kept.
+ *
+ * SF-RECEIVE-PC-RELEASE-SAFETY-015: fixture shops are recovery-eligible
+ * (offline credential, mapped location, real empty converged cutover, flag ON).
+ *   D1  an approved recovery still confirms after the flag goes OFF: one
+ *       credit, durable for I4 (lag, not loss).
+ *   W1  a bin outside the baseline warehouse is refused at assignment and at
+ *       confirmation (zero side effects); a valid bin then succeeds.
+ *   W2  an unmapped Shopify location is refused at assignment and at
+ *       confirmation; once mapped again the same Stow confirms.
  *   T1  another shop cannot assign, claim or confirm; zero side effects.
  *
  * Commits held units, custody, recovery Stows, outcome events and recovery
@@ -96,12 +105,9 @@ interface Shop { shopId: number; userId: number; token: string; problemBin: stri
 async function provisionFt2Shop(label: string): Promise<Shop> {
   const shopDomain = `rcvs45i3-${label}-${crypto.randomBytes(3).toString('hex')}-${Date.now()}.myshopify.com`;
   const { shopId, userId } = await hmacInstall(shopDomain);
-  await seedFreshInstall(shopId);
-  await withTenant(shopId, (trx) =>
-    trx('integrations').insert({
-      shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      sync_status: 'COMPLETED', updated_at: new Date(),
-    }));
+  // SAFETY-015/C6: real zero-order Shopify link (no seed_fresh_install ROOT
+  // stock); physical stock arrives only through real Receive flows.
+  await provisionLinkedShopifyIntegration(shopId, shopDomain);
   let c = 0;
   c = await pumpEvents(shopId, c);
   c = await pumpEvents(shopId, c);
@@ -125,6 +131,7 @@ async function provisionFt2Shop(label: string): Promise<Shop> {
     return code;
   };
   const problemBin = await bin('problem');
+  await makeRecoverySyncEligible(shopId, userId);
   return { shopId, userId, token, problemBin, bin };
 }
 
@@ -355,8 +362,12 @@ async function raceOnRowLock(
 
 let shopA: Shop;
 let shopB: Shop;
+const previousFlag = process.env[RECOVERY_SYNC_FLAG];
 
 beforeAll(async () => {
+  // SAFETY-015: eligible fixtures run with the I4 flag ON (no worker runs in
+  // this process; the flag only satisfies the approval guard).
+  process.env[RECOVERY_SYNC_FLAG] = 'true';
   shopA = await provisionFt2Shop('a');
   shopB = await provisionFt2Shop('b');
 });
@@ -366,6 +377,8 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
+  if (previousFlag === undefined) delete process.env[RECOVERY_SYNC_FLAG];
+  else process.env[RECOVERY_SYNC_FLAG] = previousFlag;
   await db.destroy();
 });
 
@@ -667,5 +680,98 @@ describe('S4-5 I3 — tenant isolation', () => {
     expect((await claim(shopB.token, stowId)).status).not.toBe(200);
     expect((await confirm(shopB.token, stowId, { lasyncro_unit_id: j.heldIds[0] })).status).toBe(404);
     expect(await snapshot(j)).toEqual(before);
+  });
+});
+
+// ── SAFETY-015 D1 and destination sync checks ───────────────────────────────
+
+describe('SAFETY-015 — confirmation after approval (D1) and destination sync checks', () => {
+  /** A second, non-baseline warehouse with one storage bin. */
+  async function foreignWarehouseBin(shop: Shop): Promise<string> {
+    const warehouseId = crypto.randomUUID();
+    const suffix = `${shop.shopId}-${crypto.randomBytes(3).toString('hex')}`;
+    const root = `S015-W2-ROOT-${suffix}`;
+    const code = `S015-W2-STORAGE-${suffix}`;
+    await withTenant(shop.shopId, async (trx) => {
+      await trx('warehouses').insert({
+        warehouse_id: warehouseId, shop_id: shop.shopId, name: `SAFETY-015 second warehouse ${suffix}`,
+        root_location_code: root, is_default: false, active: true, external_location_id: `88${shop.shopId}`,
+      });
+      await trx('warehouse_locations').insert([
+        { shop_id: shop.shopId, warehouse_id: warehouseId, location_code: root, type: 'warehouse', parent_location_code: null, active: true, zone_type: null },
+        { shop_id: shop.shopId, warehouse_id: warehouseId, location_code: code, type: 'bin', parent_location_code: root, active: true, zone_type: 'storage' },
+      ]);
+    });
+    return code;
+  }
+
+  const setDefaultLocationMapping = (shop: Shop, value: string | null) =>
+    withTenant(shop.shopId, (trx) =>
+      trx('warehouses').where({ shop_id: shop.shopId, is_default: true }).update({ external_location_id: value }));
+
+  it('D1 — an approved recovery confirms after the flag goes OFF: one credit, nothing else changes', async () => {
+    const j = await heldJob(shopA, 1);
+    const destination = await shopA.bin('storage');
+    const stowId = await claimedRecovery(j, 0, destination);
+    const res = await withRecoverySyncFlag('false', () => confirm(shopA.token, stowId, { lasyncro_unit_id: j.heldIds[0] }));
+    expect(res.status).toBe(200);
+    const after = await snapshot(j);
+    expect(recoveryCredits(after)).toEqual([expect.objectContaining({
+      lasyncro_inventory_movement_id: recoveryCreditIdentity(stowId, j.heldIds[0]).movementId,
+      quantity_delta: 1, location_code: destination,
+    })]);
+    expect(unitOf(after, j.heldIds[0])).toMatchObject({ status: 'stowed', current_location_code: destination });
+    expect(mockSyncStowedQuantityToShopify).not.toHaveBeenCalled();
+  });
+
+  it('W1 — a bin outside the baseline warehouse is refused at assignment and confirmation; a valid bin succeeds', async () => {
+    const j = await heldJob(shopA, 1);
+    const foreign = await foreignWarehouseBin(shopA);
+    const stowId = await reStow(j, 0);
+    const before = await snapshot(j);
+
+    const assign = await setLocation(shopA.token, stowId, foreign);
+    expect([assign.status, assign.body.code, assign.body.reason])
+      .toEqual([409, 'RECEIVE_RECOVERY_DESTINATION_INVALID', 'outside_sync_baseline_warehouse']);
+    expect(await snapshot(j)).toEqual(before);
+
+    const valid = await shopA.bin('storage');
+    expect((await setLocation(shopA.token, stowId, valid)).status).toBe(200);
+    expect((await claim(shopA.token, stowId)).status).toBe(200);
+    // Moved to the foreign bin behind the API's back: confirmation re-checks.
+    await withTenant(shopA.shopId, (trx) =>
+      trx('stow_tasks').where({ shop_id: shopA.shopId, stow_task_id: stowId }).update({ location_code: foreign }));
+    const claimed = await snapshot(j);
+    const refused = await confirm(shopA.token, stowId, { lasyncro_unit_id: j.heldIds[0] });
+    expect([refused.status, refused.body.reason]).toEqual([409, 'outside_sync_baseline_warehouse']);
+    expect(await snapshot(j)).toEqual(claimed);
+  });
+
+  it('W2 — an unmapped Shopify location is refused at assignment and confirmation; once mapped the same Stow confirms', async () => {
+    const j = await heldJob(shopB, 1);
+    const destination = await shopB.bin('storage');
+    const stowId = await reStow(j, 0);
+    const mapping = await withTenant(shopB.shopId, (trx) =>
+      trx('warehouses').where({ shop_id: shopB.shopId, is_default: true }).first('external_location_id'));
+    try {
+      await setDefaultLocationMapping(shopB, null);
+      const before = await snapshot(j);
+      const assign = await setLocation(shopB.token, stowId, destination);
+      expect([assign.status, assign.body.reason]).toEqual([409, 'location_not_mapped']);
+      expect(await snapshot(j)).toEqual(before);
+
+      await setDefaultLocationMapping(shopB, mapping.external_location_id);
+      expect((await setLocation(shopB.token, stowId, destination)).status).toBe(200);
+      expect((await claim(shopB.token, stowId)).status).toBe(200);
+      await setDefaultLocationMapping(shopB, null);
+      const claimed = await snapshot(j);
+      const refused = await confirm(shopB.token, stowId, { lasyncro_unit_id: j.heldIds[0] });
+      expect([refused.status, refused.body.reason]).toEqual([409, 'location_not_mapped']);
+      expect(await snapshot(j)).toEqual(claimed);
+    } finally {
+      await setDefaultLocationMapping(shopB, mapping.external_location_id);
+    }
+    expect((await confirm(shopB.token, stowId, { lasyncro_unit_id: j.heldIds[0] })).status).toBe(200);
+    expect(recoveryCredits(await snapshot(j))).toHaveLength(1);
   });
 });

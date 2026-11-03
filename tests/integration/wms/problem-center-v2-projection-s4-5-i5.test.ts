@@ -23,6 +23,14 @@
 //   J2  Receive lineage: held LSUs of two jobs (one open, one closed) each
 //       project their own job through the unit's Receive line; one row per task.
 //
+//   P4  (SAFETY-015) recovery_sync is projected per shop and per row:
+//       eligible → available/shopify with variant_sync_mapped; flag OFF →
+//       SYNC_DISABLED; a recovered unit reports its I4 sync row status
+//       (pending until swept and pushed — never presented as done).
+//
+// SF-RECEIVE-PC-RELEASE-SAFETY-015: fixture shops are recovery-eligible
+// (offline credential, mapped location, real empty converged cutover, flag ON).
+//
 // Reuses the I3 suite's real-route held-unit provisioning verbatim. Commits
 // held units, custody, recovery Stows and credits: isolated held-unit step only.
 const mockSyncStowedQuantityToShopify = jest.fn((..._args: unknown[]) => Promise.resolve());
@@ -35,11 +43,12 @@ import crypto from 'crypto';
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/backend-core/db.js';
-import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
 import { inspectReceiveJobLine } from 'api-src/services/wms/receiveJob.service';
 import { issueTestToken } from '../../unit/helpers/auth';
+import { sweepRecoveryCredits } from 'api-src/services/wms/shopifyRecoveryInventorySync.service';
+import { makeRecoverySyncEligible, provisionLinkedShopifyIntegration, RECOVERY_SYNC_FLAG, withRecoverySyncFlag } from './receive-recovery-sync-eligibility.fixture';
 
 const app = createApp();
 jest.setTimeout(300000);
@@ -88,12 +97,9 @@ interface Shop { shopId: number; userId: number; token: string; problemBin: stri
 async function provisionFt2Shop(label: string): Promise<Shop> {
   const shopDomain = `pcv2i5-${label}-${crypto.randomBytes(3).toString('hex')}-${Date.now()}.myshopify.com`;
   const { shopId, userId } = await hmacInstall(shopDomain);
-  await seedFreshInstall(shopId);
-  await withTenant(shopId, (trx) =>
-    trx('integrations').insert({
-      shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      sync_status: 'COMPLETED', updated_at: new Date(),
-    }));
+  // SAFETY-015/C6: real zero-order Shopify link (no seed_fresh_install ROOT
+  // stock); physical stock arrives only through real Receive flows.
+  await provisionLinkedShopifyIntegration(shopId, shopDomain);
   let c = 0;
   c = await pumpEvents(shopId, c);
   c = await pumpEvents(shopId, c);
@@ -117,6 +123,7 @@ async function provisionFt2Shop(label: string): Promise<Shop> {
     return code;
   };
   const problemBin = await bin('problem');
+  await makeRecoverySyncEligible(shopId, userId);
   return { shopId, userId, token, problemBin, bin };
 }
 
@@ -263,13 +270,18 @@ const confirm = (token: string, stowId: string, body: Record<string, unknown>) =
 
 let shopA: Shop;
 let shopB: Shop;
+const previousFlag = process.env[RECOVERY_SYNC_FLAG];
 
 beforeAll(async () => {
+  // SAFETY-015: approval guard only; this suite never starts the worker.
+  process.env[RECOVERY_SYNC_FLAG] = 'true';
   shopA = await provisionFt2Shop('a');
   shopB = await provisionFt2Shop('b');
 });
 
 afterAll(async () => {
+  if (previousFlag === undefined) delete process.env[RECOVERY_SYNC_FLAG];
+  else process.env[RECOVERY_SYNC_FLAG] = previousFlag;
   await db.destroy();
 });
 
@@ -439,5 +451,37 @@ describe('S4-5 I5 — Problem Center V2 projection', () => {
     // Tenant boundary: the other shop sees neither job's tasks.
     const other = await list(shopB.token, 'recent_resolved');
     for (const taskId of [...open.taskIds, ...closed.taskIds]) expect(rowOf(other, taskId)).toBeUndefined();
+  });
+});
+
+describe('SAFETY-015 — recovery availability projection', () => {
+  it('P4 — recovery_sync per shop, variant_sync_mapped per row, recovered units report their I4 sync status', async () => {
+    const j = await heldJob(shopA, 1);
+    const taskId = j.taskIds[0];
+
+    const eligible = await list(shopA.token);
+    expect(eligible.body.recovery_sync).toEqual({ available: true, reason: null });
+    expect(rowOf(eligible, taskId)).toEqual(expect.objectContaining({ variant_sync_mapped: true, recovery_sync_status: null }));
+
+    const disabled = await withRecoverySyncFlag('false', () => list(shopA.token));
+    expect(disabled.body.recovery_sync).toEqual({ available: false, reason: 'SYNC_DISABLED' });
+    expect(rowOf(disabled, taskId)).toBeDefined();
+    await expectReadOnly(shopA, j.variantId, [shopA.token]);
+
+    const stowId = await reStow(j, 0);
+    const destination = await shopA.bin('storage');
+    expect((await setLocation(shopA.token, stowId, destination)).status).toBe(200);
+    expect((await claim(shopA.token, stowId)).status).toBe(200);
+    expect((await confirm(shopA.token, stowId, { lasyncro_unit_id: j.heldIds[0] })).status).toBe(200);
+    // Credited in LaSyncro, not yet discovered by I4: no sync status to claim.
+    expect(rowOf(await list(shopA.token, 'recent_resolved'), taskId)).toEqual(expect.objectContaining({
+      status: 'resolved', recovery_stow_status: 'completed', recovery_sync_status: null,
+    }));
+    await sweepRecoveryCredits(shopA.shopId);
+    expect(rowOf(await list(shopA.token, 'recent_resolved'), taskId)).toEqual(expect.objectContaining({
+      recovery_sync_status: 'pending',
+    }));
+    // Shop B never sees shop A's sync state.
+    expect(rowOf(await list(shopB.token, 'recent_resolved'), taskId)).toBeUndefined();
   });
 });

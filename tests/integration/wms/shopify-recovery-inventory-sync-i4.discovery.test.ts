@@ -3,8 +3,10 @@
 // under concurrent inventory projection rebuild (the recount truth writer).
 //
 //   DS1 one confirmed recovery → one sync row with I3's credit identity,
-//       held_no_baseline (no converged cutover); no Shopify call; the tenant
-//       is listed for work.
+//       pending against the shop's converged baseline (SAFETY-015/C7: every
+//       recovering shop now has one; held_no_baseline stays covered by the I4
+//       cutover suite's classifier cases); no Shopify call; the tenant is
+//       listed for work.
 //   DS2 repeated and concurrent sweeps → still exactly one row per credit.
 //   DS3 another shop's sweep sees and registers nothing of this shop.
 //   RC1 recovery confirm vs rebuildInventoryProjectionForVariants (commitRecount's
@@ -28,7 +30,6 @@ import request from 'supertest';
 import { knex as knexFactory, type Knex } from 'knex';
 import { createApp } from 'api-src/bootstrap/express';
 import db, { systemQuery, withTenant, runWithTenantContext } from '@lasyncro/backend-core/db.js';
-import { seedFreshInstall } from 'api-src/scripts/seed_fresh_install';
 import { processDomainEvent } from 'api-src/events/processDomainEvent';
 import { syncProducts } from 'api-src/services/shopify/shopifyProducts.core';
 import { inspectReceiveJobLine } from 'api-src/services/wms/receiveJob.service';
@@ -40,6 +41,7 @@ import {
   sweepRecoveryCredits,
 } from 'api-src/services/wms/shopifyRecoveryInventorySync.service';
 import { issueTestToken } from '../../unit/helpers/auth';
+import { makeRecoverySyncEligible, provisionLinkedShopifyIntegration, RECOVERY_SYNC_FLAG } from './receive-recovery-sync-eligibility.fixture';
 
 const app = createApp();
 jest.setTimeout(300000);
@@ -49,8 +51,11 @@ const EXTERNAL_BARCODE = '5012345678901';
 const SYNCS = 'shopify_recovery_inventory_syncs';
 
 let coord: Knex;
+const previousFlag = process.env[RECOVERY_SYNC_FLAG];
 
 beforeAll(async () => {
+  // SAFETY-015: approval guard only; this suite never starts the worker.
+  process.env[RECOVERY_SYNC_FLAG] = 'true';
   process.env.SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || 'test_shopify_secret';
   process.env.SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY || 'test_shopify_key';
   process.env.API_URL = process.env.API_URL || 'https://api.test';
@@ -70,6 +75,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (previousFlag === undefined) delete process.env[RECOVERY_SYNC_FLAG];
+  else process.env[RECOVERY_SYNC_FLAG] = previousFlag;
   await coord?.destroy();
 });
 
@@ -108,15 +115,13 @@ async function hmacInstall(shopDomain: string): Promise<{ shopId: number; userId
 
 interface Shop { shopId: number; userId: number; token: string; problemBin: string; storageBin: string }
 
+/** SAFETY-015: every fixture shop is Shopify-linked and recovery-eligible. */
 async function provisionFt2Shop(label: string): Promise<Shop> {
   const shopDomain = `rcvs45i4-${label}-${crypto.randomBytes(3).toString('hex')}-${Date.now()}.myshopify.com`;
   const { shopId, userId } = await hmacInstall(shopDomain);
-  await seedFreshInstall(shopId);
-  await withTenant(shopId, (trx) =>
-    trx('integrations').insert({
-      shop_id: shopId, platform: 'shopify', platform_shop_name: shopDomain,
-      sync_status: 'COMPLETED', updated_at: new Date(),
-    }));
+  // SAFETY-015/C6: real zero-order Shopify link (no seed_fresh_install ROOT
+  // stock); physical stock arrives only through real Receive flows.
+  await provisionLinkedShopifyIntegration(shopId, shopDomain);
   let c = 0;
   c = await pumpEvents(shopId, c);
   c = await pumpEvents(shopId, c);
@@ -139,7 +144,18 @@ async function provisionFt2Shop(label: string): Promise<Shop> {
     });
     return code;
   };
-  return { shopId, userId, token, problemBin: await bin('problem'), storageBin: await bin('storage') };
+  const problemBin = await bin('problem');
+  const storageBin = await bin('storage');
+  await makeRecoverySyncEligible(shopId, userId);
+  return { shopId, userId, token, problemBin, storageBin };
+}
+
+/** The shop's one converged opening-cutover generation (its I4 baseline). */
+async function convergedGenerationId(shopId: number): Promise<string> {
+  const rows = await withTenant(shopId, (trx) =>
+    trx('opening_inventory_cutover_executions').where({ shop_id: shopId, status: 'converged' }).pluck('generation_id'));
+  expect(rows).toHaveLength(1);
+  return String(rows[0]);
 }
 
 async function seedMappedVariant(shopId: number): Promise<string> {
@@ -283,7 +299,7 @@ async function ledgerAndTruth(j: Job, location: string) {
 // ── DS ─────────────────────────────────────────────────────────────────────
 
 describe('discovery of real I3 recovery credits', () => {
-  it('DS1 registers the I3 credit once and HOLDs it without a converged cutover', async () => {
+  it('DS1 registers the I3 credit once, pending against the converged baseline', async () => {
     const shop = await provisionFt2Shop('ds1');
     const j = await heldJob(shop, 1);
     const stowId = await claimedRecovery(j, 0, shop.storageBin);
@@ -305,13 +321,13 @@ describe('discovery of real I3 recovery credits', () => {
       location_code: shop.storageBin,
       idempotency_key: sync.idempotencyKey,
       reference_document_uri: sync.referenceDocumentUri,
-      status: 'held_no_baseline',
-      hold_reason: 'NO_CONVERGED_CUTOVER',
-      baseline_generation_id: null,
+      status: 'pending',
+      hold_reason: null,
+      baseline_generation_id: await convergedGenerationId(shop.shopId),
       first_dispatched_at: null,
     }));
 
-    expect(await dispatchNextRecoveryCredit(shop.shopId)).toEqual({ kind: 'IDLE' });
+    // SAFETY-015/C7: no dispatch here — a pending credit would be pushed.
     expect(mockSyncStowedQuantityToShopify).not.toHaveBeenCalled();
   });
 

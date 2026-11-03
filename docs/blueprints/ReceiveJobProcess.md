@@ -553,6 +553,7 @@ repair reads only `WH-{shop}-ROOT`, which recovery can never target, and writes 
 LaSyncro truth only, so Shopify available quantity stays lower until Shopify inventory synchronisation (I4) ships.
 S4-5 recovery must not be deployed to Shopify-connected merchant shops before I4 (Shopify inventory
 synchronisation) and I5 (operator UX).
+Since SAFETY-015 this restriction is enforced in the backend: see **Recovery sync safety guard (SAFETY-015)** below.
 
 **Approved exception: Ruling R1** (`SF-S4-5-I3-DOC-CLOSE-001`;
 `~/Codes/evidence/SF-RECEIVE-S8C5-S4-CONTRACT-026/ruling-R1-SF-S4-5-I3-DOC-CLOSE-001/`). Recovered units are
@@ -623,3 +624,66 @@ I3 (confirmation):
   outcome.
 - Claim racing confirmation: claim locks only the Stow and never deadlocks against confirmation.
 - Every losing transaction leaves zero side effects: movement, truth, unit, Stow, task and event rows unchanged.
+
+### Recovery sync safety guard (SAFETY-015)
+
+**Contract:** SF-RECEIVE-PC-RELEASE-SAFETY-014, owner decisions D1, C4–C7 (SAFETY-015). D2 (SYNC_DEGRADED) is
+deferred to the I4 MEDIUM-2 reconciliation tooling. The I4 worker flag stays OFF; this guard does not activate it.
+
+A recovery credit (I3) raises LaSyncro truth; Shopify follows only through the I4 push. A new recovery is therefore
+**approved** (`re_stow` on a Receive unit task) only when that push can run for the shop. One canonical predicate,
+`evaluateRecoverySyncEligibility` (`apps/backend/src/services/wms/receiveRecoverySyncEligibility.service.ts`),
+uses tenant-scoped reads only, with no locks and no writes:
+
+| Check | Refusal reason |
+|---|---|
+| GH-1101 connection ready (`CONNECTED` / `REFRESHING`). No exception for shops without Shopify (C4); not installed, integration-only (legacy), reauthentication or reconnecting all fail closed | `SHOPIFY_NOT_CONNECTED` |
+| Uninstalled, or uninstall verification unresolved | `SHOPIFY_DISCONNECTED` |
+| `SHOPIFY_RECOVERY_INVENTORY_SYNC_ENABLED === 'true'` | `SYNC_DISABLED` |
+| I4 baseline (`readRecoveryBaseline`, shared with the I4 classifier): marker → exactly one converged generation → CB1 capture header | `NO_CONVERGED_CUTOVER` / `MARKER_WITHOUT_CONVERGED_GENERATION` / `BASELINE_WITHOUT_RECOVERY_CAPTURE` |
+| Variant has a Shopify inventory item (`external_product_identity_map.external_inventory_item_id`) | `VARIANT_NOT_MAPPED` |
+
+- **Approval guard** (`resolveReceiveHeldTask`): runs after the live-Stow replay return and the locked
+  revalidation, before the `stow_tasks` insert. On refusal it returns 409 `RECEIVE_RECOVERY_SYNC_UNAVAILABLE` with
+  the reason and writes nothing. An existing approval still replays (`replayed: true`). Discard and write-off
+  never reach the guard.
+- **Destination check** (`assertRecoveryDestination`, at Stow assignment and again at confirmation): the bin must
+  belong to the baseline warehouse, and that warehouse must map to a Shopify location. Otherwise it returns 409
+  `RECEIVE_RECOVERY_DESTINATION_INVALID` (`outside_sync_baseline_warehouse` / `location_not_mapped`). The operator
+  can pick another bin, so no Stow is stranded. `sync_baseline_unavailable` fails closed. It cannot arise for a
+  recovery approved after SAFETY-015, and none from before exists (see Production evidence).
+- **D1:** the flag is a dispatch kill switch, not a credit-validity rule. It gates new approvals only. An approved
+  recovery Stow still confirms after the flag goes OFF. Its credit waits durably for I4: the Shopify update lags,
+  but the credit is not lost.
+- **Problem Center:** `GET /wms/problem-center` returns `recovery_sync { available, reason }` (shop scope), plus
+  `variant_sync_mapped` and `recovery_sync_status` (that unit's I4 row) per task. These fields are display-only.
+  When recovery is unavailable, re_stow is shown disabled with the reason; discard and write-off stay available.
+  The 409 is shown as "Nothing was approved". A recovered unit reads "Shopify updated" only for I4 `succeeded` /
+  `skipped_included`; otherwise it reads "Shopify update pending".
+
+**Production evidence (HIGH-1):** taken on 2026-11-03 as `sf_app` in a `BEGIN READ ONLY … ROLLBACK` transaction,
+catalog reads only, with no credentials recorded. Production was at migration
+`20261025120000_0222_create_shop_authorization_foundation`. `stow_task_trigger` had no `receive_recovery` label, so
+no recovery Stow can exist yet. Migrations 0223–0228 write no `stow_tasks` rows (0224 only adds the label). The
+deployed app (`883b0cdb`) has no code that creates recovery Stows, so none can appear while it runs on the new
+schema. Evidence: `~/Codes/SF-RECEIVE-PC-RELEASE-SAFETY-015-A01-evidence/50-prod-readonly-query.js`,
+`51-prod-readonly-result.txt`.
+
+| Verification (`SF-RECEIVE-PC-RELEASE-SAFETY-015`, isolated disposable PostgreSQL 16, exact CI selections) | Result |
+|---|---|
+| Held-unit step (S4-2…S4-4C, I2, I3, I5 projection, I4 discovery) | 86/86 pass |
+| I4 cutover / opening inventory cutover step | 234/234 pass |
+| Problem Center neighbours (GH-1238, 1202) | 69/69 pass |
+| I4 contract + worker activation | 16/16 pass |
+| Problem Center UI (`tests/unit/ui/problem-center/`) | 122/122 pass |
+
+Independent delta review: `SF-RECEIVE-PC-RELEASE-SAFETY-016` approved it (HIGH-1 resolved).
+
+**Test fixture** (`tests/integration/wms/receive-recovery-sync-eligibility.fixture.ts`):
+- Eligible shops are built only through real flows: the zero-order integration completion
+  (`updateIntegrationStatus`), the canonical offline credential fixture, and a real empty opening-inventory cutover.
+- They are not seeded with `seed_fresh_install` ROOT stock, because no application flow drains ROOT before cutover
+  (C6). Physical stock arrives afterwards through Receive.
+- No maintenance-role SQL or inventory correction is used to manufacture eligibility.
+- I4 discovery DS1 now expects `pending` against the converged generation (C7). `held_no_baseline` stays covered by
+  the I4 cutover classifier cases.

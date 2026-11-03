@@ -40,7 +40,45 @@ export type ProblemTask = {
   recovery_stow_status?: 'pending' | 'in_progress' | 'completed' | null;
   recovery_stow_location_code?: string | null;
   recovery_stow_created_at?: string | null;
+  // ── SAFETY-015 (optional: older responses omit them) ──
+  /** The variant has a Shopify inventory item (variant half of recovery eligibility). */
+  variant_sync_mapped?: boolean | null;
+  /** The recovered credit's I4 Shopify sync row status, if one exists. */
+  recovery_sync_status?: string | null;
 };
+
+/**
+ * SAFETY-015 shop-scoped recovery eligibility (GET /wms/problem-center
+ * `recovery_sync`). Display only: the resolve endpoint re-checks under locks.
+ */
+export type RecoverySync = {
+  available: boolean;
+  reason: string | null;
+};
+
+/** Operator copy per refusal reason (receiveRecoverySyncEligibility.service). */
+export function recoveryUnavailableText(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'SHOPIFY_NOT_CONNECTED':
+    case 'SHOPIFY_DISCONNECTED':
+      return 'Reconnect Shopify to return this item to stock. It stays in the problem bin; you can still discard or write it off.';
+    case 'VARIANT_NOT_MAPPED':
+      return "This product isn't linked to a Shopify inventory item, so it can't be returned to stock yet. It stays in the problem bin.";
+    default:
+      return 'Return to stock is unavailable until Shopify inventory sync for recovered items is active. The item stays in the problem bin; you can keep investigating, or discard or write it off.';
+  }
+}
+
+/** Why a held unit cannot be recovered right now, or null when it can. */
+export function recoveryUnavailableReason(t: ProblemTask, sync: RecoverySync | null | undefined): string | null {
+  if (!sync) return null;
+  if (!sync.available) return sync.reason ?? 'SYNC_DISABLED';
+  if (t.variant_sync_mapped === false) return 'VARIANT_NOT_MAPPED';
+  return null;
+}
+
+/** I4 states in which Shopify has (or by cutover already had) the recovered unit. */
+const SHOPIFY_SETTLED = ['succeeded', 'skipped_included'];
 
 /** An existing pack decision request (GET /wms/pack/decision-requests). */
 export type PackDecisionItem = {
@@ -159,6 +197,8 @@ export type ItemAction =
       hint?: string;
       /** Destructive or irreversible: requires an explicit second confirmation. */
       confirm?: string;
+      /** SAFETY-015: shown disabled with this reason; never submitted. */
+      unavailable?: string;
     }
   | {
       kind: 'pack_decision';
@@ -231,14 +271,21 @@ export function receiveUnitActions(t: ProblemTask): ResolutionAction[] {
   return ['re_stow', 'discard', 'write_off'];
 }
 
-function resolveActionSpec(t: ProblemTask, action: ResolutionAction, index: number): ItemAction {
+function resolveActionSpec(
+  t: ProblemTask,
+  action: ResolutionAction,
+  index: number,
+  recoverySync?: RecoverySync | null
+): ItemAction {
   const qty = t.quantity;
   const units = `${qty} unit${qty === 1 ? '' : 's'}`;
   if (isReceiveUnitTask(t)) {
     if (action === 're_stow') {
+      const blocked = recoveryUnavailableReason(t, recoverySync);
       return {
         kind: 'resolve', action, tone: 'primary', label: 'Approve recovery',
         hint: 'Creates one recovery Stow task. Inventory is not credited until an operator scans this exact unit into a storage bin.',
+        ...(blocked ? { unavailable: recoveryUnavailableText(blocked) } : {}),
       };
     }
     if (action === 'discard') {
@@ -329,8 +376,14 @@ function receiveInventory(t: ProblemTask, state: OperationalState): InventoryNot
     { label: 'Inventory credited', done: scanned },
   ];
   if (state === 'recovered') {
+    // SAFETY-015 / D1: the LaSyncro credit is final; Shopify is claimed only
+    // when its I4 row proves it. No row = not yet discovered by I4.
+    const where = t.recovery_stow_location_code ?? 'the Stow destination';
+    const shopify = t.recovery_sync_status && SHOPIFY_SETTLED.includes(t.recovery_sync_status)
+      ? ' · Shopify updated'
+      : ' · Shopify update pending';
     return {
-      text: `+1 credited at ${t.recovery_stow_location_code ?? 'the Stow destination'}`,
+      text: `+1 credited at ${where}${shopify}`,
       tone: 'credited',
       track: track(true, true),
     };
@@ -346,7 +399,7 @@ function receiveInventory(t: ProblemTask, state: OperationalState): InventoryNot
   return { text: 'Held · not in inventory', tone: 'muted', track: track(false, false) };
 }
 
-export type BuildOptions = { canResolve: boolean; currentUserId?: number | null };
+export type BuildOptions = { canResolve: boolean; currentUserId?: number | null; recoverySync?: RecoverySync | null };
 
 export function taskToItem(t: ProblemTask, opts: BuildOptions): QueueItem {
   const offered = isReceiveUnitTask(t)
@@ -356,7 +409,7 @@ export function taskToItem(t: ProblemTask, opts: BuildOptions): QueueItem {
       : [];
   const state = taskState(t, offered);
   const stage = STAGE_OF_SOURCE[t.source] ?? 'inventory';
-  const decisionActions = opts.canResolve ? offered.map((a, i) => resolveActionSpec(t, a, i)) : [];
+  const decisionActions = opts.canResolve ? offered.map((a, i) => resolveActionSpec(t, a, i, opts.recoverySync)) : [];
   const actions: ItemAction[] = [...decisionActions];
   if ((state === 'awaiting_stow' || state === 'stow_in_progress') && t.recovery_stow_task_id) {
     actions.unshift({
@@ -368,7 +421,7 @@ export function taskToItem(t: ProblemTask, opts: BuildOptions): QueueItem {
     });
   }
   const awaitingManager = !opts.canResolve && offered.length > 0;
-  const first = actions[0];
+  const first = actions.find((a) => !(a.kind === 'resolve' && a.unavailable));
   const next =
     state === 'recovered' ? `Recovered at ${t.recovery_stow_location_code ?? 'storage'}`
       : state === 'resolved' ? resolutionLabel(t.resolution_action)
@@ -376,6 +429,7 @@ export function taskToItem(t: ProblemTask, opts: BuildOptions): QueueItem {
           : state === 'stow_in_progress' ? 'Stow claimed by an operator'
             : state === 'awaiting_receive_close' ? 'Waiting for the Receive to close'
             : awaitingManager ? 'Waiting on owner/admin decision'
+              : actions[0]?.kind === 'resolve' && actions[0].unavailable ? 'Return to stock unavailable · item stays held'
               : first ? `Next: ${first.label}`
                 : state === 'investigating' ? 'Replacement search underway'
                   : 'No safe automatic resolution';
@@ -481,8 +535,12 @@ export function fmtAge(iso: string, now = Date.now()): string {
 
 /** Map a resolve failure to operator copy. The server's own message wins when present. */
 export function actionErrorMessage(err: unknown): string {
-  const data = (err as { response?: { status?: number; data?: { error?: unknown; reason?: unknown } } })?.response;
+  const data = (err as { response?: { status?: number; data?: { error?: unknown; code?: unknown; reason?: unknown } } })?.response;
   const reason = typeof data?.data?.reason === 'string' ? data.data.reason : null;
+  // SAFETY-015: the server refused a new recovery; nothing was approved.
+  if (data?.data?.code === 'RECEIVE_RECOVERY_SYNC_UNAVAILABLE') {
+    return `${recoveryUnavailableText(reason)} Nothing was approved. The queue has been refreshed.`;
+  }
   const REASONS: Record<string, string> = {
     receive_not_closed: 'The Receive job must be closed before this unit can be recovered.',
     custody_not_verified: 'The unit\'s problem-bin placement is not verified.',
