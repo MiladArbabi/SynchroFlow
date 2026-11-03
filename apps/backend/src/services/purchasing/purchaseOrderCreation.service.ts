@@ -316,10 +316,17 @@ export async function createPurchaseOrderIdempotently(
   }
 
   if (input.supplier_id !== null) {
+    // Lock the supplier row for the rest of this transaction, so a concurrent
+    // soft-delete (httpDeleteSupplier) serializes with this create — the same
+    // FOR UPDATE pattern reorder conversion uses. `active` is read under it.
     const supplier = await trx('suppliers')
       .where({ id: input.supplier_id, shop_id: shopId })
-      .first('id');
+      .forUpdate()
+      .first('id', 'active');
     if (!supplier) reject(404, 'Supplier not found');
+    // Purchasing lifecycle S1: a soft-deleted supplier takes no NEW orders.
+    // Replays of an already-created PO returned above and are unaffected.
+    if (!supplier.active) reject(422, 'Supplier is inactive — reactivate it before ordering');
   }
 
   const variantIds = input.line_items.map((l) => l.lasyncro_variant_id);
