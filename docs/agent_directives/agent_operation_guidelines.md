@@ -1,10 +1,26 @@
 # AGENT OPERATING INSTRUCTIONS — laSyncro
 
-- Aligned with: ENGINEERING WORKFLOW v4.1 (`docs/agent_directives/engineering_workflow.md`)
-- Status: RATIFIED — v4.1 owner approved 2026-11-02
+- Aligned with: ENGINEERING WORKFLOW v5.0 (`docs/agent_directives/engineering_workflow.md`)
+- Status: OWNER-APPROVED CHANGES 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001); ratified on owner diff review
 - Scope: the execution contract for any agent running a laSyncro brief
 
 The workflow is the single authority. This document applies the workflow to agent execution and does not restate it. Rule IDs below (for example SAFE-05, EXEC-01) refer to the workflow. If the two conflict, follow the workflow and report the conflict under FINDINGS. MUST / MUST NOT / SHOULD / MAY / STOP have the meanings in workflow section 0.
+
+## 0. Lifecycle and working style
+
+- Every brief sits in one stage of the seven-stage lifecycle (LIFECYCLE-01): **AUDIT → WORKSHOP → IMPLEMENT → REVIEW/VERIFY → RELEASE → HOUSEKEEPING → REPEAT**. Know which stage you are in and do only that stage's work. Certification is the recorded outcome of REVIEW/VERIFY, never a separate stage you add.
+- Apply SIMPLIFY-01:
+  - one issue at a time; respect the current issue's boundaries and never expand scope without approval;
+  - verification depth follows the brief's risk tier; prefer targeted tests and existing CI over full runs;
+  - reuse valid evidence and previously certified work (EVIDENCE-REUSE-01); never repeat verification of an unchanged contract;
+  - produce only the artifacts the brief asks for; no extra status documents or administrative reports;
+  - once scope is authorized, continue through the authorized steps without asking for routine re-approval;
+  - classify every new finding as a blocker of the current issue or a separate follow-up; never drift;
+  - on failure, return only to the stage the failure invalidates, not to the beginning.
+- **Terminal-first.** Establish Git, environment, test and database truth with terminal commands (TERMINAL-ROUTING-01). Begin every command group with an explicit `cd` into the intended worktree.
+- **Agent and worktree restrictions.** Respect Milad's restrictions on spawning agents and on concurrent worktrees (ROLE-01, ROUTE-02, SOLO-MAIN-01). Never create an agent or worktree that the brief or Milad has not allowed, and never touch another workstream's worktree.
+- **Production deployment** and production migrations always require Milad's explicit authorization for that release (ROLE-01, DEPLOY-01). No delegation, passing CI or roadmap status implies it.
+- Report progress in plain English and end with the two-column roadmap (section 11, REPORT-02).
 
 ## 1. Role and authority
 
@@ -153,7 +169,8 @@ For a contradiction: report and classify it from existing evidence. Do not reint
 
 ## 10. Git and ship
 
-- Default: Milad stages, commits and pushes. Never run `git add`, `git commit`, `git push` or GitHub write actions unless the brief invokes SHIP-DELEGATION-01 for its exact RUN_ID and manifest. Even then: explicit-path staging only, manifest and hash equality, no force push, STOP on divergence or RED CI, and no deployment.
+- Default: Milad stages, commits and pushes. Never run `git add`, `git commit`, `git push` or GitHub write actions unless the brief invokes SHIP-DELEGATION-01 for its exact RUN_ID or issue scope and its manifest/allowlist. Within an issue-scope delegation, routine commits and pushes inside the allowlist need no per-commit re-approval. Always: explicit-path staging only, staged-content hash verification, no force push, STOP on divergence or RED CI, and no deployment.
+- HOUSEKEEPING actions (closing issues/PRs, deleting branches or worktrees) are GitHub/Git writes: perform them only when the brief authorizes them, and never on another workstream's branch or worktree.
 - Never `git add -A` or `git add .`. Never stage a new untracked file unless that exact file is authorized.
 
 ## 11. Report format — every response
@@ -173,7 +190,7 @@ Then these sections, in order:
 - **BLOCKED** — anything requested that could not be obtained or proved; otherwise NONE.
 - **NOT COMPLETED** — `ITEM=<brief item>; STATUS=<NOT_STARTED|PARTIAL|FAILED|SKIPPED>; REASON=<cause>; TO_RESUME=<decision or action>` for every unfinished directive, including work skipped because an earlier guard stopped execution. NONE only when everything is completed and evidenced (REPORT-01).
 - **STATE_MUTATED** — every changed source, test, DB/fixture or runtime state, generated artifact, temporary file and unintended side effect; otherwise NONE.
-- **ROADMAP POSITION** — the final section: the approved problem-specific roadmap with exactly one `(CURRENT)` milestone and GREEN/CERTIFIED/BLOCKED/PENDING/NOT AUTHORIZED status (REPORT-02). If none is approved, report the missing roadmap contract. Factual only: no phase transition, and no recommendation of further work.
+- **ROADMAP POSITION** — the final section: the two-column roadmap from REPORT-02. Left column 🗺️ PROJECT ROADMAP (where LaSyncro is overall); right column 🔧 CURRENT ISSUE (the concrete steps now, with the current step identifiable as a LIFECYCLE-01 stage). The columns are independent; rows do not imply dependencies; never invent rows to fill the table. One status icon per cell: ✅ Done, 🟡 In progress, 🔵 Next, 🔴 Blocked, ⚪ Later. Keep APPROVED/CERTIFIED/GREEN/SHIPPED for detailed evidence, not for roadmap cells. Never mark a milestone ✅ while its production release is outstanding. If no roadmap is approved, report the missing roadmap contract. Factual only: no phase transition, and no recommendation of further work.
 
 Keep reports concise per REPORT-01. Do not add recommendations, remediation direction, prioritisation, architectural conclusions, proposed fixes or next phases unless the brief explicitly asks for them; an explicitly requested deliverable (for example a verdict or smallest follow-up) is answered as a numbered finding.
 
@@ -181,7 +198,10 @@ Keep reports concise per REPORT-01. Do not add recommendations, remediation dire
 
 When asked to acknowledge these instructions, confirm that you will:
 
+- follow the seven-stage lifecycle and work only in the brief's stage;
 - run one brief at a time and stop at its boundary;
+- end every report with the two-column roadmap and the agreed status icons;
+- never deploy to production without Milad's explicit authorization;
 - treat test strategy as owned by the lead;
 - write and run only authorized tests, and never weaken them;
 - preserve regression evidence and report contradictions;
