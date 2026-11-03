@@ -1,13 +1,17 @@
 name: CI / RLS Security Boundary
 
 on:
+  # Manual dispatch selects the suite explicitly. The Fly release gate accepts
+  # only a fully successful rls-security job and a successful cutover job, so a
+  # general-only or cutover-only run never stands in for the other.
   workflow_dispatch:
     inputs:
-      scope:
-        description: 'Manual run scope: all steps, or cutover regressions without sibling integration suites'
+      suite:
+        description: 'general: rls-security only; cutover: cutover verification only; all: both'
         type: choice
         options:
           - all
+          - general
           - cutover
         default: all
   pull_request:
@@ -17,6 +21,14 @@ on:
       - 'packages/epistemic/**'
       - 'packages/backend-core/**'
       - 'packages/commercial-policy/**'
+      - 'modules/shared/src/**'
+      - 'modules/shared/package.json'
+      - 'scripts/ci/**'
+      - 'tests/setup/**'
+      - 'jest.config.js'
+      - 'babel.config.js'
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/check-conflict-usage.sh'
       - '.github/workflows/ci-security.yml'
       - 'fly.toml'
@@ -72,6 +84,14 @@ on:
       - 'packages/epistemic/**'
       - 'packages/backend-core/**'
       - 'packages/commercial-policy/**'
+      - 'modules/shared/src/**'
+      - 'modules/shared/package.json'
+      - 'scripts/ci/**'
+      - 'tests/setup/**'
+      - 'jest.config.js'
+      - 'babel.config.js'
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/check-conflict-usage.sh'
       - '.github/workflows/ci-security.yml'
       - 'fly.toml'
@@ -123,8 +143,9 @@ on:
 
 jobs:
   rls-security:
+    if: github.event_name != 'workflow_dispatch' || inputs.suite != 'cutover'
     runs-on: ubuntu-latest
-    services:
+    services: &disposable-postgres
       postgres:
         image: postgres:16
         env:
@@ -144,7 +165,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
-    env:
+    env: &harness-env
       PGHOST: 127.0.0.1
       PGPORT: 5432
       PGDATABASE: synchroflow_db
@@ -172,22 +193,27 @@ jobs:
       STRIPE_SECRET_KEY: sk_test_ci_placeholder_not_used
 
     steps:
-      - name: Checkout
+      - &checkout
+        name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - &setup-node
+        name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20.20.0
           cache: npm
 
-      - name: Install dependencies
+      - &install
+        name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Validate generated artifact ownership
+      - &generated-artifacts
+        name: Validate generated artifact ownership
         run: npm run check:generated-artifacts
 
-      - name: Build security boundary
+      - &build
+        name: Build security boundary
         run: |
           npm run build -w modules/shared
           npm run build -w packages/epistemic
@@ -219,7 +245,8 @@ jobs:
       # GH-1068 T3: block external egress BEFORE the first migration. Every
       # later disposable-harness step independently re-verifies this policy;
       # restoration is a dedicated always() step at the end of the job.
-      - name: Block external egress for database work
+      - &block-egress
+        name: Block external egress for database work
         shell: bash
         env:
           POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
@@ -386,7 +413,8 @@ jobs:
           print("OAUTH_LOOPBACK=PASS")
           PY
 
-      - name: Provision reconnect executor/owner roles before migrations
+      - &provision-roles
+        name: Provision reconnect executor/owner roles before migrations
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -400,7 +428,8 @@ jobs:
       # S8-C5: migration 0223 fails closed while sf_app can create temporary
       # objects. A new database grants PUBLIC TEMPORARY by default; remove it
       # from this job's service database only, before it is migrated.
-      - name: Revoke PUBLIC TEMPORARY on the CI service database
+      - &revoke-temp
+        name: Revoke PUBLIC TEMPORARY on the CI service database
         run: |
           set -euo pipefail
           node <<'JS'
@@ -436,7 +465,8 @@ jobs:
           });
           JS
 
-      - name: Apply migrations and release assertions
+      - &migrate
+        name: Apply migrations and release assertions
         run: npm run migrate -w apps/backend
 
       - name: Run live RLS and endpoint regressions
@@ -468,7 +498,6 @@ jobs:
       # bin-rich tenant rebuild runs — the root-only fresh-install fixture stays
       # owned by tests/integration/fresh-install-release-path.test.ts.
       - name: Run fresh-install release path
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -482,7 +511,6 @@ jobs:
       # STOCK-SUPPLY-01: expected assertion RED until the approved F1/F2 fix.
       # Reuse the existing service, isolation policy, roles and scratch-DB lifecycle.
       - name: Run STOCK-SUPPLY-01 targeted purchasing regressions
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -495,7 +523,6 @@ jobs:
           --testNamePattern 'STOCK-SUPPLY-01'
 
       - name: Run GH-1242 locked-action runtime regression
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         env:
           PGUSER: sf_app
           PGPASSWORD: sf_app_pass
@@ -507,7 +534,6 @@ jobs:
         run: npm run test:integration -- --testPathPatterns locked-action-runtime-gh1242.test.ts
 
       - name: Run OAuth callback regression with external egress blocked
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         shell: bash
         timeout-minutes: 20
         env:
@@ -576,7 +602,6 @@ jobs:
           npm run test:integration -- --testPathPatterns oauth-callback-provider-mocked.test.ts
 
       - name: Run GH-1046 credential lifecycle regressions
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -587,7 +612,6 @@ jobs:
         run: npm run test:integration -- --testPathPatterns 'shopify-admin-credential-(lifecycle-state-red3|resolution-red3b|final-architecture)'
 
       - name: Run GH-1068 reconnect executor regressions with real principals
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -607,7 +631,6 @@ jobs:
       # with ZERO Slice-E evidence, so they never share a database with the
       # behavioural cutover suites that commit executions and verifications.
       - name: Run GH-1101 connection truth, manual recovery and GH-1262 S1 purchasing regressions
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -634,7 +657,6 @@ jobs:
       # S4-5 I4 discovery commits the same recovery evidence through the real
       # Receive flow (plus 0228 sync rows), so it runs here too.
       - name: Run S4-2 held-unit safety regressions
-        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'cutover'
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -646,27 +668,8 @@ jobs:
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns 'wms/receive-held-safety-s4-2|wms/receive-held-capture-s4-3|wms/receive-held-custody-close-s4-4b|wms/receive-held-grouped-custody-s4-4c|wms/receive-held-resolution-s4-5-i2|wms/receive-held-recovery-stow-s4-5-i3|wms/shopify-recovery-inventory-sync-i4\.discovery'
 
-      # S4-5 I4 CB1/CB2 + opening inventory cutover. These suites commit frozen
-      # generations, executions and 0228 freeze-capture evidence (which the 0228
-      # rollback guard treats as persisted evidence), so they run in their own
-      # disposable database: never with the migration round-trip step and never
-      # with the held-unit step. Holds the 10 behavioural opening-inventory
-      # cutover suites (the 4 cutover migration suites run in the migration
-      # round-trip step above; 14 in total, previously not CI-gated) and the
-      # Stow push/credit regressions that bound I4's ordinary-Stow boundary.
-      - name: Run S4-5 I4 cutover inclusion and opening inventory cutover regressions
-        timeout-minutes: 30
-        env:
-          PGUSER: sf_app
-          PGPASSWORD: sf_app_pass
-          PGMIGRATION_USER: sf_user
-          PGMIGRATION_PASSWORD: sf_pass
-          # Synthetic, CI-only executor credential; valid only inside this
-          # job's disposable service cluster.
-          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'inventory/opening-inventory-cutover\.service|inventory/opening-inventory-cutover-(ambiguity-recovery|continuation|execution|final-convergence|generation|modern-route|orchestration|regeneration)\.service|inventory/shopify-opening-inventory-cutover\.executor|inventory/shopify-recovery-inventory-sync-i4\.cutover|wms/stow-shopify-push-trigger-contract|wms/stow-inventory-credit-enqueue\.contract'
-
-      - name: Restore runner network
+      - &restore-network
+        name: Restore runner network
         if: always()
         shell: bash
         run: |
@@ -682,3 +685,81 @@ jobs:
             echo "OAUTH_NETWORK_RESTORED=$([ "$result" = 0 ] && echo PASS || echo FAIL)"
           fi
           exit "$result"
+
+  # SF-CI-CUTOVER-ISOLATION-001 — opening-inventory cutover verification is its
+  # own job. scripts/ci/cutover-impact.js selects it from the live import
+  # closure of the cutover suites plus their runtime/harness inputs and fails
+  # closed; manual dispatch runs it unless suite=general. The Fly release gate
+  # applies the same classifier (--mode=release) to the release range.
+  cutover-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.classify.outputs.required }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify cutover impact
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              if [ "$SUITE" = general ]; then required=false; else required=true; fi
+              echo "CUTOVER_REQUIRED=$required (manual dispatch suite=$SUITE)" ;;
+            pull_request) required=$(node scripts/ci/cutover-impact.js "$PR_BASE_SHA" "$PR_HEAD_SHA" | tee /dev/stderr | sed -n 's/^CUTOVER_REQUIRED=//p') ;;
+            push) required=$(node scripts/ci/cutover-impact.js "$PUSH_BEFORE_SHA" "$GITHUB_SHA" | tee /dev/stderr | sed -n 's/^CUTOVER_REQUIRED=//p') ;;
+            *) echo "CUTOVER_REQUIRED=true (unknown event $EVENT_NAME)"; required=true ;;
+          esac
+          [ "$required" = false ] || required=true
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+  opening-inventory-cutover:
+    name: Opening inventory cutover verification
+    needs: cutover-scope
+    if: needs.cutover-scope.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    services: *disposable-postgres
+    env: *harness-env
+    steps:
+      - *checkout
+      - *setup-node
+      - *install
+      - *generated-artifacts
+      - *build
+      - *block-egress
+      - *provision-roles
+      - *revoke-temp
+      - *migrate
+
+      # S4-5 I4 CB1/CB2 + opening inventory cutover. These suites commit frozen
+      # generations, executions and 0228 freeze-capture evidence (which the 0228
+      # rollback guard treats as persisted evidence), so they run in their own
+      # disposable database: never with the migration round-trip step and never
+      # with the held-unit step. Holds the 10 behavioural opening-inventory
+      # cutover suites (the 4 cutover migration suites run in the rls-security
+      # job's migration round-trip step; 14 in total) and the
+      # Stow push/credit regressions that bound I4's ordinary-Stow boundary.
+      - name: Run S4-5 I4 cutover inclusion and opening inventory cutover regressions
+        timeout-minutes: 30
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          # Synthetic, CI-only executor credential; valid only inside this
+          # job's disposable service cluster.
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns 'inventory/opening-inventory-cutover\.service|inventory/opening-inventory-cutover-(ambiguity-recovery|continuation|execution|final-convergence|generation|modern-route|orchestration|regeneration)\.service|inventory/shopify-opening-inventory-cutover\.executor|inventory/shopify-recovery-inventory-sync-i4\.cutover|wms/stow-shopify-push-trigger-contract|wms/stow-inventory-credit-enqueue\.contract'
+
+      - *restore-network
