@@ -9,6 +9,7 @@ on:
         options:
           - all
           - cutover
+          - purchasing
         default: all
   pull_request:
     branches: [main]
@@ -655,6 +656,7 @@ jobs:
       # round-trip step above; 14 in total, previously not CI-gated) and the
       # Stow push/credit regressions that bound I4's ordinary-Stow boundary.
       - name: Run S4-5 I4 cutover inclusion and opening inventory cutover regressions
+        if: github.event_name != 'workflow_dispatch' || inputs.scope != 'purchasing'
         timeout-minutes: 30
         env:
           PGUSER: sf_app
