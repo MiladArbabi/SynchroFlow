@@ -106,7 +106,7 @@ const CONTROL = {
   boxSizing: 'border-box', '&:focus-visible': FOCUS_RING,
 } as const;
 const VISUALLY_HIDDEN = {
-  position: 'absolute', width: 1, height: 1, p: 0, m: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+  position: 'absolute', top: 0, left: 0, width: 1, height: 1, p: 0, m: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
 } as const;
 const STALE_AGE_MS = 8 * 3_600_000;
 
