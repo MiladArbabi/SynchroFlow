@@ -58,9 +58,11 @@ interface LoadOptions {
   url?: string;
   cookie?: string;
   waitlistOk?: boolean;
+  /** Overrides waitlistOk, for network failures and in-flight or changing responses. */
+  waitlistFetch?: () => Promise<FetchResponse>;
 }
 
-async function load({ html, url = 'https://www.lasyncro.com/', cookie, waitlistOk = true }: LoadOptions) {
+async function load({ html, url = 'https://www.lasyncro.com/', cookie, waitlistOk = true, waitlistFetch }: LoadOptions) {
   const posthog = createPostHogFake();
   const fetchCalls: Array<{ url: string; body?: string }> = [];
   const virtualConsole = new VirtualConsole();
@@ -81,6 +83,7 @@ async function load({ html, url = 'https://www.lasyncro.com/', cookie, waitlistO
       window.fetch = (input: string, init?: { body?: string }) => {
         fetchCalls.push({ url: input, body: init?.body });
         if (input === '/api/waitlist') {
+          if (waitlistFetch) return waitlistFetch();
           return Promise.resolve<FetchResponse>({
             ok: waitlistOk,
             status: waitlistOk ? 200 : 502,
@@ -329,5 +332,135 @@ describe('MARKETING-P0 homepage waitlist conversion', () => {
     const { posthog } = await submit(false);
 
     expect(captured(posthog, 'waitlist_submission_accepted')).toHaveLength(0);
+  });
+});
+
+describe('MARKETING-P0 checklist waitlist gate', () => {
+  const EMAIL = 'merchant@example.com';
+  const ok = (): FetchResponse => ({ ok: true, status: 200, json: () => Promise.resolve({ success: true }) });
+  const failed = (status: number): FetchResponse => ({
+    ok: false,
+    status,
+    json: () => Promise.resolve({ error: 'failed' }),
+  });
+
+  async function open(options: Partial<LoadOptions> = {}) {
+    const ctx = await load({
+      html: CHECKLIST,
+      url: 'https://www.lasyncro.com/checklist',
+      cookie: 'lasyncro_analytics_consent=granted',
+      ...options,
+    });
+    const { document, window } = ctx;
+    const input = document.querySelector<HTMLInputElement>('#eg-email')!;
+    const button = document.querySelector<HTMLButtonElement>('#eg-submit')!;
+    const error = document.querySelector<HTMLElement>('#eg-error')!;
+    const gate = document.querySelector<HTMLElement>('#email-gate')!;
+    const results = document.querySelector<HTMLElement>('#post-email')!;
+    const send = () =>
+      document
+        .querySelector<HTMLFormElement>('.eg-form')!
+        .dispatchEvent(new window.Event('submit', { cancelable: true }));
+    const waitlistCalls = () => ctx.fetchCalls.filter((call) => call.url === '/api/waitlist');
+    input.value = EMAIL;
+    return { ...ctx, input, button, error, gate, results, send, waitlistCalls };
+  }
+
+  const settle = async () => {
+    await flush();
+    await flush();
+  };
+
+  test('stays on the gate until the API confirms, and ignores double submits', async () => {
+    let resolve!: (response: FetchResponse) => void;
+    const page = await open({
+      waitlistFetch: () => new Promise<FetchResponse>((done) => { resolve = done; }),
+    });
+
+    page.send();
+    page.send();
+    await settle();
+
+    expect(page.waitlistCalls()).toHaveLength(1);
+    expect(page.button.disabled).toBe(true);
+    expect(page.gate.style.display).not.toBe('none');
+    expect(page.results.style.display).toBe('none');
+    expect(captured(page.posthog, 'waitlist_submission_accepted')).toHaveLength(0);
+
+    resolve(ok());
+    await settle();
+
+    expect(page.gate.style.display).toBe('none');
+    expect(page.results.style.display).toBe('block');
+    expect(page.document.querySelectorAll('#breakdown-list .breakdown-item').length).toBeGreaterThan(0);
+    expect(page.error.textContent).toBe('');
+    const events = captured(page.posthog, 'waitlist_submission_accepted');
+    expect(events).toHaveLength(1);
+    expect(events[0].args[1]).toEqual({ source: 'checklist', form: 'checklist' });
+  });
+
+  test.each([
+    ['server error', () => Promise.resolve(failed(502)), /check your connection and try again/i],
+    ['network failure', () => Promise.reject(new Error('offline')), /check your connection and try again/i],
+    ['rejected email', () => Promise.resolve(failed(400)), /check it for typos and try again/i],
+  ])('%s keeps the gate, explains, and preserves input', async (_name, waitlistFetch, message) => {
+    const page = await open({ waitlistFetch });
+
+    page.send();
+    await settle();
+
+    expect(page.gate.style.display).not.toBe('none');
+    expect(page.results.style.display).toBe('none');
+    expect(page.error.getAttribute('role')).toBe('alert');
+    expect(page.error.textContent).toMatch(message);
+    expect(page.input.value).toBe(EMAIL);
+    expect(page.button.disabled).toBe(false);
+    expect(page.button.textContent).toBe('Send my breakdown →');
+    expect(captured(page.posthog, 'waitlist_submission_accepted')).toHaveLength(0);
+  });
+
+  test('retry after a failure resubmits the same email and then advances', async () => {
+    const responses = [failed(502), ok()];
+    const page = await open({ waitlistFetch: () => Promise.resolve(responses.shift()!) });
+
+    page.send();
+    await settle();
+    page.send();
+    await settle();
+
+    const bodies = page.waitlistCalls().map((call) => JSON.parse(call.body!));
+    expect(bodies).toEqual([
+      { email: EMAIL, store: 'checklist-signup', source: 'checklist' },
+      { email: EMAIL, store: 'checklist-signup', source: 'checklist' },
+    ]);
+    expect(page.results.style.display).toBe('block');
+    expect(page.error.textContent).toBe('');
+    expect(captured(page.posthog, 'waitlist_submission_accepted')).toHaveLength(1);
+  });
+
+  test.each([
+    ['denied', 'lasyncro_analytics_consent=denied'],
+    ['absent', undefined],
+  ])('%s consent: success advances without any analytics', async (_name, cookie) => {
+    const page = await open({ cookie });
+
+    page.send();
+    await settle();
+
+    expect(page.results.style.display).toBe('block');
+    expect(page.posthog.calls).toEqual([]);
+  });
+
+  test('an analytics fault does not turn a confirmed signup into an error', async () => {
+    const page = await open();
+    page.posthog.capture = () => {
+      throw new Error('posthog down');
+    };
+
+    page.send();
+    await settle();
+
+    expect(page.results.style.display).toBe('block');
+    expect(page.error.textContent).toBe('');
   });
 });

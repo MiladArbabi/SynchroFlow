@@ -307,6 +307,9 @@ main{max-width:680px;margin:0 auto;padding:48px 5vw 96px}
 .eg-input:focus{border-color:rgba(255,107,43,.5)}
 .eg-btn{width:100%;padding:14px;background:var(--accent);color:#fff;font-size:14px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;cursor:pointer;transition:background .15s}
 .eg-btn:hover{background:var(--accent-hover)}
+.eg-btn:disabled{opacity:.6;cursor:not-allowed}
+.eg-error{font-size:13px;line-height:1.5;color:#FFB4A8;text-align:left}
+.eg-error:empty{display:none}
 .eg-fine{font-size:11px;color:rgba(255,255,255,.25);margin-top:8px}
 
 .cta-waitlist{display:block;width:100%;padding:15px;background:var(--accent);color:#fff;font-size:15px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;text-align:center;cursor:pointer;text-decoration:none;transition:background .15s,transform .15s;margin-bottom:12px}
@@ -637,7 +640,8 @@ main{max-width:680px;margin:0 auto;padding:48px 5vw 96px}
       <p class="eg-sub">See which questions flagged a problem — and what to do about each one. Plus, join the LaSyncro waitlist for early access.</p>
       <form class="eg-form" onsubmit="handleEmail(event)">
         <input class="eg-input" type="email" required placeholder="Your email address" id="eg-email" autocomplete="email"/>
-        <button class="eg-btn" type="submit">Send my breakdown →</button>
+        <button class="eg-btn" type="submit" id="eg-submit">Send my breakdown →</button>
+        <p class="eg-error" id="eg-error" role="alert"></p>
       </form>
       <p class="eg-fine">No spam. Unsubscribe any time.</p>
     </div>
@@ -785,9 +789,20 @@ function finish() {
 }
 
 /* ── Email gate ── */
+var waitlistSubmitting = false;
+
 function handleEmail(e) {
   e.preventDefault();
+  if (waitlistSubmitting) return;
   var email = document.getElementById('eg-email').value;
+  var btn = document.getElementById('eg-submit');
+  var btnLabel = btn.textContent;
+  var errorEl = document.getElementById('eg-error');
+
+  waitlistSubmitting = true;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  errorEl.textContent = '';
 
   fetch('/api/waitlist', {
     method: 'POST',
@@ -795,16 +810,38 @@ function handleEmail(e) {
     body: JSON.stringify({ email: email, store: 'checklist-signup', source: 'checklist' })
   })
   .then(function(r) {
-    if (!r.ok) throw new Error('API responded ' + r.status);
+    if (!r.ok) {
+      var apiError = new Error('API responded ' + r.status);
+      apiError.status = r.status;
+      throw apiError;
+    }
+  })
+  .then(function() {
+    waitlistSubmitting = false;
     // PostHog capture fires only after server confirms — prevents inflated counts
     if (window.__LASYNCRO_ANALYTICS_ENABLED__ && typeof posthog !== 'undefined') {
       // Accepted submission, not necessarily a new signup (duplicates get the
       // same response by design). Unique signups: waitlist_signups table.
-      posthog.capture('waitlist_submission_accepted', { source: 'checklist', form: 'checklist' });
+      try {
+        posthog.capture('waitlist_submission_accepted', { source: 'checklist', form: 'checklist' });
+      } catch (analyticsErr) {
+        console.error('[waitlist] checklist analytics error:', analyticsErr);
+      }
     }
-  })
-  .catch(function(err) { console.error('[waitlist] checklist signup error:', err); });
+    showBreakdown();
+  }, function(err) {
+    console.error('[waitlist] checklist signup error:', err);
+    waitlistSubmitting = false;
+    // The typed email stays in the input so the visitor can resubmit as is.
+    btn.disabled = false;
+    btn.textContent = btnLabel;
+    errorEl.textContent = err && err.status === 400
+      ? "We couldn't accept that email address. Check it for typos and try again."
+      : "We couldn't save your email, so your breakdown isn't ready yet. Check your connection and try again.";
+  });
+}
 
+function showBreakdown() {
   document.getElementById('email-gate').style.display = 'none';
   document.getElementById('post-email').style.display = 'block';
 
