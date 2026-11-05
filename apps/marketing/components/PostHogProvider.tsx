@@ -8,9 +8,8 @@
 
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
-import { usePostHog } from 'posthog-js/react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? ''
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://t.lasyncro.com'
@@ -54,13 +53,65 @@ function getPageviewContext(pathname: string) {
   return { section: 'marketing', page_type: 'static_page' }
 }
 
+// Campaign parameters from the landing URL, held in memory only (never stored
+// or sent before consent). Used once, on the first pageview after consent,
+// when the visitor navigated away from the landing URL before granting it.
+const CAMPAIGN_PARAMS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+] as const
+
+function readCampaignParams(search: string): Record<string, string> {
+  const params = new URLSearchParams(search)
+  const campaign: Record<string, string> = {}
+  for (const key of CAMPAIGN_PARAMS) {
+    const value = params.get(key)
+    if (value) campaign[key] = value
+  }
+  return campaign
+}
+
+let landingCampaign: Record<string, string> | null =
+  typeof window === 'undefined' ? null : readCampaignParams(window.location.search)
+
+function takeLandingCampaign(currentSearch: string): Record<string, string> {
+  const campaign = landingCampaign ?? {}
+  landingCampaign = null
+  if (Object.keys(readCampaignParams(currentSearch)).length > 0) return {}
+  return campaign
+}
+
+// Marketing identification is added per event (before_send), never through
+// PostHog super-properties (register): registered super-properties persist in the shared
+// .lasyncro.com cookie and would leak onto app.lasyncro.com events.
+function tagMarketingEvent<T extends { properties?: Record<string, unknown> } | null>(
+  event: T
+): T {
+  if (!event) return event
+  event.properties = { ...(event.properties ?? {}), surface: 'marketing' }
+  return event
+}
+
+function subscribeConsent(onChange: () => void) {
+  window.addEventListener('lasyncro:analytics-consent', onChange)
+  return () => window.removeEventListener('lasyncro:analytics-consent', onChange)
+}
+
 let posthogInitialized = false
 
 function initializePostHog() {
   if (!shouldEnablePostHog()) return
   if (getConsent() !== 'granted') return
   if (!POSTHOG_KEY) return
-  if (posthogInitialized) return
+  if (posthogInitialized) {
+    if (posthog.has_opted_out_capturing()) {
+      posthog.opt_in_capturing({ captureEventName: false })
+    }
+    return
+  }
 
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST,
@@ -72,8 +123,30 @@ function initializePostHog() {
     cookie_domain: '.lasyncro.com',
     cross_subdomain_cookie: true,
     persistence: 'localStorage+cookie',
+    before_send: tagMarketingEvent,
   } as Parameters<typeof posthog.init>[1])
   posthogInitialized = true
+
+  // A previous withdrawal persists PostHog's own opt-out flag. Our consent
+  // cookie is the source of truth, so a fresh grant re-enables capture
+  // (without emitting an $opt_in event).
+  if (posthog.has_opted_out_capturing()) {
+    posthog.opt_in_capturing({ captureEventName: false })
+  }
+}
+
+/**
+ * Applies the current consent cookie to an already-initialised PostHog.
+ * Withdrawal stops all capture, including autocapture and pageleave.
+ */
+export function syncMarketingPostHogConsent() {
+  if (getConsent() === 'granted') {
+    initializePostHog()
+    return
+  }
+  if (posthogInitialized && !posthog.has_opted_out_capturing()) {
+    posthog.opt_out_capturing()
+  }
 }
 
 export function captureMarketingEvent(
@@ -95,7 +168,7 @@ export function useMarketingAnalyticsReady(): boolean {
 
   useEffect(() => {
     const sync = () => {
-      initializePostHog()
+      syncMarketingPostHogConsent()
       setAnalyticsReady(
         shouldEnablePostHog() &&
           getConsent() === 'granted' &&
@@ -116,30 +189,37 @@ export function useMarketingAnalyticsReady(): boolean {
 function PageViewTracker() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const ph = usePostHog()
-  const [consent, setConsent] = useState<Consent>(getConsent())
+  const search = searchParams.toString()
+  // Server snapshot is null: the cookie is only read in the browser.
+  const consent = useSyncExternalStore(subscribeConsent, getConsent, () => null)
+  // One $pageview per distinct URL. Re-renders, consent re-grants and
+  // StrictMode effect replays on the same URL never capture twice.
+  const lastPageviewUrl = useRef<string | null>(null)
 
+  // Apply grant/withdrawal to PostHog whenever consent changes.
   useEffect(() => {
-    const onConsent = () => setConsent(getConsent())
-
-    window.addEventListener('lasyncro:analytics-consent', onConsent)
-    return () =>
-      window.removeEventListener('lasyncro:analytics-consent', onConsent)
-  }, [])
+    syncMarketingPostHogConsent()
+  }, [consent])
 
   useEffect(() => {
     if (!shouldEnablePostHog()) return
     if (consent !== 'granted') return
     initializePostHog()
-    const url = searchParams.toString()
-      ? `${window.origin}${pathname}?${searchParams.toString()}`
+    if (!posthogInitialized) return
+
+    const url = search
+      ? `${window.origin}${pathname}?${search}`
       : `${window.origin}${pathname}`
-    ph?.capture('$pageview', {
+    if (lastPageviewUrl.current === url) return
+    lastPageviewUrl.current = url
+
+    posthog.capture('$pageview', {
       $current_url: url,
       pathname,
       ...getPageviewContext(pathname),
+      ...takeLandingCampaign(search),
     })
-  }, [pathname, searchParams, ph, consent])
+  }, [pathname, search, consent])
 
   return null
 }

@@ -46,23 +46,44 @@
     window.location.hostname === 'lasyncro.com';
 
   let posthogInitialized = false;
+  let pageviewCaptured = false;
+
+  // Marketing identification is added per event, never via PostHog super-properties (register):
+  // registered properties persist in the shared .lasyncro.com cookie and would
+  // leak onto app.lasyncro.com events.
+  function tagMarketingEvent(event) {
+    if (!event) return event;
+    event.properties = Object.assign({}, event.properties, { surface: 'marketing' });
+    return event;
+  }
 
   function initializePostHog() {
     if (!productionAnalyticsHost) return;
     if (getAnalyticsConsent() !== 'granted') return;
-    if (posthogInitialized) return;
 
-    posthog.init('phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM', {
-      api_host:'https://t.lasyncro.com',
-      ui_host:'https://app.posthog.com',
-      autocapture:true,
-      capture_pageview:true,
-      cookie_domain:'.lasyncro.com',
-      cross_subdomain_cookie:true,
-      persistence:'localStorage+cookie'
-    });
+    if (!posthogInitialized) {
+      posthog.init('phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM', {
+        api_host:'https://t.lasyncro.com',
+        ui_host:'https://app.posthog.com',
+        autocapture:true,
+        capture_pageview:false,
+        cookie_domain:'.lasyncro.com',
+        cross_subdomain_cookie:true,
+        persistence:'localStorage+cookie',
+        before_send: tagMarketingEvent
+      });
+      posthogInitialized = true;
+    }
 
-    posthogInitialized = true;
+    // The consent cookie is the source of truth: clear any opt-out PostHog
+    // persisted from an earlier withdrawal, without emitting $opt_in.
+    posthog.opt_in_capturing({ captureEventName: false });
+
+    // Exactly one $pageview per page load, even if consent is re-granted.
+    if (!pageviewCaptured) {
+      pageviewCaptured = true;
+      posthog.capture('$pageview');
+    }
   }
 
   function syncAnalyticsConsent() {
@@ -70,7 +91,12 @@
       productionAnalyticsHost &&
       getAnalyticsConsent() === 'granted';
 
-    initializePostHog();
+    if (window.__LASYNCRO_ANALYTICS_ENABLED__) {
+      initializePostHog();
+    } else if (posthogInitialized) {
+      // Withdrawal: stops autocapture, pageleave and custom events.
+      posthog.opt_out_capturing();
+    }
   }
 
   syncAnalyticsConsent();
@@ -132,8 +158,26 @@
     return true;
   };
 
+  let gaPageViewSent = false;
+
+  const disableGA4 = () => {
+    window['ga-disable-' + GA4_ID] = true;
+    document.cookie
+      .split(';')
+      .map((part) => part.trim().split('=')[0])
+      .filter((name) => name === '_ga' || name.startsWith('_ga_'))
+      .forEach((name) => {
+        ['; Domain=.lasyncro.com', '; Domain=lasyncro.com', ''].forEach((domain) => {
+          document.cookie = `${name}=; Max-Age=0; Path=/${domain}`;
+        });
+      });
+  };
+
   const trackPageView = () => {
     if (!loadGA4()) return;
+    window['ga-disable-' + GA4_ID] = false;
+    if (gaPageViewSent) return;
+    gaPageViewSent = true;
 
     window.gtag('event', 'page_view', {
       page_location: window.location.href,
@@ -147,6 +191,8 @@
       `${CONSENT_COOKIE}=${value}; ` +
       'Max-Age=31536000; Path=/; Domain=.lasyncro.com; SameSite=Lax; Secure';
 
+    if (value === 'denied') disableGA4();
+
     window.dispatchEvent(
       new CustomEvent('lasyncro:analytics-consent', { detail: value })
     );
@@ -154,12 +200,14 @@
     if (value === 'granted') trackPageView();
   };
 
-  const renderBanner = () => {
-    if (getConsent() !== null) return;
+  const renderBanner = (force) => {
+    if (!force && getConsent() !== null) return;
+    if (document.querySelector('[data-analytics-consent-banner]')) return;
 
     const banner = document.createElement('div');
     banner.setAttribute('role', 'dialog');
     banner.setAttribute('aria-label', 'Analytics consent');
+    banner.setAttribute('data-analytics-consent-banner', '');
     banner.style.cssText =
       'position:fixed;left:16px;right:16px;bottom:16px;z-index:99999;' +
       'max-width:720px;margin:0 auto;padding:16px;border-radius:12px;' +
@@ -196,16 +244,31 @@
     actions.append(allow, decline);
     banner.append(copy, actions);
     document.body.appendChild(banner);
+    if (force) allow.focus();
+  };
+
+  // Footer "Cookie preferences" control: reopen the banner to change or
+  // withdraw consent.
+  const bindPreferences = () => {
+    document.querySelectorAll('[data-analytics-preferences]').forEach((control) => {
+      control.hidden = false;
+      control.addEventListener('click', () => renderBanner(true));
+    });
   };
 
   if (getConsent() === 'granted') {
     trackPageView();
   }
 
+  const onReady = () => {
+    renderBanner(false);
+    bindPreferences();
+  };
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', renderBanner, { once: true });
+    document.addEventListener('DOMContentLoaded', onReady, { once: true });
   } else {
-    renderBanner();
+    onReady();
   }
 })();
 </script>
@@ -1434,6 +1497,7 @@ em { font-style: italic; color: var(--accent); }
       <a href="/help" style="font: 400 12px/1.4 'Plus Jakarta Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Help</a>
       <a href="/privacy" style="font: 400 12px/1.4 'Plus Jakarta Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Privacy</a>
       <a href="/terms" style="font: 400 12px/1.4 'Plus Jakarta Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Terms</a>
+      <button type="button" data-analytics-preferences hidden style="font: 400 12px/1.4 'Plus Jakarta Sans', sans-serif; color: #8B8F9A; background: none; border: none; padding: 0; cursor: pointer;">Cookie preferences</button>
       <a href="mailto:contact@lasyncro.com" style="font: 400 12px/1.4 'Plus Jakarta Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Contact</a>
     </div>
   </footer>
@@ -1454,8 +1518,8 @@ em { font-style: italic; color: var(--accent); }
   }
 
 
-  function setInstallAvailable(url) {
-    installLinks.forEach((link) => {
+  // Attached once; install links are only visible when the app is available.
+  installLinks.forEach((link) => {
     link.addEventListener('click', () => {
       captureHomepageEvent('shopify_install_clicked', {
         location: link.classList.contains('is-nav') ? 'nav' : 'body'
@@ -1463,7 +1527,8 @@ em { font-style: italic; color: var(--accent); }
     });
   });
 
-  forms.forEach((form) => { form.hidden = true; });
+  function setInstallAvailable(url) {
+    forms.forEach((form) => { form.hidden = true; });
     scrollButtons.forEach((button) => { button.hidden = true; });
     installLinks.forEach((link) => {
       link.hidden = false;
@@ -1514,9 +1579,12 @@ em { font-style: italic; color: var(--accent); }
 
         if (!response.ok) throw new Error('waitlist failed');
 
-      captureHomepageEvent('waitlist_signup', {
-        source: form.dataset.source || 'launch_home'
-      });
+        // Accepted submission, not necessarily a new signup (duplicates get
+        // the same response by design). Unique signups: waitlist_signups table.
+        captureHomepageEvent('waitlist_submission_accepted', {
+          source: form.dataset.source || 'launch_home',
+          form: 'launch_notify'
+        });
         form.hidden = true;
         if (status) status.textContent = "You're on the list. We'll email you when LaSyncro is available.";
       } catch {

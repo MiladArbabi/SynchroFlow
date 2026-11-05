@@ -7,7 +7,9 @@ import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
 import PostHogProvider from '@/components/PostHogProvider'
-import GoogleAnalyticsProvider from '@/components/GoogleAnalyticsProvider'
+import GoogleAnalyticsProvider, {
+  AnalyticsPreferencesButton,
+} from '@/components/GoogleAnalyticsProvider'
 import MarketingNav from '@/components/navigation/MarketingNav'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -84,6 +86,7 @@ function Footer() {
         <Link href="/help" className="marketing-footer-link">Help</Link>
         <Link href="/about" className="marketing-footer-link">About</Link>
         <a href="mailto:contact@lasyncro.com" className="marketing-footer-link">Contact</a>
+        <AnalyticsPreferencesButton className="marketing-footer-link" />
       </div>
     </footer>
   )

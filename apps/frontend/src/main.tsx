@@ -84,6 +84,13 @@ if (!analyticsEnabled) {
     capture_pageview: false,   // handled manually — SPA controls its own pageviews
     capture_exceptions: true,
     autocapture: false,        // explicit events only — prevents noisy garbage
+    // Surface tag per event (not PostHog super-properties): registered properties
+    // persist in the shared .lasyncro.com cookie and would cross surfaces.
+    before_send: (event) => {
+      if (!event) return event;
+      event.properties = { ...event.properties, surface: 'app' };
+      return event;
+    },
 
     /**
      * CROSS-DOMAIN IDENTITY (CRITICAL)

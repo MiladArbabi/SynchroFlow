@@ -134,12 +134,12 @@ Two naming conventions are in use. **Never mix them.**
 | Event | Props | Surface | Notes |
 |---|---|---|---|
 | `launch_notify_clicked` | `location: nav|body` | Homepage | User opens the launch/waitlist path |
-| `waitlist_signup` | `source` | Homepage + checklist | Fires only after successful waitlist API confirmation |
+| `waitlist_submission_accepted` | `source`, `form` | Homepage + checklist | Fires only after the waitlist API accepts the submission (replaces `waitlist_signup`, Nov 2026) |
 | `shopify_install_clicked` | `location: nav|body` | Homepage | Conditional Shopify install CTA |
 | `checklist_answer` | — | `/checklist` | Checklist interaction |
 | `checklist_complete` | — | `/checklist` | Checklist completion |
 
-`waitlist_signup` is shared across homepage and checklist; `source` distinguishes the surface.
+`waitlist_submission_accepted` is shared across homepage, checklist and the marketing app; `source` distinguishes the placement and `form` the form type. It counts **accepted submissions, not unique signups**: the API answers a duplicate email exactly like a new one (no email enumeration). **Unique waitlist signups are counted from the `waitlist_signups` table, which is the canonical KPI.** Historical data before Nov 2026 uses the event name `waitlist_signup`.
 
 Raw email is submitted only to the application waitlist endpoint. Email is not included in the PostHog event payload.
 
@@ -154,6 +154,8 @@ Raw email is submitted only to the application waitlist endpoint. Email is not i
 | `blog_article_completed` | `article_slug`, `scroll_depth_pct` | `BlogArticleTracker.tsx` | Fires at 80% scroll via IntersectionObserver |
 | `blog_cta_clicked` | `variant`, `cta_label`, `location` | `ArticleCTA.tsx` | Inline and full CTA variants |
 | `about_cta_clicked` | `cta_label` | `AboutCTAs.tsx` | get_early_access \| read_blog |
+| `waitlist_submission_accepted` | `source`, `form: launch_notify\|newsletter` | `LaunchNotifyForm.tsx`, `BlogIndex.tsx` | Only after API success; never email/store |
+| `shopify_install_clicked` | `location` (form source) | `LaunchNotifyForm.tsx` | Install link shown when the app is available |
 
 Passive marketing trackers subscribe to analytics readiness. If a visitor grants analytics consent after the initial render, eligible page/article view tracking reruns after PostHog becomes ready.
 
@@ -562,3 +564,35 @@ Verification on September 4, 2026:
 - `git diff --check`: **PASS**
 - Fly machine: **1/1 health check passing**
 - production backend `/health`: `{"status":"ok"}`
+
+---
+
+## MARKETING-P0-IMPLEMENT-002 — Consent withdrawal, conversions and surface isolation (Nov 2026)
+
+### Context
+
+PostHog marketing pageviews fell from 93 (Aug 2026) to 1 a month after Sep 4, when tracking became opt-in (AN-PH-01 / AN-ENV-01). The audit (MARKETING-P0-AUDIT-001) attributed the drop to consent gating plus removal of preview-host traffic, not traffic loss. Opt-in consent is preserved; this issue does **not** bypass it.
+
+### Invariants
+
+1. No PostHog or GA4 activity on public marketing surfaces until the shared `lasyncro_analytics_consent` cookie (`.lasyncro.com`) is `granted`, and only on `www.lasyncro.com` / `lasyncro.com`.
+2. Every marketing surface (homepage, checklist, Next.js pages) has a **Cookie preferences** button in the footer that reopens the consent dialog (focus moves to the first action).
+3. Withdrawal (`denied`) calls `posthog.opt_out_capturing()` (stops autocapture, pageleave and custom events), sets `window['ga-disable-G-1H3XLN9MN2'] = true` and expires `_ga` / `_ga_*` cookies.
+4. A fresh grant clears any opt-out PostHog persisted from an earlier withdrawal with `opt_in_capturing({ captureEventName: false })`, before the first pageview. The consent cookie is the source of truth.
+5. Exactly one `$pageview` per page load (static pages, `capture_pageview: false` + one manual capture) and per distinct URL (Next.js). Re-renders and re-grants on the same URL never duplicate. GA4 `page_view` follows the same rule.
+6. Marketing events carry `surface: 'marketing'`; app events carry `surface: 'app'`. Both are added per event through `before_send`. **Never use `posthog.register()`**: registered super-properties persist in the shared `.lasyncro.com` cookie and would cross surfaces. Filter reports by `surface` and/or `$host`.
+7. UTM parameters from the landing URL are held in memory only (Next.js), never stored or sent before consent, and are attached once to the first pageview after consent if the visitor navigated before granting it. A static → Next.js document boundary before consent still loses them (accepted limitation).
+8. Waitlist analytics fire only after API success and never include email or store.
+
+### Regression contracts
+
+- `tests/contract/marketing-static-consent-behavior.contract.test.ts`: executes the real homepage/checklist scripts in jsdom.
+- `tests/contract/marketing-next-consent-behavior.contract.test.ts`: renders the real Next.js providers and `LaunchNotifyForm`.
+- `tests/unit/backend/waitlist/waitlist.routes.no-enumeration.test.ts`: new vs duplicate signups give identical responses (DB mocked; run by exact path).
+- `tests/contract/analytics-production-isolation.contract.test.ts` (surface isolation), `posthog-no-pii`, `posthog-homepage-conversions`.
+
+### Production checks (owner)
+
+- Vercel (marketing app) production has `NEXT_PUBLIC_POSTHOG_KEY` set (presence only).
+- In a clean browser: no requests to `t.lasyncro.com` / `googletagmanager.com` before consent; after Allow, one `$pageview` with `surface=marketing`; after Cookie preferences → Decline, no further PostHog/GA requests.
+- PostHog insights for marketing filter on `surface = marketing` (or `$host` in www/apex); waitlist KPI comes from `waitlist_signups`.
