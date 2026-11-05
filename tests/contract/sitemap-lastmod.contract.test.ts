@@ -11,11 +11,11 @@ describe('AN-GSC-01 sitemap lastmod integrity', () => {
   it('reports truthful dates for static pages changed in the November 5 marketing release', () => {
     const routes = [
       'url: BASE_URL,',
-      'url: `\${BASE_URL}/about`,',
-      'url: `\${BASE_URL}/privacy`,',
-      'url: `\${BASE_URL}/terms`,',
-      'url: `\${BASE_URL}/pricing`,',
-      'url: `\${BASE_URL}/faq`,',
+      'url: `${BASE_URL}/about`,',
+      'url: `${BASE_URL}/privacy`,',
+      'url: `${BASE_URL}/terms`,',
+      'url: `${BASE_URL}/pricing`,',
+      'url: `${BASE_URL}/faq`,',
     ]
 
     for (const route of routes) {
