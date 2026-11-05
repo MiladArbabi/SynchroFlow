@@ -246,7 +246,7 @@ export default function AboutPage() {
           {[
             { num: '$500K–$10M', label: 'Revenue range we build for' },
             { num: '1–30', label: 'Warehouse team size' },
-            { num: '60s', label: 'Shopify connection time' },
+            { num: 'Shopify', label: 'Primary commerce platform' },
           ].map(({ num, label }) => (
             <div
               key={label}

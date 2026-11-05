@@ -37,7 +37,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function PrivacyPage() {
-  const updated = 'May 17, 2026'
+  const updated = 'November 5, 2026'
 
   return (
     <>
@@ -72,8 +72,8 @@ export default function PrivacyPage() {
         <Section title="What data we collect">
           <p style={{ marginBottom: 16 }}>We collect the following types of information:</p>
           <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Account and contact information.</strong> When you sign up for early access or contact us, we collect your email address and, optionally, your Shopify store URL. This information is used solely to communicate with you about LaSyncro.</p>
-          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Shopify store data.</strong> When you connect LaSyncro to your Shopify store via OAuth, we access the data scopes you authorise — typically orders, products, inventory levels, and locations. We use this data exclusively to provide the LaSyncro service. We do not sell, share, or use your Shopify store data for any purpose other than operating the service on your behalf.</p>
-          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Usage and analytics data.</strong> We collect anonymised usage data (page views, feature usage, session duration) via PostHog to understand how the product is used and improve it. This data is not linked to personally identifiable information.</p>
+          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Shopify store data.</strong> When you connect LaSyncro to Shopify, requested OAuth permissions include reading products, orders, customers, inventory and locations, and writing inventory and fulfillment data for supported workflows. We use your store information to provide and operate the service. We do not sell, share, or use your Shopify store data for any purpose other than operating the service on your behalf.</p>
+          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Usage and analytics data.</strong> With analytics consent, we use PostHog and Google Analytics to measure page views, feature interactions and similar usage. These tools may use cookie-based or pseudonymous identifiers. Signed-in product usage may be associated with account or merchant-workspace identifiers. Email and store URLs submitted through public waitlist forms are not included in marketing analytics event properties.</p>
           <p><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Communications.</strong> If you contact us by email, we retain those communications to respond to your enquiry and improve our support.</p>
         </Section>
 
@@ -94,14 +94,15 @@ export default function PrivacyPage() {
           <ul style={{ paddingLeft: '1.4rem', margin: '0 0 16px' }}>
             <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Shopify.</strong> We connect to Shopify via their official OAuth API. Shopify&apos;s privacy policy governs their handling of data.</li>
             <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Vercel.</strong> Our web infrastructure is hosted on Vercel. Vercel may process request data (IP addresses, request logs) as part of normal web hosting operations.</li>
-            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>PostHog.</strong> We use PostHog for anonymised product analytics. No personally identifiable information is sent to PostHog.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>PostHog.</strong> With analytics consent, PostHog processes pseudonymous browser analytics and may associate authenticated product events with account or merchant-workspace identifiers.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Google Analytics.</strong> With analytics consent, Google Analytics measures visits and usage and may place analytics identifier cookies on supported website and app surfaces.</li>
             <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Resend.</strong> We use Resend to send transactional email notifications. Email addresses used for notifications are processed by Resend in accordance with their privacy policy.</li>
           </ul>
           <p>We do not share your Shopify store data, order data, inventory data, or customer data with any third party for any purpose other than operating the LaSyncro service.</p>
         </Section>
 
         <Section title="Data retention">
-          <p>We retain your account data for as long as your account is active. If you request deletion of your account and data, we will remove your personal information within 30 days, except where we are required to retain it by law. Anonymised usage analytics data may be retained indefinitely as it cannot be linked to you personally.</p>
+          <p>We retain account and operational information as needed to provide the service, respond to requests and meet applicable legal, security and recordkeeping obligations. You may request deletion by contacting us; some records may need to be retained where required by law or legitimate operational obligations. Analytics data retention is governed by the applicable service settings and legal requirements.</p>
         </Section>
 
         <Section title="Your rights">
@@ -117,7 +118,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Cookies">
-          <p>LaSyncro uses minimal cookies required for the service to function (session authentication). We do not use advertising cookies or tracking cookies. Our anonymised analytics (PostHog) uses a first-party cookie that does not track you across other websites.</p>
+          <p>LaSyncro uses essential cookies for service functions such as authentication. Optional analytics cookies and identifiers from PostHog and Google Analytics are used after you grant analytics consent. You can change your choice using Cookie preferences. Withdrawing consent stops new analytics event capture and removes accessible GA4 identifier cookies. PostHog events recorded while consent was granted may still complete transmission afterward; a pseudonymous PostHog identifier may remain on your device while capture is disabled.</p>
         </Section>
 
         <Section title="Security">

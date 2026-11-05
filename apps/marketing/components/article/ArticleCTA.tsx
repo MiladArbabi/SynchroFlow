@@ -1,6 +1,7 @@
 'use client'
 
 import { captureMarketingEvent } from '../PostHogProvider'
+import { useShopifyAvailability } from '@/components/conversion/LaunchNotifyForm'
 
 interface ArticleCTAProps {
   variant?: 'inline' | 'full'
@@ -11,9 +12,16 @@ interface ArticleCTAProps {
 }
 
 export default function ArticleCTA({ variant = 'full', theme = 'legacy', text, href, label }: ArticleCTAProps) {
-  // Defaults keep legacy CTAs safe; article frontmatter can override destination and label per search intent.
-  const targetHref = href ?? 'https://app.lasyncro.com'
-  const targetLabel = label ?? 'Start free'
+  // The existing Shopify-availability check owns the public launch boundary.
+  // Preserve an explicitly non-app destination when installation is available.
+  const availability = useShopifyAvailability()
+  const waitingForLaunch = !availability.available || !availability.installUrl
+  const targetHref = waitingForLaunch
+    ? '/pricing#launch-pricing'
+    : href && !href.startsWith('https://app.lasyncro.com')
+      ? href
+      : availability.installUrl!
+  const targetLabel = waitingForLaunch ? 'Notify me at launch' : (label ?? 'Install on Shopify')
   const isDark = theme === 'dark'
 
   function handleClick() {
@@ -70,7 +78,9 @@ export default function ArticleCTA({ variant = 'full', theme = 'legacy', text, h
           fontSize: '14px', fontWeight: 300, lineHeight: 1.6,
           color: isDark ? 'var(--ink-2)' : 'rgba(240,238,232,0.7)', maxWidth: '460px',
         }}>
-          Start your 14-day Growth trial. No credit card required.
+          {waitingForLaunch
+            ? 'Join the launch list and we will notify you when Shopify installation opens.'
+            : 'Review the published plans before installing LaSyncro on Shopify.'}
         </p>
       </div>
       <a href={targetHref} onClick={handleClick} style={{

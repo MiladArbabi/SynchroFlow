@@ -17,11 +17,11 @@ const W = {
 const faqs = [
   {
     q: 'How long does setup take?',
-    a: 'Most merchants are fully connected in under 60 seconds. Connect your store, complete OAuth, and LaSyncro syncs your products, orders, and inventory automatically. No CSV imports, no manual data entry, no IT team required.',
+    a: 'When public Shopify installation opens, connection will use Shopify OAuth. Initial product and inventory synchronization and warehouse configuration take additional time depending on store size and setup. A complete setup time is not guaranteed.',
   },
   {
     q: 'Do I need technical knowledge to use LaSyncro?',
-    a: 'No. LaSyncro is built for warehouse operators and merchant owners — not developers. If you can use a smartphone, you can use LaSyncro. The mobile scan interface works with any Bluetooth barcode scanner or your phone camera.',
+    a: 'LaSyncro is designed for merchant owners and warehouse teams, with mobile-oriented workflows. Scanner compatibility depends on your device, browser, and barcode hardware; validate your setup before relying on a particular scanner.',
   },
   {
     q: 'What store size is LaSyncro designed for?',
@@ -29,11 +29,11 @@ const faqs = [
   },
   {
     q: 'How does inventory sync work?',
-    a: 'Every scan — pick, pack, receive — updates your store\'s inventory count in real time. There is no end-of-day reconciliation, no batch sync window, and no lag. When your warehouse team scans a unit out, your store reflects that immediately.',
+    a: 'LaSyncro records supported warehouse operations when they are confirmed. Shopify inventory updates happen at defined workflow points, such as eligible stow confirmations, and depend on Shopify connectivity and synchronization success. A scan does not guarantee an immediate Shopify stock change.',
   },
   {
     q: 'Can LaSyncro handle multiple warehouse locations?',
-    a: 'Yes. LaSyncro supports multiple warehouse locations with bin-level tracking. Every product has a precise location — bin, zone, aisle — so any team member can pick correctly on day one.',
+    a: 'Paid plans support multiple warehouse locations: Growth includes three and Scale includes ten. Bin-level tracking depends on configured locations and confirmed stock placement; do not assume every product has an assigned bin before receiving and stowing.',
   },
   {
     q: 'What is demand intelligence?',
@@ -41,27 +41,27 @@ const faqs = [
   },
   {
     q: 'How does PO receiving work?',
-    a: 'When a delivery arrives, your team scans each unit against the open purchase order. LaSyncro compares what arrived against what was ordered and flags any discrepancy — short shipments, wrong SKUs, damaged units. Inventory updates at point of scan.',
+    a: 'During receiving, operators count and confirm delivered units against purchase orders and record discrepancies. LaSyncro updates its receiving records as work is confirmed; Shopify stock synchronization follows the relevant inventory workflow rather than every receiving scan.',
   },
   {
     q: 'What data does LaSyncro access from my store?',
-    a: 'LaSyncro accesses orders, products, inventory levels, and locations via OAuth. We use this data exclusively to operate the service. We do not sell, share, or use your store data for any purpose other than running LaSyncro on your behalf. See our privacy policy for full details.',
+    a: 'Shopify OAuth permissions include reading products, orders, inventory and locations, and writing inventory or fulfillment data for supported operations. The permissions granted during installation determine what the app can access. See our Privacy Policy for how data is handled.',
   },
   {
     q: 'Is there a free plan?',
-    a: 'Yes. The Starter plan is free and gives you enough to understand LaSyncro and evaluate whether it fits your operation. All paid plans include a 14-day Growth trial — no credit card required.',
+    a: 'The published pricing includes a free Starter tier and a 14-day Growth trial. Public self-service installation is not yet open; join the launch list for availability updates.',
   },
   {
     q: 'What happens if I disconnect my store?',
-    a: 'You can disconnect at any time. Your LaSyncro account and historical data are retained for 30 days, after which they are permanently deleted on request. We do not hold your data hostage.',
+    a: 'You can revoke the app connection through Shopify. For questions about your LaSyncro account, access, retention or deletion requests, contact support and refer to our Privacy Policy. Data is not automatically guaranteed to be deleted after a fixed number of days.',
   },
   {
     q: 'Does LaSyncro work on mobile?',
-    a: 'Yes. The pick and pack interface is designed for mobile use. It works with any Bluetooth barcode scanner or your phone camera. Warehouse operators can work entirely from a phone or tablet — no desktop required for day-to-day operations.',
+    a: 'LaSyncro includes mobile-oriented warehouse workflows. Camera and external barcode scanning depend on the device, browser and hardware; check compatibility before adopting a specific warehouse setup.',
   },
   {
     q: 'What is the 2D/3D warehouse map?',
-    a: 'LaSyncro generates a visual map of your warehouse layout based on your bin and zone configuration. Every product is locatable on the map. New staff can navigate to any product without knowing the layout — the map tells them where to go.',
+    a: 'LaSyncro has floor-planning and location-management functionality, with availability depending on your plan and configured warehouse. A visual layout does not by itself confirm stock placement; operators still need accurate location and scan records.',
   },
 ]
 
