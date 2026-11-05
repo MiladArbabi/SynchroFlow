@@ -736,8 +736,11 @@ function back() {
 }
 
 /* ── Finish ── */
+var quizCompleted = false;
+
 function finish() {
-  if (answers[current] === undefined) return;
+  if (quizCompleted || answers[current] === undefined) return;
+  quizCompleted = true;
   var score = 0;
   for (var k in answers) { score += answers[k]; }
 
@@ -867,7 +870,15 @@ function showBreakdown() {
 }
 
 /* ── Keyboard nav ── */
+function isEditableTarget(target) {
+  if (!target || !target.closest) return false;
+  return !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+}
+
 document.addEventListener('keydown', function(e) {
+  // Quiz shortcuts apply only while the quiz is on screen, and never while the
+  // visitor is typing: native field behaviour (including Enter submit) stays intact.
+  if (quizCompleted || isEditableTarget(e.target)) return;
   if (e.key === 'Enter') {
     var wrap = document.querySelector('.question-wrap.active');
     if (!wrap) return;

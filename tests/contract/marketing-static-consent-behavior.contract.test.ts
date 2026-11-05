@@ -464,3 +464,160 @@ describe('MARKETING-P0 checklist waitlist gate', () => {
     expect(page.error.textContent).toBe('');
   });
 });
+
+describe('MARKETING-P0 checklist keyboard shortcuts', () => {
+  const EMAIL = 'merchant@example.com';
+
+  async function openQuiz(cookie = 'lasyncro_analytics_consent=granted') {
+    const ctx = await load({ html: CHECKLIST, url: 'https://www.lasyncro.com/checklist', cookie });
+    const { document, window } = ctx;
+    const press = (key: string, target: EventTarget = document.body) =>
+      target.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    const active = () => document.querySelector<HTMLElement>('.question-wrap.active')!;
+    const answers = () => JSON.parse(window.eval('JSON.stringify(answers)')) as Record<string, number>;
+    const current = () => window.eval('current') as number;
+    const results = () => document.querySelector<HTMLElement>('#results')!;
+    const complete = () => {
+      // Picks each question's first option, then advances with its own button.
+      for (let guard = 0; guard < 40 && results().style.display !== 'block'; guard += 1) {
+        active().querySelector<HTMLButtonElement>('.option')!.click();
+        active().querySelector<HTMLButtonElement>('.btn-next')!.click();
+      }
+      expect(results().style.display).toBe('block');
+    };
+    return { ...ctx, press, active, answers, current, results, complete };
+  }
+
+  /** Dispatches the keydown each character would produce, with the field as target. */
+  function typeInto(page: Awaited<ReturnType<typeof openQuiz>>, text: string) {
+    const input = page.document.querySelector<HTMLInputElement>('#eg-email')!;
+    input.focus();
+    for (const key of text) {
+      page.press(key, input);
+      input.value += key;
+    }
+    return input;
+  }
+
+  const count = (page: Awaited<ReturnType<typeof openQuiz>>, event: string) =>
+    captured(page.posthog, event).length;
+
+  test('typing an email after Q12 changes no answers and sends no quiz events', async () => {
+    const page = await openQuiz();
+    page.complete();
+    const before = page.answers();
+    const answerEvents = count(page, 'checklist_answer');
+    expect(count(page, 'checklist_complete')).toBe(1);
+
+    const input = typeInto(page, EMAIL);
+
+    expect(input.value).toBe(EMAIL);
+    expect(page.answers()).toEqual(before);
+    expect(count(page, 'checklist_answer')).toBe(answerEvents);
+    expect(count(page, 'checklist_complete')).toBe(1);
+  });
+
+  test('ArrowLeft while editing the email does not move the quiz', async () => {
+    const page = await openQuiz();
+    page.complete();
+    const input = typeInto(page, EMAIL);
+    const position = page.current();
+
+    page.press('ArrowLeft', input);
+    page.press('ArrowLeft', input);
+
+    expect(page.current()).toBe(position);
+    expect(page.results().style.display).toBe('block');
+    expect(input.value).toBe(EMAIL);
+  });
+
+  test('Enter in the email field stays unhandled by the quiz and the form still submits', async () => {
+    const page = await openQuiz();
+    page.complete();
+    const before = page.answers();
+    const input = typeInto(page, EMAIL);
+
+    // A cancelled keydown would suppress the browser's implicit form submission.
+    const notCancelled = page.press('Enter', input);
+    expect(notCancelled).toBe(true);
+    expect(count(page, 'checklist_complete')).toBe(1);
+    expect(page.answers()).toEqual(before);
+
+    page.document
+      .querySelector<HTMLFormElement>('.eg-form')!
+      .dispatchEvent(new page.window.Event('submit', { cancelable: true }));
+    await flush();
+    await flush();
+
+    expect(page.fetchCalls.filter((call) => call.url === '/api/waitlist')).toHaveLength(1);
+    expect(count(page, 'waitlist_submission_accepted')).toBe(1);
+    expect(count(page, 'checklist_complete')).toBe(1);
+  });
+
+  test('shortcuts are inert once the quiz is completed, whatever has focus', async () => {
+    const page = await openQuiz();
+    page.complete();
+    const before = page.answers();
+    const position = page.current();
+    const answerEvents = count(page, 'checklist_answer');
+
+    ['a', 'b', 'c', 'd', 'Enter', 'ArrowLeft'].forEach((key) => page.press(key));
+
+    expect(page.answers()).toEqual(before);
+    expect(page.current()).toBe(position);
+    expect(count(page, 'checklist_answer')).toBe(answerEvents);
+    expect(count(page, 'checklist_complete')).toBe(1);
+  });
+
+  test('finish() runs once even if invoked again', async () => {
+    const page = await openQuiz();
+    page.complete();
+
+    page.window.eval('finish()');
+
+    expect(count(page, 'checklist_complete')).toBe(1);
+  });
+
+  test.each([
+    ['input', '<input />'],
+    ['textarea', '<textarea></textarea>'],
+    ['select', '<select></select>'],
+    ['editable element', '<div contenteditable="true"><span></span></div>'],
+  ])('shortcuts are ignored during the quiz when focus is in a %s', async (_name, markup) => {
+    const page = await openQuiz();
+    const host = page.document.createElement('div');
+    host.innerHTML = markup;
+    page.document.body.appendChild(host);
+    const target = host.querySelector('span') ?? host.firstElementChild!;
+
+    ['a', 'Enter', 'ArrowLeft'].forEach((key) => page.press(key, target));
+
+    expect(page.answers()).toEqual({});
+    expect(page.current()).toBe(1);
+  });
+
+  test('A/B/C/D, Enter and ArrowLeft still work during the quiz', async () => {
+    const page = await openQuiz();
+    const keys = ['a', 'b', 'c', 'd'];
+    keys.forEach((key, index) => {
+      page.press(key);
+      const options = Array.from(page.active().querySelectorAll('.option'));
+      expect(options[index].classList.contains('selected')).toBe(true);
+    });
+    expect(count(page, 'checklist_answer')).toBe(4);
+
+    page.press('Enter');
+    expect(page.current()).toBe(2);
+
+    page.press('ArrowLeft');
+    expect(page.current()).toBe(1);
+
+    // Finishing by keyboard alone completes exactly once.
+    for (let guard = 0; guard < 40 && page.results().style.display !== 'block'; guard += 1) {
+      page.press('a');
+      page.press('Enter');
+    }
+    expect(page.results().style.display).toBe('block');
+    expect(count(page, 'checklist_complete')).toBe(1);
+  });
+});
