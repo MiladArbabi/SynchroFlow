@@ -58,11 +58,13 @@ interface LoadOptions {
   url?: string;
   cookie?: string;
   waitlistOk?: boolean;
+  /** Full cookie definitions for domain/path withdrawal coverage. */
+  cookieDefinitions?: string[];
   /** Overrides waitlistOk, for network failures and in-flight or changing responses. */
   waitlistFetch?: () => Promise<FetchResponse>;
 }
 
-async function load({ html, url = 'https://www.lasyncro.com/', cookie, waitlistOk = true, waitlistFetch }: LoadOptions) {
+async function load({ html, url = 'https://www.lasyncro.com/', cookie, cookieDefinitions = [], waitlistOk = true, waitlistFetch }: LoadOptions) {
   const posthog = createPostHogFake();
   const fetchCalls: Array<{ url: string; body?: string }> = [];
   const virtualConsole = new VirtualConsole();
@@ -75,6 +77,7 @@ async function load({ html, url = 'https://www.lasyncro.com/', cookie, waitlistO
       for (const pair of (cookie ?? '').split(';').map((part) => part.trim()).filter(Boolean)) {
         window.document.cookie = `${pair}; Path=/; Domain=.lasyncro.com; Secure`;
       }
+      for (const definition of cookieDefinitions) window.document.cookie = definition;
       window.posthog = posthog;
       window.scrollTo = () => undefined;
       window.requestAnimationFrame = () => 0;
@@ -278,6 +281,66 @@ describe('MARKETING-P0 homepage consent lifecycle', () => {
     );
     expect(initIndex).toBeLessThan(optInIndex);
     expect(optInIndex).toBeLessThan(pageviewIndex);
+  });
+});
+
+describe('MARKETING-P0 checklist GA4 withdrawal', () => {
+  const identifiers = [
+    '_ga=root; Domain=.lasyncro.com; Path=/; Secure',
+    '_ga_SHARED=shared; Domain=lasyncro.com; Path=/checklist; Secure',
+    '_ga_HOST=host; Path=/; Secure',
+    '_ga_PATH=path; Path=/checklist/; Secure',
+  ];
+
+  test.each(['withdrawal', 'persisted denial'])('%s clears accessible GA identifiers only', async (scenario) => {
+    const { dom, window, document, posthog } = await load({
+      html: CHECKLIST,
+      url: 'https://www.lasyncro.com/checklist/',
+      cookie: `lasyncro_analytics_consent=${scenario === 'withdrawal' ? 'granted' : 'denied'}`,
+      cookieDefinitions: [...identifiers, 'preferences=keep; Path=/; Secure', 'ph_identity=keep; Domain=.lasyncro.com; Path=/; Secure'],
+    });
+
+    if (scenario === 'withdrawal') {
+      expect(document.cookie).toContain('_ga=root');
+      expect(document.cookie).toContain('_ga_SHARED=shared');
+      expect(document.cookie).toContain('_ga_HOST=host');
+      expect(document.cookie).toContain('_ga_PATH=path');
+      document.querySelector<HTMLButtonElement>('[data-analytics-preferences]')!.click();
+      clickButton(document, 'Decline analytics');
+      expect(names(posthog, 'opt_out_capturing')).toHaveLength(1);
+    } else {
+      expect(posthog.calls).toEqual([]);
+    }
+
+    expect(window[`ga-disable-${GA4_ID}`]).toBe(true);
+    expect(window.__LASYNCRO_ANALYTICS_ENABLED__).toBe(false);
+    for (const url of ['https://www.lasyncro.com/', 'https://www.lasyncro.com/checklist/', 'https://www.lasyncro.com/about']) {
+      const cookies = dom.cookieJar.getCookieStringSync(url);
+      expect(cookies).not.toMatch(/(^|;\s*)_ga(_[^=]*)?=/);
+      expect(cookies).toContain('lasyncro_analytics_consent=denied');
+      expect(cookies).toContain('preferences=keep');
+      expect(cookies).toContain('ph_identity=keep');
+    }
+    expect(gaPageViews(window)).toEqual([]);
+  });
+
+  test('re-grant removes the GA disable flag and resumes PostHog without duplicate pageviews', async () => {
+    const { window, document, posthog } = await load({
+      html: CHECKLIST,
+      url: 'https://www.lasyncro.com/checklist',
+      cookie: 'lasyncro_analytics_consent=granted',
+    });
+    document.querySelector<HTMLButtonElement>('[data-analytics-preferences]')!.click();
+    clickButton(document, 'Decline analytics');
+    expect(window[`ga-disable-${GA4_ID}`]).toBe(true);
+    document.querySelector<HTMLButtonElement>('[data-analytics-preferences]')!.click();
+    clickButton(document, 'Allow analytics');
+    expect(window[`ga-disable-${GA4_ID}`]).toBe(false);
+    expect(document.cookie).toContain('lasyncro_analytics_consent=granted');
+    expect(posthog.has_opted_out_capturing()).toBe(false);
+    expect(window.__LASYNCRO_ANALYTICS_ENABLED__).toBe(true);
+    expect(names(posthog, 'init')).toHaveLength(1);
+    expect(captured(posthog, '$pageview')).toHaveLength(1);
   });
 });
 

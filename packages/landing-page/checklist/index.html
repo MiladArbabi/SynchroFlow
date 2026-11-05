@@ -78,12 +78,41 @@
     }
   }
 
+  const GA4_ID = 'G-1H3XLN9MN2';
+
+  // Match the homepage withdrawal behaviour, including legacy cookies scoped
+  // to the checklist path. Only GA4 identifier cookies are expired.
+  function disableGA4() {
+    window['ga-disable-' + GA4_ID] = true;
+    const paths = new Set(['/']);
+    const segments = window.location.pathname.split('/').filter(Boolean);
+    segments.forEach((_segment, index) => {
+      const path = '/' + segments.slice(0, index + 1).join('/');
+      paths.add(path);
+      paths.add(path + '/');
+    });
+    document.cookie
+      .split(';')
+      .map((part) => part.trim().split('=')[0])
+      .filter((name) => name === '_ga' || name.startsWith('_ga_'))
+      .forEach((name) => {
+        ['; Domain=.lasyncro.com', '; Domain=lasyncro.com', ''].forEach((domain) => {
+          paths.forEach((path) => {
+            document.cookie = `${name}=; Max-Age=0; Path=${path}${domain}`;
+          });
+        });
+      });
+  }
+
   function syncAnalyticsConsent() {
     window.__LASYNCRO_ANALYTICS_ENABLED__ =
       productionAnalyticsHost &&
       getAnalyticsConsent() === 'granted';
 
+    if (productionAnalyticsHost && getAnalyticsConsent() === 'denied') disableGA4();
+
     if (window.__LASYNCRO_ANALYTICS_ENABLED__) {
+      window['ga-disable-' + GA4_ID] = false;
       initializePostHog();
     } else if (posthogInitialized) {
       // Withdrawal: stops autocapture, pageleave and custom events.
