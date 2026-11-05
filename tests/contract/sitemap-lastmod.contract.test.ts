@@ -8,6 +8,26 @@ const sitemap = fs.readFileSync(
 )
 
 describe('AN-GSC-01 sitemap lastmod integrity', () => {
+  it('reports truthful dates for static pages changed in the November 5 marketing release', () => {
+    const routes = [
+      'url: BASE_URL,',
+      'url: `\${BASE_URL}/about`,',
+      'url: `\${BASE_URL}/privacy`,',
+      'url: `\${BASE_URL}/terms`,',
+      'url: `\${BASE_URL}/pricing`,',
+      'url: `\${BASE_URL}/faq`,',
+    ]
+
+    for (const route of routes) {
+      const start = sitemap.indexOf(route)
+      expect(start).toBeGreaterThanOrEqual(0)
+      const entryEnd = sitemap.indexOf('},', start)
+      expect(entryEnd).toBeGreaterThan(start)
+      const entry = sitemap.slice(start, entryEnd)
+      expect(entry).toContain("lastModified: new Date('2026-11-05')")
+    }
+  })
+
   it('never uses deployment time as sitemap freshness', () => {
     expect(sitemap).not.toMatch(/lastModified:\s*new Date\(\)/)
     expect(sitemap).not.toContain('Date.now()')

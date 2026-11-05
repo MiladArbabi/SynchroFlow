@@ -50,16 +50,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     helpArticles.map(({ frontmatter }) => contentDate(frontmatter))
   )
 
+  // Update static lastModified only after a meaningful edit to the named page.
+  // These six pages changed in the 2026-11-05 P0/P1 marketing releases.
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
-      lastModified: new Date('2026-05-01'),
+      lastModified: new Date('2026-11-05'),
       priority: 1.0,
       changeFrequency: 'weekly',
     },
     {
       url: `${BASE_URL}/about`,
-      lastModified: new Date('2026-05-01'),
+      lastModified: new Date('2026-11-05'),
       priority: 0.8,
       changeFrequency: 'monthly',
     },
@@ -77,25 +79,25 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     {
       url: `${BASE_URL}/privacy`,
-      lastModified: new Date('2026-05-17'),
+      lastModified: new Date('2026-11-05'),
       priority: 0.3,
       changeFrequency: 'yearly',
     },
     {
       url: `${BASE_URL}/terms`,
-      lastModified: new Date('2026-05-17'),
+      lastModified: new Date('2026-11-05'),
       priority: 0.3,
       changeFrequency: 'yearly',
     },
     {
       url: `${BASE_URL}/pricing`,
-      lastModified: new Date('2026-05-21'),
+      lastModified: new Date('2026-11-05'),
       priority: 0.8,
       changeFrequency: 'monthly',
     },
     {
       url: `${BASE_URL}/faq`,
-      lastModified: new Date('2026-05-21'),
+      lastModified: new Date('2026-11-05'),
       priority: 0.7,
       changeFrequency: 'monthly',
     },
