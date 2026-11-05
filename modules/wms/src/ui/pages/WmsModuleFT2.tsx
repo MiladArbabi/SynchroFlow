@@ -3141,6 +3141,10 @@ function WmsModuleFT2Inner({
         onFetchPlacements={(taskId) =>
           onFetchStowPlacements?.(taskId) ?? Promise.resolve([])
         }
+        // STOW-UX-01 — the same warehouse.operations + wms:read geometry the
+        // Pick map uses (GH-1222). Stow acquires nothing of its own, so it can
+        // never reach the Growth-gated /layout or /grid/occupancy.
+        floorZones={pickFloorZones}
       />
     );
   }

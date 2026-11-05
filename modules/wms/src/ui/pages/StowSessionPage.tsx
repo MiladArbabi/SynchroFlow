@@ -1,16 +1,27 @@
 // modules/wms/src/ui/pages/StowSessionPage.tsx
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
-  Box, Paper, Typography, Button, Alert, Chip,
-  TextField, useTheme, CircularProgress, IconButton,
-  alpha,
+  Box, Typography, Button, Alert,
+  TextField, useTheme, useMediaQuery, CircularProgress, IconButton,
 } from '@mui/material';
 import {
   CheckCircle,
-  MapPin,
   Package,
   ArrowLeft,
 } from 'lucide-react';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
+import {
+  ReceiveActions,
+  ReceiveCta,
+  ReceiveExitSheet,
+  ReceiveFactStrip,
+  ReceiveFooterButton,
+  ReceiveItemLine,
+  ReceiveStatusLine,
+  ReceiveTaskHeading,
+  receiveMonoSx,
+} from '../components/receive/ReceiveSessionShell';
 import type {
   WmsStowTask,
   WmsStowConfirmResult,
@@ -89,6 +100,11 @@ export interface StowSessionPageProps {
   ) => Promise<WmsStowConfirmResult>;
   /** STOW-UX-SCAN-RAIL-01 — canonical current-bin activity trace, task-scoped. */
   onFetchPlacements?: (taskId: string) => Promise<StowPlacement[]>;
+  /**
+   * STOW-UX-01 — warehouse geometry for the orientation map. undefined or
+   * unplaced means text-only directions; this page never fetches geometry.
+   */
+  floorZones?: WarehouseZone[];
 }
 
 // STOW-SPLIT-01 — only phases that remain reachable in the per-unit scanner
@@ -261,16 +277,26 @@ function getStowOperatorError(
 }
 
 // ── Scan input ────────────────────────────────────────────────────────────────
-function ScanInput({ hint, onSubmit, error, disabled = false }: {
+function ScanInput({ hint, onSubmit, error, disabled = false, focusRequest = 0 }: {
   hint: string;
   onSubmit: (value: string) => void;
   error?: string | null;
   disabled?: boolean;
+  /** Bumped by the page to return a hardware scanner's keystrokes here. */
+  focusRequest?: number;
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    // A disabled input loses focus, so re-enabling after each saved scan must
+    // take it back or the next hardware scan has nowhere to land. The timeout
+    // lets a closing dialog restore its own focus first.
+    if (disabled) return;
+    inputRef.current?.focus({ preventScroll: true });
+    const timer = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
+    return () => clearTimeout(timer);
+  }, [disabled, focusRequest]);
   useEffect(() => {
     if (error) setTimeout(() => inputRef.current?.focus(), 50);
   }, [error]);
@@ -293,8 +319,9 @@ function ScanInput({ hint, onSubmit, error, disabled = false }: {
       <TextField
         inputRef={inputRef}
         fullWidth
-        size="small"
         placeholder={hint}
+        inputProps={{ 'aria-label': hint, autoCapitalize: 'off', spellCheck: false }}
+        sx={{ '& .MuiInputBase-root': { minHeight: 56, borderRadius: '12px', bgcolor: 'var(--surface)' } }}
         value={value}
         disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
@@ -312,21 +339,360 @@ function ScanInput({ hint, onSubmit, error, disabled = false }: {
       {value.trim() && (
         <Button
           variant="contained"
-          size="small"
           onClick={handleSubmit}
           disabled={disabled}
           sx={{
             bgcolor: 'var(--accent)',
             color: 'var(--accent-ink)',
-            borderRadius: '6px',
+            borderRadius: '12px',
             fontWeight: 600,
-            mt: '2px',
+            minHeight: 56,
             flexShrink: 0,
           }}
         >
           Scan
         </Button>
       )}
+    </Box>
+  );
+}
+
+// ── Floor map helpers (STOW-UX-01) ────────────────────────────────────────────
+/**
+ * Same "is there a floor?" semantic as GH-1176 hasOperationalFloor: the
+ * bootstrapped warehouse root never counts. undefined (grid unresolved or
+ * denied) and an unplaced floor both fall back to text-only directions.
+ */
+function hasPlacedFloor(zones: WarehouseZone[] | undefined): boolean {
+  return Boolean(
+    zones?.some(
+      (zone) =>
+        zone.type !== 'warehouse' &&
+        zone.position_x != null &&
+        zone.position_y != null,
+    ),
+  );
+}
+
+/**
+ * Ancestors of a location, outermost first, read from the shop's own geometry.
+ * Codes are never parsed: their format belongs to the merchant. The warehouse
+ * root adds no direction and is left out. Empty when geometry is unavailable.
+ */
+function describeLocationPath(
+  locationCode: string,
+  zones: WarehouseZone[] | undefined,
+): string[] {
+  if (!zones) return [];
+  const byCode = new Map(zones.map((zone) => [zone.location_code, zone]));
+  const path: string[] = [];
+  const seen = new Set<string>([locationCode]);
+  let parentCode = byCode.get(locationCode)?.parent_location_code ?? null;
+  while (parentCode && !seen.has(parentCode)) {
+    seen.add(parentCode);
+    const parent = byCode.get(parentCode);
+    if (!parent || parent.type === 'warehouse') break;
+    path.unshift(parentCode);
+    parentCode = parent.parent_location_code;
+  }
+  return path;
+}
+
+/**
+ * Physical levels of a multilevel rack, read from the shop's own geometry. Null
+ * for one level, an unknown count, or no geometry. Placement is tracked by
+ * location code only, so this describes the rack; it never assigns a level.
+ */
+function getRackLevelCount(
+  locationCode: string | null,
+  zones: WarehouseZone[] | undefined,
+): number | null {
+  const levels = Number(zones?.find((zone) => zone.location_code === locationCode)?.rack_levels);
+  return Number.isInteger(levels) && levels > 1 ? levels : null;
+}
+
+/** Orientation only: the destination is lit, nothing here can change session state. */
+function StowFloorMap({
+  zones,
+  destinationCode,
+  destinationOnMap,
+  isMultilevelRack,
+  placements,
+}: {
+  zones: WarehouseZone[];
+  destinationCode: string | null;
+  destinationOnMap: boolean;
+  isMultilevelRack: boolean;
+  placements: StowPlacement[];
+}) {
+  const stateByLocation = useMemo(() => {
+    const states: Record<string, OperationalMapState> = {};
+    // Committed placements keep their ORIGINAL bins lit after a destination switch.
+    for (const placement of placements) states[placement.location_code] = 'healthy';
+    if (destinationCode) states[destinationCode] = 'active';
+    return states;
+  }, [placements, destinationCode]);
+  const inspectable = useMemo(
+    () => new Set(destinationCode ? [destinationCode] : []),
+    [destinationCode],
+  );
+
+  return (
+    <Box
+      component="section"
+      id="stow-warehouse-map"
+      aria-label="Warehouse map"
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid var(--rule)',
+        borderRadius: '12px',
+        bgcolor: 'var(--bg-2)',
+        overflow: 'hidden',
+      }}
+    >
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: { xs: 240, md: 360, lg: 'min(56vh, 560px)' },
+          position: 'relative',
+        }}
+      >
+        <IsometricCanvas
+          zones={zones}
+          selectedLocationCode={destinationOnMap ? destinationCode : null}
+          inspectableLocationCodes={inspectable}
+          operationalStateByLocation={stateByLocation}
+          showLegend={false}
+          showControls={false}
+          disablePan
+          autoFit
+        />
+      </Box>
+      {destinationCode && (
+        <Typography role="status" sx={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', px: 1.5, py: 1, borderTop: '1px solid var(--rule)' }}>
+          {destinationOnMap
+            ? `Destination ${destinationCode} is highlighted on the map.${
+                // The renderer draws selection on the rack's top face, which
+                // must not read as an assigned level.
+                isMultilevelRack ? ' The highlight marks the rack, not a shelf level.' : ''
+              }`
+            : `Destination ${destinationCode} is not placed on this map. Follow its bin label.`}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+type StowBarTone = 'done' | 'current' | 'idle';
+
+const STOW_BAR_COLOR: Record<StowBarTone, string> = {
+  done: 'var(--good-ink)',
+  current: 'var(--ink)',
+  idle: 'var(--rule)',
+};
+
+/**
+ * Same grammar as ReceiveSessionShell (header, one task column, footer), local
+ * to Stow because that shell's workflow pill is fixed to RECEIVE. Presentation
+ * only: it owns no session state. One DOM for every viewport.
+ */
+function StowSessionShell({
+  sourceLabel,
+  positionLabel,
+  progressLabel,
+  bars,
+  onBack,
+  onExit,
+  exitDisabled,
+  map,
+  desktopMapLayout,
+  footer,
+  overlay,
+  children,
+}: {
+  sourceLabel: string;
+  positionLabel: string;
+  progressLabel: string;
+  bars: StowBarTone[];
+  onBack?: () => void;
+  onExit?: () => void;
+  exitDisabled: boolean;
+  map: ReactNode;
+  /** Map and task as two equal panels; everything task-related stays on the right. */
+  desktopMapLayout: boolean;
+  footer?: ReactNode;
+  overlay: ReactNode;
+  children: ReactNode;
+}) {
+  const hasDesktopMapColumn = Boolean(map && desktopMapLayout);
+  return (
+    <Box
+      data-testid="stow-session-shell"
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1300,
+        bgcolor: 'var(--bg)',
+        color: 'var(--ink)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        pb: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
+      <Box
+        component="header"
+        sx={{
+          flex: '0 0 auto',
+          display: 'grid',
+          gridTemplateColumns: { xs: 'minmax(0,1fr) auto', md: '1fr auto 1fr' },
+          alignItems: 'center',
+          minHeight: { md: 64 },
+          columnGap: 2,
+          rowGap: 0.75,
+          px: { xs: 2, md: 3 },
+          pt: { xs: 'max(8px, env(safe-area-inset-top, 0px))', md: 0 },
+          pb: { xs: 1, md: 0 },
+          bgcolor: { xs: 'var(--bg)', md: 'var(--surface)' },
+          borderBottom: { xs: 0, md: '1px solid var(--rule)' },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, gridColumn: 1, gridRow: 1 }}>
+          <Box
+            component="span"
+            sx={{
+              fontSize: { xs: 10, md: 11 },
+              fontWeight: 500,
+              lineHeight: 1,
+              letterSpacing: '0.12em',
+              color: 'var(--accent-text)',
+              bgcolor: { xs: 'transparent', md: 'var(--accent-ghost)' },
+              borderRadius: '100px',
+              px: { xs: 0, md: '11px' },
+              py: { xs: 0, md: '6px' },
+              flexShrink: 0,
+            }}
+          >
+            STOW
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography noWrap sx={{ fontSize: { xs: 12, md: 14 }, fontWeight: 500, color: 'var(--ink)' }}>
+              {sourceLabel}
+            </Typography>
+            {positionLabel && (
+              <Typography noWrap sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+                {positionLabel}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        <Box
+          sx={{
+            display: 'grid',
+            justifyItems: { xs: 'stretch', md: 'center' },
+            gap: 0.75,
+            gridColumn: { xs: '1 / -1', md: 2 },
+            gridRow: { xs: 2, md: 1 },
+          }}
+        >
+          {bars.length > 0 && (
+            <Box aria-hidden="true" sx={{ display: 'flex', gap: '4px', width: { xs: '100%', md: Math.min(bars.length * 56, 360) } }}>
+              {bars.map((tone, index) => (
+                <Box key={index} sx={{ flex: '1 1 0', height: 4, borderRadius: '2px', bgcolor: STOW_BAR_COLOR[tone] }} />
+              ))}
+            </Box>
+          )}
+          {progressLabel && (
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', ...receiveMonoSx }}>
+              {progressLabel}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifySelf: 'end', gridColumn: { xs: 2, md: 3 }, gridRow: 1 }}>
+          {onBack && (
+            <IconButton onClick={onBack} aria-label="Back to stow session" sx={{ width: 44, height: 44 }}>
+              <ArrowLeft size={18} />
+            </IconButton>
+          )}
+          {onExit && (
+            <ReceiveFooterButton
+              onClick={onExit}
+              disabled={exitDisabled}
+              sx={{
+                height: 36,
+                '&:hover': { bgcolor: 'var(--bg-2)', borderColor: 'var(--rule-2)' },
+              }}
+            >
+              Exit
+            </ReceiveFooterButton>
+          )}
+        </Box>
+      </Box>
+
+      <Box
+        component="main"
+        sx={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Box
+          sx={{
+            width: '100%',
+            maxWidth: hasDesktopMapColumn ? 1240 : { xs: '100%', md: 600 },
+            m: { xs: 0, md: 'auto' },
+            boxSizing: 'border-box',
+            flex: { xs: '1 0 auto', md: '0 0 auto' },
+            display: 'grid',
+            gridTemplateColumns: hasDesktopMapColumn ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+            gap: { xs: 1.5, md: 4 },
+            px: { xs: 2, md: 3 },
+            pt: { xs: 1.5, md: 3 },
+            pb: { xs: 1, md: 3 },
+          }}
+        >
+          {hasDesktopMapColumn && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              {map}
+            </Box>
+          )}
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: { xs: 1.5, md: 2 },
+              minWidth: 0,
+              ...(hasDesktopMapColumn && {
+                p: { md: 2, lg: 3 },
+                justifyContent: 'space-between',
+                border: '1px solid var(--rule)',
+                borderRadius: '12px',
+                bgcolor: 'var(--surface)',
+              }),
+            }}
+          >
+            {children}
+            {!hasDesktopMapColumn && map}
+          </Box>
+        </Box>
+      </Box>
+
+      {footer && (
+        <Box
+          component="footer"
+          sx={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', px: 2, py: 1 }}
+        >
+          {footer}
+        </Box>
+      )}
+      {overlay}
     </Box>
   );
 }
@@ -345,8 +711,15 @@ export default function StowSessionPage({
   onResolveBarcode,
   onConfirmStow,
   onFetchPlacements,
+  floorZones,
 }: StowSessionPageProps) {
   const theme = useTheme();
+  // Desktop keeps the map beside execution; mobile keeps the scanner first and
+  // mounts the map only when the operator asks for it.
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  const [mobileMapOpen, setMobileMapOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
+  const [scannerFocusRequest, setScannerFocusRequest] = useState(0);
 
   const [phase,            setPhase]            = useState<Phase>('brief');
   const [tasks,            setTasks]            = useState<WmsStowTask[]>([]);
@@ -449,6 +822,11 @@ export default function StowSessionPage({
 
   useEffect(() => {
     onActiveTaskChangeRef.current = onActiveTaskChange;
+    // A task load outliving this session must not report identity: the parent
+    // writes it to the URL, which would reopen a session the operator has left.
+    return () => {
+      onActiveTaskChangeRef.current = undefined;
+    };
   }, [onActiveTaskChange]);
 
   // ── Load tasks ──────────────────────────────────────────────────────────────
@@ -956,86 +1334,226 @@ export default function StowSessionPage({
   onActiveTaskChange,
 ]);
 
-  // STOW-SPLIT-01 — task position remains useful navigation context, but workflow
-  // progress is communicated by the physical bin state and remaining-unit count
-  // rather than an abstract progress bar or duplicated step tracker.
-  const progressLabel = currentTask
-    ? `Stow ${currentIndex + 1} of ${tasks.length}`
-    : '';
-
-  const nextAction =
-    phase === 'brief'
-      ? 'Review task'
-      : phase === 'location_scan'
-        ? 'Scan destination bin'
-        : phase === 'item_scan'
-          ? 'Scan item'
-          : 'Task complete';
-  const destinationLabel =
-    confirmedLocation ??
-    currentTask?.location_code ??
-    'Scan location';
+  // ── Presentation (STOW-UX-01) ───────────────────────────────────────────────
+  // Everything below renders session state only. Scanner handlers, task
+  // ordering, claim/assign/confirm calls and resume all live above unchanged.
   const taskProgressLabel = currentTask
     ? `${currentTask.quantity_placed} / ${currentTask.quantity}`
     : '0 / 0';
+  const taskPositionLabel = currentTask
+    ? `Stow ${currentIndex + 1} of ${tasks.length}`
+    : '';
+  // Most-recently-activated bin, else the task's suggested bin (guidance only).
+  const destinationCode = confirmedLocation ?? currentTask?.location_code ?? null;
+  const destinationPath = destinationCode ? describeLocationPath(destinationCode, floorZones) : [];
+  const rackLevelCount = getRackLevelCount(destinationCode, floorZones);
+  const rackLevelLabel = rackLevelCount ? `${destinationCode} · ${rackLevelCount} rack levels` : null;
+  // Orientation serves a live task: never on loading, empty or finished screens.
+  const showMap = hasPlacedFloor(floorZones) && Boolean(currentTask) && phase !== 'complete';
+  const destinationOnMap = Boolean(
+    destinationCode &&
+    floorZones?.some(
+      (zone) =>
+        zone.location_code === destinationCode &&
+        zone.position_x != null &&
+        zone.position_y != null,
+    ),
+  );
+  const bars: StowBarTone[] = tasks.map((_, index) =>
+    phase === 'complete' || index < currentIndex
+      ? 'done'
+      : index === currentIndex
+        ? 'current'
+        : 'idle',
+  );
 
-  const identityBanner = currentTask ? (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: 2,
-        mb: 2,
-        borderRadius: '6px',
-        bgcolor: 'background.paper',
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(6, minmax(0, 1fr))' },
-        gap: 1,
-      }}
-    >
-      {[
-        ['Source', triggerLabel(currentTask.trigger)],
-        ['Task', tasks.length > 1 ? `${currentIndex + 1} / ${tasks.length}` : '1 / 1'],
-        ['Item', currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'],
-        ['SKU', currentTask.sku ?? 'SKU unavailable'],
-        ['Progress', taskProgressLabel],
-        ['Destination', destinationLabel],
-      ].map(([label, value]) => (
-        <Box key={label} sx={{ minWidth: 0 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
-            {label}
-          </Typography>
-          <Typography variant="body2" noWrap sx={{ fontWeight: 650 }}>
-            {value}
-          </Typography>
-        </Box>
-      ))}
-      <Box sx={{ minWidth: 0, gridColumn: { xs: '1 / -1', md: 'auto' } }}>
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
-          Next
-        </Typography>
-        <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: 'var(--accent-text)' }}>
-          {nextAction}
-        </Typography>
-      </Box>
-      {/* S4-5 I5 — exact-LSU recovery guidance. The held unit was never in
-          inventory; it is credited once, only by this confirmed scan. */}
-      {currentTask.trigger === 'receive_recovery' && (
-        <Box
-          data-testid="stow-recovery-guidance"
-          sx={{ gridColumn: '1 / -1', mt: 0.5, pt: 1, borderTop: '0.5px solid var(--rule)' }}
+  const leaveSession = () => {
+    setExitOpen(false);
+    onComplete();
+  };
+
+  const resumeScanning = () => {
+    setExitOpen(false);
+    setScannerFocusRequest((request) => request + 1);
+  };
+
+  const toggleMobileMap = () => {
+    setMobileMapOpen((open) => !open);
+    // A hardware scan must never land on the toggle: its Enter would flip the
+    // map and drop the scan instead of reaching the scanner input.
+    setScannerFocusRequest((request) => request + 1);
+  };
+
+  const desktopMapLayout = showMap && isDesktop;
+
+  const mapRegion = showMap && (isDesktop || mobileMapOpen) ? (
+    <StowFloorMap
+      zones={floorZones ?? []}
+      destinationCode={destinationCode}
+      destinationOnMap={destinationOnMap}
+      isMultilevelRack={rackLevelCount !== null}
+      placements={placements}
+    />
+  ) : null;
+
+  const renderShell = (column: ReactNode, facts?: ReactNode) => (
+    <StowSessionShell
+      sourceLabel={currentTask ? triggerLabel(currentTask.trigger) : 'Warehouse'}
+      positionLabel={taskPositionLabel}
+      progressLabel={currentTask ? taskProgressLabel : ''}
+      bars={bars}
+      onBack={
+        phase === 'item_scan' || phase === 'location_scan'
+          ? () => setPhase('brief')
+          : undefined
+      }
+      onExit={phase === 'complete' ? undefined : (currentTask ? () => setExitOpen(true) : leaveSession)}
+      exitDisabled={submitting}
+      map={mapRegion}
+      desktopMapLayout={desktopMapLayout}
+      footer={
+        showMap && !isDesktop ? (
+          <ReceiveFooterButton
+            onClick={toggleMobileMap}
+            aria-expanded={mobileMapOpen}
+            aria-controls="stow-warehouse-map"
+          >
+            {mobileMapOpen ? 'Hide map' : 'Show map'}
+          </ReceiveFooterButton>
+        ) : undefined
+      }
+      overlay={
+        <ReceiveExitSheet
+          open={exitOpen}
+          eyebrow="Leave stow"
+          title="Progress is"
+          accent="saved."
+          body={
+            currentTask?.status === 'in_progress'
+              ? 'Exiting does not undo units already placed. Your progress remains saved.'
+              : 'This task has not been claimed. It stays available in Warehouse Operations.'
+          }
+          onDismiss={resumeScanning}
         >
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, textTransform: 'uppercase' }}>
-            Required unit
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
-            {(currentTask.unit_ids ?? []).length > 0 ? (currentTask.unit_ids ?? []).join(', ') : 'Unavailable'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Scan an eligible storage bin, then this exact unit label. A product barcode is not accepted. Inventory is credited only when this scan is confirmed.
-          </Typography>
-        </Box>
+          <ReceiveCta onClick={resumeScanning}>Keep stowing</ReceiveCta>
+          <ReceiveCta tier="secondary" onClick={leaveSession}>Back to Warehouse</ReceiveCta>
+        </ReceiveExitSheet>
+      }
+    >
+      {column}
+      {desktopMapLayout && facts ? <Box sx={{ mt: 'auto' }}>{facts}</Box> : facts}
+    </StowSessionShell>
+  );
+
+  const itemLine = currentTask ? (
+    <ReceiveItemLine
+      name={currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'}
+      identity={currentTask.sku ?? 'SKU unavailable'}
+      media={
+        currentTask.image_url ? (
+          <Box
+            component="img"
+            src={currentTask.image_url}
+            alt=""
+            sx={{ width: 44, height: 44, objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid var(--rule)' }}
+          />
+        ) : (
+          <Box sx={{ width: 44, height: 44, borderRadius: '8px', bgcolor: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Package size={18} aria-hidden="true" style={{ opacity: 0.5 }} />
+          </Box>
+        )
+      }
+    />
+  ) : null;
+
+  // S4-5 I5 — exact-LSU recovery guidance. The held unit was never in
+  // inventory; it is credited once, only by this confirmed scan.
+  const recoveryGuidance = currentTask?.trigger === 'receive_recovery' ? (
+    <Box
+      data-testid="stow-recovery-guidance"
+      sx={{ p: 1.5, border: '1px solid var(--rule-2)', borderRadius: '10px', bgcolor: 'var(--surface)' }}
+    >
+      <Typography variant="caption" sx={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--ink-3)' }}>
+        Required unit
+      </Typography>
+      <Typography variant="body2" sx={{ ...receiveMonoSx, fontWeight: 600, overflowWrap: 'anywhere' }}>
+        {(currentTask.unit_ids ?? []).length > 0 ? (currentTask.unit_ids ?? []).join(', ') : 'Unavailable'}
+      </Typography>
+      <Typography variant="caption" sx={{ display: 'block', color: 'var(--ink-3)' }}>
+        Scan an eligible storage bin, then this exact unit label. A product barcode is not accepted. Inventory is credited only when this scan is confirmed.
+      </Typography>
+    </Box>
+  ) : null;
+
+  const pathLine = destinationPath.length > 0 ? (
+    <Box component="span" sx={{ display: 'block', ...receiveMonoSx, fontSize: 12, color: 'var(--ink-3)' }}>
+      Found in {destinationPath.join(' › ')}
+    </Box>
+  ) : null;
+
+  const shelfLevelNote = rackLevelCount ? (
+    <Box component="span" sx={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>
+      Specific shelf level not tracked
+    </Box>
+  ) : null;
+
+  const rackLevelGuidance = rackLevelLabel ? (
+    <>
+      <Box component="span" sx={{ display: 'block', ...receiveMonoSx, fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
+        {rackLevelLabel}
+      </Box>
+      {shelfLevelNote}
+    </>
+  ) : null;
+
+  const scanFeedbackLines = (
+    <>
+      {scanFeedback && (
+        <ReceiveStatusLine tone={scanFeedback.severity === 'success' ? 'ok' : 'neutral'} role="status">
+          {scanFeedback.message}
+        </ReceiveStatusLine>
       )}
-    </Paper>
+      {submitError && (
+        <ReceiveStatusLine tone="error" role="alert">
+          {submitError}
+        </ReceiveStatusLine>
+      )}
+    </>
+  );
+
+  const executionFacts = currentTask ? (
+    <Box
+      sx={
+        desktopMapLayout
+          ? {
+              height: '100%',
+              // A half-width panel is too narrow for three equal columns: the
+              // counts size to their content and a long bin code truncates. Its
+              // full code stays in the page's heading or directions.
+              '& > div': {
+                height: '100%',
+                boxSizing: 'border-box',
+                gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+              },
+              '& > div > div': { alignContent: 'center', minWidth: 0 },
+              '& > div > div > span:last-of-type': {
+                fontSize: 18,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              },
+            }
+          : undefined
+      }
+    >
+      <ReceiveFactStrip
+        facts={[
+          { label: 'Destination', value: destinationCode ?? '—', highlight: true },
+          { label: 'Remaining', value: remainingQty },
+          { label: 'Units', value: currentTask.quantity },
+        ]}
+      />
+    </Box>
   ) : null;
 
   // STOW-UX-SCAN-RAIL-01 — LOCATION -> ITEM -> REGISTERED is the single
@@ -1054,16 +1572,11 @@ export default function StowSessionPage({
         : 'Waiting';
 
   const stageRail = (
-    <Paper
-      variant="outlined"
+    <Box
       sx={{
-        p: 1.5,
-        mb: 2,
-        borderRadius: '6px',
         display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-        gap: 1,
-        bgcolor: 'background.paper',
+        gap: 0.75,
       }}
     >
       {[
@@ -1119,63 +1632,60 @@ export default function StowSessionPage({
             data-state={stage.state}
             sx={{
               minWidth: 0,
-              p: 1,
-              borderRadius: '6px',
-              bgcolor: isActive
-                ? 'var(--accent-ghost)'
-                : isComplete
-                  ? alpha(theme.palette.success.main, 0.08)
-                  : 'transparent',
-              border: '0.5px solid',
+              px: 1,
+              py: 0.75,
+              borderRadius: '8px',
+              bgcolor: isActive ? 'var(--accent-ghost)' : 'transparent',
+              border: '1px solid',
               borderColor: isActive
                 ? 'var(--accent-border)'
                 : isComplete
-                  ? theme.palette.success.main
+                  ? 'var(--good-ink)'
                   : 'var(--rule)',
               animation: stage.pulse ? 'stowRailPulse 1.6s ease-in-out infinite' : 'none',
               '@keyframes stowRailPulse': {
                 '0%, 100%': { opacity: 1 },
                 '50%': { opacity: 0.6 },
               },
+              '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
             }}
           >
             <Typography
-              variant="body2"
+              variant="caption"
+              component="div"
               sx={{
-                fontWeight: 750,
-                color: isComplete
-                  ? 'var(--good-ink)'
-                  : isActive
-                    ? 'var(--accent)'
-                    : 'text.secondary',
+                fontWeight: 600,
+                color: isComplete ? 'var(--good-ink)' : isActive ? 'var(--accent-text)' : 'var(--ink-3)',
               }}
             >
               {isComplete ? '✓' : isActive ? '●' : '○'} {stage.label}
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap title={stage.meta}>
+            <Typography variant="caption" component="div" noWrap title={stage.meta} sx={{ color: 'var(--ink-3)', fontSize: 11 }}>
               {stage.meta}
             </Typography>
           </Box>
         );
       })}
-    </Paper>
+    </Box>
   );
 
-  // STOW-UX-SCAN-RAIL-01 / STOW-ACTIVE-LOCATION-01 — the identity banner +
-  // rail already carry destination/progress state (see Section C: remove
-  // duplicated active UI). This panel exists to show something the rail does
-  // NOT: the canonical, server-committed history of everything registered by
-  // this task. Read-only, server-authoritative — never an optimistic local
-  // row, never a client-generated operator name or timestamp.
-  //
-  // STOW-ACTIVE-LOCATION-01 — this is task-wide, not current-bin-only: since
-  // the active destination is now mutable mid-task, a row placed at a bin
-  // the operator has since switched away from must still be shown here. The
-  // title is deliberately neutral (not "<bin> ACTIVE") because the rows
-  // below it may legitimately span more than one bin.
+  // STOW-UX-SCAN-RAIL-01 / STOW-ACTIVE-LOCATION-01 — canonical, server-committed
+  // history of everything registered by this task. Read-only and task-wide, not
+  // current-bin-only: a row placed at a bin the operator has since switched away
+  // from stays here with its original location. Never an optimistic local row.
   const currentBinActivity = confirmedLocation ? (
-    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: '6px' }} data-testid="stow-bin-activity">
-      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+    <Box
+      data-testid="stow-bin-activity"
+      sx={{
+        p: 1.5,
+        border: '1px solid var(--rule)',
+        borderRadius: '10px',
+        bgcolor: 'var(--surface)',
+        maxHeight: { md: 180 },
+        overflowY: { md: 'auto' },
+      }}
+    >
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
         Stow activity · {placements.length} registered
       </Typography>
 
@@ -1191,7 +1701,7 @@ export default function StowSessionPage({
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {placements.map((p) => (
             <Box key={p.lasyncro_unit_id}>
-              <Typography variant="body2" fontWeight={600}>
+              <Typography variant="body2" fontWeight={500}>
                 ✓ {p.product_title ?? p.variant_title ?? p.sku ?? 'Item'} ·{' '}
                 <Box
                   component="span"
@@ -1209,163 +1719,133 @@ export default function StowSessionPage({
           ))}
         </Box>
       )}
-    </Paper>
+    </Box>
   ) : null;
 
   // ── BRIEF ───────────────────────────────────────────────────────────────────
   if (phase === 'brief') {
-    return (
-      <Box sx={{ p: 3 }}>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}>
-            <CircularProgress size={32} />
-          </Box>
-        ) : loadError ? (
-          <Alert severity="error">{loadError}</Alert>
-        ) : tasks.length === 0 ? (
-          <Alert severity="info">No stow tasks pending.</Alert>
-        ) : (
-          <>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="h6" fontWeight={600}>Stow Session</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Review the selected task, then scan a destination bin to claim it.
+    if (loading) {
+      return renderShell(
+        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}>
+          <CircularProgress size={32} />
+        </Box>,
+      );
+    }
+    if (loadError) return renderShell(<Alert severity="error">{loadError}</Alert>);
+    if (tasks.length === 0) return renderShell(<Alert severity="info">No stow tasks pending.</Alert>);
+
+    // STOW-BRIEF-DECLUTTER-01 — the LOCATION/ITEM/REGISTERED rail is active
+    // execution UI and deliberately does not render on Brief.
+    return renderShell(
+      <>
+        <ReceiveTaskHeading
+          eyebrow="Review task"
+          title="Stow Session"
+          sub="Review the selected task, then scan a destination bin to claim it."
+        />
+        <Box data-testid="stow-directions" sx={{ textAlign: 'center' }}>
+          {destinationCode ? (
+            <>
+              <Typography component="div" sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                Suggested destination
               </Typography>
-            </Box>
-            {identityBanner}
-            {/* STOW-BRIEF-DECLUTTER-01 — the LOCATION/ITEM/REGISTERED
-                execution rail (stageRail) is active-execution UI and must
-                not render on Brief: execution has not started yet, so a box
-                showing "Location: active" / a pulsing scan target here would
-                lie about session state. identityBanner already carries the
-                pre-execution summary (source, task position, product, SKU,
-                progress, suggested destination); stageRail begins rendering
-                again once the operator actually starts/resumes (see the
-                location_scan / item_scan / complete phases below, all
-                unchanged). */}
-            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-              {[
-                { label: 'Task',      value: `${currentIndex + 1}/${tasks.length}` },
-                { label: 'Units',     value: currentTask?.quantity ?? 0 },
-                { label: 'Remaining', value: remainingQty },
-              ].map(({ label, value }) => (
-                <Paper key={label} variant="outlined" sx={{ flex: 1, p: 2, textAlign: 'center', borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={600} color="warning.main">{value}</Typography>
-                  <Typography variant="caption" color="text.secondary">{label}</Typography>
-                </Paper>
-              ))}
-            </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
-              {(currentTask ? [currentTask] : []).map((t) => (
-                <Paper key={t.stow_task_id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    {t.image_url ? (
-                      <Box component="img" src={t.image_url} alt={t.variant_title ?? ''}
-                        sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0, border: `1px solid ${theme.palette.divider}` }} />
-                    ) : (
-                      <Box sx={{ width: 40, height: 40, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Package size={18} color={theme.palette.text.disabled} />
-                      </Box>
-                    )}
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {t.product_title ?? t.variant_title ?? t.sku ?? t.stow_task_id.slice(0, 8).toUpperCase()}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                      <Chip label={`${t.quantity} units`} size="small" />
-                      {t.location_code
-                        ? <Chip label={t.location_code} size="small" color="success" />
-                        : <Chip label="No location" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent-text)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />}
-                    </Box>
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
-            <Button
-              variant="contained"
-              size="large"
-              fullWidth
-              sx={{
-                borderRadius: '6px',
-                fontWeight: 600,
-                bgcolor: 'var(--accent)',
-                color: 'var(--accent-ink)',
-                '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
-              }}
-              onClick={() => {
-                if (currentTask) onActiveTaskChange?.(currentTask.stow_task_id, 'location');
-                setPhase('location_scan');
-              }}
-            >
-              {currentTask?.status === 'in_progress' ? 'Resume stowing' : 'Claim & start stowing'}
-            </Button>
-          </>
-        )}
-      </Box>
+              <Typography component="div" sx={{ ...receiveMonoSx, fontSize: 18, fontWeight: 500, overflowWrap: 'anywhere' }}>
+                {rackLevelLabel ?? destinationCode}
+              </Typography>
+              {shelfLevelNote}
+            </>
+          ) : (
+            <Typography sx={{ fontSize: 14, color: 'var(--ink-2)' }}>
+              No destination yet — you choose one by scanning a bin.
+            </Typography>
+          )}
+          {pathLine}
+        </Box>
+        {itemLine}
+        {recoveryGuidance}
+        {/* Metrics beside the action on a wide desktop; everywhere else the
+            action comes first, then the metrics, as a stack. */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: desktopMapLayout ? 'minmax(0, 1fr) 208px' : 'minmax(0, 1fr)' },
+            gap: { xs: 1.5, md: 2, lg: desktopMapLayout ? 1.5 : 2 },
+            mt: { xs: 'auto', md: 0 },
+          }}
+        >
+          <ReceiveCta
+            onClick={() => {
+              if (currentTask) onActiveTaskChange?.(currentTask.stow_task_id, 'location');
+              setPhase('location_scan');
+            }}
+            sx={desktopMapLayout ? { gridColumn: { lg: 2 }, gridRow: { lg: 1 }, height: { lg: 'auto' }, minHeight: { lg: 56 } } : undefined}
+          >
+            {currentTask?.status === 'in_progress' ? 'Resume stowing' : 'Claim & start stowing'}
+          </ReceiveCta>
+          <Box sx={desktopMapLayout ? { gridColumn: { lg: 1 }, gridRow: { lg: 1 }, minWidth: 0 } : undefined}>
+            {executionFacts}
+          </Box>
+        </Box>
+      </>,
     );
   }
 
   // ── COMPLETE ─────────────────────────────────────────────────────────────────
   if (phase === 'complete') {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 4, textAlign: 'center', minHeight: 400 }}>
-        <CheckCircle size={56} color={theme.palette.success.main} />
-        <Typography variant="h5" fontWeight={600} sx={{ mt: 2 }}>Stow complete</Typography>
-        <Box sx={{ width: '100%', maxWidth: 720, mt: 2 }}>
-          {stageRail}
+    return renderShell(
+      <>
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <CheckCircle size={48} color="var(--good-ink)" aria-hidden="true" />
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 4 }}>
-          {tasks.length} SKU{tasks.length !== 1 ? 's' : ''} stowed. Inventory updated.
-        </Typography>
-        <Button variant="contained" size="large"
-          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-          onClick={onComplete}>
-          Exit Stow
-        </Button>
-      </Box>
+        <ReceiveTaskHeading
+          eyebrow="Complete"
+          eyebrowTone="ok"
+          title="Stow complete"
+          sub={`${tasks.length} SKU${tasks.length !== 1 ? 's' : ''} stowed. Inventory updated.`}
+        />
+        {stageRail}
+        <ReceiveActions>
+          <ReceiveCta onClick={onComplete}>Exit Stow</ReceiveCta>
+        </ReceiveActions>
+      </>,
     );
   }
 
   if (!currentTask) {
-  // STOW-SPLIT-01 — reaching an active session phase without a task means the
-  // UI state and loaded task queue have diverged. Do not render a blank screen:
-  // surface the exact invariant failure so the operator knows why work stopped.
-  return (
-    <Box sx={{ p: 2 }}>
+    // STOW-SPLIT-01 — reaching an active session phase without a task means the
+    // UI state and loaded task queue have diverged. Do not render a blank screen:
+    // surface the exact invariant failure so the operator knows why work stopped.
+    return renderShell(
       <Alert severity="error">
         Cannot continue stowing because no active stow task is loaded.
-      </Alert>
-    </Box>
-  );
-}
+      </Alert>,
+    );
+  }
 
-// ── ITEM SCAN (Node 1) ───────────────────────────────────────────────────────
-if (phase === 'item_scan') {
-    return (
-      <Box sx={{ p: 2 }}>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <IconButton onClick={() => setPhase('brief')} size="small">
-            <ArrowLeft size={18} />
-          </IconButton>
-          <Typography variant="subtitle2" color="text.secondary">
-            {progressLabel}
-          </Typography>
-        </Box>
-
-        {identityBanner}
-        {stageRail}
-
-        {/* STOW-UX-SCAN-RAIL-01 (Section C) — the separate large ACTIVE
-            destination card and the separate large product/action card were
-            removed: identityBanner already carries destination/item/SKU and
-            the rail already carries Location/Item/Registered state. */}
-
+  // ── ITEM SCAN (Node 1) ───────────────────────────────────────────────────────
+  if (phase === 'item_scan') {
+    return renderShell(
+      <>
+        <ReceiveTaskHeading
+          eyebrow="Scan item"
+          title="Scan"
+          accent={hasStartedThisTask ? 'the next unit.' : 'a unit.'}
+          sub={
+            <Box component="span" data-testid="stow-directions">
+              Placing into {destinationCode}. Scan another bin at any time to switch destination.
+              {rackLevelGuidance}
+              {pathLine}
+            </Box>
+          }
+        />
+        {itemLine}
+        {recoveryGuidance}
         <ScanInput
+          key="item_scan"
           hint="Scan item barcode (LSU- or product barcode)"
           error={submitError}
           disabled={submitting}
+          focusRequest={scannerFocusRequest}
           onSubmit={(v) => {
             if (!beginScannerAction()) return;
 
@@ -1381,76 +1861,43 @@ if (phase === 'item_scan') {
               });
           }}
         />
-
-        {scanFeedback && (
-          <Alert severity={scanFeedback.severity} sx={{ mt: 2 }}>
-            {scanFeedback.message}
-          </Alert>
-        )}
-
-        {submitError && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {submitError}
-          </Alert>
-        )}
-
-        <Box sx={{ mt: 2 }}>
-          {currentBinActivity}
-        </Box>
-      </Box>
+        {scanFeedbackLines}
+        {stageRail}
+        {currentBinActivity}
+      </>,
+      executionFacts,
     );
   }
 
   // ── LOCATION SCAN (Node 2) ───────────────────────────────────────────────────
   if (phase === 'location_scan') {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <IconButton
-            // STOW-SPLIT-01 — location is the first operational step. Going back from
-            // here returns to the session brief rather than exposing unit scanning
-            // before a physical destination has been activated.
-            onClick={() => setPhase('brief')}
-            size="small"
-            aria-label="Back to stow session"
-          >
-            <ArrowLeft size={18} />
-          </IconButton>
-
-          <Typography variant="subtitle2" color="text.secondary">
-            {progressLabel}
-          </Typography>
-        </Box>
-
-        {identityBanner}
-        {stageRail}
-
-        {/* STOW-UX-SCAN-RAIL-01 — the rail already shows Location as
-            active/pending with a "Scan destination" prompt; no destination
-            is confirmed yet in this phase, so there is nothing for the
-            current-bin activity panel to show either. */}
-
-        {/* STOW-SPLIT-01 — location is activated before any physical item scan.
-            Do not show an item-confirmed state here: at this point no unit has been
-            validated or committed. The suggested bin remains guidance only. */}
-        {currentTask.location_code && (
-          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'var(--accent-ghost)', borderColor: 'var(--accent-border)'}}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <MapPin size={16} color='var(--accent)' />
-              <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--accent-text)' }}>
-                Suggested bin: {currentTask.location_code}
-              </Typography>
+    // STOW-SPLIT-01 — location is activated before any physical item scan, and
+    // the suggested bin remains guidance only until its label is scanned.
+    const suggestedBin = currentTask.location_code;
+    return renderShell(
+      <>
+        <ReceiveTaskHeading
+          eyebrow={suggestedBin ? 'Suggested bin' : 'Scan location'}
+          title={suggestedBin ? 'Go to' : 'Scan a'}
+          accent={suggestedBin ? `${suggestedBin}.` : 'destination bin.'}
+          sub={
+            <Box component="span" data-testid="stow-directions">
+              {suggestedBin
+                ? 'Walk to this bin and scan its barcode to confirm. Any other active bin also works.'
+                : 'Choose an active storage bin and scan its barcode.'}
+              {rackLevelGuidance}
+              {pathLine}
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.25, display: 'block' }}>
-              Walk to this bin and scan its barcode to confirm.
-            </Typography>
-          </Paper>
-        )}
-
+          }
+        />
+        {itemLine}
+        {recoveryGuidance}
         <ScanInput
+          key="location_scan"
           hint="Scan bin barcode or type location code"
           error={submitError}
           disabled={submitting}
+          focusRequest={scannerFocusRequest}
           onSubmit={(v) => {
             if (!beginScannerAction()) return;
 
@@ -1466,19 +1913,10 @@ if (phase === 'item_scan') {
               });
           }}
         />
-
-        {scanFeedback && (
-          <Alert severity={scanFeedback.severity} sx={{ mt: 2 }}>
-            {scanFeedback.message}
-          </Alert>
-        )}
-
-        {submitError && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {submitError}
-          </Alert>
-        )}
-      </Box>
+        {scanFeedbackLines}
+        {stageRail}
+      </>,
+      executionFacts,
     );
   }
 
@@ -1488,11 +1926,9 @@ if (phase === 'item_scan') {
   // STOW-SPLIT-01 — every supported operational phase returns above.
   // If execution reaches this point, the session state has diverged from the
   // declared workflow. Render the invariant failure instead of failing silently.
-  return (
-    <Box sx={{ p: 2 }}>
-      <Alert severity="error">
-        Cannot render the stow session because its workflow state is unsupported.
-      </Alert>
-    </Box>
+  return renderShell(
+    <Alert severity="error">
+      Cannot render the stow session because its workflow state is unsupported.
+    </Alert>,
   );
 }
