@@ -5,6 +5,7 @@
 'use client'
 
 import { useState } from 'react'
+import { captureMarketingEvent } from '@/components/PostHogProvider'
 import {
   ContentHero,
   ContentMeta,
@@ -653,7 +654,16 @@ function NewsletterForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, source: 'newsletter' }),
       })
-      setStatus(res.ok ? 'success' : 'error')
+      if (!res.ok) {
+        setStatus('error')
+        return
+      }
+      // Accepted submission only; unique signups come from waitlist_signups.
+      captureMarketingEvent('waitlist_submission_accepted', {
+        source: 'newsletter',
+        form: 'newsletter',
+      })
+      setStatus('success')
     } catch {
       setStatus('error')
     }

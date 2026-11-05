@@ -11,6 +11,30 @@ import {
 
 const root = process.cwd();
 
+// MARKETING-P0-IMPLEMENT-002: www and app share one PostHog project and the
+// .lasyncro.com cookie. Surfaces are tagged per event (before_send), never via
+// posthog.register(), whose super-properties persist in the shared cookie.
+describe('MARKETING-P0 marketing/app surface isolation', () => {
+  test('app events are tagged surface=app per event', () => {
+    const main = source('apps/frontend/src/main.tsx');
+
+    expect(main).toMatch(
+      /posthog\.init\([\s\S]*?before_send:[\s\S]*?surface: 'app'/
+    );
+  });
+
+  test('no marketing or app PostHog surface registers persistent super-properties', () => {
+    for (const file of [
+      'apps/marketing/components/PostHogProvider.tsx',
+      'packages/landing-page/index.html',
+      'packages/landing-page/checklist/index.html',
+      'apps/frontend/src/main.tsx',
+    ]) {
+      expect(source(file)).not.toMatch(/posthog\.register(_once)?\(/);
+    }
+  });
+});
+
 function source(relativePath: string): string {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }

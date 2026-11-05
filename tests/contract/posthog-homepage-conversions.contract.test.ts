@@ -22,7 +22,7 @@ describe('AN-PH-01 homepage conversion analytics', () => {
       "captureHomepageEvent('launch_notify_clicked'"
     );
     expect(page).toContain(
-      "captureHomepageEvent('waitlist_signup'"
+      "captureHomepageEvent('waitlist_submission_accepted'"
     );
     expect(page).toContain(
       "captureHomepageEvent('shopify_install_clicked'"
@@ -34,7 +34,7 @@ describe('AN-PH-01 homepage conversion analytics', () => {
       "if (!response.ok) throw new Error('waitlist failed');"
     );
     const capture = page.indexOf(
-      "captureHomepageEvent('waitlist_signup'"
+      "captureHomepageEvent('waitlist_submission_accepted'"
     );
 
     expect(failureCheck).toBeGreaterThan(-1);
@@ -43,7 +43,7 @@ describe('AN-PH-01 homepage conversion analytics', () => {
 
   test('homepage PostHog waitlist event does not contain email', () => {
     const match = page.match(
-      /captureHomepageEvent\('waitlist_signup',\s*\{([\s\S]*?)\}\)/
+      /captureHomepageEvent\('waitlist_submission_accepted',\s*\{([\s\S]*?)\}\)/
     );
 
     expect(match).not.toBeNull();

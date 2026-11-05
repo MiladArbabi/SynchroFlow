@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
+import { captureMarketingEvent } from '@/components/PostHogProvider'
 
 interface ShopifyAvailability {
   available: boolean
@@ -75,7 +76,19 @@ export default function LaunchNotifyForm({ source, compact = false }: LaunchNoti
         }),
       })
 
-      setStatus(response.ok ? 'success' : 'error')
+      if (!response.ok) {
+        setStatus('error')
+        return
+      }
+
+      // Accepted by the API, not necessarily a new signup: duplicates get the
+      // same response by design. Unique signups are counted from the
+      // waitlist_signups table. Never include the email or store here.
+      captureMarketingEvent('waitlist_submission_accepted', {
+        source,
+        form: 'launch_notify',
+      })
+      setStatus('success')
     } catch {
       setStatus('error')
     }
@@ -87,6 +100,9 @@ export default function LaunchNotifyForm({ source, compact = false }: LaunchNoti
         href={availability.installUrl}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() =>
+          captureMarketingEvent('shopify_install_clicked', { location: source })
+        }
         style={{
           display: 'inline-flex',
           alignItems: 'center',
