@@ -31,7 +31,7 @@ export default function TermsPage() {
               Terms of Service
             </h1>
             <p style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: 'var(--ink-3)', marginBottom: '2.5rem' }}>
-              Last updated: May 2026
+              Last updated: November 5, 2026
             </p>
 
             <div style={{ maxWidth: '720px', fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: 'var(--ink-2)' }}>
@@ -40,19 +40,19 @@ export default function TermsPage() {
               <p>By accessing or using LaSyncro (&quot;the Service&quot;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>2. Description of service</h2>
-              <p>LaSyncro provides inventory management, order management, and warehouse management software for Shopify merchants. The Service connects to your Shopify store in read-only mode by default.</p>
+              <p>LaSyncro provides inventory, order and warehouse operations software integrated with Shopify. Depending on enabled workflows and granted permissions, the Service reads Shopify store information and may update inventory and fulfillment records on a merchant&apos;s behalf.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>3. Account registration</h2>
               <p>You must provide accurate information when creating an account. You are responsible for maintaining the security of your credentials. You must be 18 or older to use the Service.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>4. Data access and permissions</h2>
-              <p>LaSyncro requests read-only access to your Shopify store data including products, inventory, orders, and customers. We never make changes to your store without explicit permission. You can revoke access at any time from your Shopify admin.</p>
+              <p>Connecting LaSyncro through Shopify requires authorization for the data and actions used by supported workflows. Requested permissions include reading products, orders, customers, inventory and locations, and writing inventory and fulfillment updates. Merchants can review permissions during installation and revoke app access through Shopify.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>5. Acceptable use</h2>
               <p>You agree not to misuse the Service, attempt to gain unauthorised access, reverse engineer any part of the platform, or use it for any unlawful purpose.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>6. Subscription and billing</h2>
-              <p>LaSyncro offers a 14-day free trial. After the trial, continued use requires a paid subscription. Billing is handled securely through Stripe. You may cancel at any time.</p>
+              <p>LaSyncro publishes a free Starter tier and optional paid subscription plans. The published Growth trial is 14 days for eligible accounts when self-service signup is available. Applicable charges, billing frequency, payment provider and cancellation terms are presented through the relevant checkout channel before a paid subscription begins.</p>
 
               <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>7. Termination</h2>
               <p>We may suspend or terminate your account if you violate these terms. You may terminate your account at any time by contacting support.</p>
