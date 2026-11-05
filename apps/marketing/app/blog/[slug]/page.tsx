@@ -329,7 +329,8 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           />
         }
         header={
-          <BlogArticleHeader
+          <>
+            <BlogArticleHeader
             title={frontmatter.title}
             titleAccent={frontmatter.titleAccent}
             description={frontmatter.description}
