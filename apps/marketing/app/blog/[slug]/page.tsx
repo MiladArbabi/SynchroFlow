@@ -27,6 +27,20 @@ import ProductVisual from '@/components/article/ProductVisual'
 import remarkGfm from 'remark-gfm'
 import styles from '../blog.module.css'
 
+// Keep hreflang and visible language links scoped to genuinely corresponding WMS guides.
+const WMS_LANGUAGE_VERSIONS = [
+  { lang: 'en', slug: 'shopify-warehouse-management', label: 'English' },
+  { lang: 'sv', slug: 'shopify-lagerhantering', label: 'Svenska' },
+  { lang: 'da', slug: 'shopify-lagerstyring', label: 'Dansk' },
+] as const
+
+const WMS_LANGUAGE_ALTERNATES = Object.fromEntries(
+  WMS_LANGUAGE_VERSIONS.map(({ lang, slug }) => [
+    lang,
+    `https://www.lasyncro.com/blog/${slug}`,
+  ])
+)
+
 const components = {
   ...createContentMdxComponents(),
   QuickAnswer: BlogQuickAnswer,
@@ -58,6 +72,7 @@ function BlogArticleHeader({
   lastReviewed,
   tags,
   readTime,
+  contentLanguage,
 }: {
   title: string
   titleAccent?: string
@@ -66,6 +81,7 @@ function BlogArticleHeader({
   lastReviewed: string
   tags: string[]
   readTime: number
+  contentLanguage?: 'en' | 'sv' | 'da'
 }) {
   return (
     <>
@@ -81,7 +97,7 @@ function BlogArticleHeader({
       }}>
         {tags?.[0] ?? 'Blog'}
       </div>
-      <h1 style={{
+      <h1 lang={contentLanguage} style={{
         margin: '0 0 30px',
         color: 'var(--ink)',
         fontFamily: 'var(--sans)',
@@ -97,7 +113,7 @@ function BlogArticleHeader({
           </>
         ) : title}
       </h1>
-      <p style={{
+      <p lang={contentLanguage} style={{
         margin: '0 0 28px',
         color: 'var(--ink-2)',
         fontFamily: 'var(--sans)',
@@ -240,6 +256,7 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const { frontmatter } = getContentBySlug('blog', slug)
+  const language = WMS_LANGUAGE_VERSIONS.find((version) => version.slug === slug)
   const fallbackImage = 'https://www.lasyncro.com/og_image_lightmode.png'
   const articleImagePath = frontmatter.ogImage ?? frontmatter.image
   const articleImage = articleImagePath ? `https://www.lasyncro.com/${articleImagePath}` : fallbackImage
@@ -248,7 +265,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title: `${frontmatter.title} — LaSyncro`,
     description: frontmatter.description,
-    alternates: { canonical: `https://www.lasyncro.com/blog/${slug}` },
+    alternates: {
+      canonical: `https://www.lasyncro.com/blog/${slug}`,
+      ...(language ? { languages: WMS_LANGUAGE_ALTERNATES } : {}),
+    },
     openGraph: {
       title: frontmatter.title,
       description: frontmatter.description,
@@ -275,6 +295,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const { frontmatter, content } = getContentBySlug('blog', slug)
+  const language = WMS_LANGUAGE_VERSIONS.find((version) => version.slug === slug)
   const url = `https://www.lasyncro.com/blog/${slug}`
   const wordCount = content?.split(/\s+/).length ?? 0
   const readTime = Math.max(1, Math.ceil(wordCount / 200))
@@ -316,12 +337,31 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             lastReviewed={frontmatter.lastReviewed}
             tags={frontmatter.tags}
             readTime={readTime}
+            contentLanguage={language?.lang}
           />
+          {language ? (
+            <nav aria-label="Article language" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 18, alignItems: 'center' }}>
+              <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>Read in:</span>
+              {WMS_LANGUAGE_VERSIONS.map((version) => (
+                <a
+                  key={version.lang}
+                  href={`/blog/${version.slug}`}
+                  hrefLang={version.lang}
+                  lang={version.lang}
+                  aria-current={language.lang === version.lang ? 'page' : undefined}
+                  style={{ fontSize: 13, color: 'var(--accent)', textDecoration: language.lang === version.lang ? 'underline' : 'none' }}
+                >
+                  {version.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+        </>
         }
         footer={
           <>
             <LegacyReadableSection>
-              <FAQ items={frontmatter.faq} />
+              <div lang={language?.lang}><FAQ items={frontmatter.faq} /></div>
             </LegacyReadableSection>
             <ArticleCTA variant="full" href={frontmatter.cta_url} label={frontmatter.cta_label} />
             <LaunchNotifyForm source="launch_blog" />
@@ -331,8 +371,12 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           <InternalLinks links={frontmatter.relatedLinks ?? []} variant="blogDark" />
         }
       >
-        <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
-        <ArticleCTA variant="inline" text={frontmatter.cta_text} href={frontmatter.cta_url} label={frontmatter.cta_label} />
+        <div lang={language?.lang}>
+          <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
+        </div>
+        <div lang={language?.lang}>
+          <ArticleCTA variant="inline" text={frontmatter.cta_text} href={frontmatter.cta_url} label={frontmatter.cta_label} />
+        </div>
         <BlogArticleTracker
           slug={slug}
           category={frontmatter.tags?.[0] ?? 'general'}
