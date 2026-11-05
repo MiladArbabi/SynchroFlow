@@ -97,8 +97,9 @@ export default function PricingPage() {
             maxWidth: 760,
           }}
         >
-          Every new shop starts with a 14-day Growth trial. No credit card
-          required. Switch or cancel anytime.
+          These are the published self-service plans. Shopify installation is not
+          publicly available yet; join the launch list for updates. The planned
+          Growth trial is 14 days, with no credit card required.
         </p>
       </header>
 
