@@ -46,6 +46,19 @@ describe('MARKETING-P1: buyer-facing messaging agrees with product contracts', (
     expect(compare).toContain("'/pricing#launch-pricing'")
   })
 
+
+  test('edited blog claims do not promise universal instant updates or automatic fitment', () => {
+    const drift = source('apps/marketing/content/blog/how-to-fix-inventory-drift-shopify.mdx')
+    const autoParts = source('apps/marketing/content/blog/shopify-inventory-management-auto-parts.mdx')
+    const sports = source('apps/marketing/content/blog/shopify-inventory-management-sports-hobby.mdx')
+    const ops = source('apps/marketing/content/blog/shopify-operations-guide.mdx')
+    expect(drift).toContain('External stock updates depend on the integration')
+    expect(drift).not.toContain('Every scan updates Shopify')
+    expect(autoParts).toContain('Fitment requires separate compatibility data')
+    expect(sports).not.toContain('multi-channel overselling structurally prevented')
+    expect(ops).not.toContain('connected in 60 seconds')
+  })
+
   test('published LaSyncro paid starting price matches canonical Core economics', () => {
     const limits = source('packages/commercial-policy/src/limits.ts')
     expect(limits).toContain('core: 9900')

@@ -2,7 +2,7 @@
 title: "Shopify Inventory Drift: 5 Causes and How to Fix It"
 description: "Inventory drift builds silently between your shelf and Shopify. Here are the 5 causes, how to close the gap today, and how to stop it coming back permanently."
 date: "2026-05-08"
-lastReviewed: "2026-06-03"
+lastReviewed: "2026-11-05"
 author: "LaSyncro"
 tags: ["shopify", "inventory", "drift", "warehouse", "operations"]
 primaryKeyword: "how to fix inventory drift in shopify"
@@ -51,7 +51,7 @@ Inventory drift is the slow accumulation of discrepancies between Shopify's stoc
   leftItems="Unrecorded returns|Pick errors not corrected|Receiving discrepancies|App sync conflicts"
   rightLabel="The fix"
   rightHeading="Real-time event ledger"
-  rightItems="Every scan updates Shopify|Immutable movement history|Discrepancy detection|Single authoritative source"
+  rightItems="Warehouse movements are recorded|Movement history can be reviewed|Discrepancies are investigated|Shopify sync at supported workflow points"
   caption="Drift is a structural gap between physical reality and system state. Close the gap permanently with scan-based inventory."
 />
 
@@ -70,7 +70,7 @@ None of these individual events feels significant. Collectively, across a wareho
 <ArticleImage
   src="ba-scan-locations.png"
   alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
-  caption="Every scan closes the gap between physical stock and Shopify's records."
+  caption="Warehouse scans create records to support stock reconciliation and review."
   priority={true}
 />
 
@@ -140,7 +140,7 @@ A drift reconciliation resets your baseline. It does not prevent future drift �
 
 The root cause of all five drift sources above is the same: a gap between when a physical stock movement happens and when Shopify learns about it. Returns, pick errors, damaged stock, receiving discrepancies — all of these create drift because Shopify is updated after the fact, manually, and inconsistently.
 
-The permanent solution is closing that gap entirely. When every physical movement — pick, pack, receive, stow, return, adjustment — triggers an immediate Shopify update via a scan, there is no window for unrecorded movements to accumulate. The gap between physical reality and Shopify never opens.
+A durable improvement is to record physical movements at the appropriate warehouse workflow steps and reconcile discrepancies. External stock updates depend on the integration and successful synchronization, so monitoring and exception handling still matter.
 
 At that point, the problem has moved into [warehouse management](/blog/shopify-warehouse-management): the receiving, stowing, picking, returns, and adjustment work Shopify does not control directly.
 
