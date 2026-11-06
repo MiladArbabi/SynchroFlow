@@ -288,6 +288,29 @@ export async function confirmPickScan(
     );
   }
 
+  /**
+   * SF-STOW-B1: one eligibility gate for allocation-backed and legacy scans.
+   * The scanned unit must belong to this tenant and variant and be stowed at
+   * the Pick location. The row lock is held before any inventory write, so a
+   * refused scan writes nothing and competing scans of one unit serialize.
+   */
+  const scannedUnit = lasyncroUnitId
+    ? await trx('inventory_units')
+        .where({
+          shop_id: shopId,
+          lasyncro_unit_id: lasyncroUnitId,
+          lasyncro_variant_id: lasyncroVariantId,
+          current_location_code: locationCode,
+          status: 'stowed',
+        })
+        .forUpdate()
+        .first('receive_job_line_id')
+    : undefined;
+
+  if (lasyncroUnitId && !scannedUnit) {
+    throw new Error('[PICK_SCAN] INVENTORY_UNIT_MISMATCH');
+  }
+
   // 5. Deterministic inventory movement id + device_event_id.
   // Allocation-backed tasks use allocation identity so split line items
   // produce independent, idempotent pick_removal movements.
@@ -581,35 +604,6 @@ export async function confirmPickScan(
   // then remaining qty-1 stowed siblings from same receive_job_line_id
   // updated in one pass. current_location_code nulled — unit left the shelf.
   if (lasyncroUnitId) {
-    const scannedUnitQuery = trx('inventory_units')
-      .where({
-        shop_id: shopId,
-        lasyncro_unit_id: lasyncroUnitId,
-      });
-
-    if (allocationBackedLine) {
-      scannedUnitQuery.andWhere({
-        lasyncro_variant_id: lasyncroVariantId,
-        current_location_code: locationCode,
-        status: 'stowed',
-      });
-    }
-
-    const scannedUnit = allocationBackedLine
-      ? await scannedUnitQuery
-          .forUpdate()
-          .select('receive_job_line_id')
-          .first()
-      : await scannedUnitQuery
-          .select('receive_job_line_id')
-          .first();
-
-    if (allocationBackedLine && !scannedUnit) {
-      throw new Error(
-        '[PICK_SCAN] INVENTORY_UNIT_MISMATCH'
-      );
-    }
-
     if (scannedUnit?.receive_job_line_id) {
       const transitionedUnits = await trx('inventory_units')
         .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })

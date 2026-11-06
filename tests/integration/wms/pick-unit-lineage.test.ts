@@ -403,3 +403,164 @@ it('C — unrelated same-variant LSU-D has no order attribution and cannot enter
   expect(packD.status >= 400 && packD.status < 500).toBe(true);
   expect(afterPackD).toEqual(afterPackB);
 });
+
+// ── SF-STOW-B1: legacy (unallocated) Pick LSU eligibility ────────────────────
+
+type B1Shop = { shopId: number; userId: number; token: string; variantId: string; productId: string; binA: string; binB: string };
+type B1Line = { batchId: string; lineId: string };
+const B1_UNIT_MISMATCH = 'lasyncro_unit_id does not match the requested pick task.';
+
+async function b1Shop(): Promise<B1Shop> {
+  const tenant = await provisionFt2Shop(crypto.randomUUID());
+  const variant = await withTenant(tenant.shopId, trx => trx('variants')
+    .where({ shop_id: tenant.shopId }).orderBy('sku').first('lasyncro_variant_id', 'lasyncro_product_id'));
+  const binA = `PICK-B1-${tenant.shopId}-A`;
+  const binB = `PICK-B1-${tenant.shopId}-B`;
+  await withTenant(tenant.shopId, async trx => {
+    const warehouse = await trx('warehouses').where({ shop_id: tenant.shopId, is_default: true })
+      .first('warehouse_id', 'root_location_code');
+    await trx('warehouse_locations').insert([binA, binB].map(location_code => ({
+      shop_id: tenant.shopId, warehouse_id: warehouse.warehouse_id, location_code,
+      type: 'bin', parent_location_code: warehouse.root_location_code, active: true, zone_type: 'pick',
+    })));
+  });
+  return { ...tenant, variantId: variant.lasyncro_variant_id, productId: variant.lasyncro_product_id, binA, binB };
+}
+async function b1Unit(s: B1Shop, locationCode: string, variantId = s.variantId) {
+  return seedStowedUnit(s.shopId, { variantId, locationCode, receiveJobId: await seedReceiveJob(s.shopId), sequence: 1 });
+}
+const b1SetUnit = (s: B1Shop, unitId: string, row: Record<string, unknown>) => withTenant(s.shopId, trx =>
+  trx('inventory_units').where({ shop_id: s.shopId, lasyncro_unit_id: unitId }).update(row));
+const b1ReadUnit = (s: B1Shop, unitId: string) => withTenant(s.shopId, trx =>
+  trx('inventory_units').where({ shop_id: s.shopId, lasyncro_unit_id: unitId }).first('lasyncro_variant_id', 'status', 'current_location_code'));
+/** A picking batch holding one unallocated line: the legacy /pick/scan path. */
+async function b1Line(s: B1Shop): Promise<B1Line> {
+  const { orderId, lineItemIds } = await seedOrder(s.shopId, [{ variantId: s.variantId, productId: s.productId, quantity: 1 }]);
+  const batchId = crypto.randomUUID();
+  await withTenant(s.shopId, async trx => {
+    await trx('pick_batches').insert({
+      pick_batch_id: batchId, shop_id: s.shopId, status: 'picking', release_trigger: 'manual', max_line_items: 10,
+      total_line_items: 1, total_units: 1, released_at: new Date(), picked_by: s.userId,
+    });
+    await trx('pick_batch_orders').insert({ pick_batch_id: batchId, lasyncro_order_id: orderId, shop_id: s.shopId });
+    await trx('order_warehouse_status').insert({ lasyncro_order_id: orderId, pick_batch_id: batchId, status: 'picking' });
+    await trx('order_line_item_warehouse_status').insert({
+      lasyncro_line_item_id: lineItemIds[0], lasyncro_order_id: orderId, shop_id: s.shopId, status: 'awaiting_pick',
+    });
+  });
+  return { batchId, lineId: lineItemIds[0] };
+}
+const b1Scan = (s: B1Shop, l: B1Line, unitId: string | undefined, locationCode: string) =>
+  request(app).post('/api/v1/wms/pick/scan').set(auth(s.token)).send({
+    pick_batch_id: l.batchId, lasyncro_line_item_id: l.lineId, lasyncro_variant_id: s.variantId,
+    location_code: locationCode, quantity_confirmed: 1, scan_source: 'manual',
+    ...(unitId ? { lasyncro_unit_id: unitId } : {}),
+  });
+const b1Stock = (s: B1Shop) => withTenant(s.shopId, async trx => ({
+  truth: await trx('inventory_truth').where({ shop_id: s.shopId, lasyncro_variant_id: s.variantId }).orderBy('location_code')
+    .select('location_code', 'on_hand_quantity', 'available_quantity', 'reserved_quantity', 'committed_quantity'),
+  ledger: await trx('inventory_movements').where({ shop_id: s.shopId, lasyncro_variant_id: s.variantId })
+    .orderBy('lasyncro_inventory_movement_id').select('lasyncro_inventory_movement_id', 'movement_type', 'location_code', 'quantity_delta'),
+}));
+/** Everything a legacy Pick could persist: a refused scan must leave all of it identical. */
+const b1State = async (s: B1Shop, l: B1Line, unitId: string) => ({
+  stock: await b1Stock(s),
+  unit: await b1ReadUnit(s, unitId),
+  ...(await withTenant(s.shopId, async trx => ({
+    scans: await trx('pick_scan_log').where({ shop_id: s.shopId, lasyncro_line_item_id: l.lineId }).select('scan_id'),
+    lineage: await trx('pick_scan_unit_lineage').where({ shop_id: s.shopId, lasyncro_unit_id: unitId }).orderBy('scan_id').select('scan_id'),
+    batch: await trx('pick_batches').where({ shop_id: s.shopId, pick_batch_id: l.batchId }).first('units_picked', 'status'),
+    line: await trx('order_line_item_warehouse_status').where({ lasyncro_line_item_id: l.lineId }).first('status'),
+    unitStatus: await trx('inventory_unit_status').where({ shop_id: s.shopId, lasyncro_variant_id: s.variantId }).orderBy('location_code').select('location_code', 'status'),
+    audit: await trx('operator_audit_log').where({ shop_id: s.shopId, entity_id: l.batchId, action_type: 'pick_scan' }).count({ n: '*' }).first(),
+  }))),
+});
+async function b1ExpectRefused(s: B1Shop, l: B1Line, unitId: string, locationCode: string) {
+  const before = await b1State(s, l, unitId);
+  const r = await b1Scan(s, l, unitId, locationCode);
+  expect({ status: r.status, error: r.body.error }).toEqual({ status: 400, error: B1_UNIT_MISMATCH });
+  expect(await b1State(s, l, unitId)).toEqual(before);
+}
+
+describe('SF-STOW-B1: legacy Pick unit eligibility', () => {
+  it('refuses a unit that is already picked, with zero writes', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binA);
+    await b1SetUnit(s, u, { status: 'picked', current_location_code: null });
+    await b1ExpectRefused(s, await b1Line(s), u, s.binA);
+  });
+
+  it('refuses a unit that has shipped, with zero writes', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binA);
+    await b1SetUnit(s, u, { status: 'shipped', current_location_code: null });
+    await b1ExpectRefused(s, await b1Line(s), u, s.binA);
+  });
+
+  it('refuses a stowed unit on a different shelf, with zero writes', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binB);
+    await b1ExpectRefused(s, await b1Line(s), u, s.binA);
+  });
+
+  it('refuses a stowed unit of another variant, with zero writes', async () => {
+    const s = await b1Shop();
+    const other = await withTenant(s.shopId, trx => trx('variants').where({ shop_id: s.shopId })
+      .whereNot({ lasyncro_variant_id: s.variantId }).first('lasyncro_variant_id'));
+    expect(other).toBeTruthy();
+    const u = await b1Unit(s, s.binA, other.lasyncro_variant_id);
+    await b1ExpectRefused(s, await b1Line(s), u, s.binA);
+  });
+
+  it('refuses another tenant\'s unit and leaves that tenant identical', async () => {
+    const t1 = await b1Shop();
+    const t2 = await b1Shop();
+    const foreign = await b1Unit(t2, t2.binA);
+    const before = await b1ReadUnit(t2, foreign);
+    const l = await b1Line(t1);
+    const stock = await b1Stock(t1);
+    const r = await b1Scan(t1, l, foreign, t1.binA);
+    expect({ status: r.status, error: r.body.error }).toEqual({ status: 400, error: B1_UNIT_MISMATCH });
+    expect(await b1ReadUnit(t2, foreign)).toEqual(before);
+    expect(await b1Stock(t1)).toEqual(stock);
+  });
+
+  it('refuses an unknown LSU, with zero writes', async () => {
+    const s = await b1Shop();
+    const l = await b1Line(s);
+    const stock = await b1Stock(s);
+    const r = await b1Scan(s, l, `LSU-${crypto.randomUUID().slice(0, 8)}`, s.binA);
+    expect(r.status).toBe(400);
+    expect(await b1Stock(s)).toEqual(stock);
+  });
+
+  it('two batches racing for one unit: exactly one wins', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binA);
+    const a = await b1Line(s);
+    const b = await b1Line(s);
+    const results = await Promise.all([b1Scan(s, a, u, s.binA), b1Scan(s, b, u, s.binA)]);
+    expect(results.map(r => r.status).sort()).toEqual([201, 400]);
+    const rows = await withTenant(s.shopId, trx => trx('pick_scan_unit_lineage').where({ shop_id: s.shopId, lasyncro_unit_id: u }).select('scan_id'));
+    expect(rows).toHaveLength(1);
+    expect((await b1Stock(s)).ledger.filter((m: any) => m.movement_type === 'pick_removal')).toHaveLength(1);
+  });
+
+  it('still picks a stowed unit on this shelf and records its lineage', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binA);
+    const r = await b1Scan(s, await b1Line(s), u, s.binA);
+    expect({ status: r.status, error: r.body.error }).toEqual({ status: 201, error: undefined });
+    expect(await b1ReadUnit(s, u)).toMatchObject({ status: 'picked', current_location_code: null });
+    const rows = await withTenant(s.shopId, trx => trx('pick_scan_unit_lineage').where({ shop_id: s.shopId, lasyncro_unit_id: u }).select('scan_id'));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('still accepts a legacy Pick with no LSU', async () => {
+    const s = await b1Shop();
+    const u = await b1Unit(s, s.binA);
+    const r = await b1Scan(s, await b1Line(s), undefined, s.binA);
+    expect({ status: r.status, error: r.body.error }).toEqual({ status: 201, error: undefined });
+    expect((await b1ReadUnit(s, u))?.status).toBe('stowed');
+  });
+});
