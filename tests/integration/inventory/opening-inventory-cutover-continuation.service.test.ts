@@ -78,7 +78,7 @@ const VERIFICATIONS = 'opening_inventory_cutover_verifications';
 const VERIFICATION_LINES = 'opening_inventory_cutover_verification_lines';
 
 // Initial E02 owner: expires in real DB time before recovery reclaims.
-const INITIAL_LEASE_MS = 3000;
+const INITIAL_LEASE_MS = 15000;
 
 // E03 recovery owner: long enough to remain live across readback +
 // revalidation and the immediate busy probe, short enough to expire for real.
