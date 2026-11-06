@@ -18,9 +18,9 @@ Stable entry point for GTM agents and operators. Read this file first, then read
 
 | Sprint | Charter | Mode | Research authorized | Outreach authorized |
 |---|---|---|---|---|
-| GTM-01-S02 | `docs/stratgies/gtm_sprints/GTM-01-S02/charter.md` | RESEARCH_ONLY | LEAD-APPROVED; G0-A/B execution evidence pending charter preflight | FALSE (G5 BLOCKED) |
+| GTM-03-S01 | `docs/stratgies/gtm_sprints/GTM-03-S01/charter.md` | RESEARCH_ONLY | GTM-03-S01-LEAD-001 approved; G0-A/B cold-start verification required | FALSE (G5 BLOCKED) |
 
-**Index status:** GTM-CHG-007 workflow v1.5 is approved and ratified by the GTM lead (2026-10-28), effective for S02 after charter/index pinning. S02 nationwide merchant research was lead-approved under GTM-01-S02-G0B-LEAD-001, but the versioned charter has not documented an independently verified G0-A/G0-B PASS; treat further gated execution as EVIDENCE_HOLD until verified, rather than inferring PASS from a lead decision or this index. Previously authorized bounded merchant-source methods remain subject to domain terms and quotas. The lead approved bounded public hero/business-email discovery (GTM-01-S02-CONTACT-METHOD-001), and GTM-CHG-007 clarifies that person-specific published professional emails should be recorded without automatic substitution by generic company addresses. Under already approved public-source methods, finding and documenting a direct work email is a research task; G5 legal-contact suitability and individual sending permission are assessed later, before dispatch. Existing source terms, G0 evidence requirements and G5 remain binding. G5 BLOCKED. S01 remains unchanged.
+**Index status:** GTM-CHG-008 strategy v1.1 and workflow v1.6 are ratified 2026-11-06 for GTM-03-S01 after charter/index pinning. GTM-01-S02 remains historical (unchanged). Its previously approved GTM-CHG-007 workflow v1.5 was effective for S02 after charter/index pinning; S02 nationwide merchant research was lead-approved under GTM-01-S02-G0B-LEAD-001, but the versioned charter has not documented an independently verified G0-A/G0-B PASS; treat further gated execution as EVIDENCE_HOLD until verified, rather than inferring PASS from a lead decision or this index. Previously authorized bounded merchant-source methods remain subject to domain terms and quotas. The lead approved bounded public hero/business-email discovery (GTM-01-S02-CONTACT-METHOD-001), and GTM-CHG-007 clarifies that person-specific published professional emails should be recorded without automatic substitution by generic company addresses. Under already approved public-source methods, finding and documenting a direct work email is a research task; G5 legal-contact suitability and individual sending permission are assessed later, before dispatch. Existing source terms, G0 evidence requirements and G5 remain binding. G5 BLOCKED. S01 remains unchanged.
 
 **Pinning rule:** this index records path, version and file SHA-256 only. Every sprint charter must additionally pin the actual Git commit SHA from which these files are read (workflow §3, §10). A charter without a commit pin fails G0-A.
 
@@ -28,12 +28,15 @@ Stable entry point for GTM agents and operators. Read this file first, then read
 
 | Document | Path | Version | Status | SHA-256 |
 |---|---|---|---|---|
-| GTM strategy | `docs/stratgies/GTM_strategy_v1.0.md` | 1.0 | APPROVED AND RATIFIED (2026-10-26) | `2f2b4e98ff0f647479473c65cd6566f6f97e88a562e9d0ace7d3a4b507277bd7` |
-| Sprint workflow | `docs/stratgies/GTM_sprint_workflow_v1.5.md` | 1.5 | APPROVED AND RATIFIED; GTM-CHG-007 (S02, subject to charter pinning) | `02985780eef0f4e74ae19f5f133abeacfef22e1f4a9cc99e3e0ed0d1b37dd389` |
+| GTM strategy | `docs/stratgies/GTM_strategy_v1.1.md` | 1.1 | APPROVED AND RATIFIED GTM-CHG-008 (2026-11-06) | `da0fac9e7e34971f09ea798ebfabb8e181c0ec5bed838e7fbfd4b241afebb30e` |
+| Sprint workflow | `docs/stratgies/GTM_sprint_workflow_v1.6.md` | 1.6 | APPROVED AND RATIFIED GTM-CHG-008 (2026-11-06) | `af20f7c784256eb48b0410090a1b3df0849c12b59b90b904dbe27cef18ed5aab` |
 
 Approval of the workflow does not itself pass G0-A or G0-B. Follow the current charter's separate gate decisions and `docs/stratgies/gtm_sprints/blocker_register.md`. BLK-0004 remains OPEN for G5; it does not automatically block company-level research, but independently verified source and sprint gates are still required.
 
 ## Historical and proposed documents (not authoritative)
+
+| GTM strategy | `docs/stratgies/GTM_strategy_v1.0.md` | 1.0 | Prior approved strategy, unchanged |
+| Sprint workflow | `docs/stratgies/GTM_sprint_workflow_v1.5.md` | 1.5 | Prior approved version, unchanged |
 
 | Document | Path | Version | Status |
 |---|---|---|---|
@@ -71,3 +74,5 @@ Updating this index is a C2 change (workflow §13.5): it requires a GTM lead dec
 | 2026-10-28 | GTM-CHG-006 + GTM-01-S02-CONTACT-METHOD-001 | Ratify hero-first and verified-business-email-first preparation; evidence-based SV/EN choice; publish workflow v1.4 and pin S02 to it. Approve bounded *method intent* for manually identifying a hero through official team/company pages, clearly public professional materials and published business email routes, subject to separate source terms, privacy and execution review. Maintain G5/G6/G7 and per-send authorization. S01 unchanged. | LEAD RATIFIED; SOURCE/COMPLIANCE EXECUTION HOLD |
 
 | 2026-10-28 | GTM-CHG-007 | Replace unnecessary per-email contact-research hurdles with a simple hero-first public professional email lookup. Retain person-specific published addresses and their publication context. Keep source permissions and mandatory G5/QA/per-send authorization; no blanket right to email any published address. | LEAD DIRECTED; v1.5 PUBLISHED WHEN MERGED |
+
+| 2026-11-06 | GTM-CHG-008 / GTM-03-S01-LEAD-001 | Ratify standing PUBLIC_COMPANY_FACTS method-category approval for public factual research; launch GTM-03-S01 bounded research-only pilot; G5–G7 and GTM-01 histories unchanged. | LEAD RATIFIED; publication and cold-start verification required |
