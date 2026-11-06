@@ -25,3 +25,10 @@ Read repo docs/stratgies/gtm_sprints/blocker_register.md. BLK-0001–0003/0005�
 G0-A: PENDING publication and fresh index/charter/strategy/workflow pin and workspace/reviewer/source-category verification.
 G0-B: lead authorized exact bounded RUN_ID via GTM-03-S01-LEAD-001, conditional on G0-A verification; execution certification pending.
 G5/G6/G7: NOT AUTHORIZED for contact.
+
+## 2026-11-06 ICP segmentation ratification addendum — GTM-CHG-009
+
+This is a *reclassification of already discovered merchants*, not a new nomination sprint, new source permission, outbound authorization, or retroactive claim that the original research used the new rubric. Original 25-nomination cap exhausted. Original public-fact run remains historically pinned to strategy v1.1 and workflow v1.6 as above.
+Current reclassification and subsequent GTM qualification baseline: index docs/stratgies/GTM_INDEX.md at commit 9ee724f3e5b1ea9ce9e57a4470b2076e15395d3e, SHA-256 08995ed3688c2ab04ca68e51720405f8fab67058abef9831aad11aebc8610baa; strategy docs/stratgies/GTM_strategy_v1.2.md SHA-256 7e134f0291887b70a04ec8341a949b002a20ce1880c733012a5932b703cb0c6c; workflow docs/stratgies/GTM_sprint_workflow_v1.7.md SHA-256 e47e7df11db3be9081a48bcbcedce21ad9d64d7e3ca79dc5b50e031e00368804.
+Lead decision: GTM-ICP-GROWTH-001 (GTM-CHG-009), approved in conversation 2026-11-06. Scope: update qualification of existing GTM-01/02/03 merchants and reopen prior SMALL_ONLY exclusions when current Shopify/owned-fulfillment and growth/complexity evidence warrants review.
+No new merchants, no messages, no CRM writes, no G5 contact readiness. Evidence and named merchants stay in restricted Drive. G0-A/G0-B historical independent review not backfilled.
