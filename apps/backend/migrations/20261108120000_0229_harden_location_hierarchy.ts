@@ -2,11 +2,11 @@ import type { Knex } from 'knex';
 
 /** Forward-only. Never repair or re-key legacy inventory/location records.
  * Run as the migration role: row_security=off fails closed without BYPASSRLS.
+ * The protected migration runner owns the transaction.
  * The table lock freezes all tenants while validating and installing guards.
  */
 export async function up(knex: Knex): Promise<void> {
-  await knex.transaction(async (trx) => {
-    await trx.raw(`
+  await knex.raw(`
       SET LOCAL row_security = off;
       LOCK TABLE public.warehouses, public.warehouse_locations IN ACCESS EXCLUSIVE MODE;
       DO $$ BEGIN
@@ -107,8 +107,7 @@ export async function up(knex: Knex): Promise<void> {
       CREATE TRIGGER warehouse_locations_integrity_1305
         BEFORE INSERT OR UPDATE OF shop_id, warehouse_id, location_code, parent_location_code, barcode
         ON public.warehouse_locations FOR EACH ROW EXECUTE FUNCTION public.guard_location_integrity_1305();
-    `);
-  });
+  `);
 }
 
 export async function down(): Promise<void> {

@@ -154,10 +154,11 @@ async function invalidData(kind: 'cycle' | 'parent' | 'owner' | 'identity', expe
         .update({ parent_location_code: other.root });
     }
     const before = await snapshot(trx);
-    await expect(migration.up(trx)).rejects.toThrow(expected);
+    // The test owns each savepoint; migration.up uses only its supplied transaction.
+    await expect(trx.savepoint(sp => migration.up(sp))).rejects.toThrow(expected);
     expect(await snapshot(trx)).toEqual(before);
     // Retrying an unchanged invalid dataset must fail identically and preserve it.
-    await expect(migration.up(trx)).rejects.toThrow(expected);
+    await expect(trx.savepoint(sp => migration.up(sp))).rejects.toThrow(expected);
     expect(await snapshot(trx)).toEqual(before);
     const guard = await trx.raw(`SELECT to_regprocedure('public.assert_location_integrity_1305(integer,uuid,text,text,text)') AS fn`);
     expect(guard.rows[0].fn).toBeNull(); // failed migration rolled back its DDL
