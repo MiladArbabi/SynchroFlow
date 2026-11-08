@@ -1,4 +1,5 @@
 import type { Knex } from 'knex';
+import { resolveLocationIdentity } from './locationIdentity.service.js';
 
 import { assertReceiveMutable, lockReceiveJob, receiveError } from './receiveWorkflowLock.service.js';
 import { pickableLocationCondition } from '../inventory/pickableLocation.js';
@@ -55,15 +56,15 @@ export async function resolveProblemBin(
   const job = await trx('receive_jobs').where({ shop_id: shopId, receive_job_id: receiveJobId }).first('receive_job_id');
   if (!job) throw receiveError('Receive job not found', 404);
 
-  const matches = await activeProblemBins(trx, shopId)
-    .where((qb) => qb.where('wl.barcode', scannedValue).orWhere('wl.location_code', scannedValue))
-    .select('wl.location_code', 'wl.barcode', trx.raw('(?) AS pickable', [pickableLocationCondition(trx)]));
-  const bins = matches.filter((row: any) => !row.pickable);
-  // A barcode naming two different bins is ambiguous: never guess.
-  if (bins.length !== 1) {
+  // Detect ambiguity across ALL identities before applying custody eligibility.
+  const identity = await resolveLocationIdentity(trx, shopId, scannedValue);
+  const bin = identity ? await activeProblemBins(trx, shopId)
+    .where('wl.location_code', identity.location_code)
+    .first('wl.location_code', 'wl.barcode', trx.raw('(?) AS pickable', [pickableLocationCondition(trx)])) : null;
+  if (!bin || bin.pickable) {
     throw custodyError('RECEIVE_PROBLEM_BIN_INVALID', `${scannedValue} is not an active non-pickable problem bin`);
   }
-  return { location_code: bins[0].location_code, barcode: bins[0].barcode ?? null };
+  return { location_code: bin.location_code, barcode: bin.barcode ?? null };
 }
 
 export interface PlaceHeldUnitInput {

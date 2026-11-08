@@ -1,6 +1,7 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { lockLocationHierarchy, validateLocationHierarchy, locationIntegrityError } from '../../services/inventory/locationHierarchy.service.js';
 import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
 import { 
   generateWarehouseLabelPdf, 
@@ -723,6 +724,7 @@ export async function httpCreateZone(req: Request, res: Response) {
   try {
     const warehouseId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await lockLocationHierarchy(trx, shopId);
 
       let resolvedWarehouseId: string;
 
@@ -762,6 +764,13 @@ export async function httpCreateZone(req: Request, res: Response) {
         resolvedWarehouseId = defaultWarehouse.warehouse_id;
       }
 
+      await validateLocationHierarchy(trx, {
+        shopId, warehouseId: resolvedWarehouseId,
+        locationCode: location_code.trim().toUpperCase(),
+        parentCode: parent_location_code?.trim().toUpperCase() ?? null,
+        barcode: barcode?.trim() ?? null,
+      });
+
       await trx('warehouse_locations').insert({
         shop_id: shopId,
         warehouse_id: resolvedWarehouseId,
@@ -798,6 +807,8 @@ export async function httpCreateZone(req: Request, res: Response) {
     });
     return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
   } catch (err: any) {
+    const integrityError = locationIntegrityError(err);
+    if (integrityError) return res.status(409).json({ error: integrityError });
     if (err.code === '23505') {
       return res.status(409).json({ error: `Location code already exists: ${location_code}` });
     }
@@ -925,6 +936,7 @@ export async function httpDuplicateZones(req: Request, res: Response) {
   try {
     const created = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await lockLocationHierarchy(trx, shopId);
 
       const sources = await trx('warehouse_locations')
         .where({ shop_id: shopId })
@@ -954,7 +966,7 @@ export async function httpDuplicateZones(req: Request, res: Response) {
         throw bulkActionError('Warehouse root cannot be duplicated', 400);
       }
 
-      const sourceByCode = new Map(
+      const sourceByCode = new Map<string, (typeof sources)[number]>(
         sources.map((row) => [row.location_code, row] as const),
       );
 
@@ -985,6 +997,11 @@ export async function httpDuplicateZones(req: Request, res: Response) {
         }
 
         const locationCode = nextLocationCode(prefix, usedCodes);
+
+        await validateLocationHierarchy(trx, {
+          shopId, warehouseId: source.warehouse_id, locationCode,
+          parentCode: source.parent_location_code, barcode: null,
+        });
 
         await trx('warehouse_locations').insert({
           shop_id: shopId,
@@ -1026,6 +1043,8 @@ export async function httpDuplicateZones(req: Request, res: Response) {
       created,
     });
   } catch (err: unknown) {
+    const integrityError = locationIntegrityError(err);
+    if (integrityError) return res.status(409).json({ error: integrityError });
     const statusCode =
       err instanceof Error
         ? (err as BulkActionError).statusCode
@@ -1426,6 +1445,7 @@ export async function httpUpdateZone(req: Request, res: Response) {
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const locationCode = req.params.locationCode;
+  if (typeof locationCode !== 'string') return res.status(400).json({ error: 'locationCode is required' });
   const { 
     active, 
     barcode, 
@@ -1454,14 +1474,24 @@ export async function httpUpdateZone(req: Request, res: Response) {
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await lockLocationHierarchy(trx, shopId);
 
     const current = await trx('warehouse_locations')
       .where({ shop_id: shopId, location_code: locationCode })
-      .select('location_code', 'zone_type', 'type', 'warehouse_id', 'position_x', 'position_y', 'width', 'depth')
+      .select('location_code', 'zone_type', 'type', 'warehouse_id', 'parent_location_code', 'barcode', 'position_x', 'position_y', 'width', 'depth')
       .forUpdate()
       .first();
 
     if (!current) throw new Error('Zone not found');
+    if (parent_location_code !== undefined || barcode !== undefined) {
+      await validateLocationHierarchy(trx, {
+        shopId, warehouseId: current.warehouse_id, locationCode,
+        parentCode: parent_location_code !== undefined
+          ? parent_location_code?.trim() ?? null : current.parent_location_code,
+        barcode: barcode !== undefined ? barcode?.trim() ?? null : current.barcode,
+      });
+    }
+
 
     // GH-1176: the warehouse root is the floor boundary. Resizing it must not
     // exclude any positioned component; components are never moved to fit.
@@ -1519,6 +1549,8 @@ export async function httpUpdateZone(req: Request, res: Response) {
 
     return res.json({ success: true });
   } catch (err: any) {
+    const integrityError = locationIntegrityError(err);
+    if (integrityError) return res.status(409).json({ error: integrityError });
     if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
     if (err.message === 'dock_face requires zone_type ship or receive') {
       return res.status(400).json({ error: err.message });
