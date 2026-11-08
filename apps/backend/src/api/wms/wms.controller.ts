@@ -1,3 +1,4 @@
+import { resolveLocationIdentity, LocationIdentityAmbiguousError } from '../../services/wms/locationIdentity.service.js';
 import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/wms/wms.controller.ts
 import { Request, Response } from 'express';
@@ -4411,14 +4412,7 @@ export const httpResolveLocation = async (req: Request, res: Response) => {
   try {
     const location = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return trx('warehouse_locations')
-        .where({ shop_id: shopId })
-        .where(function () {
-          this.where('barcode', scanned_value)
-            .orWhere('location_code', scanned_value);
-        })
-        .select('location_code', 'barcode', 'type')
-        .first();
+      return resolveLocationIdentity(trx, shopId, scanned_value);
     });
 
     if (!location) {
@@ -4427,6 +4421,7 @@ export const httpResolveLocation = async (req: Request, res: Response) => {
 
     return res.json({ location_code: location.location_code, barcode: location.barcode, type: location.type });
   } catch (error) {
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ error: error.errorCode });
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[LOCATION_RESOLVE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Failed to resolve location: ${message}` });
@@ -4728,12 +4723,7 @@ export const httpScanResolve = async (req: Request, res: Response) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       // ── 1. Try location barcode ──────────────────────────────────────────
-      const location = await trx('warehouse_locations')
-        .where({ shop_id: shopId })
-        .where(function () {
-          this.where('barcode', scanned_value).orWhere('location_code', scanned_value);
-        })
-        .first();
+      const location = await resolveLocationIdentity(trx, shopId, scanned_value);
 
       if (location) {
         const inventory = await trx('inventory_truth as it')
@@ -4953,6 +4943,7 @@ export const httpScanResolve = async (req: Request, res: Response) => {
 
     return res.json(result);
   } catch (error) {
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ error: error.errorCode });
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[SCAN_RESOLVE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Scan resolve failed: ${message}` });
