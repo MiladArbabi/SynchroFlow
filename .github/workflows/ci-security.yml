@@ -81,6 +81,7 @@ on:
       - 'tests/integration/floor-planning/location-hierarchy-1305.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-migration-1305.test.ts'
       - 'tests/integration/wms/location-identity-1305.test.ts'
+      - 'tests/integration/wms/stow-task-barcode-projection.test.ts'
   push:
     branches: [main]
     paths:
@@ -148,6 +149,7 @@ on:
       - 'tests/integration/floor-planning/location-hierarchy-1305.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-migration-1305.test.ts'
       - 'tests/integration/wms/location-identity-1305.test.ts'
+      - 'tests/integration/wms/stow-task-barcode-projection.test.ts'
 
 jobs:
   rls-security:
@@ -686,6 +688,17 @@ jobs:
           PGMIGRATION_PASSWORD: sf_pass
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns '(floor-planning/location-hierarchy(-migration)?-1305|wms/location-identity-1305)\.test\.ts$'
+
+      # SF-STOW-UX-REFINEMENT-01: Stow task barcode projection contract.
+      - name: Run Stow barcode projection contract
+        timeout-minutes: 20
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns 'wms/stow-task-barcode-projection\.test\.ts$'
 
       - &restore-network
         name: Restore runner network
