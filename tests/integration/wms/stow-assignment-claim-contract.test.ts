@@ -1061,7 +1061,10 @@ describe('STOW-ACTIVE-LOCATION-01 — mutable sticky destination', () => {
       fixture.operatorAId
     );
     expect(response.statusCode).toBe(404);
-    expect(response.body).toEqual({ error: 'Location not found' });
+    expect(response.body).toEqual({
+      "code": "STOW_DESTINATION_NOT_FOUND",
+      "error": "STOW_DESTINATION_NOT_FOUND"
+    });
 
     const after = await taskRow(fixture.shopId, work.taskId);
     expect(after).toEqual(before);

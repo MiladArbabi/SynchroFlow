@@ -1,3 +1,4 @@
+import { assertStowDestinationEligible, lockStowDestinationHierarchy } from './stowDestinationEligibility.service.js';
 // apps/backend/src/services/wms/stow.service.ts
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
@@ -290,6 +291,9 @@ export async function confirmStow(
   }> {
   const { stowTaskId, shopId, claimedBy, quantityPlaced, lasyncroUnitId } = input;
 
+  // Hierarchy → Stow task → destination → existing unit/truth locks.
+  await lockStowDestinationHierarchy(trx, shopId);
+
   // 1. Validate task
   //
   // STOW-ACTIVE-LOCATION-01 — stow_tasks.location_code is now the CURRENT /
@@ -322,6 +326,10 @@ export async function confirmStow(
   if (task.status !== 'in_progress') throw new Error(`[STOW_CONFIRM] Task not in progress: ${task.status}`);
   if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
+
+  // Authoritative for stale/preassigned/sticky destinations and every trigger,
+  // including Receive recovery before its early return.
+  await assertStowDestinationEligible(trx, shopId, task.location_code);
 
   // S4-5 I3 — a held Receive unit leaves custody only through its own
   // receive_recovery Stow (Stow row locked above, then unit → task inside).

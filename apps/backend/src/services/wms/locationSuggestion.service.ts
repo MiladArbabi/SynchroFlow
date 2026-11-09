@@ -77,6 +77,9 @@ export async function suggestStowLocation(
             .andOn('wl.shop_id', trx.raw('?', [shopId]))
             .andOnVal('wl.active', true);
       })
+      .whereNotExists(trx('warehouse_locations as child').select(1)
+        .where('child.shop_id', trx.ref('wl.shop_id'))
+        .where('child.parent_location_code', trx.ref('wl.location_code')))
       .where('ru_target.lasyncro_variant_id', lasyncroVariantId)
       .where('o.order_created_at', '>=', windowStart)
       .groupBy('ius.location_code')
@@ -109,6 +112,9 @@ export async function suggestStowLocation(
       'ius.status': 'stowed',
       'wl.active': true,
     })
+    .whereNotExists(trx('warehouse_locations as child').select(1)
+      .where('child.shop_id', trx.ref('wl.shop_id'))
+      .where('child.parent_location_code', trx.ref('wl.location_code')))
     .orderBy('ius.status_updated_at', 'desc')
     .select('ius.location_code')
     .first();

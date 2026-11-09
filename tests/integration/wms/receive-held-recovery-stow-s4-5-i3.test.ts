@@ -482,17 +482,19 @@ describe('S4-5 I3 — destination, LSU and duplicate-credit refusals', () => {
     await withTenant(shopA.shopId, (trx) =>
       trx('shop_wms_settings').where({ shop_id: shopA.shopId }).update({ problem_bin_location: configured }));
     try {
+      const inactive = await shopA.bin('storage', false);
       const refused = [
         shopA.problemBin,
         await shopA.bin('problem'),
         configured,
-        await shopA.bin('storage', false),
+        inactive,
         await shopA.bin('quarantine'),
         await shopA.bin('storage', true, 'shelf'),
       ];
       for (const destination of refused) {
         const res = await setLocation(shopA.token, stowId, destination);
-        expect([destination, res.status, res.body.code]).toEqual([destination, 409, 'RECEIVE_RECOVERY_DESTINATION_INVALID']);
+        expect([destination, res.status, res.body.code]).toEqual([destination, 409,
+          destination === inactive ? 'STOW_DESTINATION_INACTIVE' : 'RECEIVE_RECOVERY_DESTINATION_INVALID']);
       }
       expect(stowOf(await snapshot(j), stowId).location_code).toBeNull();
     } finally {
@@ -513,7 +515,7 @@ describe('S4-5 I3 — destination, LSU and duplicate-credit refusals', () => {
       trx('warehouse_locations').where({ shop_id: shopA.shopId, location_code: destination }).update({ active: false }));
     const before = await snapshot(j);
     const res = await confirm(shopA.token, stowId, { lasyncro_unit_id: j.heldIds[0] });
-    expect([res.status, res.body.code]).toEqual([409, 'RECEIVE_RECOVERY_DESTINATION_INVALID']);
+    expect([res.status, res.body.code]).toEqual([409, 'STOW_DESTINATION_INACTIVE']);
     expect(await snapshot(j)).toEqual(before);
   });
 
@@ -773,5 +775,27 @@ describe('SAFETY-015 — confirmation after approval (D1) and destination sync c
     }
     expect((await confirm(shopB.token, stowId, { lasyncro_unit_id: j.heldIds[0] })).status).toBe(200);
     expect(recoveryCredits(await snapshot(j))).toHaveLength(1);
+  });
+});
+
+
+describe('GH1305 S3A — structural Receive recovery destination', () => {
+  it.each([true, false])('refuses newly configured parent (child active=%s) at assignment and confirmation without custody or inventory mutation', async active => {
+    const j = await heldJob(shopA, 1);
+    const destination = await shopA.bin('storage');
+    const stowId = await claimedRecovery(j, 0, destination);
+    await withTenant(shopA.shopId, async trx => {
+      const parent = await trx('warehouse_locations').where({ shop_id: shopA.shopId, location_code: destination }).first();
+      await trx('warehouse_locations').insert({ shop_id: shopA.shopId, warehouse_id: parent.warehouse_id,
+        location_code: `CHILD-${crypto.randomUUID()}`, parent_location_code: destination,
+        type: 'bin', zone_type: 'storage', active });
+    });
+    const before = await snapshot(j);
+    const assignment = await setLocation(shopA.token, stowId, destination);
+    expect([assignment.status, assignment.body.code]).toEqual([409, 'STOW_DESTINATION_STRUCTURAL']);
+    const confirmation = await confirm(shopA.token, stowId, { lasyncro_unit_id: j.heldIds[0] });
+    expect([confirmation.status, confirmation.body.code]).toEqual([409, 'STOW_DESTINATION_STRUCTURAL']);
+    expect(await snapshot(j)).toEqual(before);
+    expect(mockSyncStowedQuantityToShopify).not.toHaveBeenCalled();
   });
 });
