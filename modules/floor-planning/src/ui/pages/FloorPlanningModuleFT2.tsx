@@ -95,7 +95,9 @@ export type FloorPlanningPageProps = {
   binStats?: BinStats;
   onBinSelect?: (locationCode: string) => void;
   variantFocusBins?: string[];
-  onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
+  /** Configuration stays disabled until structural-parent Stow protection is certified. */
+  allowChildPositionConfiguration?: boolean;
+  onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string; zone_type?: string; barcode?: string }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
   onDeleteZones?: (locationCodes: string[]) => Promise<{
     success: true;
@@ -485,6 +487,7 @@ function FloorPlanningModuleFT2Inner({
   binStats,
   onBinSelect,
   onCreateZone,
+  allowChildPositionConfiguration = false,
   onDeleteZone,
   onDeleteZones,
   onDuplicateZones,
@@ -629,6 +632,7 @@ function FloorPlanningModuleFT2Inner({
         {!isLoading && !isError && (
           <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
             <CanvasEditor
+              allowChildPositionConfiguration={allowChildPositionConfiguration}
               zones={zones}
               minimumMappingReady={minimumMappingReady}
               onUpdateZone={onUpdateZone}

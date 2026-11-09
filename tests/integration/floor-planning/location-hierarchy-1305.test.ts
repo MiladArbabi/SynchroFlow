@@ -1,3 +1,4 @@
+import type { Knex } from 'knex';
 import crypto from 'crypto';
 import request from 'supertest';
 import { createApp } from 'api-src/bootstrap/express';
@@ -49,6 +50,32 @@ async function parents(shopId: number) {
 }
 
 beforeAll(() => { process.env.JWT_SECRET ||= 'test_jwt_secret'; });
+
+async function seedInventory(trx: Knex.Transaction, shop: number, root: string) {
+  await setTenantContext(trx, shop);
+  const product = crypto.randomUUID();
+  const variant = crypto.randomUUID();
+  await trx('products').insert({ shop_id: shop, lasyncro_product_id: product, title: 'Legacy stock', status: 'active', product_type: 'physical' });
+  await trx('variants').insert({ shop_id: shop, lasyncro_product_id: product, lasyncro_variant_id: variant,
+    title: 'Legacy variant', sku: crypto.randomUUID(), unit_cost: '1.00', status: 'active' });
+  const [supplier] = await trx('suppliers').insert({ shop_id: shop, name: 'Legacy supplier' }).returning('id');
+  const [po] = await trx('purchase_orders').insert({ shop_id: shop, supplier_id: supplier.id, status: 'shipped' }).returning('id');
+  const [job] = await trx('receive_jobs').insert({ shop_id: shop, po_id: po.id, status: 'in_progress', delivery_accounting_version: 2 }).returning('receive_job_id');
+  const [line] = await trx('receive_job_lines').insert({ shop_id: shop, receive_job_id: job.receive_job_id,
+    lasyncro_variant_id: variant, quantity_expected: 1 }).returning('receive_job_line_id');
+  await trx('inventory_units').insert({ shop_id: shop, lasyncro_variant_id: variant,
+    lasyncro_unit_id: 'LSU-' + crypto.randomBytes(4).toString('hex'), receive_job_line_id: line.receive_job_line_id,
+    receive_sequence: 1, status: 'stowed', current_location_code: root });
+  await trx('inventory_movements').insert({ shop_id: shop, lasyncro_variant_id: variant,
+    lasyncro_inventory_movement_id: crypto.randomUUID(), device_event_id: crypto.randomUUID(),
+    movement_type: 'inbound_purchase', quantity_delta: 1, reference_type: 'test_fixture_receipt',
+    reference_id: crypto.randomUUID(), platform: 'wms', location_code: root,
+    occurred_at: new Date(), triggered_by: 'test_fixture' });
+  await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+  await trx('inventory_truth').insert({ shop_id: shop, lasyncro_variant_id: variant, location_code: root,
+    on_hand_quantity: 1, reserved_quantity: 0, committed_quantity: 0, available_quantity: 1, last_evaluated_at: new Date() });
+}
+
 
 describe('GH1305 hierarchy integrity', () => {
   it('runs as restricted sf_app with forced tenant RLS', async () => {
@@ -158,6 +185,34 @@ describe('GH1305 hierarchy integrity', () => {
     const final = await parents(f.shopId);
     expect(final.find(r => r.location_code === 'A').parent_location_code).toBe('B');
     expect(final.find(r => r.location_code === 'B').parent_location_code).toBe('ROOT');
+  });
+
+  it('configures one child pick bin without geometry or moving stocked-parent inventory', async () => {
+    const f = await fixture();
+    await withTenant(f.shopId, trx => seedInventory(trx, f.shopId, 'A'));
+    const stock = () => withTenant(f.shopId, async trx => {
+      const result: Record<string, unknown> = {};
+      for (const table of ['inventory_truth', 'inventory_units', 'inventory_movements', 'pick_reservation_allocations']) {
+        result[table] = await trx(table).where({ shop_id: f.shopId }).select('*').orderByRaw('to_jsonb(??)::text', [table]);
+      }
+      return result;
+    });
+    const before = await stock();
+    const response = await request(app).post('/api/v1/floor-planning/zones')
+      .set('Authorization', `Bearer ${f.token}`).send({ location_code: 'A-S1', type: 'bin',
+        parent_location_code: 'A', zone_type: 'pick', barcode: 'shelf override' });
+    expect(response.status).toBe(201);
+    await withTenant(f.shopId, async trx => {
+      const children = await trx('warehouse_locations').where({ shop_id: f.shopId, parent_location_code: 'A' });
+      expect(children).toHaveLength(1);
+      expect(children[0]).toMatchObject({ location_code: 'A-S1', type: 'bin', zone_type: 'pick',
+        warehouse_id: f.warehouseId, barcode: 'shelf override', position_x: null, position_y: null,
+        width: null, depth: null, rack_levels: null });
+      const layout = await request(app).get('/api/v1/floor-planning/layout').set('Authorization', `Bearer ${f.token}`);
+      expect(layout.status).toBe(200);
+      expect(layout.body.zones).toEqual(expect.arrayContaining([expect.objectContaining({ location_code: 'A-S1', parent_location_code: 'A' })]));
+    });
+    expect(await stock()).toEqual(before);
   });
 
   it('fails closed for a stale-snapshot isolation level', async () => {
