@@ -355,7 +355,17 @@ describe('SF-STOW-SAD-PATH-01 S1 — API: 409 mapping and settings', () => {
     expect(on.status).toBe(200);
     expect(on.body.settings.enforce_location_capacity).toBe(true);
 
-    const operatorToken = await tokenFor(owner.shopId, owner.operatorId, ['operator']);
+    // Roles are resolved from shop_memberships, not the token, so the
+    // forbidden check needs a distinct user with a real operator membership.
+    const operatorUserId = await withTenant(owner.shopId, async (trx) => {
+      const [row] = await trx('users').insert({ shop_id: owner.shopId,
+        email: `cap-settings-operator-${crypto.randomBytes(6).toString('hex')}@test.example`,
+        password_hash: 'not_a_real_hash', first_name: 'Capacity', last_name: 'Operator', role: 'operator' }).returning('id');
+      const id = Number((row as any).id ?? row);
+      await trx('shop_memberships').insert({ shop_id: owner.shopId, user_id: id, role: 'operator' });
+      return id;
+    });
+    const operatorToken = await tokenFor(owner.shopId, operatorUserId, ['operator']);
     const forbidden = await request(app).patch('/api/v1/wms/settings').set('Authorization', `Bearer ${operatorToken}`).send({ enforce_location_capacity: false });
     expect(forbidden.status).toBe(403);
 
