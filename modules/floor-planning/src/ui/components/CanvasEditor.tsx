@@ -189,6 +189,8 @@ interface ResizeState {
 }
 
 interface CanvasEditorProps {
+  /** Remains off until structural-parent Stow protection is certified. */
+  allowChildPositionConfiguration?: boolean;
   minimumMappingReady?: boolean | null;
   zones: WarehouseZone[];
   onUpdateZone?: (locationCode: string, payload: {
@@ -236,7 +238,9 @@ interface CanvasEditorProps {
     position_y?: number; 
     width?: number; 
     depth?: number;
-    rack_levels?: number
+    rack_levels?: number;
+    parent_location_code?: string;
+    barcode?: string;
   }) => Promise<void>;
   // FP-04: Canvas no longer embeds its own 3D preview — IsometricCanvas
   // already renders full-featured (with occupancy/stock-out overlays) on
@@ -691,7 +695,78 @@ function BulkSelectionPanel({
 }
 
 // ── RackInspector ─────────────────────────────────────────────────────────────
-function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarcode, onCreateZone }: {
+/** Configuration only: no lifecycle, transfer, reparent or geometry actions. */
+function ChildPositions({ parent, children, enabled, onCreateZone, onPrintBarcode }: {
+  parent: WarehouseZone;
+  children: WarehouseZone[];
+  enabled: boolean;
+  onCreateZone?: CanvasEditorProps['onCreateZone'];
+  onPrintBarcode?: CanvasEditorProps['onPrintBarcode'];
+}) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [barcode, setBarcode] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createPosition() {
+    if (!enabled || !onCreateZone || !code.trim() || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onCreateZone({ location_code: code.trim().toUpperCase(), type: 'bin',
+        zone_type: 'pick', parent_location_code: parent.location_code,
+        ...(barcode.trim() ? { barcode: barcode.trim() } : {}),
+      });
+      // Persisted layout is authoritative: never append an optimistic child.
+      setOpen(false);
+      setCode('');
+      setBarcode('');
+    } catch (failure: unknown) {
+      const serverError = (failure as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      setError(typeof serverError === 'string' ? serverError : 'Could not create position. Check the code and barcode and try again.');
+    } finally { setPending(false); }
+  }
+
+  return (
+    <Box component="section" aria-label="Shelf and bin positions" sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 600 }}>Shelf / bin positions</Typography>
+      <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+        {children.length === 0 ? 'Track this rack as one location, or explicitly add positions.' : 'Positions have their own location codes. Existing rack stock stays at the rack.'}
+      </Typography>
+      {children.map(child => (
+        <Box key={child.location_code} sx={{ border: '1px solid var(--rule)', p: 0.75 }}>
+          <Typography sx={{ fontSize: 11, fontFamily: 'monospace' }}>{child.location_code}</Typography>
+          <Typography sx={{ fontSize: 10 }}>{child.active ? 'Active' : 'Inactive'} · Barcode: {child.barcode ?? child.location_code}</Typography>
+          <Button size="small" disabled={!child.active || !onPrintBarcode || pending}
+            onClick={async () => {
+              setPending(true); setError(null);
+              try { await onPrintBarcode?.(child.location_code); }
+              catch { setError('Could not print position label. Try again.'); }
+              finally { setPending(false); }
+            }} aria-label={`Print label for ${child.location_code}`}>Print label</Button>
+        </Box>
+      ))}
+      {enabled && onCreateZone && !open && (
+        <Button size="small" onClick={() => { setError(null); setOpen(true); }}>Add position</Button>
+      )}
+      {enabled && open && (
+        <Box component="form" onSubmit={event => { event.preventDefault(); void createPosition(); }} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <TextField label="Position code" value={code} onChange={event => setCode(event.target.value)} disabled={pending} required size="small" />
+          <TextField label="Barcode override (optional)" value={barcode} onChange={event => setBarcode(event.target.value)} disabled={pending} size="small" />
+          <Typography sx={{ fontSize: 10 }}>Creates one pick bin inside {parent.location_code}. Rack levels and existing inventory stay unchanged.</Typography>
+          <Button type="submit" disabled={pending || !code.trim()}>Create position</Button>
+          <Button disabled={pending} onClick={() => { setOpen(false); setCode(''); setBarcode(''); setError(null); }}>Cancel</Button>
+        </Box>
+      )}
+      {error && <Typography role="alert" sx={{ fontSize: 11, color: 'error.main' }}>{error}</Typography>}
+    </Box>
+  );
+}
+
+function RackInspector({ zone, childPositions, allowChildPositionConfiguration, onClose, onUpdateZone, onDeleteZone, onPrintBarcode, onCreateZone }: {
+  childPositions: WarehouseZone[];
+  allowChildPositionConfiguration: boolean;
   zone: WarehouseZone;
   onClose: () => void;
   onUpdateZone?: CanvasEditorProps['onUpdateZone'];
@@ -917,6 +992,11 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             </TextField>
           </Box>
         )}
+        {(zone.type === 'shelf' || (zone.type === 'bin' && zone.zone_type === 'pick')) && (childPositions.length > 0 || allowChildPositionConfiguration) && (
+          <ChildPositions key={zone.location_code} parent={zone} children={childPositions}
+            enabled={allowChildPositionConfiguration && zone.active}
+            onCreateZone={onCreateZone} onPrintBarcode={onPrintBarcode} />
+        )}
         {(zone.barcode || zone.parent_location_code) && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35, p: 0.75, bgcolor: 'var(--bg-2)', borderRadius: 1, border: '1px solid var(--rule)' }}>
             {zone.barcode && <Typography sx={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--ink-3)' }}>Barcode: {zone.barcode}</Typography>}
@@ -1070,7 +1150,8 @@ function Ruler({ length, horizontal, scale, offset: off, zoom }: {
 
 // ── CanvasEditor ──────────────────────────────────────────────────────────────
 export function CanvasEditor({ 
-  zones,
+  zones: allZones,
+  allowChildPositionConfiguration = false,
   minimumMappingReady,
   onUpdateZone,
   onUpdateZonePositions,
@@ -1081,6 +1162,15 @@ export function CanvasEditor({
   onPrintBarcode,
   onViewIn3D,
 }: CanvasEditorProps) {
+  // Bins beneath stock racks/shelf frames are identities within the parent,
+  // never independent floor objects or candidates for floor placement.
+  const zones = useMemo(() => {
+    const parentByCode = new Map(allZones.map(zone => [zone.location_code, zone]));
+    return allZones.filter(zone => {
+      const parent = zone.parent_location_code ? parentByCode.get(zone.parent_location_code) : undefined;
+      return !(zone.type === 'bin' && parent && (parent.type === 'bin' || parent.type === 'shelf'));
+    });
+  }, [allZones]);
   const svgRef = useRef<SVGSVGElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom]         = useState(1);
@@ -2218,7 +2308,7 @@ export function CanvasEditor({
       {/* LEFT — palette */}
       <ComponentPalette
         zones={zones}
-        codeSourceZones={[...zones, ...optimisticCreatedZones]}
+        codeSourceZones={[...allZones, ...optimisticCreatedZones]}
         unpositionedZones={zones.filter(z => z.type !== 'warehouse' && z.position_x == null)}
         onPlace={(zone) => {
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
@@ -2581,7 +2671,10 @@ export function CanvasEditor({
               pending={bulkActionPending}
             />
           ) : selectedZone ? (
-            <RackInspector zone={selectedZone} onClose={() => setSelected(new Set())}
+            <RackInspector zone={selectedZone}
+              childPositions={allZones.filter(zone => zone.parent_location_code === selectedZone.location_code)}
+              allowChildPositionConfiguration={allowChildPositionConfiguration}
+              onClose={() => setSelected(new Set())}
               onUpdateZone={onUpdateZone}
               onDeleteZone={onDeleteZone}
               onPrintBarcode={onPrintBarcode}

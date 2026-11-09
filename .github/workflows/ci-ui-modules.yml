@@ -10,6 +10,7 @@ on:
       - 'Dockerfile'
       - 'scripts/**'
       - 'tests/contract/**'
+      - 'tests/unit/ui/floor-planning/**'
       - 'apps/frontend/**'
       - '.github/workflows/ci-ui-modules.yml'
   pull_request:
@@ -22,6 +23,7 @@ on:
       - 'Dockerfile'
       - 'scripts/**'
       - 'tests/contract/**'
+      - 'tests/unit/ui/floor-planning/**'
       - 'apps/frontend/**'
       - '.github/workflows/ci-ui-modules.yml'
 
@@ -54,6 +56,9 @@ jobs:
 
       - name: Run contract tests
         run: npx jest tests/contract --runInBand
+
+      - name: Run Floor Planning UI regressions
+        run: npx --no-install jest --selectProjects frontend --runInBand --watchman=false --testPathPatterns 'tests/unit/ui/floor-planning/'
 
   contract-tests:
     runs-on: ubuntu-latest

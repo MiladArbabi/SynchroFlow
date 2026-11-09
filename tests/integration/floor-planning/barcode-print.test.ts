@@ -1,3 +1,4 @@
+import * as barcodeGenerator from 'api-src/services/shared/barcodeGenerator';
 /**
  * SHOP-REVIEW-BARCODE-PRINT-05 — Floor Planning barcode print endpoints.
  *
@@ -272,6 +273,29 @@ describe('SHOP-REVIEW-BARCODE-PRINT-05 — barcode print endpoints', () => {
       expect(width).toBeCloseTo(72, 3);                  // 1in
       expect(height).toBeCloseTo(153, 3);               // 2.125in
     }
+  }, 180_000);
+
+  it('GH1305 — child labels preserve overrides in single and batch printing', async () => {
+    const { shopId, token, rootLocationCode } = await provisionFt2Shop('gh1305-labels');
+    const rack = await createBin(token, rootLocationCode, `RACK-${shopId}`);
+    const child = await createBin(token, rack, `RACK-${shopId}-S1`);
+    const png = jest.spyOn(barcodeGenerator, 'generateCode128Png'); // calls the real generator
+    try {
+      for (const barcode of [null, 'legacy shelf override']) {
+        await withTenant(shopId, trx => trx('warehouse_locations')
+          .where({ shop_id: shopId, location_code: child }).update({ barcode }));
+        for (const batch of [false, true]) {
+          png.mockClear();
+          const response = await request(app)
+            .post(batch ? '/api/v1/floor-planning/zones/print-batch' : `/api/v1/floor-planning/zones/${child}/print`)
+            .set(authed(token)).buffer(true).parse(binaryParser)
+            .send(batch ? { locationCodes: [child], formatId: 'zebra-4x6' } : {});
+          expect(response.status).toBe(200);
+          expect(await pageCount(response.body)).toBe(1);
+          expect(png).toHaveBeenCalledWith(barcode ?? child);
+        }
+      }
+    } finally { png.mockRestore(); }
   }, 180_000);
 
   it('BE3 — single product print returns a PDF', async () => {

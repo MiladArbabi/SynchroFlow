@@ -79,6 +79,7 @@ on:
       - 'tests/contract/shopify-recovery-inventory-sync-i4.contract.test.ts'
       - 'tests/unit/workers/shopify-recovery-inventory-sync.activation.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-1305.test.ts'
+      - 'tests/integration/floor-planning/barcode-print.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-migration-1305.test.ts'
       - 'tests/integration/wms/location-identity-1305.test.ts'
       - 'tests/integration/wms/stow-task-barcode-projection.test.ts'
@@ -147,6 +148,7 @@ on:
       - 'tests/contract/shopify-recovery-inventory-sync-i4.contract.test.ts'
       - 'tests/unit/workers/shopify-recovery-inventory-sync.activation.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-1305.test.ts'
+      - 'tests/integration/floor-planning/barcode-print.test.ts'
       - 'tests/integration/floor-planning/location-hierarchy-migration-1305.test.ts'
       - 'tests/integration/wms/location-identity-1305.test.ts'
       - 'tests/integration/wms/stow-task-barcode-projection.test.ts'
@@ -687,7 +689,7 @@ jobs:
           PGMIGRATION_USER: sf_user
           PGMIGRATION_PASSWORD: sf_pass
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns '(floor-planning/location-hierarchy(-migration)?-1305|wms/location-identity-1305)\.test\.ts$'
+        run: npm run test:integration -- --testPathPatterns '(floor-planning/(location-hierarchy(-migration)?-1305|barcode-print)|wms/location-identity-1305)\.test\.ts$'
 
       # SF-STOW-UX-REFINEMENT-01: Stow task barcode projection contract.
       - name: Run Stow barcode projection contract

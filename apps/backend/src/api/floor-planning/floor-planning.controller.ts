@@ -1633,7 +1633,7 @@ export async function httpPrintBarcode(req: Request, res: Response) {
       const updated = await trx('warehouse_locations')
         .where({ shop_id: shopId, location_code: locationCode })
         .update({ last_printed_at: trx.fn.now() })
-        .returning(['location_code', 'last_printed_at', 'type', 'zone_type']);
+        .returning(['location_code', 'last_printed_at', 'type', 'zone_type', 'barcode']);
 
       let childBinCodes: string[] = [];
       if (updated[0]?.type === 'lane') {
