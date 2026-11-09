@@ -126,6 +126,7 @@ export default function FloorPlanningPage() {
             onRefresh={refetch}
             gridLocations={gridData?.locations}
             gridOccupancy={occupancyData?.occupancy}
+            inventoryInspection={occupancyData?.inventoryInspection}
             isGridLoading={isGridLoading}
             binLog={binLogData}
             isBinLogLoading={isBinLogLoading}

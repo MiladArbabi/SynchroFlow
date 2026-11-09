@@ -18,6 +18,7 @@ import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui'
 import type {
   WarehouseLocation,
   BinOccupancy,
+  LocationStockDetail,
   BinLogResponse,
   BinStats,
   WarehouseLocationType,
@@ -88,6 +89,7 @@ export type FloorPlanningPageProps = {
   /** Grid data — loaded separately for fast layout paint */
   gridLocations?: WarehouseLocation[];
   gridOccupancy?: Record<string, BinOccupancy>;
+  inventoryInspection?: Record<string, LocationStockDetail>;
   isGridLoading?: boolean;
   binLog?: BinLogResponse;
   isBinLogLoading?: boolean;
@@ -247,7 +249,7 @@ function LocationRail({
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const stats = binStats?.location_code === code ? binStats : undefined;
-  const units = occupancy?.on_hand_quantity ?? 0;
+  const units = occupancy?.on_hand_quantity;
 
   // Single-location print — same path as the editor inspector
   // (usePrintBarcode owns QZ dispatch / browser fallback).
@@ -265,7 +267,7 @@ function LocationRail({
   }
 
   const facts = [
-    { k: 'On hand', v: `${units} unit${units === 1 ? '' : 's'}` },
+    { k: 'On hand', v: units == null ? 'Unavailable' : `${units} unit${units === 1 ? '' : 's'}` },
     { k: 'Picks · 7d', v: stats ? String(stats.picks_7d) : '—' },
     { k: 'Last pick', v: stats?.last_pick_at ? relativeAge(stats.last_pick_at) : '—' },
     { k: 'Reorder in', v: stats && stats.reorder_in_days !== null ? `${stats.reorder_in_days}d` : '—' },
@@ -326,7 +328,7 @@ function LocationRail({
               </Box>
             ))
           ) : (
-            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Nothing stored here right now.</Typography>
+            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{occupancy == null ? 'Occupancy information is unavailable.' : units != null && units < 0 ? 'Negative inventory is recorded here.' : 'Nothing stored here right now.'}</Typography>
           )}
         </Box>
 
@@ -479,6 +481,7 @@ function FloorPlanningModuleFT2Inner({
   isError,
   gridLocations,
   gridOccupancy,
+  inventoryInspection,
   isGridLoading,
   onRefresh,
   binLog,
@@ -501,6 +504,13 @@ function FloorPlanningModuleFT2Inner({
   suppressLocationRail = false,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
+  // Match CanvasEditor's placement rule. Child positions remain in `zones`
+  // for labels and the parent Inspector, but are not separate floor objects.
+  const zoneByCode = new Map(zones.map(zone => [zone.location_code, zone]));
+  const floorZones = zones.filter(zone => {
+    const parent = zone.parent_location_code ? zoneByCode.get(zone.parent_location_code) : undefined;
+    return !(zone.type === 'bin' && parent && (parent.type === 'bin' || parent.type === 'shelf'));
+  });
   const [localMode, setLocalMode] = useState<FloorPlanningMode>(mode ?? 'inspect');
   const currentMode = mode ?? localMode;
   const changeMode = useCallback((next: FloorPlanningMode) => {
@@ -518,40 +528,37 @@ function FloorPlanningModuleFT2Inner({
   const [showBins,  setShowBins]  = useState(true);
   const [logOpen, setLogOpen]     = useState(false);
 
-  // FP-SUMMARY1: always-on counts for the headline strip, independent of
-  // which overlay is currently selected — a merchant looking at Occupancy
-  // should still see "3 at risk" without switching views. Same predicates
-  // as overlayFocusedBins (at risk: qty > 0 && qty <= 3; empty: qty === 0)
-  // but computed together rather than gated behind `overlay ===`.
+  // The positive-only occupancy projection cannot establish an empty bin.
+  // Only canonical records distinguish explicit zero, signed stock and unknown.
+  const knownOccupancyLocationCodes = new Set(
+    Object.entries(inventoryInspection ?? {})
+      .filter(([, detail]) => detail.on_hand_quantity >= 0)
+      .map(([code]) => code),
+  );
   const summaryCounts = useMemo(() => {
-    const bins = (gridLocations ?? []).filter(l => l.type === 'bin');
-    let atRisk = 0, empty = 0;
-    for (const l of bins) {
-      const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
-      if (qty === 0) empty;
-      else if (qty <= 3) atRisk++;
+    const bins = (gridLocations ?? []).filter(location => location.type === 'bin');
+    let atRisk = 0, empty = 0, unknown = 0;
+    for (const location of bins) {
+      const detail = inventoryInspection?.[location.location_code];
+      if (detail == null) { unknown++; continue; }
+      if (detail.on_hand_quantity === 0) empty++;
+      else if (detail.on_hand_quantity > 0 && detail.on_hand_quantity <= 3) atRisk++;
     }
-    return { atRisk, empty, total: bins.length };
-  }, [gridLocations, gridOccupancy]);
+    return { atRisk, empty, unknown, total: bins.length,
+      occupancyAvailable: inventoryInspection != null || gridOccupancy != null };
+  }, [gridLocations, inventoryInspection, gridOccupancy]);
 
   const overlayFocusedBins = useMemo(() => {
-    if (overlay === 'empty') {
-      return (gridLocations ?? [])
-        .filter(l => l.type === 'bin' && ((gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0) === 0))
-        .map(l => l.location_code);
-    }
-    if (overlay === 'stockout') {
-      // Bins with stock but critically low — on_hand_quantity > 0 but <= 3 units
-      return (gridLocations ?? [])
-        .filter(l => l.type === 'bin')
-        .filter(l => {
-          const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
-          return qty > 0 && qty <= 3;
-        })
-        .map(l => l.location_code);
+    if (inventoryInspection == null) return undefined;
+    if (overlay === 'empty' || overlay === 'stockout') {
+      return (gridLocations ?? []).filter(location => {
+        if (location.type !== 'bin') return false;
+        const quantity = inventoryInspection[location.location_code]?.on_hand_quantity;
+        return quantity != null && (overlay === 'empty' ? quantity === 0 : quantity > 0 && quantity <= 3);
+      }).map(location => location.location_code);
     }
     return undefined;
-  }, [overlay, gridLocations, gridOccupancy]);
+  }, [overlay, gridLocations, inventoryInspection]);
 
   const filteredCodes = useMemo(() => new Set(
     // Filter by zone_type — matches the zone filter menu (pick/pack/receive etc.)
@@ -576,14 +583,10 @@ function FloorPlanningModuleFT2Inner({
 
   const rootCode = zones.find((z) => z.type === 'warehouse')?.location_code;
   const bins     = (gridLocations ?? []).filter((l) => l.type === 'bin');
-  const aisles   = new Set(
-    bins
-      .filter((l) => l.zone_type !== 'quarantine' && l.parent_location_code != null)
-      .map((l) => l.parent_location_code)
-  ).size;
-  const stocked  = Object.values(gridOccupancy ?? {}).filter((o) => o.on_hand_quantity > 0).length;
+  const aisles = (gridLocations ?? []).filter(location => location.type === 'lane').length;
+  const stocked = Object.values(inventoryInspection ?? {}).filter(detail => detail.on_hand_quantity > 0).length;
   const subLine  = bins.length > 0
-    ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${stocked} bin${stocked !== 1 ? 's' : ''} with stock`
+    ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${inventoryInspection == null && gridOccupancy == null ? 'Occupancy unavailable' : `${stocked} bin${stocked !== 1 ? 's' : ''} with stock`}`
     : 'No bins configured yet — use Edit layout to map your warehouse.';
 
   // Every active physical location is printable; the warehouse root is passive.
@@ -599,8 +602,8 @@ function FloorPlanningModuleFT2Inner({
   const floorFacts = [
     { k: 'Locations',       v: String(zones.filter((z) => z.type !== 'warehouse').length) },
     { k: 'Bins',            v: String(bins.length) },
-    { k: 'Bins with stock', v: String(stocked) },
-    { k: 'Low on stock',    v: String(summaryCounts.atRisk) },
+    { k: 'Bins with stock', v: inventoryInspection == null ? 'Unavailable' : String(stocked) },
+    { k: 'Low on stock',    v: inventoryInspection == null ? 'Unavailable' : String(summaryCounts.atRisk) },
   ];
 
   const filtersAll = zoneFilters.size === ALL_ZONE_TYPES.length;
@@ -762,11 +765,12 @@ function FloorPlanningModuleFT2Inner({
             {isGridLoading ? <ModuleLoadingSkeleton /> : (
               /* Isometric 2.5D view (read-only). 2D editing lives in Edit layout. */
               <IsometricCanvas
-                zones={zones}
+                zones={floorZones}
                 onSelect={(code) => code && handleBinSelect(code)}
                 filteredCodes={filteredCodes}
                 /* Each overlay owns one visual language: heatmap or semantic focus. */
-                occupancy={overlay === 'occupancy' ? gridOccupancy : undefined}
+                occupancy={overlay === 'occupancy' ? gridOccupancy ?? (inventoryInspection != null ? {} : undefined) : undefined}
+                knownOccupancyLocationCodes={knownOccupancyLocationCodes}
                 focusedBins={overlayFocusedBins}
                 focusTone={overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined}
                 showFloor={showFloor}
@@ -801,7 +805,7 @@ function FloorPlanningModuleFT2Inner({
                   code={selectedBin}
                   zone={zones.find((z) => z.location_code === selectedBin)}
                   rootCode={rootCode}
-                  occupancy={gridOccupancy?.[selectedBin]}
+                  occupancy={inventoryInspection?.[selectedBin]}
                   binStats={binStats}
                   onClear={clearSelection}
                   onPrintBarcode={onPrintBarcode}

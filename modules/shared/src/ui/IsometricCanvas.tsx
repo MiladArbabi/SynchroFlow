@@ -923,7 +923,7 @@ export interface IsometricCanvasProps {
   * recomputing here risked the same count-mismatch found during
   * FP-NULL1/FP-SCROLL1 verification) rather than one flat string.
   */
- summaryCounts?: { atRisk: number; empty: number; total: number };
+ summaryCounts?: { atRisk: number; empty: number; total: number; unknown?: number; occupancyAvailable?: boolean };
   /**
    * FP-CTRL1: optional manual refresh trigger, rendered in the bottom-right
    * controls cluster alongside zoom/reset/mirror. useFloorPlanning has no
@@ -2564,6 +2564,9 @@ export function IsometricCanvas({
           bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
           px: 1.25, py: 0.75, opacity: 0.95,
         }}>
+          {summaryCounts.occupancyAvailable === false ? (
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>Occupancy unavailable</Typography>
+          ) : <>
           <Typography sx={{
            fontSize: 12, fontWeight: 700,
            color: summaryCounts.atRisk > 0 ? `rgba(${zoneRGBVar('pack')},1)` : 'var(--ink-4)',
@@ -2577,6 +2580,10 @@ export function IsometricCanvas({
          }}>
            {summaryCounts.empty} out of stock
          </Typography>
+         </>}
+         {summaryCounts.occupancyAvailable !== false && (summaryCounts.unknown ?? 0) > 0 && (
+           <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>{summaryCounts.unknown} unknown</Typography>
+         )}
          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', ml: 0.5 }}>
            / {summaryCounts.total} bins
          </Typography>

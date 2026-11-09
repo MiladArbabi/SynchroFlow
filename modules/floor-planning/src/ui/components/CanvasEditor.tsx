@@ -951,6 +951,9 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
               ))}
             </Box>
           ))}
+          <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+            Visual levels only. Add shelf/bin positions separately to give them individual location codes.
+          </Typography>
           <Box data-testid="geometry-levels-row" sx={FIELD_GRID_SX}>
             <TextField size="small" type="number" label="Levels"
               key={`${zone.location_code}:${zone.rack_levels ?? 'none'}`}

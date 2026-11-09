@@ -76,7 +76,9 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
 }));
 jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
   useWarehouseGrid: () => ({ data: { locations: [mockRoot, mockStock] }, isLoading: false }),
-  useWarehouseGridOccupancy: () => ({ data: { occupancy: {} } }),
+  useWarehouseGridOccupancy: () => ({ data: { occupancy: {}, inventoryInspection: {
+    'STOCK-RED-01': { on_hand_quantity: -2, available_quantity: 0, reserved_quantity: 0, variants: [] },
+  } } }),
 }));
 jest.mock('pages/floor-planning/useBinLog', () => ({
   useBinLog: () => ({ data: { events: [] }, isLoading: false }),
@@ -191,4 +193,11 @@ describe('Floor Planning — canonical spatial workspace (RED contract)', () => 
     expect(rail).not.toBeInTheDocument();
     expect(screen.queryByText(/print (?:bin|location) label/i)).not.toBeInTheDocument();
   });
+});
+
+it('passes canonical signed occupancy from the page query into the location Inspector', () => {
+  renderPage();
+  fireEvent.click(screen.getByRole('button', { name: 'Select stock location' }));
+  expect(screen.getByText('-2 units')).toBeVisible();
+  expect(screen.getByText('Negative inventory is recorded here.')).toBeVisible();
 });
