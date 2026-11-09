@@ -172,6 +172,7 @@ describe('Inspector child position configuration', () => {
     fireEvent.blur(screen.getByLabelText('Levels'));
     expect(update).toHaveBeenCalledWith('RACK-A', { rack_levels: 5 });
     expect(create).not.toHaveBeenCalled();
+    expect(screen.getByText('Visual levels only. Add shelf/bin positions separately to give them individual location codes.')).toBeVisible();
   });
 
   it('does not offer creation beneath inactive racks', () => {
