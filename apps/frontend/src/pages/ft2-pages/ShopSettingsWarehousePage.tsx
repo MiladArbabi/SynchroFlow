@@ -10,9 +10,9 @@ import { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { ShopifyLocationPersistenceContext } from '../../contexts/ShopifyLocationJourneyContext';
 import { SpotlightCoachMark } from '@lasyncro/shared/ui';
-import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip, Popper } from '@mui/material';
+import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip, Popper, Switch } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle, Link2} from 'lucide-react';
+import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle, Link2, PackageCheck } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import {
   getWarehouseShopifyLocations,
@@ -264,7 +264,7 @@ function FloorDisplaySection() {
 }
 
 function useWmsSettings() {
-  return useQuery<{ settings: { legacy_barcode_fallback_enabled: boolean } }>({
+  return useQuery<{ settings: { legacy_barcode_fallback_enabled: boolean; enforce_location_capacity?: boolean } }>({
     queryKey: ['wms-settings'],
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/wms/settings');
@@ -283,6 +283,47 @@ function usePatchLegacyFallback() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['wms-settings'] }),
     onError: () => show('Failed to update legacy barcode setting', 'error'),
   });
+}
+
+// SF-STOW-SAD-PATH-01 S1 — opt-in hard Stow capacity. Default OFF.
+function StorageCapacitySection() {
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+  const { data, isLoading } = useWmsSettings();
+  const enforced = data?.settings?.enforce_location_capacity === true;
+  const { mutate, isPending } = useMutation<void, Error, boolean>({
+    mutationFn: async (enabled) => {
+      await axiosInstance.patch('/api/v1/wms/settings', { enforce_location_capacity: enabled });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['wms-settings'] }),
+    onError: () => show('Failed to update storage capacity setting', 'error'),
+  });
+
+  return (
+    <SettingsCard
+      icon={<PackageCheck size={16} />}
+      title="Enforce storage capacity"
+      description="When on, Stow refuses any placement that would exceed a location's configured capacity. Locations without a capacity stay unlimited."
+    >
+      {isLoading ? (
+        <Skeleton height={32} sx={{ borderRadius: '6px' }} />
+      ) : (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>
+            {enforced ? 'On — full locations block Stow placement.' : 'Off — capacity is advisory only.'}
+          </Typography>
+          <Switch
+            checked={enforced}
+            disabled={isPending}
+            onChange={(e) => mutate(e.target.checked)}
+            size="small"
+            inputProps={{ 'aria-label': 'Enforce storage capacity' }}
+            sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--accent)' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: 'var(--accent)' } }}
+          />
+        </Box>
+      )}
+    </SettingsCard>
+  );
 }
 
 function UnitLabelCoverageSection() {
@@ -937,6 +978,7 @@ export default function ShopSettingsWarehousePage() {
     <SettingsPageWrapper>
       <ShopifyLocationMappingSection />
       <UnitLabelCoverageSection />
+      <StorageCapacitySection />
       <PrintersSection />
       <FloorDisplaySection />
     </SettingsPageWrapper>

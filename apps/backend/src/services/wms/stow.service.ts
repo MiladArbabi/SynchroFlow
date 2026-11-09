@@ -6,6 +6,7 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 import { HELD_UNIT_STATUSES } from './receiveBarcodeReadiness.service.js';
 import { confirmReceiveRecoveryStow } from './receiveHeldRecoveryStow.service.js';
+import { assertStowLocationCapacity, isLocationCapacityEnforced } from './stowLocationCapacity.service.js';
 
 /**
  * STOW SERVICE (WM-05)
@@ -335,7 +336,16 @@ export async function confirmStow(
   // receive_recovery Stow (Stow row locked above, then unit → task inside).
   // S4-2 — no other trigger may place a held or discarded unit: refused below,
   // before any truth, ledger or unit write.
+  // SF-STOW-SAD-PATH-01 S1 — read once per confirmation, under the hierarchy
+  // lock. ON: SUM(inventory_truth.on_hand_quantity) is the sole capacity
+  // authority and the legacy unit-count warning is skipped. OFF: unchanged.
+  const capacityEnforced = await isLocationCapacityEnforced(trx, shopId);
+
   if (task.trigger === 'receive_recovery') {
+    // SF-STOW-SAD-PATH-01 S1 — before the early return: recovery is a
+    // single-unit credit (custody stock is not in inventory_truth, and the
+    // custody bin is refused as a destination), so the incoming quantity is 1.
+    await assertStowLocationCapacity(trx, { shopId, locationCode: task.location_code, incomingQuantity: 1, enforced: capacityEnforced });
     const recovered = await confirmReceiveRecoveryStow(trx, {
       shopId,
       claimedBy,
@@ -349,7 +359,9 @@ export async function confirmStow(
       lasyncroUnitId,
       quantityPlaced,
     });
-    await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
+    if (!capacityEnforced) {
+      await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
+    }
     await enqueueShopSnapshotJob(trx, shopId);
     return recovered;
   }
@@ -541,6 +553,14 @@ export async function confirmStow(
           `[STOW_CONFIRM] Source location missing for scanned unit ${lasyncroUnitId}`
         );
       }
+    }
+
+    // SF-STOW-SAD-PATH-01 S1 — hard capacity (opt-in), after eligibility and
+    // source resolution, before any inventory/ledger/unit/task write. `qty` is
+    // exactly what is credited to the destination below. A same-location
+    // transfer changes no occupancy, so it is never a capacity failure.
+    if (sourceLocation !== task.location_code) {
+      await assertStowLocationCapacity(trx, { shopId, locationCode: task.location_code, incomingQuantity: qty, enforced: capacityEnforced });
     }
 
     // Transfer stows must debit the complete quantity atomically.
@@ -813,8 +833,11 @@ export async function confirmStow(
       updated_at: completedAt,
     });
 
-  // 4d. Soft capacity check.
-  await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
+  // 4d. Soft capacity check — advisory mode only (S1: enforced shops use the
+  // pre-mutation SUM(on_hand) guard above as the single authority).
+  if (!capacityEnforced) {
+    await checkStowBinCapacity(trx, shopId, stowTaskId, task.location_code, task.lasyncro_variant_id);
+  }
 
  // 5. Record placement; complete only when the task's full quantity is placed.
   //
