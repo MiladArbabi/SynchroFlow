@@ -692,3 +692,24 @@ describe('GH1305 destination assignment refusals', () => {
     expect(props.onAssignLocation).toHaveBeenLastCalledWith('stow-a', 'BIN-C');
   });
 });
+
+
+describe('SF-STOW-SAD-PATH-01 S1 — capacity refusal', () => {
+  it('shows the full-location message, keeps the task active and accepts another location scan', async () => {
+    const props = renderSession({ tasks: [task({ status: 'in_progress', claimed_by: 7, claimed_at: '2026-09-17T00:00:00Z' })] });
+    props.onConfirmStow.mockRejectedValueOnce(Object.assign(new Error('LOCATION_CAPACITY_EXCEEDED'), {
+      response: { status: 409, data: { error: 'LOCATION_CAPACITY_EXCEEDED', code: 'LOCATION_CAPACITY_EXCEEDED', location_code: 'BIN-A' } },
+    }));
+    const input = await screen.findByPlaceholderText('Scan item barcode (LSU- or product barcode)');
+    fireEvent.change(input, { target: { value: 'LSU-8F31AAAA' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await screen.findByText('Location BIN-A is full. Scan another storage location.');
+    expect(screen.getByTestId('stow-stage-complete')).not.toHaveAttribute('data-state', 'complete');
+    expect(props.onConfirmStow).toHaveBeenCalledTimes(1);
+    // Scanning context is preserved: the same rail accepts a different bin.
+    const rail = screen.getByPlaceholderText('Scan item barcode (LSU- or product barcode)');
+    fireEvent.change(rail, { target: { value: 'BIN-B' } });
+    fireEvent.keyDown(rail, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(props.onAssignLocation).toHaveBeenLastCalledWith('stow-a', 'BIN-B'));
+  });
+});

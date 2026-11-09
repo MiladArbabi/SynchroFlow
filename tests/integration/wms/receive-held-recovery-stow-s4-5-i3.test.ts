@@ -668,6 +668,41 @@ describe('S4-5 I3 — Shopify boundary and bin capacity (A3)', () => {
     expect(recoveryCredits(s)).toHaveLength(2);
     expect(s.truth.find((t: any) => t.location_code === destination)?.on_hand_quantity).toBe(2);
   });
+
+  // SF-STOW-SAD-PATH-01 S1 — enforced capacity is checked before
+  // confirmReceiveRecoveryStow: success unchanged when capacity permits;
+  // refusal leaves custody, truth, ledger, Stow, task and outcomes untouched.
+  it('CAP2 — enforced capacity: recovery succeeds within the limit; over it 409 LOCATION_CAPACITY_EXCEEDED with zero side effects', async () => {
+    const j = await heldJob(shopA, 2);
+    const destination = await shopA.bin('storage');
+    const setEnforced = (on: boolean) => withTenant(shopA.shopId, (trx) =>
+      trx('shop_wms_settings').where({ shop_id: shopA.shopId }).update({ enforce_location_capacity: on }));
+    await withTenant(shopA.shopId, (trx) =>
+      trx('warehouse_locations').where({ shop_id: shopA.shopId, location_code: destination }).update({ max_capacity: 1 }));
+    const audits = () => withTenant(shopA.shopId, (trx) =>
+      trx('problem_center_tasks').where({ shop_id: shopA.shopId, source: 'stow', exception_type: 'bin_over_capacity',
+        problem_bin_location: destination }).select('problem_task_id'));
+    await setEnforced(true);
+    try {
+      const first = await claimedRecovery(j, 0, destination);
+      expect((await confirm(shopA.token, first, { lasyncro_unit_id: j.heldIds[0] })).status).toBe(200);
+      const placed = await snapshot(j);
+      expect(unitOf(placed, j.heldIds[0])).toEqual(expect.objectContaining({ status: 'stowed', current_location_code: destination }));
+      expect(recoveryCredits(placed)).toHaveLength(1);
+
+      const second = await claimedRecovery(j, 1, destination);
+      const before = await snapshot(j);
+      const res = await confirm(shopA.token, second, { lasyncro_unit_id: j.heldIds[1] });
+      expect([res.status, res.body.code, res.body.location_code]).toEqual([409, 'LOCATION_CAPACITY_EXCEEDED', destination]);
+      const after = await snapshot(j);
+      expect(after).toEqual(before);
+      expect([unitOf(after, j.heldIds[1]).status, stowOf(after, second).status, recoveryCredits(after).length])
+        .toEqual(['held', 'in_progress', 1]);
+      expect(await audits()).toEqual([]);
+    } finally {
+      await setEnforced(false);
+    }
+  });
 });
 
 describe('S4-5 I3 — tenant isolation', () => {

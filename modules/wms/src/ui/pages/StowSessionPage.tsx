@@ -237,6 +237,18 @@ function getStowOperatorError(
 
   const reason = technicalMessage.toLowerCase();
 
+  // SF-STOW-SAD-PATH-01 S1 — opt-in hard capacity. Item scan also accepts a
+  // location scan (STOW-ACTIVE-LOCATION-01), so the task and scanning context
+  // stay as they are and the operator can switch bins directly.
+  if (reason.includes('location_capacity_exceeded')) {
+    const fullLocation =
+      (err as { response?: { data?: { location_code?: unknown } } })
+        ?.response?.data?.location_code;
+    return typeof fullLocation === 'string' && fullLocation
+      ? `Location ${fullLocation} is full. Scan another storage location.`
+      : 'This location is full. Scan another storage location.';
+  }
+
   if (reason.includes('stow_destination_structural')) {
     return 'This rack uses shelf or bin positions. Scan a position label to continue.';
   }

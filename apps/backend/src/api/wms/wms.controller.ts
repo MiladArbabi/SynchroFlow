@@ -1,4 +1,5 @@
 import { assertStowDestinationEligible, lockStowDestinationHierarchy, StowDestinationEligibilityError } from '../../services/wms/stowDestinationEligibility.service.js';
+import { LocationCapacityExceededError } from '../../services/wms/stowLocationCapacity.service.js';
 import { resolveLocationIdentity, LocationIdentityAmbiguousError } from '../../services/wms/locationIdentity.service.js';
 import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/wms/wms.controller.ts
@@ -3115,6 +3116,15 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     if (error instanceof StowDestinationEligibilityError) {
       return res.status(error.code === 'STOW_DESTINATION_NOT_FOUND' ? 404 : 409).json({ error: error.code, code: error.code });
     }
+    // SF-STOW-SAD-PATH-01 S1: opt-in hard capacity; the transaction has rolled back.
+    if (error instanceof LocationCapacityExceededError) {
+      return res.status(409).json({
+        error: error.code,
+        code: error.code,
+        location_code: error.locationCode,
+        message: `Location ${error.locationCode} is full. Scan another storage location.`,
+      });
+    }
     // S4-5 I3: typed recovery refusals; the transaction has already rolled back.
     if (error instanceof ReceiveRecoveryStowError) {
       return res.status(error.statusCode).json({ error: error.code, code: error.code, reason: error.reason ?? null });
@@ -5017,9 +5027,17 @@ export const httpPatchWmsSettings = async (req: Request, res: Response) => {
     idle_alert_threshold_minutes,
     include_return_label,
     legacy_barcode_fallback_enabled,
+    enforce_location_capacity,
   } = req.body;
-  
+
   const updates: Record<string, unknown> = {};
+  // SF-STOW-SAD-PATH-01 S1 — strict boolean; no truthy coercion.
+  if (enforce_location_capacity !== undefined) {
+    if (typeof enforce_location_capacity !== 'boolean') {
+      return res.status(400).json({ error: 'enforce_location_capacity must be a boolean' });
+    }
+    updates.enforce_location_capacity = enforce_location_capacity;
+  }
   if (problem_bin_location !== undefined) updates.problem_bin_location = String(problem_bin_location).trim() || null;
   if (include_return_label !== undefined) updates.include_return_label = Boolean(include_return_label);
   // WM-46 manual toggle: lets a shop owner disable legacy barcode
