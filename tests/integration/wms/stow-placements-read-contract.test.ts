@@ -1,3 +1,9 @@
+import type { Knex } from 'knex';
+import request from 'supertest';
+import { createApp } from 'api-src/bootstrap/express';
+import { issueTestToken } from '../../unit/helpers/auth';
+import { assertStowDestinationEligible } from 'api-src/services/wms/stowDestinationEligibility.service';
+import { suggestStowLocation } from 'api-src/services/wms/locationSuggestion.service';
 // tests/integration/wms/stow-placements-read-contract.test.ts
 //
 // STOW-UX-SCAN-RAIL-01 — canonical placement read projection.
@@ -323,5 +329,238 @@ describe('STOW-UX-SCAN-RAIL-01 — GET stow-tasks/:taskId/placements canonical p
         getStowTaskPlacements(trx, { shopId: shopB.shopId, stowTaskId: workA.taskId })
       )
     ).rejects.toThrow('[STOW_PLACEMENTS] TASK_NOT_FOUND');
+  });
+});
+
+
+// GH-1305 S3A: reuse the real inbound fixture above; no alternate stock writer.
+describe('GH1305 structural-parent Stow safety', () => {
+  async function fixture() {
+    const shop = await createShopWithOperator('structural-stow');
+    const work = await seedReceiveLineAndTask(shop.shopId, 'RACK', 2);
+    await withTenant(shop.shopId, trx => claimStowTask(trx, work.taskId, shop.shopId, shop.operatorId));
+    return { ...shop, ...work };
+  }
+  type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+  async function child(trx: Knex.Transaction, f: Fixture, active = true) {
+    const parent = await trx('warehouse_locations').where({ shop_id: f.shopId, location_code: 'RACK' }).first();
+    // Direct SQL proves the database-owned hierarchy guard shares Stow's lock.
+    await trx('warehouse_locations').insert({ shop_id: f.shopId, warehouse_id: parent.warehouse_id,
+      location_code: 'POSITION', parent_location_code: 'RACK', type: 'bin', zone_type: 'pick', active });
+  }
+  async function snapshot(f: Fixture) {
+    return withTenant(f.shopId, async trx => ({
+      truth: await trx('inventory_truth').where({ shop_id: f.shopId }).orderBy('location_code'),
+      units: await trx('inventory_units').where({ shop_id: f.shopId }).orderBy('lasyncro_unit_id'),
+      movements: await trx('inventory_movements').where({ shop_id: f.shopId }).orderBy('lasyncro_inventory_movement_id'),
+      tasks: await trx('stow_tasks').where({ shop_id: f.shopId }).orderBy('stow_task_id'),
+      reservations: await trx('pick_reservation_allocations').where({ shop_id: f.shopId }).orderBy('allocation_id'),
+    }));
+  }
+  async function confirm(trx: Knex.Transaction, f: Fixture, index = 0) {
+    await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+    return confirmStow(trx, { stowTaskId: f.taskId, shopId: f.shopId, claimedBy: f.operatorId,
+      quantityPlaced: 1, lasyncroUnitId: f.lasyncroUnitIds[index] });
+  }
+  async function api(f: Fixture) {
+    await withTenant(f.shopId, async trx => {
+      await trx('user_lifecycle_snapshot').insert({ shop_id: f.shopId, user_id: f.operatorId,
+        phase: 'FT2', since: new Date(), last_event_id: crypto.randomUUID() });
+      await trx('shop_subscriptions').insert({ shop_id: f.shopId, tier: 'growth', allow_overage: true,
+        billing_provider: 'stripe', stripe_customer_id: null });
+    });
+    process.env.JWT_SECRET ||= 'test_jwt_secret';
+    return issueTestToken({ shopId: f.shopId, userId: f.operatorId, tier: 'growth' });
+  }
+
+  it('uses restricted sf_app and keeps visual rack levels non-material for simple-rack placement', async () => {
+    const f = await fixture();
+    await withTenant(f.shopId, async trx => {
+      const role = (await trx.raw('SELECT current_user AS role, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user')).rows[0];
+      expect(role).toEqual({ role: 'sf_app', rolsuper: false, rolbypassrls: false });
+      await trx('warehouse_locations').where({ shop_id: f.shopId, location_code: 'RACK' }).update({ rack_levels: 9 });
+      expect((await assertStowDestinationEligible(trx, f.shopId, 'RACK')).location_code).toBe('RACK');
+    });
+    await withTenant(f.shopId, trx => confirm(trx, f));
+    expect((await snapshot(f)).units.find(u => u.lasyncro_unit_id === f.lasyncroUnitIds[0]))
+      .toMatchObject({ status: 'stowed', current_location_code: 'RACK' });
+  });
+
+  it.each([true, false])('first configured child (active=%s) preserves stocked-parent truth and blocks the remaining sticky placement', async active => {
+    const f = await fixture();
+    await withTenant(f.shopId, trx => confirm(trx, f));
+    await withTenant(f.shopId, trx => trx('inventory_truth').where({ shop_id: f.shopId, location_code: 'RACK' })
+      .update({ reserved_quantity: 1, available_quantity: 0 }));
+    const before = await snapshot(f);
+    await withTenant(f.shopId, trx => child(trx, f, active));
+    expect(await snapshot(f)).toEqual(before);
+    await expect(withTenant(f.shopId, trx => confirm(trx, f, 1))).rejects.toThrow('STOW_DESTINATION_STRUCTURAL');
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it.each(['inbound_stock', 'return_restock', 'problem_center', 'order_cancelled_mid_pick'])
+    ('rejects a preassigned structural destination before any %s branch mutates inventory', async trigger => {
+      const f = await fixture();
+      await withTenant(f.shopId, async trx => {
+        await child(trx, f, false);
+        await trx('stow_tasks').where({ shop_id: f.shopId, stow_task_id: f.taskId }).update({ trigger });
+      });
+      const before = await snapshot(f);
+      await expect(withTenant(f.shopId, trx => confirm(trx, f))).rejects.toThrow('STOW_DESTINATION_STRUCTURAL');
+      expect(await snapshot(f)).toEqual(before);
+    });
+
+  it.each(['inactive', 'structural'])('rejects %s assignment, including same-location idempotent requests, and confirmation with stable API errors', async state => {
+    const f = await fixture();
+    const token = await api(f);
+    await withTenant(f.shopId, async trx => {
+      if (state === 'structural') await child(trx, f);
+      else await trx('warehouse_locations').where({ shop_id: f.shopId, location_code: 'RACK' }).update({ active: false });
+    });
+    const before = await snapshot(f);
+    const app = createApp();
+    const code = state === 'structural' ? 'STOW_DESTINATION_STRUCTURAL' : 'STOW_DESTINATION_INACTIVE';
+    const assigned = await request(app).patch(`/api/v1/wms/stow-tasks/${f.taskId}/location`)
+      .set('Authorization', `Bearer ${token}`).send({ location_code: 'RACK' });
+    expect(assigned.status).toBe(409);
+    expect(assigned.body.code).toBe(code);
+    const confirmed = await request(app).post(`/api/v1/wms/stow-tasks/${f.taskId}/confirm`)
+      .set('Authorization', `Bearer ${token}`).send({ quantity_placed: 1, lasyncro_unit_id: f.lasyncroUnitIds[0] });
+    expect(confirmed.status).toBe(409);
+    expect(confirmed.body.code).toBe(code);
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('does not suggest stocked parents with inactive children, and refuses a saved suggestion at confirmation', async () => {
+    const f = await fixture();
+    await withTenant(f.shopId, trx => confirm(trx, f));
+    await withTenant(f.shopId, trx => child(trx, f, false));
+    const suggested = await withTenant(f.shopId, trx => suggestStowLocation(trx, { shopId: f.shopId, lasyncroVariantId: f.variantId }));
+    expect(suggested).toBeNull();
+    await expect(withTenant(f.shopId, trx => confirm(trx, f, 1))).rejects.toThrow('STOW_DESTINATION_STRUCTURAL');
+  });
+
+  it('does not resolve another tenant destination and rolls back a valid placement when its transaction fails', async () => {
+    const f = await fixture();
+    const foreign = await fixture();
+    await withTenant(foreign.shopId, trx => child(trx, foreign));
+    await expect(withTenant(f.shopId, trx => assertStowDestinationEligible(trx, f.shopId, 'POSITION')))
+      .rejects.toThrow('STOW_DESTINATION_NOT_FOUND');
+    const before = await snapshot(f);
+    await expect(withTenant(f.shopId, async trx => { await confirm(trx, f); throw new Error('ROLLBACK_PROOF'); }))
+      .rejects.toThrow('ROLLBACK_PROOF');
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('refuses repeatable-read snapshots before placement instead of relying on stale hierarchy reads', async () => {
+    const f = await fixture();
+    const before = await snapshot(f);
+    await expect(withTenant(f.shopId, trx => confirm(trx, f), { isolationLevel: 'repeatable read' }))
+      .rejects.toThrow('STOW_DESTINATION_ISOLATION_UNSUPPORTED');
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it.each(['child-first', 'stow-first'])('serializes real overlapping transactions: %s', async order => {
+    const f = await fixture();
+    let release!: () => void;
+    let ready!: () => void;
+    const held = new Promise<void>(r => { release = r; });
+    const started = new Promise<void>(r => { ready = r; });
+    const before = await snapshot(f);
+    const sourceCode = `WH-${f.shopId}-ROOT`;
+    const quantities = (state: Awaited<ReturnType<typeof snapshot>>) => state.truth.map(row => ({
+      location_code: row.location_code,
+      on_hand_quantity: Number(row.on_hand_quantity),
+      available_quantity: Number(row.available_quantity),
+      reserved_quantity: Number(row.reserved_quantity),
+      committed_quantity: Number(row.committed_quantity),
+    }));
+    const totalInventory = (state: Awaited<ReturnType<typeof snapshot>>) =>
+      state.truth.reduce((sum, row) => sum + Number(row.on_hand_quantity), 0);
+    // The destination has no truth row yet; both physical units start at root.
+    expect(quantities(before)).toEqual([{
+      location_code: sourceCode, on_hand_quantity: 2, available_quantity: 2,
+      reserved_quantity: 0, committed_quantity: 0,
+    }]);
+    expect(totalInventory(before)).toBe(2);
+    const first = withTenant(f.shopId, async trx => {
+      if (order === 'child-first') await child(trx, f);
+      else await confirm(trx, f);
+      ready();
+      await held;
+    });
+    // Attach rejection handling immediately, also unblocking setup failures.
+    const firstOutcome = first.then(() => null, error => { ready(); return error; });
+    await started;
+    let pid!: number;
+    let entering!: () => void;
+    const entered = new Promise<void>(r => { entering = r; });
+    const second = withTenant(f.shopId, async trx => {
+      pid = (await trx.raw('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+      entering();
+      if (order === 'child-first') return confirm(trx, f);
+      return child(trx, f);
+    }).then(() => null, error => error);
+    try {
+      await entered;
+      let waiting = false;
+      const deadline = Date.now() + 5000;
+      while (!waiting && Date.now() < deadline) {
+        waiting = await withTenant(f.shopId, async trx => (await trx.raw(
+          "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = ? AND locktype = 'advisory' AND NOT granted) AS waiting", [pid])).rows[0].waiting);
+      }
+      expect(waiting).toBe(true);
+    } finally {
+      release();
+      expect(await firstOutcome).toBeNull();
+    }
+    const secondError = await second;
+    if (order === 'child-first') {
+      expect(secondError?.message).toContain('STOW_DESTINATION_STRUCTURAL');
+      expect(await snapshot(f)).toEqual(before);
+    } else {
+      expect(secondError).toBeNull();
+      const after = await snapshot(f);
+      expect(after.units.find(u => u.lasyncro_unit_id === f.lasyncroUnitIds[0]))
+        .toMatchObject({ status: 'stowed', current_location_code: 'RACK' });
+      expect(after.movements.length - before.movements.length).toBe(2);
+      expect(quantities(after)).toEqual([
+        { location_code: 'RACK', on_hand_quantity: 1, available_quantity: 1,
+          reserved_quantity: 0, committed_quantity: 0 },
+        { location_code: sourceCode, on_hand_quantity: 1, available_quantity: 1,
+          reserved_quantity: 0, committed_quantity: 0 },
+      ]);
+      expect(totalInventory(after)).toBe(totalInventory(before));
+      const previousMovementIds = new Set(before.movements.map(row => row.lasyncro_inventory_movement_id));
+      expect(after.movements.filter(row => previousMovementIds.has(row.lasyncro_inventory_movement_id)))
+        .toEqual(before.movements);
+      const unit = before.units.find(row => row.lasyncro_unit_id === f.lasyncroUnitIds[0]);
+      const newLegs = after.movements
+        .filter(row => !previousMovementIds.has(row.lasyncro_inventory_movement_id))
+        .map(row => ({ location_code: row.location_code, quantity_delta: Number(row.quantity_delta),
+          shop_id: row.shop_id, lasyncro_variant_id: row.lasyncro_variant_id,
+          movement_type: row.movement_type, reference_type: row.reference_type,
+          reference_id: row.reference_id, triggered_by: row.triggered_by }))
+        .sort((a, b) => a.quantity_delta - b.quantity_delta);
+      const identity = { shop_id: f.shopId, lasyncro_variant_id: f.variantId,
+        movement_type: 'location_transfer', reference_type: 'inventory_unit',
+        reference_id: unit.id, triggered_by: 'stow' };
+      expect(newLegs).toEqual([
+        { ...identity, location_code: sourceCode, quantity_delta: -1 },
+        { ...identity, location_code: 'RACK', quantity_delta: 1 },
+      ]);
+      expect(newLegs.reduce((sum, row) => sum + row.quantity_delta, 0)).toBe(0);
+      expect(after.units.find(row => row.lasyncro_unit_id === f.lasyncroUnitIds[1]))
+        .toEqual(before.units.find(row => row.lasyncro_unit_id === f.lasyncroUnitIds[1]));
+      expect(after.reservations).toEqual(before.reservations);
+    }
+    // Parent stock committed before child configuration remains exactly where
+    // it was. Refusing the remaining unit must not alter truth, units or ledger.
+    const beforeRefusal = await snapshot(f);
+    await expect(withTenant(f.shopId, trx => confirm(trx, f, 1))).rejects.toThrow('STOW_DESTINATION_STRUCTURAL');
+    const afterRefusal = await snapshot(f);
+    expect(afterRefusal).toEqual(beforeRefusal);
+    expect(totalInventory(afterRefusal)).toBe(totalInventory(before));
   });
 });

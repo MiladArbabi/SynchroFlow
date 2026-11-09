@@ -653,3 +653,42 @@ describe('SF-STOW-UX-REFINEMENT-01 — product barcode', () => {
     });
   });
 });
+
+
+describe('GH1305 structural-parent Stow refusals', () => {
+  it.each([
+    ['STOW_DESTINATION_STRUCTURAL', 'This rack uses shelf or bin positions. Scan a position label to continue.'],
+    ['STOW_DESTINATION_INACTIVE', 'This location is inactive. Scan another active location.'],
+  ])('keeps the item rail usable and never registers a refused %s confirmation', async (code, message) => {
+    const props = renderSession({ tasks: [task({ status: 'in_progress', claimed_by: 7, claimed_at: '2026-09-17T00:00:00Z' })] });
+    props.onConfirmStow.mockRejectedValueOnce(Object.assign(new Error(code), { response: { data: { error: code } } }));
+    const input = await screen.findByPlaceholderText('Scan item barcode (LSU- or product barcode)');
+    fireEvent.change(input, { target: { value: 'LSU-8F31AAAA' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await screen.findByText(message);
+    expect(screen.getByTestId('stow-stage-complete')).not.toHaveAttribute('data-state', 'complete');
+    expect(props.onConfirmStow).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('GH1305 destination assignment refusals', () => {
+  it.each([
+    ['STOW_DESTINATION_STRUCTURAL', 'This rack uses shelf or bin positions. Scan a position label to continue.'],
+    ['STOW_DESTINATION_INACTIVE', 'This location is inactive. Scan another active location.'],
+  ])('keeps Location active after %s and accepts a later valid destination', async (code, message) => {
+    const props = renderSession({ tasks: [task({ status: 'pending' })], initialStep: 'location' });
+    props.onAssignLocation.mockRejectedValueOnce(Object.assign(new Error(code), { response: { data: { error: code } } }));
+    const input = await screen.findByPlaceholderText('Scan bin barcode or type location code');
+    fireEvent.change(input, { target: { value: 'BIN-B' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await screen.findByText(message);
+    expect(screen.getByTestId('stow-stage-location')).toHaveAttribute('data-state', 'active');
+    expect(props.onClaimTask).not.toHaveBeenCalled();
+    expect(props.onConfirmStow).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'BIN-C' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('stow-stage-location')).toHaveAttribute('data-state', 'complete'));
+    expect(props.onAssignLocation).toHaveBeenLastCalledWith('stow-a', 'BIN-C');
+  });
+});

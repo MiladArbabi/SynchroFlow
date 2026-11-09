@@ -237,6 +237,17 @@ function getStowOperatorError(
 
   const reason = technicalMessage.toLowerCase();
 
+  if (reason.includes('stow_destination_structural')) {
+    return 'This rack uses shelf or bin positions. Scan a position label to continue.';
+  }
+  if (reason.includes('stow_destination_inactive')) {
+    return 'This location is inactive. Scan another active location.';
+  }
+  if (reason.includes('stow_destination_not_found')) {
+    return 'Bin not recognised. Scan the bin label again.';
+  }
+
+
   if (
     reason.includes('unauthorized') ||
     reason.includes('session')

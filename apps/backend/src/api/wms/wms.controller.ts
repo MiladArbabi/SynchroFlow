@@ -1,3 +1,4 @@
+import { assertStowDestinationEligible, lockStowDestinationHierarchy, StowDestinationEligibilityError } from '../../services/wms/stowDestinationEligibility.service.js';
 import { resolveLocationIdentity, LocationIdentityAmbiguousError } from '../../services/wms/locationIdentity.service.js';
 import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/wms/wms.controller.ts
@@ -2695,6 +2696,8 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
     await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+    // Match confirmation: hierarchy lock precedes task and location locks.
+    await lockStowDestinationHierarchy(trx, shopId);
     const destination = location_code.trim();
 
     const task = await trx('stow_tasks')
@@ -2735,11 +2738,7 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
       throw new Error('STOW_INBOUND_RECEIVE_LINE_REQUIRED');
     }
 
-    const location = await trx('warehouse_locations')
-    .where({ shop_id: shopId, location_code: destination })
-    .first();
-
-    if (!location) throw new Error('LOCATION_NOT_FOUND');
+    const location = await assertStowDestinationEligible(trx, shopId, destination);
 
     if (
       task.trigger === 'problem_center' ||
@@ -2807,6 +2806,9 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
     console.info('[STOW_LOCATION_ASSIGNED]', { shopId, userId, taskId, location_code });
     return res.json({ success: true });
     } catch (err: unknown) {
+    if (err instanceof StowDestinationEligibilityError) {
+      return res.status(err.code === 'STOW_DESTINATION_NOT_FOUND' ? 404 : 409).json({ error: err.code, code: err.code });
+    }
     if (err instanceof ReceiveRecoveryStowError) {
       return res.status(err.statusCode).json({ error: err.code, code: err.code, reason: err.reason ?? null });
     }
@@ -3110,6 +3112,9 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
       placed_now: confirmResult.placedNow,
     });
   } catch (error) {
+    if (error instanceof StowDestinationEligibilityError) {
+      return res.status(error.code === 'STOW_DESTINATION_NOT_FOUND' ? 404 : 409).json({ error: error.code, code: error.code });
+    }
     // S4-5 I3: typed recovery refusals; the transaction has already rolled back.
     if (error instanceof ReceiveRecoveryStowError) {
       return res.status(error.statusCode).json({ error: error.code, code: error.code, reason: error.reason ?? null });
