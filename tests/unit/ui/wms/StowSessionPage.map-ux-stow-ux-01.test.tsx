@@ -158,7 +158,10 @@ describe('STOW-UX-01 — warehouse map', () => {
     const map = screen.getByRole('region', { name: 'Warehouse map' });
     expect(within(map).getByTestId('isometric-canvas-stub')).toBeInTheDocument();
     expect(lastCanvas().selectedLocationCode).toBe('BIN-A');
-    expect(lastCanvas().operationalStateByLocation).toEqual({ 'BIN-A': 'active' });
+    // SF-STOW-UX-REFINEMENT-01 — the scanned destination is the green open
+    // bin, painted by destinationHighlight instead of an operational state.
+    expect(lastCanvas().operationalStateByLocation).toEqual({});
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-A', tone: 'confirmed' });
     expect(within(map).getByText('Destination BIN-A is highlighted on the map.')).toBeInTheDocument();
   });
 
@@ -304,7 +307,8 @@ describe('STOW-UX-01 — operational contracts through the new presentation', ()
     expect(props.onConfirmStow).not.toHaveBeenCalled();
     expect(screen.getByTestId('stow-bin-activity')).toHaveTextContent('registered in BIN-A');
     expect(lastCanvas().selectedLocationCode).toBe('BIN-B');
-    expect(lastCanvas().operationalStateByLocation).toEqual({ 'BIN-A': 'healthy', 'BIN-B': 'active' });
+    expect(lastCanvas().operationalStateByLocation).toEqual({ 'BIN-A': 'healthy' });
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-B', tone: 'confirmed' });
   });
 
   it('a failed commit shows recovery copy, registers nothing and leaves the scanner usable', async () => {
@@ -341,7 +345,9 @@ describe('STOW-UX-01 — operational contracts through the new presentation', ()
     expect(await screen.findByPlaceholderText(BIN_HINT)).toBeInTheDocument();
     expect(props.onActiveTaskChange).toHaveBeenLastCalledWith('stow-b', 'location');
     expect(lastCanvas().selectedLocationCode).toBe('BIN-B');
-    expect(lastCanvas().operationalStateByLocation).toEqual({ 'BIN-B': 'active' });
+    // Task B's bin is only a suggestion until scanned: restrained orange.
+    expect(lastCanvas().operationalStateByLocation).toEqual({});
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-B', tone: 'suggested' });
   });
 
   it('asks for no tote scan: bin then unit is the whole path', async () => {
@@ -395,6 +401,35 @@ describe('STOW-UX-01 — session Exit control', () => {
   });
 });
 
+describe('SF-STOW-UX-REFINEMENT-01 — suggested vs confirmed destination on the map', () => {
+  it('an unscanned suggestion is restrained orange, then green once its label is scanned', async () => {
+    renderSession({
+      tasks: [task({ status: 'pending', quantity_placed: 0, claimed_by: null, location_code: 'BIN-A' })],
+      floorZones: FLOOR,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Claim & start stowing' }));
+    await screen.findByPlaceholderText(BIN_HINT);
+
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-A', tone: 'suggested' });
+    expect(
+      within(screen.getByRole('region', { name: 'Warehouse map' })).getByRole('status'),
+    ).toHaveTextContent('Suggested bin BIN-A is highlighted on the map.');
+
+    scan(BIN_HINT, 'BIN-A');
+
+    await screen.findByPlaceholderText(ITEM_HINT);
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-A', tone: 'confirmed' });
+  });
+
+  it('a destination missing from the floor is never highlighted', async () => {
+    renderSession({ tasks: [task({ location_code: 'BIN-OFFMAP' })], floorZones: FLOOR });
+    await screen.findByPlaceholderText(ITEM_HINT);
+    expect(lastCanvas().destinationHighlight).toBeNull();
+  });
+});
+
+// SF-STOW-UX-REFINEMENT-01 — rack levels stay visual geometry. The session no
+// longer prints level counts; it must still never invent or assign a level.
 describe('STOW-UX-01 — rack-level guidance', () => {
   const RACK_FLOOR = [
     zone('WH-ROOT', { type: 'warehouse' }),
@@ -404,7 +439,7 @@ describe('STOW-UX-01 — rack-level guidance', () => {
   ];
   const INVENTED_LEVEL = /\blevel\s*\d|\bL\d\b|(?:top|middle|bottom)\s+(?:level|shelf)|shelf\s*\d/i;
 
-  it('Brief: states the count and that the level is untracked, inventing no level', async () => {
+  it('Brief: names the multilevel destination with no level count, inventing no level', async () => {
     renderSession({
       tasks: [task({ status: 'pending', quantity_placed: 0, location_code: 'B-1', claimed_by: null })],
       floorZones: RACK_FLOOR,
@@ -412,8 +447,9 @@ describe('STOW-UX-01 — rack-level guidance', () => {
     await screen.findByRole('button', { name: 'Claim & start stowing' });
 
     const directions = screen.getByTestId('stow-directions');
-    expect(directions).toHaveTextContent('B-1 · 3 rack levels');
-    expect(directions).toHaveTextContent('Specific shelf level not tracked');
+    expect(directions).toHaveTextContent('Suggested destination');
+    expect(directions).toHaveTextContent('B-1');
+    expect(document.body.textContent).not.toMatch(/rack levels?|shelf level/i);
     expect(document.body.textContent).not.toMatch(INVENTED_LEVEL);
   });
 
@@ -423,13 +459,13 @@ describe('STOW-UX-01 — rack-level guidance', () => {
 
     const directions = screen.getByTestId('stow-directions');
     expect(directions).toHaveTextContent('Placing into B-1');
-    expect(directions).toHaveTextContent('B-1 · 3 rack levels');
-    expect(directions).toHaveTextContent('Specific shelf level not tracked');
     expect(lastCanvas().selectedLocationCode).toBe('B-1');
-    expect(lastCanvas().operationalStateByLocation).toEqual({ 'B-1': 'active' });
+    // The whole rack is lit; the highlight carries no level of any kind.
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'B-1', tone: 'confirmed' });
     expect(
       within(screen.getByRole('region', { name: 'Warehouse map' })).getByRole('status'),
-    ).toHaveTextContent('Destination B-1 is highlighted on the map. The highlight marks the rack, not a shelf level.');
+    ).toHaveTextContent(/^Destination B-1 is highlighted on the map\.$/);
+    expect(document.body.textContent).not.toMatch(/rack levels?|shelf level/i);
     expect(document.body.textContent).not.toMatch(INVENTED_LEVEL);
 
     scan(ITEM_HINT, 'LSU-1');
@@ -457,14 +493,15 @@ describe('STOW-UX-01 — rack-level guidance', () => {
     expect(document.body.textContent).not.toMatch(/rack levels?|shelf level/i);
   });
 
-  it('follows a bin switch: guidance drops when the new bin has one level', async () => {
+  it('follows a bin switch from a multilevel rack: the highlight moves whole, no level text appears', async () => {
     renderSession({ tasks: [task({ location_code: 'B-1' })], floorZones: [...RACK_FLOOR, zone('BIN-A')] });
     await screen.findByPlaceholderText(ITEM_HINT);
-    expect(screen.getByTestId('stow-directions')).toHaveTextContent('3 rack levels');
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'B-1', tone: 'confirmed' });
 
     scan(ITEM_HINT, 'BIN-A');
 
     await waitFor(() => expect(screen.getByTestId('stow-directions')).toHaveTextContent('Placing into BIN-A'));
+    expect(lastCanvas().destinationHighlight).toEqual({ locationCode: 'BIN-A', tone: 'confirmed' });
     expect(document.body.textContent).not.toMatch(/rack levels?|shelf level/i);
   });
 });

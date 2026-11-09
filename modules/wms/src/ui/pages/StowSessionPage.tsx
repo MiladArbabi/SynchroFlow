@@ -2,15 +2,16 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   Box, Typography, Button, Alert,
-  TextField, useTheme, useMediaQuery, CircularProgress, IconButton,
+  TextField, useTheme, useMediaQuery, CircularProgress, IconButton, Tooltip,
 } from '@mui/material';
 import {
   CheckCircle,
   Package,
   ArrowLeft,
+  Info,
 } from 'lucide-react';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
-import type { OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
+import type { DestinationHighlight, OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
 import {
   ReceiveActions,
   ReceiveCta,
@@ -55,6 +56,41 @@ export type BarcodeResolveResult = {
   lasyncro_unit_id?: string;
   unit_status?: string;
 };
+
+/**
+ * SF-STOW-UX-REFINEMENT-01 — exact-LSU tasks recover one specific unit, so a
+ * generic product barcode is never their scan target. Mirrors the scan guard.
+ */
+function requiresExactUnit(task: Pick<WmsStowTask, 'trigger' | 'unit_ids'>): boolean {
+  return (
+    task.trigger === 'receive_recovery' ||
+    (task.trigger === 'order_cancelled_mid_pick' && (task.unit_ids ?? []).length > 0)
+  );
+}
+
+/**
+ * The product barcode an operator may scan for this task: the server-vetted
+ * external barcode (see httpGetStowTasks), never an SKU or LSP- identity, and
+ * never for an exact-LSU task. Null means "scan the unit label".
+ */
+function scannableProductBarcode(task: Pick<WmsStowTask, 'trigger' | 'unit_ids' | 'barcode'>): string | null {
+  if (requiresExactUnit(task)) return null;
+  const barcode = task.barcode?.trim();
+  return barcode ? barcode : null;
+}
+
+/**
+ * SF-STOW-UX-LSU-VISIBILITY-01 — triggers whose unit_ids projection is scoped to
+ * THIS task (httpGetStowTasks): inbound units of the task's own Receive line, the
+ * one held unit of a receive recovery, and the picked, unlocated units a
+ * cancellation recovery accepts. Every other trigger projects any received unit
+ * of the variant shop-wide, which may belong to other tasks, so it is never
+ * listed as this task's expected labels.
+ */
+const TASK_SCOPED_UNIT_TRIGGERS = new Set(['inbound_stock', 'receive_recovery', 'order_cancelled_mid_pick']);
+
+/** How long Registered stays lit before the rail returns to Scan Item. */
+export const STOW_REGISTERED_ACK_MS = 1500;
 
 /** Canonical placement projection — see stow.service.ts#getStowTaskPlacements. */
 export type StowPlacement = {
@@ -135,6 +171,18 @@ function triggerLabel(trigger: string): string {
   if (trigger === 'receive_recovery') return 'Receive recovery';
   return trigger.replace(/_/g, ' ');
 }
+
+const visuallyHiddenSx = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  p: 0,
+  m: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
 
 /** STOW-UX-SCAN-RAIL-01 — visual shortening only; full LSU stays accessible
  * via the `title` attribute on the element rendering this string. */
@@ -222,6 +270,9 @@ function getStowOperatorError(
   if (
     reason.includes('wrong unit') ||
     reason.includes('lsu mismatch') ||
+    // SF-STOW-UX-LSU-VISIBILITY-01 — confirmStow's code is INBOUND_LSU_MISMATCH
+    // (underscore), which previously fell through to the generic message.
+    reason.includes('lsu_mismatch') ||
     reason.includes('specific unit')
   ) {
     return 'Wrong unit. Scan the LSU shown for this stow task.';
@@ -399,39 +450,37 @@ function describeLocationPath(
 }
 
 /**
- * Physical levels of a multilevel rack, read from the shop's own geometry. Null
- * for one level, an unknown count, or no geometry. Placement is tracked by
- * location code only, so this describes the rack; it never assigns a level.
+ * Orientation only: the destination is lit, nothing here can change session state.
+ * SF-STOW-UX-REFINEMENT-01 — a scanned destination lights its whole geometry
+ * green as an open bin; an unscanned suggestion gets a restrained orange. The
+ * whole rack is lit because levels are geometry, not addresses.
  */
-function getRackLevelCount(
-  locationCode: string | null,
-  zones: WarehouseZone[] | undefined,
-): number | null {
-  const levels = Number(zones?.find((zone) => zone.location_code === locationCode)?.rack_levels);
-  return Number.isInteger(levels) && levels > 1 ? levels : null;
-}
-
-/** Orientation only: the destination is lit, nothing here can change session state. */
 function StowFloorMap({
   zones,
   destinationCode,
+  destinationConfirmed,
   destinationOnMap,
-  isMultilevelRack,
   placements,
 }: {
   zones: WarehouseZone[];
   destinationCode: string | null;
+  destinationConfirmed: boolean;
   destinationOnMap: boolean;
-  isMultilevelRack: boolean;
   placements: StowPlacement[];
 }) {
   const stateByLocation = useMemo(() => {
     const states: Record<string, OperationalMapState> = {};
     // Committed placements keep their ORIGINAL bins lit after a destination switch.
     for (const placement of placements) states[placement.location_code] = 'healthy';
-    if (destinationCode) states[destinationCode] = 'active';
     return states;
-  }, [placements, destinationCode]);
+  }, [placements]);
+  const destinationHighlight = useMemo<DestinationHighlight | null>(
+    () =>
+      destinationCode && destinationOnMap
+        ? { locationCode: destinationCode, tone: destinationConfirmed ? 'confirmed' : 'suggested' }
+        : null,
+    [destinationCode, destinationOnMap, destinationConfirmed],
+  );
   const inspectable = useMemo(
     () => new Set(destinationCode ? [destinationCode] : []),
     [destinationCode],
@@ -465,6 +514,7 @@ function StowFloorMap({
           selectedLocationCode={destinationOnMap ? destinationCode : null}
           inspectableLocationCodes={inspectable}
           operationalStateByLocation={stateByLocation}
+          destinationHighlight={destinationHighlight}
           showLegend={false}
           showControls={false}
           disablePan
@@ -474,11 +524,7 @@ function StowFloorMap({
       {destinationCode && (
         <Typography role="status" sx={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', px: 1.5, py: 1, borderTop: '1px solid var(--rule)' }}>
           {destinationOnMap
-            ? `Destination ${destinationCode} is highlighted on the map.${
-                // The renderer draws selection on the rack's top face, which
-                // must not read as an assigned level.
-                isMultilevelRack ? ' The highlight marks the rack, not a shelf level.' : ''
-              }`
+            ? `${destinationConfirmed ? 'Destination' : 'Suggested bin'} ${destinationCode} is highlighted on the map.`
             : `Destination ${destinationCode} is not placed on this map. Follow its bin label.`}
         </Typography>
       )}
@@ -777,10 +823,23 @@ export default function StowSessionPage({
   // of the next scanner action alongside scanFeedback, so the two surfaces
   // never disagree about whether a "just registered" state is showing.
   const [lastConfirmedLsu, setLastConfirmedLsu] = useState<string | null>(null);
+  // SF-STOW-UX-REFINEMENT-01 — Registered is a moment, not a resting state:
+  // after the acknowledgement the rail returns to Scan Item on its own. The
+  // active destination and scanner focus are untouched.
+  useEffect(() => {
+    if (!lastConfirmedLsu) return undefined;
+    const timer = setTimeout(() => setLastConfirmedLsu(null), STOW_REGISTERED_ACK_MS);
+    return () => clearTimeout(timer);
+  }, [lastConfirmedLsu]);
 
   // STOW-UX-SCAN-RAIL-01 — current-bin activity trace, task-scoped. Read-only
   // canonical projection; never locally fabricated (no optimistic rows).
   const [placements, setPlacements] = useState<StowPlacement[]>([]);
+  // SF-STOW-UX-LSU-VISIBILITY-01 — LSUs committed in this session, per task. Set
+  // only after onConfirmStow resolves, so the expected list updates at once
+  // without waiting for the placements refetch. Server truth wins on refresh:
+  // unit_ids then excludes stowed units and placements list them.
+  const [registeredByTask, setRegisteredByTask] = useState<Record<string, string[]>>({});
   const [placementsError, setPlacementsError] = useState<string | null>(null);
 
   const currentTask = tasks[currentIndex] ?? null;
@@ -1150,9 +1209,7 @@ export default function StowSessionPage({
     // (unit_ids = that LSU, server-side). A generic product barcode or a
     // sibling LSU never substitutes for it, and with no declared LSU the scan
     // fails closed. confirmStow re-checks the exact LSU and stays authoritative.
-    const exactUnitRequired =
-      currentTask.trigger === 'receive_recovery' ||
-      (currentTask.trigger === 'order_cancelled_mid_pick' && (currentTask.unit_ids ?? []).length > 0);
+    const exactUnitRequired = requiresExactUnit(currentTask);
     if (
       exactUnitRequired &&
       (!resolved.lasyncro_unit_id ||
@@ -1214,13 +1271,23 @@ export default function StowSessionPage({
     // STOW-SPLIT-01 — successful feedback acknowledges the physical scan only.
     // Active location, placed-here count and remaining quantity already have
     // dedicated persistent surfaces and must not be repeated here.
+    // SF-STOW-UX-REFINEMENT-01 — only an exact match with the task's vetted
+    // product barcode is named; resolution_method alone proves nothing.
+    const taskBarcode = scannableProductBarcode(currentTask);
+    const productBarcode = taskBarcode !== null && scannedValue.trim() === taskBarcode ? taskBarcode : null;
     setScanFeedback({
       severity: 'success',
-      message: `Unit placed · ${resolved.lasyncro_unit_id}`,
+      message: `Unit placed · ${resolved.lasyncro_unit_id}${productBarcode ? ` · Barcode ${productBarcode}` : ''}`,
     });
+
     // STOW-UX-SCAN-RAIL-01 — drives the rail's transient ✓ ITEM / ✓ REGISTERED
     // acknowledgement; only ever set after onConfirmStow has already resolved.
     setLastConfirmedLsu(resolved.lasyncro_unit_id);
+    const committedLsu = resolved.lasyncro_unit_id;
+    setRegisteredByTask((prev) => ({
+      ...prev,
+      [currentTask.stow_task_id]: [...(prev[currentTask.stow_task_id] ?? []), committedLsu],
+    }));
 
     if (!confirmResult.is_fully_placed) {
       setRemainingQty(authoritativeRemaining);
@@ -1346,8 +1413,6 @@ export default function StowSessionPage({
   // Most-recently-activated bin, else the task's suggested bin (guidance only).
   const destinationCode = confirmedLocation ?? currentTask?.location_code ?? null;
   const destinationPath = destinationCode ? describeLocationPath(destinationCode, floorZones) : [];
-  const rackLevelCount = getRackLevelCount(destinationCode, floorZones);
-  const rackLevelLabel = rackLevelCount ? `${destinationCode} · ${rackLevelCount} rack levels` : null;
   // Orientation serves a live task: never on loading, empty or finished screens.
   const showMap = hasPlacedFloor(floorZones) && Boolean(currentTask) && phase !== 'complete';
   const destinationOnMap = Boolean(
@@ -1390,8 +1455,8 @@ export default function StowSessionPage({
     <StowFloorMap
       zones={floorZones ?? []}
       destinationCode={destinationCode}
+      destinationConfirmed={Boolean(confirmedLocation)}
       destinationOnMap={destinationOnMap}
-      isMultilevelRack={rackLevelCount !== null}
       placements={placements}
     />
   ) : null;
@@ -1445,10 +1510,74 @@ export default function StowSessionPage({
     </StowSessionShell>
   );
 
+  // SF-STOW-UX-REFINEMENT-01 / SF-STOW-UX-LSU-VISIBILITY-01 — what to scan sits
+  // in the item line: name → expected LSU(s) → optional barcode → secondary SKU.
+  // Only task-scoped projections are listed (TASK_SCOPED_UNIT_TRIGGERS); any
+  // other trigger, or a missing projection, is an inline unavailable state.
+  // Registered = canonical placements for this task plus this session's
+  // committed scans, so a confirmed unit leaves the list at once.
+  const productBarcode = currentTask ? scannableProductBarcode(currentTask) : null;
+  const registeredLsus = currentTask
+    ? Array.from(new Set([
+        ...placements.map((p) => p.lasyncro_unit_id),
+        ...(registeredByTask[currentTask.stow_task_id] ?? []),
+      ]))
+    : [];
+  const unitListScoped = Boolean(currentTask && TASK_SCOPED_UNIT_TRIGGERS.has(currentTask.trigger));
+  const pendingLsus = unitListScoped
+    ? (currentTask?.unit_ids ?? []).filter((id) => !registeredLsus.includes(id))
+    : [];
+  const exactUnitTask = Boolean(currentTask && requiresExactUnit(currentTask));
+  const unitListUnavailable = Boolean(currentTask) && (!unitListScoped || (pendingLsus.length === 0 && remainingQty > 0));
+
+  const itemIdentity = currentTask ? (
+    <>
+      {pendingLsus.length > 0 ? (
+        <Box
+          component="ul"
+          aria-label={exactUnitTask ? 'Required unit label' : 'Expected unit labels'}
+          data-testid="stow-item-lsus"
+          sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}
+        >
+          {pendingLsus.map((lsu) => (
+            <Box
+              component="li"
+              key={lsu}
+              data-lsu={lsu}
+              sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', letterSpacing: 0, overflowWrap: 'anywhere' }}
+            >
+              {lsu}
+            </Box>
+          ))}
+        </Box>
+      ) : unitListUnavailable ? (
+        <Box component="span" role="note" data-testid="stow-item-lsus-unavailable" sx={{ display: 'block', color: 'var(--ink-2)' }}>
+          {exactUnitTask
+            ? 'Required unit label unavailable. Ask a supervisor before scanning.'
+            : 'Unit labels unavailable for this task. Scan the label on each unit.'}
+        </Box>
+      ) : (
+        <Box component="span" data-testid="stow-item-lsus-done" sx={{ display: 'block', color: 'var(--good-ink)' }}>
+          All expected units registered
+        </Box>
+      )}
+      {productBarcode ? (
+        <Box component="span" data-testid="stow-item-barcode" sx={{ display: 'block', color: 'var(--ink-2)' }}>
+          Barcode {productBarcode}
+        </Box>
+      ) : null}
+      {currentTask.sku ? (
+        <Box component="span" data-testid="stow-item-sku" sx={{ display: 'block', fontSize: 11 }}>
+          SKU <Box component="span">{currentTask.sku}</Box>
+        </Box>
+      ) : null}
+    </>
+  ) : null;
+
   const itemLine = currentTask ? (
     <ReceiveItemLine
       name={currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'}
-      identity={currentTask.sku ?? 'SKU unavailable'}
+      identity={itemIdentity}
       media={
         currentTask.image_url ? (
           <Box
@@ -1489,21 +1618,6 @@ export default function StowSessionPage({
     <Box component="span" sx={{ display: 'block', ...receiveMonoSx, fontSize: 12, color: 'var(--ink-3)' }}>
       Found in {destinationPath.join(' › ')}
     </Box>
-  ) : null;
-
-  const shelfLevelNote = rackLevelCount ? (
-    <Box component="span" sx={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>
-      Specific shelf level not tracked
-    </Box>
-  ) : null;
-
-  const rackLevelGuidance = rackLevelLabel ? (
-    <>
-      <Box component="span" sx={{ display: 'block', ...receiveMonoSx, fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
-        {rackLevelLabel}
-      </Box>
-      {shelfLevelNote}
-    </>
   ) : null;
 
   const scanFeedbackLines = (
@@ -1571,98 +1685,171 @@ export default function StowSessionPage({
         ? `${currentTask.quantity_placed} / ${currentTask.quantity} placed`
         : 'Waiting';
 
+  type StageState = 'active' | 'complete' | 'pending';
+  // A destination already scanned stays confirmed, even when the operator
+  // steps back through the brief to the bin screen.
+  const locationStageState: StageState = confirmedLocation
+    ? 'complete'
+    : phase === 'brief' || phase === 'location_scan'
+      ? 'active'
+      : 'pending';
+  const stages: { id: string; label: string; meta: string; state: StageState }[] = [
+    {
+      id: 'location',
+      label: 'Location',
+      // A suggestion until scanned; the confirmed destination always wins.
+      meta: confirmedLocation ?? currentTask?.location_code ?? 'Scan destination',
+      state: locationStageState,
+    },
+    {
+      id: 'items',
+      label: 'Scan Item',
+      meta: justRegistered
+        ? lastConfirmedLsu!
+        : phase === 'item_scan'
+          ? (hasStartedThisTask ? 'Next unit' : 'First unit')
+          : phase === 'complete'
+            ? 'Task complete'
+            : 'Waiting',
+      state: justRegistered || phase === 'complete' ? 'complete' : phase === 'item_scan' ? 'active' : 'pending',
+    },
+    {
+      id: 'complete',
+      label: 'Registered',
+      meta: registeredMeta,
+      // Only after onConfirmStow has resolved (justRegistered), never on
+      // barcode recognition alone. Registered is never itself "active".
+      state: justRegistered || phase === 'complete' ? 'complete' : 'pending',
+    },
+  ];
+
+  // SF-STOW-UX-REFINEMENT-01 — one connected indicator: the active step
+  // pulses orange, completed steps and the connectors behind them are green.
+  const STAGE_NODE = 22;
   const stageRail = (
     <Box
+      component="ol"
+      aria-label="Stow progress"
       sx={{
+        listStyle: 'none',
+        m: 0,
+        p: 0,
         display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-        gap: 0.75,
+        '@keyframes stowStepPulse': {
+          '0%, 100%': { boxShadow: '0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent)' },
+          '50%': { boxShadow: '0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent)' },
+        },
       }}
     >
-      {[
-        {
-          id: 'location',
-          label: 'Location',
-          meta: confirmedLocation ?? currentTask?.location_code ?? 'Scan destination',
-          state: (phase === 'brief' || phase === 'location_scan'
-            ? 'active'
-            : confirmedLocation
-              ? 'complete'
-              : 'pending') as 'active' | 'complete' | 'pending',
-          // Guidance only, never authoritative — the confirmed destination
-          // always wins once it exists.
-          pulse: (phase === 'brief' || phase === 'location_scan') && !confirmedLocation,
-        },
-        {
-          id: 'items',
-          label: 'Item',
-          meta: justRegistered
-            ? lastConfirmedLsu!
-            : phase === 'item_scan'
-              ? (hasStartedThisTask ? 'Scan next item' : 'Scan item')
-              : phase === 'complete'
-                ? 'Task complete'
-                : 'Waiting',
-          state: (justRegistered
-            ? 'complete'
-            : phase === 'item_scan'
-              ? 'active'
-              : phase === 'complete'
-                ? 'complete'
-                : 'pending') as 'active' | 'complete' | 'pending',
-          pulse: phase === 'item_scan' && !justRegistered,
-        },
-        {
-          id: 'complete',
-          label: 'Registered',
-          meta: registeredMeta,
-          // This must only ever flip to complete after onConfirmStow has
-          // actually resolved (justRegistered) — never on barcode
-          // recognition alone.
-          state: (justRegistered || phase === 'complete' ? 'complete' : 'pending') as 'active' | 'complete' | 'pending',
-          pulse: false,
-        },
-      ].map((stage) => {
+      {stages.map((stage, index) => {
         const isComplete = stage.state === 'complete';
         const isActive = stage.state === 'active';
+        const tone = isComplete ? 'var(--good-ink)' : isActive ? 'var(--accent)' : 'var(--rule-2)';
+        const showSwitchHint = stage.id === 'location' && isComplete && phase === 'item_scan';
         return (
           <Box
+            component="li"
             key={stage.id}
             data-testid={`stow-stage-${stage.id}`}
             data-state={stage.state}
+            aria-current={isActive ? 'step' : undefined}
             sx={{
+              position: 'relative',
               minWidth: 0,
-              px: 1,
-              py: 0.75,
-              borderRadius: '8px',
-              bgcolor: isActive ? 'var(--accent-ghost)' : 'transparent',
-              border: '1px solid',
-              borderColor: isActive
-                ? 'var(--accent-border)'
-                : isComplete
-                  ? 'var(--good-ink)'
-                  : 'var(--rule)',
-              animation: stage.pulse ? 'stowRailPulse 1.6s ease-in-out infinite' : 'none',
-              '@keyframes stowRailPulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.6 },
-              },
-              '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              px: 0.5,
+              // Connector to the next step: green once this step is done.
+              ...(index < stages.length - 1 && {
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  top: STAGE_NODE / 2 - 1,
+                  left: `calc(50% + ${STAGE_NODE / 2 + 4}px)`,
+                  right: `calc(-50% + ${STAGE_NODE / 2 + 4}px)`,
+                  height: 2,
+                  borderRadius: 1,
+                  bgcolor: isComplete ? 'var(--good-ink)' : 'var(--rule)',
+                  transition: 'background-color 200ms ease',
+                },
+              }),
             }}
           >
+            <Box
+              aria-hidden="true"
+              data-testid={`stow-stage-${stage.id}-node`}
+              data-pulse={isActive ? 'true' : 'false'}
+              sx={{
+                width: STAGE_NODE,
+                height: STAGE_NODE,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1,
+                color: isComplete ? 'var(--bg)' : tone,
+                bgcolor: isComplete ? 'var(--good-ink)' : isActive ? 'var(--accent-ghost)' : 'transparent',
+                border: '2px solid',
+                borderColor: tone,
+                transition: 'background-color 200ms ease, border-color 200ms ease',
+                animation: isActive ? 'stowStepPulse 1.8s ease-in-out infinite' : 'none',
+                '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+              }}
+            >
+              {isComplete ? '✓' : index + 1}
+            </Box>
             <Typography
               variant="caption"
               component="div"
               sx={{
+                mt: 0.5,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
                 fontWeight: 600,
                 color: isComplete ? 'var(--good-ink)' : isActive ? 'var(--accent-text)' : 'var(--ink-3)',
               }}
             >
-              {isComplete ? '✓' : isActive ? '●' : '○'} {stage.label}
+              {stage.label}
+              {showSwitchHint && (
+                <Tooltip
+                  title="To switch destination, scan another bin."
+                  placement="top"
+                  arrow
+                  enterTouchDelay={0}
+                  leaveTouchDelay={3000}
+                >
+                  {/* Not focusable: a hardware scan must keep landing in the scanner. */}
+                  <Box
+                    component="span"
+                    data-testid="stow-location-switch-hint"
+                    sx={{ display: 'inline-flex', color: 'var(--ink-3)', cursor: 'help' }}
+                  >
+                    <Info size={12} aria-hidden="true" />
+                  </Box>
+                </Tooltip>
+              )}
             </Typography>
-            <Typography variant="caption" component="div" noWrap title={stage.meta} sx={{ color: 'var(--ink-3)', fontSize: 11 }}>
+            <Typography
+              variant="caption"
+              component="div"
+              noWrap
+              title={stage.meta}
+              sx={{ maxWidth: '100%', color: 'var(--ink-3)', fontSize: 11, ...(stage.id === 'location' && receiveMonoSx) }}
+            >
               {stage.meta}
             </Typography>
+            {showSwitchHint && (
+              // The same guidance for assistive tech, which cannot hover.
+              <Box component="span" sx={visuallyHiddenSx}>
+                To switch destination, scan another bin.
+              </Box>
+            )}
           </Box>
         );
       })}
@@ -1750,9 +1937,8 @@ export default function StowSessionPage({
                 Suggested destination
               </Typography>
               <Typography component="div" sx={{ ...receiveMonoSx, fontSize: 18, fontWeight: 500, overflowWrap: 'anywhere' }}>
-                {rackLevelLabel ?? destinationCode}
+                {destinationCode}
               </Typography>
-              {shelfLevelNote}
             </>
           ) : (
             <Typography sx={{ fontSize: 14, color: 'var(--ink-2)' }}>
@@ -1832,8 +2018,7 @@ export default function StowSessionPage({
           accent={hasStartedThisTask ? 'the next unit.' : 'a unit.'}
           sub={
             <Box component="span" data-testid="stow-directions">
-              Placing into {destinationCode}. Scan another bin at any time to switch destination.
-              {rackLevelGuidance}
+              Placing into {destinationCode}.
               {pathLine}
             </Box>
           }
@@ -1854,7 +2039,15 @@ export default function StowSessionPage({
                 // Failed scans replace previous positive feedback with an actionable
                 // operator message. Technical detail remains diagnostic only.
                 setScanFeedback(null);
-                setSubmitError(getStowOperatorError(err, 'item_scan'));
+                const scanned = v.trim();
+                const message = getStowOperatorError(err, 'item_scan');
+                // SF-STOW-UX-LSU-VISIBILITY-01 — presentation only: the server
+                // refused it; say why when the scan is a unit already registered.
+                setSubmitError(
+                  message.startsWith('Wrong unit.') && registeredLsus.includes(scanned)
+                    ? `${scanned} is already registered. Scan one of the expected unit labels.`
+                    : message,
+                );
               })
               .finally(() => {
                 finishScannerAction();
@@ -1882,10 +2075,7 @@ export default function StowSessionPage({
           accent={suggestedBin ? `${suggestedBin}.` : 'destination bin.'}
           sub={
             <Box component="span" data-testid="stow-directions">
-              {suggestedBin
-                ? 'Walk to this bin and scan its barcode to confirm. Any other active bin also works.'
-                : 'Choose an active storage bin and scan its barcode.'}
-              {rackLevelGuidance}
+              {suggestedBin ? 'Scan its barcode, or any active bin.' : 'Scan any active storage bin.'}
               {pathLine}
             </Box>
           }

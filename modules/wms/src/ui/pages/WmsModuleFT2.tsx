@@ -136,6 +136,12 @@ export type WmsStowTask = {
   sku: string | null;
   product_title: string | null;
   image_url: string | null;       // WEB-STOW-UNIT-01: product image for item scan confirmation
+  /**
+   * SF-STOW-UX-REFINEMENT-01 — the external product barcode, present only when
+   * a Stow scan of it would place this variant (see httpGetStowTasks). Never
+   * an SKU or LSP- identity. Optional: older payloads omit it.
+   */
+  barcode?: string | null;
   unit_ids: string[] | null;      // WEB-STOW-UNIT-01: LSU- IDs for units assigned to this task
 };
 

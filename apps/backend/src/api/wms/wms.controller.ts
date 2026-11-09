@@ -2461,6 +2461,51 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'v.sku',
           'v.image_url',
           'p.title as product_title',
+          // SF-STOW-UX-REFINEMENT-01 — the merchant's external product barcode,
+          // exposed only when a Stow scan of it would place THIS variant. Each
+          // clause mirrors a step that would otherwise intercept or redirect
+          // the scan, so the UI never shows a barcode the session would reject:
+          //   - the scanner trims input and the resolver matches exactly, so a
+          //     padded stored value can never be scanned;
+          //   - LSU-/LSO-/LSP- are reserved and resolved before variants.barcode;
+          //   - an item-phase scan matching a location is a bin switch;
+          //   - shop_wms_settings.legacy_barcode_fallback_enabled = false rejects
+          //     it (no settings row means enabled, as in the resolver);
+          //   - external_product_identity_map.barcode is consulted first, so any
+          //     row for the value must name this variant;
+          //   - variants.barcode lookup takes the first match, so the value must
+          //     be unique to this variant within the shop.
+          // Read-only and display-only: it never generates or alters identity.
+          trx.raw(`
+            CASE
+              WHEN NULLIF(BTRIM(v.barcode), '') IS NULL THEN NULL
+              WHEN v.barcode <> BTRIM(v.barcode) THEN NULL
+              WHEN v.barcode LIKE 'LSU-%' OR v.barcode LIKE 'LSO-%' OR v.barcode LIKE 'LSP-%' THEN NULL
+              WHEN EXISTS (
+                SELECT 1 FROM warehouse_locations wl
+                 WHERE wl.shop_id = st.shop_id
+                   AND (wl.barcode = v.barcode OR wl.location_code = v.barcode)
+              ) THEN NULL
+              WHEN EXISTS (
+                SELECT 1 FROM shop_wms_settings sws
+                 WHERE sws.shop_id = st.shop_id
+                   AND sws.legacy_barcode_fallback_enabled = false
+              ) THEN NULL
+              WHEN EXISTS (
+                SELECT 1 FROM external_product_identity_map m
+                 WHERE m.shop_id = st.shop_id
+                   AND m.barcode = v.barcode
+                   AND m.lasyncro_variant_id IS DISTINCT FROM v.lasyncro_variant_id
+              ) THEN NULL
+              WHEN EXISTS (
+                SELECT 1 FROM variants v2
+                 WHERE v2.shop_id = st.shop_id
+                   AND v2.barcode = v.barcode
+                   AND v2.lasyncro_variant_id <> v.lasyncro_variant_id
+              ) THEN NULL
+              ELSE v.barcode
+            END AS barcode
+          `),
           // INV-BLOCK-10b-LSU-01 — unit_ids must reflect the task's trigger.
           //
           // Inbound stow consumes freshly received units, so 'received' is

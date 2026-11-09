@@ -19,6 +19,19 @@ export type OperationalMapState =
   | 'critical';
 
 /**
+ * SF-STOW-UX-REFINEMENT-01 — caller-resolved emphasis for one destination.
+ * 'confirmed' paints the whole geometry green with an open-bin top;
+ * 'suggested' is a restrained orange tint before the bin is scanned. Rack
+ * levels stay visual geometry: the whole rack is lit, never a single level.
+ */
+export type DestinationHighlightTone = 'confirmed' | 'suggested';
+
+export interface DestinationHighlight {
+  locationCode: string;
+  tone: DestinationHighlightTone;
+}
+
+/**
  * OVERVIEW-LIVE-MAP-01 Slice D — the single merchant-facing badge a rendered
  * map object may show. Primitive only: a pre-worded label and an optional
  * count for sizing/testing. Which fact wins and how it reads is entirely

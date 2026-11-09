@@ -22,7 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation } from './IsometricCanvas.types.js';
+import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation, DestinationHighlight, DestinationHighlightTone } from './IsometricCanvas.types.js';
 
 // ── IsometricZoneView ─────────────────────────────────────────────────────────
 /**
@@ -122,6 +122,30 @@ export function resolveOperationalVisualTreatment(
 ): OperationalVisualTreatment | null {
   if (!state || state === 'neutral') return null;
   return OPERATIONAL_TREATMENT[state];
+}
+
+// SF-STOW-UX-REFINEMENT-01 — destination emphasis paints the WHOLE geometry
+// (top face and every rack-level side slice), so a lit rack can never read as
+// one assigned level. Opt-in: no tone leaves rendering unchanged.
+export interface DestinationVisualTreatment {
+  color: string;
+  topFillOpacity: number;
+  sideFillOpacity: number;
+  strokeWidth: number;
+  /** Draws an inset cavity on the top face: the bin reads as open, ready to receive. */
+  openBin: boolean;
+}
+
+const DESTINATION_TREATMENT: Record<DestinationHighlightTone, DestinationVisualTreatment> = {
+  confirmed: { color: 'var(--good-ink)', topFillOpacity: 0.45, sideFillOpacity: 0.35, strokeWidth: 2, openBin: true },
+  // Restrained: guidance only until the bin's label is scanned.
+  suggested: { color: 'var(--accent)', topFillOpacity: 0.16, sideFillOpacity: 0.1, strokeWidth: 1.4, openBin: false },
+};
+
+export function resolveDestinationVisualTreatment(
+  tone: DestinationHighlightTone | undefined,
+): DestinationVisualTreatment | null {
+  return tone ? DESTINATION_TREATMENT[tone] : null;
 }
 
 // ── Isometric projection ──────────────────────────────────────────────────────
@@ -292,6 +316,8 @@ interface BoxProps {
    * treated identically; both come from independent, page-owned sources.
    */
   operationalState?: OperationalMapState;
+  /** SF-STOW-UX-REFINEMENT-01 — whole-geometry destination emphasis; overrides selection paint. */
+  destinationTone?: DestinationHighlightTone;
   /**
    * ZONE-SHAPE-01: carve a truck berth out of the top face on this building
    * edge. Derived in IsometricCanvas, which owns the world bbox — this is
@@ -336,6 +362,7 @@ function IsometricBox({
   focusTone,
   isCritical,
   operationalState,
+  destinationTone,
   dockBay,
 }: BoxProps) {
   const baseFill      = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
@@ -348,6 +375,7 @@ function IsometricBox({
   const resolvedOperationalState: OperationalMapState | undefined =
     isCritical || operationalState === 'critical' ? 'critical' : operationalState;
   const operationalTreatment = resolveOperationalVisualTreatment(resolvedOperationalState);
+  const destinationTreatment = resolveDestinationVisualTreatment(destinationTone);
   const faceStroke     = operationalTreatment
     ? operationalTreatment.stroke
     : isHovered
@@ -470,9 +498,11 @@ function IsometricBox({
       <polygon
         points={pts(...topFacePoints)}
         fill={fill}
-        stroke={isSelected ? selStroke : faceStroke}
+        stroke={destinationTreatment ? destinationTreatment.color : isSelected ? selStroke : faceStroke}
         strokeWidth={
-          isSelected
+          destinationTreatment
+            ? destinationTreatment.strokeWidth
+            : isSelected
             ? 2
             : operationalTreatment
               ? operationalTreatment.strokeWidth
@@ -494,8 +524,40 @@ function IsometricBox({
           style={{ pointerEvents: 'none' }}
         />
       )}
+      {destinationTreatment && (
+        <polygon
+          data-destination-tone={destinationTone}
+          points={pts(...topFacePoints)}
+          fill={destinationTreatment.color}
+          fillOpacity={destinationTreatment.topFillOpacity}
+          stroke={destinationTreatment.color}
+          strokeWidth={destinationTreatment.strokeWidth}
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+      {destinationTreatment?.openBin && !isFlat && renderedRackLevels === 1 && (() => {
+        // Open bin: an inset cavity on the top face, shaded like depth. Single
+        // level only: on a multilevel rack a top-face opening would point at
+        // the top shelf, a level that is never addressed. The whole-geometry
+        // tint alone confirms a rack.
+        const INSET = 0.18;
+        const ix = ww * INSET;
+        const iy = wd * INSET;
+        const c = (x: number, y: number) => project(x, y, wh, zoom, flipped);
+        return (
+          <polygon
+            data-testid="destination-open-bin"
+            points={pts(c(wx + ix, wy + iy), c(wx + ww - ix, wy + iy), c(wx + ww - ix, wy + wd - iy), c(wx + ix, wy + wd - iy))}
+            fill="var(--ink)"
+            fillOpacity={0.28}
+            stroke={destinationTreatment.color}
+            strokeWidth={1}
+            style={{ pointerEvents: 'none' }}
+          />
+        );
+      })()}
       {/* Selection highlight */}
-      {isSelected && (
+      {isSelected && !destinationTreatment && (
         <polygon
           points={pts(...topFacePoints)}
           fill="none"
@@ -515,7 +577,7 @@ function IsometricBox({
             textAnchor="middle" dominantBaseline="middle"
             fontSize={fontSize}
             fontFamily="monospace" fontWeight={isSelected ? 700 : 600}
-            fill={isSelected ? (hasColoredOverlay ? 'var(--bg)' : 'var(--accent)') : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)'}
+            fill={destinationTreatment ? 'var(--ink)' : isSelected ? (hasColoredOverlay ? 'var(--bg)' : 'var(--accent)') : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)'}
             style={{ pointerEvents: 'none', userSelect: 'none' }}>
             {label}
           </text>
@@ -576,8 +638,18 @@ function IsometricBox({
                 key={fi}
                 points={pts(...f.pts)}
                 fill={f.fill}
-                stroke={faceStroke}
-                strokeWidth={operationalTreatment ? operationalTreatment.sideStrokeWidth : 0.4}
+                stroke={destinationTreatment ? destinationTreatment.color : faceStroke}
+                strokeWidth={destinationTreatment ? 0.8 : operationalTreatment ? operationalTreatment.sideStrokeWidth : 0.4}
+              />
+            ))}
+            {destinationTreatment && faces.map((f, fi) => (
+              <polygon
+                key={`dest-${fi}`}
+                points={pts(...f.pts)}
+                fill={destinationTreatment.color}
+                fillOpacity={destinationTreatment.sideFillOpacity}
+                stroke="none"
+                style={{ pointerEvents: 'none' }}
               />
             ))}
           </g>
@@ -724,6 +796,11 @@ export interface IsometricCanvasProps {
    * 'neutral' = base/analytical rendering unchanged. Never inferred here.
    */
   operationalStateByLocation?: Record<string, import('./IsometricCanvas.types.js').OperationalMapState>;
+  /**
+   * SF-STOW-UX-REFINEMENT-01 — one caller-resolved destination painted across
+   * its whole geometry. Absent = rendering unchanged for every other caller.
+   */
+  destinationHighlight?: DestinationHighlight | null;
   /** Same contract as operationalStateByLocation, keyed by SyntheticStation.id. */
   operationalStateByStation?: Record<string, import('./IsometricCanvas.types.js').OperationalMapState>;
   /**
@@ -880,6 +957,7 @@ export function IsometricCanvas({
     knownOccupancyLocationCodes,
     occupancyPresentation,
     operationalStateByLocation,
+    destinationHighlight,
     operationalStateByStation,
     operationalPresentationByLocation,
     operationalPresentationByStation,
@@ -1686,6 +1764,11 @@ export function IsometricCanvas({
                   }
                   isCritical={(problemCount ?? 0) > 0}
                   operationalState={operationalStateByLocation?.[zone.location_code]}
+                  destinationTone={
+                    destinationHighlight && destinationHighlight.locationCode === zone.location_code
+                      ? destinationHighlight.tone
+                      : undefined
+                  }
                   isFrame={isFrame}
                   isInactive={!zone.active}
                   label={zone.type === 'warehouse' ? '' : zone.location_code}
