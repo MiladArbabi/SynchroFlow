@@ -27,6 +27,11 @@ async function createShopWithUser(prefix: string, role: 'operator' | 'owner' = '
   const shopId = await systemTransaction(async (trx) => {
     const id = await createTenantShop(trx, `${prefix}-${unique}`);
     await setTenantContext(trx, id);
+    // Provision WMS settings as shop bootstrap does; enforce_location_capacity
+    // is left to its database default (false).
+    await trx('shop_wms_settings')
+      .insert({ shop_id: id, bootstrap_model: 'reconcile_opening_expectation_v2' })
+      .onConflict('shop_id').ignore();
     return id;
   });
   const userId = await withTenant(shopId, async (trx) => {
@@ -109,7 +114,7 @@ async function configure(shopId: number, opts: { enforce?: boolean; max?: number
   await withTenant(shopId, async (trx) => {
     if (opts.enforce !== undefined) {
       const updated = await trx('shop_wms_settings').where({ shop_id: shopId }).update({ enforce_location_capacity: opts.enforce });
-      if (updated === 0) await trx('shop_wms_settings').insert({ shop_id: shopId, enforce_location_capacity: opts.enforce });
+      expect(updated).toBe(1);
     }
     if (opts.max !== undefined) {
       await trx('warehouse_locations').where({ shop_id: shopId, location_code: opts.binCode ?? BIN }).update({ max_capacity: opts.max });
@@ -271,18 +276,11 @@ describe('SF-STOW-SAD-PATH-01 S1 — opt-in hard Stow capacity', () => {
     expect(after.truth.reduce((n, r) => n + Number(r.on_hand_quantity), 0)).toBe(2);
   });
 
-  it('9. receive_recovery Stow is checked before confirmReceiveRecoveryStow (no early-return bypass)', async () => {
-    const f = await fixture('cap-recovery');
-    await withTenant(f.shopId, (trx) => trx('stow_tasks').where({ shop_id: f.shopId, stow_task_id: f.taskId }).update({ trigger: 'receive_recovery' }));
-    // OFF: the recovery branch is reached and refuses on its own eligibility rules.
-    const offErr = await withTenant(f.shopId, (trx) => confirm(trx, f, 0)).then(() => null, (e) => e);
-    expect(offErr).not.toBeNull();
-    expect(offErr).not.toBeInstanceOf(LocationCapacityExceededError);
-    // ON + full: capacity refuses first, before any recovery read or write.
-    await seedUnlabelledAtBin(f.shopId, 1, 0);
-    await configure(f.shopId, { enforce: true, max: 1 });
-    await expectCapacityRejection(f, 0);
-  });
+  // 9. receive_recovery: proven with a real held unit in
+  // receive-held-recovery-stow-s4-5-i3.test.ts — CAP1 (OFF, advisory warning
+  // kept) and CAP2 (ON: success within the limit; 409 with zero custody,
+  // truth, ledger, Stow or task mutation). A recovery Stow's trigger is
+  // immutable (RECEIVE_RECOVERY_STOW_IMMUTABLE), so it is not simulated here.
 
   it('10. a same-source/destination re-stow keeps its own error, not a capacity error', async () => {
     const f = await fixture('cap-same');
