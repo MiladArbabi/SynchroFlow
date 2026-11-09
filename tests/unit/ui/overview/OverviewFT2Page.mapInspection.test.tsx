@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import OverviewPageFT2, { overviewLocationPulseTitle } from 'pages/ft2-pages/OverviewFT2Page';
 
+let mockRealCanvas = false;
 const mockUseSearchParams = jest.fn();
 const mockSetSearchParams = jest.fn();
 const mockUseAddressResolutionOrders = jest.fn();
@@ -48,7 +49,10 @@ jest.mock('@lasyncro/overview', () => ({
 }), { virtual: true });
 
 jest.mock('@lasyncro/shared/ui', () => ({
-  IsometricCanvas: (props: Record<string, unknown>) => mockIsometricCanvas(props),
+  IsometricCanvas: (props: Record<string, unknown>) => {
+    const stub = mockIsometricCanvas(props);
+    return mockRealCanvas ? require('react').createElement(require('../../../../modules/shared/src/ui/IsometricCanvas').IsometricCanvas, props) : stub;
+  },
 }));
 
 jest.mock('components/ExportDrawer', () => ({
@@ -183,6 +187,7 @@ const BRIEF = {
 };
 
 beforeEach(() => {
+  mockRealCanvas = false;
   jest.clearAllMocks();
   setSearchParams('');
   mockFloorZones = [bin('A-1'), bin('B-1'), bin('PROBLEM', 'problem')];
@@ -346,4 +351,26 @@ describe('CROSS-SCREEN-UX-01: Overview live state', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
     expect(screen.queryByText('Open floor →')).toBeNull();
   });
+});
+
+it('S1 renders nested positions through the actual Overview page while preserving stations, badges and Problem Center action', () => {
+  mockRealCanvas = true;
+  mockFloorZones = [...mockFloorZones,
+    { ...bin('NESTED-NULL'), parent_location_code: 'A-1', position_x: null, position_y: null },
+    { ...bin('NESTED-POSITIONED'), parent_location_code: 'A-1', position_x: 4 },
+    { ...bin('INDEPENDENT'), parent_location_code: null, position_x: 6 },
+    { ...bin('UNPLACED'), parent_location_code: null, position_x: null, position_y: null }];
+  renderMapContent();
+  expect(screen.queryByText('NESTED-POSITIONED', { selector: 'text' })).not.toBeInTheDocument();
+  expect(screen.getByText('INDEPENDENT', { selector: 'text' })).toBeInTheDocument();
+  expect(screen.getByText('1 location not placed on the floor')).toBeVisible();
+  expect(latestCanvasProps().occupancyPresentation).toBe('neutral');
+  expect((latestCanvasProps().stations as unknown[]).length).toBeGreaterThan(0);
+  const presentation = latestCanvasProps().operationalPresentationByLocation as Record<string, { primaryBadge?: { label: string } }>;
+  expect(presentation['A-1'].primaryBadge).toBeDefined();
+  expect(screen.getByRole('img', { name: `${presentation['A-1'].primaryBadge!.label} at A-1` })).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Inspect location A-1' }), { key: 'Enter' });
+  expect(latestCanvasProps().selectedLocationCode).toBe('A-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Open Problem Center →' }));
+  expect(mockNavigate).toHaveBeenCalledWith('/problem-center');
 });

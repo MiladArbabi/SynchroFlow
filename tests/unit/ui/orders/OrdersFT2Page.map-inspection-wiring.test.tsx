@@ -18,11 +18,12 @@
 // the map data hooks mocked so the live-map branch renders.
 
 import React from 'react';
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 
 import { renderWithProviders } from 'test-utils';
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
 
+let mockRealCanvas = false;
 const mockCanvas = jest.fn();
 const mockNavigate = jest.fn();
 const mockUseOrdersLiveActivity = jest.fn();
@@ -43,7 +44,7 @@ jest.mock('@lasyncro/shared/ui', () => ({
   EntityDetailModal: ({ children }: any) => require('react').createElement(require('react').Fragment, {}, children),
   IsometricCanvas: (props: any) => {
     mockCanvas(props);
-    return null;
+    return mockRealCanvas ? require('react').createElement(require('../../../../modules/shared/src/ui/IsometricCanvas').IsometricCanvas, props) : null;
   },
 }));
 
@@ -67,6 +68,12 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
       zones: [
         { location_code: 'A-1', type: 'bin', active: true, position_x: 1, position_y: 1, zone_type: 'pick' },
         { location_code: 'B-1', type: 'bin', active: true, position_x: 2, position_y: 1, zone_type: 'pick' },
+        ...(mockRealCanvas ? [
+          { location_code: 'NESTED-NULL', type: 'bin', parent_location_code: 'A-1', active: true, position_x: null, position_y: null },
+          { location_code: 'NESTED-POSITIONED', type: 'bin', parent_location_code: 'A-1', active: true, position_x: 4, position_y: 1 },
+          { location_code: 'INDEPENDENT', type: 'bin', parent_location_code: null, active: true, position_x: 6, position_y: 1 },
+          { location_code: 'UNPLACED', type: 'bin', parent_location_code: null, active: true, position_x: null, position_y: null },
+        ] : []),
       ],
     },
     isLoading: false,
@@ -125,6 +132,7 @@ function lastCanvasProps(): Record<string, any> {
 }
 
 beforeEach(() => {
+  mockRealCanvas = false;
   mockCanvas.mockClear();
   mockNavigate.mockClear();
   const now = new Date().toISOString();
@@ -211,4 +219,17 @@ describe('CROSS-SCREEN-UX-01: Orders live-map shortcuts', () => {
     const drawerProps = mockExportDrawer.mock.calls[mockExportDrawer.mock.calls.length - 1][0];
     expect(drawerProps.reportIds).toEqual(['orders-all']);
   });
+});
+
+it('S1 renders nested positions through the actual Orders page while preserving order inspection and navigation', () => {
+  mockRealCanvas = true;
+  renderWithProviders(<OrdersFT2Page />);
+  expect(screen.queryByText('NESTED-POSITIONED', { selector: 'text' })).not.toBeInTheDocument();
+  expect(screen.getByText('INDEPENDENT', { selector: 'text' })).toBeInTheDocument();
+  expect(screen.getByText('1 location not placed on the floor')).toBeVisible();
+  expect(lastCanvasProps().liveActivity['A-1']).toBeDefined();
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Inspect location A-1' }), { key: 'Enter' });
+  expect(lastCanvasProps().selectedLocationCode).toBe('A-1');
+  fireEvent.click(within(screen.getByTestId('isometric-pulse-card')).getByRole('button', { name: 'Open order flow →' }));
+  expect(mockNavigate).toHaveBeenCalledWith('/orders/flow');
 });
