@@ -73,6 +73,51 @@ describe('Inspector child position configuration', () => {
     expect(container.querySelector('[data-zone-code="RACK-A-S1"]')).toBeNull();
   });
 
+  it('suggests an editable aisle-first code from explicit ancestry and skips used identities', async () => {
+    const create = jest.fn().mockResolvedValue(undefined);
+    const aisle = zone({ location_code: 'A', type: 'lane', parent_location_code: 'ROOT-01' });
+    const stock = { ...rack, location_code: 'PICK-0A-03', parent_location_code: 'A' };
+    const existing = zone({ location_code: 'A-PICK-0A-03-01', parent_location_code: stock.location_code });
+    const elsewhere = zone({ location_code: 'OTHER', barcode: 'A-PICK-0A-03-02', active: false });
+    const { container } = render(<CanvasEditor zones={[warehouse, aisle, stock, existing, elsewhere]}
+      allowChildPositionConfiguration onCreateZone={create} />);
+    fireEvent.mouseDown(container.querySelector('[data-zone-code="PICK-0A-03"]')!, { clientX: 200, clientY: 150 });
+    fireEvent.mouseUp(window);
+    fireEvent.click(screen.getByRole('button', { name: 'Add position' }));
+    expect(screen.getByLabelText(/^Position code/)).toHaveValue('A-PICK-0A-03-03');
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/^Position code/), { target: { value: 'A-PICK-0A-03-XYZ123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create position' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ location_code: 'A-PICK-0A-03-XYZ123',
+      type: 'bin', zone_type: 'pick', parent_location_code: 'PICK-0A-03' }));
+    expect(stock).toEqual({ ...rack, location_code: 'PICK-0A-03', parent_location_code: 'A' });
+    expect(elsewhere.barcode).toBe('A-PICK-0A-03-02');
+  });
+
+  it('uses the parent code without inventing aisle ancestry from nearby lanes', () => {
+    const create = jest.fn();
+    const aisle = zone({ location_code: 'A', type: 'lane', parent_location_code: 'ROOT-01' });
+    const { container } = render(<CanvasEditor zones={[warehouse, aisle, rack]}
+      allowChildPositionConfiguration onCreateZone={create} />);
+    selectRack(container);
+    fireEvent.click(screen.getByRole('button', { name: 'Add position' }));
+    expect(screen.getByLabelText(/^Position code/)).toHaveValue('RACK-A-01');
+    fireEvent.change(screen.getByLabelText(/^Position code/), { target: { value: 'MERCHANT-SHELF' } });
+    expect(screen.getByLabelText(/^Position code/)).toHaveValue('MERCHANT-SHELF');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat an aisle prefix already present in the stock location code', () => {
+    const aisle = zone({ location_code: 'A', type: 'lane', parent_location_code: 'ROOT-01' });
+    const stock = { ...rack, location_code: 'A-PICK-0A-03', parent_location_code: 'A' };
+    const { container } = render(<CanvasEditor zones={[warehouse, aisle, stock]}
+      allowChildPositionConfiguration onCreateZone={jest.fn()} />);
+    fireEvent.mouseDown(container.querySelector('[data-zone-code="A-PICK-0A-03"]')!, { clientX: 200, clientY: 150 });
+    fireEvent.mouseUp(window);
+    fireEvent.click(screen.getByRole('button', { name: 'Add position' }));
+    expect(screen.getByLabelText(/^Position code/)).toHaveValue('A-PICK-0A-03-01');
+  });
+
   it('cancels configuration without creating a position', () => {
     const create = jest.fn();
     const { container } = render(<CanvasEditor zones={[warehouse, rack]} allowChildPositionConfiguration onCreateZone={create} />);
