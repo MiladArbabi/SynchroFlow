@@ -701,6 +701,16 @@ jobs:
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
         run: npm run test:integration -- --testPathPatterns '(floor-planning/(location-hierarchy(-migration)?-1305|barcode-print)|wms/location-identity-1305)\.test\.ts$'
 
+      - name: Run Floor Planning S2A geometry integration
+        timeout-minutes: 20
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+          SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
+        run: npm run test:integration -- --testPathPatterns 'floor-planning/(bulk-zone-actions|bulk-position-update|root-dimension-containment)\.test\.ts$'
+
       # SF-STOW-UX-REFINEMENT-01: Stow task barcode projection contract.
       - name: Run Stow barcode projection contract
         timeout-minutes: 20
