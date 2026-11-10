@@ -8,6 +8,7 @@ import {
   useWebPush,
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
+import { quarantineProblemBinUnit, quarantineStowUnit, resolveProblemBin } from '../wms/problemBinApi';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import useConfig from 'hooks/useConfig';
 import { useReadyToPack } from '../wms/useReadyToPack';
@@ -1225,23 +1226,10 @@ export default function WmsOperationsPage() {
       stowTasks={stowTasks}
       onClaimStowTask={handleClaimStowTask}
       onConfirmStow={handleConfirmStow}
-      onQuarantineStow={async (taskId, lsu, bin, eventId) => {
-        const { data } = await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/quarantine`, {
-          lasyncro_unit_id: lsu, problem_bin_location: bin, device_event_id: eventId,
-        });
-        return data;
-      }}
+      onQuarantineStow={quarantineStowUnit}
       problemBinEnabled={problemBinEnabled}
-      onResolveProblemBin={async (scan) => {
-        const { data } = await axiosInstance.get('/api/v1/wms/problem-bin/resolve', { params: { scan } });
-        return data;
-      }}
-      onQuarantineProblemBin={async (lsu, bin, eventId) => {
-        const { data } = await axiosInstance.post('/api/v1/wms/problem-bin/quarantine', {
-          lasyncro_unit_id: lsu, problem_bin_location: bin, device_event_id: eventId,
-        });
-        return data;
-      }}
+      onResolveProblemBin={resolveProblemBin}
+      onQuarantineProblemBin={quarantineProblemBinUnit}
       onFetchStowTasks={handleFetchStowTasks}
       onFetchStowPlacements={handleFetchStowPlacements}
       onResolveLocation={handleResolveLocation}
