@@ -35,6 +35,43 @@ export interface RecountLineInput {
 }
 
 /**
+ * SF-PROBLEM-BIN-B-S1 — RECOUNT PROTECTION
+ * ----------------------------------------
+ * Stock in a Problem Bin or quarantine zone is exact-LSU custody: every unit
+ * there is owned by an open Problem Center incident (0226 Receive-held, 0231
+ * Problem Bin quarantine). An ordinary recount correction is variant-grain and
+ * would change that stock without touching the units or their incidents, so
+ * the next resolution would debit stock that no longer matches custody.
+ *
+ * Broad scopes (full, variant_set) silently skip these zones; suggested
+ * already counts only pick/storage. Naming one explicitly (location,
+ * locations) is refused with RECOUNT_LOCATION_PROTECTED. commitRecount and
+ * reviewLine('accept') refuse lines created before this guard existed — the
+ * owner escalates them to Problem Center, which removes them from commit
+ * (RECOUNT-EXCEPTIONS-80). Missing quarantined units are investigated in
+ * Problem Center, never corrected here.
+ */
+export const RECOUNT_PROTECTED_ZONE_TYPES = ['problem', 'quarantine'] as const;
+export const RECOUNT_LOCATION_PROTECTED = 'RECOUNT_LOCATION_PROTECTED';
+
+/** Location codes (of those given) in a protected zone, sorted. Active or not:
+ * deactivating a Problem Bin does not release the custody it holds. */
+export async function findProtectedRecountLocations(
+  trx: Knex.Transaction,
+  shopId: number,
+  locationCodes: readonly string[]
+): Promise<string[]> {
+  if (locationCodes.length === 0) return [];
+  const rows: string[] = await trx('warehouse_locations')
+    .where({ shop_id: shopId })
+    .whereIn('location_code', [...new Set(locationCodes)])
+    .whereIn('zone_type', RECOUNT_PROTECTED_ZONE_TYPES as unknown as string[])
+    .orderBy('location_code', 'asc')
+    .pluck('location_code');
+  return rows;
+}
+
+/**
  * Atomically increments recount_label_sequence. Mirrors the prob_label pattern
  * at wms.controller.ts:3950 — UPDATE ... RETURNING so concurrent creates cannot
  * collide on the shop_id+label unique constraint.
@@ -268,7 +305,32 @@ export async function createRecountTask(
   if (scope === 'suggested') {
     lines = await selectSuggestedLines(trx, shopId, warehouseId);
   } else {
-    const q = trx('inventory_truth').where({ shop_id: shopId });
+    // SF-PROBLEM-BIN-B-S1: an explicitly named protected location is refused,
+    // never silently dropped — the caller asked for exactly that bin.
+    const explicitCodes =
+      scope === 'location' && params.locationCode ? [params.locationCode]
+        : scope === 'locations' ? (params.locationCodes ?? [])
+        : [];
+    const protectedCodes = await findProtectedRecountLocations(trx, shopId, explicitCodes);
+    if (protectedCodes.length > 0) {
+      throw new Error(
+        `[RECOUNT_CREATE] ${RECOUNT_LOCATION_PROTECTED}: ${protectedCodes.join(', ')} ` +
+        'is a Problem Bin or quarantine location. Its units are held by Problem Center incidents; ' +
+        'investigate or resolve them in Problem Center instead of recounting.'
+      );
+    }
+
+    const q = trx('inventory_truth')
+      .where({ shop_id: shopId })
+      // Broad scopes skip protected zones (and explicit scopes are already
+      // proven clean above).
+      .whereNotExists(function () {
+        this.select(trx.raw('1'))
+          .from('warehouse_locations as pwl')
+          .whereRaw('pwl.shop_id = inventory_truth.shop_id')
+          .whereRaw('pwl.location_code = inventory_truth.location_code')
+          .whereIn('pwl.zone_type', RECOUNT_PROTECTED_ZONE_TYPES as unknown as string[]);
+      });
     if (scope === 'location') {
       if (!params.locationCode) {
         throw new Error('[RECOUNT_CREATE] scope=location requires locationCode');
@@ -2209,6 +2271,13 @@ export async function reviewLine(
     if (!params.varianceReason) {
       throw new Error('[RECOUNT_REVIEW] accept requires a varianceReason — an unexplained correction is not auditable');
     }
+    // SF-PROBLEM-BIN-B-S1: an accepted variance becomes a correction at commit.
+    if ((await findProtectedRecountLocations(trx, shopId, [line.location_code])).length > 0) {
+      throw new Error(
+        `[RECOUNT_REVIEW] ${RECOUNT_LOCATION_PROTECTED}: ${line.location_code} is a Problem Bin or quarantine location ` +
+        'and cannot take a recount correction. Escalate this line to Problem Center instead.'
+      );
+    }
     await trx('inventory_recount_lines')
       .where({ shop_id: shopId, recount_line_id: recountLineId })
       .update({ variance_reason: params.varianceReason, notes: params.notes ?? null, updated_at: trx.fn.now() });
@@ -2319,6 +2388,21 @@ export async function commitRecount(
     .select('recount_line_id', 'lasyncro_variant_id', 'location_code', 'variance');
 
   const pending = lines.filter((l: any) => !superseded.includes(l.recount_line_id));
+
+  // SF-PROBLEM-BIN-B-S1: tasks created before the creation guard (or accepted
+  // before the review guard) must not write corrections into protected
+  // custody. Refuse the whole commit — nothing partial — before any write.
+  const protectedCodes = await findProtectedRecountLocations(
+    trx, shopId, pending.map((l: any) => l.location_code)
+  );
+  if (protectedCodes.length > 0) {
+    throw new Error(
+      `[RECOUNT_COMMIT] ${RECOUNT_LOCATION_PROTECTED}: lines at ${protectedCodes.join(', ')} ` +
+      'are in a Problem Bin or quarantine location and cannot write recount corrections. ' +
+      'Escalate those lines to Problem Center, then commit again.'
+    );
+  }
+
   const now = new Date();
   let units = 0;
 
