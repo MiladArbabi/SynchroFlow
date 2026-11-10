@@ -26,6 +26,10 @@ import {
   httpGetStowTasks,
   httpClaimStowTask,
   httpConfirmStow,
+  httpQuarantineStow,
+  httpGetProblemBinStatus,
+  httpResolveProblemBin,
+  httpQuarantineProblemBin,
   httpGetStowTaskPlacements,
   httpAssignStowTask,
   httpAssignStowLocation,
@@ -350,6 +354,18 @@ router.post(
   requireAction('wms:stow:confirm'),
   httpConfirmStow
 );
+
+// SF-PROBLEM-BIN Phase A — reporting a problem (wms:exception:report) never
+// grants resolution (wms:problem:resolve, unchanged). Server flag default OFF.
+router.get('/problem-bin/status', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpGetProblemBinStatus);
+router.get('/problem-bin/resolve', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpResolveProblemBin);
+router.post('/problem-bin/quarantine', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpQuarantineProblemBin);
+// Stow adapter: task accounting with ordinary placement authorization.
+router.post('/stow-tasks/:taskId/quarantine', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:stow:confirm'), httpQuarantineStow);
 
 router.patch(
   '/stow-tasks/:taskId/assignment',

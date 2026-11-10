@@ -56,6 +56,10 @@ export async function resolveProblemBin(
   const job = await trx('receive_jobs').where({ shop_id: shopId, receive_job_id: receiveJobId }).first('receive_job_id');
   if (!job) throw receiveError('Receive job not found', 404);
 
+  return resolveActiveProblemBin(trx, shopId, scannedValue);
+}
+
+export async function resolveActiveProblemBin(trx: Knex.Transaction, shopId: number, scannedValue: string): Promise<ResolvedProblemBin> {
   // Detect ambiguity across ALL identities before applying custody eligibility.
   const identity = await resolveLocationIdentity(trx, shopId, scannedValue);
   const bin = identity ? await activeProblemBins(trx, shopId)

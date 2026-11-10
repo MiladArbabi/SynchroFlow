@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Info,
 } from 'lucide-react';
+import ProblemBinScanFlow from '../components/ProblemBinScanFlow.js';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { DestinationHighlight, OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
 import {
@@ -129,6 +130,9 @@ export interface StowSessionPageProps {
   onAssignLocation: (taskId: string, locationCode: string) => Promise<void>;
   onClaimTask: (taskId: string) => Promise<void>;
   onResolveBarcode: (scannedValue: string) => Promise<BarcodeResolveResult | null>;
+  onQuarantineStow?: (taskId: string, lsu: string, bin: string, eventId: string) => Promise<WmsStowConfirmResult>;
+  /** SF-PROBLEM-BIN: shared Problem Bin resolution (not task-scoped). */
+  onResolveProblemBin?: (scan: string) => Promise<{ location_code: string }>;
   onConfirmStow: (
     taskId: string,
     quantityPlaced: number,
@@ -779,6 +783,8 @@ export default function StowSessionPage({
   onClaimTask,
   onResolveBarcode,
   onConfirmStow,
+  onQuarantineStow,
+  onResolveProblemBin,
   onFetchPlacements,
   floorZones,
 }: StowSessionPageProps) {
@@ -840,6 +846,10 @@ export default function StowSessionPage({
   // Per-unit auto-commit only needs the number of physical units still required.
   // Quantity-entry, shortfall and review state belonged to the retired bulk flow.
   const [remainingQty, setRemainingQty] = useState(0);
+  // SF-PROBLEM-BIN — the shared ProblemBinScanFlow owns step state and the
+  // retry identity; Stow only applies its task accounting from the result.
+  const [problemBinOpen, setProblemBinOpen] = useState(false);
+
 
   // STOW-UX-SCAN-RAIL-01 — the exact LSU just committed, for the rail's
   // transient "✓ ITEM / ✓ REGISTERED" acknowledgement. Cleared at the start
@@ -947,7 +957,7 @@ export default function StowSessionPage({
           // refresh, reconnect or Fast Refresh.
           setRemainingQty(
             Math.max(
-              firstTask.quantity - firstTask.quantity_placed,
+              firstTask.quantity - firstTask.quantity_placed - (firstTask.quantity_excepted ?? 0),
               0
             )
           );
@@ -1023,7 +1033,7 @@ export default function StowSessionPage({
 
     setRemainingQty(
       Math.max(
-        nextTask.quantity - nextTask.quantity_placed,
+        nextTask.quantity - nextTask.quantity_placed - (nextTask.quantity_excepted ?? 0),
         0
       )
     );
@@ -1277,6 +1287,7 @@ export default function StowSessionPage({
         ? {
             ...task,
             quantity_placed: confirmResult.quantity_placed,
+            quantity_excepted: confirmResult.quantity_excepted ?? 0,
           }
         : task
     ));
@@ -1287,7 +1298,7 @@ export default function StowSessionPage({
     setPlacedHereCount(nextPlacedHereCount);
 
     const authoritativeRemaining = Math.max(
-      confirmResult.quantity_total - confirmResult.quantity_placed,
+      confirmResult.quantity_total - confirmResult.quantity_placed - (confirmResult.quantity_excepted ?? 0),
       0
     );
 
@@ -1643,6 +1654,20 @@ export default function StowSessionPage({
     </Box>
   ) : null;
 
+  const handleStowQuarantined = (result: WmsStowConfirmResult, lsu: string, bin: string) => {
+    if (!currentTask) return;
+    const taskId = currentTask.stow_task_id;
+    setTasks(prev => prev.map(t => t.stow_task_id === taskId ? { ...t,
+      quantity_placed: result.quantity_placed, quantity_excepted: result.quantity_excepted ?? 0,
+      unit_ids: (t.unit_ids ?? []).filter(id => id !== lsu) } : t));
+    setRemainingQty(Math.max(0, result.quantity_total - result.quantity_placed - (result.quantity_excepted ?? 0)));
+    setProblemBinOpen(false);
+    setSubmitError(null);
+    setScanFeedback({ severity: 'success', message: `Unit quarantined · ${lsu} · ${bin}` });
+    setScannerFocusRequest(n => n + 1);
+    if (result.is_fully_placed) advanceToNext();
+  };
+
   const scanFeedbackLines = (
     <>
       {scanFeedback && (
@@ -1686,6 +1711,7 @@ export default function StowSessionPage({
       <ReceiveFactStrip
         facts={[
           { label: 'Destination', value: destinationCode ?? '—', highlight: true },
+          { label: 'Quarantined', value: currentTask.quantity_excepted ?? 0 },
           { label: 'Remaining', value: remainingQty },
           { label: 'Units', value: currentTask.quantity },
         ]}
@@ -2048,7 +2074,14 @@ export default function StowSessionPage({
         />
         {itemLine}
         {recoveryGuidance}
-        <ScanInput
+        {problemBinOpen && currentTask && onQuarantineStow && onResolveProblemBin ? <ProblemBinScanFlow<WmsStowConfirmResult>
+          onResolveBin={onResolveProblemBin}
+          onQuarantine={(lsu, bin, eventId) => onQuarantineStow(currentTask.stow_task_id, lsu, bin, eventId)}
+          onQuarantined={handleStowQuarantined}
+          onExit={() => { setProblemBinOpen(false); setSubmitError(null); setScannerFocusRequest(n => n + 1); }}
+          exitLabel="Continue Stow"
+          disabled={submitting}
+        /> : <ScanInput
           key="item_scan"
           hint="Scan item barcode (LSU- or product barcode)"
           error={submitError}
@@ -2076,7 +2109,10 @@ export default function StowSessionPage({
                 finishScannerAction();
               });
           }}
-        />
+        />}
+        {phase === 'item_scan' && !problemBinOpen && currentTask?.quarantine_enabled && currentTask.trigger === 'inbound_stock' && onQuarantineStow && onResolveProblemBin && (
+          <Button disabled={submitting} onClick={() => { setProblemBinOpen(true); setScanFeedback(null); setSubmitError(null); }}>Problem Bin</Button>
+        )}
         {scanFeedbackLines}
         {stageRail}
         {currentBinActivity}

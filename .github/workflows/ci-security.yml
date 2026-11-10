@@ -61,6 +61,9 @@ on:
       - 'tests/integration/wms/stow-receive-lineage-contract.test.ts'
       - 'tests/integration/wms/stow-placements-read-contract.test.ts'
       - 'tests/integration/wms/stow-location-capacity-s1.test.ts'
+      - 'tests/integration/wms/problem-bin-quarantine.test.ts'
+      - 'apps/backend/src/services/inventory/problemBinQuarantine.service.ts'
+      - 'apps/backend/migrations/20261109150000_0231_problem_bin_quarantine_custody.ts'
       - 'apps/backend/src/services/wms/stowLocationCapacity.service.ts'
       - 'apps/backend/migrations/20261109120000_0230_add_enforce_location_capacity.ts'
       - 'tests/integration/wms/stow-assignment-claim-contract.test.ts'
@@ -135,6 +138,9 @@ on:
       - 'tests/integration/wms/stow-receive-lineage-contract.test.ts'
       - 'tests/integration/wms/stow-placements-read-contract.test.ts'
       - 'tests/integration/wms/stow-location-capacity-s1.test.ts'
+      - 'tests/integration/wms/problem-bin-quarantine.test.ts'
+      - 'apps/backend/src/services/inventory/problemBinQuarantine.service.ts'
+      - 'apps/backend/migrations/20261109150000_0231_problem_bin_quarantine_custody.ts'
       - 'apps/backend/src/services/wms/stowLocationCapacity.service.ts'
       - 'apps/backend/migrations/20261109120000_0230_add_enforce_location_capacity.ts'
       - 'tests/integration/wms/stow-assignment-claim-contract.test.ts'
@@ -731,7 +737,7 @@ jobs:
           PGMIGRATION_USER: sf_user
           PGMIGRATION_PASSWORD: sf_pass
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'wms/stow-location-capacity-s1\.test\.ts$'
+        run: npm run test:integration -- --testPathPatterns 'wms/stow-location-capacity-s1\.test\.ts$|wms/problem-bin-quarantine\.test\.ts$'
 
       - &restore-network
         name: Restore runner network

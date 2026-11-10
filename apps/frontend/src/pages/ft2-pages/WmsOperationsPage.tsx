@@ -8,6 +8,7 @@ import {
   useWebPush,
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
+import { quarantineProblemBinUnit, quarantineStowUnit, resolveProblemBin } from '../wms/problemBinApi';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import useConfig from 'hooks/useConfig';
 import { useReadyToPack } from '../wms/useReadyToPack';
@@ -69,7 +70,7 @@ export default function WmsOperationsPage() {
   const { state: { isOpsConsoleOpen } } = useConfig();
   const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
-    data, isLoading, isError, refetch, stowTasks,
+    data, isLoading, isError, refetch, stowTasks, problemBinEnabled = false,
     openReceiveJobs, recountTasks, recountLocked, recountTasksSettled,
     openingInventory = null, refetchOpeningInventory,
   } = useWms();
@@ -1225,6 +1226,10 @@ export default function WmsOperationsPage() {
       stowTasks={stowTasks}
       onClaimStowTask={handleClaimStowTask}
       onConfirmStow={handleConfirmStow}
+      onQuarantineStow={quarantineStowUnit}
+      problemBinEnabled={problemBinEnabled}
+      onResolveProblemBin={resolveProblemBin}
+      onQuarantineProblemBin={quarantineProblemBinUnit}
       onFetchStowTasks={handleFetchStowTasks}
       onFetchStowPlacements={handleFetchStowPlacements}
       onResolveLocation={handleResolveLocation}
