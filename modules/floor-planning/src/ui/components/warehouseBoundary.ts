@@ -4,21 +4,15 @@
 // floor component. Pure geometry shared by the Canvas render projection, the
 // first-entry guidance state and Floor settings resize containment.
 
+import { DEFAULT_COMPONENT_FOOTPRINT } from '@lasyncro/shared/ui';
+export { DEFAULT_COMPONENT_FOOTPRINT, isImplicitWarehouseRoot, projectWarehouseRoot } from '@lasyncro/shared/ui';
+
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 
 type BoundaryZone = Pick<WarehouseZone, 'type' | 'position_x' | 'position_y' | 'width' | 'depth'>;
 
 // Floating-point tolerance for edge comparisons (dimensions snap to 0.1 m).
 const EDGE_EPSILON = 1e-6;
-
-/**
- * Canvas draws a positioned component whose persisted width/depth is null at
- * this footprint (CanvasEditor: `width ?? 1`, `depth ?? 0.8`). Containment uses
- * the same footprint so a boundary can never clip what the merchant sees.
- * Mirrored by NULL_SIZE_COMPONENT_FOOTPRINT in the backend floor-planning
- * controller. Never persisted onto the component.
- */
-export const DEFAULT_COMPONENT_FOOTPRINT = { width: 1, depth: 0.8 } as const;
 
 /** Right (width) or bottom (depth) edge of a positioned component's footprint. */
 export function componentFootprintEdge(zone: BoundaryZone, axis: 'width' | 'depth'): number {
@@ -30,31 +24,6 @@ function finite(value: unknown): number | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function hasValidDimensions(zone: BoundaryZone): boolean {
-  const width = finite(zone.width);
-  const depth = finite(zone.depth);
-  return width != null && width > 0 && depth != null && depth > 0;
-}
-
-/**
- * A fresh root: no persisted coordinates, but a valid physical size. Canvas
- * draws it at the implicit origin (0,0) without persisting anything.
- */
-export function isImplicitWarehouseRoot(zone: BoundaryZone): boolean {
-  return zone.type === 'warehouse'
-    && zone.position_x == null
-    && zone.position_y == null
-    && hasValidDimensions(zone);
-}
-
-/**
- * Render projection only: a fresh root gains the implicit (0,0) origin; every
- * other zone — including a root with persisted coordinates — is returned as-is.
- */
-export function projectWarehouseRoot<T extends BoundaryZone>(zone: T): T {
-  return isImplicitWarehouseRoot(zone) ? { ...zone, position_x: 0, position_y: 0 } : zone;
 }
 
 /** Persisted root origin, or the implicit (0,0) origin of a fresh root. */

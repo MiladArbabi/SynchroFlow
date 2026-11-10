@@ -19,6 +19,7 @@ import type { IsometricCanvasProps } from '../../../../modules/shared/src/ui/Iso
 
 // Same complete zone shape as CanvasEditor.warehouseRoot.test.tsx; no reusable
 // helper exists there. One root and one placed stock location suffice here.
+let mockRealCanvas = false;
 const mockStock: WarehouseZone = {
   location_code: 'STOCK-RED-01', type: 'bin', parent_location_code: 'ROOT-RED-01',
   barcode: null, active: true, children_count: 0,
@@ -31,6 +32,14 @@ const mockRoot: WarehouseZone = {
   position_x: 0, position_y: 0, width: 10, depth: 5,
 };
 
+const mockNestedZones: WarehouseZone[] = [
+  { ...mockStock, location_code: 'NESTED-NULL', parent_location_code: mockStock.location_code, position_x: null, position_y: null },
+  { ...mockStock, location_code: 'NESTED-POSITIONED', parent_location_code: mockStock.location_code, position_x: 4 },
+  { ...mockStock, location_code: 'INDEPENDENT', position_x: 6 },
+  { ...mockStock, location_code: 'UNPLACED', position_x: null, position_y: null },
+];
+beforeEach(() => { mockRealCanvas = false; });
+
 jest.mock('@lasyncro/floor-planning', () => ({
   // Resolve directly to current source, not a potentially stale package dist.
   FloorPlanningModuleFT2: jest.requireActual(
@@ -42,9 +51,9 @@ jest.mock('@lasyncro/shared/ui', () => ({
   ModuleErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   ModuleLoadingSkeleton: () => <div>Loading floor planning</div>,
   WarehouseGrid: () => <div data-testid="warehouse-grid" />,
-  IsometricCanvas: ({ onSelect }: Pick<IsometricCanvasProps, 'onSelect'>) => (
+  IsometricCanvas: (props: IsometricCanvasProps) => mockRealCanvas ? require('react').createElement(require('../../../../modules/shared/src/ui/IsometricCanvas').IsometricCanvas, props) : (
     <div data-testid="inspection-workspace">
-      <button onClick={() => onSelect?.('STOCK-RED-01')}>Select stock location</button>
+      <button onClick={() => props.onSelect?.('STOCK-RED-01')}>Select stock location</button>
     </div>
   ),
 }));
@@ -64,7 +73,7 @@ jest.mock('utils/qzPrint', () => ({ printViaQz: jest.fn() }));
 jest.mock('pages/floor-planning/useFloorPlanning', () => ({
   useFloorPlanning: () => ({
     data: {
-      zones: [mockRoot, mockStock],
+      zones: [mockRoot, mockStock, ...(mockRealCanvas ? mockNestedZones : [])],
       product_barcodes: [{
         lasyncro_variant_id: 'variant-red-01', sku: 'SKU-RED-01',
         product_title: 'Synthetic product', variant_title: null,
@@ -75,7 +84,7 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
   }),
 }));
 jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
-  useWarehouseGrid: () => ({ data: { locations: [mockRoot, mockStock] }, isLoading: false }),
+  useWarehouseGrid: () => ({ data: { locations: [mockRoot, mockStock, ...(mockRealCanvas ? mockNestedZones : [])] }, isLoading: false }),
   useWarehouseGridOccupancy: () => ({ data: { occupancy: {}, inventoryInspection: {
     'STOCK-RED-01': { on_hand_quantity: -2, available_quantity: 0, reserved_quantity: 0, variants: [] },
   } } }),
@@ -200,4 +209,16 @@ it('passes canonical signed occupancy from the page query into the location Insp
   fireEvent.click(screen.getByRole('button', { name: 'Select stock location' }));
   expect(screen.getByText('-2 units')).toBeVisible();
   expect(screen.getByText('Negative inventory is recorded here.')).toBeVisible();
+});
+
+it('S1 renders nested positions through the actual Floor Planning page and preserves location labels and inspection', () => {
+  mockRealCanvas = true;
+  renderPage();
+  expect(screen.queryByText('NESTED-POSITIONED', { selector: 'text' })).not.toBeInTheDocument();
+  expect(screen.getByText('INDEPENDENT', { selector: 'text' })).toBeInTheDocument();
+  expect(screen.getByText('1 location not placed on the floor')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Labels for 5 locations' })).toBeVisible();
+  fireEvent.click(screen.getByText('STOCK-RED-01', { selector: 'text' }));
+  expect(screen.getByText('-2 units')).toBeVisible();
+  expect(screen.getByRole('button', { name: /^Edit layout$/i })).toBeVisible();
 });

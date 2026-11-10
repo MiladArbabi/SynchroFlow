@@ -1,7 +1,8 @@
 // apps/frontend/src/pages/floor-planning/operationalFloor.ts
+import { floorObjects } from '../../../../../modules/shared/src/ui/warehouseGeometry';
 import type { WarehouseZone } from '@lasyncro/shared/ui';
 
-type FloorZone = Pick<WarehouseZone, 'type' | 'position_x' | 'position_y'>;
+type FloorZone = Pick<WarehouseZone, 'location_code' | 'parent_location_code' | 'type' | 'position_x' | 'position_y'>;
 
 /**
  * GH-1176 — the one "is there an operational floor?" semantic for the live-map
@@ -16,7 +17,7 @@ type FloorZone = Pick<WarehouseZone, 'type' | 'position_x' | 'position_y'>;
  * wms.zonesConfigured.
  */
 export function hasOperationalFloor(zones: readonly FloorZone[]): boolean {
-  return zones.some(
+  return floorObjects(zones).some(
     (zone) => zone.type !== 'warehouse' && zone.position_x != null && zone.position_y != null
   );
 }

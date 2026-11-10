@@ -32,6 +32,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const mockNavigate = jest.fn();
+let mockRealCanvas = false;
 const mockCanvas = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -54,7 +55,7 @@ jest.mock('@lasyncro/shared/ui', () => ({
   __esModule: true,
   IsometricCanvas: (props: Record<string, unknown>) => {
     mockCanvas(props);
-    return null;
+    return mockRealCanvas ? require('react').createElement(require('../../../../modules/shared/src/ui/IsometricCanvas').IsometricCanvas, props) : null;
   },
 }));
 
@@ -114,6 +115,12 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
         mockZone('Z-01', 'bin', 'pick', 5),
         mockZone('P-01', 'bin', 'storage', 7),
         mockZone('U-01', 'bin', 'pick', 9),
+        ...(mockRealCanvas ? [
+          { ...mockZone('NESTED-NULL', 'bin', 'pick', 2), parent_location_code: 'A-01', position_x: null, position_y: null },
+          { ...mockZone('NESTED-POSITIONED', 'bin', 'pick', 4), parent_location_code: 'A-01' },
+          mockZone('INDEPENDENT', 'bin', 'pick', 11),
+          { ...mockZone('UNPLACED', 'bin', 'pick', 12), position_x: null, position_y: null },
+        ] : []),
       ],
     },
     isLoading: false,
@@ -276,6 +283,7 @@ function select(code: string | null) {
 }
 
 beforeEach(() => {
+  mockRealCanvas = false;
   mockCanvas.mockClear();
   mockNavigate.mockClear();
 });
@@ -485,4 +493,18 @@ describe('CROSS-SCREEN-UX-01: Inventory live-map shortcut', () => {
     fireEvent.click(shortcuts[0]);
     expect(mockNavigate).toHaveBeenCalledWith('/floor-planning?tab=setup&view=canvas');
   });
+});
+
+it('S1 renders nested positions through the actual Inventory page while preserving occupancy and signed inspection', () => {
+  mockRealCanvas = true;
+  render(<ProductsFT2Page />);
+  expect(screen.queryByText('NESTED-POSITIONED', { selector: 'text' })).not.toBeInTheDocument();
+  expect(screen.getByText('INDEPENDENT', { selector: 'text' })).toBeInTheDocument();
+  expect(screen.getByText('1 location not placed on the floor')).toBeVisible();
+  expect(lastCanvasProps().occupancy).toBe(mockOccupancyResponse.occupancy);
+  expect(lastCanvasProps().knownOccupancyLocationCodes.has('Z-01')).toBe(true);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Inspect location P-01' }), { key: 'Enter' });
+  expect(lastCanvasProps().selectedLocationCode).toBe('P-01');
+  expect(screen.getByTestId('isometric-pulse-card')).toBeVisible();
+  expect(lastCanvasProps().pinnedAction).toBeNull();
 });

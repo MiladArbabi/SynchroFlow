@@ -20,6 +20,8 @@ import { X, RotateCw, Copy, Trash2, Tag, Settings2, MousePointer2, BoxSelect, Ha
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import {
   DecisionConfirmationModal,
+  floorObjects,
+  DEFAULT_COMPONENT_FOOTPRINT as componentFootprint,
   SpotlightCoachMark,
   WarehouseLocationType,
 } from '@lasyncro/shared/ui';
@@ -874,7 +876,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
         zone_type: zone.zone_type ?? undefined,
         position_x: (parseFloat(String(zone.position_x ?? 0)) + 1.1),
         position_y: parseFloat(String(zone.position_y ?? 0)),
-        width: parseFloat(String(zone.width ?? 1)),
+        width: parseFloat(String(zone.width ?? componentFootprint.width)),
         depth: parseFloat(String(zone.depth ?? 0.5)),
         rack_levels: zone.rack_levels ?? undefined,
       });
@@ -1194,13 +1196,7 @@ export function CanvasEditor({
 }: CanvasEditorProps) {
   // Bins beneath stock racks/shelf frames are identities within the parent,
   // never independent floor objects or candidates for floor placement.
-  const zones = useMemo(() => {
-    const parentByCode = new Map(allZones.map(zone => [zone.location_code, zone]));
-    return allZones.filter(zone => {
-      const parent = zone.parent_location_code ? parentByCode.get(zone.parent_location_code) : undefined;
-      return !(zone.type === 'bin' && parent && (parent.type === 'bin' || parent.type === 'shelf'));
-    });
-  }, [allZones]);
+  const zones = useMemo(() => floorObjects(allZones), [allZones]);
   const svgRef = useRef<SVGSVGElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom]         = useState(1);
@@ -1462,8 +1458,8 @@ export function CanvasEditor({
       if (z.location_code === code || z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf') continue;
         const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
         const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
-        const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width  ?? 1));
-        const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth  ?? 0.8));
+        const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width  ?? componentFootprint.width));
+        const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth  ?? componentFootprint.depth));
         const TOL = 0.05;
         if (!(cx < zx + zw - TOL && cx + w - TOL > zx && cy < zy + zh - TOL && cy + h - TOL > zy)) continue;
         const snapLeft  = zx - w;
@@ -1523,10 +1519,10 @@ export function CanvasEditor({
 
       const w =
         localSizesRef.current[code]?.w
-        ?? parseFloat(String(zone.width ?? 1));
+        ?? parseFloat(String(zone.width ?? componentFootprint.width));
       const h =
         localSizesRef.current[code]?.h
-        ?? parseFloat(String(zone.depth ?? 0.8));
+        ?? parseFloat(String(zone.depth ?? componentFootprint.depth));
 
       for (const blocker of positionedZonesRef.current) {
         if (
@@ -1546,10 +1542,10 @@ export function CanvasEditor({
           ?? parseFloat(String(blocker.position_y ?? 0));
         const bw =
           localSizesRef.current[blocker.location_code]?.w
-          ?? parseFloat(String(blocker.width ?? 1));
+          ?? parseFloat(String(blocker.width ?? componentFootprint.width));
         const bh =
           localSizesRef.current[blocker.location_code]?.h
-          ?? parseFloat(String(blocker.depth ?? 0.8));
+          ?? parseFloat(String(blocker.depth ?? componentFootprint.depth));
 
         const overlaps =
           candidateX < bx + bw - TOL
@@ -1786,8 +1782,8 @@ export function CanvasEditor({
       if (z.type !== 'warehouse' && z.type !== 'lane' && z.type !== 'shelf') continue;
       const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
       const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
-      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
-      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? componentFootprint.width));
+      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? componentFootprint.depth));
 
       // X axis: compare left/center/right of dragged zone against left/center/right of sibling
       const candidatesX = [
@@ -1849,8 +1845,8 @@ export function CanvasEditor({
       if (z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf') continue;
       const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
       const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
-      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
-      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? componentFootprint.width));
+      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? componentFootprint.depth));
 
       const candidatesX = [
         { dragEdge: x,         targetEdge: zx },
@@ -1916,8 +1912,8 @@ export function CanvasEditor({
       if (z.type !== 'warehouse' && z.type !== 'lane' && z.type !== 'shelf') continue;
       const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
       const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
-      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
-      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? componentFootprint.width));
+      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? componentFootprint.depth));
 
       if (checkX) {
         // FP-12b: curX + zw is a *dimension* match (same width as this
@@ -2087,8 +2083,8 @@ export function CanvasEditor({
           if (z.location_code === r.locationCode || z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf') continue;
           const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
           const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
-          const zw = localSizesRef.current[z.location_code]?.w    ?? parseFloat(String(z.width  ?? 1));
-          const zh = localSizesRef.current[z.location_code]?.h    ?? parseFloat(String(z.depth  ?? 0.8));
+          const zw = localSizesRef.current[z.location_code]?.w    ?? parseFloat(String(z.width  ?? componentFootprint.width));
+          const zh = localSizesRef.current[z.location_code]?.h    ?? parseFloat(String(z.depth  ?? componentFootprint.depth));
           if (zx > curX + 0.05 && curY < zy + zh - 0.05 && curY + clampedH - 0.05 > zy)
             clampedW = Math.min(clampedW, snapV(zx - curX));
           if (zy > curY + 0.05 && curX < zx + zw - 0.05 && curX + rawW - 0.05 > zx)
@@ -2130,8 +2126,8 @@ export function CanvasEditor({
         const rawX = snapV(Math.max(0, d.startPosX + dxM));
         const rawY = snapV(Math.max(0, d.startPosY + dyM));
         const zone = positionedZonesRef.current.find(z => z.location_code === d.locationCode);
-        const w    = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width  ?? 1));
-        const h    = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth  ?? 0.8));
+        const w    = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width  ?? componentFootprint.width));
+        const h    = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth  ?? componentFootprint.depth));
         // FP-11: alignment snap runs first for frame zones (lane/warehouse/
         // shelf) — clampPosition already returns {x,y} unchanged for these
         // types, so this is purely additive, never fighting the existing
@@ -2256,8 +2252,8 @@ export function CanvasEditor({
         if (local && onUpdateZone && !savingRef.current.has(d.locationCode)) {
           // Final clamp before persist — guards against any residual overlap from rapid drag
           const zone    = positionedZonesRef.current.find(z => z.location_code === d.locationCode);
-          const w       = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width  ?? 1));
-          const h       = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth  ?? 0.8));
+          const w       = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width  ?? componentFootprint.width));
+          const h       = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth  ?? componentFootprint.depth));
           const { x: safeX, y: safeY } = clampPosition(d.locationCode, local.x, local.y, w, h);
           // Update local state to reflect final safe position
           setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: safeX, y: safeY } }));
@@ -2283,8 +2279,8 @@ export function CanvasEditor({
           const localSize = localSizesRef.current[zone.location_code];
           const zoneLeft = offsetRef.current.x + (localPosition?.x ?? Number(zone.position_x)) * SCALE * zoomRef.current;
           const zoneTop = offsetRef.current.y + (localPosition?.y ?? Number(zone.position_y)) * SCALE * zoomRef.current;
-          const zoneRight = zoneLeft + (localSize?.w ?? Number(zone.width ?? 1)) * SCALE * zoomRef.current;
-          const zoneBottom = zoneTop + (localSize?.h ?? Number(zone.depth ?? 0.8)) * SCALE * zoomRef.current;
+          const zoneRight = zoneLeft + (localSize?.w ?? Number(zone.width ?? componentFootprint.width)) * SCALE * zoomRef.current;
+          const zoneBottom = zoneTop + (localSize?.h ?? Number(zone.depth ?? componentFootprint.depth)) * SCALE * zoomRef.current;
           return left <= zoneRight && right >= zoneLeft && top <= zoneBottom && bottom >= zoneTop;
         });
         const next = selectionRect.shiftKey
@@ -2526,8 +2522,8 @@ export function CanvasEditor({
                     const ls  = localSizes[zone.location_code];
                     const px  = toSvg(lp?.x ?? parseFloat(String(zone.position_x!)));
                     const py  = toSvg(lp?.y ?? parseFloat(String(zone.position_y!)));
-                    const pw  = toSvg(ls?.w ?? parseFloat(String(zone.width  ?? 1)));
-                    const ph  = toSvg(ls?.h ?? parseFloat(String(zone.depth  ?? 0.8)));
+                    const pw  = toSvg(ls?.w ?? parseFloat(String(zone.width  ?? componentFootprint.width)));
+                    const ph  = toSvg(ls?.h ?? parseFloat(String(zone.depth  ?? componentFootprint.depth)));
                     // Frame types (lane/warehouse/shelf) use type-based colour regardless of zone_type
                     const colorKey = (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf')
                       ? zone.type
@@ -2596,13 +2592,13 @@ export function CanvasEditor({
                         {isSelected && selected.size === 1 && !isWarehouse && (<>
                           <rect x={pw - HANDLE / 2} y={ph / 2 - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ew-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                           <rect x={pw / 2 - HANDLE / 2} y={ph - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ns-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                           <rect x={pw - HANDLE / 2} y={ph - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--accent)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'nwse-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                         </>)}
                       </g>
                     );

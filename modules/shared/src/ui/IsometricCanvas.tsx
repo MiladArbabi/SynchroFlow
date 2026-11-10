@@ -22,6 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
+import { DEFAULT_COMPONENT_FOOTPRINT, floorObjects, projectWarehouseRoot } from './warehouseGeometry.js';
 import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation, DestinationHighlight, DestinationHighlightTone } from './IsometricCanvas.types.js';
 
 // ── IsometricZoneView ─────────────────────────────────────────────────────────
@@ -935,7 +936,7 @@ export interface IsometricCanvasProps {
   onRefresh?: () => void;
 }
 export function IsometricCanvas({ 
-    zones, 
+    zones: allZones,
     onSelect,
     onZoneClick,
     selectedLocationCode,
@@ -1013,6 +1014,7 @@ export function IsometricCanvas({
   zoomRef.current   = zoom;
   offsetRef.current = offset;
   sizeRef.current   = size;
+  const zones = useMemo(() => floorObjects(allZones).map(projectWarehouseRoot), [allZones]);
   const isInspectableLocation = (code: string): boolean =>
     inspectableLocationCodes == null || inspectableLocationCodes.has(code);
   const requestedSelectedLocation = selectedLocationCode !== undefined ? selectedLocationCode : selected;
@@ -1045,8 +1047,8 @@ export function IsometricCanvas({
       if (isFrame(z)) continue;
       const wx = parseFloat(String(z.position_x ?? 0));
       const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width ?? 1));
-      const wd = parseFloat(String(z.depth ?? 0.5));
+      const ww = parseFloat(String(z.width ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+      const wd = parseFloat(String(z.depth ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
       if (wx < minX) minX = wx;
       if (wx + ww > maxX) maxX = wx + ww;
       if (wy < minY) minY = wy;
@@ -1078,8 +1080,8 @@ export function IsometricCanvas({
     const h = worldBox.maxY - worldBox.minY;
     if (w <= 0 || h <= 0) return null;
 
-    const cx = parseFloat(String(z.position_x ?? 0)) + parseFloat(String(z.width ?? 1)) / 2;
-    const cy = parseFloat(String(z.position_y ?? 0)) + parseFloat(String(z.depth ?? 0.5)) / 2;
+    const cx = parseFloat(String(z.position_x ?? 0)) + parseFloat(String(z.width ?? DEFAULT_COMPONENT_FOOTPRINT.width)) / 2;
+    const cy = parseFloat(String(z.position_y ?? 0)) + parseFloat(String(z.depth ?? DEFAULT_COMPONENT_FOOTPRINT.depth)) / 2;
     const sides: Array<{ side: DockBay; d: number }> = [
       { side: 'north', d: (cy - worldBox.minY) / h },
       { side: 'south', d: (worldBox.maxY - cy) / h },
@@ -1184,8 +1186,8 @@ export function IsometricCanvas({
     for (const z of positionedZones) {
       const wx = parseFloat(String(z.position_x ?? 0));
       const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width ?? 1));
-      const wd = parseFloat(String(z.depth ?? 0.5));
+      const ww = parseFloat(String(z.width ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+      const wd = parseFloat(String(z.depth ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
       if (wx < minX) minX = wx;
       if (wx + ww > maxX) maxX = wx + ww;
       if (wy < minY) minY = wy;
@@ -1288,8 +1290,8 @@ export function IsometricCanvas({
     for (const z of positionedZones) {
       const wx = parseFloat(String(z.position_x ?? 0));
       const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width  ?? 1));
-      const wd = parseFloat(String(z.depth  ?? 0.5));
+      const ww = parseFloat(String(z.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+      const wd = parseFloat(String(z.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
       const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
       const corners: Array<[number, number, number]> = [
         [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
@@ -1483,8 +1485,8 @@ export function IsometricCanvas({
     for (const z of positionedZones) {
       const wx = parseFloat(String(z.position_x ?? 0));
       const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width  ?? 1));
-      const wd = parseFloat(String(z.depth  ?? 0.5));
+      const ww = parseFloat(String(z.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+      const wd = parseFloat(String(z.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
       const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
       const corners: Array<[number, number, number]> = [
         [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
@@ -1559,8 +1561,8 @@ export function IsometricCanvas({
           {sorted.map((zone) => {
             const wx = parseFloat(String(zone.position_x ?? 0));
             const wy = parseFloat(String(zone.position_y ?? 0));
-            const ww = parseFloat(String(zone.width  ?? 1));
-            const wd = parseFloat(String(zone.depth  ?? 0.5));
+            const ww = parseFloat(String(zone.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+            const wd = parseFloat(String(zone.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
             const isFrame = zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf';
             const rackLevels = zone.rack_levels ?? null;
             const wh = isFrame ? 0 : (rackLevels ?? 1) * LEVEL_HEIGHT;
@@ -2613,8 +2615,8 @@ export function IsometricCanvas({
 }
 
 export function IsometricZoneView({ zone, width = 120, height = 90 }: IsometricZoneViewProps) {
-  const ww = parseFloat(String(zone.width  ?? 1));
-  const wd = parseFloat(String(zone.depth  ?? 0.5));
+  const ww = parseFloat(String(zone.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
+  const wd = parseFloat(String(zone.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
   const wh = (zone.rack_levels ?? 1) * LEVEL_HEIGHT;
   const isFrame = zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf';
   const colorKey = isFrame ? zone.type : (zone.zone_type ?? 'storage');

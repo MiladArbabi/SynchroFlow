@@ -504,13 +504,6 @@ function FloorPlanningModuleFT2Inner({
   suppressLocationRail = false,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
-  // Match CanvasEditor's placement rule. Child positions remain in `zones`
-  // for labels and the parent Inspector, but are not separate floor objects.
-  const zoneByCode = new Map(zones.map(zone => [zone.location_code, zone]));
-  const floorZones = zones.filter(zone => {
-    const parent = zone.parent_location_code ? zoneByCode.get(zone.parent_location_code) : undefined;
-    return !(zone.type === 'bin' && parent && (parent.type === 'bin' || parent.type === 'shelf'));
-  });
   const [localMode, setLocalMode] = useState<FloorPlanningMode>(mode ?? 'inspect');
   const currentMode = mode ?? localMode;
   const changeMode = useCallback((next: FloorPlanningMode) => {
@@ -765,7 +758,7 @@ function FloorPlanningModuleFT2Inner({
             {isGridLoading ? <ModuleLoadingSkeleton /> : (
               /* Isometric 2.5D view (read-only). 2D editing lives in Edit layout. */
               <IsometricCanvas
-                zones={floorZones}
+                zones={zones}
                 onSelect={(code) => code && handleBinSelect(code)}
                 filteredCodes={filteredCodes}
                 /* Each overlay owns one visual language: heatmap or semantic focus. */
