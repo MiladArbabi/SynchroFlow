@@ -29,6 +29,7 @@ export type AuditActionType =
   | 'stow_assign'
   | 'stow_exception'
   | 'stow_confirm'
+  | 'problem_bin_quarantine'
   | 'pick_claim'
   | 'pick_scan'
   | 'pick_complete'
@@ -67,6 +68,8 @@ export type AuditEntityType =
   // just the session. `operator_audit_log.entity_type` is
   // varchar with no enum/check, so no migration is required.
   | 'recount_task'
+  // SF-PROBLEM-BIN Phase A: one exact LSU quarantined into a Problem Bin.
+  | 'inventory_unit'
   | 'recount_line';
 
 export interface WriteAuditLogInput {

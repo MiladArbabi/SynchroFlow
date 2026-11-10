@@ -287,6 +287,7 @@ export async function confirmStow(
     isFullyPlaced: boolean;
     quantityPlaced: number;
     quantityTotal: number;
+    quantityExcepted?: number;
     placedNow: number;
     locationCode: string;
   }> {
@@ -369,7 +370,7 @@ export async function confirmStow(
     const scanned = await trx('inventory_units')
       .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
       .first('status');
-    if (scanned && (HELD_UNIT_STATUSES as readonly string[]).includes(scanned.status)) {
+    if (scanned && ((HELD_UNIT_STATUSES as readonly string[]).includes(scanned.status) || scanned.status === 'quarantined')) {
       throw new Error(`[STOW_CONFIRM] HELD_UNIT_NOT_STOWABLE: ${lasyncroUnitId}`);
     }
   }
@@ -855,15 +856,15 @@ export async function confirmStow(
       quantity_placed: trx.raw('quantity_placed + ?', [placedNow]),
       updated_at: completedAt,
     })
-    .returning(['quantity', 'quantity_placed']);
+    .returning(['quantity', 'quantity_placed', 'quantity_excepted']);
 
-  const isFullyPlaced = updatedTask.quantity_placed >= updatedTask.quantity;
+  const isFullyPlaced = updatedTask.quantity_placed + updatedTask.quantity_excepted >= updatedTask.quantity;
 
   if (isFullyPlaced) {
     await trx('stow_tasks')
       .where({ stow_task_id: stowTaskId })
       .update({
-        status: 'completed',
+        status: updatedTask.quantity_excepted > 0 ? 'finished_with_exceptions' : 'completed',
         completed_at: completedAt,
         updated_at: completedAt,
       });
@@ -876,6 +877,7 @@ export async function confirmStow(
     placedNow,
     quantityPlaced: updatedTask.quantity_placed,
     quantityTotal: updatedTask.quantity,
+    quantityExcepted: updatedTask.quantity_excepted,
   });
 
   await writeAuditLog(trx, {
@@ -891,7 +893,7 @@ export async function confirmStow(
       // and what remains after the persisted cumulative quantity is updated.
       quantity: placedNow,
       quantity_remaining:
-        updatedTask.quantity - updatedTask.quantity_placed,
+        updatedTask.quantity - updatedTask.quantity_placed - updatedTask.quantity_excepted,
 
       lasyncro_variant_id: task.lasyncro_variant_id,
       // STOW-MOVEMENT-ID-01 — movements are now per unit; record the units
@@ -910,6 +912,7 @@ export async function confirmStow(
     isFullyPlaced,
     quantityPlaced: updatedTask.quantity_placed,
     quantityTotal: updatedTask.quantity,
+    quantityExcepted: updatedTask.quantity_excepted,
     placedNow,
     // STOW-ACTIVE-LOCATION-01 — the exact destination THIS transaction
     // committed to, taken from the FOR UPDATE-locked snapshot above. Callers

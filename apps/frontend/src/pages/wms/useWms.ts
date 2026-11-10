@@ -109,8 +109,18 @@ export function useWms() {
     retry: false,
   });
 
+  // SF-PROBLEM-BIN Phase A — server flag (default OFF). Any failure keeps the
+  // Free Scan Problem Bin action hidden; the server refuses writes regardless.
+  const { data: problemBinStatus } = useQuery<{ enabled?: boolean }>({
+    queryKey: ['wms', 'problem-bin', 'status'],
+    queryFn: async () => (await axiosInstance.get('/api/v1/wms/problem-bin/status')).data,
+    staleTime: 60_000,
+    retry: false,
+  });
+
   return {
     data, isLoading, isError,
+    problemBinEnabled: problemBinStatus?.enabled === true,
     stowTasks: stowData ?? [],
     settings: settingsData ?? null,
     // A disabled query still returns its cache; never show it once access is denied.

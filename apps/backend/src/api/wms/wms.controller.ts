@@ -1,3 +1,6 @@
+import { quarantineStowUnit } from '../../services/wms/stowQuarantine.service.js';
+import { isProblemBinQuarantineEnabled, quarantineUnitToProblemBin } from '../../services/inventory/problemBinQuarantine.service.js';
+import { resolveActiveProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
 import { assertStowDestinationEligible, lockStowDestinationHierarchy, StowDestinationEligibilityError } from '../../services/wms/stowDestinationEligibility.service.js';
 import { LocationCapacityExceededError } from '../../services/wms/stowLocationCapacity.service.js';
 import { resolveLocationIdentity, LocationIdentityAmbiguousError } from '../../services/wms/locationIdentity.service.js';
@@ -2449,6 +2452,8 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           // or hot-refreshed scanner reconstructs remaining work from database truth
           // rather than assuming the full task quantity is still outstanding.
           'st.quantity_placed',
+          'st.quantity_excepted',
+          trx.raw('?::boolean as quarantine_enabled', [isProblemBinQuarantineEnabled()]),
 
           'st.location_code',
           'st.status',
@@ -3103,13 +3108,14 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       stow_task_id: taskId,
-      status: confirmResult.isFullyPlaced ? 'completed' : 'in_progress',
+      status: confirmResult.isFullyPlaced ? ((confirmResult.quantityExcepted ?? 0) > 0 ? 'finished_with_exceptions' : 'completed') : 'in_progress',
 
       // STOW-SPLIT-01 — frontend progress and completion are driven by committed
       // server state so refresh/resume cannot corrupt the operator's remaining count.
       is_fully_placed: confirmResult.isFullyPlaced,
       quantity_placed: confirmResult.quantityPlaced,
       quantity_total: confirmResult.quantityTotal,
+      quantity_excepted: confirmResult.quantityExcepted ?? 0,
       placed_now: confirmResult.placedNow,
     });
   } catch (error) {
@@ -6204,4 +6210,90 @@ export const httpGetOrdersLiveActivity = async (req: Request, res: Response): Pr
   const shopId = req.user?.shopId;
   if (!shopId) { res.status(401).json({ error: 'Unauthorized' }); return; }
   res.status(200).json(await getLiveActivity(shopId));
+};
+
+
+// SF-PROBLEM-BIN Phase A — shared Problem Bin quarantine endpoints.
+// Server flag PROBLEM_BIN_QUARANTINE_ENABLED (default OFF) refuses every
+// write and bin resolution before any database access.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LSU_RE = /^LSU-[A-Za-z0-9-]{1,16}$/;
+const PROBLEM_BIN_DISABLED = { code: 'PROBLEM_BIN_QUARANTINE_DISABLED', error: 'Problem Bin quarantine is unavailable.' };
+
+function parseQuarantineBody(body: any): { lsu: string; bin: string; eventId: string } | null {
+  const { lasyncro_unit_id, problem_bin_location, device_event_id } = body ?? {};
+  if (typeof lasyncro_unit_id !== 'string' || !LSU_RE.test(lasyncro_unit_id) ||
+      typeof problem_bin_location !== 'string' || !problem_bin_location.trim() || problem_bin_location.length > 255 ||
+      typeof device_event_id !== 'string' || !UUID_RE.test(device_event_id)) return null;
+  return { lsu: lasyncro_unit_id, bin: problem_bin_location, eventId: device_event_id };
+}
+
+async function runProblemBinWrite(res: Response, shopId: number, logContext: Record<string, unknown>,
+  work: (trx: any) => Promise<unknown>) {
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.current_tenant', ?, true)", [String(shopId)]);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      return work(trx);
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    if (error.statusCode) return res.status(error.statusCode).json({ code: error.errorCode, error: error.message });
+    if (error instanceof StowDestinationEligibilityError) return res.status(409).json({ code: error.code, error: error.message });
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ code: 'PROBLEM_BIN_SCAN_AMBIGUOUS', error: error.message });
+    if (error.code === '23505') return res.status(409).json({ code: 'PROBLEM_BIN_DUPLICATE', error: 'This unit or event already has a quarantine record.' });
+    console.error('[PROBLEM_BIN_QUARANTINE_FAILED]', { shopId, ...logContext, error: error.message });
+    return res.status(500).json({ error: 'Unable to quarantine the unit. Retry the same scan.' });
+  }
+}
+
+/** Read-only: lets clients show the action only when the server allows it. */
+export const httpGetProblemBinStatus = async (req: Request, res: Response) => {
+  if (!req.user?.shopId || !req.user?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  return res.status(200).json({ enabled: isProblemBinQuarantineEnabled() });
+};
+
+export const httpResolveProblemBin = async (req: Request, res: Response) => {
+  if (!isProblemBinQuarantineEnabled()) return res.status(409).json(PROBLEM_BIN_DISABLED);
+  const shopId = req.user?.shopId;
+  if (!shopId || !req.user?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const scan = req.query.scan;
+  if (typeof scan !== 'string' || !scan.trim() || scan.length > 255) return res.status(400).json({ error: 'Scan a Problem Bin.' });
+  try {
+    const bin = await db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.current_tenant', ?, true)", [String(shopId)]);
+      return resolveActiveProblemBin(trx, shopId, scan);
+    });
+    return res.status(200).json(bin);
+  } catch (error: any) {
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ code: 'PROBLEM_BIN_SCAN_AMBIGUOUS', error: error.message });
+    if (error.statusCode) return res.status(error.statusCode).json({ code: error.errorCode, error: error.message });
+    console.error('[PROBLEM_BIN_RESOLVE_FAILED]', { shopId, error: error.message });
+    return res.status(500).json({ error: 'Unable to resolve the Problem Bin. Retry the scan.' });
+  }
+};
+
+/** Free Scan: no operational task required. */
+export const httpQuarantineProblemBin = async (req: Request, res: Response) => {
+  if (!isProblemBinQuarantineEnabled()) return res.status(409).json(PROBLEM_BIN_DISABLED);
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const body = parseQuarantineBody(req.body);
+  if (!body) return res.status(400).json({ error: 'Exact LSU, Problem Bin and device event ID are required.' });
+  return runProblemBinWrite(res, shopId, { context: 'free_scan' }, (trx) => quarantineUnitToProblemBin(trx, {
+    shopId, actorId: userId, lasyncroUnitId: body.lsu, problemBinScan: body.bin, deviceEventId: body.eventId }));
+};
+
+/** Stow adapter: same authorization as ordinary placement. */
+export const httpQuarantineStow = async (req: Request, res: Response) => {
+  if (!isProblemBinQuarantineEnabled()) return res.status(409).json(PROBLEM_BIN_DISABLED);
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const taskId = String(req.params.taskId);
+  const body = parseQuarantineBody(req.body);
+  if (!UUID_RE.test(taskId) || !body) return res.status(400).json({ error: 'Exact LSU, Problem Bin and device event ID are required.' });
+  return runProblemBinWrite(res, shopId, { context: 'stow', taskId }, (trx) => quarantineStowUnit(trx, {
+    shopId, stowTaskId: taskId, claimedBy: userId, lasyncroUnitId: body.lsu, problemBinLocation: body.bin, deviceEventId: body.eventId }));
 };

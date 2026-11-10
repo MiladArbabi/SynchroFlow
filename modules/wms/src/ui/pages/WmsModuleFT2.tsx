@@ -59,6 +59,7 @@ import {
   warehouseLocationToZone,
   type RecountPreviewBin,
 } from './recountSelection.js';
+import ProblemBinScanFlow from '../components/ProblemBinScanFlow.js';
 import { RecountEmptyState } from '../components/RecountEmptyState.js';
 
 export {
@@ -121,6 +122,8 @@ export type WmsStowTask = {
   // Resume/refresh must reconstruct remaining work from persisted warehouse
   // state rather than assuming the original task quantity is still outstanding.
   quantity_placed: number;
+  quantity_excepted?: number;
+  quarantine_enabled?: boolean;
 
   location_code: string | null;
   status: 'pending' | 'in_progress';
@@ -145,11 +148,21 @@ export type WmsStowTask = {
   unit_ids: string[] | null;      // WEB-STOW-UNIT-01: LSU- IDs for units assigned to this task
 };
 
+export type ProblemBinQuarantineResult = {
+  problem_task_id: string;
+  lasyncro_unit_id: string;
+  problem_bin_location: string;
+  source_location: string;
+  replayed: boolean;
+};
+
 export type WmsStowConfirmResult = {
   stow_task_id: string;
-  status: 'in_progress' | 'completed';
+  status: 'in_progress' | 'completed' | 'finished_with_exceptions';
   is_fully_placed: boolean;
   quantity_placed: number;
+  quantity_excepted?: number;
+  quarantine_enabled?: boolean;
   quantity_total: number;
   placed_now: number;
 };
@@ -303,6 +316,11 @@ export type WmsModuleFT2Props = {
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
+  onQuarantineStow?: (taskId: string, lsu: string, bin: string, eventId: string) => Promise<WmsStowConfirmResult>;
+  /** SF-PROBLEM-BIN Phase A — shared Problem Bin quarantine (server-gated). */
+  problemBinEnabled?: boolean;
+  onResolveProblemBin?: (scan: string) => Promise<{ location_code: string }>;
+  onQuarantineProblemBin?: (lsu: string, bin: string, eventId: string) => Promise<ProblemBinQuarantineResult>;
   onConfirmStow?: (
     taskId: string,
     quantityPlaced?: number,
@@ -2006,6 +2024,7 @@ type ActiveSession =
       lines: ReceiveJobLine[];
     }
   | { type: 'stow'; taskId: string }
+  | { type: 'problem_bin' }
   | { type: 'count'; task: CountingTask }
   | { type: 'return'; returnJobId: string }
   | null;
@@ -2066,6 +2085,10 @@ function WmsModuleFT2Inner({
   stowTasks,
   onClaimStowTask,
   onConfirmStow,
+  onQuarantineStow,
+  problemBinEnabled = false,
+  onResolveProblemBin,
+  onQuarantineProblemBin,
   onFetchStowTasks,
   onResolveLocation,
   onAssignStowLocation,
@@ -3099,6 +3122,26 @@ function WmsModuleFT2Inner({
     );
   }
 
+  // SF-PROBLEM-BIN Phase A — Free Scan Problem Bin: no operational task.
+  if (activeSession?.type === 'problem_bin' && onResolveProblemBin && onQuarantineProblemBin) {
+    return (
+      <Box sx={{ p: { xs: '20px 16px', md: '24px' }, maxWidth: 640, mx: 'auto', width: '100%', boxSizing: 'border-box' }}>
+        <Typography component="h1" sx={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em', mb: 0.5 }}>
+          Problem Bin
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2 }}>
+          Move one exact unit into a Problem Bin. It leaves sellable stock and opens a Problem Center incident.
+        </Typography>
+        <ProblemBinScanFlow<ProblemBinQuarantineResult>
+          onResolveBin={onResolveProblemBin}
+          onQuarantine={onQuarantineProblemBin}
+          onExit={() => exitSession()}
+          exitLabel="Return to Operations"
+        />
+      </Box>
+    );
+  }
+
   // Active stow session
   if (activeSession?.type === 'stow') {
     return (
@@ -3144,6 +3187,8 @@ function WmsModuleFT2Inner({
             )
           )
         }
+        onQuarantineStow={onQuarantineStow}
+        onResolveProblemBin={onResolveProblemBin}
         onFetchPlacements={(taskId) =>
           onFetchStowPlacements?.(taskId) ?? Promise.resolve([])
         }
@@ -4346,6 +4391,13 @@ function WmsModuleFT2Inner({
           <Typography role="status" sx={{ mt: 1, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
             {quickScanResult}
           </Typography>
+        )}
+
+        {problemBinEnabled && onResolveProblemBin && onQuarantineProblemBin && (
+          <Button size="small" variant="outlined" sx={{ mt: 1, textTransform: 'none' }}
+            onClick={() => setActiveSession({ type: 'problem_bin' })}>
+            Problem Bin
+          </Button>
         )}
 
         {isOperatorShell && (
