@@ -1,6 +1,11 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
-import { GeometryValidationError, validateGeometry, translatedCoordinates } from './geometry.validation.js';
+import type { Knex } from 'knex';
+import {
+  GeometryValidationError, validateGeometry, translatedCoordinates,
+  WarehouseBoundaryError, componentsNewlyExcluded, warehouseBounds, worsensBoundary,
+  type BoundaryLocation, type WarehouseBounds,
+} from './geometry.validation.js';
 import db from '@lasyncro/backend-core/db.js';
 import { lockLocationHierarchy, validateLocationHierarchy, locationIntegrityError } from '../../services/inventory/locationHierarchy.service.js';
 import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
@@ -773,6 +778,21 @@ export async function httpCreateZone(req: Request, res: Response) {
         barcode: barcode?.trim() ?? null,
       });
 
+      // S2B: a new floor object must be inside the warehouse boundary.
+      if (type !== 'warehouse') {
+        const bounds = await readWarehouseBounds(trx, shopId, resolvedWarehouseId);
+        const normalizedCode = location_code.trim().toUpperCase();
+        const candidate: BoundaryLocation = {
+          location_code: normalizedCode, type,
+          position_x: position_x ?? null, position_y: position_y ?? null,
+          width: width ?? null, depth: depth ?? null,
+          parent_type: await parentTypeOf(trx, shopId, parent_location_code?.trim().toUpperCase() ?? null),
+        };
+        if (worsensBoundary(null, candidate, bounds)) {
+          throw new WarehouseBoundaryError('LOCATION_OUTSIDE_WAREHOUSE_BOUNDARY', [normalizedCode]);
+        }
+      }
+
       await trx('warehouse_locations').insert({
         shop_id: shopId,
         warehouse_id: resolvedWarehouseId,
@@ -810,6 +830,7 @@ export async function httpCreateZone(req: Request, res: Response) {
     return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
   } catch (err: any) {
     if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
+    if (err instanceof WarehouseBoundaryError) return res.status(422).json(err.body());
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
     if (err.code === '23505') {
@@ -987,6 +1008,34 @@ export async function httpDuplicateZones(req: Request, res: Response) {
         location_code: string;
       }> = [];
 
+      // S2B: evaluate the complete translated set before any insert, so every
+      // affected source is reported and nothing is written on rejection.
+      const sourceParentTypes = new Map<string, string | null>(
+        (await boundaryLocationQuery(trx, shopId).whereIn('l.location_code', normalizedCodes))
+          .map((row: BoundaryLocation) => [row.location_code, row.parent_type ?? null] as const),
+      );
+      const boundsByWarehouse = new Map<string, WarehouseBounds | null>();
+      const outside: string[] = [];
+      for (const sourceCode of normalizedCodes) {
+        const source = sourceByCode.get(sourceCode)!;
+        let translated: Record<string, unknown>;
+        try {
+          translated = translatedCoordinates(source, offset);
+        } catch (err) {
+          // Same precise 400 as the insert loop; geometry errors win.
+          if (err instanceof GeometryValidationError) {
+            throw new GeometryValidationError(`${sourceCode}: ${err.message}`);
+          }
+          throw err;
+        }
+        if (!boundsByWarehouse.has(source.warehouse_id)) {
+          boundsByWarehouse.set(source.warehouse_id, await readWarehouseBounds(trx, shopId, source.warehouse_id));
+        }
+        const copy: BoundaryLocation = { ...source, ...translated, parent_type: sourceParentTypes.get(sourceCode) ?? null };
+        if (worsensBoundary(null, copy, boundsByWarehouse.get(source.warehouse_id) ?? null)) outside.push(sourceCode);
+      }
+      if (outside.length > 0) throw new WarehouseBoundaryError('LOCATION_OUTSIDE_WAREHOUSE_BOUNDARY', outside);
+
       for (const sourceCode of normalizedCodes) {
         const source = sourceByCode.get(sourceCode);
         if (!source) throw bulkActionError('Zone not found', 404);
@@ -1050,6 +1099,7 @@ export async function httpDuplicateZones(req: Request, res: Response) {
     });
   } catch (err: unknown) {
     if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
+    if (err instanceof WarehouseBoundaryError) return res.status(422).json(err.body());
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
     const statusCode =
@@ -1296,6 +1346,9 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
   try {
     const updatedCount = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      // S2B: same lock as every other geometry write, so the root boundary
+      // cannot change while this batch is evaluated.
+      await lockLocationHierarchy(trx, shopId);
 
       const requestedCodes = positions.map(
         (item: { location_code: string }) => item.location_code.trim(),
@@ -1321,6 +1374,26 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
         (err as Error & { statusCode?: number }).statusCode = 400;
         throw err;
       }
+
+      // S2B: evaluate the complete batch before any update; reject atomically
+      // with every location whose move would worsen its boundary overflow.
+      const currentRows: Array<BoundaryLocation & { warehouse_id: string | null }> =
+        await boundaryLocationQuery(trx, shopId).whereIn('l.location_code', requestedCodes);
+      const currentByCode = new Map(currentRows.map((row) => [row.location_code, row] as const));
+      const boundsByWarehouse = new Map<string, WarehouseBounds | null>();
+      const outside: string[] = [];
+      for (const item of positions as Array<{ location_code: string; position_x: number | null; position_y: number | null }>) {
+        const before = currentByCode.get(item.location_code.trim());
+        if (!before?.warehouse_id) continue;
+        if (!boundsByWarehouse.has(before.warehouse_id)) {
+          boundsByWarehouse.set(before.warehouse_id, await readWarehouseBounds(trx, shopId, before.warehouse_id));
+        }
+        const after = { ...before, position_x: item.position_x, position_y: item.position_y };
+        if (worsensBoundary(before, after, boundsByWarehouse.get(before.warehouse_id) ?? null)) {
+          outside.push(before.location_code);
+        }
+      }
+      if (outside.length > 0) throw new WarehouseBoundaryError('LOCATION_OUTSIDE_WAREHOUSE_BOUNDARY', outside);
 
       const now = new Date();
 
@@ -1357,6 +1430,7 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
       updated: updatedCount,
     });
   } catch (err: unknown) {
+    if (err instanceof WarehouseBoundaryError) return res.status(422).json(err.body());
     const statusCode =
       err instanceof Error
         ? (err as Error & { statusCode?: number }).statusCode
@@ -1381,64 +1455,45 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
   }
 }
 
-type BoundaryRow = {
-  location_code: string;
-  position_x: unknown;
-  position_y: unknown;
-  width: unknown;
-  depth: unknown;
-};
-
-const BOUNDARY_EDGE_EPSILON = 1e-6;
-
 /**
- * GH-1176: Canvas renders a positioned component with a null width/depth at
- * 1m x 0.8m (CanvasEditor DEFAULT_COMPONENT_FOOTPRINT). Containment uses the
- * same footprint so an accepted resize can never clip a visible component.
- * Evaluation only — never persisted onto the component.
+ * FP-SPATIAL-S2B — boundary data access. Callers hold lockLocationHierarchy,
+ * which every Floor Planning geometry write takes first, so a root boundary
+ * and the components evaluated against it cannot change concurrently.
  */
-const NULL_SIZE_COMPONENT_FOOTPRINT = { width: 1, depth: 0.8 } as const;
-
-function finiteOrNull(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * GH-1176 — positioned non-root components a resized warehouse root would
- * newly exclude: inside the current boundary on that axis, outside the next.
- * Growing a dimension can never be rejected. The origin is the persisted root
- * x/y, or the implicit (0,0) of a fresh root. Child edges: right = x + width,
- * bottom = y + depth, with a null size taken as NULL_SIZE_COMPONENT_FOOTPRINT.
- */
-function componentsExcludedByRootResize(
-  root: BoundaryRow,
-  next: { width?: unknown; depth?: unknown },
-  children: BoundaryRow[],
-): string[] {
-  const originX = finiteOrNull(root.position_x) ?? 0;
-  const originY = finiteOrNull(root.position_y) ?? 0;
-  const axes = [
-    { next: finiteOrNull(next.width), current: finiteOrNull(root.width), start: originX, pos: 'position_x' as const, size: 'width' as const },
-    { next: finiteOrNull(next.depth), current: finiteOrNull(root.depth), start: originY, pos: 'position_y' as const, size: 'depth' as const },
-  ].filter((axis) => axis.next !== null);
-
-  return children
-    .filter((child) => axes.some((axis) => {
-      const edge = Number(child[axis.pos])
-        + (finiteOrNull(child[axis.size]) ?? NULL_SIZE_COMPONENT_FOOTPRINT[axis.size]);
-      const outsideNext = edge > axis.start + (axis.next as number) + BOUNDARY_EDGE_EPSILON;
-      const insideCurrent = axis.current === null || edge <= axis.start + axis.current + BOUNDARY_EDGE_EPSILON;
-      return outsideNext && insideCurrent;
-    }))
-    .map((child) => child.location_code);
-}
-
-class WarehouseBoundaryError extends Error {
-  constructor(readonly locationCodes: string[]) {
-    super('WAREHOUSE_BOUNDARY_EXCLUDES_COMPONENTS');
+async function readWarehouseBounds(
+  trx: Knex.Transaction,
+  shopId: number,
+  warehouseId: string | null | undefined,
+): Promise<WarehouseBounds | null> {
+  const warehouse = warehouseId ? await trx('warehouses')
+    .where({ shop_id: shopId, warehouse_id: warehouseId })
+    .first('root_location_code') : null;
+  const root = warehouse?.root_location_code ? await trx('warehouse_locations')
+    .where({ shop_id: shopId, warehouse_id: warehouseId, location_code: warehouse.root_location_code })
+    .first('location_code', 'type', 'parent_location_code', 'position_x', 'position_y', 'width', 'depth') : null;
+  if (!root || root.type !== 'warehouse' || root.parent_location_code !== null) {
+    throw new WarehouseBoundaryError('WAREHOUSE_BOUNDARY_ROOT_INVALID', warehouse?.root_location_code ? [warehouse.root_location_code] : []);
   }
+  return warehouseBounds(root);
+}
+
+/** Locations with their explicit parent's type (nested-address identity). */
+function boundaryLocationQuery(trx: Knex.Transaction, shopId: number) {
+  return trx('warehouse_locations as l')
+    .leftJoin('warehouse_locations as p', function joinParent() {
+      this.on('p.shop_id', '=', 'l.shop_id').andOn('p.location_code', '=', 'l.parent_location_code');
+    })
+    .where('l.shop_id', shopId)
+    .select('l.location_code', 'l.type', 'l.warehouse_id', 'l.position_x', 'l.position_y',
+      'l.width', 'l.depth', 'p.type as parent_type');
+}
+
+async function parentTypeOf(trx: Knex.Transaction, shopId: number, parentCode: string | null): Promise<string | null> {
+  if (!parentCode) return null;
+  const parent = await trx('warehouse_locations')
+    .where({ shop_id: shopId, location_code: parentCode })
+    .first('type');
+  return parent?.type ?? null;
 }
 
 /**
@@ -1504,20 +1559,43 @@ export async function httpUpdateZone(req: Request, res: Response) {
     }
 
 
-    // GH-1176: the warehouse root is the floor boundary. Resizing it must not
-    // exclude any positioned component; components are never moved to fit.
-    if (current.type === 'warehouse' && (width !== undefined || depth !== undefined)) {
-      const childQuery = trx('warehouse_locations')
-        .where({ shop_id: shopId })
-        .whereNot('type', 'warehouse')
-        .whereNotNull('position_x')
-        .whereNotNull('position_y');
-      if (current.warehouse_id) childQuery.where('warehouse_id', current.warehouse_id);
-      const children: BoundaryRow[] = await childQuery
-        .select('location_code', 'position_x', 'position_y', 'width', 'depth');
+    const geometryChanged = [position_x, position_y, width, depth].some((value) => value !== undefined);
+    const nextGeometry = {
+      position_x: position_x !== undefined ? position_x : current.position_x,
+      position_y: position_y !== undefined ? position_y : current.position_y,
+      width: width !== undefined ? width : current.width,
+      depth: depth !== undefined ? depth : current.depth,
+    };
 
-      const excluded = componentsExcludedByRootResize(current, { width, depth }, children);
-      if (excluded.length > 0) throw new WarehouseBoundaryError(excluded);
+    if (current.type === 'warehouse' && geometryChanged) {
+      // Validate the configured identity even when editing a noncanonical
+      // warehouse-type row. Only the configured root defines the boundary.
+      const bounds = await readWarehouseBounds(trx, shopId, current.warehouse_id);
+      const warehouse = await trx('warehouses')
+        .where({ shop_id: shopId, warehouse_id: current.warehouse_id }).first('root_location_code');
+      if (warehouse.root_location_code === current.location_code) {
+        const childQuery = boundaryLocationQuery(trx, shopId)
+          .whereNot('l.type', 'warehouse')
+          .whereNotNull('l.position_x')
+          .whereNotNull('l.position_y');
+        childQuery.where('l.warehouse_id', current.warehouse_id);
+        const children: BoundaryLocation[] = await childQuery;
+        const excluded = componentsNewlyExcluded(bounds, warehouseBounds(nextGeometry), children);
+        if (excluded.length > 0) throw new WarehouseBoundaryError('WAREHOUSE_BOUNDARY_EXCLUDES_COMPONENTS', excluded);
+      }
+    } else if (current.type !== 'warehouse' && (geometryChanged || parent_location_code !== undefined)) {
+      // S2B: a component edit may not move its footprint further outside the
+      // boundary. Legacy out-of-bounds rows stay editable and correctable.
+      const bounds = await readWarehouseBounds(trx, shopId, current.warehouse_id);
+      if (bounds) {
+        const nextParent = parent_location_code !== undefined
+          ? parent_location_code?.trim() ?? null : current.parent_location_code;
+        const before: BoundaryLocation = { ...current, parent_type: await parentTypeOf(trx, shopId, current.parent_location_code) };
+        const after: BoundaryLocation = { ...current, ...nextGeometry, parent_type: await parentTypeOf(trx, shopId, nextParent) };
+        if (worsensBoundary(before, after, bounds)) {
+          throw new WarehouseBoundaryError('LOCATION_OUTSIDE_WAREHOUSE_BOUNDARY', [locationCode]);
+        }
+      }
     }
 
     const nextZoneType =
@@ -1567,13 +1645,7 @@ export async function httpUpdateZone(req: Request, res: Response) {
     if (err.message === 'dock_face requires zone_type ship or receive') {
       return res.status(400).json({ error: err.message });
     }
-    if (err instanceof WarehouseBoundaryError) {
-      return res.status(422).json({
-        error: err.message,
-        message: 'Existing mapped components would fall outside the warehouse boundary.',
-        location_codes: err.locationCodes,
-      });
-    }
+    if (err instanceof WarehouseBoundaryError) return res.status(422).json(err.body());
     if (err.code === '23505') return res.status(409).json({ error: 'Barcode already assigned to another location' });
     console.error('[floor-planning] httpUpdateZone failed', err);
     return res.status(500).json({ error: 'Failed to update zone' });
