@@ -62,6 +62,7 @@ on:
       - 'tests/integration/wms/stow-placements-read-contract.test.ts'
       - 'tests/integration/wms/stow-location-capacity-s1.test.ts'
       - 'tests/integration/wms/problem-bin-quarantine.test.ts'
+      - 'tests/integration/wms/problem-bin-visibility-recount-b-s1.test.ts'
       - 'apps/backend/src/services/inventory/problemBinQuarantine.service.ts'
       - 'apps/backend/migrations/20261109150000_0231_problem_bin_quarantine_custody.ts'
       - 'apps/backend/src/services/wms/stowLocationCapacity.service.ts'
@@ -139,6 +140,7 @@ on:
       - 'tests/integration/wms/stow-placements-read-contract.test.ts'
       - 'tests/integration/wms/stow-location-capacity-s1.test.ts'
       - 'tests/integration/wms/problem-bin-quarantine.test.ts'
+      - 'tests/integration/wms/problem-bin-visibility-recount-b-s1.test.ts'
       - 'apps/backend/src/services/inventory/problemBinQuarantine.service.ts'
       - 'apps/backend/migrations/20261109150000_0231_problem_bin_quarantine_custody.ts'
       - 'apps/backend/src/services/wms/stowLocationCapacity.service.ts'
@@ -729,7 +731,7 @@ jobs:
         run: npm run test:integration -- --testPathPatterns 'wms/stow-task-barcode-projection\.test\.ts$'
 
       # SF-STOW-SAD-PATH-01 S1: opt-in hard Stow capacity and migration 0230.
-      - name: Run Stow location capacity S1 integration
+      - name: Run Stow location capacity S1 and Problem Bin integration
         timeout-minutes: 20
         env:
           PGUSER: sf_app
@@ -737,7 +739,7 @@ jobs:
           PGMIGRATION_USER: sf_user
           PGMIGRATION_PASSWORD: sf_pass
           SYNCHROFLOW_TEST_EXECUTOR_PASSWORD: ci-synthetic-reconnect-executor-0123456789abcdef
-        run: npm run test:integration -- --testPathPatterns 'wms/stow-location-capacity-s1\.test\.ts$|wms/problem-bin-quarantine\.test\.ts$'
+        run: npm run test:integration -- --testPathPatterns 'wms/stow-location-capacity-s1\.test\.ts$|wms/problem-bin-quarantine\.test\.ts$|wms/problem-bin-visibility-recount-b-s1\.test\.ts$'
 
       - &restore-network
         name: Restore runner network
