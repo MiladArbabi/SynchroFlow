@@ -1,5 +1,6 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
+import { GeometryValidationError, validateGeometry, translatedCoordinates } from './geometry.validation.js';
 import db from '@lasyncro/backend-core/db.js';
 import { lockLocationHierarchy, validateLocationHierarchy, locationIntegrityError } from '../../services/inventory/locationHierarchy.service.js';
 import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
@@ -722,6 +723,7 @@ export async function httpCreateZone(req: Request, res: Response) {
   if (rejectSpatialFieldsBelowGrowth(req, res)) return;
 
   try {
+    validateGeometry(req.body);
     const warehouseId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       await lockLocationHierarchy(trx, shopId);
@@ -807,6 +809,7 @@ export async function httpCreateZone(req: Request, res: Response) {
     });
     return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
   } catch (err: any) {
+    if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
     if (err.code === '23505') {
@@ -998,6 +1001,16 @@ export async function httpDuplicateZones(req: Request, res: Response) {
 
         const locationCode = nextLocationCode(prefix, usedCodes);
 
+        let coordinates: Record<string, unknown>;
+        try {
+          coordinates = translatedCoordinates(source, offset);
+        } catch (err) {
+          if (err instanceof GeometryValidationError) {
+            throw new GeometryValidationError(`${sourceCode}: ${err.message}`);
+          }
+          throw err;
+        }
+
         await validateLocationHierarchy(trx, {
           shopId, warehouseId: source.warehouse_id, locationCode,
           parentCode: source.parent_location_code, barcode: null,
@@ -1011,17 +1024,10 @@ export async function httpDuplicateZones(req: Request, res: Response) {
           parent_location_code: source.parent_location_code,
           barcode: null,
           active: source.active,
-          position_x:
-            source.position_x == null
-              ? null
-              : Number(source.position_x) + offset.x,
-          position_y:
-            source.position_y == null
-              ? null
-              : Number(source.position_y) + offset.y,
+          ...coordinates,
           width: source.width,
           depth: source.depth,
-          orientation: source.orientation ?? 0,
+          orientation: source.orientation,
           rack_levels: source.rack_levels,
           zone_type: source.zone_type,
           dock_face: source.dock_face,
@@ -1043,6 +1049,7 @@ export async function httpDuplicateZones(req: Request, res: Response) {
       created,
     });
   } catch (err: unknown) {
+    if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
     const statusCode =
@@ -1249,14 +1256,17 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
     if (
       typeof locationCode !== 'string'
       || locationCode.trim().length === 0
-      || typeof positionX !== 'number'
-      || !Number.isFinite(positionX)
-      || positionX < 0
-      || typeof positionY !== 'number'
-      || !Number.isFinite(positionY)
-      || positionY < 0
+      || positionX === undefined
+      || positionY === undefined
     ) {
       return res.status(400).json({ error: 'Invalid position entry' });
+    }
+
+    try {
+      validateGeometry({ position_x: positionX, position_y: positionY });
+    } catch (err) {
+      if (err instanceof GeometryValidationError) return res.status(400).json({ error: `${locationCode}: ${err.message}` });
+      throw err;
     }
 
     const normalizedCode = locationCode.trim();
@@ -1316,8 +1326,8 @@ export async function httpUpdateZonePositions(req: Request, res: Response) {
 
       for (const item of positions as Array<{
         location_code: string;
-        position_x: number;
-        position_y: number;
+        position_x: number | null;
+        position_y: number | null;
       }>) {
         const locationCode = item.location_code.trim();
 
@@ -1483,6 +1493,7 @@ export async function httpUpdateZone(req: Request, res: Response) {
       .first();
 
     if (!current) throw new Error('Zone not found');
+    validateGeometry(req.body, current);
     if (parent_location_code !== undefined || barcode !== undefined) {
       await validateLocationHierarchy(trx, {
         shopId, warehouseId: current.warehouse_id, locationCode,
@@ -1549,6 +1560,7 @@ export async function httpUpdateZone(req: Request, res: Response) {
 
     return res.json({ success: true });
   } catch (err: any) {
+    if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
     if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });

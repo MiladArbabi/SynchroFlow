@@ -240,6 +240,94 @@ async function seedStock(
 }
 
 describe('FLOOR-PLANNING-CANVAS-01 C3B — atomic bulk zone actions', () => {
+  it('validates create geometry before inserting', async () => {
+    const shop = await provisionFt2Shop('geometry-create');
+    for (const geometry of [
+      { position_x: 1 }, { position_x: '1', position_y: 1 },
+      { width: 1000 }, { depth: 1.0001 }, { orientation: 45 }, { rack_levels: 1.5 },
+    ]) {
+      const response = await request(app).post('/api/v1/floor-planning/zones')
+        .set(authed(shop.token)).send({ location_code: 'INVALID', type: 'bin', ...geometry });
+      expect(response.status).toBe(400);
+      expect(await readZone(shop.shopId, 'INVALID')).toBeUndefined();
+    }
+  });
+
+  it('validates partial PATCH while preserving omitted legacy geometry', async () => {
+    const shop = await provisionFt2Shop('geometry-patch');
+    await seedZone(shop.shopId, { locationCode: 'PICK-01', orientation: 45 });
+    const path = '/api/v1/floor-planning/zones/PICK-01';
+    const partial = await request(app).patch(path).set(authed(shop.token)).send({ position_x: 2.001 });
+    expect(partial.status).toBe(200);
+    let row = await readZone(shop.shopId, 'PICK-01');
+    expect(Number(row.position_x)).toBe(2.001);
+    expect(Number(row.position_y)).toBe(1);
+    expect(Number(row.orientation)).toBe(45);
+    const invalid = await request(app).patch(path).set(authed(shop.token)).send({ position_x: null });
+    expect(invalid.status).toBe(400);
+    await withTenant(shop.shopId, trx => trx('warehouse_locations')
+      .where({ shop_id: shop.shopId, location_code: 'PICK-01' })
+      .update({ position_x: -1, position_y: null, width: null, depth: null }));
+    const unrelated = await request(app).patch(path).set(authed(shop.token)).send({ active: false });
+    expect(unrelated.status).toBe(200);
+    row = await readZone(shop.shopId, 'PICK-01');
+    expect(Number(row.position_x)).toBe(-1);
+    expect(row.position_y).toBeNull();
+    expect(row.width).toBeNull();
+    expect(row.depth).toBeNull();
+    expect(Number(row.orientation)).toBe(45);
+    const unplace = await request(app).patch(path).set(authed(shop.token))
+      .send({ position_x: null, position_y: null, rack_levels: null });
+    expect(unplace.status).toBe(200);
+    row = await readZone(shop.shopId, 'PICK-01');
+    expect(row.position_x).toBeNull();
+    expect(row.position_y).toBeNull();
+    expect(row.rack_levels).toBeNull();
+  });
+
+  it('rejects an entire bulk move with invalid range or precision', async () => {
+    const shop = await provisionFt2Shop('geometry-bulk');
+    await seedZone(shop.shopId, { locationCode: 'PICK-01' });
+    await seedZone(shop.shopId, { locationCode: 'PICK-02' });
+    for (const x of [100000, 1.0001]) {
+      const response = await request(app).patch('/api/v1/floor-planning/zones/positions')
+        .set(authed(shop.token)).send({ positions: [
+          { location_code: 'PICK-01', position_x: 2, position_y: 2 },
+          { location_code: 'PICK-02', position_x: x, position_y: 2 },
+        ] });
+      expect(response.status).toBe(400);
+      expect(Number((await readZone(shop.shopId, 'PICK-01')).position_x)).toBe(1);
+      expect(Number((await readZone(shop.shopId, 'PICK-02')).position_x)).toBe(1);
+    }
+  });
+
+  it('preserves null dimensions and legacy orientation when duplicating', async () => {
+    const shop = await provisionFt2Shop('geometry-null');
+    await seedZone(shop.shopId, { locationCode: 'PICK-01', orientation: 45 });
+    await withTenant(shop.shopId, trx => trx('warehouse_locations')
+      .where({ shop_id: shop.shopId, location_code: 'PICK-01' }).update({ width: null, depth: null }));
+    const response = await request(app).post('/api/v1/floor-planning/zones/duplicate')
+      .set('Authorization', `Bearer ${shop.token}`)
+      .send({ location_codes: ['PICK-01'], offset: { x: 0.001, y: 0.001 } });
+    expect(response.status).toBe(201);
+    const copy = await readZone(shop.shopId, response.body.created[0].location_code);
+    expect(copy.width).toBeNull();
+    expect(copy.depth).toBeNull();
+    expect(Number(copy.orientation)).toBe(45);
+  });
+
+  it('rolls back earlier duplicates when a later translated coordinate is invalid', async () => {
+    const shop = await provisionFt2Shop('geometry-rollback');
+    await seedZone(shop.shopId, { locationCode: 'PICK-01', x: 1 });
+    await seedZone(shop.shopId, { locationCode: 'PICK-02', x: 99999.999 });
+    const response = await request(app).post('/api/v1/floor-planning/zones/duplicate')
+      .set('Authorization', `Bearer ${shop.token}`)
+      .send({ location_codes: ['PICK-01', 'PICK-02'], offset: { x: 1, y: 0 } });
+    expect(response.status).toBe(400);
+    expect(await readZone(shop.shopId, 'PICK-03')).toBeUndefined();
+    expect(await readZone(shop.shopId, 'PICK-04')).toBeUndefined();
+  });
+
   describe('POST /api/v1/floor-planning/zones/duplicate', () => {
     it('duplicates the complete selected group atomically with deterministic role codes and one common offset', async () => {
       const shop = await provisionFt2Shop('duplicate-success');
