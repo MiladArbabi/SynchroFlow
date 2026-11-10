@@ -56,6 +56,8 @@ function recountErrorStatus(message: string): number {
 
   if (
     message === 'PROBLEM_BIN_NOT_CONFIGURED' ||
+    // SF-PROBLEM-BIN-B-S1: protected Problem Bin / quarantine custody.
+    message.includes('RECOUNT_LOCATION_PROTECTED') ||
     message.includes('already claimed') ||
     message.includes('already resolved') ||
     message.includes('client_event_id already used') ||
@@ -91,6 +93,7 @@ function recountErrorStatus(message: string): number {
  */
 function recountErrorCode(message: string): string | undefined {
   if (message.includes('different operator')) return 'RECOUNT_OWNERSHIP_CHANGED';
+  if (message.includes('RECOUNT_LOCATION_PROTECTED')) return 'RECOUNT_LOCATION_PROTECTED';
   return undefined;
 }
 
