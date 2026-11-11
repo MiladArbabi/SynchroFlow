@@ -3,6 +3,7 @@ import {
   problemBinError,
   quarantineUnitToProblemBin,
   type ProblemBinQuarantineAdapter,
+  type QuarantineReason,
 } from '../inventory/problemBinQuarantine.service.js';
 
 /**
@@ -14,7 +15,7 @@ import {
  */
 export interface StowQuarantineInput {
   shopId: number; stowTaskId: string; claimedBy: number;
-  lasyncroUnitId: string; problemBinLocation: string; deviceEventId: string;
+  lasyncroUnitId: string; problemBinLocation: string; deviceEventId: string; quarantineReason: QuarantineReason;
 }
 
 function stowAdapter(shopId: number, stowTaskId: string, claimedBy: number): ProblemBinQuarantineAdapter {
@@ -50,7 +51,7 @@ function stowAdapter(shopId: number, stowTaskId: string, claimedBy: number): Pro
 export async function quarantineStowUnit(trx: Knex.Transaction, input: StowQuarantineInput) {
   return quarantineUnitToProblemBin(trx, {
     shopId: input.shopId, actorId: input.claimedBy, lasyncroUnitId: input.lasyncroUnitId,
-    problemBinScan: input.problemBinLocation, deviceEventId: input.deviceEventId,
+    problemBinScan: input.problemBinLocation, deviceEventId: input.deviceEventId, quarantineReason: input.quarantineReason,
     adapter: stowAdapter(input.shopId, input.stowTaskId, input.claimedBy),
   });
 }

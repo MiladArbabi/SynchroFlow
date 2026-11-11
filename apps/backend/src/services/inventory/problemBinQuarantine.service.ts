@@ -5,6 +5,9 @@ import { resolveActiveProblemBin } from '../wms/receiveHeldCustody.service.js';
 import { pickableLocationCondition } from './pickableLocation.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 
+export const QUARANTINE_REASONS = ['routine', 'damaged', 'defective'] as const;
+export type QuarantineReason = (typeof QUARANTINE_REASONS)[number];
+
 /**
  * SF-PROBLEM-BIN Phase A — the ONE warehouse-wide Problem Bin quarantine writer.
  * ----------------------------------------------------------------------------
@@ -77,12 +80,17 @@ export interface ProblemBinQuarantineInput {
   lasyncroUnitId: string;
   problemBinScan: string;
   deviceEventId: string;
+  /** S2 (0232): minimal classification — routine recovery vs damaged/defective. */
+  quarantineReason: QuarantineReason;
   adapter?: ProblemBinQuarantineAdapter;
 }
 
 export async function quarantineUnitToProblemBin(trx: Knex.Transaction, input: ProblemBinQuarantineInput) {
   if (!isProblemBinQuarantineEnabled()) throw problemBinError('PROBLEM_BIN_QUARANTINE_DISABLED');
-  const { shopId, actorId, lasyncroUnitId, problemBinScan, deviceEventId, adapter } = input;
+  const { shopId, actorId, lasyncroUnitId, problemBinScan, deviceEventId, quarantineReason, adapter } = input;
+  if (!(QUARANTINE_REASONS as readonly string[]).includes(quarantineReason)) {
+    throw problemBinError('PROBLEM_BIN_QUARANTINE_REASON_REQUIRED', 400);
+  }
   const contextKind = adapter?.kind ?? 'free_scan';
   const contextId = adapter?.contextId ?? null;
 
@@ -94,7 +102,8 @@ export async function quarantineUnitToProblemBin(trx: Knex.Transaction, input: P
   const prior = await trx('problem_bin_custody_events').where({ shop_id: shopId, device_event_id: deviceEventId }).first();
   if (prior) {
     if (prior.lasyncro_unit_id !== lasyncroUnitId || prior.problem_bin_scan !== problemBinScan ||
-        prior.operator_id !== actorId || prior.context_kind !== contextKind || (prior.stow_task_id ?? null) !== contextId) {
+        prior.operator_id !== actorId || prior.context_kind !== contextKind || (prior.stow_task_id ?? null) !== contextId ||
+        (prior.quarantine_reason ?? null) !== quarantineReason) {
       throw problemBinError('PROBLEM_BIN_REPLAY_CONFLICT');
     }
     return { ...prior.result, replayed: true };
@@ -201,12 +210,12 @@ export async function quarantineUnitToProblemBin(trx: Knex.Transaction, input: P
 
   const contextResult = adapter ? await adapter.apply(trx, unit, now) : {};
   const result = { problem_task_id: incidentId, lasyncro_unit_id: lasyncroUnitId, problem_bin_location: bin.location_code,
-    source_location: source, source_status: unit.status, context: contextKind, ...contextResult };
+    source_location: source, source_status: unit.status, context: contextKind, quarantine_reason: quarantineReason, ...contextResult };
   // Custody evidence precedes the unit transition: the 0231 guard requires it.
   await trx('problem_bin_custody_events').insert({ shop_id: shopId, device_event_id: deviceEventId,
     lasyncro_unit_id: lasyncroUnitId, problem_bin_scan: problemBinScan, problem_bin_location: bin.location_code,
     source_location: source, source_status: unit.status, context_kind: contextKind, stow_task_id: contextId,
-    operator_id: actorId, problem_task_id: incidentId, result });
+    operator_id: actorId, problem_task_id: incidentId, quarantine_reason: quarantineReason, result });
   await trx('inventory_units').where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId }).update({
     status: 'quarantined', current_location_code: bin.location_code,
     quarantined_from_location: source, quarantined_from_status: unit.status, updated_at: now });

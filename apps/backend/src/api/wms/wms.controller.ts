@@ -1,5 +1,6 @@
 import { quarantineStowUnit } from '../../services/wms/stowQuarantine.service.js';
-import { isProblemBinQuarantineEnabled, quarantineUnitToProblemBin } from '../../services/inventory/problemBinQuarantine.service.js';
+import { isProblemBinQuarantineEnabled, quarantineUnitToProblemBin, QUARANTINE_REASONS, type QuarantineReason } from '../../services/inventory/problemBinQuarantine.service.js';
+import { resolveProblemBinIncident, grantProblemSolver, revokeProblemSolver, listProblemSolvers, WRITE_OFF_REASONS, type WriteOffReason } from '../../services/inventory/problemBinResolution.service.js';
 import { resolveActiveProblemBin } from '../../services/wms/receiveHeldCustody.service.js';
 import { assertStowDestinationEligible, lockStowDestinationHierarchy, StowDestinationEligibilityError } from '../../services/wms/stowDestinationEligibility.service.js';
 import { LocationCapacityExceededError } from '../../services/wms/stowLocationCapacity.service.js';
@@ -6220,13 +6221,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const LSU_RE = /^LSU-[A-Za-z0-9-]{1,16}$/;
 const PROBLEM_BIN_DISABLED = { code: 'PROBLEM_BIN_QUARANTINE_DISABLED', error: 'Problem Bin quarantine is unavailable.' };
 
-function parseQuarantineBody(body: any): { lsu: string; bin: string; eventId: string } | null {
-  const { lasyncro_unit_id, problem_bin_location, device_event_id } = body ?? {};
+// S2 (0232): quarantine_reason is required — the minimal classification that
+// separates routine recovery from damaged/defective stock. The Phase A UI does
+// not send it yet (S5 dependency); the feature stays OFF until S5 ships.
+function parseQuarantineBody(body: any): { lsu: string; bin: string; eventId: string; reason: QuarantineReason } | null {
+  const { lasyncro_unit_id, problem_bin_location, device_event_id, quarantine_reason } = body ?? {};
   if (typeof lasyncro_unit_id !== 'string' || !LSU_RE.test(lasyncro_unit_id) ||
       typeof problem_bin_location !== 'string' || !problem_bin_location.trim() || problem_bin_location.length > 255 ||
-      typeof device_event_id !== 'string' || !UUID_RE.test(device_event_id)) return null;
-  return { lsu: lasyncro_unit_id, bin: problem_bin_location, eventId: device_event_id };
+      typeof device_event_id !== 'string' || !UUID_RE.test(device_event_id) ||
+      !(QUARANTINE_REASONS as readonly unknown[]).includes(quarantine_reason)) return null;
+  return { lsu: lasyncro_unit_id, bin: problem_bin_location, eventId: device_event_id, reason: quarantine_reason };
 }
+const QUARANTINE_BODY_ERROR = 'Exact LSU, Problem Bin, device event ID and quarantine reason (routine, damaged or defective) are required.';
 
 async function runProblemBinWrite(res: Response, shopId: number, logContext: Record<string, unknown>,
   work: (trx: any) => Promise<unknown>) {
@@ -6280,9 +6286,10 @@ export const httpQuarantineProblemBin = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
   const body = parseQuarantineBody(req.body);
-  if (!body) return res.status(400).json({ error: 'Exact LSU, Problem Bin and device event ID are required.' });
+  if (!body) return res.status(400).json({ error: QUARANTINE_BODY_ERROR });
   return runProblemBinWrite(res, shopId, { context: 'free_scan' }, (trx) => quarantineUnitToProblemBin(trx, {
-    shopId, actorId: userId, lasyncroUnitId: body.lsu, problemBinScan: body.bin, deviceEventId: body.eventId }));
+    shopId, actorId: userId, lasyncroUnitId: body.lsu, problemBinScan: body.bin, deviceEventId: body.eventId,
+    quarantineReason: body.reason }));
 };
 
 /** Stow adapter: same authorization as ordinary placement. */
@@ -6293,7 +6300,104 @@ export const httpQuarantineStow = async (req: Request, res: Response) => {
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
   const taskId = String(req.params.taskId);
   const body = parseQuarantineBody(req.body);
-  if (!UUID_RE.test(taskId) || !body) return res.status(400).json({ error: 'Exact LSU, Problem Bin and device event ID are required.' });
+  if (!UUID_RE.test(taskId) || !body) return res.status(400).json({ error: QUARANTINE_BODY_ERROR });
   return runProblemBinWrite(res, shopId, { context: 'stow', taskId }, (trx) => quarantineStowUnit(trx, {
-    shopId, stowTaskId: taskId, claimedBy: userId, lasyncroUnitId: body.lsu, problemBinLocation: body.bin, deviceEventId: body.eventId }));
+    shopId, stowTaskId: taskId, claimedBy: userId, lasyncroUnitId: body.lsu, problemBinLocation: body.bin, deviceEventId: body.eventId,
+    quarantineReason: body.reason }));
+};
+
+
+// ── SF-PROBLEM-BIN Phase B S2 — barcode-verified resolution ────────────────
+// Not gated by PROBLEM_BIN_QUARANTINE_ENABLED: units already in custody must
+// stay resolvable. Authority is decided in the service (management vs
+// designated problem solver) and re-proved by the 0232 event trigger.
+const SCAN_MAX = 255;
+const isScan = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= SCAN_MAX;
+
+async function runProblemBinResolution(res: Response, shopId: number, logContext: Record<string, unknown>,
+  work: (trx: any) => Promise<unknown>) {
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw("SELECT set_config('app.current_tenant', ?, true)", [String(shopId)]);
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+      return work(trx);
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    if (error.statusCode) return res.status(error.statusCode).json({ code: error.errorCode, error: error.message });
+    if (error instanceof StowDestinationEligibilityError) return res.status(409).json({ code: 'PROBLEM_BIN_DESTINATION_INELIGIBLE', error: error.code });
+    if (error instanceof LocationCapacityExceededError) return res.status(409).json({ code: error.code, error: error.message, location_code: error.locationCode });
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ code: 'PROBLEM_BIN_SCAN_AMBIGUOUS', error: error.message });
+    const guard = typeof error.message === 'string' && error.message.match(/PROBLEM_BIN_[A-Z_]+|PROBLEM_SOLVER_[A-Z_]+/);
+    if (error.code === 'P0001' && guard) return res.status(409).json({ code: guard[0], error: 'The resolution was refused by a custody guard.' });
+    if (error.code === '23505') return res.status(409).json({ code: 'PROBLEM_BIN_DUPLICATE', error: 'This incident or event already has a resolution.' });
+    console.error('[PROBLEM_BIN_RESOLUTION_FAILED]', { shopId, ...logContext, error: error.message });
+    return res.status(500).json({ error: 'Unable to resolve the incident. Retry the same scan.' });
+  }
+}
+
+function parseResolutionBody(body: any) {
+  const { problem_bin_scan, lasyncro_unit_id, device_event_id, notes } = body ?? {};
+  if (!isScan(problem_bin_scan) || typeof lasyncro_unit_id !== 'string' || !LSU_RE.test(lasyncro_unit_id) ||
+      typeof device_event_id !== 'string' || !UUID_RE.test(device_event_id) ||
+      (notes != null && (typeof notes !== 'string' || notes.length > 2000))) return null;
+  return { problemBinScan: problem_bin_scan, unitScan: lasyncro_unit_id, deviceEventId: device_event_id, notes: notes ?? null };
+}
+
+/** Release to stock: Problem Bin → exact LSU → destination pick bin. */
+export const httpReleaseProblemBinUnit = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const taskId = String(req.params.taskId);
+  const body = parseResolutionBody(req.body);
+  const destinationScan = req.body?.destination_scan;
+  if (!UUID_RE.test(taskId) || !body || !isScan(destinationScan)) {
+    return res.status(400).json({ error: 'Scan the Problem Bin, the exact LSU and a destination bin, with a device event ID.' });
+  }
+  return runProblemBinResolution(res, shopId, { action: 'release', taskId }, (trx) => resolveProblemBinIncident(trx, {
+    shopId, actorId: userId, problemTaskId: taskId, action: 'release', destinationScan, ...body }));
+};
+
+/** Damaged/defective write-off (management only; route + service + DB trigger). */
+export const httpWriteOffProblemBinUnit = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const taskId = String(req.params.taskId);
+  const body = parseResolutionBody(req.body);
+  const reason = req.body?.write_off_reason;
+  if (!UUID_RE.test(taskId) || !body || !(WRITE_OFF_REASONS as readonly unknown[]).includes(reason)) {
+    return res.status(400).json({ error: 'Scan the Problem Bin and the exact LSU, give a write-off reason (damaged or defective) and a device event ID.' });
+  }
+  return runProblemBinResolution(res, shopId, { action: 'write_off', taskId }, (trx) => resolveProblemBinIncident(trx, {
+    shopId, actorId: userId, problemTaskId: taskId, action: 'write_off', writeOffReason: reason as WriteOffReason, ...body }));
+};
+
+// ── Per-member problem-solver designation (wms:problem:resolve, locked) ────
+export const httpListProblemSolvers = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId || !req.user?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  return runProblemBinResolution(res, shopId, { action: 'list_problem_solvers' },
+    async (trx) => ({ problem_solvers: await listProblemSolvers(trx, shopId) }));
+};
+
+export const httpGrantProblemSolver = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const actorId = req.user?.userId;
+  if (!shopId || !actorId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = Number(req.body?.user_id);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'user_id must be a positive integer.' });
+  return runProblemBinResolution(res, shopId, { action: 'grant_problem_solver', userId },
+    (trx) => grantProblemSolver(trx, { shopId, actorId, userId }));
+};
+
+export const httpRevokeProblemSolver = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const actorId = req.user?.userId;
+  if (!shopId || !actorId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'userId must be a positive integer.' });
+  return runProblemBinResolution(res, shopId, { action: 'revoke_problem_solver', userId },
+    (trx) => revokeProblemSolver(trx, { shopId, actorId, userId }));
 };
