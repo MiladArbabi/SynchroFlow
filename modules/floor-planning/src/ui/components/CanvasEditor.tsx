@@ -28,6 +28,7 @@ import {
 import { IsometricCanvas } from './IsometricCanvas.js';
 import {
   componentFootprintEdge,
+  parseGeometryInput, geometryErrorMessage, type GeometryInputField,
   componentsExcludedByResize,
   projectWarehouseRoot,
   warehouseRootOrigin,
@@ -150,7 +151,7 @@ export const ZONE_STROKE: Record<string, string> = {
 };
 
 function snapV(v: number): number {
-  return Math.round(v / SNAP) * SNAP;
+  return Number((Math.round(v / SNAP) * SNAP).toFixed(3));
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -195,6 +196,7 @@ interface CanvasEditorProps {
   allowChildPositionConfiguration?: boolean;
   minimumMappingReady?: boolean | null;
   zones: WarehouseZone[];
+  onEditingBlockedChange?: (blocked: boolean) => void;
   onUpdateZone?: (locationCode: string, payload: {
     position_x?: number | null;
     position_y?: number | null;
@@ -484,8 +486,9 @@ function ComponentPalette({ zones, codeSourceZones, unpositionedZones, onPlace, 
 // ── FloorSettingsPanel ────────────────────────────────────────────────────────
 const FLOOR_DIMENSION_ERROR_ID = 'floor-settings-dimension-error';
 
-function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
+function FloorSettingsPanel({ root, components, onClose, onUpdateZone, onDraftBlockedChange }: {
   root: WarehouseZone;
+  onDraftBlockedChange: (blocked: boolean) => void;
   /** Positioned floor components the boundary must keep containing (GH-1176). */
   components: readonly WarehouseZone[];
   onClose: () => void;
@@ -497,22 +500,17 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
   const [depth, setDepth] = useState(String(root.depth ?? ''));
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const dirty = useRef(false);
   useEffect(() => {
+    if (dirty.current || savingRef.current) return;
     setWidth(String(root.width ?? ''));
     setDepth(String(root.depth ?? ''));
-    setSaveError(null);
   }, [root.location_code, root.width, root.depth]);
-
-  const parsedWidth = Number(width);
-  const parsedDepth = Number(depth);
-  const candidate = Number.isFinite(parsedWidth) && parsedWidth > 0
-    && Number.isFinite(parsedDepth) && parsedDepth > 0
-    ? { width: snapV(parsedWidth), depth: snapV(parsedDepth) }
-    : null;
-  const validDimensions = candidate != null
-    && Number.isFinite(candidate.width) && candidate.width > 0
-    && Number.isFinite(candidate.depth) && candidate.depth > 0;
-
+  const widthInput = parseGeometryInput(width, 'width');
+  const depthInput = parseGeometryInput(depth, 'depth');
+  const candidate = { width: widthInput.value ?? (root.width == null ? undefined : Number(root.width)), depth: depthInput.value ?? (root.depth == null ? undefined : Number(root.depth)) };
+  const validDimensions = !widthInput.error && !depthInput.error
+    && candidate.width != null && candidate.depth != null;
   // GH-1176: validate the complete draft boundary against the existing component
   // footprints, including the rendered fallback for null-sized components.
   const excluded = validDimensions
@@ -522,6 +520,8 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
   const dimensionError = excluded.length > 0
     ? `${excluded.length === 1 ? excluded[0].location_code : `${excluded.length} mapped components`} would fall outside the warehouse. Minimum width: ${Number((Math.max(...excluded.map((zone) => componentFootprintEdge(zone, 'width'))) - origin.x).toFixed(2))} m. Minimum depth: ${Number((Math.max(...excluded.map((zone) => componentFootprintEdge(zone, 'depth'))) - origin.y).toFixed(2))} m.`
     : null;
+  useEffect(() => { onDraftBlockedChange(!!widthInput.error || !!depthInput.error || !!dimensionError || !!saveError); }, [widthInput.error, depthInput.error, dimensionError, saveError, onDraftBlockedChange]);
+  useEffect(() => () => onDraftBlockedChange(false), [onDraftBlockedChange]);
   const canSave = validDimensions && !dimensionError && !!onUpdateZone && !saving;
 
   async function saveDimensions() {
@@ -530,12 +530,11 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
     setSaving(true);
     setSaveError(null);
     try {
-      await onUpdateZone(root.location_code, {
-        width: candidate.width,
-        depth: candidate.depth,
-      });
-    } catch {
-      setSaveError('Could not save floor settings. Please try again.');
+      const changed = candidate.width !== Number(root.width) || candidate.depth !== Number(root.depth);
+      if (changed) await onUpdateZone(root.location_code, { width: candidate.width, depth: candidate.depth });
+      dirty.current = false;
+    } catch (failure) {
+      setSaveError(geometryErrorMessage(failure, 'Could not save floor settings. Please try again.'));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -549,7 +548,7 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
           <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Floor settings</Typography>
           <Typography sx={{ mt: 0.25, fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>{root.location_code}</Typography>
         </Box>
-        <IconButton size="small" title="Close floor settings" onClick={onClose} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
+        <IconButton size="small" title="Close floor settings" disabled={saving || !!widthInput.error || !!depthInput.error || !!dimensionError || !!saveError} onClick={onClose} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
       </Box>
       <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
         <TextField
@@ -569,10 +568,12 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
               label={dimension.label}
               value={dimension.value}
               disabled={saving}
-              error={dimensionError != null}
+              error={dimensionError != null || !!(dimension.field === 'width' ? widthInput.error : depthInput.error)}
+              helperText={dimension.field === 'width' ? widthInput.error : depthInput.error}
               sx={FIELD_SX}
               InputLabelProps={{ shrink: true }}
               onChange={(event) => {
+                dirty.current = true;
                 dimension.set(event.target.value);
                 setSaveError(null);
               }}
@@ -618,6 +619,7 @@ function FloorSettingsPanel({ root, components, onClose, onUpdateZone }: {
         >
           {saving ? 'Saving…' : 'Save & continue'}
         </Button>
+        <Button size="small" disabled={saving} onClick={() => { dirty.current = false; setWidth(String(root.width ?? '')); setDepth(String(root.depth ?? '')); setSaveError(null); }}>Reset draft</Button>
       </Box>
     </Box>
   );
@@ -810,43 +812,138 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
   )?.label ?? zone.zone_type ?? zone.type;
   const [saving, setSaving]           = useState(false);
   const [deleteOpen, setDeleteOpen]   = useState(false);
-  const [editW, setEditW]   = useState(String(zone.width  ?? ''));
-  const [editD, setEditD]   = useState(String(zone.depth  ?? ''));
-  const [editX, setEditX]   = useState(String(zone.position_x ?? ''));
-  const [editY, setEditY]   = useState(String(zone.position_y ?? ''));
-
-  useEffect(() => {
-    setEditW(String(zone.width  ?? ''));
-    setEditD(String(zone.depth  ?? ''));
-    setEditX(String(zone.position_x ?? ''));
-    setEditY(String(zone.position_y ?? ''));
-  }, [zone.location_code, zone.width, zone.depth, zone.position_x, zone.position_y]);
-
-  async function commitField(field: 'width' | 'depth' | 'position_x' | 'position_y', raw: string) {
-    const val = parseFloat(raw);
-    if (isNaN(val) || !onUpdateZone) return;
-    setSaving(true);
-    try { await onUpdateZone(zone.location_code, { [field]: snapV(val) }); }
-    finally { setSaving(false); }
+  const [drafts, setDrafts] = useState<Record<GeometryInputField, string>>(() => ({
+    width: String(zone.width ?? ''), depth: String(zone.depth ?? ''),
+    position_x: String(zone.position_x ?? ''), position_y: String(zone.position_y ?? ''), rack_levels: String(zone.rack_levels ?? ''),
+  }));
+  const dirtyFields = useRef(new Set<GeometryInputField>());
+  const busy = useRef(false);
+  const accepted = useRef<Partial<Record<GeometryInputField, number | null>>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const draftGeneration = useRef(0);
+  // Props can temporarily contain the optimistic payload. Retain accepted
+  // geometry separately so rejection and Reset never read that preview.
+  const resetGeometry = useRef(drafts);
+  const previousProps = useRef(drafts);
+  const inFlight = useRef<{ payload: Partial<Record<GeometryInputField, number | null>>; before: Record<GeometryInputField, string>; superseded: Set<GeometryInputField> } | null>(null);
+  function resetDraft() {
+    draftGeneration.current += 1;
+    dirtyFields.current.clear();
+    accepted.current = {};
+    setDrafts({ ...resetGeometry.current });
+    setSaveError(null);
   }
-
+  const errors = Object.fromEntries(Object.entries(drafts).map(([field, raw]) => [field, parseGeometryInput(raw, field as GeometryInputField).error]));
+  useEffect(() => {
+    const incoming = { width: String(zone.width ?? ''), depth: String(zone.depth ?? ''), position_x: String(zone.position_x ?? ''), position_y: String(zone.position_y ?? ''), rack_levels: String(zone.rack_levels ?? '') };
+    const request = inFlight.current;
+    const submittedFields = request ? Object.keys(request.payload) as GeometryInputField[] : [];
+    const newerGeometry = request && submittedFields.some(field =>
+      incoming[field] !== previousProps.current[field]
+      && incoming[field] !== String(request.payload[field] ?? '')
+      && incoming[field] !== request.before[field]);
+    if (request && newerGeometry) {
+      // A newer authoritative record supersedes the whole submitted patch,
+      // including a paired coordinate that happens to equal its prior value.
+      for (const field of submittedFields) {
+        request.superseded.add(field);
+        resetGeometry.current[field] = incoming[field];
+        accepted.current[field] = incoming[field] === '' ? null : Number(incoming[field]);
+        dirtyFields.current.delete(field);
+      }
+    }
+    if (!busy.current) {
+      for (const field of Object.keys(incoming) as GeometryInputField[]) {
+        resetGeometry.current[field] = incoming[field];
+        if (!dirtyFields.current.has(field)) delete accepted.current[field];
+      }
+    }
+    previousProps.current = incoming;
+    setDrafts(current => Object.fromEntries(Object.keys(current).map(key => {
+      const field = key as GeometryInputField;
+      return [field, dirtyFields.current.has(field) ? current[field] : String(accepted.current[field] !== undefined ? accepted.current[field] ?? '' : incoming[field])];
+    })) as Record<GeometryInputField, string>);
+  }, [zone.width, zone.depth, zone.position_x, zone.position_y, zone.rack_levels]);
+  function changeDraft(field: GeometryInputField, raw: string) {
+    dirtyFields.current.add(field);
+    setDrafts(current => ({ ...current, [field]: raw }));
+  }
+  async function submit(payload: Partial<Record<GeometryInputField, number | null>>) {
+    if (!onUpdateZone || busy.current) return;
+    const changed = Object.entries(payload).some(([key, value]) => {
+      const field = key as GeometryInputField;
+      const previous = accepted.current[field] !== undefined ? accepted.current[field] : zone[field];
+      return value !== (previous == null ? null : Number(previous));
+    });
+    const fields = Object.keys(payload) as GeometryInputField[];
+    if (!changed) {
+      fields.forEach(field => dirtyFields.current.delete(field));
+      return;
+    }
+    const generation = draftGeneration.current;
+    const before = { ...resetGeometry.current };
+    const request = { payload, before, superseded: new Set<GeometryInputField>() };
+    inFlight.current = request;
+    busy.current = true; setSaving(true); setSaveError(null);
+    try {
+      await onUpdateZone(zone.location_code, payload);
+      if (generation !== draftGeneration.current) return;
+      const currentFields = fields.filter(field => !request.superseded.has(field));
+      const saved = Object.fromEntries(currentFields.map(field => [field, String(payload[field] ?? '')]));
+      resetGeometry.current = { ...resetGeometry.current, ...saved };
+      currentFields.forEach(field => { accepted.current[field] = payload[field]; dirtyFields.current.delete(field); });
+      setDrafts(current => ({ ...current, ...saved }));
+    } catch (failure) {
+      if (generation === draftGeneration.current) {
+        const currentFields = fields.filter(field => !request.superseded.has(field));
+        const restored = Object.fromEntries(currentFields.map(field => [field, before[field]]));
+        currentFields.forEach(field => {
+          dirtyFields.current.delete(field);
+          accepted.current[field] = before[field] === '' ? null : Number(before[field]);
+        });
+        setDrafts(current => ({ ...current, ...restored }));
+        if (currentFields.length) setSaveError(`${geometryErrorMessage(failure)} Previous values restored. Adjust and try again.`);
+      }
+    } finally { inFlight.current = null; busy.current = false; setSaving(false); }
+  }
+  function blurField(field: GeometryInputField, raw: string) {
+    void commitField(field, raw);
+  }
+  async function commitField(field: GeometryInputField, raw: string) {
+    const parsed = parseGeometryInput(raw, field);
+    if (parsed.error || busy.current) return;
+    if (parsed.value === undefined) {
+      dirtyFields.current.delete(field);
+      setDrafts(current => ({ ...current, [field]: String(accepted.current[field] !== undefined ? accepted.current[field] ?? '' : zone[field] ?? '') }));
+      return;
+    }
+    if (field === 'position_x' || field === 'position_y') {
+      const x = parseGeometryInput(drafts.position_x, 'position_x');
+      const y = parseGeometryInput(drafts.position_y, 'position_y');
+      if (x.error || y.error) return;
+      const px = x.value ?? (accepted.current.position_x !== undefined ? accepted.current.position_x : zone.position_x);
+      const py = y.value ?? (accepted.current.position_y !== undefined ? accepted.current.position_y : zone.position_y);
+      if (px == null || py == null) { setSaveError('Set both X and Y, or use Clear position.'); return; }
+      await submit({ position_x: Number(px), position_y: Number(py) });
+    } else await submit({ [field]: parsed.value });
+  }
   // Location lifecycle — owned by the Edit layout Inspector (the retired
   // Setup list toggled directly, without confirmation). Same patch contract.
   const isActive = zone.active !== false;
   async function toggleActive() {
-    if (!onUpdateZone) return;
+    if (!onUpdateZone || saving) return;
     setSaving(true);
     try { await onUpdateZone(zone.location_code, { active: !isActive }); }
     finally { setSaving(false); }
   }
 
   async function handleDelete() {
-    if (!onDeleteZone) return;
+    if (!onDeleteZone || saving) return;
     setDeleteOpen(true);
   }
 
   async function confirmDelete() {
-    if (!onDeleteZone) return;
+    if (!onDeleteZone || saving) return;
     setDeleteOpen(false);
     await onDeleteZone(zone.location_code);
     onClose();
@@ -860,13 +957,14 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   function openDuplicate() {
+    if (saving) return;
     setDuplicateCode(`${zone.location_code}-COPY`);
     setDuplicateError(null);
     setDuplicateOpen(true);
   }
 
   async function confirmDuplicate() {
-    if (!onCreateZone || !duplicateCode.trim()) return;
+    if (!onCreateZone || !duplicateCode.trim() || saving) return;
     setDuplicating(true);
     setDuplicateError(null);
     try {
@@ -874,7 +972,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
         location_code: duplicateCode.trim().toUpperCase(),
         type: zone.type as WarehouseLocationType,
         zone_type: zone.zone_type ?? undefined,
-        position_x: (parseFloat(String(zone.position_x ?? 0)) + 1.1),
+        position_x: Number((Number(zone.position_x ?? 0) + 1.1).toFixed(3)),
         position_y: parseFloat(String(zone.position_y ?? 0)),
         width: parseFloat(String(zone.width ?? componentFootprint.width)),
         depth: parseFloat(String(zone.depth ?? 0.5)),
@@ -899,7 +997,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
             {zone.location_code}
           </Typography>
         </Box>
-        <IconButton size="small" title="Close inspector" onClick={onClose} sx={{ color: 'var(--ink-4)' }}>
+        <IconButton size="small" title="Close inspector" disabled={saving} onClick={onClose} sx={{ color: 'var(--ink-4)' }}>
           <X size={13} />
         </IconButton>
       </Box>
@@ -932,19 +1030,20 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
           <Typography sx={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>Geometry</Typography>
           {([
             { testId: 'geometry-size-row', fields: [
-              { label: 'Width', field: 'width' as const, value: editW, set: setEditW },
-              { label: 'Depth', field: 'depth' as const, value: editD, set: setEditD },
+              { label: 'Width', field: 'width' as const, value: drafts.width },
+              { label: 'Depth', field: 'depth' as const, value: drafts.depth },
             ] },
             { testId: 'geometry-position-row', fields: [
-              { label: 'Position X', field: 'position_x' as const, value: editX, set: setEditX },
-              { label: 'Position Y', field: 'position_y' as const, value: editY, set: setEditY },
+              { label: 'Position X', field: 'position_x' as const, value: drafts.position_x },
+              { label: 'Position Y', field: 'position_y' as const, value: drafts.position_y },
             ] },
           ]).map((row) => (
             <Box key={row.testId} data-testid={row.testId} sx={{ ...FIELD_GRID_SX, gap: 0.75, mb: 0.75 }}>
-              {row.fields.map(({ label, field, value, set }) => (
-                <TextField key={field} size="small" label={label} value={value} onChange={(e) => set(e.target.value)}
-                  onBlur={() => void commitField(field, value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void commitField(field, value); }}
+              {row.fields.map(({ label, field, value }) => (
+                <TextField key={field} size="small" label={label} value={value} onChange={(e) => changeDraft(field, e.target.value)}
+                  error={!!errors[field]} helperText={errors[field]}
+                  onBlur={() => blurField(field, value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commitField(field, value); } }}
                   disabled={saving}
                   sx={FIELD_SX}
                   InputLabelProps={{ shrink: true }}
@@ -958,22 +1057,13 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
           </Typography>
           <Box data-testid="geometry-levels-row" sx={FIELD_GRID_SX}>
             <TextField size="small" type="number" label="Levels"
-              key={`${zone.location_code}:${zone.rack_levels ?? 'none'}`}
-              defaultValue={zone.rack_levels ?? ''}
-              placeholder="—"
-              sx={FIELD_SX}
-              InputLabelProps={{ shrink: true }}
-              onBlur={(e) => {
-                const val = parseInt(e.target.value);
-                if (!isNaN(val) && val >= 1 && val <= 20) onUpdateZone?.(zone.location_code, { rack_levels: val });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const val = parseInt((e.target as HTMLInputElement).value);
-                  if (!isNaN(val) && val >= 1 && val <= 20) onUpdateZone?.(zone.location_code, { rack_levels: val });
-                }
-              }}
-              inputProps={{ min: 1, max: 20, 'aria-label': 'Levels', style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' } }} />
+              value={drafts.rack_levels}
+              disabled={saving} error={!!errors.rack_levels} helperText={errors.rack_levels}
+              sx={FIELD_SX} InputLabelProps={{ shrink: true }}
+              onChange={event => changeDraft('rack_levels', event.target.value)}
+              onBlur={() => blurField('rack_levels', drafts.rack_levels)}
+              onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void commitField('rack_levels', drafts.rack_levels); } }}
+              inputProps={{ 'aria-label': 'Levels', style: { fontFamily: 'monospace', fontSize: 11, padding: '6px 8px' } }} />
             <Box sx={{ minHeight: 32, px: 1, border: '1px solid var(--rule)', borderRadius: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <RotateCw size={11} color="var(--ink-4)" />
               <Box>
@@ -984,6 +1074,17 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
           </Box>
         </Box>
 
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+          <Button size="small" disabled={saving} onClick={() => void submit({ width: null })}>Clear width</Button>
+          <Button size="small" disabled={saving} onClick={() => void submit({ depth: null })}>Clear depth</Button>
+          <Button size="small" disabled={saving} onClick={() => void submit({ position_x: null, position_y: null })}>Clear position</Button>
+          <Button size="small" disabled={saving} onClick={() => void submit({ rack_levels: null })}>Clear levels</Button>
+          <Button size="small"
+            // Retain field focus until click so discarding cannot trigger blur autosave.
+            onMouseDown={event => event.preventDefault()}
+            onClick={resetDraft}>Reset draft</Button>
+        </Box>
+        {saveError && <Typography role="alert" sx={{ fontSize: 11, color: 'error.main' }}>{saveError}</Typography>}
         {(zone.zone_type === 'ship' || zone.zone_type === 'receive') && (
           <Box>
             <Typography
@@ -1005,6 +1106,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
               value={zone.dock_face ?? ''}
               onChange={(e) => {
                 const value = e.target.value;
+                if (saving) return;
                 void onUpdateZone?.(zone.location_code, {
                   dock_face: value === ''
                     ? null
@@ -1012,6 +1114,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
                 });
               }}
               SelectProps={{ native: true }}
+              disabled={saving}
               inputProps={{ 'aria-label': 'Dock opening' }}
               sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.75, fontSize: 11 } }}
             >
@@ -1026,8 +1129,8 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
         )}
         {(zone.type === 'shelf' || (zone.type === 'bin' && zone.zone_type === 'pick')) && (childPositions.length > 0 || allowChildPositionConfiguration) && (
           <ChildPositions key={zone.location_code} parent={zone} children={childPositions} allZones={allZones}
-            enabled={allowChildPositionConfiguration && zone.active}
-            onCreateZone={onCreateZone} onPrintBarcode={onPrintBarcode} />
+            enabled={allowChildPositionConfiguration && zone.active && !saving}
+            onCreateZone={onCreateZone} onPrintBarcode={saving ? undefined : onPrintBarcode} />
         )}
         {(zone.barcode || zone.parent_location_code) && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35, p: 0.75, bgcolor: 'var(--bg-2)', borderRadius: 1, border: '1px solid var(--rule)' }}>
@@ -1062,7 +1165,7 @@ function RackInspector({ zone, childPositions, allZones, allowChildPositionConfi
 
           {zone.type !== 'warehouse' && (
             <Box
-              onClick={() => onPrintBarcode?.(zone.location_code)}
+              onClick={() => { if (!saving) onPrintBarcode?.(zone.location_code); }}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1185,7 +1288,8 @@ export function CanvasEditor({
   zones: allZones,
   allowChildPositionConfiguration = false,
   minimumMappingReady,
-  onUpdateZone,
+  onUpdateZone: persistZone,
+  onEditingBlockedChange,
   onUpdateZonePositions,
   onDeleteZone,
   onDeleteZones,
@@ -1214,6 +1318,10 @@ export function CanvasEditor({
   const [localSizes, setLocalSizes]         = useState<Record<string, { w: number; h: number }>>({});
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
+  const [pendingWrites, setPendingWrites] = useState(0);
+  const [draftBlocked, setDraftBlocked] = useState(false);
+  const [gestureError, setGestureError] = useState<string | null>(null);
+  useEffect(() => { onEditingBlockedChange?.(pendingWrites > 0 || draftBlocked); }, [pendingWrites, draftBlocked, onEditingBlockedChange]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const dragRef   = useRef<DragState | null>(null);
   const panRef    = useRef<PanState | null>(null);
@@ -1221,6 +1329,58 @@ export function CanvasEditor({
   const marqueeRef = useRef<MarqueeState | null>(null);
   const initialViewportAppliedRef = useRef(false);
   const savingRef = useRef<Set<string>>(new Set());
+  const latestZones = useRef(allZones);
+  latestZones.current = allZones;
+  const onUpdateZone = useMemo(() => persistZone ? async (code: string, payload: Parameters<NonNullable<CanvasEditorProps['onUpdateZone']>>[1]) => {
+    setPendingWrites(value => value + 1);
+    const original = allZones.find(zone => zone.location_code === code);
+    const superseded = () => {
+      const latest = latestZones.current.find(zone => zone.location_code === code);
+      return (['width', 'depth', 'position_x', 'position_y', 'rack_levels'] as const).some(field =>
+        payload[field] !== undefined && String(latest?.[field] ?? '') !== String(original?.[field] ?? '')
+        && String(latest?.[field] ?? '') !== String(payload[field] ?? ''));
+    };
+    const clearPreview = () => {
+      setLocalSizes(current => { const next = { ...current }; delete next[code]; return next; });
+      setLocalPositions(current => { const next = { ...current }; delete next[code]; return next; });
+    };
+    try {
+      await persistZone(code, payload);
+      if (superseded()) { clearPreview(); return; }
+      if (payload.position_x !== undefined || payload.position_y !== undefined) {
+        if (payload.position_x === null || payload.position_y === null) setPlacedCoords(current => {
+          const next = { ...current }; delete next[code]; return next;
+        });
+        setLocalPositions(current => {
+          const next = { ...current };
+          if (payload.position_x === null || payload.position_y === null) delete next[code];
+          else next[code] = { x: payload.position_x ?? Number(original?.position_x ?? 0), y: payload.position_y ?? Number(original?.position_y ?? 0) };
+          return next;
+        });
+      }
+      if (payload.width !== undefined || payload.depth !== undefined) {
+        setLocalSizes(current => ({ ...current, [code]: {
+          w: payload.width === null ? componentFootprint.width : payload.width ?? Number(original?.width ?? componentFootprint.width),
+          h: payload.depth === null ? componentFootprint.depth : payload.depth ?? Number(original?.depth ?? componentFootprint.depth),
+        } }));
+      }
+    } catch (failure) {
+      if (superseded()) clearPreview();
+      throw failure;
+    } finally { setPendingWrites(value => value - 1); }
+  } : undefined, [persistZone, allZones]);
+  const previousGeometry = useRef(allZones);
+  useEffect(() => {
+    const changed = allZones.filter(zone => {
+      const before = previousGeometry.current.find(item => item.location_code === zone.location_code);
+      return before && ['position_x', 'position_y', 'width', 'depth'].some(field => before[field as keyof WarehouseZone] !== zone[field as keyof WarehouseZone]);
+    }).map(zone => zone.location_code);
+    previousGeometry.current = allZones;
+    if (changed.length && pendingWrites === 0) {
+      setLocalPositions(current => Object.fromEntries(Object.entries(current).filter(([code]) => !changed.includes(code))));
+      setLocalSizes(current => Object.fromEntries(Object.entries(current).filter(([code]) => !changed.includes(code))));
+    }
+  }, [allZones, pendingWrites]);
   // FP-11: alignment guide lines, shown while dragging a frame zone
   // (warehouse/lane/shelf) if it lines up with a sibling frame zone's
   // left/center/right or top/center/bottom edge. Scoped to frame zones
@@ -1338,6 +1498,7 @@ export function CanvasEditor({
         : null;
 
   const openFloorSettings = () => {
+    if (draftBlocked || pendingWrites > 0) return;
     setSelected(new Set());
     setFloorSettingsOpen(true);
   };
@@ -1401,7 +1562,7 @@ export function CanvasEditor({
   const toSvg = useCallback((metres: number) => metres * SCALE * zoom, [zoom]);
 
   async function createPaletteComponent(item: FloorPlanningComponentDefinition, locationCode: string) {
-    if (!onCreateZone) return;
+    if (!onCreateZone || draftBlocked || pendingWrites > 0) return;
     const x = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
     const y = snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)));
     await onCreateZone({
@@ -1948,6 +2109,7 @@ export function CanvasEditor({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
+    if (draftBlocked || pendingWrites > 0) { e.stopPropagation(); return; }
     if (!isSelectableZone(zone) || mode === 'pan') return;
     e.stopPropagation();
     if (mode === 'marquee') return;
@@ -2008,6 +2170,7 @@ export function CanvasEditor({
   }
 
   function onCanvasMouseDown(e: React.MouseEvent) {
+    if ((draftBlocked || pendingWrites > 0) && mode !== 'pan') return;
     if (dragRef.current) return;
     if (mode === 'pointer') {
       setSelected(new Set());
@@ -2176,10 +2339,18 @@ export function CanvasEditor({
     async function onMouseUp() {
       if (resizeRef.current) {
         const r     = resizeRef.current;
-        const local = localSizesRef.current[r.locationCode];
+        const preview = localSizesRef.current[r.locationCode];
+        const local = preview ? { w: Number(preview.w.toFixed(3)), h: Number(preview.h.toFixed(3)) } : undefined;
+        resizeRef.current = null;
+        setAlignGuides({ x: null, y: null });
+        setGestureError(null);
         if (local && onUpdateZone && !savingRef.current.has(r.locationCode)) {
           savingRef.current.add(r.locationCode);
           try { await onUpdateZone(r.locationCode, { width: local.w, depth: local.h }); setLastSaved(new Date()); }
+          catch (failure) {
+            setLocalSizes(current => ({ ...current, [r.locationCode]: { w: r.startW, h: r.startD } }));
+            setGestureError(geometryErrorMessage(failure));
+          }
           finally { savingRef.current.delete(r.locationCode); }
         }
         resizeRef.current = null;
@@ -2190,6 +2361,9 @@ export function CanvasEditor({
       }
       if (dragRef.current) {
         const d = dragRef.current;
+        dragRef.current = null;
+        setAlignGuides({ x: null, y: null });
+        setGestureError(null);
 
         // C2b — persist the complete transform through one transactional
         // backend operation. Never degrade to N independent zone PATCHes.
@@ -2227,10 +2401,12 @@ export function CanvasEditor({
           const codes = Object.keys(starts);
           for (const code of codes) savingRef.current.add(code);
 
+          setPendingWrites(value => value + 1);
           try {
-            await onUpdateZonePositions(positions);
+            await onUpdateZonePositions(positions.map(item => ({ ...item, position_x: Number(item.position_x.toFixed(3)), position_y: Number(item.position_y.toFixed(3)) })));
             setLastSaved(new Date());
-          } catch {
+          } catch (failure) {
+            setGestureError(geometryErrorMessage(failure));
             // HTTP/cache rollback happens in the page mutation; Canvas owns
             // its own local drag geometry and must roll that back as well.
             setLocalPositions((current) => {
@@ -2241,6 +2417,7 @@ export function CanvasEditor({
               return next;
             });
           } finally {
+            setPendingWrites(value => value - 1);
             for (const code of codes) savingRef.current.delete(code);
           }
 
@@ -2258,7 +2435,11 @@ export function CanvasEditor({
           // Update local state to reflect final safe position
           setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: safeX, y: safeY } }));
           savingRef.current.add(d.locationCode);
-          try { await onUpdateZone(d.locationCode, { position_x: safeX, position_y: safeY }); setLastSaved(new Date()); }
+          try { await onUpdateZone(d.locationCode, { position_x: Number(safeX.toFixed(3)), position_y: Number(safeY.toFixed(3)) }); setLastSaved(new Date()); }
+          catch (failure) {
+            setLocalPositions(current => ({ ...current, [d.locationCode]: { x: d.startPosX, y: d.startPosY } }));
+            setGestureError(geometryErrorMessage(failure));
+          }
           finally { savingRef.current.delete(d.locationCode); }
         }
         dragRef.current = null;
@@ -2331,12 +2512,14 @@ export function CanvasEditor({
     // marks the authoring state. Selected editing context uses natural height.
     <Box ref={workspaceRef} sx={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minHeight: 0, boxSizing: 'border-box', border: '1px solid var(--accent-border)', borderRadius: '10px', overflow: 'hidden', bgcolor: 'var(--bg)' }}>
 
+      {gestureError && <Typography role="alert" sx={{ px: 1, color: 'error.main', fontSize: 12 }}>{gestureError}</Typography>}
       {/* LEFT — palette */}
       <ComponentPalette
         zones={zones}
         codeSourceZones={[...allZones, ...optimisticCreatedZones]}
         unpositionedZones={zones.filter(z => z.type !== 'warehouse' && z.position_x == null)}
         onPlace={(zone) => {
+          if (draftBlocked || pendingWrites > 0) return;
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
           const centreY = snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)));
           setPlacedCoords(prev => ({ ...prev, [zone.location_code]: { x: centreX, y: centreY } }));
@@ -2592,13 +2775,13 @@ export function CanvasEditor({
                         {isSelected && selected.size === 1 && !isWarehouse && (<>
                           <rect x={pw - HANDLE / 2} y={ph / 2 - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ew-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); if (draftBlocked || pendingWrites > 0) return; resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                           <rect x={pw / 2 - HANDLE / 2} y={ph - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'ns-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); if (draftBlocked || pendingWrites > 0) return; resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                           <rect x={pw - HANDLE / 2} y={ph - HANDLE / 2} width={HANDLE} height={HANDLE} rx="1"
                             fill="var(--accent)" stroke="var(--accent)" strokeWidth="1.5" style={{ cursor: 'nwse-resize' }}
-                            onMouseDown={(e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
+                            onMouseDown={(e) => { e.stopPropagation(); if (draftBlocked || pendingWrites > 0) return; resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? componentFootprint.width)), startD: ls?.h ?? parseFloat(String(zone.depth ?? componentFootprint.depth)) }; }} />
                         </>)}
                       </g>
                     );
@@ -2658,7 +2841,7 @@ export function CanvasEditor({
           </Typography>
           {positionedZones.filter(z => z.type === 'lane' || z.type === 'warehouse').map((z, i, arr) => (
             <Box key={z.location_code} sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <Box onClick={z.type === 'warehouse' ? undefined : () => { setFloorSettingsOpen(false); setSelected(selectableCodes([z.location_code], positionedZones)); }}
+              <Box onClick={z.type === 'warehouse' ? undefined : () => { if (draftBlocked || pendingWrites > 0) return; setFloorSettingsOpen(false); setSelected(selectableCodes([z.location_code], positionedZones)); }}
                 sx={{ px: 1, py: 0.25, borderRadius: 0.75, cursor: z.type === 'warehouse' ? 'default' : 'pointer', fontSize: 10, fontFamily: 'monospace',
                   opacity: z.type === 'warehouse' ? 0.55 : 1,
                   fontWeight: selected.has(z.location_code) ? 700 : 400,
@@ -2687,7 +2870,7 @@ export function CanvasEditor({
           bgcolor: 'var(--bg)',
         }}>
           {floorSettingsOpen && warehouseRoot ? (
-            <FloorSettingsPanel root={warehouseRoot} components={positionedZones} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
+            <FloorSettingsPanel onDraftBlockedChange={setDraftBlocked} root={warehouseRoot} components={positionedZones} onClose={() => setFloorSettingsOpen(false)} onUpdateZone={onUpdateZone} />
           ) : selectedZones.length > 1 ? (
             <BulkSelectionPanel
               zones={selectedZones}
@@ -2697,7 +2880,7 @@ export function CanvasEditor({
               pending={bulkActionPending}
             />
           ) : selectedZone ? (
-            <RackInspector zone={selectedZone} allZones={allZones}
+            <RackInspector key={selectedZone.location_code} zone={selectedZone} allZones={allZones}
               childPositions={allZones.filter(zone => zone.parent_location_code === selectedZone.location_code)}
               allowChildPositionConfiguration={allowChildPositionConfiguration}
               onClose={() => setSelected(new Set())}

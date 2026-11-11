@@ -205,7 +205,7 @@ describe('CanvasEditor floor settings', () => {
     cannotCommit();
   });
 
-  it('GH1192: saves snapped Width and Depth together in exactly one update', async () => {
+  it('GH1192: preserves manual Width and Depth precision in exactly one update', async () => {
     const onUpdateZone = jest.fn().mockResolvedValue(undefined);
     render(<CanvasEditor zones={[warehouse, bin]} onUpdateZone={onUpdateZone} />);
     fireEvent.click(screen.getByRole('button', { name: 'Floor settings' }));
@@ -217,7 +217,7 @@ describe('CanvasEditor floor settings', () => {
     });
 
     expect(onUpdateZone).toHaveBeenCalledTimes(1);
-    expect(onUpdateZone).toHaveBeenCalledWith('WAREHOUSE-01', { width: 14, depth: 10 });
+    expect(onUpdateZone).toHaveBeenCalledWith('WAREHOUSE-01', { width: 14.04, depth: 10.04 });
   });
 
   it('GH1192: disables confirmation during saving and prevents duplicate updates', async () => {
