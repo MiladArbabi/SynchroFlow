@@ -40,7 +40,7 @@ export function hasPositionedOperationalZone(zones: readonly BoundaryZone[]): bo
 
 /**
  * Positioned non-root components that a resized root boundary would newly
- * exclude: inside the current boundary on that axis, outside the next one.
+ * exclude or worsen on an edge, including existing legacy violations.
  * Growing a dimension can therefore never be rejected.
  *
  * Child edges: right = x + width, bottom = y + depth, with a null size taken
@@ -52,18 +52,48 @@ export function componentsExcludedByResize<T extends BoundaryZone>(
   zones: readonly T[],
 ): T[] {
   const origin = warehouseRootOrigin(root);
-  const axes = [
-    { next: next.width, current: finite(root.width), start: origin.x, edge: (z: T) => componentFootprintEdge(z, 'width') },
-    { next: next.depth, current: finite(root.depth), start: origin.y, edge: (z: T) => componentFootprintEdge(z, 'depth') },
-  ].filter((axis) => axis.next != null && Number.isFinite(axis.next));
-
-  return zones.filter((zone) => {
+  const width = next.width ?? finite(root.width);
+  const depth = next.depth ?? finite(root.depth);
+  if (width == null || depth == null || !Number.isFinite(width) || !Number.isFinite(depth) || width <= 0 || depth <= 0) return [];
+  const currentBoundary = (finite(root.width) ?? 0) > 0 && (finite(root.depth) ?? 0) > 0;
+  return zones.filter(zone => {
     if (zone.type === 'warehouse' || zone.position_x == null || zone.position_y == null) return false;
-    return axes.some((axis) => {
-      const edge = axis.edge(zone);
-      const outsideNext = edge > axis.start + (axis.next as number) + EDGE_EPSILON;
-      const insideCurrent = axis.current == null || edge <= axis.start + axis.current + EDGE_EPSILON;
-      return outsideNext && insideCurrent;
+    // A first usable boundary establishes near edges as well as far edges.
+    if (!currentBoundary && (origin.x - Number(zone.position_x) > EDGE_EPSILON
+      || origin.y - Number(zone.position_y) > EDGE_EPSILON)) return true;
+    return (['width', 'depth'] as const).some(axis => {
+      const start = axis === 'width' ? origin.x : origin.y;
+      const edge = componentFootprintEdge(zone, axis);
+      const before = currentBoundary ? Math.max(0, edge - start - Number(root[axis])) : 0;
+      const after = Math.max(0, edge - start - (axis === 'width' ? width : depth));
+      return after > before + EDGE_EPSILON;
     });
   });
+}
+
+export type GeometryInputField = 'position_x' | 'position_y' | 'width' | 'depth' | 'rack_levels';
+
+/** Blank means no edit; null is sent only by an explicit Clear action. */
+export function parseGeometryInput(raw: string, field: GeometryInputField): { value?: number; error?: string } {
+  const text = raw.trim();
+  if (!text) return {};
+  const levels = field === 'rack_levels';
+  const max = levels ? 20 : field === 'width' || field === 'depth' ? 999.999 : 99999.999;
+  const min = levels ? 1 : field === 'width' || field === 'depth' ? 0.001 : 0;
+  const syntax = levels ? /^\d+$/ : /^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/;
+  const value = Number(text);
+  if (!syntax.test(text) || !Number.isFinite(value) || value < min || value > max) {
+    return { error: levels ? 'Enter a whole number from 1 to 20.' : `Enter ${min}–${max} m with at most three decimal places.` };
+  }
+  return { value };
+}
+
+/** Preserve actionable validation details without exposing arbitrary server failures. */
+export function geometryErrorMessage(failure: unknown, fallback = 'Could not save geometry. Please try again.'): string {
+  const response = (failure as { response?: { status?: number; data?: { message?: unknown; error?: unknown; location_codes?: unknown } } })?.response;
+  if (response?.status !== 400 && response?.status !== 422) return fallback;
+  const data = response.data;
+  const message = typeof data?.message === 'string' ? data.message : typeof data?.error === 'string' ? data.error : fallback;
+  const codes = Array.isArray(data?.location_codes) ? data.location_codes.filter((code): code is string => typeof code === 'string') : [];
+  return codes.length ? `${message} Affected locations: ${codes.join(', ')}.` : message;
 }

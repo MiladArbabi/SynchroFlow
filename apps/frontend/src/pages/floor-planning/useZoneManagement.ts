@@ -1,3 +1,4 @@
+import { geometryErrorMessage } from '../../../../../modules/floor-planning/src/ui/components/warehouseBoundary';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import { useToast } from '../../contexts/ToastContext';
@@ -76,9 +77,9 @@ export function useUpdateZone() {
     // FP-13: surface a toast when a rollback actually happens, so a
     // failed save doesn't just silently revert with no explanation -
     // previously the value would snap back with zero indication of why.
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
       if (context?.previous) qc.setQueryData(queryKey, context.previous);
-      show('Failed to save changes — reverted to last saved value.', 'error');
+      show(geometryErrorMessage(err, 'Failed to save changes — reverted to last saved value.'), 'error');
     },
     onSuccess: (_data, payload) => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
@@ -140,13 +141,13 @@ export function useUpdateZonePositions() {
       return { previous };
     },
 
-    onError: (_err, _positions, context) => {
+    onError: (err, _positions, context) => {
       if (context?.previous) {
         qc.setQueryData(queryKey, context.previous);
       }
 
       show(
-        'Failed to move selected components — reverted to their previous positions.',
+        geometryErrorMessage(err, 'Failed to move selected components — reverted to their previous positions.'),
         'error',
       );
     },

@@ -504,6 +504,7 @@ function FloorPlanningModuleFT2Inner({
   suppressLocationRail = false,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
+  const [editingBlocked, setEditingBlocked] = useState(false);
   const [localMode, setLocalMode] = useState<FloorPlanningMode>(mode ?? 'inspect');
   const currentMode = mode ?? localMode;
   const changeMode = useCallback((next: FloorPlanningMode) => {
@@ -614,7 +615,8 @@ function FloorPlanningModuleFT2Inner({
               variant="contained"
               disableElevation
               startIcon={<Check size={14} />}
-              onClick={() => changeMode('inspect')}
+              disabled={editingBlocked}
+              onClick={() => { if (!editingBlocked) changeMode('inspect'); }}
               sx={{ height: 32, textTransform: 'none', fontSize: 13, fontWeight: 600, borderRadius: '6px', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
             >
               Done editing
@@ -628,6 +630,7 @@ function FloorPlanningModuleFT2Inner({
         {!isLoading && !isError && (
           <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
             <CanvasEditor
+              onEditingBlockedChange={setEditingBlocked}
               allowChildPositionConfiguration={allowChildPositionConfiguration}
               zones={zones}
               minimumMappingReady={minimumMappingReady}
