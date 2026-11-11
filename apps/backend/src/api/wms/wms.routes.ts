@@ -27,6 +27,11 @@ import {
   httpClaimStowTask,
   httpConfirmStow,
   httpQuarantineStow,
+  httpReleaseProblemBinUnit,
+  httpWriteOffProblemBinUnit,
+  httpListProblemSolvers,
+  httpGrantProblemSolver,
+  httpRevokeProblemSolver,
   httpGetProblemBinStatus,
   httpResolveProblemBin,
   httpQuarantineProblemBin,
@@ -366,6 +371,21 @@ router.post('/problem-bin/quarantine', authenticateToken, requireFt2,
 // Stow adapter: task accounting with ordinary placement authorization.
 router.post('/stow-tasks/:taskId/quarantine', authenticateToken, requireFt2,
   requireCapability('warehouse.operations'), requireAction('wms:stow:confirm'), httpQuarantineStow);
+
+// SF-PROBLEM-BIN Phase B S2 — barcode-verified resolution. Release admits
+// owner/admin and designated problem-solver operators (decided per member in
+// the service, re-proved by the 0232 trigger); write-off and designation
+// management keep the LOCKED wms:problem:resolve boundary (owner/admin).
+router.post('/problem-bin/incidents/:taskId/release', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpReleaseProblemBinUnit);
+router.post('/problem-bin/incidents/:taskId/write-off', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:problem:resolve'), httpWriteOffProblemBinUnit);
+router.get('/problem-solvers', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:problem:resolve'), httpListProblemSolvers);
+router.post('/problem-solvers', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:problem:resolve'), httpGrantProblemSolver);
+router.delete('/problem-solvers/:userId', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:problem:resolve'), httpRevokeProblemSolver);
 
 router.patch(
   '/stow-tasks/:taskId/assignment',

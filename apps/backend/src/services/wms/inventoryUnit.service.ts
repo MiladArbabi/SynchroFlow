@@ -542,9 +542,10 @@ export async function computeCoverage(
   // (not shipped/lost) represents one physically-present labelled unit.
   // S4-2: held / discarded Receive units are outside inventory_truth, so they
   // are excluded here too — numerator and denominator stay the same population.
+  // SF-PROBLEM-BIN S2: written-off units left inventory_truth the same way.
   const unitRow = await trx('inventory_units')
     .where({ shop_id: shopId })
-    .whereNotIn('status', ['shipped', 'lost', ...HELD_UNIT_STATUSES])
+    .whereNotIn('status', ['shipped', 'lost', 'written_off', ...HELD_UNIT_STATUSES])
     .count<{ count: string }>('* as count')
     .first();
   const labelled = Number(unitRow?.count ?? 0);

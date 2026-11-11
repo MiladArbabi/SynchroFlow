@@ -16,9 +16,9 @@ describe('Problem Bin quarantine server gate', () => {
   });
   it.each([
     ['free scan core', (trx: Knex.Transaction) => quarantineUnitToProblemBin(trx, {
-      shopId: 1, actorId: 1, lasyncroUnitId: 'LSU-test', problemBinScan: 'PROBLEM', deviceEventId: 'event' })],
+      shopId: 1, actorId: 1, lasyncroUnitId: 'LSU-test', problemBinScan: 'PROBLEM', deviceEventId: 'event', quarantineReason: 'routine' })],
     ['stow adapter', (trx: Knex.Transaction) => quarantineStowUnit(trx, {
-      shopId: 1, stowTaskId: 'task', claimedBy: 1, lasyncroUnitId: 'LSU-test', problemBinLocation: 'PROBLEM', deviceEventId: 'event' })],
+      shopId: 1, stowTaskId: 'task', claimedBy: 1, lasyncroUnitId: 'LSU-test', problemBinLocation: 'PROBLEM', deviceEventId: 'event', quarantineReason: 'routine' })],
   ])('%s rejects before any database access when unset', async (_name, call) => {
     const saved = process.env[FLAG];
     delete process.env[FLAG];

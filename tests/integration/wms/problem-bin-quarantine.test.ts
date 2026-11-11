@@ -129,11 +129,11 @@ async function setupStowed(count = 2) {
 
 function stowInput(f: Fixture, index = 0) {
   return { shopId: f.shopId, stowTaskId: f.taskId, claimedBy: f.operatorId,
-    lasyncroUnitId: f.lasyncroUnitIds[index], problemBinLocation: PROBLEM, deviceEventId: crypto.randomUUID() };
+    lasyncroUnitId: f.lasyncroUnitIds[index], problemBinLocation: PROBLEM, deviceEventId: crypto.randomUUID(), quarantineReason: 'routine' as const };
 }
 function freeInput(f: Fixture, index = 0) {
   return { shopId: f.shopId, actorId: f.operatorId, lasyncroUnitId: f.lasyncroUnitIds[index],
-    problemBinScan: PROBLEM, deviceEventId: crypto.randomUUID() };
+    problemBinScan: PROBLEM, deviceEventId: crypto.randomUUID(), quarantineReason: 'routine' as const };
 }
 async function inTx<T>(shopId: number, fn: (trx: any) => Promise<T>) {
   return withTenant(shopId, async trx => { await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`); return fn(trx); });
@@ -206,7 +206,7 @@ describe('Problem Bin gate and authentication', () => {
     expect(isProblemBinQuarantineEnabled()).toBe(false);
     await expect(quarantineFree(freeInput(f))).rejects.toMatchObject({ errorCode: 'PROBLEM_BIN_QUARANTINE_DISABLED' });
     const token = await tokenFor(f); const app = createApp();
-    const body = { lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, device_event_id: crypto.randomUUID() };
+    const body = { lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: crypto.randomUUID() };
     for (const res of [
       await request(app).post('/api/v1/wms/problem-bin/quarantine').set('Authorization', `Bearer ${token}`).send(body),
       await request(app).post(`/api/v1/wms/stow-tasks/${f.taskId}/quarantine`).set('Authorization', `Bearer ${token}`).send(body),
@@ -309,7 +309,7 @@ describe('Free Scan — task-independent quarantine', () => {
     await withTenant(f.shopId, trx => trx('warehouse_locations').where({ shop_id: f.shopId, location_code: BIN }).update({ active: true }));
     const token = await tokenFor(f);
     const productBarcode = await request(createApp()).post('/api/v1/wms/problem-bin/quarantine').set('Authorization', `Bearer ${token}`)
-      .send({ lasyncro_unit_id: 'CAP-PRODUCT-BARCODE', problem_bin_location: PROBLEM, device_event_id: crypto.randomUUID() });
+      .send({ lasyncro_unit_id: 'CAP-PRODUCT-BARCODE', problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: crypto.randomUUID() });
     expect(productBarcode.status).toBe(400);
     expect(await state(f.shopId)).toEqual(before);
   });
@@ -345,7 +345,7 @@ describe('Free Scan — task-independent quarantine', () => {
     await expect(quarantineFree({ ...freeInput(other), lasyncroUnitId: f.lasyncroUnitIds[0] })).rejects.toMatchObject({ errorCode: 'PROBLEM_BIN_UNIT_NOT_FOUND' });
     const otherToken = await tokenFor(other);
     const res = await request(createApp()).post('/api/v1/wms/problem-bin/quarantine').set('Authorization', `Bearer ${otherToken}`)
-      .send({ lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, device_event_id: crypto.randomUUID() });
+      .send({ lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: crypto.randomUUID() });
     expect(res.status).toBe(404);
     expect(await state(f.shopId)).toEqual(before);
     await quarantineFree(freeInput(f));
@@ -360,7 +360,7 @@ describe('Free Scan — task-independent quarantine', () => {
     expect(bin.status).toBe(200); expect(bin.body).toMatchObject({ location_code: PROBLEM });
     const notProblem = await request(app).get('/api/v1/wms/problem-bin/resolve').query({ scan: BIN }).set('Authorization', `Bearer ${token}`);
     expect(notProblem.status).toBe(409);
-    const body = { lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, device_event_id: crypto.randomUUID() };
+    const body = { lasyncro_unit_id: f.lasyncroUnitIds[0], problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: crypto.randomUUID() };
     const res = await request(app).post('/api/v1/wms/problem-bin/quarantine').set('Authorization', `Bearer ${token}`).send(body);
     expect(res.status).toBe(200); expect(res.body).toMatchObject({ source_location: BIN, replayed: false });
     const replay = await request(app).post('/api/v1/wms/problem-bin/quarantine').set('Authorization', `Bearer ${token}`).send(body);
@@ -400,7 +400,7 @@ describe('Stow adapter — task accounting over the shared core', () => {
     expect(after.tasks[0].status).toBe('finished_with_exceptions');
     await expect(quarantineStow({ ...i, lasyncroUnitId: 'LSU-wrong' })).rejects.toMatchObject({ errorCode: 'PROBLEM_BIN_REPLAY_CONFLICT' });
     // The same key may not be replayed through Free Scan either.
-    await expect(quarantineFree({ shopId: f.shopId, actorId: f.operatorId, lasyncroUnitId: i.lasyncroUnitId, problemBinScan: PROBLEM, deviceEventId: i.deviceEventId }))
+    await expect(quarantineFree({ shopId: f.shopId, actorId: f.operatorId, lasyncroUnitId: i.lasyncroUnitId, problemBinScan: PROBLEM, deviceEventId: i.deviceEventId, quarantineReason: 'routine' }))
       .rejects.toMatchObject({ errorCode: 'PROBLEM_BIN_REPLAY_CONFLICT' });
     expect(await state(f.shopId)).toEqual(after);
   });
@@ -418,12 +418,12 @@ describe('Stow adapter — task accounting over the shared core', () => {
   it('API: the owning operator succeeds; another tenant is refused without writes', async () => {
     const f = await setup(); const i = stowInput(f); const token = await tokenFor(f);
     const res = await request(createApp()).post(`/api/v1/wms/stow-tasks/${f.taskId}/quarantine`).set('Authorization', `Bearer ${token}`)
-      .send({ lasyncro_unit_id: i.lasyncroUnitId, problem_bin_location: PROBLEM, device_event_id: i.deviceEventId });
+      .send({ lasyncro_unit_id: i.lasyncroUnitId, problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: i.deviceEventId });
     expect(res.status).toBe(200); expect(res.body).toMatchObject({ quantity_excepted: 1, quantity_remaining: 1 });
     const other = await createShopWithUser('problem-bin-foreign'); const otherToken = await tokenFor(other);
     const before = await state(f.shopId);
     const foreign = await request(createApp()).post(`/api/v1/wms/stow-tasks/${f.taskId}/quarantine`).set('Authorization', `Bearer ${otherToken}`)
-      .send({ lasyncro_unit_id: f.lasyncroUnitIds[1], problem_bin_location: PROBLEM, device_event_id: crypto.randomUUID() });
+      .send({ lasyncro_unit_id: f.lasyncroUnitIds[1], problem_bin_location: PROBLEM, quarantine_reason: 'routine', device_event_id: crypto.randomUUID() });
     expect(foreign.status).toBeGreaterThanOrEqual(400); expect(foreign.status).toBeLessThan(500);
     expect(await state(f.shopId)).toEqual(before);
   });
