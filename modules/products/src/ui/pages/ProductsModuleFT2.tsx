@@ -28,7 +28,7 @@ import type { ReactNode } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
-import { Warehouse, RefreshCw } from 'lucide-react';
+import { Warehouse } from 'lucide-react';
 import {
   formatCurrencyCompact,
   OperationalContextShell,
@@ -598,7 +598,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const theme = useTheme();
   const navigate = useNavigate();
   const {
-    operatorSummary, dataFreshness, currency, onExport, mapContent,
+    operatorSummary, currency, onExport, mapContent,
     inventoryState, suppressInventoryState = false,
     inventoryStateStatus = 'ready', onRetryInventoryState,
   } = props;
@@ -701,26 +701,6 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
           )}
         </Box>
       </Box>
-
-      {/* ── DATA TRUST BAR ────────────────────────────────────── */}
-      {dataFreshness && Object.values(dataFreshness).some(v => v === 'stale') && (
-        <Box sx={{
-          display: 'flex', alignItems: 'center', gap: 1.5,
-          px: 2, py: 1, mb: 2.5,
-          bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
-          border: `0.5px solid ${alpha(theme.palette.warning.main, 0.3)}`,
-          borderRadius: '8px',
-        }}>
-          <RefreshCw size={12} color={theme.palette.warning.main} />
-          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-            Some data may be stale —{' '}
-            {(['structural','inventory','sales','fulfillment','cost'] as const)
-              .filter(k => dataFreshness[k] === 'stale')
-              .join(', ')}{' '}
-            data needs a sync.
-          </Typography>
-        </Box>
-      )}
 
       {/* ── 4A. LIVE INTELLIGENCE BODY ───────────────────────── */}
       {/* Shared OperationalContextShell owns the primary + rail composition.
