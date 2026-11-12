@@ -247,6 +247,17 @@ describe('ProductsModuleFT2 — live intelligence map layout', () => {
     expect(screen.queryByText('LIVE')).toBeNull();
   });
 
+  it('does not show a generic synchronization warning for legacy stale sales freshness', () => {
+    renderWithMapProps({ dataFreshness: {
+      structural: 'fresh', inventory: 'fresh', sales: 'stale', fulfillment: 'fresh', cost: 'fresh',
+    } });
+
+    expect(screen.getByTestId('map-surface')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Inventory state' })).toBeInTheDocument();
+    expect(screen.queryByText(/Some data may be stale/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/data needs a sync/i)).not.toBeInTheDocument();
+  });
+
   it('keeps Export available when a handler is supplied', () => {
     const onExport = jest.fn();
     renderWithMapProps({ onExport });

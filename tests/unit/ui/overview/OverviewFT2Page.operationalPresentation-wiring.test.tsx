@@ -15,7 +15,7 @@
 // full Overview UI and the shared-ui barrel are never imported.
 
 import React from 'react';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import OverviewPageFT2 from 'pages/ft2-pages/OverviewFT2Page';
 
@@ -137,56 +137,24 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
 }));
 
 jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
-  useWarehouseGridOccupancy: () => ({
-    data: { occupancy: {} },
-    isLoading: false,
-    isError: false,
-  }),
+  useWarehouseGridOccupancy: () => mockS4Stock(),
 }));
 
 jest.mock('pages/wms/useOrderPool', () => ({
-  useOrderPool: () => ({
-    data: {
-      eligible_order_count: 3,
-      summary: { blocked_count: 2 },
-    },
-    isPending: false,
-    isError: false,
-  }),
+  useOrderPool: () => mockS4Pool(),
 }));
 
 jest.mock('pages/wms/useWmsLiveActivity', () => ({
-  useWmsLiveActivity: () => ({
-    data: {
-      pickerPositions: [],
-      activeBatches: [],
-      stowPressure: { by_location: [] },
-      receiveAtDock: [],
-      awaitingPackUnits: 0,
-      shippedToday: 5,
-      packedNotShipped: 0,
-      staleThresholdMinutes: 15,
-    },
-    isLoading: false,
-    isError: false,
-  }),
+  useWmsLiveActivity: () => mockS4Activity(),
 }));
 
+const mockS4Idle = jest.fn();
 jest.mock('../../../../apps/frontend/src/hooks/useIdleAlerts', () => ({
-  useIdleAlerts: () => ({
-    alerts: [],
-    isLoading: false,
-    isError: false,
-  }),
+  useIdleAlerts: () => mockS4Idle(),
 }));
 
 jest.mock('pages/problem-center/useProblemCenter', () => ({
-  useProblemCenter: () => ({
-    // One open problem at A-1 -> primaryBadge "1 issue", state critical.
-    data: { tasks: [{ problem_bin_location: 'A-1' }] },
-    isLoading: false,
-    isError: false,
-  }),
+  useProblemCenter: () => mockS4Problems(),
 }));
 
 jest.mock('pages/orders/AddressResolutionSessionModal', () => ({
@@ -197,6 +165,14 @@ jest.mock('pages/orders/useAddressResolutionOrders', () => ({
   useAddressResolutionOrders: (...args: unknown[]) => mockUseAddressResolutionOrders(...args),
   useInvalidateAddressResolutionOrders: () => jest.fn(),
 }));
+
+const mockS4Stock = jest.fn();
+
+const mockS4Pool = jest.fn();
+
+const mockS4Activity = jest.fn();
+
+const mockS4Problems = jest.fn();
 
 const BRIEF = {
   signals: [],
@@ -214,6 +190,40 @@ function setSearchParams(search: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockS4Idle.mockReturnValue({ alerts: [], hasData: true, isLoading: false, isError: false });
+  mockS4Problems.mockReturnValue({
+    // One open problem at A-1 -> primaryBadge "1 issue", state critical.
+    data: { tasks: [{ problem_bin_location: 'A-1' }] },
+    isLoading: false,
+    isError: false,
+  });
+  mockS4Activity.mockReturnValue({
+    data: {
+      pickerPositions: [],
+      activeBatches: [],
+      stowPressure: { by_location: [] },
+      receiveAtDock: [],
+      awaitingPackUnits: 0,
+      shippedToday: 5,
+      packedNotShipped: 0,
+      staleThresholdMinutes: 15,
+    },
+    isLoading: false,
+    isError: false,
+  });
+  mockS4Pool.mockReturnValue({
+    data: {
+      eligible_order_count: 3,
+      summary: { blocked_count: 2 },
+    },
+    isPending: false,
+    isError: false,
+  });
+  mockS4Stock.mockReturnValue({
+    data: { occupancy: {} },
+    isLoading: false,
+    isError: false,
+  });
   setSearchParams('');
   mockUseMorningBriefSnapshot.mockReturnValue({
     data: BRIEF,
@@ -342,4 +352,68 @@ describe('OVERVIEW-LIVE-MAP-01 Slice D.1: occupancy suppression + station identi
     >;
     expect(byStation.blocked.primaryBadge).toEqual({ label: '2 blocked orders', count: 2 });
   });
+});
+
+
+describe('S4 map trust', () => {
+  it('uses signed canonical stock, preserves explicit zero and never infers zero from an absent record', () => {
+    mockS4Stock.mockReturnValue({ data: { occupancy: {} }, isError: false });
+    let props = renderMapContentAndGetIsometricCanvasProps() as any;
+    expect(props.locationPulseByCode['A-1'].rows).toContainEqual({ label: 'On hand', value: 'Unknown' });
+    mockS4Stock.mockReturnValue({ data: { occupancy: {}, inventoryInspection: {
+      'A-1': { on_hand_quantity: -2, available_quantity: -3, reserved_quantity: 1, variants: [] },
+    } }, isError: false });
+    render(<OverviewPageFT2 />);
+    const content = mockOverviewModuleFT2.mock.calls.at(-1)![0].mapContent as React.ReactNode;
+    render(<>{content}</>);
+    props = mockIsometricCanvas.mock.calls.at(-1)![0];
+    expect(props.locationPulseByCode['A-1'].rows).toContainEqual({ label: 'On hand', value: '-2 units' });
+  });
+  it('exposes cached activity refresh failure, retains evidenced exceptions and retries the failed source', () => {
+    const retry = jest.fn();
+    mockS4Activity.mockReturnValue({ ...mockS4Activity(), isError: true, refetch: retry });
+    const props = renderMapContentAndGetIsometricCanvasProps() as any;
+    expect(screen.getByText('Activity refresh failed · showing last loaded data.')).toBeVisible();
+    expect(screen.queryByText('Floor is clear · No active batches')).not.toBeInTheDocument();
+    expect(props.operationalPresentationByLocation['A-1'].primaryBadge.label).toBe('1 issue');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Activity' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+  it('keeps loading/failed sources distinct from no work and confirms no batches only after success', () => {
+    mockS4Activity.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    mockS4Problems.mockReturnValue({ data: undefined, isError: true, refetch: jest.fn() });
+    renderMapContentAndGetIsometricCanvasProps();
+    expect(screen.getByText('Loading Activity…')).toBeVisible();
+    expect(screen.getByText('Problems unavailable.')).toBeVisible();
+    expect(screen.queryByText('Floor is clear · No active batches')).not.toBeInTheDocument();
+  });
+  it('retains the evidenced Problem Center inspection action', () => {
+    const props = renderMapContentAndGetIsometricCanvasProps() as any;
+    act(() => props.onSelect('A-1'));
+    render(<>{mockOverviewModuleFT2.mock.calls.at(-1)![0].mapContent as React.ReactNode}</>);
+    const selected = mockIsometricCanvas.mock.calls.at(-1)![0] as any;
+    expect(selected.pinnedAction.label).toBe('Open Problem Center →');
+    selected.pinnedAction.onClick();
+    expect(mockNavigate).toHaveBeenCalledWith('/problem-center');
+  });
+});
+
+
+it('S4 displays a canonical zero as zero, and does not call a problem-bearing floor clear', () => {
+  mockS4Stock.mockReturnValue({ data: { occupancy: {}, inventoryInspection: {
+    'A-1': { on_hand_quantity: 0, available_quantity: 0, reserved_quantity: 0, variants: [] },
+  } }, isError: false });
+  const props = renderMapContentAndGetIsometricCanvasProps() as any;
+  expect(props.locationPulseByCode['A-1'].rows).toContainEqual({ label: 'On hand', value: '0 units' });
+  expect(screen.queryByText('Floor is clear · No active batches')).not.toBeInTheDocument();
+});
+
+
+it('S4 exposes idle-alert request failure independently of no alerts and retries it', () => {
+  const retry = jest.fn();
+  mockS4Idle.mockReturnValue({ alerts: [], hasData: false, isLoading: false, isError: true, refetch: retry });
+  renderMapContentAndGetIsometricCanvasProps();
+  expect(screen.getByText('Idle alerts unavailable.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Idle alerts' }));
+  expect(retry).toHaveBeenCalledTimes(1);
 });

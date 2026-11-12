@@ -233,3 +233,36 @@ it('S1 renders nested positions through the actual Orders page while preserving 
   fireEvent.click(within(screen.getByTestId('isometric-pulse-card')).getByRole('button', { name: 'Open order flow →' }));
   expect(mockNavigate).toHaveBeenCalledWith('/orders/flow');
 });
+
+
+describe('S4 activity availability', () => {
+  it('loading is not confirmed no work', () => {
+    mockUseOrdersLiveActivity.mockReturnValue({ data: undefined, isLoading: true });
+    renderWithProviders(<OrdersFT2Page />);
+    expect(screen.getByText('Loading fulfillment activity…')).toBeVisible();
+    expect(screen.queryByText('No active batches')).not.toBeInTheDocument();
+    expect(lastCanvasProps().inspectableLocationCodes.size).toBe(0);
+  });
+  it('a failed initial request is unavailable and retryable, never no work', () => {
+    const retry = jest.fn();
+    mockUseOrdersLiveActivity.mockReturnValue({ data: undefined, isError: true, refetch: retry });
+    renderWithProviders(<OrdersFT2Page />);
+    expect(screen.getByText('Fulfillment activity unavailable.')).toBeVisible();
+    expect(screen.queryByText('No active batches')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry fulfillment activity' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+  it('a failed refresh retains located activity and exposes its stale status', () => {
+    const previous = mockUseOrdersLiveActivity();
+    mockUseOrdersLiveActivity.mockReturnValue({ ...previous, isError: true, refetch: jest.fn() });
+    renderWithProviders(<OrdersFT2Page />);
+    expect(screen.getByText('Fulfillment activity refresh failed · showing last loaded data.')).toBeVisible();
+    expect(lastCanvasProps().locationPulseByCode['A-1'].rows).toContainEqual({ label: 'Pickers here', value: '1' });
+    expect(lastCanvasProps().disablePan).toBe(true);
+  });
+  it('a successful empty payload can confirm no active batches', () => {
+    mockUseOrdersLiveActivity.mockReturnValue({ data: { pickerPositions: [], activeBatches: [] }, isError: false });
+    renderWithProviders(<OrdersFT2Page />);
+    expect(screen.getByText('No active batches')).toBeVisible();
+  });
+});
