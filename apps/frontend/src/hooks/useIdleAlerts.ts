@@ -22,7 +22,7 @@ export interface IdleAlert {
  * interval avoids redundant load.
  */
 export function useIdleAlerts(enabled: boolean) {
-  const { data, isLoading, isError } = useQuery<{ data: IdleAlert[]; meta: { total: number } }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ data: IdleAlert[]; meta: { total: number } }>({
     queryKey: ['alerts', 'wms_operator_idle'],
     queryFn: () =>
       axiosInstance
@@ -32,5 +32,5 @@ export function useIdleAlerts(enabled: boolean) {
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
-  return { alerts: data?.data ?? [], isLoading, isError };
+  return { alerts: data?.data ?? [], hasData: data != null, isLoading, isError, refetch };
 }

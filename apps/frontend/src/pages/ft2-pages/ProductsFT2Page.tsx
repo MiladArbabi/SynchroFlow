@@ -208,14 +208,13 @@ function InventoryIntelligenceView({
   // Canonical inspection truth → inspection targets, occupancy knowledge and
   // plates. A bin with no inspection record has no truth record: it is neither
   // inspectable nor painted as confirmed empty, and gets no plate.
-  // Occupancy data is only a fact once it has loaded successfully. While it is
-  // loading or failed, nothing is known, inspectable or plated — a failure is
-  // never read as empty inventory.
+  // A missing payload establishes no stock facts. Failed refreshes may retain
+  // the last loaded canonical facts, with a visible stale-data status and retry.
   const occupancyStatus: 'loading' | 'error' | 'ready' =
     occupancyQuery.isError ? 'error'
-    : occupancyQuery.isPending || occupancyQuery.isLoading ? 'loading'
+    : occupancyQuery.data == null ? 'loading'
     : 'ready';
-  const occupancyData = occupancyStatus === 'ready' ? occupancyQuery.data : undefined;
+  const occupancyData = occupancyQuery.data; // Retained facts are explicitly qualified after a failed refresh.
   const inventoryInspection = occupancyData?.inventoryInspection;
   const zoneByCode = new Map(zones.map((zone) => [zone.location_code, zone]));
   const inspectionLocationCodes = new Set<string>();
@@ -294,6 +293,9 @@ function InventoryIntelligenceView({
             fitPadding={0.88}
           />
         </Box>
+        <Typography sx={{ px: 1.5, py: 0.75, fontSize: 11.5, color: 'var(--ink-3)' }}>
+          Indicative stock levels · not storage capacity. Colour reflects positive stock only; it does not establish empty or available stock. Select a location for signed quantities and reservations.
+        </Typography>
         {/* Navigation only — the map itself never mutates Inventory. */}
         <LiveMapFooter onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)} />
         {occupancyStatus !== 'ready' && (
@@ -310,7 +312,7 @@ function InventoryIntelligenceView({
             }}
           >
             <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              {occupancyStatus === 'loading' ? 'Loading inventory locations…' : 'Inventory locations unavailable'}
+              {occupancyStatus === 'loading' ? 'Loading inventory locations…' : occupancyData != null ? 'Inventory refresh failed · showing last loaded data.' : 'Inventory locations unavailable'}
             </Typography>
             {occupancyStatus === 'error' && (
               <Box component="button" type="button" onClick={() => { void occupancyQuery.refetch(); }} sx={RETRY_BUTTON_SX}>

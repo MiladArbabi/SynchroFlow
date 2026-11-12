@@ -361,3 +361,14 @@ describe('Inventory fallbacks — inventory-location status overlay position', (
     expect(mockOccupancyRefetch).toHaveBeenCalledTimes(1);
   });
 });
+
+
+it('S4 retains cached canonical stock after refresh failure and qualifies the stock colours', () => {
+  mockOccupancyState = { ...OCCUPANCY_READY(), isError: true };
+  render(<ProductsFT2Page />);
+  expect(screen.getByText('Inventory refresh failed · showing last loaded data.')).toBeVisible();
+  expect(lastCanvasProps().locationPulseByCode['A-01'].rows).toContainEqual({ label: 'On hand', value: '4' });
+  expect(screen.getByText(/Indicative stock levels · not storage capacity/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+  expect(mockOccupancyRefetch).toHaveBeenCalledTimes(1);
+});
