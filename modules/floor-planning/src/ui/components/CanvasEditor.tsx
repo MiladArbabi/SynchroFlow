@@ -21,6 +21,7 @@ import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import {
   DecisionConfirmationModal,
   floorObjects,
+  clampViewportOffset, preserveViewport, zoomViewportAtCenter,
   DEFAULT_COMPONENT_FOOTPRINT as componentFootprint,
   SpotlightCoachMark,
   WarehouseLocationType,
@@ -1327,7 +1328,8 @@ export function CanvasEditor({
   const panRef    = useRef<PanState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
-  const initialViewportAppliedRef = useRef(false);
+  const automaticViewportRef = useRef(true);
+  const measuredViewportRef = useRef({ w: 0, h: 0 });
   const savingRef = useRef<Set<string>>(new Set());
   const latestZones = useRef(allZones);
   latestZones.current = allZones;
@@ -1512,6 +1514,7 @@ export function CanvasEditor({
   };
 
   const fitCurrentWarehouse = useCallback(() => {
+    automaticViewportRef.current = true;
     const rect = svgRef.current?.getBoundingClientRect();
     const viewport = fitWarehouseToViewport(
       viewportRoot,
@@ -1519,45 +1522,57 @@ export function CanvasEditor({
       rect?.height ?? 0,
     );
     if (!viewport) return false;
+    zoomRef.current = viewport.zoom; offsetRef.current = viewport.offset;
     setZoom(viewport.zoom);
     setOffset(viewport.offset);
     return true;
   }, [viewportRoot]);
 
   useEffect(() => {
-    if (initialViewportAppliedRef.current) return;
-    if (!hasUsableWarehouseBounds(viewportRoot)) return;
-
+    const element = svgRef.current;
+    if (!element) return;
     let animationFrame: number | undefined;
-    let observer: ResizeObserver | undefined;
-
-    const applyWhenMeasurable = () => {
-      const fitted = fitCurrentWarehouse();
-      if (!fitted) {
-        animationFrame = window.requestAnimationFrame(applyWhenMeasurable);
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      const next = { w: rect.width, h: rect.height };
+      const floor = floorBoundsRef.current;
+      const bounds = { minX: floor.x * SCALE, maxX: (floor.x + floor.width) * SCALE,
+        minY: floor.y * SCALE, maxY: (floor.y + floor.depth) * SCALE };
+      if (automaticViewportRef.current && hasUsableWarehouseBounds(viewportRoot)) {
+        fitCurrentWarehouse();
+      } else {
+        const viewport = preserveViewport({ zoom: zoomRef.current, offset: offsetRef.current },
+          measuredViewportRef.current, next, bounds, 100);
+        offsetRef.current = viewport.offset; setOffset(viewport.offset);
       }
-      return fitted;
+      measuredViewportRef.current = next;
+      return true;
     };
-
-    applyWhenMeasurable();
-
-    if (typeof ResizeObserver !== 'undefined' && svgRef.current) {
-      observer = new ResizeObserver(() => {
-        if (fitCurrentWarehouse()) {
-          initialViewportAppliedRef.current = true;
-          observer?.disconnect();
-        }
-      });
-      observer.observe(svgRef.current);
-    }
-
+    const whenMeasurable = () => {
+      if (!update()) animationFrame = window.requestAnimationFrame(whenMeasurable);
+    };
+    whenMeasurable();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : undefined;
+    observer?.observe(element);
+    window.addEventListener('resize', update);
     return () => {
-      if (animationFrame !== undefined) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      observer?.disconnect();
+      if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+      observer?.disconnect(); window.removeEventListener('resize', update);
     };
-  }, [fitCurrentWarehouse, warehouseRoot]);
+  }, [fitCurrentWarehouse, viewportRoot]);
+
+  function zoomFromCenter(delta: number) {
+    automaticViewportRef.current = false;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const floor = floorBoundsRef.current;
+    const viewport = zoomViewportAtCenter({ zoom: zoomRef.current, offset: offsetRef.current }, delta,
+      { w: rect.width, h: rect.height }, { minX: floor.x * SCALE, maxX: (floor.x + floor.width) * SCALE,
+        minY: floor.y * SCALE, maxY: (floor.y + floor.depth) * SCALE }, MIN_ZOOM, MAX_ZOOM, 100);
+    zoomRef.current = viewport.zoom; offsetRef.current = viewport.offset;
+    setZoom(viewport.zoom); setOffset(viewport.offset);
+  }
 
   const toSvg = useCallback((metres: number) => metres * SCALE * zoom, [zoom]);
 
@@ -2209,14 +2224,10 @@ export function CanvasEditor({
     // GH-1176: bounds follow the real floor (root origin + size), read through a
     // ref so native listeners never clamp against stale geometry.
     const floor = floorBoundsRef.current;
-    const left   = floor.x * SCALE * currentZoom;
-    const top    = floor.y * SCALE * currentZoom;
-    const right  = (floor.x + floor.width) * SCALE * currentZoom;
-    const bottom = (floor.y + floor.depth) * SCALE * currentZoom;
-    return {
-      x: Math.min(rect.width - PAN_MARGIN - left, Math.max(PAN_MARGIN - right, x)),
-      y: Math.min(rect.height - PAN_MARGIN - top, Math.max(PAN_MARGIN - bottom, y)),
-    };
+    return clampViewportOffset({ x, y }, currentZoom,
+      { minX: floor.x * SCALE, maxX: (floor.x + floor.width) * SCALE,
+        minY: floor.y * SCALE, maxY: (floor.y + floor.depth) * SCALE },
+      { w: rect.width, h: rect.height }, PAN_MARGIN);
   }
 
   useEffect(() => {
@@ -2327,12 +2338,15 @@ export function CanvasEditor({
       // Pan — FP-05: clamped so the floor plan can't be dragged fully off-screen
       if (panRef.current) {
         const p = panRef.current;
-        const next = clampOffset(
-          p.startOffsetX + (e.clientX - p.startMouseX),
-          p.startOffsetY + (e.clientY - p.startMouseY),
-          zoom
-        );
-        setOffset(next);
+        const rawX = p.startOffsetX + (e.clientX - p.startMouseX);
+        const rawY = p.startOffsetY + (e.clientY - p.startMouseY);
+        if (rawX === offsetRef.current.x && rawY === offsetRef.current.y) return;
+        const next = clampOffset(rawX, rawY, zoomRef.current);
+        if (next.x !== offsetRef.current.x || next.y !== offsetRef.current.y) {
+          automaticViewportRef.current = false;
+          offsetRef.current = next;
+          setOffset(next);
+        }
       }
     }
 
@@ -2486,10 +2500,11 @@ export function CanvasEditor({
     // FP-05: clamped so wheel-panning can't scroll the floor plan fully off-screen
     function onWheel(e: WheelEvent) {
       e.preventDefault();
+      automaticViewportRef.current = false;
       setOffset(prev => clampOffset(
         prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8,
         prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8,
-        zoom
+        zoomRef.current
       ));
     }
     const svgEl = svgRef.current;
@@ -2656,7 +2671,7 @@ export function CanvasEditor({
               </Popper>
             </Box>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
-              <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, z), z + delta)))}
+              <Box key={label} onClick={() => zoomFromCenter(delta)}
                 sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
                 {label}
               </Box>

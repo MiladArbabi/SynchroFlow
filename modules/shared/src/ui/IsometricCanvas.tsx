@@ -22,6 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
+import { boundsOfPoints, unionViewportBounds, fitViewport, clampViewportOffset, preserveViewport, zoomViewportAtCenter } from './warehouseViewport.js';
 import { DEFAULT_COMPONENT_FOOTPRINT, floorObjects, projectWarehouseRoot } from './warehouseGeometry.js';
 import type { LocationPulse, WarehouseZone, OperationalMapState, OperationalMapPresentation, DestinationHighlight, DestinationHighlightTone } from './IsometricCanvas.types.js';
 
@@ -167,6 +168,24 @@ function project(wx: number, wy: number, wz: number, zoom: number, flipped = fal
     sy: (wx + wy) * th / 2 - wz * lh,
   };
 }
+
+/** Camera bounds use the same projected corners/heights as the renderer. */
+function projectedGeometryBounds(zones: readonly WarehouseZone[], flipped: boolean) {
+  const points: { sx: number; sy: number }[] = [];
+  for (const zone of zones) {
+    if (zone.position_x == null || zone.position_y == null) continue;
+    const x = Number(zone.position_x), y = Number(zone.position_y);
+    const w = Number(zone.width ?? DEFAULT_COMPONENT_FOOTPRINT.width);
+    const d = Number(zone.depth ?? DEFAULT_COMPONENT_FOOTPRINT.depth);
+    if (![x, y, w, d].every(Number.isFinite) || w <= 0 || d <= 0) continue;
+    const height = ['warehouse', 'lane', 'shelf'].includes(zone.type) ? 0 : Number(zone.rack_levels ?? 1) * LEVEL_HEIGHT;
+    for (const z of [0, Number.isFinite(height) ? height : 0]) {
+      for (const [px, py] of [[x, y], [x + w, y], [x + w, y + d], [x, y + d]]) points.push(project(px, py, z, 1, flipped));
+    }
+  }
+  return boundsOfPoints(points);
+}
+
 
 type ScreenPoint = ReturnType<typeof project>;
 
@@ -1006,6 +1025,11 @@ export function IsometricCanvas({
   const [flipped, setFlipped]   = useState(false);
   const [size, setSize]         = useState({ w: 0, h: 0 });
   const [visibleCanvasBottom, setVisibleCanvasBottom] = useState(0);
+  const automaticViewportRef = useRef(autoFit);
+  const manuallyNavigatedRef = useRef(false);
+  const previousViewportSize = useRef({ w: 0, h: 0 });
+  const disablePanRef = useRef(disablePan);
+  disablePanRef.current = disablePan;
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
   const zoomRef   = useRef(zoom);
   const offsetRef = useRef(offset);
@@ -1266,7 +1290,7 @@ export function IsometricCanvas({
   // count changes exactly as it reacts to layout changes.
   const stationSig = stationPlacements
   .map(p =>
-`${p.station.id}:${p.station.label}:${p.station.side}:${p.station.rank}:${p.station.count}`
+`${p.station.id}:${p.station.label}:${p.station.side}:${p.station.rank}:${p.station.count}:${p.wx},${p.wy},${p.tw},${p.td},${p.totalBarH}`
   )
   .join('|');
 
@@ -1277,80 +1301,50 @@ export function IsometricCanvas({
     .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth},${z.rack_levels ?? ''}`)
     .join('|');
 
-  // Auto-fit: centre + contain the whole warehouse in the current container.
-  // Projection scales linearly with zoom and has no additive origin, so we
-  // project all corners at zoom 1, take the screen-space bbox, then solve for
-  // the zoom + offset that fits it with a margin.
-
-  // Recompute projected bbox at zoom=1 whenever layout or flip changes.
-  // Stored in ref so the pan event handler can read it without stale closure.
-  useEffect(() => {
-    if (positionedZones.length === 0) { bboxRef.current = null; return; }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const z of positionedZones) {
-      const wx = parseFloat(String(z.position_x ?? 0));
-      const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
-      const wd = parseFloat(String(z.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
-      const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
-      const corners: Array<[number, number, number]> = [
-        [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
-        // OV-14: the far-top corner read `wx + wh` — height on the X axis. Since
-      // sx = (px - py) * TILE_W/2, that corner's sx exceeded the true maxX
-      // whenever wh > ww + wd (reachable at 4+ rack levels on a 1m x 0.5m bin),
-      // inflating bboxRef.maxX and loosening clampOffset's left bound. Must stay
-      // identical to the autoFit effect's list below — same eight corners.
-        [wx, wy, wh], [wx + ww, wy, wh], [wx + ww, wy + wd, wh], [wx, wy + wd, wh],
-      ];
-      for (const [px, py, pz] of corners) {
-        const { sx, sy } = project(px, py, pz, 1, flipped);
-        if (sx < minX) minX = sx;
-        if (sx > maxX) maxX = sx;
-        if (sy < minY) minY = sy;
-        if (sy > maxY) maxY = sy;
-      }
+  const rootViewportSignature = zones.filter(z => z.type === 'warehouse')
+    .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth}`).join('|');
+  const physicalViewportBounds = useMemo(() => {
+    const roots = zones.filter(z => z.type === 'warehouse');
+    const root = roots.length === 1 ? roots[0] : undefined;
+    if (root && root.position_x != null && root.position_y != null && root.width != null && root.depth != null
+      && [root.position_x, root.position_y, root.width, root.depth].every(v => Number.isFinite(Number(v)))
+      && Number(root.width) > 0 && Number(root.depth) > 0) {
+      // The authoritative root owns the footprint. Preserve vertical bounds
+      // for physical objects inside it without letting legacy outliers set scale.
+      const contained = positionedZones.filter(z => z.type !== 'warehouse' && z.position_x != null && z.position_y != null
+        && Number(z.position_x) >= Number(root.position_x) && Number(z.position_y) >= Number(root.position_y)
+        && Number(z.position_x) + Number(z.width ?? DEFAULT_COMPONENT_FOOTPRINT.width) <= Number(root.position_x) + Number(root.width)
+        && Number(z.position_y) + Number(z.depth ?? DEFAULT_COMPONENT_FOOTPRINT.depth) <= Number(root.position_y) + Number(root.depth));
+      return projectedGeometryBounds([root, ...contained], flipped);
     }
-
-    // OV-13: aprons are drawn but were not measured, so the clamp could park
-    // them off-canvas. +0.6 m of headroom covers the count badge and label
-    // text drawn above the bar top face.
+    return projectedGeometryBounds(positionedZones, flipped)
+      ?? boundsOfPoints([[0, 0], [20, 0], [20, 15], [0, 15]].map(([x, y]) => project(x, y, 0, 1, flipped)));
+    // Signatures deliberately exclude occupancy and other operational overlays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootViewportSignature, zoneSig, flipped]);
+  const stationViewportBounds = useMemo(() => {
+    const points: { sx: number; sy: number }[] = [];
     for (const p of stationPlacements) {
-    const top = p.totalBarH + 0.6;
-    const corners: Array<[number, number, number]> = [
-      [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
-      [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
-      [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
-      [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
-    ];
-
-    for (const [px, py, pz] of corners) {
-      const { sx, sy } = project(px, py, pz, 1, flipped);
-      if (sx < minX) minX = sx;
-      if (sx > maxX) maxX = sx;
-      if (sy < minY) minY = sy;
-      if (sy > maxY) maxY = sy;
+      for (const z of [0, p.totalBarH + 0.6]) {
+        for (const [x, y] of [[p.wx, p.wy], [p.wx + p.tw, p.wy], [p.wx + p.tw, p.wy + p.td], [p.wx, p.wy + p.td]]) {
+          points.push(project(x, y, z, 1, flipped));
+        }
+      }
+      const start = project(p.wx, p.wy + p.td, 0, 1, flipped);
+      const end = project(p.wx + p.tw, p.wy + p.td, 0, 1, flipped);
+      points.push(...getEdgeLabelGeometry(p.station.label, start, end, 1).plateCorners);
     }
-
-    // OV-133: the label sits below the near edge and extends beyond the
-    // footprint, so its rotated plate must participate in both fit bounds.
-    const labelStart = project(p.wx, p.wy + p.td, 0, 1, flipped);
-    const labelEnd = project(p.wx + p.tw, p.wy + p.td, 0, 1, flipped);
-    const { plateCorners } = getEdgeLabelGeometry(
-      p.station.label,
-      labelStart,
-      labelEnd,
-      1
-    );
-
-    for (const { sx, sy } of plateCorners) {
-      if (sx < minX) minX = sx;
-      if (sx > maxX) maxX = sx;
-      if (sy < minY) minY = sy;
-      if (sy > maxY) maxY = sy;
-    }
-  }
-    bboxRef.current = { minX, maxX, minY, maxY };
-  }, [zoneSig, stationSig, flipped]);
+    return boundsOfPoints(points);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationSig, flipped]);
+  const navigationBounds = useMemo(() => unionViewportBounds(physicalViewportBounds,
+    projectedGeometryBounds(positionedZones, flipped), stationViewportBounds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [physicalViewportBounds, zoneSig, flipped, stationViewportBounds]);
+  bboxRef.current = navigationBounds;
+  const approvedFitBounds = useMemo(() => fitPhysicalFloorFirst ? physicalViewportBounds
+    : unionViewportBounds(physicalViewportBounds, stationViewportBounds),
+    [fitPhysicalFloorFirst, physicalViewportBounds, stationViewportBounds]);
 
   // Painter's algorithm: sort by (position_x + position_y) ascending — back zones first
   // Painter's algorithm: ascending = back-to-front for standard view.
@@ -1392,43 +1386,55 @@ export function IsometricCanvas({
     onPinnedClose?.();
   }
 
-  // Clamp pan offset so at least one quarter of the active floor bbox remains visible.
-  // Allows generous panning for large warehouses while preventing total content loss.
-  function clampOffset(x: number, y: number, z: number): { x: number; y: number } {
-    const bbox = bboxRef.current;
-    const { w, h } = sizeRef.current;
-    if (!bbox || w === 0 || h === 0) return { x, y };
-    const margin = 80; // px — minimum visible strip at each edge
-    const scaledMinX = bbox.minX * z;
-    const scaledMaxX = bbox.maxX * z;
-    const scaledMinY = bbox.minY * z;
-    const scaledMaxY = bbox.maxY * z;
-    const clampedX = Math.min(w - margin - scaledMinX, Math.max(margin - scaledMaxX, x));
-    const clampedY = Math.min(h - margin - scaledMinY, Math.max(margin - scaledMaxY, y));
-    return { x: clampedX, y: clampedY };
+  function applyViewport(viewport: { zoom: number; offset: { x: number; y: number } }) {
+    zoomRef.current = viewport.zoom; offsetRef.current = viewport.offset;
+    setZoom(viewport.zoom); setOffset(viewport.offset);
+  }
+  function clampOffset(x: number, y: number, z: number) {
+    return clampViewportOffset({ x, y }, z, bboxRef.current, sizeRef.current, 80);
+  }
+  function resetViewport() {
+    automaticViewportRef.current = true; manuallyNavigatedRef.current = false;
+    const viewport = fitViewport(approvedFitBounds, sizeRef.current, 2.5, fitPadding,
+      fitPhysicalFloorFirst ? apronReserveRatio : 0);
+    if (viewport) applyViewport(viewport);
+  }
+  function zoomFromCenter(delta: number) {
+    automaticViewportRef.current = false; manuallyNavigatedRef.current = true;
+    applyViewport(zoomViewportAtCenter({ zoom: zoomRef.current, offset: offsetRef.current }, delta,
+      sizeRef.current, physicalViewportBounds, 0.3, 2.5, 80));
   }
 
   function onCanvasMouseDown(e: React.MouseEvent) {
-    if (disablePan) return;
+    if (disablePanRef.current) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, startOX: offset.x, startOY: offset.y };
   }
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
-      if (!panRef.current) return;
+      if (disablePanRef.current || !panRef.current) return;
       const rawX = panRef.current.startOX + (e.clientX - panRef.current.startX);
       const rawY = panRef.current.startOY + (e.clientY - panRef.current.startY);
-      setOffset(clampOffset(rawX, rawY, zoomRef.current));
+      if (rawX === offsetRef.current.x && rawY === offsetRef.current.y) return;
+      const next = clampOffset(rawX, rawY, zoomRef.current);
+      if (next.x !== offsetRef.current.x || next.y !== offsetRef.current.y) {
+        automaticViewportRef.current = false; manuallyNavigatedRef.current = true;
+        offsetRef.current = next;
+        setOffset(next);
+      }
     }
     function onMouseUp() { panRef.current = null; }
     function onWheel(e: WheelEvent) {
+      if (disablePanRef.current) return;
       e.preventDefault();
+      automaticViewportRef.current = false; manuallyNavigatedRef.current = true;
       setOffset(prev => {
         const rawX = prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8;
         const rawY = prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8;
         return clampOffset(rawX, rawY, zoomRef.current);
       });
     }
+    if (disablePan) panRef.current = null;
     const svgEl = svgRef.current;
     if (svgEl && !disablePan) svgEl.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('mousemove', onMouseMove);
@@ -1438,7 +1444,7 @@ export function IsometricCanvas({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, []);
+  }, [disablePan]);
 
   const measureVisibleCanvas = useCallback(() => {
     const el = svgRef.current;
@@ -1478,79 +1484,21 @@ export function IsometricCanvas({
     };
   }, [measureVisibleCanvas]);
 
-  useEffect(() => {
-    if (!autoFit || size.w === 0 || size.h === 0 || positionedZones.length === 0) return;
-
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const z of positionedZones) {
-      const wx = parseFloat(String(z.position_x ?? 0));
-      const wy = parseFloat(String(z.position_y ?? 0));
-      const ww = parseFloat(String(z.width  ?? DEFAULT_COMPONENT_FOOTPRINT.width));
-      const wd = parseFloat(String(z.depth  ?? DEFAULT_COMPONENT_FOOTPRINT.depth));
-      const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
-      const corners: Array<[number, number, number]> = [
-        [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
-        [wx, wy, wh], [wx + ww, wy, wh], [wx + ww, wy + wd, wh], [wx, wy + wd, wh],
-      ];
-      for (const [px, py, pz] of corners) {
-        const { sx, sy } = project(px, py, pz, 1, flipped);
-        if (sx < minX) minX = sx;
-        if (sx > maxX) maxX = sx;
-        if (sy < minY) minY = sy;
-        if (sy > maxY) maxY = sy;
-      }
+  useLayoutEffect(() => { automaticViewportRef.current = autoFit; }, [autoFit]);
+  useLayoutEffect(() => {
+    if (size.w <= 0 || size.h <= 0) return;
+    if (automaticViewportRef.current || (disablePan && autoFit)) {
+      const viewport = fitViewport(approvedFitBounds, size, 2.5, fitPadding,
+        fitPhysicalFloorFirst ? apronReserveRatio : 0);
+      if (viewport) applyViewport(viewport);
+    } else if (manuallyNavigatedRef.current) {
+      applyViewport(preserveViewport({ zoom: zoomRef.current, offset: offsetRef.current },
+        previousViewportSize.current, size, navigationBounds, 80));
     }
-
-    // Default callers still fit physical geometry + apron stations together.
-    // Overview can instead reserve a dedicated rail so synthetic workflow
-    // volume never dictates the scale of the physical warehouse.
-    if (!fitPhysicalFloorFirst) {
-      for (const p of stationPlacements) {
-        const top = p.totalBarH + 0.6;
-        const corners: Array<[number, number, number]> = [
-          [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
-          [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
-          [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
-          [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
-        ];
-
-        for (const [px, py, pz] of corners) {
-          const { sx, sy } = project(px, py, pz, 1, flipped);
-          if (sx < minX) minX = sx;
-          if (sx > maxX) maxX = sx;
-          if (sy < minY) minY = sy;
-          if (sy > maxY) maxY = sy;
-        }
-      }
-    }
-
-    const bboxW = Math.max(1, maxX - minX);
-    const bboxH = Math.max(1, maxY - minY);
-
-    const reservedRatio = fitPhysicalFloorFirst
-      ? Math.min(0.4, Math.max(0, apronReserveRatio))
-      : 0;
-
-    const fitWidth = size.w * (1 - reservedRatio);
-
-    const fitZoom = Math.min(
-      2.5,
-      Math.max(
-        0.3,
-        Math.min(fitWidth / bboxW, size.h / bboxH) * fitPadding
-      )
-    );
-
-    const cx = ((minX + maxX) / 2) * fitZoom;
-    const cy = ((minY + maxY) / 2) * fitZoom;
-
-    setZoom(fitZoom);
-    setOffset({
-      x: fitWidth / 2 - cx,
-      y: size.h / 2 - cy,
-    });
+    previousViewportSize.current = size;
+    // Camera refs are the current state; operational rerenders must not refit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFit, size.w, size.h, flipped, zoneSig]);
+  }, [size.w, size.h, approvedFitBounds, navigationBounds, fitPadding, apronReserveRatio, fitPhysicalFloorFirst, autoFit, disablePan]);
 
   return (
     <Box sx={{ display: 'flex', width: '100%', height: '100%', position: 'relative', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
@@ -2212,14 +2160,14 @@ export function IsometricCanvas({
       {/* Zoom controls — hidden in embedded contexts via showControls={false} */}
       {showControls && <Box sx={{ position: 'absolute', bottom: 12, right: 12, display:'flex', flexDirection: 'column', gap: 0.5 }}>
         {[{ label: '+', delta: 0.15 }, { label: '−', delta: -0.15 }].map(({ label, delta }) => (
-          <Box key={label} onClick={() => setZoom(z => Math.min(2.5, Math.max(0.3, z + delta)))}
+          <Box key={label} onClick={() => zoomFromCenter(delta)}
             sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 16,
               color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent-text)' } }}>
             {label}
           </Box>
         ))}
-       <Box onClick={() => { setZoom(0.9); setOffset({ x: 420, y: 120 }); }}
+       <Box onClick={resetViewport}
           sx={{ px: 0.5, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '1px solid var(--rule)', borderRadius: 1, fontSize: 9, color: 'var(--ink-4)',
             bgcolor: 'var(--bg)', cursor: 'pointer', fontFamily: 'monospace',
@@ -2227,7 +2175,7 @@ export function IsometricCanvas({
           Reset
         </Box>
         {/* Angle preset toggle */}
-        <Box onClick={() => { setFlipped(f => !f); setOffset({ x: 420, y: 120 }); }}
+        <Box onClick={() => setFlipped(f => !f)}
           title={flipped ? 'Switch to standard view' : 'Switch to mirrored view'}
           sx={{ px: 0.5, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '1px solid var(--rule)', borderRadius: 1, fontSize: 9,

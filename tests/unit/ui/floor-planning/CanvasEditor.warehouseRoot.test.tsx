@@ -235,7 +235,7 @@ describe('CanvasEditor passive warehouse root', () => {
     }
   });
 
-  it('stops observing after the initial resize fit has settled', async () => {
+  it('keeps observing after initial fit so automatic views follow later resize', async () => {
     rectSpy.mockReturnValue(canvasRect(600, 500));
 
     let notifyResize: (() => void) | undefined;
@@ -261,7 +261,7 @@ describe('CanvasEditor passive warehouse root', () => {
       notifyResize?.();
 
       await waitFor(() => expect(screen.getByText('150%')).toBeInTheDocument());
-      expect(disconnect).toHaveBeenCalled();
+      expect(disconnect).not.toHaveBeenCalled();
     } finally {
       global.ResizeObserver = originalResizeObserver;
     }
