@@ -183,7 +183,8 @@ function baseProps(overrides: Record<string, unknown> = {}) {
 
 const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i);
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i);
-const qtyInput = () => screen.queryByPlaceholderText(/count and enter qty/i);
+// SF-PICK-P2 (decision 4): quantity is a zero-based stepper, not a typed field.
+const qtyInput = () => screen.queryByRole('button', { name: /add one unit/i });
 const reportProblem = () => screen.queryByRole('button', { name: /report problem/i });
 
 /** Renders the host on a resumed (canonical `picking`) batch and waits for execution. */
@@ -366,7 +367,11 @@ describe('PICK-EXECUTION-SPATIAL-01A — canonical spatial route', () => {
     // Item 1 (B-4, qty 2) and item 2 (B-4, qty 1).
     scan(locationInput(), 'B-4');
     scan(await screen.findByPlaceholderText(/scan product barcode/i), 'LSP-variant-sp-0');
-    scan(await screen.findByPlaceholderText(/count and enter qty/i), '2');
+    // SF-PICK-P2 (decision 4): count up from zero, then confirm the full quantity.
+    const addUnit = await screen.findByRole('button', { name: /add one unit/i });
+    fireEvent.click(addUnit);
+    fireEvent.click(addUnit);
+    fireEvent.click(screen.getByRole('button', { name: /confirm 2 picked/i }));
     await waitFor(() => expect(props.onConfirmScan).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText(/item\s+2\s+of\s+5/i)).toBeInTheDocument());
 
@@ -407,12 +412,14 @@ describe('PICK-EXECUTION-SPATIAL-01A — focused viewport layout', () => {
   it('VIEWPORT-01 — the active execution root is viewport-bound', async () => {
     const { container } = await renderExecution();
 
-    const root = container.firstElementChild as HTMLElement;
+    // SF-PICK-P2: execution renders in the shared ExecutionSessionShell, which
+    // binds to the viewport with a fixed full-inset frame (same as Stow)
+    // rather than height: 100dvh. Same invariant, different mechanism.
+    const root = screen.getByTestId('pick-session-shell');
+    expect(container).toContainElement(root);
+    expect(root).toHaveStyle({ position: 'fixed', display: 'flex', flexDirection: 'column' });
     const style = getComputedStyle(root);
-    expect([style.height, style.maxHeight]).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^100d?vh$/)]),
-    );
-    expect(root).toHaveStyle({ display: 'flex', flexDirection: 'column' });
+    expect([style.inset, style.top]).toEqual(expect.arrayContaining([expect.stringMatching(/^0(px)?$/)]));
   });
 
   it('VIEWPORT-02 — the spatial region fills the remaining height instead of using a fixed height', async () => {
@@ -424,14 +431,17 @@ describe('PICK-EXECUTION-SPATIAL-01A — focused viewport layout', () => {
     expect(within(map).getByTestId('isometric-canvas-stub')).toBeInTheDocument();
   });
 
-  it('VIEWPORT-04 — the execution root does not unconditionally hide vertical overflow', async () => {
+  it('VIEWPORT-04 — the execution scroll region (shell <main>) does not hide vertical overflow', async () => {
     const { container } = await renderExecution();
 
     // jsdom does not expand the `overflow` shorthand into its longhands, so
     // resolve the effective vertical value: overflow-y when set, otherwise the
     // shorthand's second token (or its only token). Horizontal overflow may
     // stay hidden; vertical must allow a graceful constrained-height fallback.
-    const style = getComputedStyle(container.firstElementChild as HTMLElement);
+    // SF-PICK-P2: the shared shell's scroll container is its <main>; the
+    // fixed frame clips, the task region scrolls vertically.
+    expect(container).toContainElement(screen.getByTestId('pick-session-shell'));
+    const style = getComputedStyle(screen.getByRole('main'));
     const shorthand = style.overflow.trim().split(/\s+/).filter(Boolean);
     const overflowY = style.overflowY || shorthand[1] || shorthand[0] || 'visible';
 
