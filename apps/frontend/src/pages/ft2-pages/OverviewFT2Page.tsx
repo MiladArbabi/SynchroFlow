@@ -32,6 +32,7 @@ import {
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
 import {
+  reconcileMapProblems,
   deriveLocationOperationalPresentation,
   deriveStationOperationalPresentation,
   type OverviewOperationalState,
@@ -191,19 +192,14 @@ export default function OverviewPageFT2() {
     15_000
   );
   const problemTasks = problemCenter.data?.tasks ?? [];
-  const problemByLocation = problemTasks.reduce<Record<string, number>>(
-    (acc, task) => {
-      if (!task.problem_bin_location) return acc;
-      acc[task.problem_bin_location] =
-        (acc[task.problem_bin_location] ?? 0) + 1;
-      return acc;
-    },
-    {}
-  );
-  const problemTaskTotal = problemTasks.length;
-  const unlocatedProblemTaskTotal = problemTasks.filter(
-    task => !task.problem_bin_location
-  ).length;
+  const problemSummary = reconcileMapProblems(problemTasks, new Set(
+    zones.filter(zone => zone.type === 'bin' && zone.position_x != null && zone.position_y != null &&
+      !zones.some(parent => parent.location_code === zone.parent_location_code && (parent.type === 'bin' || parent.type === 'shelf')))
+      .map(zone => zone.location_code)
+  ));
+  const problemByLocation = problemSummary.byLocation;
+  const problemTaskTotal = problemSummary.total;
+  const unlocatedProblemTaskTotal = problemSummary.unlocated;
 
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.
@@ -541,6 +537,12 @@ export default function OverviewPageFT2() {
 
       locationPulseByCode[code] = {
         title: overviewLocationPulseTitle(code, z.zone_type),
+        qualification: [
+          problemCenter.data == null ? 'Problems unknown' : problemCenter.isError ? 'Last loaded problems' : 'Verified problems',
+          occupancyQuery.data?.inventoryInspection?.[code] == null ? 'Stock unknown'
+            : occupancyQuery.isError ? 'Last loaded stock quantities' : 'Verified stock quantities',
+          liveActivityQuery.data == null ? 'Activity unknown' : liveActivityQuery.isError ? 'Last loaded activity' : 'Verified activity',
+        ].join(' · '),
         rows,
       };
     }
@@ -832,6 +834,12 @@ export default function OverviewPageFT2() {
             fitPadding={0.88}
           />
         </Box>
+        {problemCenter.data != null && problemTaskTotal > 0 && (
+          <Typography sx={{ px: 1.5, py: 0.75, fontSize: 12, color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>
+            {`${problemTaskTotal} open ${problemTaskTotal === 1 ? 'problem' : 'problems'} · ${problemSummary.mapped} on map · ${problemSummary.elsewhere} elsewhere · ${problemSummary.unlocated} location unknown`}
+            {problemCenter.isError ? ' · last loaded' : ''}
+          </Typography>
+        )}
         {unavailableSources.length > 0 && (
           <Box role="status" sx={{ px: 1.5, py: 0.75, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {unavailableSources.map(source => (

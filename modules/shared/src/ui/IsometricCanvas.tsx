@@ -694,12 +694,14 @@ function OperationalBadge({
   ariaLabel,
   fill,
   strong,
+  symbol,
 }: {
   pt: ScreenPoint;
   zoom: number;
   label: string;
   ariaLabel: string;
   fill: string;
+  symbol?: string;
   /** Slightly stronger visual weight — used for the critical state only. */
   strong?: boolean;
 }) {
@@ -714,7 +716,8 @@ function OperationalBadge({
   const baseFontSize = 7; // was 6 pre-D.2
   const padX = 5; // was 4 pre-D.2
   const h = 12; // was 10 pre-D.2
-  const w = Math.max(20, measureLabelPlateWidth(label, baseFontSize) + padX * 2);
+  const visibleLabel = symbol ? `${symbol} ${label}` : label;
+  const w = Math.max(20, measureLabelPlateWidth(visibleLabel, baseFontSize) + padX * 2);
   return (
     <g role="img" aria-label={ariaLabel} style={{ pointerEvents: 'none' }}>
       <title>{ariaLabel}</title>
@@ -739,6 +742,8 @@ function OperationalBadge({
       >
         {label}
       </text>
+      {symbol && <text aria-hidden="true" x={pt.sx - (w / 2 - padX) * zoom} y={pt.sy}
+        dominantBaseline="middle" fontSize={Math.round(baseFontSize * zoom)} fill="var(--bg)">{symbol}</text>}
     </g>
   );
 }
@@ -1884,6 +1889,7 @@ export function IsometricCanvas({
                     pt={operationalBadgePt}
                     zoom={zoom}
                     label={locationPresentation.primaryBadge.label}
+                    symbol={locationPresentation.state === 'critical' ? '!' : locationPresentation.state === 'warning' || locationPresentation.state === 'stale' ? '△' : locationPresentation.state === 'active' ? '↻' : '○'}
                     ariaLabel={`${locationPresentation.primaryBadge.label} at ${zone.location_code}`}
                     fill={
                       resolveOperationalVisualTreatment(
@@ -2124,6 +2130,7 @@ export function IsometricCanvas({
                     pt={primaryLabelPt}
                     zoom={zoom}
                     label={stationBadgeLabel}
+                    symbol={stationPresentation?.state === 'critical' ? '!' : stationPresentation?.state === 'healthy' ? '✓' : '↻'}
                     ariaLabel={`${stationBadgeLabel} — ${station.label}`}
                     fill={barFill}
                     strong={isCritical}
@@ -2234,7 +2241,7 @@ export function IsometricCanvas({
                 : undefined
             }
             sx={{
-              position: 'absolute', left, top, width: PW, zIndex: 3,
+              position: 'absolute', left, top, width: PW, maxWidth: 'calc(100% - 16px)', zIndex: 3,
               pointerEvents: isPinnedPulse ? 'auto' : 'none',
               border: isPinnedPulse ? '1px solid rgba(255,255,255,0.24)' : '1px solid var(--rule)',
               borderRadius: '6px',
@@ -2287,13 +2294,18 @@ export function IsometricCanvas({
                 </Box>
               )}
             </Box>
+            {activePulse.qualification && (
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-2)', flexShrink: 0 }}>
+                {activePulse.qualification}
+              </Typography>
+            )}
             {stateLine && (
               <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', flexShrink: 0 }}>
                 {stateLine}
               </Typography>
             )}
             <Box sx={{ borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75, minHeight: 0, overflowY: 'auto' }}>
-              {rows.map((r, i) => (
+              {[...rows, ...(!isPinnedPulse ? activePulse.preview ?? [] : [])].map((r, i) => (
                 <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, py: 0.25 }}>
                   <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', minWidth: 0 }}>{r.label}</Typography>
                   <Typography sx={{
@@ -2306,6 +2318,11 @@ export function IsometricCanvas({
                 </Box>
               ))}
             </Box>
+            {!isPinnedPulse && (activePulse.previewRemainder ?? 0) > 0 && (
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                +{activePulse.previewRemainder} more · select for all SKUs
+              </Typography>
+            )}
             {isPinnedPulse && pinnedAction && (
               <Box
                 component="button"

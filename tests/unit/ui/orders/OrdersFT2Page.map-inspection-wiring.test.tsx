@@ -157,6 +157,7 @@ describe('OrdersFT2Page — C2C live-map hover/pinned inspection wiring', () => 
     expect(props.enableHoverFocus).toBe(true);
     expect(props.locationPulseByCode['A-1']).toEqual({
       title: 'A-1',
+      qualification: 'Verified scan location · Picking',
       rows: [
         { label: 'Pickers here', value: '1' },
         { label: 'Batch phase', value: 'Picking', tone: 'muted' },
@@ -264,5 +265,22 @@ describe('S4 activity availability', () => {
     mockUseOrdersLiveActivity.mockReturnValue({ data: { pickerPositions: [], activeBatches: [] }, isError: false });
     renderWithProviders(<OrdersFT2Page />);
     expect(screen.getByText('No active batches')).toBeVisible();
+  });
+});
+
+
+describe('S5 located fulfillment context', () => {
+  it('qualifies verified location activity and supplies one semantic badge', () => {
+    renderWithProviders(<OrdersFT2Page />);
+    const props = lastCanvasProps();
+    expect(props.locationPulseByCode['A-1'].qualification).toBe('Verified scan location · Picking');
+    expect(props.operationalPresentationByLocation['A-1']).toMatchObject({ state: 'active', primaryBadge: { label: '1 picking' } });
+    expect(props.operationalPresentationByLocation['B-1']).toBeUndefined();
+  });
+  it('never calls cached location activity verified after refresh failure', () => {
+    const previous = mockUseOrdersLiveActivity();
+    mockUseOrdersLiveActivity.mockReturnValue({ ...previous, isError: true, refetch: jest.fn() });
+    renderWithProviders(<OrdersFT2Page />);
+    expect(lastCanvasProps().locationPulseByCode['A-1'].qualification).toContain('Last loaded scan location');
   });
 });
