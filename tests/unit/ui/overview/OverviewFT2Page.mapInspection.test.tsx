@@ -191,7 +191,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   setSearchParams('');
   mockFloorZones = [bin('A-1'), bin('B-1'), bin('PROBLEM', 'problem')];
-  mockProblemTasks = [{ problem_bin_location: 'A-1' }, { problem_bin_location: 'PROBLEM' }];
+  mockProblemTasks = [{ status: 'open', problem_bin_location: 'A-1' }, { status: 'investigating', problem_bin_location: 'PROBLEM' }];
   mockOrderPoolData = {
     eligible_order_count: 3,
     summary: { blocked_count: 2 },
@@ -373,4 +373,44 @@ it('S1 renders nested positions through the actual Overview page while preservin
   expect(latestCanvasProps().selectedLocationCode).toBe('A-1');
   fireEvent.click(screen.getByRole('button', { name: 'Open Problem Center →' }));
   expect(mockNavigate).toHaveBeenCalledWith('/problem-center');
+});
+
+
+describe('S5 problem record reconciliation', () => {
+  it('counts only unresolved task records and reconciles mapped, elsewhere and unknown locations', () => {
+    mockProblemTasks = [
+      { status: 'open', problem_bin_location: 'A-1', quantity: 9 },
+      { status: 'investigating', problem_bin_location: 'OFF-MAP', quantity: 20 },
+      { status: 'open', problem_bin_location: null, quantity: 2 },
+      { status: 'resolved', problem_bin_location: 'PROBLEM', quantity: 10 },
+    ];
+    render(<OverviewPageFT2 />);
+    const props = latestCanvasProps() as any;
+    expect(props.problemByLocation).toEqual({ 'A-1': 1, 'OFF-MAP': 1 });
+    expect(props.problemTaskTotal).toBe(3);
+    expect(screen.getByText('3 open problems · 1 on map · 1 elsewhere · 1 location unknown')).toBeVisible();
+    expect(props.locationPulseByCode['A-1'].qualification).toContain('Verified problems');
+    expect(props.locationPulseByCode['A-1'].qualification).toContain('Stock unknown');
+    expect(props.pinnedAction).toBeNull();
+  });
+});
+
+
+it('S5 correction: shelf-contained problem locations are elsewhere, not on map or unknown', () => {
+  mockFloorZones = [
+    bin('A-1'),
+    { ...bin('SHELF-1'), type: 'shelf' },
+    { ...bin('SHELF-ADDRESS'), parent_location_code: 'SHELF-1' },
+  ];
+  mockProblemTasks = [
+    { status: 'open', problem_bin_location: 'A-1' },
+    { status: 'investigating', problem_bin_location: 'SHELF-ADDRESS' },
+    { status: 'open', problem_bin_location: null },
+  ];
+  render(<OverviewPageFT2 />);
+  const props = latestCanvasProps() as any;
+  expect(props.problemByLocation).toEqual({ 'A-1': 1, 'SHELF-ADDRESS': 1 });
+  expect(props.problemTaskTotal).toBe(3);
+  expect(props.unlocatedProblemTaskTotal).toBe(1);
+  expect(screen.getByText('3 open problems · 1 on map · 1 elsewhere · 1 location unknown')).toBeVisible();
 });

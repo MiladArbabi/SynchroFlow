@@ -33,6 +33,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const mockNavigate = jest.fn();
 let mockRealCanvas = false;
+let mockShelfLocations = false;
 const mockCanvas = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -115,6 +116,10 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
         mockZone('Z-01', 'bin', 'pick', 5),
         mockZone('P-01', 'bin', 'storage', 7),
         mockZone('U-01', 'bin', 'pick', 9),
+        ...(mockShelfLocations ? [
+          mockZone('SHELF-1', 'shelf', 'storage', 10),
+          { ...mockZone('SHELF-ADDRESS', 'bin', 'storage', 10), parent_location_code: 'SHELF-1' },
+        ] : []),
         ...(mockRealCanvas ? [
           { ...mockZone('NESTED-NULL', 'bin', 'pick', 2), parent_location_code: 'A-01', position_x: null, position_y: null },
           { ...mockZone('NESTED-POSITIONED', 'bin', 'pick', 4), parent_location_code: 'A-01' },
@@ -284,6 +289,7 @@ function select(code: string | null) {
 
 beforeEach(() => {
   mockRealCanvas = false;
+  mockShelfLocations = false;
   mockCanvas.mockClear();
   mockNavigate.mockClear();
 });
@@ -507,4 +513,48 @@ it('S1 renders nested positions through the actual Inventory page while preservi
   expect(lastCanvasProps().selectedLocationCode).toBe('P-01');
   expect(screen.getByTestId('isometric-pulse-card')).toBeVisible();
   expect(lastCanvasProps().pinnedAction).toBeNull();
+});
+
+
+describe('S5 signed stock context', () => {
+  it('uses neutral stock shading with a separate semantic badge for reservations and discrepancies', () => {
+    render(<ProductsFT2Page />);
+    const props = lastCanvasProps();
+    expect(props.occupancyPresentation).toBe('neutral');
+    expect(props.operationalPresentationByLocation['B-01']).toMatchObject({ state: 'warning', primaryBadge: { label: 'Fully reserved' } });
+    expect(props.operationalPresentationByLocation['P-01']).toMatchObject({ state: 'critical', primaryBadge: { label: 'Phantom' } });
+    expect(props.operationalPresentationByLocation['A-01'].primaryBadge).toBeNull();
+    expect(props.locationPulseByCode['A-01'].qualification).toBe('Verified stock quantities');
+    expect(screen.getByText('1 location · stock unknown')).toBeVisible();
+    expect(screen.queryByText(/Indicative stock levels/)).not.toBeInTheDocument();
+  });
+  it('bounds hover SKU previews, prioritizes signed discrepancies and preserves full pinned detail', () => {
+    const original = mockOccupancyResponse.inventoryInspection['A-01'];
+    mockOccupancyResponse.inventoryInspection['A-01'] = {
+      on_hand_quantity: 5, available_quantity: 9, reserved_quantity: 0,
+      variants: [variantRow('1', 'POS-1', 2, 2, 0), variantRow('2', 'POS-2', 2, 2, 0), variantRow('3', 'POS-3', 2, 2, 0), variantRow('4', 'NEG', -1, 0, 0)],
+    };
+    try {
+      render(<ProductsFT2Page />);
+      const pulse = pulseFor('A-01') as any;
+      expect(pulse.preview).toHaveLength(3);
+      expect(pulse.preview[0]).toMatchObject({ label: 'NEG', value: '-1', tone: 'critical' });
+      expect(pulse.previewRemainder).toBe(1);
+      select('A-01');
+      expect(skuRow(pulseFor('A-01'), 'NEG').value).toContain('-1');
+      expect(skuRow(pulseFor('A-01'), 'POS-3')).toBeDefined();
+    } finally { mockOccupancyResponse.inventoryInspection['A-01'] = original; }
+  });
+});
+
+
+it('S5 correction: shelf-contained stock locations do not inflate displayed unknown counts', () => {
+  mockShelfLocations = true;
+  render(<ProductsFT2Page />);
+  expect(screen.getByText('1 location · stock unknown')).toBeVisible();
+  expect(screen.queryByText('2 locations · stock unknown')).not.toBeInTheDocument();
+  const props = lastCanvasProps();
+  expect(props.locationPulseByCode['U-01']).toBeUndefined();
+  expect(props.locationPulseByCode['SHELF-ADDRESS']).toBeUndefined();
+  expect(props.locationPulseByCode['Z-01'].rows).toContainEqual({ label: 'On hand', value: '0' });
 });

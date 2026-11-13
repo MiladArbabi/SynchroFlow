@@ -117,6 +117,12 @@ function variantIdentity(variant: LocationStockVariant): string {
 function compactLocationPulse(code: string, detail: LocationStockDetail): LocationPulse {
   return {
     title: code,
+    preview: detail.variants.length > 3 || detail.variants.some(variant => variant.on_hand_quantity < 0) ? [...detail.variants].sort((a, b) => Number(b.on_hand_quantity < 0) - Number(a.on_hand_quantity < 0))
+      .slice(0, 3).map(variant => ({
+        label: variantIdentity(variant), value: fmtUnits(variant.on_hand_quantity),
+        tone: variant.on_hand_quantity < 0 ? 'critical' : 'muted',
+      })) : undefined,
+    previewRemainder: Math.max(0, detail.variants.length - 3),
     rows: [
       { label: 'On hand', value: fmtUnits(detail.on_hand_quantity) },
       { label: 'Available', value: fmtUnits(detail.available_quantity) },
@@ -219,14 +225,25 @@ function InventoryIntelligenceView({
   const zoneByCode = new Map(zones.map((zone) => [zone.location_code, zone]));
   const inspectionLocationCodes = new Set<string>();
   const locationPulseByCode: Record<string, LocationPulse> = {};
+  const inventoryPresentation: Record<string, { state: 'neutral' | 'warning' | 'critical'; primaryBadge: { label: string } | null }> = {};
   for (const [code, detail] of Object.entries(inventoryInspection ?? {})) {
     const zone = zoneByCode.get(code);
     if (!zone || !isInspectableInventoryLocation(zone)) continue;
     inspectionLocationCodes.add(code);
-    locationPulseByCode[code] = code === selectedLocationCode
-      ? pinnedLocationPulse(code, zone, detail)
-      : compactLocationPulse(code, detail);
+    const quality = locationTruthQuality(detail);
+    inventoryPresentation[code] = {
+      state: quality === 'Phantom' ? 'critical' : quality === 'Fully reserved' ? 'warning' : 'neutral',
+      primaryBadge: quality === 'Confirmed' ? null : { label: quality },
+    };
+    locationPulseByCode[code] = {
+      ...(code === selectedLocationCode ? pinnedLocationPulse(code, zone, detail) : compactLocationPulse(code, detail)),
+      qualification: occupancyQuery.isError ? 'Last loaded stock quantities' : 'Verified stock quantities',
+    };
   }
+
+  const unknownStockLocations = zones.filter(zone => isInspectableInventoryLocation(zone) &&
+    !zones.some(parent => parent.location_code === zone.parent_location_code && (parent.type === 'bin' || parent.type === 'shelf')) &&
+    inventoryInspection?.[zone.location_code] == null).length;
 
   let mapContent: ReactNode;
 
@@ -284,6 +301,8 @@ function InventoryIntelligenceView({
             pinnedAction={null}
             pinnedPulseWidth={288}
             overlay="occupancy"
+            occupancyPresentation="neutral"
+            operationalPresentationByLocation={inventoryPresentation}
             showLegend={false}
             showControls={false}
             enableHoverFocus
@@ -293,9 +312,11 @@ function InventoryIntelligenceView({
             fitPadding={0.88}
           />
         </Box>
-        <Typography sx={{ px: 1.5, py: 0.75, fontSize: 11.5, color: 'var(--ink-3)' }}>
-          Indicative stock levels · not storage capacity. Colour reflects positive stock only; it does not establish empty or available stock. Select a location for signed quantities and reservations.
-        </Typography>
+        {unknownStockLocations > 0 && (
+          <Typography sx={{ px: 1.5, py: 0.75, fontSize: 11.5, color: 'var(--ink-3)' }}>
+            {`${unknownStockLocations} ${unknownStockLocations === 1 ? 'location' : 'locations'} · stock unknown`}
+          </Typography>
+        )}
         {/* Navigation only — the map itself never mutates Inventory. */}
         <LiveMapFooter onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)} />
         {occupancyStatus !== 'ready' && (

@@ -193,7 +193,7 @@ beforeEach(() => {
   mockS4Idle.mockReturnValue({ alerts: [], hasData: true, isLoading: false, isError: false });
   mockS4Problems.mockReturnValue({
     // One open problem at A-1 -> primaryBadge "1 issue", state critical.
-    data: { tasks: [{ problem_bin_location: 'A-1' }] },
+    data: { tasks: [{ status: 'open', problem_bin_location: 'A-1' }] },
     isLoading: false,
     isError: false,
   });

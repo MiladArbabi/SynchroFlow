@@ -180,6 +180,7 @@ export default function OrdersFT2Page() {
    * has no plate and stays silent.
    */
   const orderLocationPulseByCode: Record<string, LocationPulse> = {};
+  const orderPresentation: Record<string, { state: 'active' | 'stale'; primaryBadge: { label: string } }> = {};
   for (const [code, activity] of Object.entries(orderFloorActivity)) {
     const phase = [
       (activity.pickingCount ?? 0) > 0 ? 'Picking' : null,
@@ -196,7 +197,17 @@ export default function OrdersFT2Page() {
         tone: 'warning',
       });
     }
-    orderLocationPulseByCode[code] = { title: code, rows };
+    const staleCount = activity.staleCount ?? 0;
+    orderPresentation[code] = {
+      state: staleCount > 0 ? 'stale' : 'active',
+      primaryBadge: { label: staleCount > 0 ? `${staleCount} stale` :
+        [activity.pickingCount ? `${activity.pickingCount} picking` : null,
+          activity.packingCount ? `${activity.packingCount} packing` : null].filter(Boolean).join(' · ') },
+    };
+    orderLocationPulseByCode[code] = {
+      title: code, rows,
+      qualification: `${ordersLiveActivity.isError ? 'Last loaded scan location' : 'Verified scan location'}${phase ? ` · ${phase}` : ''}`,
+    };
   }
 
   // C2D — pulse exists = Orders has something truthful to inspect there; no
@@ -361,6 +372,7 @@ export default function OrdersFT2Page() {
             zones={floorZones}
             liveActivity={orderFloorActivity}
             locationPulseByCode={orderLocationPulseByCode}
+            operationalPresentationByLocation={orderPresentation}
             inspectableLocationCodes={orderInspectableLocationCodes}
             selectedLocationCode={selectedLocationCode}
             onSelect={setSelectedLocationCode}

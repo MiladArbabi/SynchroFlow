@@ -324,3 +324,26 @@ export function deriveStationOperationalPresentation(
     showIdentityLabel: STATION_SHOW_IDENTITY[key] ?? true,
   };
 }
+
+
+/** Task records, never quantities. Physical association is supplied by Problem Center. */
+export function reconcileMapProblems(
+  tasks: readonly { status: string; problem_bin_location: string | null }[],
+  mappedLocationCodes: ReadonlySet<string>,
+) {
+  const byLocation: Record<string, number> = {};
+  let total = 0;
+  let mapped = 0;
+  let elsewhere = 0;
+  let unlocated = 0;
+  for (const task of tasks) {
+    if (task.status !== 'open' && task.status !== 'investigating') continue;
+    total += 1;
+    const code = task.problem_bin_location;
+    if (!code) { unlocated += 1; continue; }
+    byLocation[code] = (byLocation[code] ?? 0) + 1;
+    if (mappedLocationCodes.has(code)) mapped += 1;
+    else elsewhere += 1;
+  }
+  return { byLocation, total, mapped, elsewhere, unlocated };
+}
