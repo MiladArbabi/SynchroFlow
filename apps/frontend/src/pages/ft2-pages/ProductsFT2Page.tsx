@@ -41,6 +41,7 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { hasOperationalFloor } from '../floor-planning/operationalFloor';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import useConfig from 'hooks/useConfig';
+import { parentInventoryInspection } from '../floor-planning/parentInventoryInspection';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -222,6 +223,8 @@ function InventoryIntelligenceView({
     : 'ready';
   const occupancyData = occupancyQuery.data; // Retained facts are explicitly qualified after a failed refresh.
   const inventoryInspection = occupancyData?.inventoryInspection;
+  // Inspection eligibility may include unknown parents; occupancy knowledge is exact-location truth only.
+  const knownOccupancyLocationCodes = new Set(Object.keys(inventoryInspection ?? {}));
   const zoneByCode = new Map(zones.map((zone) => [zone.location_code, zone]));
   const inspectionLocationCodes = new Set<string>();
   const locationPulseByCode: Record<string, LocationPulse> = {};
@@ -238,6 +241,49 @@ function InventoryIntelligenceView({
     locationPulseByCode[code] = {
       ...(code === selectedLocationCode ? pinnedLocationPulse(code, zone, detail) : compactLocationPulse(code, detail)),
       qualification: occupancyQuery.isError ? 'Last loaded stock quantities' : 'Verified stock quantities',
+    };
+  }
+
+  // Parent inspection uses explicit ancestry, including unpositioned addresses.
+  // Exact-location payloads and occupancy remain untouched.
+  for (const zone of zones) {
+    if (zone.position_x == null || zone.position_y == null) continue;
+    if (zone.type !== 'shelf' && !(zone.type === 'bin' && zones.some(child => child.parent_location_code === zone.location_code))) continue;
+    const aggregate = parentInventoryInspection(zone.location_code, zones, inventoryInspection);
+    inspectionLocationCodes.add(zone.location_code);
+    const hasNegative = aggregate.locations.some(location => location.detail?.variants.some(variant => variant.on_hand_quantity < 0));
+    const fullyReserved = aggregate.unknownLocations === 0 && aggregate.total.on_hand_quantity > 0 && aggregate.total.available_quantity === 0 && aggregate.total.reserved_quantity > 0;
+    inventoryPresentation[zone.location_code] = {
+      state: hasNegative ? 'critical' : fullyReserved || aggregate.unknownLocations > 0 ? 'warning' : 'neutral',
+      primaryBadge: hasNegative ? { label: 'Phantom' } : fullyReserved ? { label: 'Fully reserved' } : null,
+    };
+    const quantities = (detail: Pick<LocationStockDetail, 'on_hand_quantity' | 'available_quantity' | 'reserved_quantity'>) =>
+      `${fmtUnits(detail.on_hand_quantity)} · ${fmtUnits(detail.available_quantity)} · ${fmtUnits(detail.reserved_quantity)}`;
+    const summary = aggregate.unknownLocations > 0
+      ? `${fmtUnits(aggregate.total.on_hand_quantity)} units recorded · ${aggregate.unknownLocations} locations unknown`
+      : `${fmtUnits(aggregate.total.on_hand_quantity)} units on hand`;
+    locationPulseByCode[zone.location_code] = {
+      title: zone.location_code,
+      subtitle: locationIdentity(zone),
+      qualification: occupancyQuery.isError ? 'Last loaded stock quantities' : 'Recorded stock quantities',
+      rows: [
+        { label: 'Stock', value: summary },
+        { label: 'Recorded', value: 'On hand · Available · Reserved', tone: 'muted' },
+        { label: aggregate.unknownLocations > 0 ? 'Recorded sum' : 'All locations', value: quantities(aggregate.total) },
+        ...aggregate.locations.flatMap(({ code, direct, detail }): LocationPulse['rows'] => [
+          { label: `${direct ? 'Direct' : 'Descendant'} · ${code}`, value: detail ? quantities(detail) : 'Stock unknown', tone: 'muted' },
+          ...(detail?.variants.map(variant => ({
+            label: `${code} · ${variantIdentity(variant)}`,
+            value: quantities(variant),
+            tone: variant.on_hand_quantity < 0 ? 'critical' as const : 'muted' as const,
+          })) ?? []),
+        ]),
+        { label: 'SKU totals', value: 'Recorded across locations', tone: 'muted' },
+        ...aggregate.total.variants.map(variant => ({
+          label: variantIdentity(variant), value: quantities(variant),
+          tone: variant.on_hand_quantity < 0 ? 'critical' as const : 'muted' as const,
+        })),
+      ],
     };
   }
 
@@ -292,7 +338,7 @@ function InventoryIntelligenceView({
           <IsometricCanvas
             zones={zones}
             occupancy={occupancyData?.occupancy}
-            knownOccupancyLocationCodes={inspectionLocationCodes}
+            knownOccupancyLocationCodes={knownOccupancyLocationCodes}
             inspectableLocationCodes={inspectionLocationCodes}
             locationPulseByCode={locationPulseByCode}
             selectedLocationCode={selectedLocationCode}

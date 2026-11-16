@@ -1124,14 +1124,14 @@ export function IsometricCanvas({
       : candidates[0].side;
   };
 
-  // OV-HOVER-01: only an actually rendered physical bin may own hover focus.
+  // OV-HOVER-01: rendered bins and explicitly opted-in shelves may own hover focus.
   // This prevents stale hover state from dimming the map after filters/layout change.
   const activeHoveredCode =
     enableHoverFocus &&
     hovered != null &&
     isInspectableLocation(hovered) &&
     positionedZones.some(
-      z => z.type === 'bin' && z.location_code === hovered
+      z => (z.type === 'bin' || (z.type === 'shelf' && inspectableLocationCodes?.has(z.location_code))) && z.location_code === hovered
     )
       ? hovered
       : null;
@@ -1636,7 +1636,7 @@ export function IsometricCanvas({
             // keyboard target. Enter / Space run the same handleSelect toggle as
             // a pointer click; Escape clears through clearPinnedPulse.
             const isInspectionTarget =
-              enableHoverFocus && !isFrame && isInspectableLocation(zone.location_code);
+              enableHoverFocus && (!isFrame || (zone.type === 'shelf' && inspectableLocationCodes?.has(zone.location_code))) && isInspectableLocation(zone.location_code);
             const selectionAnchor = () => ({
               x: project(wx + ww, wy, wh, zoom, flipped).sx,
               y: project(wx + ww, wy, wh, zoom, flipped).sy,
