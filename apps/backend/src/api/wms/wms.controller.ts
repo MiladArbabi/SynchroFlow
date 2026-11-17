@@ -32,6 +32,7 @@ import { computeCoverage, markLabelsPrinted } from '../../services/wms/inventory
 import { getLiveActivity } from '../../services/wms/liveActivity.service.js';
 import {
   confirmPickScan,
+  PickScanAlreadyRecordedError,
   recordShortPickPhysicalOutcome,
 } from '../../services/wms/pickScan.service.js';
 /**
@@ -112,6 +113,46 @@ import {
   type BillingUsageNotificationIntent,
 } from '../../services/billing/billingUsageThreshold.service.js';
 import { dispatchNotification } from '../../services/notifications/notificationDispatch.service.js';
+import {
+  PickOwnershipError,
+  acknowledgePickCustody,
+  assertPickOperatorEligible,
+  assertPickWriteOwnership,
+  assignPickBatch,
+  claimPickBatch,
+  lockPickBatch,
+  lockPickBatchRow,
+  pickRecoveryThresholdSql,
+  type PickNotificationIntent,
+} from '../../services/wms/pickAssignment.service.js';
+
+// SF-PICK-ASSIGN-01 — one response shape for every Pick ownership refusal.
+function respondPickOwnershipError(res: Response, error: PickOwnershipError) {
+  return res.status(error.statusCode).json({
+    error: error.message,
+    code: error.code,
+    ...error.details,
+  });
+}
+
+// SF-PICK-ASSIGN-01 — Pick notifications are dispatched only after commit.
+function dispatchPickNotifications(shopId: number, intents: PickNotificationIntent[]): void {
+  for (const intent of intents) {
+    dispatchNotification({
+      shopId,
+      payload: {
+        title: intent.title,
+        body: intent.body,
+        data: { route: '/wms', batchId: intent.batchId },
+      },
+      ...(intent.kind === 'user'
+        ? { targetUserIds: [intent.userId] }
+        : { broadcastToRole: 'operator' as const }),
+    }).catch((err: unknown) =>
+      console.error('[PICK_NOTIFICATION_FAILED]', { shopId, batchId: intent.batchId, error: (err as Error)?.message })
+    );
+  }
+}
 
 async function assertStowAssignee(
   shopId: number,
@@ -196,18 +237,20 @@ class OverageBillingUnavailableError extends Error {
 // ─────────────────────────────────────────
 export const httpGetBatches = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
+  const requesterId = req.user?.userId ?? null;
 
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    const batches = await db.transaction(async (trx) => {
+    const rows: Array<Record<string, any>> = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      return trx('pick_batches as pb')
+      return (await trx('pick_batches as pb')
         .where({ 'pb.shop_id': shopId })
         .whereNotIn('pb.status', ['pack_complete', 'cancelled'])
         .leftJoin('users as upick', 'upick.id', 'pb.picked_by')
         .leftJoin('users as upack', 'upack.id', 'pb.packed_by')
+        .leftJoin('users as uassign', 'uassign.id', 'pb.assigned_operator_id')
         .orderBy('pb.released_at', 'desc')
         .select(
           'pb.pick_batch_id',
@@ -228,7 +271,30 @@ export const httpGetBatches = async (req: Request, res: Response) => {
           'pb.assigned_packer_id',
           trx.raw(`COALESCE(upick.first_name || ' ' || COALESCE(upick.last_name, ''), upick.email) as picker_name`),
           trx.raw(`COALESCE(upack.first_name || ' ' || COALESCE(upack.last_name, ''), upack.email) as packer_name`),
-        );
+          // SF-PICK-ASSIGN-01 — assignment and recovery state for the board.
+          'pb.pick_assigned_at',
+          'pb.pick_last_activity_at',
+          'pb.pick_custody_ack_required',
+          'pb.pick_claim_generation',
+          trx.raw(`COALESCE(uassign.first_name || ' ' || COALESCE(uassign.last_name, ''), uassign.email) as assigned_operator_name`),
+          trx.raw(`${pickRecoveryThresholdSql('pb')} AS recovery_threshold_minutes`),
+          trx.raw(`FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE(pb.pick_last_activity_at, pb.pick_claimed_at))) / 60.0)::int AS idle_minutes`),
+        )) as Array<Record<string, any>>;
+    });
+
+    // The ownership generation is a capability: only its holder receives it.
+    const batches = rows.map((row: Record<string, any>) => {
+      const { pick_claim_generation, ...rest } = row;
+      const threshold = Number(rest.recovery_threshold_minutes);
+      const idle = rest.idle_minutes == null ? null : Number(rest.idle_minutes);
+      return {
+        ...rest,
+        recovery_threshold_minutes: threshold,
+        idle_minutes: rest.status === 'picking' ? idle : null,
+        recovery_eligible: rest.status === 'picking' && idle != null && idle >= threshold,
+        pick_claim_generation:
+          requesterId != null && rest.picked_by === requesterId ? pick_claim_generation : null,
+      };
     });
 
     return res.status(200).json({ batches });
@@ -524,12 +590,18 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
     const { assigned_operator_id, assigned_packer_id, priority_order_ids, exclusive } = req.body ?? {};
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      // SF-PICK-ASSIGN-01 — a release-time Pick assignee must be an active
+      // member of this shop who may claim and scan Pick work.
+      const pickAssignee =
+        assigned_operator_id == null
+          ? null
+          : await assertPickOperatorEligible(trx, shopId, assigned_operator_id);
       const released = await releaseBatch(
         trx,
         shopId,
         'manual',
         userId,
-        assigned_operator_id ?? null,
+        pickAssignee,
         assigned_packer_id ?? null,
         Array.isArray(priority_order_ids) ? priority_order_ids : undefined,
         exclusive === true,
@@ -561,6 +633,7 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
 
     return res.status(201).json(result);
   } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
     // SHOP-REVIEW-RELEASE-SYSTEM-08 (R14): a genuine concurrent inventory race —
     // pre-check was satisfiable, but FOR UPDATE-locked stock was no longer
     // sufficient because another release committed first. The release
@@ -694,120 +767,248 @@ export const httpClaimBatch = async (req: Request, res: Response) => {
 
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
+  // SF-PICK-RESUME-GENERATION-001 — explicit resume-only mode. Only a boolean
+  // is accepted: an ambiguous value must never fall through to a claim or
+  // takeover.
+  const resumeOnly = req.body?.resume_only;
+  if (resumeOnly !== undefined && typeof resumeOnly !== 'boolean') {
+    return res.status(400).json({ error: 'resume_only must be a boolean', code: 'INVALID_RESUME_ONLY' });
+  }
+
+  // SF-PICK-ASSIGN-01 — claim, first-to-claim, assignee-only and idle takeover
+  // are one atomic transition in claimPickBatch (orders → batch lock order,
+  // guarded UPDATE, generation rotation, audit). Notifications after commit.
+  try {
+    const claimed = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return claimPickBatch(trx, { shopId, batchId: String(batchId), userId, resumeOnly: resumeOnly === true });
+    });
+
+    dispatchPickNotifications(shopId, claimed.notifications);
+    const { notifications: _notifications, ...body } = claimed;
+    return res.status(200).json(body);
+  } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_BATCH_CLAIM_FAILED]', { shopId, userId, batchId, error: message });
+    return res.status(500).json({ error: `Batch claim failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/batch/:batchId/pick-session   (SF-PICK-ASSIGN-01 C003, M2)
+// ─────────────────────────────────────────
+// Read-only recovery check. Never claims, never takes over, never mints or
+// rotates a generation. C010 (REVIEW-006 F1): the client must send the
+// generation it holds (X-Pick-Claim-Generation); the answer confirms that
+// generation or refuses — it is never a source of a different one.
+export const httpGetPickSession = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const batchId = String(req.params.batchId ?? '');
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+
+  try {
+    const session = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const batch = await trx('pick_batches')
+        .where({ pick_batch_id: batchId, shop_id: shopId })
+        .first('status', 'picked_by', 'pick_claim_generation', 'pick_custody_ack_required', 'units_picked');
+      if (!batch) throw new PickOwnershipError('PICK_BATCH_NOT_FOUND');
+      if (batch.status !== 'picking') {
+        throw new PickOwnershipError('PICK_BATCH_NOT_PICKING', `Batch not in picking status: ${batch.status}`, {
+          status: batch.status,
+        });
+      }
+      if (batch.picked_by !== userId) throw new PickOwnershipError('PICK_OWNERSHIP_REVOKED');
+      if (!batch.pick_claim_generation) throw new PickOwnershipError('PICK_GENERATION_REQUIRED');
+      // SF-PICK-ASSIGN-01 C010 (REVIEW-006 F1) — after A → B → A the same user
+      // owns the batch again under a new generation; a device still holding
+      // the old one must be refused, not handed the new one.
+      const held = req.get('X-Pick-Claim-Generation');
+      if (typeof held !== 'string' || held.length === 0) throw new PickOwnershipError('PICK_GENERATION_REQUIRED');
+      if (held !== batch.pick_claim_generation) throw new PickOwnershipError('PICK_GENERATION_STALE');
+      return batch;
+    });
+    return res.status(200).json({
+      pick_batch_id: batchId,
+      status: 'picking',
+      pick_claim_generation: session.pick_claim_generation,
+      custody_ack_required: session.pick_custody_ack_required === true,
+      units_picked: Number(session.units_picked ?? 0),
+    });
+  } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    console.error('[WMS_PICK_SESSION_READ_FAILED]', {
+      shopId, userId, batchId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'Failed to read Pick session' });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/pick/unconfirmed-scan-review   (SF-PICK-ASSIGN-01 C010, F2)
+// ─────────────────────────────────────────
+// A historical web Pick scan queued before generations existed cannot be
+// replayed safely, and whether it was recorded is unknown. The operator's
+// explicit review is recorded here (operator_audit_log, with the original
+// request) BEFORE the device may forget the entry. No Pick, ownership or
+// inventory effect. The row is read back in the same transaction because
+// writeAuditLog swallows insert failures: no durable audit → 500, and the
+// device keeps the entry.
+const MAX_REVIEW_FIELD = 8192;
+// C012 (OUTCOME-INTEGRITY): optional device-side rejection evidence (status,
+// code, error, reason, rejected_at), kept in the same audit metadata; absent → null.
+const optionalOf = (v: unknown, type: 'string' | 'number', max = 0) =>
+  v === undefined || v === null ||
+  (type === 'number' ? typeof v === 'number' && Number.isFinite(v) : typeof v === 'string' && v.length <= max);
+function parseReviewRejection(v: unknown): { ok: true; value: Record<string, unknown> | null } | { ok: false } {
+  if (v === undefined || v === null) return { ok: true, value: null };
+  if (typeof v !== 'object' || Array.isArray(v)) return { ok: false };
+  const r = v as Record<string, unknown>;
+  if (
+    !optionalOf(r.status, 'number') || !optionalOf(r.code, 'string', 128) || !optionalOf(r.error, 'string', 2048) ||
+    !optionalOf(r.reason, 'string', 64) || !optionalOf(r.rejected_at, 'number')
+  ) return { ok: false };
+  return {
+    ok: true,
+    value: {
+      status: r.status ?? null, code: r.code ?? null, error: r.error ?? null,
+      reason: r.reason ?? null, rejected_at: r.rejected_at ?? null,
+    },
+  };
+}
+export const httpReviewUnconfirmedPickScan = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { device_event_id, queued_at, original } = req.body ?? {};
+  const rejection = parseReviewRejection(req.body?.rejection);
+  const validString = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max;
+  if (
+    !validString(device_event_id, 128) ||
+    !original || typeof original !== 'object' || Array.isArray(original) ||
+    !validString(original.url, 2048) ||
+    !validString(original.method, 16) ||
+    typeof original.body !== 'string' || original.body.length > MAX_REVIEW_FIELD ||
+    (queued_at !== undefined && queued_at !== null && typeof queued_at !== 'number') ||
+    !rejection.ok
+  ) {
+    return res.status(400).json({ error: 'Missing or invalid review fields', code: 'INVALID_UNCONFIRMED_SCAN_REVIEW' });
+  }
+
+  let pickBatchId: string | null = null;
+  try {
+    const parsed = JSON.parse(original.body);
+    if (parsed && typeof parsed.pick_batch_id === 'string' && parsed.pick_batch_id.length <= 128) {
+      pickBatchId = parsed.pick_batch_id;
+    }
+  } catch {
+    pickBatchId = null; // unparsable original is still recorded verbatim
+  }
+
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-      const batch = await trx('pick_batches')
-        .where({ pick_batch_id: batchId, shop_id: shopId })
-        .select('status', 'picked_by')
-        .first();
-
-      if (!batch) {
-        throw new Error('BATCH_NOT_FOUND');
-      }
-
-      if (batch.status === 'picking' && batch.picked_by === userId) {
-        // Operator re-claiming their own batch — allow through
-        return;
-      }
-      if (batch.status !== 'pending') {
-        throw new Error(`BATCH_NOT_CLAIMABLE:${batch.status}`);
-      }
-      if (batch.picked_by !== null) {
-        throw new Error('BATCH_ALREADY_CLAIMED');
-      }
-
-      const now = new Date();
-
-      await trx('pick_batches')
-        .where({ pick_batch_id: batchId })
-        .update({
-          status: 'picking',
-          picked_by: userId,
-          pick_claimed_at: now,
-          pick_last_activity_at: now,
-          updated_at: now,
-        });
-
-      // Transition all orders in batch → picking
-      const batchOrders = await trx('pick_batch_orders')
-        .where({ pick_batch_id: batchId })
-        .select('lasyncro_order_id');
-
-      for (const order of batchOrders) {
-        await trx('order_warehouse_status')
-          .insert({
-            lasyncro_order_id: order.lasyncro_order_id,
-            status: 'picking',
-            pick_batch_id: batchId,
-            status_updated_at: now,
-            picked_at: null,
-            packed_at: null,
-            shipped_at: null,
-          })
-          .onConflict(['lasyncro_order_id'])
-          .merge({
-            status: 'picking',
-            pick_batch_id: batchId,
-            status_updated_at: now,
-            updated_at: now,
-          });
-
-        // Transition all line items for this order → picking
-        const lineItems = await trx('order_line_items')
-          .where({ lasyncro_order_id: order.lasyncro_order_id })
-          .select('lasyncro_line_item_id', 'lasyncro_order_id');
-
-        for (const li of lineItems) {
-          await trx('order_line_item_warehouse_status')
-            .insert({
-              lasyncro_line_item_id: li.lasyncro_line_item_id,
-              lasyncro_order_id: li.lasyncro_order_id,
-              shop_id: shopId,
-              status: 'picking',
-              status_updated_at: now,
-            })
-            .onConflict(['lasyncro_line_item_id'])
-            .merge({
-              status: 'picking',
-              status_updated_at: now,
-              updated_at: now,
-            });
-        }
-      }
-
-      console.info('[WMS_BATCH_CLAIMED]', {
-        pick_batch_id: batchId,
-        claimed_by: userId,
-        shopId,
-      });
+      const marker = crypto.randomUUID();
       await writeAuditLog(trx, {
         shopId,
         operatorId: userId,
-        actionType: 'pick_claim',
+        actionType: 'pick_unconfirmed_scan_review',
         entityType: 'pick_batch',
-        entityId: String(batchId),
-        metadata: { claimed_at: now },
+        entityId: pickBatchId ?? 'unknown',
+        metadata: {
+          review_id: marker,
+          device_event_id,
+          queued_at: typeof queued_at === 'number' ? queued_at : null,
+          outcome: 'unconfirmed',
+          original: { url: original.url, method: original.method, body: original.body },
+          rejection: rejection.ok ? rejection.value : null,
+        },
+      });
+      const persisted = await trx('operator_audit_log')
+        .where({ shop_id: shopId, operator_id: userId, action_type: 'pick_unconfirmed_scan_review' })
+        .whereRaw(`metadata::jsonb ->> 'review_id' = ?`, [marker])
+        .first('id');
+      if (!persisted) throw new Error('UNCONFIRMED_SCAN_REVIEW_NOT_PERSISTED');
+    });
+    return res.status(201).json({ device_event_id, recorded: true });
+  } catch (error) {
+    console.error('[WMS_PICK_UNCONFIRMED_SCAN_REVIEW_FAILED]', {
+      shopId, userId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'The review could not be recorded. The scan is kept on the device.' });
+  }
+};
+
+// ─────────────────────────────────────────
+// PATCH /api/v1/wms/batch/:batchId/assignment   (SF-PICK-ASSIGN-01)
+// ─────────────────────────────────────────
+// Owner/admin (wms:pick:assign, LOCKED). Body: { assigned_operator_id: number | null }.
+// Pending: assign / reassign / null = first one to claim. Picking: only once
+// idle for the recovery threshold; custody moves when the assignee claims.
+export const httpAssignPickBatch = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const batchId = String(req.params.batchId ?? '');
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+  const body = req.body ?? {};
+  if (!Object.prototype.hasOwnProperty.call(body, 'assigned_operator_id')) {
+    return res.status(400).json({ error: 'assigned_operator_id is required (number or null)', code: 'INVALID_PICK_ASSIGNEE' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return assignPickBatch(trx, {
+        shopId,
+        batchId,
+        actingUserId: userId,
+        assigneeId: body.assigned_operator_id === null ? null : body.assigned_operator_id,
       });
     });
-
-    return res.status(200).json({ pick_batch_id: batchId, status: 'picking' });
+    dispatchPickNotifications(shopId, result.notifications);
+    const { notifications: _notifications, ...batch } = result;
+    return res.status(200).json({ batch });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    console.error('[WMS_PICK_ASSIGN_FAILED]', {
+      shopId, userId, batchId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'Failed to assign pick batch' });
+  }
+};
 
-    if (message === 'BATCH_NOT_FOUND') {
-      return res.status(404).json({ error: 'Batch not found' });
-    }
-    if (message === 'BATCH_ALREADY_CLAIMED') {
-      return res.status(409).json({ error: 'Batch already claimed by another operator' });
-    }
-    if (message.startsWith('BATCH_NOT_CLAIMABLE')) {
-      return res.status(409).json({ error: `Batch is not in pending status: ${message.split(':')[1]}` });
-    }
+// ─────────────────────────────────────────
+// POST /api/v1/wms/batch/:batchId/custody-ack   (SF-PICK-ASSIGN-01)
+// ─────────────────────────────────────────
+// The replacement operator confirms they hold the already-picked items before
+// any further Pick write is accepted. Body: { pick_claim_generation }.
+export const httpAcknowledgePickCustody = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const batchId = String(req.params.batchId ?? '');
+  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
-    console.error('[WMS_BATCH_CLAIM_FAILED]', { shopId, userId, batchId, error: message });
-    return res.status(500).json({ error: `Batch claim failed: ${message}` });
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return acknowledgePickCustody(trx, {
+        shopId, batchId, userId, generation: req.body?.pick_claim_generation,
+      });
+    });
+    return res.status(200).json({ ...result, custody_ack_required: false });
+  } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    console.error('[WMS_PICK_CUSTODY_ACK_FAILED]', {
+      shopId, userId, batchId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'Failed to acknowledge custody' });
   }
 };
 
@@ -828,14 +1029,15 @@ export const httpCompletePick = async (req: Request, res: Response) => {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // SF-PICK-ASSIGN-01 — completion holds the canonical lifecycle locks and
+      // passes the ownership/generation/custody fence; the final write below is
+      // guarded on the same owner and generation.
+      const locked = await lockPickBatch(trx, shopId, batchId);
+      if (!locked) throw new Error('BATCH_NOT_FOUND');
+      assertPickWriteOwnership(locked, userId, req.body?.pick_claim_generation);
       const batch = await trx('pick_batches')
         .where({ pick_batch_id: batchId, shop_id: shopId })
-        .select('status', 'picked_by', 'total_line_items')
-        .first();
-
-      if (!batch) throw new Error('BATCH_NOT_FOUND');
-      if (batch.status !== 'picking') throw new Error(`BATCH_NOT_IN_PICKING:${batch.status}`);
-      if (batch.picked_by !== userId) throw new Error('BATCH_NOT_OWNED_BY_OPERATOR');
+        .first('total_line_items');
 
     /**
      * COMPLETION GUARD
@@ -938,13 +1140,20 @@ export const httpCompletePick = async (req: Request, res: Response) => {
 
       const now = new Date();
 
-      await trx('pick_batches')
-        .where({ pick_batch_id: batchId })
+      const completed = await trx('pick_batches')
+        .where({
+          pick_batch_id: batchId,
+          shop_id: shopId,
+          status: 'picking',
+          picked_by: userId,
+          pick_claim_generation: locked.pick_claim_generation,
+        })
         .update({
           status: 'pick_complete',
           pick_completed_at: now,
           updated_at: now,
         });
+      if (completed !== 1) throw new PickOwnershipError('PICK_GENERATION_STALE');
 
       // Advance order_warehouse_status → picked for all orders in this batch
       await trx('order_warehouse_status')
@@ -975,16 +1184,11 @@ export const httpCompletePick = async (req: Request, res: Response) => {
 
     return res.status(200).json({ pick_batch_id: batchId, status: 'pick_complete' });
   } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
     const message = error instanceof Error ? error.message : 'Unknown error';
 
     if (message === 'BATCH_NOT_FOUND') {
       return res.status(404).json({ error: 'Batch not found' });
-    }
-    if (message === 'BATCH_NOT_OWNED_BY_OPERATOR') {
-      return res.status(403).json({ error: 'Batch not owned by this operator' });
-    }
-    if (message.startsWith('BATCH_NOT_IN_PICKING')) {
-      return res.status(409).json({ error: `Batch is not in picking status: ${message.split(':')[1]}` });
     }
     if (message.startsWith('INCOMPLETE_PICK')) {
       const [scanned, total] = message.split(':')[1].split('/');
@@ -3280,13 +3484,24 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       if (!order) throw new Error('RESERVATION_ALLOCATION_MISMATCH');
 
       // Validate batch under the lifecycle anchors, before allocation/truth.
-      const batch = await trx('pick_batches')
-        .where({ pick_batch_id: batchId, shop_id: shopId })
-        .select('status')
-        .forUpdate()
-        .first();
+      const batch = await lockPickBatchRow(trx, shopId, batchId);
 
       if (!batch) throw new Error('BATCH_NOT_FOUND');
+
+      // SF-PICK-ASSIGN-01 — a Pick-stage exception (including short_pick,
+      // which writes inventory) is a consequential Pick write: only the
+      // current owner, with the current generation and acknowledged custody.
+      // Pack-stage exceptions keep their existing rules.
+      // SF-PICK-ASSIGN-01 C003 (REVIEW-001 M1) — the client-supplied stage is
+      // checked against the locked batch status: while the batch is still
+      // picking, only a fenced Pick-stage exception exists. Refused here,
+      // before any exception row, Problem Center task or inventory effect.
+      if (stage === 'pack' && batch.status === 'picking') {
+        throw new Error('EXCEPTION_STAGE_MISMATCH');
+      }
+      if (stage === 'pick') {
+        assertPickWriteOwnership(batch, userId, req.body?.pick_claim_generation);
+      }
 
       const ACTIVE_STATUSES = ['picking', 'pick_complete', 'packing'];
       if (!ACTIVE_STATUSES.includes(batch.status)) {
@@ -3416,6 +3631,27 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         if (confirmedScan) {
           throw new Error('ALLOCATION_ALREADY_SCANNED');
         }
+      } else if (stage === 'pick') {
+        /**
+         * SF-PICK-ASSIGN-01 C010 (REVIEW-006 F3) — legacy (non-allocation)
+         * lines: the same cross-outcome rule, keyed on the line. A line already
+         * confirmed as picked cannot also be excepted. Serialized with
+         * confirmPickScan by the pick_batches row lock both paths hold
+         * (lockPickBatchRow above). Repeat legacy exceptions keep their
+         * existing behaviour; an exact device-event replay returned above.
+         */
+        const legacyScan = await trx('pick_scan_log')
+          .where({
+            shop_id: shopId,
+            pick_batch_id: batchId,
+            lasyncro_line_item_id,
+            status: 'confirmed',
+          })
+          .first('scan_id');
+
+        if (legacyScan) {
+          throw new Error('ALLOCATION_ALREADY_SCANNED');
+        }
       }
 
       const { randomUUID } = await import('crypto');
@@ -3513,6 +3749,7 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       .status(201)
       .json({ pick_exception_id: outcome.pickExceptionId });
   } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
     const message = error instanceof Error ? error.message : 'Unknown error';
 
     if (message === 'BATCH_NOT_FOUND') {
@@ -3520,6 +3757,12 @@ export const httpReportPickException = async (req: Request, res: Response) => {
     }
     if (message.startsWith('BATCH_NOT_ACTIVE')) {
       return res.status(409).json({ error: `Batch is not active: ${message.split(':')[1]}` });
+    }
+    if (message === 'EXCEPTION_STAGE_MISMATCH') {
+      return res.status(409).json({
+        error: 'This batch is still being picked; report a Pick-stage exception instead.',
+        code: 'EXCEPTION_STAGE_MISMATCH',
+      });
     }
 
     if (message === 'RESERVATION_ALLOCATION_REQUIRED') {
@@ -3663,6 +3906,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     quantity_confirmed,
     scan_source, // optional: 'camera' | 'usb' | 'bt' | 'manual' — defaults to 'camera' in service
     lasyncro_unit_id,
+    pick_claim_generation,
   } = req.body;
 
   if (
@@ -3698,6 +3942,8 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
           typeof lasyncro_unit_id === 'string' && lasyncro_unit_id.startsWith('LSU-')
           ? lasyncro_unit_id
           : undefined,
+        pickClaimGeneration:
+          typeof pick_claim_generation === 'string' ? pick_claim_generation : undefined,
       });
       await enqueueShopSnapshotJob(trx, shopId);
       return scanResult;
@@ -3705,6 +3951,20 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
 
     return res.status(201).json(result);
     } catch (error) {
+    if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    // SF-PICK-ASSIGN-01 C006 (REVIEW-004 MEDIUM-3) — authoritative answer for a
+    // replayed or repeated scan (previously an unmapped 500). Reached only after
+    // the ownership/generation fence; nothing was written by this request.
+    if (error instanceof PickScanAlreadyRecordedError) {
+      return res.status(409).json({
+        error: 'This scan is already recorded.',
+        code: 'PICK_SCAN_ALREADY_RECORDED',
+        scan_id: error.existing.scan_id,
+        scanned_at: error.existing.scanned_at,
+        reservation_allocation_id: error.existing.reservation_allocation_id,
+        recorded_by_requester: error.existing.scanned_by === userId,
+      });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
 
     if (
@@ -3792,6 +4052,8 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
       return res.status(409).json({
         error:
           'This pick may already have been recorded. Refresh the pick task before trying again.',
+        // C006 MEDIUM-3: outcome cannot be attributed to this request; the client keeps it for review.
+        code: 'PICK_SCAN_OUTCOME_UNCERTAIN',
       });
     }
 
@@ -3803,6 +4065,8 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
       return res.status(409).json({
         error:
           'This pick reservation may already have been consumed. Refresh the pick task before trying again.',
+        // C006 MEDIUM-3: outcome cannot be attributed to this request; the client keeps it for review.
+        code: 'PICK_SCAN_OUTCOME_UNCERTAIN',
       });
     }
 

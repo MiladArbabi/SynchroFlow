@@ -9,9 +9,28 @@ import {
   httpPatchWarehouseShopifyLocation,
   httpGetFulfillmentSla,
   httpPatchFulfillmentSla,
+  httpGetPickRecoveryThresholds,
+  httpPatchPickRecoveryThreshold,
 } from './shopSettings.controller.js';
 
 const router = Router();
+
+/**
+ * SF-PICK-ASSIGN-01 — per-warehouse Pick recovery threshold (owner/admin,
+ * wms:settings:write is LOCKED). Independent of the idle-alert threshold.
+ */
+router.get(
+  '/warehouses/pick-recovery',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpGetPickRecoveryThresholds
+);
+router.patch(
+  '/warehouses/:warehouseId/pick-recovery',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpPatchPickRecoveryThreshold
+);
 
 /**
  * GET /api/v1/settings/shop/timezone

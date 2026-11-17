@@ -263,7 +263,9 @@ async function arrangePickingBatch(label: string, targetQuantity = 1) {
   const allocations = await allocationsAt(shopId, batchId);
   const targetAllocation = allocations.find((a) => a.lasyncro_order_id === target.orderId);
   expect(targetAllocation).toBeTruthy();
-  return { shopId, userId, token, variantId, locationCode, before, target, bystander, batchId, targetAllocation };
+  return { shopId, userId, token, variantId, locationCode, before, target, bystander, batchId, targetAllocation,
+    // SF-PICK-ASSIGN-01: Pick writes present the claim's ownership generation.
+    generation: claim.body.pick_claim_generation as string };
 }
 
 function assertDisposableTestDb(): string {
@@ -458,6 +460,7 @@ describe('GH-1145 R0-1 RED — pick outcome vs order-cancellation unwind lock or
             scannedBy: ctx.userId,
             shopId: ctx.shopId,
             scanSource: 'manual',
+            pickClaimGeneration: ctx.generation,
           });
         })
       ),
@@ -484,6 +487,7 @@ describe('GH-1145 R0-1 RED — pick outcome vs order-cancellation unwind lock or
         quantity_required: 2,
         quantity_found: 1,
         device_event_id: crypto.randomUUID(),
+        pick_claim_generation: ctx.generation,
       }).then((r) => ({ status: r.status, body: r.body })),
       () => cancelOrderThroughProjectionHandler(ctx.shopId, ctx.target.externalOrderId),
       'short-pick-exception-insert'

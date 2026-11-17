@@ -973,12 +973,139 @@ function ShopifyLocationMappingSection() {
   );
 }
 
+// SF-PICK-ASSIGN-01 — per-warehouse Pick recovery threshold. This decides when
+// idle Pick work may be taken over and when an unclaimed assignment returns to
+// first-to-claim. It is NOT the idle-alert threshold (which only raises alerts).
+export const PICK_RECOVERY_MIN = 5;
+export const PICK_RECOVERY_MAX = 480;
+export const PICK_RECOVERY_DEFAULT = 30;
+
+type PickRecoveryWarehouse = {
+  warehouse_id: string;
+  name: string;
+  is_default: boolean;
+  active: boolean;
+  pick_recovery_threshold_minutes: number | null;
+};
+
+function pickRecoveryError(value: string): string | null {
+  if (value.trim() === '') return 'Enter a number of minutes.';
+  const n = Number(value);
+  if (!Number.isInteger(n)) return 'Use whole minutes.';
+  if (n < PICK_RECOVERY_MIN || n > PICK_RECOVERY_MAX) {
+    return `Must be between ${PICK_RECOVERY_MIN} and ${PICK_RECOVERY_MAX} minutes.`;
+  }
+  return null;
+}
+
+function PickRecoveryRow({ warehouse }: { warehouse: PickRecoveryWarehouse }) {
+  const queryClient = useQueryClient();
+  const effective = warehouse.pick_recovery_threshold_minutes ?? PICK_RECOVERY_DEFAULT;
+  const [value, setValue] = useState(String(effective));
+  const [status, setStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
+  const [serverError, setServerError] = useState<string | null>(null);
+  useEffect(() => { setValue(String(effective)); }, [effective]);
+
+  const validation = pickRecoveryError(value);
+  const dirty = validation === null && Number(value) !== effective;
+  const { mutate, isPending } = useMutation<void, Error, number>({
+    mutationFn: async (minutes) => {
+      await axiosInstance.patch(
+        `/api/v1/settings/shop/warehouses/${warehouse.warehouse_id}/pick-recovery`,
+        { pick_recovery_threshold_minutes: minutes },
+      );
+    },
+    onMutate: () => { setStatus('idle'); setServerError(null); },
+    onSuccess: () => {
+      setStatus('saved');
+      void queryClient.invalidateQueries({ queryKey: ['pick-recovery-thresholds'] });
+    },
+    onError: (err) => {
+      setStatus('failed');
+      const message = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      setServerError(typeof message === 'string' ? message : 'Could not save. Try again.');
+    },
+  });
+  const inputId = `pick-recovery-${warehouse.warehouse_id}`;
+
+  return (
+    <Box data-testid={`pick-recovery-row-${warehouse.warehouse_id}`}
+      sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flexWrap: 'wrap', py: 1, borderTop: '1px solid var(--rule)' }}>
+      <Box sx={{ flex: '1 1 160px', minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+          {warehouse.name}{warehouse.is_default ? ' · default' : ''}
+        </Typography>
+        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+          Current: {effective} min{warehouse.pick_recovery_threshold_minutes == null ? ' (default)' : ''}
+        </Typography>
+      </Box>
+      <TextField
+        id={inputId}
+        size="small"
+        type="number"
+        label="Minutes"
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+        error={validation !== null}
+        helperText={validation ?? `${PICK_RECOVERY_MIN}–${PICK_RECOVERY_MAX} minutes`}
+        inputProps={{ min: PICK_RECOVERY_MIN, max: PICK_RECOVERY_MAX, step: 1, 'aria-label': `Pick recovery minutes for ${warehouse.name}` }}
+        sx={{ width: 140 }}
+      />
+      <Button
+        size="small"
+        variant="contained"
+        disabled={!dirty || isPending}
+        onClick={() => mutate(Number(value))}
+        sx={{ mt: 0.5, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 600, '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+      >
+        {isPending ? 'Saving…' : 'Save'}
+      </Button>
+      <Box role="status" aria-live="polite" sx={{ flexBasis: '100%', fontSize: 12 }}>
+        {status === 'saved' && <Typography sx={{ fontSize: 12, color: 'var(--good-ink)' }}>Saved.</Typography>}
+        {status === 'failed' && <Typography sx={{ fontSize: 12, color: 'var(--bad-ink, #b42318)' }}>{serverError}</Typography>}
+      </Box>
+    </Box>
+  );
+}
+
+export function PickRecoverySection() {
+  const { data, isLoading, isError, refetch } = useQuery<PickRecoveryWarehouse[]>({
+    queryKey: ['pick-recovery-thresholds'],
+    queryFn: async () => {
+      const { data: body } = await axiosInstance.get('/api/v1/settings/shop/warehouses/pick-recovery');
+      return body.warehouses ?? [];
+    },
+  });
+
+  return (
+    <SettingsCard
+      icon={<RotateCcw size={16} />}
+      title="Pick recovery time"
+      description={`How long Pick work may sit idle before a teammate can take it over, and how long an unclaimed assignment stays reserved before anyone can claim it. Set per warehouse; default ${PICK_RECOVERY_DEFAULT} minutes. This is separate from idle alerts, which only notify.`}
+    >
+      {isLoading ? (
+        <Skeleton height={32} sx={{ borderRadius: '6px' }} />
+      ) : isError ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>Could not load recovery times.</Typography>
+          <Button size="small" onClick={() => void refetch()}>Retry</Button>
+        </Box>
+      ) : (data ?? []).length === 0 ? (
+        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>No warehouses yet.</Typography>
+      ) : (
+        (data ?? []).map((warehouse) => <PickRecoveryRow key={warehouse.warehouse_id} warehouse={warehouse} />)
+      )}
+    </SettingsCard>
+  );
+}
+
 export default function ShopSettingsWarehousePage() {
   return (
     <SettingsPageWrapper>
       <ShopifyLocationMappingSection />
       <UnitLabelCoverageSection />
       <StorageCapacitySection />
+      <PickRecoverySection />
       <PrintersSection />
       <FloorDisplaySection />
     </SettingsPageWrapper>

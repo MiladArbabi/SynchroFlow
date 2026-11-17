@@ -37,6 +37,15 @@ export type AuditActionType =
   | 'pick_claim'
   | 'pick_scan'
   | 'pick_complete'
+  // SF-PICK-ASSIGN-01: Pick ownership transitions.
+  | 'pick_assign'
+  | 'pick_reassign'
+  | 'pick_takeover'
+  | 'pick_assignment_expired'
+  | 'pick_custody_ack'
+  // SF-PICK-ASSIGN-01 C010: operator reviewed a historical, generation-less
+  // device scan that could not be confirmed (no Pick effect).
+  | 'pick_unconfirmed_scan_review'
   | 'pack_scan'
   | 'pack_complete'
   | 'ship_confirm'

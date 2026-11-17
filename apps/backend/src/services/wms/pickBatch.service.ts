@@ -464,6 +464,8 @@ export async function releaseBatch(
     released_by: releasedBy,
     released_at: new Date(),
     assigned_operator_id: assignedOperatorId ?? null,
+    // SF-PICK-ASSIGN-01 — the assignment expiry clock starts at release.
+    pick_assigned_at: assignedOperatorId ? trx.fn.now() : null,
     assigned_packer_id: assignedPackerId ?? null,
   });
 
@@ -794,19 +796,27 @@ let allLineItems = await trx('order_line_items')
     assignedOperatorId: assignedOperatorId ?? null,
   });
 
-  // Notify operators — targeted if assigned, broadcast to pool otherwise
-  dispatchNotification({
+  // Notify operators — targeted if assigned, broadcast to pool otherwise.
+  // SF-PICK-ASSIGN-01: the dispatcher's targeting key is targetUserIds (the
+  // former singular key matched neither branch and pushed to every
+  // subscription in the shop), and the push is sent only after commit so a
+  // rolled-back release never notifies anyone.
+  const releasedNotification = {
     shopId,
     payload: {
       title: 'New batch ready to pick',
       body: `Batch ${pickBatchId.slice(0, 8).toUpperCase()} released — ${runningLineItems} line items. Claim it to start picking.`,
       data: { route: '/wms', batchId: pickBatchId },
     },
-
     ...(assignedOperatorId
-        ? { targetUserId: assignedOperatorId }
+        ? { targetUserIds: [assignedOperatorId] }
         : { broadcastToRole: 'operator' as const }),
-  }).catch((err) => console.error('[PICK_BATCH_RELEASED_PUSH_FAILED]', err.message));
+  };
+  trx.executionPromise
+    .then(() => dispatchNotification(releasedNotification))
+    .catch((err: unknown) =>
+      console.error('[PICK_BATCH_RELEASED_PUSH_SKIPPED]', (err as Error)?.message)
+    );
 
   for (const orderId of selectedOrderIds) {
     await trx('orders')

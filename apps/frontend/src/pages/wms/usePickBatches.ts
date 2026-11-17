@@ -26,6 +26,16 @@ export interface PickBatch {
   assigned_packer_id: number | null;
   picker_name: string | null;
   packer_name: string | null;
+  // SF-PICK-ASSIGN-01 — assignment and idle-recovery state.
+  assigned_operator_name?: string | null;
+  pick_assigned_at?: string | null;
+  pick_last_activity_at?: string | null;
+  pick_custody_ack_required?: boolean;
+  /** Present only for the batch's current owner. */
+  pick_claim_generation?: string | null;
+  idle_minutes?: number | null;
+  recovery_threshold_minutes?: number;
+  recovery_eligible?: boolean;
 }
 
 export interface PickBatchLineItem {

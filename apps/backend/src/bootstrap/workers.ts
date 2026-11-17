@@ -416,6 +416,24 @@ async function startWorkersInternal(): Promise<void> {
     );
   }
 
+  // SF-PICK-ASSIGN-01 — Pick assignment expiry (independent of idle alerts).
+  try {
+    const wmsPickRecovery = await import('../workers/wms.pick-recovery.worker.js');
+    if (stopRequested) return;
+    if (typeof wmsPickRecovery.startWmsPickRecoveryWorker === 'function') {
+      superviseWorker('wms-pick-recovery', () => wmsPickRecovery.startWmsPickRecoveryWorker());
+      if (typeof wmsPickRecovery.stopWmsPickRecoveryWorker === 'function') {
+        workerStopFns.push(async () => wmsPickRecovery.stopWmsPickRecoveryWorker());
+      }
+      console.log('[bootstrap/workers] WMS pick recovery worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] WMS pick recovery worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+
   // OV-153: optional Shopify-review tenant freshness. The worker is inert
   // unless explicitly enabled and independently verifies seed ownership.
   try {

@@ -247,6 +247,7 @@ async function fixture() {
       lasyncro_variant_id: allocation.lasyncro_variant_id,
       reservation_allocation_id: allocation.allocation_id,
       location_code: allocation.location_code, quantity_confirmed: 1, lasyncro_unit_id: unitId,
+      pick_claim_generation: claim.body.pick_claim_generation,
     });
     expect({ status: pick.status, body: pick.body }).toMatchObject({ status: 201 });
     const row = await withTenant(tenant.shopId, (trx) =>
@@ -256,7 +257,7 @@ async function fixture() {
     orders.push({ orderId: order.orderId, lineItemId: order.lineItemIds[0], unitId, barcode: row.wms_barcode as string });
   }
   const complete = await request(app).post(`/api/v1/wms/batch/${batchId}/pick-complete`)
-    .set(auth(tenant.token)).send({});
+    .set(auth(tenant.token)).send({ pick_claim_generation: claim.body.pick_claim_generation });
   expect({ status: complete.status, body: complete.body }).toMatchObject({ status: 200 });
   const f = { ...tenant, batchId, a: orders[0], b: orders[1] };
   const ready = await request(app).get('/api/v1/wms/batches/ready-to-pack').set(auth(f.token));

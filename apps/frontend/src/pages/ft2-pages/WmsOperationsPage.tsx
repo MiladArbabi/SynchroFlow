@@ -24,6 +24,7 @@ import type {
   CountingSkipReason,
   CountingFinding,
   CountingFindingType,
+  PickClaimResult,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
@@ -41,6 +42,19 @@ import { EntityDetailModal } from '@lasyncro/shared/ui';
 
 /** WMS-OPS-NEEDS-ATTENTION-01 — Operations shows a bounded slice of Ops Console NOW. */
 const NEEDS_ATTENTION_VISIBLE_LIMIT = 3;
+
+/** SF-PICK-ASSIGN-01 C003 — refusals meaning this tab's Pick ownership context is gone. */
+/** C010 — a local refusal shaped like the server's, so callers handle one shape. */
+function pickRecoveryRefusal(code: string, message: string): Error {
+  return Object.assign(new Error(message), { response: { status: 409, data: { code, error: message } } });
+}
+
+const PICK_OWNERSHIP_LOST_CODES = new Set([
+  'PICK_OWNERSHIP_REVOKED',
+  'PICK_GENERATION_STALE',
+  'PICK_GENERATION_REQUIRED',
+  'PICK_BATCH_NOT_PICKING',
+]);
 /** WMS-OPS-MODAL-PARITY-01 — each repeated modal row is its own bounded raised surface. */
 const MODAL_LIST_ITEM_SX = {
   minWidth: 0,
@@ -165,7 +179,70 @@ export default function WmsOperationsPage() {
     await axiosInstance.post(url, body);
   }, []);
 
-  const { isOnline, queuedCount, submitScan } = useOfflineScanQueue({ httpPost });
+  // SF-PICK-ASSIGN-01 — rejected-scan review fields are additive; default them
+  // so hosts (and existing test doubles) without them render unchanged.
+  const offlineScanQueue = useOfflineScanQueue({ httpPost });
+  const { isOnline, queuedCount, submitScan } = offlineScanQueue;
+  const rejectedScans = offlineScanQueue.rejectedScans ?? [];
+  const dismissRejectedScan = offlineScanQueue.dismissRejectedScan ?? (async () => {});
+  // C011 (NEW-1) — a fence-refused scan may already be recorded: dismissing it
+  // records the audited review first. A failure keeps the scan and is shown.
+  const [rejectedDismissError, setRejectedDismissError] = useState<string | null>(null);
+  const handleDismissRejectedScan = useCallback(async (id: string) => {
+    setRejectedDismissError(null);
+    try {
+      await dismissRejectedScan(id);
+    } catch (err: unknown) {
+      // C012: name the actual cause — only a lost connection waits for one.
+      const response = (err as { response?: { status?: unknown } })?.response;
+      const kept = 'The review could not be recorded, so the scan is kept on this device.';
+      // C012 (LOW-2): this device's own storage failed (value of the hook's
+      // SCAN_QUEUE_STORAGE_FAILED) — not the connection, and the review may or
+      // may not have been recorded, so claim neither.
+      const localStorageFailed = (err as { code?: unknown })?.code === 'SCAN_QUEUE_STORAGE_FAILED';
+      setRejectedDismissError(
+        localStorageFailed
+          ? 'This device could not finish updating its saved scans, so the scan is kept on this device. Reload the page and try again; if it keeps failing, ask your supervisor to check the batch. Do not re-scan the item.'
+          : !response
+          ? `${kept} Try again when connected.`
+          : response.status === 401
+            ? `${kept} Sign in again, then dismiss it.`
+            : `${kept} Try again in a moment; if it keeps failing, ask your supervisor to check the batch. Do not re-scan the item.`,
+      );
+    }
+  }, [dismissRejectedScan]);
+  // C010 (REVIEW-006 F2) — generation-less historical scans: outcome unknown.
+  const unconfirmedScans = offlineScanQueue.unconfirmedScans ?? [];
+  const reviewUnconfirmedScan = offlineScanQueue.reviewUnconfirmedScan;
+  const [unconfirmedReviewError, setUnconfirmedReviewError] = useState<string | null>(null);
+  const handleReviewUnconfirmedScan = useCallback(async (id: string) => {
+    if (!reviewUnconfirmedScan) return;
+    setUnconfirmedReviewError(null);
+    try {
+      await reviewUnconfirmedScan(id);
+    } catch (err: unknown) {
+      // C012 (UX-TRUTH-004, F-A): name the actual cause, as for dismissals.
+      // A local storage failure may come after the review was recorded, so it
+      // claims neither outcome of the review.
+      const response = (err as { response?: { status?: unknown } })?.response;
+      const kept = 'The review could not be recorded, so the scan is kept on this device.';
+      // C012 (FINAL-UX-006): only a request that got no answer is a lost
+      // connection. Any other local error (for example "not awaiting review")
+      // claims neither outcome of the review.
+      const networkFailure = !response && (err as { isAxiosError?: unknown })?.isAxiosError === true;
+      setUnconfirmedReviewError(
+        (err as { code?: unknown })?.code === 'SCAN_QUEUE_STORAGE_FAILED'
+          ? 'This device could not finish updating its saved scans, so the scan is kept on this device. Reload the page and try again; if it keeps failing, ask your supervisor to check the batch. Do not re-scan the item.'
+          : networkFailure
+          ? `${kept} Try again when connected.`
+          : !response
+          ? 'This scan could not be removed. Reload the page to refresh the list; if it is still shown, ask your supervisor to check the batch. Do not re-scan the item.'
+          : response.status === 401
+            ? `${kept} Sign in again, then remove it.`
+            : `${kept} Try again in a moment; if it keeps failing, ask your supervisor to check the batch. Do not re-scan the item.`,
+      );
+    }
+  }, [reviewUnconfirmedScan]);
 
   const handleFetchReceiveJob = useCallback(async (jobId: string) => {
     const { data } = await axiosInstance.get(`/api/v1/suppliers/receive-jobs/${jobId}`);
@@ -298,9 +375,112 @@ export default function WmsOperationsPage() {
   }, [fetchOpeningInventory]);
 
   // ── PICK CALLBACKS ──────────────────────────────────────
-  const handleClaimBatch = useCallback(async (batchId: string) => {
-    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/claim`);
+  // SF-PICK-ASSIGN-01 — every consequential Pick write carries the ownership
+  // generation returned by claim. Cached per batch. C003 (REVIEW-001 M2):
+  // when absent, it is restored through the read-only GET pick-session, which
+  // answers only the current owner and can never claim or take over — only
+  // the explicit Start Picking / Take over action calls POST /claim. The cache
+  // is dropped only for an ownership/generation refusal, never for unrelated
+  // 409s (inventory changed, exception exists, …).
+  const pickGenerationsRef = useRef<Map<string, string>>(new Map());
+
+  const handleClaimBatch = useCallback(async (batchId: string): Promise<PickClaimResult> => {
+    const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/claim`);
+    if (typeof data?.pick_claim_generation === 'string') {
+      pickGenerationsRef.current.set(batchId, data.pick_claim_generation);
+    }
+    return data as PickClaimResult;
   }, []);
+
+  // SF-PICK-ASSIGN-01 C010 (REVIEW-006 F1) — the page never adopts a
+  // generation it did not receive from its own explicit claim. Without one
+  // (e.g. after a reload) writes are refused until the operator re-enters the
+  // batch through Start / Continue (POST /claim).
+  const pickGeneration = useCallback(async (batchId: string): Promise<string> => {
+    const cached = pickGenerationsRef.current.get(batchId);
+    if (cached) return cached;
+    throw pickRecoveryRefusal('PICK_GENERATION_REQUIRED', 'Pick session could not be restored. Reopen the batch to continue.');
+  }, []);
+
+  const forgetPickGenerationOnRefusal = useCallback((batchId: string, err: unknown) => {
+    const code = (err as { response?: { data?: { code?: unknown } } })?.response?.data?.code;
+    if (typeof code === 'string' && PICK_OWNERSHIP_LOST_CODES.has(code)) {
+      pickGenerationsRef.current.delete(batchId);
+    }
+  }, []);
+
+  // SF-PICK-RESUME-GENERATION-001 — opening an already-owned, in-progress
+  // batch. With no generation in this page (reload, re-login), the resume-only
+  // claim returns the EXISTING generation to its current owner only (the
+  // server never claims, takes over or rotates in this mode). A generation
+  // this page already holds is verified as-is through the fenced pick-session
+  // and is never replaced. Called on opening only — never as recovery from a
+  // generation/ownership refusal.
+  const handleResumePickSession = useCallback(async (batchId: string): Promise<PickClaimResult | void> => {
+    const held = pickGenerationsRef.current.get(batchId);
+    if (held) {
+      try {
+        await axiosInstance.get(`/api/v1/wms/batch/${batchId}/pick-session`, {
+          headers: { 'X-Pick-Claim-Generation': held },
+        });
+      } catch (err) {
+        forgetPickGenerationOnRefusal(batchId, err);
+        throw err;
+      }
+      return;
+    }
+    const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/claim`, { resume_only: true });
+    if (typeof data?.pick_claim_generation !== 'string' || data.pick_claim_generation.length === 0) {
+      throw pickRecoveryRefusal('PICK_GENERATION_REQUIRED', 'Pick session could not be verified. Reopen the batch to continue.');
+    }
+    pickGenerationsRef.current.set(batchId, data.pick_claim_generation);
+    return data as PickClaimResult;
+  }, [forgetPickGenerationOnRefusal]);
+
+  const handleAssignPickBatch = useCallback(async (batchId: string, operatorId: number | null) => {
+    await axiosInstance.patch(`/api/v1/wms/batch/${batchId}/assignment`, {
+      assigned_operator_id: operatorId,
+    });
+  }, []);
+
+  const handleAcknowledgePickCustody = useCallback(async (batchId: string) => {
+    try {
+      await axiosInstance.post(`/api/v1/wms/batch/${batchId}/custody-ack`, {
+        pick_claim_generation: await pickGeneration(batchId),
+      });
+    } catch (err) {
+      forgetPickGenerationOnRefusal(batchId, err);
+      throw err;
+    }
+  }, [pickGeneration, forgetPickGenerationOnRefusal]);
+
+  // SF-PICK-ASSIGN-01 C008 / C010 (REVIEW-006 F1) — after a lost connection,
+  // verify the generation this page HOLDS through the read-only pick-session
+  // (never claims). The server confirms that exact generation or refuses; a
+  // different generation is never adopted. No answer → still disconnected,
+  // and the held generation is kept for the next attempt.
+  const handleRevalidatePickOwnership = useCallback(async (batchId: string) => {
+    const held = pickGenerationsRef.current.get(batchId);
+    if (!held) {
+      throw pickRecoveryRefusal('PICK_GENERATION_REQUIRED', 'Pick session could not be restored. Reopen the batch to continue.');
+    }
+    let data: { pick_claim_generation?: unknown } | undefined;
+    try {
+      ({ data } = await axiosInstance.get(`/api/v1/wms/batch/${batchId}/pick-session`, {
+        headers: { 'X-Pick-Claim-Generation': held },
+      }));
+    } catch (err) {
+      if (!(err as { response?: unknown })?.response && (err as { request?: unknown })?.request !== undefined) {
+        throw Object.assign(new Error('No connection — Picking is paused.'), { code: 'PICK_CONNECTION_LOST' });
+      }
+      forgetPickGenerationOnRefusal(batchId, err);
+      throw err;
+    }
+    if (data?.pick_claim_generation !== held) {
+      pickGenerationsRef.current.delete(batchId);
+      throw pickRecoveryRefusal('PICK_GENERATION_STALE', 'This batch was taken over. Your confirmed picks are kept.');
+    }
+  }, [forgetPickGenerationOnRefusal]);
 
   const handleFetchLineItems = useCallback(async (batchId: string): Promise<LineItem[]> => {
     const { data } = await axiosInstance.get(`/api/v1/wms/batch/${batchId}/line-items`);
@@ -323,32 +503,56 @@ export default function WmsOperationsPage() {
   }, []);
 
   const handleConfirmScan = useCallback(async (batchId: string, params: ConfirmScanParams) => {
-    // device_event_id: stable idempotency key — safe to replay on reconnect (server deduplicates)
+    // C008 — online-only: submitScan resolves only on the server's acceptance
+    // (or "already recorded" for this operator). The server's pick idempotency
+    // is keyed on the pick task, so a retry never removes inventory twice.
     const deviceEventId = crypto.randomUUID();
-    await submitScan({
-      deviceEventId,
-      url: '/api/v1/wms/pick/scan',
-      body: { pick_batch_id: batchId, ...params, scan_source: params.scan_source },
-    });
-  }, [submitScan]);
+    const generation = await pickGeneration(batchId);
+    try {
+      await submitScan({
+        deviceEventId,
+        url: '/api/v1/wms/pick/scan',
+        body: {
+          pick_batch_id: batchId, ...params, scan_source: params.scan_source,
+          pick_claim_generation: generation,
+        },
+      });
+    } catch (err) {
+      forgetPickGenerationOnRefusal(batchId, err);
+      throw err;
+    }
+  }, [submitScan, pickGeneration, forgetPickGenerationOnRefusal]);
 
   const handleReportException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
     // GH-1049: PickSessionPage owns the full report payload — allocation
     // identity, stage, physical quantities and the stable device_event_id.
-    const { data } = await axiosInstance.post(
-      `/api/v1/wms/batch/${batchId}/exception`,
-      params
-    );
-    return data as { pick_exception_id: string };
-  }, []);
+    try {
+      const { data } = await axiosInstance.post(
+        `/api/v1/wms/batch/${batchId}/exception`,
+        { ...params, pick_claim_generation: await pickGeneration(batchId) }
+      );
+      return data as { pick_exception_id: string };
+    } catch (err) {
+      forgetPickGenerationOnRefusal(batchId, err);
+      throw err;
+    }
+  }, [pickGeneration, forgetPickGenerationOnRefusal]);
 
   const handleCreateProblemTask = useCallback(async (params: CreateProblemTaskParams) => {
     await axiosInstance.post('/api/v1/wms/problem-center', params);
   }, []);
 
   const handlePickComplete = useCallback(async (batchId: string) => {
-    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pick-complete`);
-  }, []);
+    try {
+      await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pick-complete`, {
+        pick_claim_generation: await pickGeneration(batchId),
+      });
+      pickGenerationsRef.current.delete(batchId);
+    } catch (err) {
+      forgetPickGenerationOnRefusal(batchId, err);
+      throw err;
+    }
+  }, [pickGeneration, forgetPickGenerationOnRefusal]);
 
   const handleClaimPack = useCallback(async (batchId: string) => {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack/claim`);
@@ -1045,6 +1249,69 @@ export default function WmsOperationsPage() {
         {finishedCountLabel} counted and submitted for review.
       </Alert>
     )}
+    {/* SF-PICK-ASSIGN-01 — offline Pick scans the server refused (for example
+        after the batch was reassigned) are kept for review, never dropped.
+        C009: a refusal does not prove the scan was never recorded (an earlier
+        attempt may have been), so the copy only says it could not be confirmed. */}
+    {rejectedScans.length > 0 && (
+      <Alert severity="warning" data-testid="rejected-offline-scans" sx={{ mb: 1 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+          {rejectedScans.length} offline scan{rejectedScans.length === 1 ? '' : 's'} could not be confirmed
+        </Typography>
+        <Typography sx={{ fontSize: 12, mb: 1 }}>
+          Keep those items aside and check them with your supervisor before dismissing.
+        </Typography>
+        {rejectedDismissError && (
+          <Typography sx={{ fontSize: 12, mb: 1, color: 'error.main' }}>{rejectedDismissError}</Typography>
+        )}
+        {rejectedScans.map((entry) => {
+          let batchShort = '';
+          try { batchShort = String(JSON.parse(entry.body)?.pick_batch_id ?? '').slice(0, 8).toUpperCase(); } catch { /* unparsable body */ }
+          return (
+            <Box key={entry.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 12 }}>
+              <span>
+                {batchShort ? `Batch ${batchShort}: ` : ''}
+                {entry.rejected?.error ?? `Refused (${entry.rejected?.status ?? '4xx'})`}
+              </span>
+              <Button size="small" onClick={() => void handleDismissRejectedScan(entry.id)} sx={{ textTransform: 'none' }}>
+                Reviewed — dismiss
+              </Button>
+            </Box>
+          );
+        })}
+      </Alert>
+    )}
+    {unconfirmedScans.length > 0 && (
+      <Alert severity="info" data-testid="unconfirmed-offline-scans" sx={{ mb: 1 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+          Unconfirmed: {unconfirmedScans.length} earlier offline scan{unconfirmedScans.length === 1 ? '' : 's'}
+        </Typography>
+        <Typography sx={{ fontSize: 12, mb: 1 }}>
+          Saved on this device before Pick required a connection. It may or may not have been recorded,
+          so it is never sent automatically. Check the batch with your supervisor, then remove it.
+        </Typography>
+        {unconfirmedReviewError && (
+          <Typography sx={{ fontSize: 12, mb: 1, color: 'error.main' }}>{unconfirmedReviewError}</Typography>
+        )}
+        {unconfirmedScans.map((entry) => {
+          let batchShort = '';
+          try { batchShort = String(JSON.parse(entry.body)?.pick_batch_id ?? '').slice(0, 8).toUpperCase(); } catch { /* unparsable body */ }
+          return (
+            <Box key={entry.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 12 }}>
+              <span>
+                {batchShort ? `Batch ${batchShort}` : 'Unknown batch'}
+                {entry.queuedAt ? ` · saved ${new Date(entry.queuedAt).toLocaleString()}` : ''}
+              </span>
+              {reviewUnconfirmedScan && (
+                <Button size="small" onClick={() => void handleReviewUnconfirmedScan(entry.id)} sx={{ textTransform: 'none' }}>
+                  Reviewed with supervisor — remove
+                </Button>
+              )}
+            </Box>
+          );
+        })}
+      </Alert>
+    )}
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}
@@ -1162,6 +1429,13 @@ export default function WmsOperationsPage() {
         )
       }
       onClaimBatch={handleClaimBatch}
+      // SF-PICK-ASSIGN-01: advisory gate only — wms:pick:assign (LOCKED) decides.
+      canAssignPick={userRole === 'owner' || userRole === 'admin'}
+      onAssignPickBatch={handleAssignPickBatch}
+      onFetchPickAssignees={handleFetchCountingAssignees}
+      onAcknowledgePickCustody={handleAcknowledgePickCustody}
+      onRevalidatePickOwnership={handleRevalidatePickOwnership}
+      onResumePickSession={handleResumePickSession}
       onFetchLineItems={handleFetchLineItems}
       onResolveBarcode={handleResolveBarcode}
       onConfirmScan={handleConfirmScan}
