@@ -32,4 +32,4 @@ export type {
   OpeningInventoryCutoverStatus,
 } from './components/OpeningInventoryCutoverCard.js';
 export { useWebPush } from './hooks/useWebPush.js';
-export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props } from './pages/WmsModuleFT2.js';
+export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props, PickClaimResult } from './pages/WmsModuleFT2.js';

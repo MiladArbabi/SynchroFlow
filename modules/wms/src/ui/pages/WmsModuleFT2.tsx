@@ -107,6 +107,26 @@ export type WmsBatch = {
   picker_name?: string | null;
   packer_name?: string | null;
   pick_completed_at?: string | null;
+  // SF-PICK-ASSIGN-01 — assignment and idle-recovery state (GET /batches).
+  assigned_operator_id?: number | null;
+  assigned_operator_name?: string | null;
+  pick_assigned_at?: string | null;
+  pick_custody_ack_required?: boolean;
+  /** Only ever present for the batch's current owner. */
+  pick_claim_generation?: string | null;
+  idle_minutes?: number | null;
+  recovery_threshold_minutes?: number;
+  recovery_eligible?: boolean;
+};
+
+/** SF-PICK-ASSIGN-01 — POST /batch/:id/claim response. */
+export type PickClaimResult = {
+  pick_batch_id: string;
+  status: 'picking';
+  pick_claim_generation: string;
+  custody_ack_required: boolean;
+  units_picked: number;
+  takeover: { previous_picked_by: number; idle_minutes: number; threshold_minutes: number } | null;
 };
 
 export type WmsData = {
@@ -258,7 +278,29 @@ export type WmsModuleFT2Props = {
   /** S4-4C — held LSU → problem bin custody (pass-through; the host owns the device event). */
   onPlaceReceiveHeldUnit?: (jobId: string, params: { lasyncro_unit_id: string; location_code: string }) => Promise<{ replayed: boolean }>;
 
-  onClaimBatch: (batchId: string) => Promise<void>;
+  /** Resolves with the claim result (SF-PICK-ASSIGN-01); older hosts may resolve void. */
+  onClaimBatch: (batchId: string) => Promise<void | PickClaimResult>;
+  /** SF-PICK-ASSIGN-01 — owner/admin assignment (advisory gate; backend wms:pick:assign decides). */
+  canAssignPick?: boolean;
+  onAssignPickBatch?: (batchId: string, assignedOperatorId: number | null) => Promise<void>;
+  /** Eligible assignees; defaults to onFetchStowAssignees (same team list). */
+  onFetchPickAssignees?: () => Promise<Array<{
+    user_id: number; first_name: string | null; last_name: string | null; role: string;
+  }>>;
+  /** SF-PICK-ASSIGN-01 — replacement operator confirms custody of already-picked items. */
+  onAcknowledgePickCustody?: (batchId: string) => Promise<void>;
+  /**
+   * SF-PICK-ASSIGN-01 C008 — re-read Pick ownership after a lost connection
+   * (read-only; never claims). Rejects without an HTTP answer while still
+   * disconnected, or with the server's ownership refusal.
+   */
+  onRevalidatePickOwnership?: (batchId: string) => Promise<void>;
+  /**
+   * SF-PICK-RESUME-GENERATION-001 — opening an already-owned, in-progress
+   * batch: the host verifies ownership and obtains the current generation
+   * through the resume-only claim (never claims or takes over).
+   */
+  onResumePickSession?: (batchId: string) => Promise<void | PickClaimResult>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
@@ -705,8 +747,34 @@ function OverviewWorkProgress({ completed, total, verb }: { completed: number; t
   );
 }
 
+/**
+ * SF-PICK-ASSIGN-01 — Pick assignment / recovery status copy. Mirrors
+ * describeStowAssignment; the backend claim and assignment routes remain the
+ * authority for every action this copy implies.
+ */
+export function describePickAssignment(batch: WmsBatch, currentUserId?: number | null): string | null {
+  const assignee = batch.assigned_operator_id ?? null;
+  const assigneeLabel = assignee !== null && assignee === currentUserId
+    ? 'you'
+    : batch.assigned_operator_name ?? 'operator';
+  if (batch.status === 'pending') {
+    if (assignee === null) return 'First one to claim';
+    return assignee === currentUserId ? 'Assigned to you' : `Assigned to ${assigneeLabel}`;
+  }
+  if (batch.status === 'picking') {
+    if (assignee !== null && assignee !== batch.picked_by) {
+      return `Reassigned to ${assigneeLabel} — transfers when claimed`;
+    }
+    if (batch.recovery_eligible) {
+      return `Idle ${batch.idle_minutes ?? batch.recovery_threshold_minutes ?? ''} min — open to take over`;
+    }
+  }
+  return null;
+}
+
 const BatchCard = memo(function BatchCard({
   batch, onOpenPick, onOpenPack, currentUserId, orderCount, board = false,
+  canAssignPick, onAssignRequest, onMakeFirstToClaim,
 }: {
   batch: WmsBatch;
   /** Opens the Pick Brief; the Brief's Start Picking owns any claim. */
@@ -717,18 +785,56 @@ const BatchCard = memo(function BatchCard({
   orderCount?: number;
   /** PARITY-02: rendered inside the management pipeline board. */
   board?: boolean;
+  /** SF-PICK-ASSIGN-01: advisory only — backend wms:pick:assign is the authority. */
+  canAssignPick?: boolean;
+  onAssignRequest?: (batch: WmsBatch) => void;
+  onMakeFirstToClaim?: (batch: WmsBatch) => void;
 }) {
   const isPending = batch.status === 'pending';
   const isPicking = batch.status === 'picking';
   const isPickComplete = batch.status === 'pick_complete';
   const isPacking = batch.status === 'packing';
   const ownsPack = isPacking && currentUserId != null && batch.packed_by === currentUserId;
-  const ctaLabel = isPending ? 'Start picking →'
-    : isPicking ? 'Continue picking →'
+  // SF-PICK-ASSIGN-01 — nobody enters another operator's Pick session. A
+  // claimed batch is offered to someone else only as an explicit, idle-gated
+  // "Take over", and pending work reserved for someone else has no Start.
+  const assignee = batch.assigned_operator_id ?? null;
+  const ownsPick = isPicking && currentUserId != null && batch.picked_by === currentUserId;
+  const pendingReservedForOther = isPending && assignee !== null && assignee !== currentUserId;
+  const reservedForOther = assignee !== null && assignee !== currentUserId && assignee !== batch.picked_by;
+  const canTakeOver = isPicking && !ownsPick && batch.recovery_eligible === true && !reservedForOther;
+  const ctaLabel = isPending ? (pendingReservedForOther ? null : 'Start picking →')
+    : isPicking ? (ownsPick ? 'Continue picking →' : canTakeOver ? 'Take over →' : null)
     : isPickComplete ? 'Start packing →'
     : ownsPack ? 'Resume packing →'
     : null;
-  const ctaEmphasis: OverviewWorkCtaEmphasis = isPicking || ownsPack ? 'primary' : 'secondary';
+  const assignmentLine = describePickAssignment(batch, currentUserId);
+  const showAssignMenu = Boolean(canAssignPick) && (isPending || (isPicking && batch.recovery_eligible === true));
+  const [assignMenuAnchor, setAssignMenuAnchor] = useState<HTMLElement | null>(null);
+  const assignMenu = showAssignMenu ? (
+    <>
+      <IconButton
+        size="small"
+        aria-label="Pick batch options"
+        data-testid={`pick-batch-menu-${batch.pick_batch_id}`}
+        onClick={(e) => setAssignMenuAnchor(e.currentTarget)}
+        sx={{ flexShrink: 0, ml: 0.5 }}
+      >
+        <MoreVertical size={16} />
+      </IconButton>
+      <Menu anchorEl={assignMenuAnchor} open={Boolean(assignMenuAnchor)} onClose={() => setAssignMenuAnchor(null)}>
+        <MenuItem onClick={() => { setAssignMenuAnchor(null); onAssignRequest?.(batch); }}>
+          {assignee === null && isPending ? 'Assign to…' : isPicking ? 'Reassign idle batch…' : 'Reassign…'}
+        </MenuItem>
+        {(assignee !== null || isPicking) && (
+          <MenuItem onClick={() => { setAssignMenuAnchor(null); onMakeFirstToClaim?.(batch); }}>
+            Make first one to claim
+          </MenuItem>
+        )}
+      </Menu>
+    </>
+  ) : null;
+  const ctaEmphasis: OverviewWorkCtaEmphasis = ownsPick || ownsPack ? 'primary' : 'secondary';
   const workload = orderCount != null
     ? `${orderCount} ${orderCount === 1 ? 'order' : 'orders'}`
     : `${batch.total_line_items} ${batch.total_line_items === 1 ? 'line' : 'lines'}`;
@@ -774,6 +880,12 @@ const BatchCard = memo(function BatchCard({
               {isPacking ? 'Packer' : 'Picker'}: {owner}
             </Typography>
           )}
+          {assignmentLine && (
+            <Typography data-testid={`pick-assignment-${batch.pick_batch_id}`}
+              sx={{ mt: 0.25, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+              {assignmentLine}
+            </Typography>
+          )}
           {isPicking && <OverviewWorkProgress completed={batch.units_picked} total={batch.total_units} verb="picked" />}
           {isPacking && <OverviewWorkProgress completed={batch.units_packed} total={batch.total_units} verb="packed" />}
         </Box>
@@ -791,6 +903,7 @@ const BatchCard = memo(function BatchCard({
                 '&:hover': { opacity: 0.88 },
               }}
             >{ctaLabel}</Box>
+            {assignMenu}
           </Box>
         ) : isPacking ? (
           <Box sx={OVERVIEW_WORK_ACTION_SX}>
@@ -798,6 +911,8 @@ const BatchCard = memo(function BatchCard({
               Packing in progress
             </Typography>
           </Box>
+        ) : assignMenu ? (
+          <Box sx={OVERVIEW_WORK_ACTION_SX}>{assignMenu}</Box>
         ) : null}
       </Box>
     );
@@ -823,6 +938,12 @@ const BatchCard = memo(function BatchCard({
             {isPacking ? 'Packer' : 'Picker'}: {owner}
           </Typography>
         )}
+        {assignmentLine && (
+          <Typography data-testid={`pick-assignment-${batch.pick_batch_id}`}
+            sx={{ mt: 0.25, fontSize: 12, fontWeight: 400, color: 'var(--ink-3)', overflowWrap: 'anywhere' }}>
+            {assignmentLine}
+          </Typography>
+        )}
       </Box>
       {ctaLabel ? (
         <Box component="button" type="button"
@@ -840,6 +961,7 @@ const BatchCard = memo(function BatchCard({
           Packing in progress
         </Typography>
       ) : null}
+      {assignMenu}
     </Box>
   );
 });
@@ -2060,6 +2182,12 @@ function WmsModuleFT2Inner({
   onPlaceReceiveHeldUnit,
 
   onClaimBatch,
+  canAssignPick,
+  onAssignPickBatch,
+  onFetchPickAssignees,
+  onAcknowledgePickCustody,
+  onRevalidatePickOwnership,
+  onResumePickSession,
   onFetchLineItems,
   onResolveBarcode,
   onConfirmScan,
@@ -2647,7 +2775,19 @@ function WmsModuleFT2Inner({
   const [sessionError, setSessionError] = useState<string | null>(null);
 
   const batches = data?.batches ?? [];
-  const pickingBatches = batches.filter((batch) => batch.status === 'pending' || batch.status === 'picking');
+  // SF-PICK-ASSIGN-01 — the operator floor shows only Pick work the operator
+  // may act on: open or own pending work, own picking work, and idle work
+  // open to take over. Owner/admin keep the full board for management.
+  const pickVisibleToOperator = (batch: WmsBatch) => {
+    const assignee = batch.assigned_operator_id ?? null;
+    if (batch.status === 'pending') return assignee === null || assignee === currentUserId;
+    if (batch.picked_by === currentUserId) return true;
+    const reservedForOther = assignee !== null && assignee !== currentUserId && assignee !== batch.picked_by;
+    return batch.recovery_eligible === true && !reservedForOther;
+  };
+  const pickingBatches = batches.filter((batch) =>
+    (batch.status === 'pending' || batch.status === 'picking') &&
+    (operationsShell !== 'operator' || pickVisibleToOperator(batch)));
   const readyPackBatches = batches.filter((batch) => batch.status === 'pick_complete');
   const packingBatches = batches.filter((batch) => batch.status === 'packing');
 
@@ -2795,15 +2935,102 @@ function WmsModuleFT2Inner({
     }
   };
 
-  // The Brief's Start Picking is the claim boundary. Whether a claim is needed
-  // derives from canonical WmsData batch.status: an already-picking batch
-  // continues without a duplicate claim; anything else (pending, or not yet
-  // in the loaded data) goes through the canonical claim, which the backend
-  // arbitrates. A rejection propagates so the Brief stays put and can retry.
+  // The Brief's Start Picking is the claim boundary. SF-PICK-ASSIGN-01: it
+  // always goes through the canonical claim — idempotent for the current
+  // owner (returns the current ownership generation), first-to-claim or
+  // assignee-only for pending work, and an idle-gated takeover otherwise. The
+  // backend arbitrates; a rejection propagates so the Brief stays put.
+  const [pickCustodyAck, setPickCustodyAck] = useState<Record<string, { required: boolean; unitsPicked: number }>>({});
   const startPickBatch = async (batchId: string) => {
-    const status = batches.find((batch) => batch.pick_batch_id === batchId)?.status;
-    if (status === 'picking') return;
-    await onClaimBatch(batchId);
+    const result = await onClaimBatch(batchId);
+    if (result && typeof result === 'object') {
+      setPickCustodyAck((prev) => ({
+        ...prev,
+        [batchId]: { required: Boolean(result.custody_ack_required), unitsPicked: result.units_picked ?? 0 },
+      }));
+    }
+    onRefresh();
+  };
+  // SF-PICK-RESUME-GENERATION-001 — resume verification; the server's custody
+  // answer applies exactly as it does for Start.
+  const resumePickBatch = async (batchId: string) => {
+    const result = await onResumePickSession?.(batchId);
+    if (result && typeof result === 'object') {
+      setPickCustodyAck((prev) => ({
+        ...prev,
+        [batchId]: { required: Boolean(result.custody_ack_required), unitsPicked: result.units_picked ?? 0 },
+      }));
+    }
+  };
+  const acknowledgePickCustody = async (batchId: string) => {
+    await onAcknowledgePickCustody?.(batchId);
+    setPickCustodyAck((prev) => ({ ...prev, [batchId]: { ...(prev[batchId] ?? { unitsPicked: 0 }), required: false } }));
+    onRefresh();
+  };
+
+  // SF-PICK-ASSIGN-01 — owner/admin Pick assignment dialog (Stow pattern).
+  const [pickAssignBatch, setPickAssignBatch] = useState<WmsBatch | null>(null);
+  const [pickAssignees, setPickAssignees] = useState<Array<{
+    user_id: number; first_name: string | null; last_name: string | null; role: string;
+  }>>([]);
+  const [pickAssignLoading, setPickAssignLoading] = useState(false);
+  const [pickAssignError, setPickAssignError] = useState<string | null>(null);
+  const [pickAssignTargetId, setPickAssignTargetId] = useState<number | ''>('');
+  const [pickAssignSubmitting, setPickAssignSubmitting] = useState(false);
+
+  const pickAssignErrorMessage = (error: any): string => {
+    const code = error?.response?.data?.code;
+    if (code === 'PICK_NOT_IDLE') {
+      return 'The picker is active again, so this batch cannot be reassigned yet.';
+    }
+    if (code === 'PICK_NOT_REASSIGNABLE' || code === 'PICK_ALREADY_CLAIMED') {
+      return 'This batch was just claimed and can no longer be reassigned.';
+    }
+    if (code === 'INVALID_PICK_ASSIGNEE') return 'That operator cannot pick in this warehouse.';
+    return error instanceof Error ? error.message : 'Assignment failed. Try again.';
+  };
+
+  const openPickAssignDialog = async (batch: WmsBatch) => {
+    setPickAssignBatch(batch);
+    setPickAssignTargetId('');
+    setPickAssignError(null);
+    setPickAssignLoading(true);
+    try {
+      const fetchAssignees = onFetchPickAssignees ?? onFetchStowAssignees;
+      setPickAssignees((await fetchAssignees?.()) ?? []);
+    } catch (error) {
+      setPickAssignError(error instanceof Error ? error.message : 'Failed to load team operators.');
+    } finally {
+      setPickAssignLoading(false);
+    }
+  };
+  const closePickAssignDialog = () => {
+    setPickAssignBatch(null);
+    setPickAssignTargetId('');
+    setPickAssignError(null);
+  };
+  const submitPickAssign = async () => {
+    if (!pickAssignBatch || pickAssignTargetId === '') return;
+    setPickAssignSubmitting(true);
+    setPickAssignError(null);
+    try {
+      await onAssignPickBatch?.(pickAssignBatch.pick_batch_id, pickAssignTargetId);
+      onRefresh();
+      closePickAssignDialog();
+    } catch (error: any) {
+      setPickAssignError(pickAssignErrorMessage(error));
+      if (error?.response?.status === 409) onRefresh();
+    } finally {
+      setPickAssignSubmitting(false);
+    }
+  };
+  const makePickFirstToClaim = async (batch: WmsBatch) => {
+    try {
+      await onAssignPickBatch?.(batch.pick_batch_id, null);
+    } catch {
+      // Advisory UI action — the refreshed board shows the real state.
+    }
+    onRefresh();
   };
 
   // Pack execution entry scanner (consequential, onPackFreeScan).
@@ -3002,9 +3229,33 @@ function WmsModuleFT2Inner({
         // PICK-RESUME-SEMANTICS-01 — only exact canonical `picking` resumes
         // execution; unknown/unresolved status keeps the Brief. Derived per
         // render so status resolving after the session still applies.
-        resumePicking={
-          batches.find((batch) => batch.pick_batch_id === activeSession.batchId)?.status === 'picking'
+        // SF-PICK-ASSIGN-01 — and only for the batch's current owner; anyone
+        // else stays on the Brief, whose Start goes through the claim.
+        resumePicking={(() => {
+          const batch = batches.find((b) => b.pick_batch_id === activeSession.batchId);
+          return batch?.status === 'picking' && currentUserId != null && batch.picked_by === currentUserId;
+        })()}
+        custodyAckRequired={(() => {
+          const local = pickCustodyAck[activeSession.batchId];
+          if (local) return local.required;
+          return Boolean(batches.find((b) => b.pick_batch_id === activeSession.batchId)?.pick_custody_ack_required);
+        })()}
+        unitsPickedBeforeTakeover={
+          pickCustodyAck[activeSession.batchId]?.unitsPicked
+          ?? batches.find((b) => b.pick_batch_id === activeSession.batchId)?.units_picked
+          ?? 0
         }
+        onAcknowledgeCustody={() => acknowledgePickCustody(activeSession.batchId)}
+        // SF-PICK-ASSIGN-01 C008 — resume after a lost connection: ownership
+        // first (read-only), then the authoritative remaining work.
+        onRevalidateSession={onRevalidatePickOwnership ? async () => {
+          const batchId = activeSession.batchId;
+          await onRevalidatePickOwnership(batchId);
+          const items = await onFetchLineItems(batchId);
+          setActiveSession((s) => (s?.type === 'pick' && s.batchId === batchId ? { ...s, lineItems: items } : s));
+          return items;
+        } : undefined}
+        onVerifyResume={onResumePickSession ? () => resumePickBatch(activeSession.batchId) : undefined}
         floorZones={pickFloorZones}
         isOnline={isOnline}
         queuedCount={queuedCount}
@@ -3427,6 +3678,9 @@ function WmsModuleFT2Inner({
       onOpenPack={(id) => { closeStageList(); enterPackHandoff(id); }}
       orderCount={readyOrderCount(batch.pick_batch_id)}
       board={!isOperatorShell}
+      canAssignPick={!isOperatorShell && Boolean(canAssignPick)}
+      onAssignRequest={(b) => { closeStageList(); void openPickAssignDialog(b); }}
+      onMakeFirstToClaim={(b) => void makePickFirstToClaim(b)}
     />
   );
 
@@ -3598,9 +3852,11 @@ function WmsModuleFT2Inner({
         stageOrder: 1, node: renderStowCard(task),
       });
     }
+    // SF-PICK-ASSIGN-01 — pickingBatches is already narrowed to work this
+    // operator may act on (pickVisibleToOperator): own picking work is current,
+    // idle work open to take over joins Up next beside open pending work.
     for (const batch of pickingBatches) {
-      if (batch.status === 'picking' && batch.picked_by !== currentUserId) continue;
-      const resuming = batch.status === 'picking';
+      const resuming = batch.status === 'picking' && batch.picked_by === currentUserId;
       (resuming ? operatorCurrentWork : operatorUpNext).push({
         key: `pick:${batch.pick_batch_id}`, tier: resuming ? 0 : 2,
         at: timeOf(batch.released_at), stageOrder: 2, node: renderBatchCard(batch),
@@ -4092,6 +4348,79 @@ function WmsModuleFT2Inner({
               : stowAssignTask?.assigned_operator_id === null
                 ? 'Assign'
                 : 'Reassign'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SF-PICK-ASSIGN-01 — Assign / reassign Pick. Owner/admin only (advisory
+          gate; PATCH /batch/:id/assignment re-validates). An idle claimed batch
+          keeps its picker until the new assignee claims it. */}
+      <Dialog
+        open={pickAssignBatch !== null}
+        onClose={pickAssignSubmitting ? undefined : closePickAssignDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>
+          {pickAssignBatch?.status === 'picking'
+            ? 'Reassign idle Pick batch'
+            : pickAssignBatch?.assigned_operator_id == null ? 'Assign Pick batch' : 'Reassign Pick batch'}
+        </DialogTitle>
+        <DialogContent>
+          {pickAssignBatch?.status === 'picking' && (
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-2)', mb: 2 }}>
+              {pickAssignBatch.picker_name ?? 'The current picker'} has been idle for {pickAssignBatch.idle_minutes ?? '—'} min.
+              They keep the batch until the new picker claims it. Confirmed picks are kept, and the new picker confirms
+              they have the picked items before continuing.
+            </Typography>
+          )}
+          {pickAssignError && (
+            <Alert severity="error" sx={{ mb: 2 }}>{pickAssignError}</Alert>
+          )}
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Assign to"
+            value={pickAssignTargetId}
+            disabled={pickAssignLoading || pickAssignSubmitting}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPickAssignTargetId(value === '' ? '' : Number(value));
+            }}
+          >
+            <MenuItem value="" disabled>
+              {pickAssignLoading ? 'Loading operators…' : 'Select an operator'}
+            </MenuItem>
+            {pickAssignees
+              .filter((operator) => operator.user_id !== pickAssignBatch?.picked_by)
+              .map((operator) => {
+                const name = `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() || `Operator ${operator.user_id}`;
+                return (
+                  <MenuItem key={operator.user_id} value={operator.user_id}>
+                    {name} · {operator.role}
+                  </MenuItem>
+                );
+              })}
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePickAssignDialog} disabled={pickAssignSubmitting} sx={{ color: 'var(--accent-text)' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void submitPickAssign()}
+            disabled={pickAssignTargetId === '' || pickAssignSubmitting}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            {pickAssignSubmitting ? 'Saving…' : pickAssignBatch?.assigned_operator_id == null && pickAssignBatch?.status !== 'picking' ? 'Assign' : 'Reassign'}
           </Button>
         </DialogActions>
       </Dialog>

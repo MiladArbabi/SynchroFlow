@@ -73,6 +73,8 @@ const POLICY: ReadonlyArray<{
     roles: ['owner', 'admin'],
   },
   { action: 'wms:problem:resolve', roles: ['owner', 'admin'] },
+  // SF-PICK-ASSIGN-01: Pick assignment / idle recovery boundary.
+  { action: 'wms:pick:assign', roles: ['owner', 'admin'] },
   { action: 'orders:execute', roles: ['owner', 'admin'] },
   {
     action: 'orders:shipping-address:write',
@@ -274,7 +276,8 @@ describe('GH-1242 — immutable locked-action runtime policy', () => {
       }
     }
 
-    expect(expected).toHaveLength(14);
+    // SF-PICK-ASSIGN-01: +1 (wms:pick:assign forbids operator).
+    expect(expected).toHaveLength(15);
     expect(actual).toEqual(expected);
   });
 
@@ -291,7 +294,8 @@ describe('GH-1242 — immutable locked-action runtime policy', () => {
       }
     }
 
-    expect(expected).toHaveLength(16);
+    // SF-PICK-ASSIGN-01: +2 (wms:pick:assign admits owner and admin).
+    expect(expected).toHaveLength(18);
     expect(actual).toEqual(expected);
   });
 

@@ -63,6 +63,7 @@ const ACTION_LABELS: Record<string, { label: string; domain: string }> = {
   'wms:read':               { label: 'View WMS',                  domain: 'Warehouse' },
   'wms:batch:release':      { label: 'Release pick batches',      domain: 'Warehouse' },
   'wms:batch:claim':        { label: 'Claim pick batches',        domain: 'Warehouse' },
+  'wms:pick:assign':        { label: 'Assign and recover pick batches', domain: 'Warehouse' },
   'wms:pick:scan':          { label: 'Pick scan',                 domain: 'Warehouse' },
   'wms:pack:scan':          { label: 'Pack scan',                 domain: 'Warehouse' },
   'wms:stow:claim':         { label: 'Claim stow tasks',          domain: 'Warehouse' },

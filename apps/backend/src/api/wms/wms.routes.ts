@@ -11,8 +11,12 @@ import {
   httpReleaseBatch,
   httpCancelBatch,
   httpClaimBatch,
+  httpAssignPickBatch,
+  httpAcknowledgePickCustody,
+  httpGetPickSession,
   httpCompletePick,
   httpReportPickException,
+  httpReviewUnconfirmedPickScan,
   httpResolveBarcode,
   httpConfirmPickScan,
   httpClaimPack,
@@ -184,6 +188,40 @@ router.post(
   httpClaimBatch
 );
 
+// SF-PICK-ASSIGN-01 — owner/admin Pick assignment and idle recovery
+// (wms:pick:assign is LOCKED). The assignee's own eligibility is validated in
+// the service, since middleware only sees the requesting user.
+router.patch(
+  '/batch/:batchId/assignment',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:pick:assign'),
+  httpAssignPickBatch
+);
+
+// SF-PICK-ASSIGN-01 C003 — read-only resume of the caller's own Pick session
+// (current generation). Never claims or takes over.
+router.get(
+  '/batch/:batchId/pick-session',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:pick:scan'),
+  httpGetPickSession
+);
+
+// SF-PICK-ASSIGN-01 — replacement operator acknowledges physical custody of
+// already-picked items after a takeover. Same authority as a Pick scan.
+router.post(
+  '/batch/:batchId/custody-ack',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:pick:scan'),
+  httpAcknowledgePickCustody
+);
+
 router.post(
   '/batch/:batchId/pick-complete',
   authenticateToken,
@@ -291,6 +329,17 @@ router.post(
   requireCapability('warehouse.operations'),
   requireAction('wms:pick:scan'),
   httpConfirmPickScan
+);
+
+// SF-PICK-ASSIGN-01 C010 (F2) — audited review of a historical web Pick scan
+// that cannot be confirmed (no generation). No Pick effect.
+router.post(
+  '/pick/unconfirmed-scan-review',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:pick:scan'),
+  httpReviewUnconfirmedPickScan
 );
 // GH-1238 / PC-SAFE-01 W4 — retired. This route closed a pick exception and
 // its paired Problem Center task from a note alone. It now answers 410 and

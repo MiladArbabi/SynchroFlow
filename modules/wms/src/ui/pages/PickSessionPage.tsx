@@ -185,6 +185,69 @@ export interface PickSessionPageProps {
   /** Canonical connection state; the header badge renders only when supplied. */
   isOnline?: boolean;
   queuedCount?: number;
+  /**
+   * SF-PICK-ASSIGN-01 — this batch was taken over with units already picked:
+   * the operator must confirm they hold those items before any scan.
+   */
+  custodyAckRequired?: boolean;
+  unitsPickedBeforeTakeover?: number;
+  onAcknowledgeCustody?: () => Promise<void>;
+  /**
+   * SF-PICK-ASSIGN-01 C008 — online-only Pick. After a lost connection the
+   * session pauses and calls this to resume: the host re-reads ownership
+   * (read-only, never a claim) and the authoritative remaining work, updates
+   * `lineItems`, and resolves with them. A rejection without an HTTP answer
+   * keeps the session paused; an ownership refusal ends it.
+   */
+  onRevalidateSession?: () => Promise<LineItem[]>;
+  /**
+   * SF-PICK-RESUME-GENERATION-001 — opening an already-started batch (resume)
+   * verifies ownership with the server before any scanner renders: the host
+   * obtains the current generation through the resume-only claim (never a
+   * claim or takeover). A rejection is shown as the server's refusal; it is
+   * never retried automatically. Omitted: no verification gate.
+   */
+  onVerifyResume?: () => Promise<void>;
+}
+
+/** SF-PICK-RESUME-GENERATION-001 — truthful copy for the resume-only refusals. */
+const RESUME_REFUSALS: Record<string, { title: string; description: string }> = {
+  PICK_OWNERSHIP_REVOKED: {
+    title: 'Batch held by another picker',
+    description: 'The server reports that another picker now owns this batch. Nothing was recorded from this screen.',
+  },
+  PICK_BATCH_NOT_PICKING: {
+    title: 'Batch is no longer being picked',
+    description: 'The server reports that this batch is not in picking. Nothing was recorded from this screen.',
+  },
+};
+
+/** C008 — no HTTP answer (or the host's PICK_CONNECTION_LOST): nothing was confirmed. */
+function isConnectionLost(err: unknown): boolean {
+  const e = err as { code?: unknown; request?: unknown; isAxiosError?: unknown; response?: { data?: { code?: unknown } } } | null;
+  if (!e || typeof e !== 'object') return false;
+  if (e.code === 'PICK_CONNECTION_LOST' || e.response?.data?.code === 'PICK_CONNECTION_LOST') return true;
+  return (e.request !== undefined || e.isAxiosError === true) && !e.response;
+}
+
+/** SF-PICK-A6B — sent, no answer: the server may have recorded it. Never "not recorded", never a re-scan. */
+const UNCERTAIN_SCAN_MESSAGE =
+  'Connection lost — this scan may already have been recorded. Do not scan this item; Picking checks with the server and shows the result when the connection is back.';
+/** SF-PICK-A6B — the connection failed before the scan was sent (barcode lookup): confirmed nothing recorded.
+ *  Keeps the underlying cause visible (GH-1241 H1: a lookup failure is reported as a failure). */
+const notSentScanMessage = (cause: string) =>
+  `Connection lost (${cause}) — this scan was not sent, so nothing was recorded. Picking resumes when the connection is back.`;
+
+/** Recovery probe cadence while paused (in addition to the browser's online event). */
+const RECONNECT_PROBE_MS = 5_000;
+
+/** SF-PICK-ASSIGN-01 — the server refused a write because this session no longer owns the batch. */
+const OWNERSHIP_LOST_CODES = new Set([
+  'PICK_OWNERSHIP_REVOKED', 'PICK_GENERATION_STALE', 'PICK_GENERATION_REQUIRED', 'PICK_BATCH_NOT_PICKING',
+]);
+function pickOwnershipCode(err: unknown): string | null {
+  const code = (err as { response?: { data?: { code?: unknown } } })?.response?.data?.code;
+  return typeof code === 'string' ? code : null;
 }
 
 type SessionPhase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'finish' | 'done';
@@ -277,6 +340,11 @@ export default function PickSessionPage({
   floorZones,
   isOnline,
   queuedCount = 0,
+  custodyAckRequired = false,
+  unitsPickedBeforeTakeover = 0,
+  onAcknowledgeCustody,
+  onRevalidateSession,
+  onVerifyResume,
 }: PickSessionPageProps) {
   const theme = useTheme();
   // Desktop puts the map beside the task; smaller viewports keep the scan
@@ -345,6 +413,51 @@ export default function PickSessionPage({
   const [pickResults,    setPickResults]    = useState<PickResult[]>([]);
   const [completingPick, setCompletingPick] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+
+  // SF-PICK-ASSIGN-01 — ownership loss is terminal for this session; custody
+  // acknowledgement gates every write after a takeover of partly picked work.
+  const [ownershipLost, setOwnershipLost] = useState(false);
+  const [custodyAckPendingLocal, setCustodyAckPendingLocal] = useState(false);
+  const [custodyAckDone, setCustodyAckDone] = useState(false);
+  const [custodyAcking, setCustodyAcking] = useState(false);
+  const [custodyAckError, setCustodyAckError] = useState<string | null>(null);
+  const custodyAckNeeded = !custodyAckDone && (custodyAckRequired || custodyAckPendingLocal);
+  /** True when the error was an ownership refusal and has been handled here. */
+  const absorbOwnershipError = useCallback((err: unknown): boolean => {
+    const code = pickOwnershipCode(err);
+    if (code && OWNERSHIP_LOST_CODES.has(code)) {
+      setOwnershipLost(true);
+      return true;
+    }
+    if (code === 'PICK_CUSTODY_ACK_REQUIRED') {
+      setCustodyAckDone(false);
+      setCustodyAckPendingLocal(true);
+      return true;
+    }
+    return false;
+  }, []);
+
+  // C008 — online-only Pick: a lost connection pauses every scan until the
+  // server answers again. The ref is the synchronous gate for the handlers.
+  const [connectionLost, setConnectionLost] = useState(false);
+  const connectionLostRef = useRef(false);
+  const pauseForConnection = useCallback(() => {
+    connectionLostRef.current = true;
+    setConnectionLost(true);
+  }, []);
+  // SF-PICK-A6B-OUTCOME-TRUTH-001 — a confirmation that was SENT but got no
+  // answer has an unknown outcome. It stays unresolved (scanning paused) until
+  // the server's authoritative remaining work says whether it was recorded.
+  const uncertainScanRef = useRef<{ allocationKey: string; title: string } | null>(null);
+  const pauseAfterLostConnection = useCallback((item: LineItem | undefined, sent: boolean, err: unknown) => {
+    pauseForConnection();
+    if (sent && item) {
+      uncertainScanRef.current = { allocationKey: item.reservation_allocation_id ?? item.lasyncro_line_item_id, title: item.product_title };
+      setScanError(UNCERTAIN_SCAN_MESSAGE);
+    } else {
+      setScanError(notSentScanMessage(errorMessage(err, 'no answer from the server')));
+    }
+  }, [pauseForConnection]);
 
   const currentItem = lineItems[currentIndex];
   const totalUnits  = lineItems.reduce((sum, li) => sum + li.quantity, 0);
@@ -415,6 +528,31 @@ export default function PickSessionPage({
     }
   }, [resumePicking, phase]);
 
+  // ── Resume verification (SF-PICK-RESUME-GENERATION-001) ────
+  // A resumed session (never one started through Start Picking) stays locked
+  // until the server confirms this operator owns the batch. Runs once per
+  // explicit attempt: a refusal is final for this session; only a request
+  // that got no answer offers an explicit Retry.
+  const [resumeGate, setResumeGate] = useState<'idle' | 'verifying' | 'verified' | 'refused' | 'unanswered'>('idle');
+  const [resumeRefusal, setResumeRefusal] = useState<{ code: string | null; message: string } | null>(null);
+  const resumeGateActive = resumedSession && onVerifyResume !== undefined;
+  const verifyResume = useCallback(async () => {
+    if (!onVerifyResume) return;
+    setResumeGate('verifying');
+    setResumeRefusal(null);
+    try {
+      await onVerifyResume();
+      setResumeGate('verified');
+    } catch (err) {
+      const code = pickOwnershipCode(err);
+      setResumeRefusal({ code, message: errorMessage(err, 'Could not verify your Pick session.') });
+      setResumeGate(isConnectionLost(err) ? 'unanswered' : 'refused');
+    }
+  }, [onVerifyResume]);
+  useEffect(() => {
+    if (resumeGateActive && resumeGate === 'idle') void verifyResume();
+  }, [resumeGateActive, resumeGate, verifyResume]);
+
   // ── Start (Brief → location_scan) ──────────────────────────
   const handleStartPicking = useCallback(async () => {
     if (startingPickRef.current) return;
@@ -425,11 +563,9 @@ export default function PickSessionPage({
       await onStartPicking?.();
       setPhase('location_scan');
     } catch (err) {
-      setStartError(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Could not start picking. Try again.',
-      );
+      // SF-PICK-ASSIGN-01 — the claim answers with a readable reason (held by
+      // an active picker, reserved for someone else, …); prefer it.
+      setStartError(errorMessage(err, 'Could not start picking. Try again.'));
     } finally {
       startingPickRef.current = false;
       setStartingPick(false);
@@ -440,7 +576,7 @@ export default function PickSessionPage({
   // Client match only; the reservation's location stays authoritative at
   // /pick/scan. A mismatch changes nothing.
   const handleLocationScan = useCallback((value: string) => {
-    if (!currentItem) return;
+    if (!currentItem || connectionLostRef.current) return;
     setScanError(null);
     if (locationMatches(value, currentItem.location_code)) {
       setLastAck(null);
@@ -459,10 +595,11 @@ export default function PickSessionPage({
 
   // ── Product scan ───────────────────────────────────────────
   const handleProductScan = useCallback(async (value: string) => {
-    if (!currentItem || scanInFlightRef.current) return;
+    if (!currentItem || scanInFlightRef.current || connectionLostRef.current) return;
     scanInFlightRef.current = true;
     setScanProcessing(true);
     setScanError(null);
+    let sent = false;
     try {
       const scannedValue = value.trim();
       const result = await onResolveBarcode(scannedValue);
@@ -479,6 +616,7 @@ export default function PickSessionPage({
           setPhase('qty_confirm');
         } else {
           // Single unit: the scan is the pick, accepted only when /pick/scan resolves.
+          sent = true;
           await onConfirmScan({
             lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
             lasyncro_variant_id:   currentItem.lasyncro_variant_id,
@@ -496,12 +634,13 @@ export default function PickSessionPage({
         setScanError('Wrong item — barcode does not match. Check you are at the right bin.');
       }
     } catch (err: unknown) {
-      setScanError(errorMessage(err, 'Scan failed. Try again.'));
+      if (isConnectionLost(err)) pauseAfterLostConnection(currentItem, sent, err);
+      else if (!absorbOwnershipError(err)) setScanError(errorMessage(err, 'Scan failed. Try again.'));
     } finally {
       scanInFlightRef.current = false;
       setScanProcessing(false);
     }
-  }, [currentItem, onResolveBarcode, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked]);
+  }, [currentItem, onResolveBarcode, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, absorbOwnershipError, pauseAfterLostConnection]);
 
   // ── Exception report (existing GH-1049 workflow) ───────────
   const openExceptionDialog = useCallback((prefillFound?: number) => {
@@ -518,7 +657,7 @@ export default function PickSessionPage({
   // Only the FULL required quantity is ever sent; a lower count is a
   // shortfall and goes to the existing exception workflow instead.
   const handleQtyConfirm = useCallback(() => {
-    if (!currentItem || scanInFlightRef.current) return;
+    if (!currentItem || scanInFlightRef.current || connectionLostRef.current) return;
     if (qtyCount !== currentItem.quantity) {
       openExceptionDialog(qtyCount);
       return;
@@ -541,13 +680,93 @@ export default function PickSessionPage({
         advanceOrFinish();
       })
       .catch((err: unknown) => {
-        setScanError(errorMessage(err, 'Confirm failed. Try again.'));
+        if (isConnectionLost(err)) pauseAfterLostConnection(currentItem, true, err);
+        else if (!absorbOwnershipError(err)) setScanError(errorMessage(err, 'Confirm failed. Try again.'));
       })
       .finally(() => {
         scanInFlightRef.current = false;
         setScanProcessing(false);
       });
-  }, [currentItem, qtyCount, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, openExceptionDialog]);
+  }, [currentItem, qtyCount, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, openExceptionDialog, absorbOwnershipError, pauseAfterLostConnection]);
+
+  // ── C008 — automatic recovery after a lost connection ──────
+  // Only a server answer ends the pause: the host re-reads ownership and the
+  // remaining work; the session then resumes at a fresh location scan.
+  const resumeInFlightRef = useRef(false);
+  // SF-PICK-A6B-RECONNECT-RECOVERY-002 — the server answered but could not
+  // confirm the session yet: still paused, but no longer "waiting for connection".
+  const [resumeUnconfirmed, setResumeUnconfirmed] = useState(false);
+  /** SF-PICK-A6B-OWNERSHIP-TRUTH-003 F1 — product title of a sent-but-unanswered scan when ownership was lost. */
+  const [uncertainAtOwnershipLoss, setUncertainAtOwnershipLoss] = useState<string | null>(null);
+  const tryResume = useCallback(async () => {
+    if (!connectionLostRef.current || resumeInFlightRef.current || !onRevalidateSession) return;
+    resumeInFlightRef.current = true;
+    try {
+      const fresh = await onRevalidateSession();
+      connectionLostRef.current = false;
+      setConnectionLost(false);
+      setResumeUnconfirmed(false);
+      setLocationInput('');
+      setProductInput('');
+      setQtyCount(0);
+      setScanError(null);
+      resetScanDetector();
+      resolvedUnitIdRef.current = undefined;
+      // Remaining work only from here on (same rule as a resumed session).
+      setResumedSession(true);
+      setCurrentIndex(0);
+      // SF-PICK-A6B — resolve an unknown outcome from the server's remaining work
+      // (confirmed allocations are excluded). The client never resends it.
+      const uncertain = uncertainScanRef.current;
+      uncertainScanRef.current = null;
+      if (uncertain) {
+        const stillToPick = fresh.some((li) => (li.reservation_allocation_id ?? li.lasyncro_line_item_id) === uncertain.allocationKey);
+        setLastAck(stillToPick
+          ? `Connection restored — ${uncertain.title} was not recorded — pick it now.`
+          : `Connection restored — ${uncertain.title} was recorded.`);
+      } else {
+        setLastAck('Connection restored');
+      }
+      setPhase(fresh.length > 0 ? 'location_scan' : 'finish');
+    } catch (err: unknown) {
+      if (isConnectionLost(err)) {                       // still (or again) disconnected
+        // SF-PICK-A6B-OWNERSHIP-TRUTH-003 F2 — an earlier inconclusive answer no
+        // longer describes the state; the uncertain outcome stays unresolved.
+        setResumeUnconfirmed(false);
+        return;
+      }
+      if (absorbOwnershipError(err)) {
+        // SF-PICK-A6B-OWNERSHIP-TRUTH-003 F1 — the sent scan's outcome is still
+        // unknown; the ownership brief must not claim it was not recorded.
+        setUncertainAtOwnershipLoss(uncertainScanRef.current?.title ?? null);
+        connectionLostRef.current = false;
+        setConnectionLost(false);
+        setResumeUnconfirmed(false);
+        return;
+      }
+      // Any other answer: stay paused (outcome still unknown) and retry.
+      setResumeUnconfirmed(true);
+    } finally {
+      resumeInFlightRef.current = false;
+    }
+  }, [onRevalidateSession, absorbOwnershipError, resetScanDetector]);
+
+  // SF-PICK-A6B-RECONNECT-RECOVERY-002 — a lost response never fires `online`,
+  // so the probe is the only recovery path. The host re-renders (board polling)
+  // with fresh callbacks far more often than the probe cadence; the probe reads
+  // the latest tryResume through a ref so its interval is never reset by them.
+  const tryResumeRef = useRef(tryResume);
+  tryResumeRef.current = tryResume;
+  useEffect(() => {
+    if (!connectionLost) return;
+    const onOnline = () => { void tryResumeRef.current(); };
+    window.addEventListener('online', onOnline);
+    const probe = window.setInterval(onOnline, RECONNECT_PROBE_MS);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.clearInterval(probe);
+    };
+  }, [connectionLost]);
 
   const handleReportException = useCallback(() => {
     if (!currentItem || !exceptionType || exceptionInFlightRef.current) return;
@@ -598,13 +817,17 @@ export default function PickSessionPage({
         advanceOrFinish();
       })
       .catch((err: unknown) => {
+        if (absorbOwnershipError(err)) {
+          setExceptionDialog(false);
+          return;
+        }
         setExceptionError(errorMessage(err, 'Exception report failed. Try again.'));
       })
       .finally(() => {
         exceptionInFlightRef.current = false;
         setExceptionProcessing(false);
       });
-  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrFinish]);
+  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrFinish, absorbOwnershipError]);
 
   // ── Pick complete ──────────────────────────────────────────
   // Done renders only after the backend accepts completion (decision 7).
@@ -618,13 +841,36 @@ export default function PickSessionPage({
         setPhase('done');
       })
       .catch((err: unknown) => {
-        setCompletionError(errorMessage(err, 'Pick complete failed. Retry when connection is restored.'));
+        if (!absorbOwnershipError(err)) {
+          setCompletionError(errorMessage(err, 'Pick complete failed. Retry when connection is restored.'));
+        }
       })
       .finally(() => {
         completeInFlightRef.current = false;
         setCompletingPick(false);
       });
-  }, [onPickComplete]);
+  }, [onPickComplete, absorbOwnershipError]);
+
+  // SF-PICK-ASSIGN-01 — custody acknowledgement, then a fresh location scan.
+  const handleAcknowledgeCustody = useCallback(async () => {
+    setCustodyAcking(true);
+    setCustodyAckError(null);
+    try {
+      await onAcknowledgeCustody?.();
+      setCustodyAckDone(true);
+      setCustodyAckPendingLocal(false);
+      setLocationInput('');
+      setProductInput('');
+      setQtyCount(0);
+      setScanError(null);
+      resolvedUnitIdRef.current = undefined;
+      setPhase('location_scan');
+    } catch (err: unknown) {
+      if (!absorbOwnershipError(err)) setCustodyAckError(errorMessage(err, 'Could not confirm. Try again.'));
+    } finally {
+      setCustodyAcking(false);
+    }
+  }, [onAcknowledgeCustody, absorbOwnershipError]);
 
   // ── BRIEF ──────────────────────────────────────────────────
   // WMS-BRIEF-SYSTEM-01A / WAREHOUSE-SESSION-FOCUS-02A — Pick is focused from
@@ -672,6 +918,152 @@ export default function PickSessionPage({
             size="small"
             onClick={() => onComplete()}
             disabled={startingPick}
+            sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+          >
+            Leave pick
+          </Button>
+        }
+      />
+    );
+  }
+
+  // SF-PICK-ASSIGN-01 — this session no longer owns the batch. Nothing else
+  // renders: no scanner, no stale location context, no further writes.
+  if (ownershipLost) {
+    const confirmedUnits = String(pickResults.reduce((n, r) => n + r.unitsPicked, 0));
+    // SF-PICK-A6B-OWNERSHIP-TRUTH-003 F1 — a sent scan with no answer may already
+    // be recorded: never "nothing else was recorded", never a re-scan.
+    const uncertainTitle = uncertainAtOwnershipLoss;
+    return (
+      <WmsSessionBrief
+        eyebrow={`Batch ${batchShort}`}
+        title="Batch reassigned"
+        description={uncertainTitle
+          ? `Another picker now owns this batch. Your confirmed picks are kept. Your last scan (${uncertainTitle}) got no answer from the server — ${uncertainTitle} may already have been recorded.`
+          : 'Another picker now owns this batch. Your confirmed picks are kept and nothing else was recorded.'}
+        facts={uncertainTitle
+          ? [
+              { label: 'Status', value: 'No longer yours' },
+              { label: 'Confirmed picks this session', value: confirmedUnits },
+              { label: 'Last scan', value: 'Outcome unknown' },
+            ]
+          : [
+              { label: 'Status', value: 'No longer yours' },
+              { label: 'Picked this session', value: confirmedUnits },
+            ]}
+        steps={uncertainTitle
+          ? [
+              'Stop scanning this batch.',
+              `Tell your supervisor the last scan (${uncertainTitle}) may already be recorded, so they can check it.`,
+              'Hand any items you already picked, including that one, to the new picker or your supervisor.',
+            ]
+          : [
+              'Stop scanning this batch.',
+              'Hand any items you already picked to the new picker or your supervisor.',
+            ]}
+        primaryAction={
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => onComplete()}
+            sx={{ ...WMS_TIER1_ACTION_SX, borderRadius: '6px', fontWeight: 600 }}
+          >
+            Back to Warehouse
+          </Button>
+        }
+      />
+    );
+  }
+
+  // SF-PICK-RESUME-GENERATION-001 — resumed session not yet verified: no
+  // scanner, no location context, no writes. The server's answer decides.
+  if (isExecution && resumeGateActive && resumeGate !== 'verified') {
+    const backAction = (
+      <Button
+        variant={resumeGate === 'refused' ? 'contained' : 'text'}
+        size={resumeGate === 'refused' ? 'large' : 'small'}
+        onClick={() => onComplete()}
+        sx={resumeGate === 'refused'
+          ? { ...WMS_TIER1_ACTION_SX, borderRadius: '6px', fontWeight: 600 }
+          : { minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+      >
+        Back to Warehouse
+      </Button>
+    );
+    if (resumeGate === 'refused') {
+      const known = resumeRefusal?.code ? RESUME_REFUSALS[resumeRefusal.code] : undefined;
+      return (
+        <WmsSessionBrief
+          eyebrow={`Batch ${batchShort}`}
+          title={known?.title ?? 'Pick session not resumed'}
+          description={known?.description ?? resumeRefusal?.message ?? 'Could not verify your Pick session.'}
+          facts={[{ label: 'Status', value: 'Not resumed' }]}
+          steps={['Stop scanning this batch.', 'Check with your supervisor before picking it again.']}
+          primaryAction={backAction}
+        />
+      );
+    }
+    return (
+      <WmsSessionBrief
+        eyebrow={`Batch ${batchShort}`}
+        title={resumeGate === 'unanswered' ? 'Could not verify your Pick session' : 'Checking your Pick session'}
+        description={resumeGate === 'unanswered'
+          ? 'No answer from the server, so scanning stays locked. Nothing was recorded.'
+          : 'Confirming with the server that this batch is still yours. Scanning unlocks when it answers.'}
+        facts={[{ label: 'Status', value: resumeGate === 'unanswered' ? 'Not verified' : 'Verifying' }]}
+        steps={['Do not scan yet.']}
+        primaryAction={resumeGate === 'unanswered' ? (
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => void verifyResume()}
+            sx={{ ...WMS_TIER1_ACTION_SX, borderRadius: '6px', fontWeight: 600 }}
+          >
+            Retry
+          </Button>
+        ) : (
+          <CircularProgress size={24} aria-label="Verifying Pick session" />
+        )}
+        secondaryAction={backAction}
+      />
+    );
+  }
+
+  // SF-PICK-ASSIGN-01 — taken over with units already picked: confirm the
+  // tote before any write; scanning then restarts at a fresh location scan.
+  if (isExecution && custodyAckNeeded) {
+    return (
+      <WmsSessionBrief
+        eyebrow={`Batch ${batchShort}`}
+        title="Confirm picked items"
+        description={`${units(unitsPickedBeforeTakeover)} of this batch were already picked by the previous picker. Their picks are kept.`}
+        facts={[
+          { label: 'Already picked', value: units(unitsPickedBeforeTakeover) },
+          { label: 'Next', value: 'Scan location' },
+        ]}
+        steps={[
+          'Collect the tote or picked items from the previous picker.',
+          'Confirm you have them, then scan the next location label.',
+        ]}
+        error={custodyAckError}
+        primaryAction={
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => void handleAcknowledgeCustody()}
+            disabled={custodyAcking}
+            startIcon={custodyAcking ? <CircularProgress size={16} color="inherit" /> : undefined}
+            sx={{ ...WMS_TIER1_ACTION_SX, borderRadius: '6px', fontWeight: 600 }}
+          >
+            I have the picked items
+          </Button>
+        }
+        secondaryAction={
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => onComplete()}
+            disabled={custodyAcking}
             sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
           >
             Leave pick
@@ -825,7 +1217,7 @@ export default function PickSessionPage({
       fullWidth
       type="text"
       placeholder={opts.placeholder}
-      disabled={scanProcessing}
+      disabled={scanProcessing || connectionLost}
       value={opts.value}
       onChange={(e) => { opts.setValue(e.target.value); onInputChange(); }}
       onKeyDown={(e) => {
@@ -918,7 +1310,7 @@ export default function PickSessionPage({
         <ReceiveActions>
           <ReceiveCta
             tier={full ? 'primary' : 'secondary'}
-            disabled={scanProcessing}
+            disabled={scanProcessing || connectionLost}
             onClick={handleQtyConfirm}
           >
             {scanProcessing ? 'Confirming…' : full ? `Confirm ${required} picked` : `Report ${qtyCount} of ${required}`}
@@ -1032,7 +1424,7 @@ export default function PickSessionPage({
             eyebrow="Leave pick"
             title="Progress is"
             accent="saved."
-            body={`Confirmed picks stay recorded. Batch ${batchShort} stays assigned to you — resume it from Warehouse Operations.`}
+            body={`Confirmed picks stay recorded. Batch ${batchShort} stays yours — resume it from Warehouse Operations. If it sits idle past the recovery time, a teammate may take it over.`}
             onDismiss={() => setExitOpen(false)}
           >
             <ReceiveCta onClick={() => setExitOpen(false)}>Keep picking</ReceiveCta>
@@ -1137,6 +1529,21 @@ export default function PickSessionPage({
         </>
       }
     >
+      {connectionLost && (
+        // C008 — one persistent, non-modal state; no repeated alerts.
+        <Alert severity="warning" role="status" aria-live="polite" sx={{ mb: 2 }} data-testid="pick-connection-lost">
+          <Typography component="p" sx={{ fontWeight: 700 }}>Connection lost</Typography>
+          <Typography component="p" sx={{ fontSize: 14 }}>Picking is paused. Your confirmed progress is saved.</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+            <CircularProgress size={14} />
+            <Typography component="span" sx={{ fontSize: 14 }}>
+              {resumeUnconfirmed
+                ? 'The server could not confirm your Pick session yet. Do not scan; Picking keeps checking. If this persists, check with your supervisor.'
+                : 'Waiting for connection…'}
+            </Typography>
+          </Box>
+        </Alert>
+      )}
       {column}
     </ExecutionSessionShell>
   );

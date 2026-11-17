@@ -48,13 +48,27 @@ async function fetchTasks(userId?: number, roles?: string[]): Promise<Task[]> {
     const assignedPicker = batch.assigned_operator_id;
     const assignedPacker = batch.assigned_packer_id;
 
-    // Pick phase
-    if (batch.status === 'pending' || batch.status === 'picking') {
+    // Pick phase — SF-PICK-ASSIGN-01: a picking batch belongs to its picker;
+    // anyone else sees it only once it is idle and open to take over.
+    if (batch.status === 'pending') {
       if (!isOperator || !assignedPicker || assignedPicker === userId) {
         tasks.push({
           id: batch.pick_batch_id,
           type: 'pick',
-          title: batch.status === 'picking' ? 'Continue picking' : 'Pick batch',
+          title: 'Pick batch',
+          subtitle: `${batch.total_line_items} lines · ${batch.total_units} units`,
+          assigned: !!assignedPicker,
+        });
+      }
+    } else if (batch.status === 'picking') {
+      const mine = batch.picked_by === userId;
+      const reservedForOther = !!assignedPicker && assignedPicker !== userId && assignedPicker !== batch.picked_by;
+      const takeover = !mine && batch.recovery_eligible === true && !reservedForOther;
+      if (mine || takeover || (!isOperator && !reservedForOther)) {
+        tasks.push({
+          id: batch.pick_batch_id,
+          type: 'pick',
+          title: mine ? 'Continue picking' : takeover ? 'Take over — idle batch' : 'Being picked',
           subtitle: `${batch.total_line_items} lines · ${batch.total_units} units`,
           assigned: !!assignedPicker,
         });

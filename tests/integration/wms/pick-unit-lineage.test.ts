@@ -286,6 +286,7 @@ async function fixture() {
     pick_batch_id: batchId, lasyncro_line_item_id: lineItemId,
     lasyncro_variant_id: variantId, reservation_allocation_id: allocation.allocation_id,
     location_code: locationCode, quantity_confirmed: 3, lasyncro_unit_id: f.unitA,
+    pick_claim_generation: claim.body.pick_claim_generation,
   });
   const afterPick = await state(f);
   capture('bulk_pick', f, afterPick, pick);
@@ -296,7 +297,7 @@ async function fixture() {
   expect(afterPick.units.find(r => r.lasyncro_unit_id === f.unitD))
     .toEqual(beforePick.units.find(r => r.lasyncro_unit_id === f.unitD));
   const complete = await request(app).post(`/api/v1/wms/batch/${batchId}/pick-complete`)
-    .set(auth(f.token)).send({});
+    .set(auth(f.token)).send({ pick_claim_generation: claim.body.pick_claim_generation });
   expect({ status: complete.status, body: complete.body }).toMatchObject({ status: 200 });
   const packClaim = await request(app).post(`/api/v1/wms/batch/${batchId}/pack/claim`)
     .set(auth(f.token)).send({});
@@ -407,7 +408,8 @@ it('C — unrelated same-variant LSU-D has no order attribution and cannot enter
 // ── SF-STOW-B1: legacy (unallocated) Pick LSU eligibility ────────────────────
 
 type B1Shop = { shopId: number; userId: number; token: string; variantId: string; productId: string; binA: string; binB: string };
-type B1Line = { batchId: string; lineId: string };
+// SF-PICK-ASSIGN-01: a claimed batch carries its ownership generation.
+type B1Line = { batchId: string; lineId: string; generation: string };
 const B1_UNIT_MISMATCH = 'lasyncro_unit_id does not match the requested pick task.';
 
 async function b1Shop(): Promise<B1Shop> {
@@ -437,10 +439,12 @@ const b1ReadUnit = (s: B1Shop, unitId: string) => withTenant(s.shopId, trx =>
 async function b1Line(s: B1Shop): Promise<B1Line> {
   const { orderId, lineItemIds } = await seedOrder(s.shopId, [{ variantId: s.variantId, productId: s.productId, quantity: 1 }]);
   const batchId = crypto.randomUUID();
+  const generation = crypto.randomUUID();
   await withTenant(s.shopId, async trx => {
     await trx('pick_batches').insert({
       pick_batch_id: batchId, shop_id: s.shopId, status: 'picking', release_trigger: 'manual', max_line_items: 10,
       total_line_items: 1, total_units: 1, released_at: new Date(), picked_by: s.userId,
+      pick_claim_generation: generation,
     });
     await trx('pick_batch_orders').insert({ pick_batch_id: batchId, lasyncro_order_id: orderId, shop_id: s.shopId });
     await trx('order_warehouse_status').insert({ lasyncro_order_id: orderId, pick_batch_id: batchId, status: 'picking' });
@@ -448,12 +452,13 @@ async function b1Line(s: B1Shop): Promise<B1Line> {
       lasyncro_line_item_id: lineItemIds[0], lasyncro_order_id: orderId, shop_id: s.shopId, status: 'awaiting_pick',
     });
   });
-  return { batchId, lineId: lineItemIds[0] };
+  return { batchId, lineId: lineItemIds[0], generation };
 }
 const b1Scan = (s: B1Shop, l: B1Line, unitId: string | undefined, locationCode: string) =>
   request(app).post('/api/v1/wms/pick/scan').set(auth(s.token)).send({
     pick_batch_id: l.batchId, lasyncro_line_item_id: l.lineId, lasyncro_variant_id: s.variantId,
     location_code: locationCode, quantity_confirmed: 1, scan_source: 'manual',
+    pick_claim_generation: l.generation,
     ...(unitId ? { lasyncro_unit_id: unitId } : {}),
   });
 const b1Stock = (s: B1Shop) => withTenant(s.shopId, async trx => ({

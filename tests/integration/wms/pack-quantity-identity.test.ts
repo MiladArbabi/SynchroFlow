@@ -270,6 +270,7 @@ async function fixture() {
       pick_batch_id: batchId, lasyncro_line_item_id: lineItemId,
       lasyncro_variant_id: variantId, reservation_allocation_id: allocation.allocation_id,
       location_code: allocation.location_code, quantity_confirmed: 1, lasyncro_unit_id: unitId,
+      pick_claim_generation: claim.body.pick_claim_generation,
     });
     expect({ status: pick.status, body: pick.body }).toMatchObject({ status: 201 });
   }
@@ -281,7 +282,7 @@ async function fixture() {
   await withTenant(tenant.shopId, trx => trx('inventory_units')
     .where({ shop_id: tenant.shopId, lasyncro_unit_id: unrelatedId }).update({ status: 'picked' }));
   const complete = await request(app).post(`/api/v1/wms/batch/${batchId}/pick-complete`)
-    .set(auth(tenant.token)).send({});
+    .set(auth(tenant.token)).send({ pick_claim_generation: claim.body.pick_claim_generation });
   expect({ status: complete.status, body: complete.body }).toMatchObject({ status: 200 });
   const row = await withTenant(tenant.shopId, trx => trx('orders')
     .where({ shop_id: tenant.shopId, lasyncro_order_id: order.orderId }).first('wms_barcode'));

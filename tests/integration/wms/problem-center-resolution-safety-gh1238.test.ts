@@ -705,6 +705,8 @@ async function seedPickContext(v: { variantId: string; productId: string }) {
     const { orderId, lineId } = await seedOrderLine(trx, v);
     const batchId = crypto.randomUUID();
     const now = new Date();
+    // SF-PICK-ASSIGN-01: a claimed batch carries its ownership generation.
+    const generation = crypto.randomUUID();
     await trx('pick_batches').insert({
       pick_batch_id: batchId,
       shop_id: shop.shopId,
@@ -716,9 +718,10 @@ async function seedPickContext(v: { variantId: string; productId: string }) {
       released_at: now,
       picked_by: shop.users.operator,
       pick_last_activity_at: now,
+      pick_claim_generation: generation,
     });
     await trx('pick_batch_orders').insert({ pick_batch_id: batchId, lasyncro_order_id: orderId, shop_id: shop.shopId });
-    return { batchId, orderId, lineId };
+    return { batchId, orderId, lineId, generation };
   });
 }
 
@@ -727,7 +730,7 @@ async function reportPickException(
   v: { variantId: string; productId: string },
   exceptionType: 'item_missing' | 'product_defect'
 ): Promise<{ exceptionId: string; taskId: string; batchId: string }> {
-  const { batchId, lineId } = await seedPickContext(v);
+  const { batchId, lineId, generation } = await seedPickContext(v);
   const res = await request(app)
     .post(`/api/v1/wms/batch/${batchId}/exception`)
     .set(auth('operator'))
@@ -738,6 +741,7 @@ async function reportPickException(
       stage: 'pick',
       quantity_required: 1,
       quantity_found: 0,
+      pick_claim_generation: generation,
     });
   expect({ status: res.status, body: res.body }).toMatchObject({ status: 201 });
   const exceptionId = String(res.body.pick_exception_id);
@@ -1104,6 +1108,7 @@ async function seedResidualIncident(c: ResidualCase) {
       quantity_required: ALLOCATION_QTY,
       quantity_found: c.quantityFound,
       device_event_id: crypto.randomUUID(),
+      pick_claim_generation: claim.body.pick_claim_generation,
     });
   expect({ status: report.status, body: report.body }).toMatchObject({ status: 201 });
   const exceptionId = String(report.body.pick_exception_id);

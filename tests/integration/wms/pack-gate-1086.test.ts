@@ -389,8 +389,8 @@ async function fixture() {
     receiveJobId, sequence: 1,
   });
 
-  expect((await pickScanRaw(f.token, batchId, healthyAlloc, 1, healthyUnit)).status).toBe(201);
-  expect((await pickScanRaw(f.token, batchId, affectedFullAlloc, 1, affectedUnit)).status).toBe(201);
+  expect((await pickScanRaw(f.token, batchId, healthyAlloc, 1, healthyUnit, claim.body.pick_claim_generation)).status).toBe(201);
+  expect((await pickScanRaw(f.token, batchId, affectedFullAlloc, 1, affectedUnit, claim.body.pick_claim_generation)).status).toBe(201);
 
   // Fulfillment deficit: 3 required, 1 physically picked, 2 missing.
   const exception = await request(app)
@@ -407,13 +407,14 @@ async function fixture() {
       quantity_found: 1,
       device_event_id: crypto.randomUUID(),
       notes: 'GH1086 two units missing at allocation location',
+      pick_claim_generation: claim.body.pick_claim_generation,
     });
   expect({ status: exception.status, body: exception.body })
     .toMatchObject({ status: 201, body: { pick_exception_id: expect.any(String) } });
 
   const completePick = await request(app)
     .post(`/api/v1/wms/batch/${batchId}/pick-complete`)
-    .set(auth(f.token)).send({});
+    .set(auth(f.token)).send({ pick_claim_generation: claim.body.pick_claim_generation });
   expect(completePick.status).toBe(200);
 
   /**
@@ -475,7 +476,8 @@ function pickScanRaw(
   batchId: string,
   alloc: any,
   quantity: number,
-  unitId?: string
+  unitId?: string,
+  generation?: string,
 ) {
   return request(app).post('/api/v1/wms/pick/scan').set(auth(token)).send({
     pick_batch_id: batchId,
@@ -485,6 +487,8 @@ function pickScanRaw(
     location_code: alloc.location_code,
     quantity_confirmed: quantity,
     ...(unitId ? { lasyncro_unit_id: unitId } : {}),
+    // SF-PICK-ASSIGN-01: the claim's ownership generation.
+    pick_claim_generation: generation,
   });
 }
 

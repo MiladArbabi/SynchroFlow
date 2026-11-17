@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
+import { assertPickWriteOwnership, lockPickBatchRow } from './pickAssignment.service.js';
 
 /**
  * PICK SCAN SERVICE (WM-01)
@@ -49,6 +50,68 @@ export interface PickScanInput {
    */
   lasyncroUnitId?: string;
   scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
+  /**
+   * SF-PICK-ASSIGN-01: the ownership generation returned by claim. Required;
+   * a missing or superseded value is refused with a 409 PickOwnershipError.
+   */
+  pickClaimGeneration: string | null | undefined;
+}
+
+/**
+ * SF-PICK-ASSIGN-01 C006 (REVIEW-004 MEDIUM-3) — the pick task already has a
+ * confirmed scan. Raised only after the ownership/generation fence passed, so
+ * it is answered only to the current owner holding the current generation.
+ * Carries the committed scan so the caller can tell "your scan is recorded"
+ * (lost response, replay) from "someone else recorded this task".
+ */
+export class PickScanAlreadyRecordedError extends Error {
+  constructor(readonly existing: {
+    scan_id: string;
+    scanned_by: number | null;
+    scanned_at: Date | string | null;
+    reservation_allocation_id: string | null;
+    lasyncro_line_item_id: string;
+  }, message: string) {
+    super(message);
+    this.name = 'PickScanAlreadyRecordedError';
+  }
+}
+
+/** Throws PickScanAlreadyRecordedError when this pick task already has a confirmed scan. Read-only. */
+async function assertPickTaskNotAlreadyRecorded(
+  trx: Knex.Transaction,
+  task: { pickBatchId: string; reservationAllocationId?: string | null; lasyncroLineItemId: string; allocationBacked: boolean }
+): Promise<void> {
+  const existingScan = task.allocationBacked
+    ? await trx('pick_scan_log')
+        .where({
+          pick_batch_id: task.pickBatchId,
+          reservation_allocation_id: task.reservationAllocationId,
+          status: 'confirmed',
+        })
+        .first()
+    : await trx('pick_scan_log')
+        .where({
+          pick_batch_id: task.pickBatchId,
+          lasyncro_line_item_id: task.lasyncroLineItemId,
+          status: 'confirmed',
+        })
+        .first();
+
+  if (existingScan) {
+    throw new PickScanAlreadyRecordedError(
+      {
+        scan_id: existingScan.scan_id,
+        scanned_by: existingScan.scanned_by ?? null,
+        scanned_at: existingScan.scanned_at ?? null,
+        reservation_allocation_id: existingScan.reservation_allocation_id ?? null,
+        lasyncro_line_item_id: existingScan.lasyncro_line_item_id,
+      },
+      task.allocationBacked
+        ? `[PICK_SCAN] Reservation allocation already scanned: ${task.reservationAllocationId}`
+        : `[PICK_SCAN] Line item already scanned: ${task.lasyncroLineItemId}`
+    );
+  }
 }
 
 export interface PickScanResult {
@@ -85,24 +148,17 @@ export async function confirmPickScan(
     throw new Error(`[PICK_SCAN] Line item not found in batch: ${lasyncroLineItemId}`);
   }
 
-  // 1. Validate batch status and ownership under the batch lock.
-  const batch = await trx('pick_batches')
-    .where({ pick_batch_id: pickBatchId, shop_id: shopId })
-    .select('status', 'picked_by')
-    .forUpdate()
-    .first();
+  // 1. Validate batch status, ownership, ownership generation and custody
+  //    acknowledgement under the batch lock (SF-PICK-ASSIGN-01). A revoked or
+  //    stale session — including an A → B → A cycle — is refused here, before
+  //    any inventory, unit or allocation lock is taken.
+  const batch = await lockPickBatchRow(trx, shopId, pickBatchId);
 
   if (!batch) {
     throw new Error(`[PICK_SCAN] Batch not found: ${pickBatchId}`);
   }
 
-  if (batch.status !== 'picking') {
-    throw new Error(`[PICK_SCAN] Batch not in picking status: ${batch.status}`);
-  }
-
-  if (batch.picked_by !== scannedBy) {
-    throw new Error(`[PICK_SCAN] Batch owned by different operator`);
-  }
+  assertPickWriteOwnership(batch, scannedBy, input.pickClaimGeneration);
 
   // 2. Validate line item belongs to batch
   const lineItem = await trx('order_line_items as oli')
@@ -197,6 +253,20 @@ export async function confirmPickScan(
       );
     }
 
+    // SF-PICK-ASSIGN-01 C006 (REVIEW-004 MEDIUM-3): a replay of an already
+    // committed scan must be recognised BEFORE the inventory-truth checks. The
+    // committed scan released its reservation, so those checks would otherwise
+    // answer INSUFFICIENT_RESERVED / INSUFFICIENT_ON_HAND (or, when other
+    // reservations share the location, reach the duplicate guard below) and the
+    // client could not tell a recorded scan from a stock problem. Read-only;
+    // the allocation row lock above is already held.
+    await assertPickTaskNotAlreadyRecorded(trx, {
+      pickBatchId,
+      reservationAllocationId,
+      lasyncroLineItemId,
+      allocationBacked: true,
+    });
+
     const inventoryTruth = await trx('inventory_truth')
       .where({
         shop_id: shopId,
@@ -264,29 +334,39 @@ export async function confirmPickScan(
   // 4. Guard against duplicate confirmed scan for this pick task.
   // Allocation-backed batches use allocation identity; legacy batches
   // preserve the existing line-level duplicate guard.
-  const existingScan = allocationBackedLine
-    ? await trx('pick_scan_log')
-        .where({
-          pick_batch_id: pickBatchId,
-          reservation_allocation_id: reservationAllocationId,
-          status: 'confirmed',
-        })
-        .first()
-    : await trx('pick_scan_log')
-        .where({
-          pick_batch_id: pickBatchId,
-          lasyncro_line_item_id: lasyncroLineItemId,
-          status: 'confirmed',
-        })
-        .first();
+  await assertPickTaskNotAlreadyRecorded(trx, {
+    pickBatchId,
+    reservationAllocationId,
+    lasyncroLineItemId,
+    allocationBacked: Boolean(allocationBackedLine),
+  });
 
-  if (existingScan) {
-    throw new Error(
-      allocationBackedLine
-        ? `[PICK_SCAN] Reservation allocation already scanned: ${reservationAllocationId}`
-        : `[PICK_SCAN] Line item already scanned: ${lasyncroLineItemId}`
-    );
+  /**
+   * SF-PICK-ASSIGN-01 C010 (REVIEW-006 F3) — legacy cross-outcome guard.
+   * A legacy line with a Pick-stage exception may not also be confirmed as a
+   * full pick. Checked after the duplicate guard so a replay of a committed
+   * scan still answers ALREADY_RECORDED. Serialization against a concurrent
+   * Pick-stage exception for the same line comes from the shared orders row
+   * lock: both the scan path (above) and the exception path take
+   * `orders FOR UPDATE` before `pick_batches FOR UPDATE`, so same-order
+   * scan/exception operations queue on the order row and the second sees the
+   * first's committed outcome here.
+   */
+  if (!allocationBackedLine) {
+    const lineException = await trx('pick_exceptions')
+      .where({
+        shop_id: shopId,
+        pick_batch_id: pickBatchId,
+        lasyncro_line_item_id: lasyncroLineItemId,
+        stage: 'pick',
+      })
+      .first('pick_exception_id');
+
+    if (lineException) {
+      throw new Error('[PICK_SCAN] ALLOCATION_EXCEPTION_EXISTS');
+    }
   }
+
 
   /**
    * SF-STOW-B1: one eligibility gate for allocation-backed and legacy scans.

@@ -186,7 +186,9 @@ async function fixture() {
   const C = owned.find(a => Number(a.quantity) === 3)!;
   const P = allocations.find(a => a.lasyncro_order_id === p.orderId)!;
   expect([A, B, C, P].every(Boolean)).toBe(true);
-  return { ...f, batchId, o, p, A, B, C, P };
+  // SF-PICK-ASSIGN-01: Pick writes present the claim's ownership generation.
+  const generation = claim.body.pick_claim_generation as string;
+  return { ...f, batchId, o, p, A, B, C, P, generation };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 function scan(f: Fixture, a: any) {
@@ -194,6 +196,7 @@ function scan(f: Fixture, a: any) {
     pick_batch_id: f.batchId, lasyncro_line_item_id: a.lasyncro_line_item_id,
     lasyncro_variant_id: a.lasyncro_variant_id, reservation_allocation_id: a.allocation_id,
     location_code: a.location_code, quantity_confirmed: Number(a.quantity),
+    pick_claim_generation: f.generation,
   });
 }
 function report(
@@ -217,6 +220,7 @@ function report(
       quantity_found: found,
       device_event_id: deviceEventId,
       notes: 'GH1049 observed stock at allocation location',
+      pick_claim_generation: f.generation,
     });
 }
 
@@ -368,7 +372,7 @@ it('item-missing exception keeps the affected order in the batch and picker cont
   const complete = await request(app)
     .post(`/api/v1/wms/batch/${f.batchId}/pick-complete`)
     .set('Authorization', `Bearer ${f.token}`)
-    .send({});
+    .send({ pick_claim_generation: f.generation });
 
   expect({
     status: complete.status,
@@ -490,7 +494,7 @@ it('short-pick is one atomic composite outcome: physically found quantity plus m
   const complete = await request(app)
     .post(`/api/v1/wms/batch/${f.batchId}/pick-complete`)
     .set('Authorization', `Bearer ${f.token}`)
-    .send({});
+    .send({ pick_claim_generation: f.generation });
 
   expect(complete.status).toBe(200);
 

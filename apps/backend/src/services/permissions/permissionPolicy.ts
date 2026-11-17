@@ -23,7 +23,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:read':                 ['owner', 'admin', 'operator'],
   'wms:batch:release':        ['owner', 'admin'],
   'wms:batch:claim':          ['owner', 'admin', 'operator'],
-  'wms:pick:scan':            ['owner', 'admin', 'operator'],
+  // SF-PICK-ASSIGN-01: assign / reassign / recover Pick work — owner/admin, LOCKED.
+  'wms:pick:assign':          ['owner', 'admin'],
+  'wms:pick:scan':           ['owner', 'admin', 'operator'],
   'wms:pack:scan':            ['owner', 'admin', 'operator'],
   'wms:returns:scan':         ['owner', 'admin', 'operator'],
   'wms:stow:claim':           ['owner', 'admin', 'operator'],
@@ -113,6 +115,8 @@ export const LOCKED_ACTIONS = new Set([
   'wms:analytics:read',
   'wms:analytics:display:write',
   'wms:problem:resolve',
+  // SF-PICK-ASSIGN-01: Pick assignment and idle recovery — never configurable.
+  'wms:pick:assign',
   // GH-1223: ratified owner/admin Orders write boundaries — never configurable.
   'orders:execute',
   'orders:shipping-address:write',

@@ -483,3 +483,62 @@ export async function httpPatchWarehouseShopifyLocation(
     });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SF-PICK-ASSIGN-01 — per-warehouse Pick recovery threshold.
+// Independent of shop_wms_settings.idle_alert_threshold_minutes. Range 5–480
+// (also enforced by warehouses_pick_recovery_threshold_range).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function httpGetPickRecoveryThresholds(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const warehouses = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('warehouses')
+        .where({ shop_id: shopId })
+        .select('warehouse_id', 'name', 'is_default', 'active', 'pick_recovery_threshold_minutes')
+        .orderBy([{ column: 'is_default', order: 'desc' }, { column: 'name', order: 'asc' }]);
+    });
+    return res.status(200).json({ warehouses });
+  } catch (error) {
+    console.error('[PICK_RECOVERY_THRESHOLD_READ_FAILED]', {
+      shopId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'Failed to read Pick recovery thresholds' });
+  }
+}
+
+export async function httpPatchPickRecoveryThreshold(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const warehouseId = String(req.params.warehouseId ?? '');
+  const minutes = Number(req.body?.pick_recovery_threshold_minutes);
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 480) {
+    return res.status(400).json({ error: 'pick_recovery_threshold_minutes must be an integer 5–480' });
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(warehouseId)) {
+    return res.status(404).json({ error: 'Warehouse not found' });
+  }
+
+  try {
+    const updated = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const [row] = await trx('warehouses')
+        .where({ shop_id: shopId, warehouse_id: warehouseId })
+        .update({ pick_recovery_threshold_minutes: minutes, updated_at: trx.fn.now() })
+        .returning(['warehouse_id', 'name', 'pick_recovery_threshold_minutes']);
+      return row ?? null;
+    });
+    if (!updated) return res.status(404).json({ error: 'Warehouse not found' });
+    return res.status(200).json({ warehouse: updated });
+  } catch (error) {
+    console.error('[PICK_RECOVERY_THRESHOLD_UPDATE_FAILED]', {
+      shopId, warehouseId, error: error instanceof Error ? error.message : error,
+    });
+    return res.status(500).json({ error: 'Failed to update Pick recovery threshold' });
+  }
+}
