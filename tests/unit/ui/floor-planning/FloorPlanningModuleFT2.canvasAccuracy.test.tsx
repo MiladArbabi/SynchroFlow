@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import FloorPlanningModuleFT2 from '../../../../modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2';
 import type { WarehouseZone, LocationStockDetail } from '@lasyncro/shared/ui';
 
@@ -44,7 +44,7 @@ it('counts actual lanes rather than the parents of bins', () => {
   const zones = [zone('AISLE', { type: 'lane' }), zone('RACK'),
     zone('CHILD', { parent_location_code: 'RACK', position_x: null, position_y: null })];
   render(<FloorPlanningModuleFT2 {...props} data={{ zones, product_barcodes: [] }} gridLocations={zones} gridOccupancy={{}} />);
-  expect(screen.getByText('2 bins across 1 aisle · 0 bins with stock')).toBeVisible();
+  expect(screen.getByText('2 bins across 1 aisle · Verified stock count unavailable')).toBeVisible();
 });
 
 it('keeps rack and shelf child identities off the floor while warning about genuine unplaced objects', () => {
@@ -62,7 +62,7 @@ it('keeps rack and shelf child identities off the floor while warning about genu
 it('counts lanes even when bins have no parent links', () => {
   const zones = [zone('AISLE-1', { type: 'lane' }), zone('AISLE-2', { type: 'lane' }), ...bins];
   render(<FloorPlanningModuleFT2 {...props} data={{ zones, product_barcodes: [] }} gridLocations={zones} gridOccupancy={{}} />);
-  expect(screen.getByText('3 bins across 2 aisles · 0 bins with stock')).toBeVisible();
+  expect(screen.getByText('3 bins across 2 aisles · Verified stock count unavailable')).toBeVisible();
 });
 
 function topFill(container: HTMLElement, code: string) {
@@ -97,4 +97,74 @@ it('preserves positive Inspector quantities and heatmap coloring', () => {
   expect(topFill(container, 'LOW')).toBe(positiveFill);
   fireEvent.click(screen.getByText('LOW', { selector: 'text' }));
   expect(screen.getByText('2 units')).toBeVisible();
+});
+
+
+it('S4 explains stock levels, the fixed low-stock threshold and whole-warehouse summary scope', () => {
+  render(<FloorPlanningModuleFT2 {...props} gridOccupancy={occupancy} inventoryInspection={inspection} />);
+  expect(screen.getByRole('button', { name: 'Stock levels' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Low stock · 1–3 units' })).toBeVisible();
+  expect(screen.getByText(/Indicative stock levels · not storage capacity/)).toBeVisible();
+  expect(screen.getByText(/Whole-warehouse counts · include filtered and unplaced bins/)).toBeVisible();
+  expect(screen.queryByText('Below 50%')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Low stock · 1–3 units' }));
+  expect(screen.getByText(/Fixed rule: more than 0 and at most 3 on-hand units · not a forecast/)).toBeVisible();
+});
+
+
+it('S4 correction: positive legacy occupancy cannot confirm a zero stocked-bin count without canonical records', () => {
+  const { container, rerender } = render(<FloorPlanningModuleFT2 {...props} gridOccupancy={occupancy} />);
+  expect(screen.getByText('3 bins across 0 aisles · Verified stock count unavailable')).toBeVisible();
+  expect(screen.queryByText(/across .* · 0 bins with stock/)).not.toBeInTheDocument();
+  const legacyFill = topFill(container, 'LOW');
+  expect(screen.getByText('LOW', { selector: 'text' })).toBeInTheDocument();
+  rerender(<FloorPlanningModuleFT2 {...props} gridOccupancy={occupancy} inventoryInspection={inspection} />);
+  expect(screen.getByText('3 bins across 0 aisles · 2 bins with stock')).toBeVisible();
+  expect(topFill(container, 'LOW')).toBe(legacyFill);
+  fireEvent.click(screen.getByText('LOW', { selector: 'text' }));
+  expect(screen.getByText('2 units')).toBeVisible();
+});
+
+it('S4 correction: partial canonical knowledge is unavailable, while complete canonical zero confirms zero stocked bins', () => {
+  const { rerender } = render(<FloorPlanningModuleFT2 {...props} gridOccupancy={{}} inventoryInspection={{ EMPTY: detail(0) }} />);
+  expect(screen.getByText('3 bins across 0 aisles · Verified stock count unavailable')).toBeVisible();
+  expect(screen.getByText('2 unknown')).toBeVisible();
+  rerender(<FloorPlanningModuleFT2 {...props} gridOccupancy={{}} inventoryInspection={{ EMPTY: detail(0), LOW: detail(0), FULL: detail(0) }} />);
+  expect(screen.getByText('3 bins across 0 aisles · 0 bins with stock')).toBeVisible();
+});
+
+
+function expectFloorFact(label: string, value: string) {
+  const rail = within(screen.getByRole('complementary', { name: 'Floor summary' }));
+  expect(within(rail.getByText(label).parentElement!).getByText(value)).toBeVisible();
+}
+
+it('S4 summary counts require complete canonical bin knowledge, including when some stock is known', () => {
+  const { rerender } = render(<FloorPlanningModuleFT2 {...props} inventoryInspection={{ EMPTY: detail(0) }} />);
+  expectFloorFact('Bins with stock', 'Unavailable');
+  expectFloorFact('Low on stock', 'Unavailable');
+  rerender(<FloorPlanningModuleFT2 {...props} inventoryInspection={{ LOW: detail(2) }} />);
+  expectFloorFact('Bins with stock', 'Unavailable');
+  expectFloorFact('Low on stock', 'Unavailable');
+  rerender(<FloorPlanningModuleFT2 {...props} inventoryInspection={{ EMPTY: detail(0), LOW: detail(0), FULL: detail(0) }} />);
+  expectFloorFact('Bins with stock', '0');
+  expectFloorFact('Low on stock', '0');
+  expect(screen.getByText('3 bins across 0 aisles · 0 bins with stock')).toBeVisible();
+});
+
+it('S4 counts only actual bins across the headline and rail, preserving signed stock and whole-warehouse scope', () => {
+  const zones = [...bins, zone('NEGATIVE', { position_x: 7 }), zone('PACK', { type: 'shelf', zone_type: 'pack' })];
+  const canonical = { ...inspection, NEGATIVE: detail(-2), PACK: detail(2), UNRELATED: detail(20) };
+  render(<FloorPlanningModuleFT2 {...props} data={{ zones, product_barcodes: [] }} gridLocations={zones}
+    gridOccupancy={occupancy} inventoryInspection={canonical} />);
+  expect(screen.getByText('4 bins across 0 aisles · 2 bins with stock')).toBeVisible();
+  expectFloorFact('Bins with stock', '2');
+  expectFloorFact('Low on stock', '1');
+  expect(screen.getByText('1 out of stock')).toBeVisible();
+  expect(screen.getByText('1 low on stock')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Empty bins' }));
+  expectFloorFact('Bins with stock', '2');
+  expectFloorFact('Low on stock', '1');
+  fireEvent.click(screen.getByText('NEGATIVE', { selector: 'text' }));
+  expect(screen.getByText('-2 units')).toBeVisible();
 });

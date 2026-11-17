@@ -4,6 +4,7 @@
 // operational-state precedence model.
 
 import {
+  reconcileMapProblems,
   resolveOverviewOperationalState,
   pendingStowSignal,
   receiveAtDockSignal,
@@ -117,5 +118,25 @@ describe('resolveOverviewOperationalState — signal-source contracts', () => {
 
     expect(forward).toBe('critical');
     expect(reversed).toBe('critical');
+  });
+});
+
+
+describe('S5 problem task record accounting', () => {
+  it('never assigns two unlocated problems to an arbitrary problem bin', () => {
+    expect(reconcileMapProblems([
+      { status: 'open', problem_bin_location: null },
+      { status: 'investigating', problem_bin_location: null },
+    ], new Set(['PROBLEM-01']))).toEqual({ byLocation: {}, total: 2, mapped: 0, elsewhere: 0, unlocated: 2 });
+  });
+  it('counts records sharing a location while excluding closed tasks and retaining off-map associations', () => {
+    const result = reconcileMapProblems([
+      { status: 'open', problem_bin_location: 'A' },
+      { status: 'investigating', problem_bin_location: 'A' },
+      { status: 'resolved', problem_bin_location: 'A' },
+      { status: 'open', problem_bin_location: 'UNPLACED' },
+    ], new Set(['A']));
+    expect(result).toEqual({ byLocation: { A: 2, UNPLACED: 1 }, total: 3, mapped: 2, elsewhere: 1, unlocated: 0 });
+    expect(result.mapped + result.elsewhere + result.unlocated).toBe(result.total);
   });
 });

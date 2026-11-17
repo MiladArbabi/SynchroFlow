@@ -176,6 +176,11 @@ export interface SyntheticStation {
 export interface LocationPulse {
   title: string;
   subtitle?: string;
+  /** Caller-qualified facts, independent of semantic severity. No renderer inference. */
+  qualification?: string;
+  /** Bounded hover preview; pinned rows retain the full signed breakdown. */
+  preview?: { label: string; value: string; tone?: 'critical' | 'muted' }[];
+  previewRemainder?: number;
   rows: {
     label: string;
     value: string;

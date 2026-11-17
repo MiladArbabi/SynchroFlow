@@ -183,7 +183,7 @@ jest.mock('../../../../apps/frontend/src/hooks/useIdleAlerts', () => ({
 jest.mock('pages/problem-center/useProblemCenter', () => ({
   useProblemCenter: () => ({
     // One open problem at A-1 -> operationalStateByLocation['A-1'] = 'critical'.
-    data: { tasks: [{ problem_bin_location: 'A-1' }] },
+    data: { tasks: [{ status: 'open', problem_bin_location: 'A-1' }] },
     isLoading: false,
     isError: false,
   }),

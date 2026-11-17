@@ -20,6 +20,10 @@ import type { IsometricCanvasProps } from '../../../../modules/shared/src/ui/Iso
 // Same complete zone shape as CanvasEditor.warehouseRoot.test.tsx; no reusable
 // helper exists there. One root and one placed stock location suffice here.
 let mockRealCanvas = false;
+let mockS4GridState: Record<string, unknown> | undefined;
+const mockS4GridRetry = jest.fn();
+let mockS4OccupancyState: Record<string, unknown> | undefined;
+const mockS4OccupancyRetry = jest.fn();
 const mockStock: WarehouseZone = {
   location_code: 'STOCK-RED-01', type: 'bin', parent_location_code: 'ROOT-RED-01',
   barcode: null, active: true, children_count: 0,
@@ -38,7 +42,7 @@ const mockNestedZones: WarehouseZone[] = [
   { ...mockStock, location_code: 'INDEPENDENT', position_x: 6 },
   { ...mockStock, location_code: 'UNPLACED', position_x: null, position_y: null },
 ];
-beforeEach(() => { mockRealCanvas = false; });
+beforeEach(() => { mockRealCanvas = false; mockS4GridState = undefined; mockS4OccupancyState = undefined; mockS4OccupancyRetry.mockClear(); });
 
 jest.mock('@lasyncro/floor-planning', () => ({
   // Resolve directly to current source, not a potentially stale package dist.
@@ -84,8 +88,8 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
   }),
 }));
 jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
-  useWarehouseGrid: () => ({ data: { locations: [mockRoot, mockStock, ...(mockRealCanvas ? mockNestedZones : [])] }, isLoading: false }),
-  useWarehouseGridOccupancy: () => ({ data: { occupancy: {}, inventoryInspection: {
+  useWarehouseGrid: () => mockS4GridState ?? ({ data: { locations: [mockRoot, mockStock, ...(mockRealCanvas ? mockNestedZones : [])] }, isLoading: false }),
+  useWarehouseGridOccupancy: () => mockS4OccupancyState ?? ({ data: { occupancy: {}, inventoryInspection: {
     'STOCK-RED-01': { on_hand_quantity: -2, available_quantity: 0, reserved_quantity: 0, variants: [] },
   } } }),
 }));
@@ -221,4 +225,34 @@ it('S1 renders nested positions through the actual Floor Planning page and prese
   fireEvent.click(screen.getByText('STOCK-RED-01', { selector: 'text' }));
   expect(screen.getByText('-2 units')).toBeVisible();
   expect(screen.getByRole('button', { name: /^Edit layout$/i })).toBeVisible();
+});
+
+
+it('S4 exposes a cached occupancy refresh failure while preserving selection and retries stock', () => {
+  mockS4OccupancyState = { data: { occupancy: {}, inventoryInspection: {
+    'STOCK-RED-01': { on_hand_quantity: -2, available_quantity: -3, reserved_quantity: 1, variants: [] },
+  } }, isError: true, refetch: mockS4OccupancyRetry };
+  renderPage();
+  expect(screen.getByText('Stock refresh failed · showing last loaded data.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Select stock location' }));
+  expect(screen.getByText('-2 units')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry stock' }));
+  expect(mockS4OccupancyRetry).toHaveBeenCalledTimes(1);
+});
+it('S4 stock loading never claims empty inventory', () => {
+  mockS4OccupancyState = { data: undefined, isLoading: true, isError: false };
+  renderPage();
+  expect(screen.getByText('Loading stock information…')).toBeVisible();
+  expect(screen.queryByText(/0 out of stock/)).not.toBeInTheDocument();
+});
+
+
+it('S4 reports a failed location-list request without hiding known layout geometry', () => {
+  mockRealCanvas = true;
+  mockS4GridState = { data: undefined, isLoading: false, isError: true, refetch: mockS4GridRetry };
+  renderPage();
+  expect(screen.getByText('Location list unavailable · showing known layout locations.')).toBeVisible();
+  expect(screen.getByText('STOCK-RED-01', { selector: 'text' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry location list' }));
+  expect(mockS4GridRetry).toHaveBeenCalledTimes(1);
 });

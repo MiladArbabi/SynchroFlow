@@ -32,6 +32,7 @@ import {
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
 import {
+  reconcileMapProblems,
   deriveLocationOperationalPresentation,
   deriveStationOperationalPresentation,
   type OverviewOperationalState,
@@ -191,19 +192,14 @@ export default function OverviewPageFT2() {
     15_000
   );
   const problemTasks = problemCenter.data?.tasks ?? [];
-  const problemByLocation = problemTasks.reduce<Record<string, number>>(
-    (acc, task) => {
-      if (!task.problem_bin_location) return acc;
-      acc[task.problem_bin_location] =
-        (acc[task.problem_bin_location] ?? 0) + 1;
-      return acc;
-    },
-    {}
-  );
-  const problemTaskTotal = problemTasks.length;
-  const unlocatedProblemTaskTotal = problemTasks.filter(
-    task => !task.problem_bin_location
-  ).length;
+  const problemSummary = reconcileMapProblems(problemTasks, new Set(
+    zones.filter(zone => zone.type === 'bin' && zone.position_x != null && zone.position_y != null &&
+      !zones.some(parent => parent.location_code === zone.parent_location_code && (parent.type === 'bin' || parent.type === 'shelf')))
+      .map(zone => zone.location_code)
+  ));
+  const problemByLocation = problemSummary.byLocation;
+  const problemTaskTotal = problemSummary.total;
+  const unlocatedProblemTaskTotal = problemSummary.unlocated;
 
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.
@@ -222,7 +218,10 @@ export default function OverviewPageFT2() {
     (
       operationalMapEnabled &&
       (
-        idleAlerts.isLoading ||
+        liveActivityQuery.data == null || liveActivityQuery.isError ||
+        problemCenter.data == null || problemCenter.isError ||
+        occupancyQuery.data == null || occupancyQuery.isError ||
+        idleAlerts.hasData === false || idleAlerts.isLoading ||
         idleAlerts.isError ||
         orderPool.isPending ||
         orderPool.isError
@@ -234,6 +233,7 @@ export default function OverviewPageFT2() {
       ? 'unknown'
       : operationalMapEnabled &&
           (
+            problemTaskTotal > 0 ||
             idleAlerts.alerts.length > 0 ||
             (orderPool.data?.summary?.blocked_count ?? 0) > 0
           )
@@ -470,7 +470,11 @@ export default function OverviewPageFT2() {
       // Always present: the one fact every bin can answer truthfully.
       rows.push({
         label: 'On hand',
-        value: `${occupancyQuery.data?.occupancy?.[code]?.on_hand_quantity ?? 0} units`,
+        value: occupancyQuery.data?.inventoryInspection?.[code] != null
+          ? `${occupancyQuery.data.inventoryInspection[code].on_hand_quantity} units`
+          : occupancyQuery.data == null
+            ? occupancyQuery.isError ? 'Unavailable' : 'Loading…'
+            : 'Unknown',
       });
 
       // STATE — the headline explanation, only when there is one to give.
@@ -533,6 +537,12 @@ export default function OverviewPageFT2() {
 
       locationPulseByCode[code] = {
         title: overviewLocationPulseTitle(code, z.zone_type),
+        qualification: [
+          problemCenter.data == null ? 'Problems unknown' : problemCenter.isError ? 'Last loaded problems' : 'Verified problems',
+          occupancyQuery.data?.inventoryInspection?.[code] == null ? 'Stock unknown'
+            : occupancyQuery.isError ? 'Last loaded stock quantities' : 'Verified stock quantities',
+          liveActivityQuery.data == null ? 'Activity unknown' : liveActivityQuery.isError ? 'Last loaded activity' : 'Verified activity',
+        ].join(' · '),
         rows,
       };
     }
@@ -764,6 +774,14 @@ export default function OverviewPageFT2() {
     // filtered to wms_operator_idle (same alerts table "Needs a decision"
     // reads from), not fabricated activity counts.
     const hasIdleAlerts = idleAlerts.alerts.length > 0;
+    const mapSources = [
+      { label: 'Activity', data: liveActivityQuery.data, failed: liveActivityQuery.isError, retry: liveActivityQuery.refetch },
+      { label: 'Problems', data: problemCenter.data, failed: problemCenter.isError, retry: problemCenter.refetch },
+      { label: 'Stock', data: occupancyQuery.data, failed: occupancyQuery.isError, retry: occupancyQuery.refetch },
+      { label: 'Order pool', data: orderPool.data, failed: orderPool.isError, retry: orderPool.refetch },
+      { label: 'Idle alerts', data: (idleAlerts.hasData ?? (!idleAlerts.isLoading && !idleAlerts.isError)) ? idleAlerts.alerts : undefined, failed: idleAlerts.isError, retry: idleAlerts.refetch },
+    ];
+    const unavailableSources = mapSources.filter(source => source.failed || source.data == null);
     mapContent = (
       <Box sx={{
         minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
@@ -816,6 +834,31 @@ export default function OverviewPageFT2() {
             fitPadding={0.88}
           />
         </Box>
+        {problemCenter.data != null && problemTaskTotal > 0 && (
+          <Typography sx={{ px: 1.5, py: 0.75, fontSize: 12, color: 'var(--ink-2)', overflowWrap: 'anywhere' }}>
+            {`${problemTaskTotal} open ${problemTaskTotal === 1 ? 'problem' : 'problems'} · ${problemSummary.mapped} on map · ${problemSummary.elsewhere} elsewhere · ${problemSummary.unlocated} location unknown`}
+            {problemCenter.isError ? ' · last loaded' : ''}
+          </Typography>
+        )}
+        {unavailableSources.length > 0 && (
+          <Box role="status" sx={{ px: 1.5, py: 0.75, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {unavailableSources.map(source => (
+              <Box key={source.label} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                  {source.failed ? source.data != null
+                    ? `${source.label} refresh failed · showing last loaded data.` : `${source.label} unavailable.`
+                    : `Loading ${source.label}…`}
+                </Typography>
+                {source.failed && (
+                  <Box component="button" type="button" onClick={() => { void source.retry(); }}
+                    sx={{ color: 'var(--accent-text)', bgcolor: 'transparent', border: '1px solid var(--rule)', borderRadius: 1, px: 1, py: 0.5, cursor: 'pointer' }}>
+                    Retry {source.label}
+                  </Box>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
         <LiveMapFooter
           onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)}
           status={hasIdleAlerts ? (
@@ -846,13 +889,13 @@ export default function OverviewPageFT2() {
                 </Typography>
               )}
             </>
-            ) : (
+            ) : unavailableSources.length === 0 && !operationalWarningsUnresolved ? (
             // Calm state per overview-live-map-playbook.md §4 — floor is idle,
             // not broken. Distinct from the idle-operator alert above.
             <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-              Floor is clear · No active batches
+              No active batches
             </Typography>
-          )}
+          ) : null}
         />
       </Box>
     );

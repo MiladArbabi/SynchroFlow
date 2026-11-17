@@ -41,6 +41,7 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { hasOperationalFloor } from '../floor-planning/operationalFloor';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import useConfig from 'hooks/useConfig';
+import { parentInventoryInspection } from '../floor-planning/parentInventoryInspection';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -117,6 +118,12 @@ function variantIdentity(variant: LocationStockVariant): string {
 function compactLocationPulse(code: string, detail: LocationStockDetail): LocationPulse {
   return {
     title: code,
+    preview: detail.variants.length > 3 || detail.variants.some(variant => variant.on_hand_quantity < 0) ? [...detail.variants].sort((a, b) => Number(b.on_hand_quantity < 0) - Number(a.on_hand_quantity < 0))
+      .slice(0, 3).map(variant => ({
+        label: variantIdentity(variant), value: fmtUnits(variant.on_hand_quantity),
+        tone: variant.on_hand_quantity < 0 ? 'critical' : 'muted',
+      })) : undefined,
+    previewRemainder: Math.max(0, detail.variants.length - 3),
     rows: [
       { label: 'On hand', value: fmtUnits(detail.on_hand_quantity) },
       { label: 'Available', value: fmtUnits(detail.available_quantity) },
@@ -208,26 +215,81 @@ function InventoryIntelligenceView({
   // Canonical inspection truth → inspection targets, occupancy knowledge and
   // plates. A bin with no inspection record has no truth record: it is neither
   // inspectable nor painted as confirmed empty, and gets no plate.
-  // Occupancy data is only a fact once it has loaded successfully. While it is
-  // loading or failed, nothing is known, inspectable or plated — a failure is
-  // never read as empty inventory.
+  // A missing payload establishes no stock facts. Failed refreshes may retain
+  // the last loaded canonical facts, with a visible stale-data status and retry.
   const occupancyStatus: 'loading' | 'error' | 'ready' =
     occupancyQuery.isError ? 'error'
-    : occupancyQuery.isPending || occupancyQuery.isLoading ? 'loading'
+    : occupancyQuery.data == null ? 'loading'
     : 'ready';
-  const occupancyData = occupancyStatus === 'ready' ? occupancyQuery.data : undefined;
+  const occupancyData = occupancyQuery.data; // Retained facts are explicitly qualified after a failed refresh.
   const inventoryInspection = occupancyData?.inventoryInspection;
+  // Inspection eligibility may include unknown parents; occupancy knowledge is exact-location truth only.
+  const knownOccupancyLocationCodes = new Set(Object.keys(inventoryInspection ?? {}));
   const zoneByCode = new Map(zones.map((zone) => [zone.location_code, zone]));
   const inspectionLocationCodes = new Set<string>();
   const locationPulseByCode: Record<string, LocationPulse> = {};
+  const inventoryPresentation: Record<string, { state: 'neutral' | 'warning' | 'critical'; primaryBadge: { label: string } | null }> = {};
   for (const [code, detail] of Object.entries(inventoryInspection ?? {})) {
     const zone = zoneByCode.get(code);
     if (!zone || !isInspectableInventoryLocation(zone)) continue;
     inspectionLocationCodes.add(code);
-    locationPulseByCode[code] = code === selectedLocationCode
-      ? pinnedLocationPulse(code, zone, detail)
-      : compactLocationPulse(code, detail);
+    const quality = locationTruthQuality(detail);
+    inventoryPresentation[code] = {
+      state: quality === 'Phantom' ? 'critical' : quality === 'Fully reserved' ? 'warning' : 'neutral',
+      primaryBadge: quality === 'Confirmed' ? null : { label: quality },
+    };
+    locationPulseByCode[code] = {
+      ...(code === selectedLocationCode ? pinnedLocationPulse(code, zone, detail) : compactLocationPulse(code, detail)),
+      qualification: occupancyQuery.isError ? 'Last loaded stock quantities' : 'Verified stock quantities',
+    };
   }
+
+  // Parent inspection uses explicit ancestry, including unpositioned addresses.
+  // Exact-location payloads and occupancy remain untouched.
+  for (const zone of zones) {
+    if (zone.position_x == null || zone.position_y == null) continue;
+    if (zone.type !== 'shelf' && !(zone.type === 'bin' && zones.some(child => child.parent_location_code === zone.location_code))) continue;
+    const aggregate = parentInventoryInspection(zone.location_code, zones, inventoryInspection);
+    inspectionLocationCodes.add(zone.location_code);
+    const hasNegative = aggregate.locations.some(location => location.detail?.variants.some(variant => variant.on_hand_quantity < 0));
+    const fullyReserved = aggregate.unknownLocations === 0 && aggregate.total.on_hand_quantity > 0 && aggregate.total.available_quantity === 0 && aggregate.total.reserved_quantity > 0;
+    inventoryPresentation[zone.location_code] = {
+      state: hasNegative ? 'critical' : fullyReserved || aggregate.unknownLocations > 0 ? 'warning' : 'neutral',
+      primaryBadge: hasNegative ? { label: 'Phantom' } : fullyReserved ? { label: 'Fully reserved' } : null,
+    };
+    const quantities = (detail: Pick<LocationStockDetail, 'on_hand_quantity' | 'available_quantity' | 'reserved_quantity'>) =>
+      `${fmtUnits(detail.on_hand_quantity)} · ${fmtUnits(detail.available_quantity)} · ${fmtUnits(detail.reserved_quantity)}`;
+    const summary = aggregate.unknownLocations > 0
+      ? `${fmtUnits(aggregate.total.on_hand_quantity)} units recorded · ${aggregate.unknownLocations} locations unknown`
+      : `${fmtUnits(aggregate.total.on_hand_quantity)} units on hand`;
+    locationPulseByCode[zone.location_code] = {
+      title: zone.location_code,
+      subtitle: locationIdentity(zone),
+      qualification: occupancyQuery.isError ? 'Last loaded stock quantities' : 'Recorded stock quantities',
+      rows: [
+        { label: 'Stock', value: summary },
+        { label: 'Recorded', value: 'On hand · Available · Reserved', tone: 'muted' },
+        { label: aggregate.unknownLocations > 0 ? 'Recorded sum' : 'All locations', value: quantities(aggregate.total) },
+        ...aggregate.locations.flatMap(({ code, direct, detail }): LocationPulse['rows'] => [
+          { label: `${direct ? 'Direct' : 'Descendant'} · ${code}`, value: detail ? quantities(detail) : 'Stock unknown', tone: 'muted' },
+          ...(detail?.variants.map(variant => ({
+            label: `${code} · ${variantIdentity(variant)}`,
+            value: quantities(variant),
+            tone: variant.on_hand_quantity < 0 ? 'critical' as const : 'muted' as const,
+          })) ?? []),
+        ]),
+        { label: 'SKU totals', value: 'Recorded across locations', tone: 'muted' },
+        ...aggregate.total.variants.map(variant => ({
+          label: variantIdentity(variant), value: quantities(variant),
+          tone: variant.on_hand_quantity < 0 ? 'critical' as const : 'muted' as const,
+        })),
+      ],
+    };
+  }
+
+  const unknownStockLocations = zones.filter(zone => isInspectableInventoryLocation(zone) &&
+    !zones.some(parent => parent.location_code === zone.parent_location_code && (parent.type === 'bin' || parent.type === 'shelf')) &&
+    inventoryInspection?.[zone.location_code] == null).length;
 
   let mapContent: ReactNode;
 
@@ -276,7 +338,7 @@ function InventoryIntelligenceView({
           <IsometricCanvas
             zones={zones}
             occupancy={occupancyData?.occupancy}
-            knownOccupancyLocationCodes={inspectionLocationCodes}
+            knownOccupancyLocationCodes={knownOccupancyLocationCodes}
             inspectableLocationCodes={inspectionLocationCodes}
             locationPulseByCode={locationPulseByCode}
             selectedLocationCode={selectedLocationCode}
@@ -285,6 +347,8 @@ function InventoryIntelligenceView({
             pinnedAction={null}
             pinnedPulseWidth={288}
             overlay="occupancy"
+            occupancyPresentation="neutral"
+            operationalPresentationByLocation={inventoryPresentation}
             showLegend={false}
             showControls={false}
             enableHoverFocus
@@ -294,6 +358,11 @@ function InventoryIntelligenceView({
             fitPadding={0.88}
           />
         </Box>
+        {unknownStockLocations > 0 && (
+          <Typography sx={{ px: 1.5, py: 0.75, fontSize: 11.5, color: 'var(--ink-3)' }}>
+            {`${unknownStockLocations} ${unknownStockLocations === 1 ? 'location' : 'locations'} · stock unknown`}
+          </Typography>
+        )}
         {/* Navigation only — the map itself never mutates Inventory. */}
         <LiveMapFooter onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)} />
         {occupancyStatus !== 'ready' && (
@@ -310,7 +379,7 @@ function InventoryIntelligenceView({
             }}
           >
             <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              {occupancyStatus === 'loading' ? 'Loading inventory locations…' : 'Inventory locations unavailable'}
+              {occupancyStatus === 'loading' ? 'Loading inventory locations…' : occupancyData != null ? 'Inventory refresh failed · showing last loaded data.' : 'Inventory locations unavailable'}
             </Typography>
             {occupancyStatus === 'error' && (
               <Box component="button" type="button" onClick={() => { void occupancyQuery.refetch(); }} sx={RETRY_BUTTON_SX}>

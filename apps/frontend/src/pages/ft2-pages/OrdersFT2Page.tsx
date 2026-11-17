@@ -180,6 +180,7 @@ export default function OrdersFT2Page() {
    * has no plate and stays silent.
    */
   const orderLocationPulseByCode: Record<string, LocationPulse> = {};
+  const orderPresentation: Record<string, { state: 'active' | 'stale'; primaryBadge: { label: string } }> = {};
   for (const [code, activity] of Object.entries(orderFloorActivity)) {
     const phase = [
       (activity.pickingCount ?? 0) > 0 ? 'Picking' : null,
@@ -196,7 +197,17 @@ export default function OrdersFT2Page() {
         tone: 'warning',
       });
     }
-    orderLocationPulseByCode[code] = { title: code, rows };
+    const staleCount = activity.staleCount ?? 0;
+    orderPresentation[code] = {
+      state: staleCount > 0 ? 'stale' : 'active',
+      primaryBadge: { label: staleCount > 0 ? `${staleCount} stale` :
+        [activity.pickingCount ? `${activity.pickingCount} picking` : null,
+          activity.packingCount ? `${activity.packingCount} packing` : null].filter(Boolean).join(' · ') },
+    };
+    orderLocationPulseByCode[code] = {
+      title: code, rows,
+      qualification: `${ordersLiveActivity.isError ? 'Last loaded scan location' : 'Verified scan location'}${phase ? ` · ${phase}` : ''}`,
+    };
   }
 
   // C2D — pulse exists = Orders has something truthful to inspect there; no
@@ -206,6 +217,11 @@ export default function OrdersFT2Page() {
   const [selectedLocationCode, setSelectedLocationCode] = useState<string | null>(null);
   const selectedLocationHasOrderWork =
     selectedLocationCode != null && orderLocationPulseByCode[selectedLocationCode] != null;
+
+  const activityUnavailable = ordersLiveActivity.data == null;
+  const activityStatus = ordersLiveActivity.isError
+    ? activityUnavailable ? 'Fulfillment activity unavailable.' : 'Fulfillment activity refresh failed · showing last loaded data.'
+    : activityUnavailable ? 'Loading fulfillment activity…' : null;
 
   const activeOrderBatches = ordersLiveActivity.data?.activeBatches ?? [];
   const pickingBatchCount = activeOrderBatches.filter(b => b.status === 'picking').length;
@@ -356,6 +372,7 @@ export default function OrdersFT2Page() {
             zones={floorZones}
             liveActivity={orderFloorActivity}
             locationPulseByCode={orderLocationPulseByCode}
+            operationalPresentationByLocation={orderPresentation}
             inspectableLocationCodes={orderInspectableLocationCodes}
             selectedLocationCode={selectedLocationCode}
             onSelect={setSelectedLocationCode}
@@ -374,6 +391,17 @@ export default function OrdersFT2Page() {
             fitPadding={0.88}
           />
         </Box>
+        {activityStatus && (
+          <Box role="status" sx={{ px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>{activityStatus}</Typography>
+            {ordersLiveActivity.isError && (
+              <Box component="button" type="button" onClick={() => { void ordersLiveActivity.refetch(); }}
+                sx={{ color: 'var(--accent-text)', bgcolor: 'transparent', border: '1px solid var(--rule)', borderRadius: 1, px: 1, py: 0.5, cursor: 'pointer' }}>
+                Retry fulfillment activity
+              </Box>
+            )}
+          </Box>
+        )}
         <LiveMapFooter
           actions={[{ label: 'Open order flow →', onClick: () => navigate('/orders/flow') }]}
           onEditFloorMap={() => navigate(EDIT_FLOOR_MAP_ROUTE)}
@@ -386,11 +414,11 @@ export default function OrdersFT2Page() {
                 {packingBatchCount > 0 && `${packingBatchCount} packing`}
               </Typography>
             </>
-          ) : (
+          ) : !activityStatus ? (
             <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
               No active batches
             </Typography>
-          )}
+          ) : null}
         />
       </Box>
     );

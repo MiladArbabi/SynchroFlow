@@ -55,8 +55,10 @@ export default function FloorPlanningPage() {
   const [variantFocusBins, setVariantFocusBins] = useState<string[]>([]);
 
   const { data, isLoading, isError, refetch } = useFloorPlanning();
-  const { data: gridData, isLoading: isGridLoading } = useWarehouseGrid();
-  const { data: occupancyData } = useWarehouseGridOccupancy(!isGridLoading);
+  const gridQuery = useWarehouseGrid();
+  const { data: gridData, isLoading: isGridLoading } = gridQuery;
+  const occupancyQuery = useWarehouseGridOccupancy(!isGridLoading);
+  const occupancyData = occupancyQuery.data;
   const printBarcode  = usePrintBarcode();
   const batchPrintBarcodes = useBatchPrintBarcodes();
   const { data: binLogData, isLoading: isBinLogLoading } = useBinLog(activeBinLog);
@@ -127,7 +129,11 @@ export default function FloorPlanningPage() {
             gridLocations={gridData?.locations}
             gridOccupancy={occupancyData?.occupancy}
             inventoryInspection={occupancyData?.inventoryInspection}
+            stockStatus={occupancyQuery.isError ? 'error' : occupancyData == null ? 'loading' : 'ready'}
+            onRetryStock={() => { void occupancyQuery.refetch(); }}
             isGridLoading={isGridLoading}
+            gridUnavailable={gridQuery.isError}
+            onRetryGrid={() => { void gridQuery.refetch(); }}
             binLog={binLogData}
             isBinLogLoading={isBinLogLoading}
             onBinLogOpen={setActiveBinLog}

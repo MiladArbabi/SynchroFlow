@@ -33,6 +33,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const mockNavigate = jest.fn();
 let mockRealCanvas = false;
+let mockShelfLocations = false;
 const mockCanvas = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -115,6 +116,10 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
         mockZone('Z-01', 'bin', 'pick', 5),
         mockZone('P-01', 'bin', 'storage', 7),
         mockZone('U-01', 'bin', 'pick', 9),
+        ...(mockShelfLocations ? [
+          mockZone('SHELF-1', 'shelf', 'storage', 10),
+          { ...mockZone('SHELF-ADDRESS', 'bin', 'storage', 10), parent_location_code: 'SHELF-1' },
+        ] : []),
         ...(mockRealCanvas ? [
           { ...mockZone('NESTED-NULL', 'bin', 'pick', 2), parent_location_code: 'A-01', position_x: null, position_y: null },
           { ...mockZone('NESTED-POSITIONED', 'bin', 'pick', 4), parent_location_code: 'A-01' },
@@ -284,6 +289,7 @@ function select(code: string | null) {
 
 beforeEach(() => {
   mockRealCanvas = false;
+  mockShelfLocations = false;
   mockCanvas.mockClear();
   mockNavigate.mockClear();
 });
@@ -507,4 +513,159 @@ it('S1 renders nested positions through the actual Inventory page while preservi
   expect(lastCanvasProps().selectedLocationCode).toBe('P-01');
   expect(screen.getByTestId('isometric-pulse-card')).toBeVisible();
   expect(lastCanvasProps().pinnedAction).toBeNull();
+});
+
+
+describe('S5 signed stock context', () => {
+  it('uses neutral stock shading with a separate semantic badge for reservations and discrepancies', () => {
+    render(<ProductsFT2Page />);
+    const props = lastCanvasProps();
+    expect(props.occupancyPresentation).toBe('neutral');
+    expect(props.operationalPresentationByLocation['B-01']).toMatchObject({ state: 'warning', primaryBadge: { label: 'Fully reserved' } });
+    expect(props.operationalPresentationByLocation['P-01']).toMatchObject({ state: 'critical', primaryBadge: { label: 'Phantom' } });
+    expect(props.operationalPresentationByLocation['A-01'].primaryBadge).toBeNull();
+    expect(props.locationPulseByCode['A-01'].qualification).toBe('Verified stock quantities');
+    expect(screen.getByText('1 location · stock unknown')).toBeVisible();
+    expect(screen.queryByText(/Indicative stock levels/)).not.toBeInTheDocument();
+  });
+  it('bounds hover SKU previews, prioritizes signed discrepancies and preserves full pinned detail', () => {
+    const original = mockOccupancyResponse.inventoryInspection['A-01'];
+    mockOccupancyResponse.inventoryInspection['A-01'] = {
+      on_hand_quantity: 5, available_quantity: 9, reserved_quantity: 0,
+      variants: [variantRow('1', 'POS-1', 2, 2, 0), variantRow('2', 'POS-2', 2, 2, 0), variantRow('3', 'POS-3', 2, 2, 0), variantRow('4', 'NEG', -1, 0, 0)],
+    };
+    try {
+      render(<ProductsFT2Page />);
+      const pulse = pulseFor('A-01') as any;
+      expect(pulse.preview).toHaveLength(3);
+      expect(pulse.preview[0]).toMatchObject({ label: 'NEG', value: '-1', tone: 'critical' });
+      expect(pulse.previewRemainder).toBe(1);
+      select('A-01');
+      expect(skuRow(pulseFor('A-01'), 'NEG').value).toContain('-1');
+      expect(skuRow(pulseFor('A-01'), 'POS-3')).toBeDefined();
+    } finally { mockOccupancyResponse.inventoryInspection['A-01'] = original; }
+  });
+});
+
+
+it('S5 correction: shelf-contained stock locations do not inflate displayed unknown counts', () => {
+  mockShelfLocations = true;
+  render(<ProductsFT2Page />);
+  expect(screen.getByText('1 location · stock unknown')).toBeVisible();
+  expect(screen.queryByText('2 locations · stock unknown')).not.toBeInTheDocument();
+  const props = lastCanvasProps();
+  expect(props.locationPulseByCode['U-01']).toBeUndefined();
+  expect(props.locationPulseByCode['SHELF-ADDRESS']).toBeUndefined();
+  expect(props.locationPulseByCode['Z-01'].rows).toContainEqual({ label: 'On hand', value: '0' });
+});
+
+
+it('S4B: shelf inspection reports partial recorded stock and keeps exact bin behavior', () => {
+  mockShelfLocations = true;
+  render(<ProductsFT2Page />);
+  const props = lastCanvasProps();
+  expect(props.inspectableLocationCodes.has('SHELF-1')).toBe(true);
+  expect(props.locationPulseByCode['SHELF-1'].rows).toContainEqual({ label: 'Stock', value: '0 units recorded · 2 locations unknown' });
+  expect(props.locationPulseByCode['SHELF-1'].rows).toContainEqual(expect.objectContaining({ label: 'Direct · SHELF-1', value: 'Stock unknown' }));
+  expect(props.locationPulseByCode['SHELF-1'].rows).toContainEqual(expect.objectContaining({ label: 'Descendant · SHELF-ADDRESS', value: 'Stock unknown' }));
+  expect(props.locationPulseByCode['Z-01'].rows).toContainEqual({ label: 'On hand', value: '0' });
+});
+
+
+it('S4B: selecting a shelf through the real canvas pins a read-only parent inspection', () => {
+  mockShelfLocations = true;
+  mockRealCanvas = true;
+  render(<ProductsFT2Page />);
+  const target = screen.getByRole('button', { name: 'Inspect location SHELF-1' });
+  fireEvent.mouseEnter(target);
+  expect(screen.getByTestId('isometric-pulse-card')).toHaveAttribute('data-pinned', 'false');
+  fireEvent.keyDown(target, { key: 'Enter' });
+  expect(lastCanvasProps().selectedLocationCode).toBe('SHELF-1');
+  expect(screen.getByTestId('isometric-pulse-card')).toHaveAttribute('data-pinned', 'true');
+  expect(screen.getByText('0 units recorded · 2 locations unknown')).toBeVisible();
+  expect(lastCanvasProps().pinnedAction).toBeNull();
+  fireEvent.keyDown(target, { key: 'Escape' });
+  expect(lastCanvasProps().selectedLocationCode).toBeNull();
+});
+
+it('S4B: complete parent stock shows on hand while preserving child discrepancies and SKU totals', () => {
+  mockShelfLocations = true;
+  const inspection = mockOccupancyResponse.inventoryInspection as Record<string, ReturnType<typeof pulseDetail>>;
+  function pulseDetail(quantity: number, available: number, reserved: number) {
+    return { on_hand_quantity: quantity, available_quantity: available, reserved_quantity: reserved, variants: [variantRow('same-sku', 'SHARED', quantity, available, reserved)] };
+  }
+  inspection['SHELF-1'] = pulseDetail(5, 3, 2);
+  inspection['SHELF-ADDRESS'] = pulseDetail(-2, -3, 1);
+  try {
+    render(<ProductsFT2Page />);
+    select('SHELF-1');
+    const rows = pulseFor('SHELF-1').rows;
+    expect(lastCanvasProps().operationalPresentationByLocation['SHELF-1']).toMatchObject({ state: 'critical', primaryBadge: { label: 'Phantom' } });
+    expect(rows).toContainEqual({ label: 'Stock', value: '3 units on hand' });
+    expect(rows).toContainEqual({ label: 'All locations', value: '3 · 0 · 3' });
+    expect(rows).toContainEqual(expect.objectContaining({ label: 'Direct · SHELF-1', value: '5 · 3 · 2' }));
+    expect(rows).toContainEqual(expect.objectContaining({ label: 'Descendant · SHELF-ADDRESS', value: '-2 · -3 · 1' }));
+    expect(rows).toContainEqual({ label: 'SHELF-ADDRESS · SHARED', value: '-2 · -3 · 1', tone: 'critical' });
+    expect(rows).toContainEqual({ label: 'SHARED', value: '3 · 0 · 3', tone: 'muted' });
+  } finally {
+    delete inspection['SHELF-1'];
+    delete inspection['SHELF-ADDRESS'];
+  }
+});
+
+
+it('S4B: a rack with unknown unpositioned descendants cannot claim a confirmed total', () => {
+  mockRealCanvas = true;
+  render(<ProductsFT2Page />);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Inspect location A-01' }), { key: 'Enter' });
+  const rows = pulseFor('A-01').rows;
+  expect(rows).toContainEqual({ label: 'Stock', value: '12 units recorded · 2 locations unknown' });
+  expect(rows).toContainEqual(expect.objectContaining({ label: 'Direct · A-01', value: '12 · 9 · 3' }));
+  expect(rows).toContainEqual(expect.objectContaining({ label: 'Descendant · NESTED-NULL', value: 'Stock unknown' }));
+  expect(rows).toContainEqual(expect.objectContaining({ label: 'Descendant · NESTED-POSITIONED', value: 'Stock unknown' }));
+  expect(lastCanvasProps().pinnedAction).toBeNull();
+});
+
+
+it.each([
+  ['rack', 'A-01', 'NESTED-NULL'],
+  ['shelf', 'SHELF-1', 'SHELF-ADDRESS'],
+])('S4B correction: unknown %s stays inspectable without acquiring exact occupancy knowledge', (_kind, parent, child) => {
+  mockRealCanvas = parent === 'A-01';
+  mockShelfLocations = parent === 'SHELF-1';
+  const inspection = mockOccupancyResponse.inventoryInspection as Record<string, typeof mockOccupancyResponse.inventoryInspection['A-01']>;
+  const originalParent = inspection[parent];
+  const originalChild = inspection[child];
+  delete inspection[parent];
+  inspection[child] = {
+    on_hand_quantity: 4, available_quantity: 3, reserved_quantity: 1,
+    variants: [variantRow('child-stock', 'CHILD', 4, 3, 1)],
+  };
+  try {
+    const view = render(<ProductsFT2Page />);
+    const props = lastCanvasProps();
+    expect(props.inspectableLocationCodes.has(parent)).toBe(true);
+    expect(props.knownOccupancyLocationCodes.has(parent)).toBe(false);
+    expect(props.knownOccupancyLocationCodes.has(child)).toBe(true);
+    expect(props.knownOccupancyLocationCodes.has('Z-01')).toBe(true);
+    expect(props.knownOccupancyLocationCodes.has('U-01')).toBe(false);
+    expect(props.locationPulseByCode[parent].rows).toContainEqual(expect.objectContaining({ label: `Direct · ${parent}`, value: 'Stock unknown' }));
+    expect(props.occupancy).toBe(mockOccupancyResponse.occupancy);
+    view.unmount();
+
+    // A canonical zero record establishes exact knowledge independently of descendants.
+    inspection[parent] = {
+      on_hand_quantity: 0, available_quantity: 0, reserved_quantity: 0,
+      variants: [variantRow('parent-zero', 'PARENT', 0, 0, 0)],
+    };
+    render(<ProductsFT2Page />);
+    expect(lastCanvasProps().inspectableLocationCodes.has(parent)).toBe(true);
+    expect(lastCanvasProps().knownOccupancyLocationCodes.has(parent)).toBe(true);
+    expect(lastCanvasProps().locationPulseByCode[parent].rows).toContainEqual(expect.objectContaining({ label: `Direct · ${parent}`, value: '0 · 0 · 0' }));
+  } finally {
+    if (originalParent) inspection[parent] = originalParent;
+    else delete inspection[parent];
+    if (originalChild) inspection[child] = originalChild;
+    else delete inspection[child];
+  }
 });

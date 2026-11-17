@@ -91,6 +91,10 @@ export type FloorPlanningPageProps = {
   gridOccupancy?: Record<string, BinOccupancy>;
   inventoryInspection?: Record<string, LocationStockDetail>;
   isGridLoading?: boolean;
+  gridUnavailable?: boolean;
+  onRetryGrid?: () => void;
+  stockStatus?: 'loading' | 'error' | 'ready';
+  onRetryStock?: () => void;
   binLog?: BinLogResponse;
   isBinLogLoading?: boolean;
   onBinLogOpen?: (locationCode: string) => void;
@@ -170,9 +174,9 @@ const LOCATION_LABEL_FORMATS: LabelFormat[] = [
 
 type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
 const OVERLAYS: { id: OverlayId; label: string; hint: string }[] = [
-  { id: 'occupancy', label: 'Occupancy',      hint: 'How full each bin is.' },
-  { id: 'stockout',  label: 'Stock-out risk', hint: 'Bins low on stock (≤3 units).' },
-  { id: 'empty',     label: 'Empty bins',     hint: 'Available capacity.' },
+  { id: 'occupancy', label: 'Stock levels',    hint: 'Indicative stock levels, not measured storage capacity.' },
+  { id: 'stockout',  label: 'Low stock · 1–3 units', hint: 'Fixed on-hand threshold, not a forecast.' },
+  { id: 'empty',     label: 'Empty bins',     hint: 'Confirmed zero on-hand units.' },
   { id: 'none',      label: 'Layout',         hint: 'Just the layout.' },
 ];
 
@@ -240,7 +244,7 @@ function LocationRail({
   zone: WarehouseZone | undefined;
   code: string;
   rootCode: string | undefined;
-  occupancy: BinOccupancy | undefined;
+  occupancy: LocationStockDetail | undefined;
   binStats: BinStats | undefined;
   onClear: () => void;
   onPrintBarcode?: (locationCode: string) => Promise<Blob>;
@@ -268,6 +272,8 @@ function LocationRail({
 
   const facts = [
     { k: 'On hand', v: units == null ? 'Unavailable' : `${units} unit${units === 1 ? '' : 's'}` },
+    { k: 'Available', v: occupancy == null ? 'Unavailable' : String(occupancy.available_quantity) },
+    { k: 'Reserved', v: occupancy == null ? 'Unavailable' : String(occupancy.reserved_quantity) },
     { k: 'Picks · 7d', v: stats ? String(stats.picks_7d) : '—' },
     { k: 'Last pick', v: stats?.last_pick_at ? relativeAge(stats.last_pick_at) : '—' },
     { k: 'Reorder in', v: stats && stats.reorder_in_days !== null ? `${stats.reorder_in_days}d` : '—' },
@@ -483,6 +489,10 @@ function FloorPlanningModuleFT2Inner({
   gridOccupancy,
   inventoryInspection,
   isGridLoading,
+  gridUnavailable,
+  onRetryGrid,
+  stockStatus,
+  onRetryStock,
   onRefresh,
   binLog,
   isBinLogLoading,
@@ -504,6 +514,7 @@ function FloorPlanningModuleFT2Inner({
   suppressLocationRail = false,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
+  const locations = gridLocations ?? zones;
   const [editingBlocked, setEditingBlocked] = useState(false);
   const [localMode, setLocalMode] = useState<FloorPlanningMode>(mode ?? 'inspect');
   const currentMode = mode ?? localMode;
@@ -530,7 +541,7 @@ function FloorPlanningModuleFT2Inner({
       .map(([code]) => code),
   );
   const summaryCounts = useMemo(() => {
-    const bins = (gridLocations ?? []).filter(location => location.type === 'bin');
+    const bins = locations.filter(location => location.type === 'bin');
     let atRisk = 0, empty = 0, unknown = 0;
     for (const location of bins) {
       const detail = inventoryInspection?.[location.location_code];
@@ -540,27 +551,27 @@ function FloorPlanningModuleFT2Inner({
     }
     return { atRisk, empty, unknown, total: bins.length,
       occupancyAvailable: inventoryInspection != null || gridOccupancy != null };
-  }, [gridLocations, inventoryInspection, gridOccupancy]);
+  }, [locations, inventoryInspection, gridOccupancy]);
 
   const overlayFocusedBins = useMemo(() => {
     if (inventoryInspection == null) return undefined;
     if (overlay === 'empty' || overlay === 'stockout') {
-      return (gridLocations ?? []).filter(location => {
+      return locations.filter(location => {
         if (location.type !== 'bin') return false;
         const quantity = inventoryInspection[location.location_code]?.on_hand_quantity;
         return quantity != null && (overlay === 'empty' ? quantity === 0 : quantity > 0 && quantity <= 3);
       }).map(location => location.location_code);
     }
     return undefined;
-  }, [overlay, gridLocations, inventoryInspection]);
+  }, [overlay, locations, inventoryInspection]);
 
   const filteredCodes = useMemo(() => new Set(
     // Filter by zone_type — matches the zone filter menu (pick/pack/receive etc.)
     // Falls back to showing location if zone_type is null (unclassified locations)
-    (gridLocations ?? [])
+    locations
       .filter(l => l.zone_type == null || zoneFilters.has(l.zone_type))
       .map(l => l.location_code),
-  ), [gridLocations, zoneFilters]);
+  ), [locations, zoneFilters]);
 
   const handleBinSelect = useCallback((lc: string) => {
     setSelectedBin((p) => {
@@ -576,11 +587,15 @@ function FloorPlanningModuleFT2Inner({
   }, [onBinSelect]);
 
   const rootCode = zones.find((z) => z.type === 'warehouse')?.location_code;
-  const bins     = (gridLocations ?? []).filter((l) => l.type === 'bin');
-  const aisles = (gridLocations ?? []).filter(location => location.type === 'lane').length;
-  const stocked = Object.values(inventoryInspection ?? {}).filter(detail => detail.on_hand_quantity > 0).length;
+  const bins     = locations.filter((l) => l.type === 'bin');
+  const aisles = locations.filter(location => location.type === 'lane').length;
+  const stocked = bins.filter(bin => (inventoryInspection?.[bin.location_code]?.on_hand_quantity ?? 0) > 0).length;
+  // A whole-warehouse stock count needs canonical knowledge for every bin.
+  // Legacy positive-only occupancy remains useful for visualisation, not proof of zero.
+  const verifiedStockCountAvailable = inventoryInspection != null &&
+    bins.every(bin => inventoryInspection[bin.location_code] != null);
   const subLine  = bins.length > 0
-    ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${inventoryInspection == null && gridOccupancy == null ? 'Occupancy unavailable' : `${stocked} bin${stocked !== 1 ? 's' : ''} with stock`}`
+    ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${verifiedStockCountAvailable ? `${stocked} bin${stocked !== 1 ? 's' : ''} with stock` : 'Verified stock count unavailable'}`
     : 'No bins configured yet — use Edit layout to map your warehouse.';
 
   // Every active physical location is printable; the warehouse root is passive.
@@ -596,8 +611,8 @@ function FloorPlanningModuleFT2Inner({
   const floorFacts = [
     { k: 'Locations',       v: String(zones.filter((z) => z.type !== 'warehouse').length) },
     { k: 'Bins',            v: String(bins.length) },
-    { k: 'Bins with stock', v: inventoryInspection == null ? 'Unavailable' : String(stocked) },
-    { k: 'Low on stock',    v: inventoryInspection == null ? 'Unavailable' : String(summaryCounts.atRisk) },
+    { k: 'Bins with stock', v: verifiedStockCountAvailable ? String(stocked) : 'Unavailable' },
+    { k: 'Low on stock',    v: verifiedStockCountAvailable ? String(summaryCounts.atRisk) : 'Unavailable' },
   ];
 
   const filtersAll = zoneFilters.size === ALL_ZONE_TYPES.length;
@@ -722,7 +737,7 @@ function FloorPlanningModuleFT2Inner({
               slotProps={{ paper: { sx: { width: 232, borderRadius: '10px', border: '0.5px solid var(--rule-2)' } } }}
             >
               {ZONE_FILTERS.map(({ type, label }) => {
-                const count = (gridLocations ?? []).filter(l => l.zone_type === type).length;
+                const count = locations.filter(l => l.zone_type === type).length;
                 return (
                   <MenuItem
                     key={type}
@@ -757,6 +772,36 @@ function FloorPlanningModuleFT2Inner({
             </Menu>
           </Box>
 
+          <Box sx={{ px: 1.5, py: 0.75, borderBottom: '0.5px solid var(--rule)' }}>
+            <Typography sx={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+              {overlay === 'occupancy'
+                ? 'Indicative stock levels · not storage capacity. Grey: confirmed zero; green, amber, red: increasing stock against a display reference. Unknown stays neutral.'
+                : overlay === 'stockout'
+                  ? 'Fixed rule: more than 0 and at most 3 on-hand units · not a forecast.'
+                  : overlay === 'empty' ? 'Confirmed zero on-hand units only · unknown is not empty.' : 'Warehouse geometry only.'}
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              Whole-warehouse counts · include filtered and unplaced bins; nested addresses are not separate floor objects.
+            </Typography>
+            {gridUnavailable && (
+              <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                  Location list unavailable · showing known layout locations.
+                </Typography>
+                {onRetryGrid && <Button size="small" onClick={onRetryGrid}>Retry location list</Button>}
+              </Box>
+            )}
+            {(stockStatus === 'error' || stockStatus === 'loading') && (
+              <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                  {stockStatus === 'loading' ? 'Loading stock information…'
+                    : gridOccupancy != null || inventoryInspection != null
+                      ? 'Stock refresh failed · showing last loaded data.' : 'Stock information unavailable.'}
+                </Typography>
+                {stockStatus === 'error' && onRetryStock && <Button size="small" onClick={onRetryStock}>Retry stock</Button>}
+              </Box>
+            )}
+          </Box>
           <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
             {isGridLoading ? <ModuleLoadingSkeleton /> : (
               /* Isometric 2.5D view (read-only). 2D editing lives in Edit layout. */
@@ -773,6 +818,7 @@ function FloorPlanningModuleFT2Inner({
                 showBins={showBins}
                 onUnplacedZonesClick={() => changeMode('edit')}
                 overlay={overlay}
+                showLegend={false}
                 summaryCounts={summaryCounts}
                 onRefresh={onRefresh}
               />
