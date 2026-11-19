@@ -23,7 +23,7 @@ function wrapper() {
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: { get: jest.fn(), post: jest.fn(), patch: jest.fn() },
 }));
-jest.mock('contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 3, role: 'operator' } }) }));
+jest.mock('contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 3, shop_id: 1, role: 'operator' } }) }));
 jest.mock('components/UpgradePrompt', () => ({ UpgradePrompt: () => null }));
 jest.mock('pages/wms/useWms', () => ({
   useWms: () => ({
@@ -39,6 +39,9 @@ jest.mock('hooks/useSpotlight', () => ({ useSpotlight: () => ({ isDismissed: tru
 const mockProps: { current: Record<string, any> } = { current: {} };
 const mockSubmitScan = jest.fn();
 jest.mock('@lasyncro/wms', () => ({
+  // B1 — the host's write-ahead recovery fence (same real helpers as committed-recovery-001).
+  ...jest.requireActual('../../../../modules/wms/src/ui/pickPendingRecovery'),
+  isUncertainPickOutcome: jest.requireActual('../../../../modules/wms/src/ui/pages/PickSessionPage').isUncertainPickOutcome,
   WmsModuleFT2: (props: Record<string, any>) => { mockProps.current = props; return null; },
   useOfflineScanQueue: () => ({ isOnline: true, queuedCount: 0, submitScan: mockSubmitScan, rejectedScans: [], dismissRejectedScan: jest.fn() }),
   useWebPush: jest.fn(),
@@ -52,7 +55,9 @@ const refusal = (code: string) => Object.assign(new Error(code), { response: { s
 const claimCalls = () => post.mock.calls.filter(([url]) => String(url).endsWith('/claim'));
 const sessionCalls = () => get.mock.calls.filter(([url]) => String(url).endsWith('/pick-session'));
 const heldHeader = (call: unknown[]) => (call[1] as { headers?: Record<string, string> } | undefined)?.headers?.['X-Pick-Claim-Generation'];
-const scanParams = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', quantity_confirmed: 1, location_code: 'A1' };
+// B1 — canonical recovery snapshot (PickPendingDraft.item), consistent with the body.
+const recoveryItem = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', product_title: 'Product', quantity: 1, location_code: 'A1' };
+const scanParams = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', quantity_confirmed: 1, location_code: 'A1', recovery_item: recoveryItem };
 
 async function renderPage() {
   render(<MemoryRouter initialEntries={['/wms']}><WmsOperationsPage /></MemoryRouter>, { wrapper: wrapper() });
@@ -60,7 +65,12 @@ async function renderPage() {
   return mockProps.current;
 }
 
+let heldLock = false;
 beforeEach(() => {
+  localStorage.clear(); heldLock = false;
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_key: string, _options: any, run: any) => {
+    if (heldLock) return run(null); heldLock = true; try { return await run({ name: _key }); } finally { heldLock = false; }
+  } } });
   get.mockReset();
   post.mockReset();
   mockSubmitScan.mockReset();
@@ -88,7 +98,8 @@ test('WF1-01 reconnect after A→B→A (B picked nothing): the held generation i
   await expect(props.onRevalidatePickOwnership(BATCH)).rejects.toMatchObject({ response: { data: { code: 'PICK_GENERATION_STALE' } } });
   expect(heldHeader(sessionCalls()[0])).toBe('g1');
   // The stale session cannot write with either generation afterwards.
-  await expect(props.onConfirmScan(BATCH, scanParams)).rejects.toBeTruthy();
+  // B1 — refused by the generation fence, not by the recovery-snapshot guard.
+  await expect(props.onConfirmScan(BATCH, scanParams)).rejects.toMatchObject({ response: { data: { code: 'PICK_GENERATION_REQUIRED' } } });
   expect(mockSubmitScan).not.toHaveBeenCalled();
   expect(claimCalls()).toHaveLength(1);                     // only the original explicit claim
 });
@@ -112,7 +123,8 @@ test('WF1-03 a server answer carrying a different generation is never adopted', 
   const props = await renderPage();
   await props.onClaimBatch(BATCH);
   await expect(props.onRevalidatePickOwnership(BATCH)).rejects.toMatchObject({ response: { data: { code: 'PICK_GENERATION_STALE' } } });
-  await expect(props.onConfirmScan(BATCH, scanParams)).rejects.toBeTruthy();
+  // B1 — refused by the generation fence, not by the recovery-snapshot guard.
+  await expect(props.onConfirmScan(BATCH, scanParams)).rejects.toMatchObject({ response: { data: { code: 'PICK_GENERATION_REQUIRED' } } });
   expect(mockSubmitScan).not.toHaveBeenCalled();
 });
 

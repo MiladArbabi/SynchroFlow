@@ -1,3 +1,4 @@
+import { readPendingPick, withPickPendingLock, savePendingPick, clearPendingPick, matchesPickReceipt, pickOutcomeSelector, isUncertainPickOutcome, type PickReceipt } from '@lasyncro/wms';
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsOperationsPage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -15,6 +16,7 @@ import { useReadyToPack } from '../wms/useReadyToPack';
 import { axiosInstance } from 'api/axiosConfig';
 import type {
   ConfirmScanParams,
+  VerifyLocationParams,
   ReportExceptionParams,
   ReportPackExceptionParams,
   CreateProblemTaskParams,
@@ -460,14 +462,16 @@ export default function WmsOperationsPage() {
   // different generation is never adopted. No answer → still disconnected,
   // and the held generation is kept for the next attempt.
   const handleRevalidatePickOwnership = useCallback(async (batchId: string) => {
-    const held = pickGenerationsRef.current.get(batchId);
+    const pending = readPendingPick(Number(user?.shop_id), Number(currentUserId), batchId);
+    const held = pending?.generation ?? pickGenerationsRef.current.get(batchId);
     if (!held) {
       throw pickRecoveryRefusal('PICK_GENERATION_REQUIRED', 'Pick session could not be restored. Reopen the batch to continue.');
     }
-    let data: { pick_claim_generation?: unknown } | undefined;
+    let data: { pick_claim_generation?: unknown; outcome?: PickReceipt } | undefined;
     try {
       ({ data } = await axiosInstance.get(`/api/v1/wms/batch/${batchId}/pick-session`, {
         headers: { 'X-Pick-Claim-Generation': held },
+        params: pending ? pickOutcomeSelector(pending) : undefined,
       }));
     } catch (err) {
       if (!(err as { response?: unknown })?.response && (err as { request?: unknown })?.request !== undefined) {
@@ -480,7 +484,12 @@ export default function WmsOperationsPage() {
       pickGenerationsRef.current.delete(batchId);
       throw pickRecoveryRefusal('PICK_GENERATION_STALE', 'This batch was taken over. Your confirmed picks are kept.');
     }
-  }, [forgetPickGenerationOnRefusal]);
+    if (pending && (!data.outcome || !matchesPickReceipt(pending, data.outcome, batchId, currentUserId ?? undefined))) {
+      return { status: 'unresolved' as const, operation_identity: data.outcome?.operation_identity ?? '' };
+    }
+    pickGenerationsRef.current.set(batchId, held); // verified original generation, never adopted
+    return data.outcome;
+  }, [forgetPickGenerationOnRefusal, currentUserId, user?.shop_id]);
 
   const handleFetchLineItems = useCallback(async (batchId: string): Promise<LineItem[]> => {
     const { data } = await axiosInstance.get(`/api/v1/wms/batch/${batchId}/line-items`);
@@ -503,40 +512,57 @@ export default function WmsOperationsPage() {
   }, []);
 
   const handleConfirmScan = useCallback(async (batchId: string, params: ConfirmScanParams) => {
-    // C008 — online-only: submitScan resolves only on the server's acceptance
-    // (or "already recorded" for this operator). The server's pick idempotency
-    // is keyed on the pick task, so a retry never removes inventory twice.
-    const deviceEventId = crypto.randomUUID();
+    const { recovery_item, ...payload } = params;
+    if (!recovery_item) throw new Error('Pick recovery snapshot is required.');
+    const deviceEventId = params.device_event_id ?? crypto.randomUUID();
     const generation = await pickGeneration(batchId);
+    const pending = { version: 1 as const, shopId: Number(user?.shop_id), userId: Number(currentUserId), batchId,
+      generation, requestId: deviceEventId, kind: 'pick' as const, item: recovery_item,
+      body: { pick_batch_id: batchId, ...payload, device_event_id: deviceEventId, pick_claim_generation: generation } };
+    return withPickPendingLock(pending.shopId, pending.userId, batchId, async () => {
+    savePendingPick(pending); // durable write succeeds BEFORE the first HTTP write
     try {
-      await submitScan({
-        deviceEventId,
-        url: '/api/v1/wms/pick/scan',
-        body: {
-          pick_batch_id: batchId, ...params, scan_source: params.scan_source,
-          pick_claim_generation: generation,
-        },
-      });
+      await submitScan({ deviceEventId, requireExactOutcome: true, url: '/api/v1/wms/pick/scan', body: pending.body });
     } catch (err) {
+      if (!isUncertainPickOutcome(err)) clearPendingPick(pending);
       forgetPickGenerationOnRefusal(batchId, err);
       throw err;
     }
-  }, [submitScan, pickGeneration, forgetPickGenerationOnRefusal]);
+    clearPendingPick(pending); // failure to clear stays fenced for receipt reconciliation
+    });
+  }, [submitScan, pickGeneration, forgetPickGenerationOnRefusal, currentUserId, user?.shop_id]);
+
+  // SF-PICK-LOCATION-TRUTH-01 — read-only; the server answers from the
+  // persisted allocation. A refusal throws with the server's short message.
+  const handleVerifyPickLocation = useCallback(async (batchId: string, params: VerifyLocationParams) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pick/location/verify', {
+      pick_batch_id: batchId,
+      ...params,
+    });
+    return data as { location_code: string };
+  }, []);
 
   const handleReportException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
-    // GH-1049: PickSessionPage owns the full report payload — allocation
-    // identity, stage, physical quantities and the stable device_event_id.
+    const { recovery_item, ...payload } = params;
+    if (!recovery_item) throw new Error('Pick recovery snapshot is required.');
+    const generation = await pickGeneration(batchId);
+    const pending = { version: 1 as const, shopId: Number(user?.shop_id), userId: Number(currentUserId), batchId,
+      generation, requestId: params.device_event_id, kind: 'exception' as const, item: recovery_item,
+      body: { ...payload, pick_claim_generation: generation } };
+    return withPickPendingLock(pending.shopId, pending.userId, batchId, async () => {
+    savePendingPick(pending);
+    let data: { pick_exception_id: string };
     try {
-      const { data } = await axiosInstance.post(
-        `/api/v1/wms/batch/${batchId}/exception`,
-        { ...params, pick_claim_generation: await pickGeneration(batchId) }
-      );
-      return data as { pick_exception_id: string };
+      ({ data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, pending.body));
     } catch (err) {
+      if (!isUncertainPickOutcome(err)) clearPendingPick(pending);
       forgetPickGenerationOnRefusal(batchId, err);
       throw err;
     }
-  }, [pickGeneration, forgetPickGenerationOnRefusal]);
+    clearPendingPick(pending);
+    return data;
+    });
+  }, [pickGeneration, forgetPickGenerationOnRefusal, currentUserId, user?.shop_id]);
 
   const handleCreateProblemTask = useCallback(async (params: CreateProblemTaskParams) => {
     await axiosInstance.post('/api/v1/wms/problem-center', params);
@@ -1434,11 +1460,18 @@ export default function WmsOperationsPage() {
       onAssignPickBatch={handleAssignPickBatch}
       onFetchPickAssignees={handleFetchCountingAssignees}
       onAcknowledgePickCustody={handleAcknowledgePickCustody}
+      onReadPendingPick={batchId => readPendingPick(Number(user?.shop_id), Number(currentUserId), batchId)}
+      onClearPendingPick={(batchId, receipt) => {
+        const pending = readPendingPick(Number(user?.shop_id), Number(currentUserId), batchId);
+        if (!pending || !matchesPickReceipt(pending, receipt, batchId, currentUserId ?? undefined)) throw new Error('Pick confirmation remains pending.');
+        clearPendingPick(pending);
+      }}
       onRevalidatePickOwnership={handleRevalidatePickOwnership}
       onResumePickSession={handleResumePickSession}
       onFetchLineItems={handleFetchLineItems}
       onResolveBarcode={handleResolveBarcode}
       onConfirmScan={handleConfirmScan}
+      onVerifyPickLocation={handleVerifyPickLocation}
       onReportException={handleReportException}
       onCreateProblemTask={handleCreateProblemTask}
       onPickComplete={handlePickComplete}

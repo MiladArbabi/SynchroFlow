@@ -29,6 +29,12 @@ function line(id: string, quantity: number, location: string): LineItem {
 const A = line('1', 1, 'A-1');
 const B = line('2', 1, 'B-2');
 
+const recordedA = { status: 'recorded' as const, operation_identity: `pick:${BATCH_ID}:${A.reservation_allocation_id}`,
+  operation_type: 'pick' as const, pick_batch_id: BATCH_ID, reservation_allocation_id: A.reservation_allocation_id,
+  lasyncro_line_item_id: A.lasyncro_line_item_id, lasyncro_variant_id: A.lasyncro_variant_id,
+  location_code: A.location_code, quantity_required: A.quantity, quantity_confirmed: A.quantity,
+  lasyncro_unit_ids: [], scan_id: 'confirmed-scan-a', inventory_movement_id: 'confirmed-removal-a' };
+
 /** The real host error for "request sent, no HTTP answer". */
 const lostAfterSend = () => new PickConnectionLostError();
 /** Barcode lookup failed with no answer (axios shape): the scan was never sent. */
@@ -56,12 +62,12 @@ function Host(props: { initial: LineItem[]; onConfirmScan: jest.Mock; revalidate
       floorZones={[]}
       isOnline
       queuedCount={0}
-      onRevalidateSession={async () => { const fresh = await props.revalidate(); setItems(fresh); return fresh; }}
+      onRevalidateSession={async () => { const result = await props.revalidate(); setItems(Array.isArray(result) ? result : result.lineItems); return result; }}
     />
   );
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 function scan(input: HTMLInputElement | null, value: string) {
   expect(input).not.toBeNull();
@@ -74,7 +80,11 @@ async function reachProduct(li: LineItem) {
   await waitFor(() => expect(productInput()).not.toBeNull());
 }
 const goOnline = () => act(async () => { window.dispatchEvent(new Event('online')); });
-const goToHeading = (code: string) => screen.queryByText(`${code}.`);
+/** SF-PICK-LOCATION-TRUTH-01: the current stop is the prominent target code. */
+const goToHeading = (code: string) => {
+  const el = screen.queryByTestId('pick-target-location');
+  return el && el.textContent === code ? el : null;
+};
 const pageText = () => document.body.textContent ?? '';
 
 test('A6B-H1 the host error for a sent scan with no answer is truthful: may already be recorded, do not re-scan', () => {
@@ -113,7 +123,7 @@ test('A6B-01 lost response after send: paused, never "not recorded", no re-scan 
 
 test('A6B-02 reconnect, server recorded it: outcome reported as recorded and the item is not offered again', async () => {
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValue(undefined);
-  const revalidate = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValueOnce([B]);
+  const revalidate = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValueOnce({ lineItems: [B], outcome: recordedA });
   render(<Host initial={[A, B]} onConfirmScan={onConfirmScan} revalidate={revalidate} />);
   await reachProduct(A);
   scan(productInput(), 'EAN-variant-1');
@@ -130,18 +140,13 @@ test('A6B-02 reconnect, server recorded it: outcome reported as recorded and the
   expect(onConfirmScan).toHaveBeenCalledTimes(1);              // the client never resent it
 });
 
-test('A6B-03 reconnect, server did not record it: outcome reported from the server and the item is offered again', async () => {
+test('A6B-03 a successful remaining-work read cannot prove the original transaction failed: keep confirmation pending', async () => {
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValue(undefined);
   const revalidate = jest.fn().mockResolvedValueOnce([A, B]);
   render(<Host initial={[A, B]} onConfirmScan={onConfirmScan} revalidate={revalidate} />);
-  await reachProduct(A);
-  scan(productInput(), 'EAN-variant-1');
-  expect(await screen.findByText('Connection lost')).toBeInTheDocument();
-  await goOnline();
-  await waitFor(() => expect(screen.queryByText('Connection lost')).toBeNull());
-  expect(await screen.findByText(/Product 1 was not recorded — pick it now/i)).toBeInTheDocument();
-  await waitFor(() => expect(locationInput()).not.toBeNull()); // fresh location verification first
-  expect(goToHeading('A-1')).toBeInTheDocument();
+  await reachProduct(A); scan(productInput(), 'EAN-variant-1');
+  expect(await screen.findByText('Connection lost')).toBeInTheDocument(); await goOnline();
+  expect(productInput()).toBeDisabled(); expect(pageText()).not.toMatch(/was not recorded|pick it now/i);
   expect(onConfirmScan).toHaveBeenCalledTimes(1);
 });
 

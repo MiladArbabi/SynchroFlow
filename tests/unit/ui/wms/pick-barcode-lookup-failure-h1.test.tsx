@@ -50,7 +50,7 @@ function renderPick(onResolveBarcode: jest.Mock) {
 
 async function scanProduct(value: string) {
   fireEvent.click(await screen.findByRole('button', { name: /start picking/i }));
-  const locationInput = await screen.findByPlaceholderText(/scan bin barcode/i);
+  const locationInput = await screen.findByPlaceholderText(/^scan location$/i);
   fireEvent.change(locationInput, { target: { value: LOCATION_CODE } });
   fireEvent.keyDown(locationInput, { key: 'Enter', code: 'Enter' });
   const productInput = await screen.findByPlaceholderText(/scan product barcode/i);

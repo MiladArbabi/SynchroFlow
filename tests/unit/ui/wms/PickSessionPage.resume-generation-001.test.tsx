@@ -44,7 +44,7 @@ function renderPage(over: { resumePicking?: boolean; onVerifyResume?: jest.Mock;
   return { onConfirmScan };
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 function scan(input: HTMLInputElement | null, value: string) {
   expect(input).not.toBeNull();

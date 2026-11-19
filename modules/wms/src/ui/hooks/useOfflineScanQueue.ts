@@ -281,6 +281,8 @@ export interface UseOfflineScanQueueResult {
    */
   reviewUnconfirmedScan: (id: string) => Promise<void>;
   submitScan: (params: {
+    /** Durable callers require an exact committed receipt for already-recorded responses. */
+    requireExactOutcome?: boolean;
     deviceEventId: string;
     url: string;
     body: Record<string, unknown>;
@@ -400,6 +402,8 @@ export function useOfflineScanQueue({
   const submitScan = useCallback(
     async (params: {
       deviceEventId: string;
+      /** Durable Pick recovery requires an exact receipt for a replay acknowledgement. */
+      requireExactOutcome?: boolean;
       url: string;
       body: Record<string, unknown>;
     }) => {
@@ -409,7 +413,7 @@ export function useOfflineScanQueue({
       } catch (err: unknown) {
         const response = (err as { response?: { data?: { code?: unknown; recorded_by_requester?: unknown } } })?.response;
         if (!response) throw new PickConnectionLostError();
-        if (response.data?.code === 'PICK_SCAN_ALREADY_RECORDED' && response.data.recorded_by_requester === true) return;
+        if (!params.requireExactOutcome && response.data?.code === 'PICK_SCAN_ALREADY_RECORDED' && response.data.recorded_by_requester === true) return;
         throw err;
       }
     },

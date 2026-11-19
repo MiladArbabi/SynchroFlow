@@ -585,7 +585,7 @@ describe('SF-STOW-UX-REFINEMENT-01 — product barcode', () => {
     it('ordinary Stow shows its LSUs, then the eligible product barcode, then the SKU apart', async () => {
       await itemLine({ barcode: EAN, sku: 'RAIL-1', unit_ids: ['LSU-AAA00001'] });
       expect(lsus()).toEqual(['LSU-AAA00001']);
-      expect(screen.getByTestId('stow-item-barcode')).toHaveTextContent(new RegExp(`^Barcode ${EAN}$`));
+      expect(screen.getByTestId('stow-item-barcode')).toHaveTextContent(new RegExp(`^Barcode: ${EAN}$`));
       expect(screen.getByTestId('stow-item-sku')).toHaveTextContent(/^SKU RAIL-1$/);
     });
 

@@ -39,6 +39,12 @@ function line(id: string, quantity: number, location: string): LineItem {
 
 const A = line('1', 1, 'A-1');
 const B = line('2', 1, 'B-2');
+
+const recordedA = { status: 'recorded' as const, operation_identity: `pick:${BATCH_ID}:${A.reservation_allocation_id}`,
+  operation_type: 'pick' as const, pick_batch_id: BATCH_ID, reservation_allocation_id: A.reservation_allocation_id,
+  lasyncro_line_item_id: A.lasyncro_line_item_id, lasyncro_variant_id: A.lasyncro_variant_id,
+  location_code: A.location_code, quantity_required: A.quantity, quantity_confirmed: A.quantity,
+  lasyncro_unit_ids: [], scan_id: 'confirmed-scan-a', inventory_movement_id: 'confirmed-removal-a' };
 const MULTI = line('3', 2, 'C-3');
 
 /** Host contract (useOfflineScanQueue.submitScan / revalidation): no HTTP answer → code PICK_CONNECTION_LOST. */
@@ -72,16 +78,16 @@ function Host(props: {
       queuedCount={0}
       {...({
         onRevalidateSession: async () => {
-          const fresh = await props.revalidate();
-          setItems(fresh);
-          return fresh;
+          const result = await props.revalidate();
+          setItems(Array.isArray(result) ? result : result.lineItems);
+          return result;
         },
       } as Record<string, unknown>)}
     />
   );
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 
 function scan(input: HTMLInputElement | null, value: string) {
@@ -95,8 +101,11 @@ async function reachProduct(li: LineItem) {
   await waitFor(() => expect(productInput()).not.toBeNull());
 }
 const goOnline = () => act(async () => { window.dispatchEvent(new Event('online')); });
-/** The current task's "Go to <location>." heading accent (the route map lists codes without the period). */
-const goToHeading = (code: string) => screen.queryByText(`${code}.`);
+/** SF-PICK-LOCATION-TRUTH-01: the current stop is the prominent target code. */
+const goToHeading = (code: string) => {
+  const el = screen.queryByTestId('pick-target-location');
+  return el && el.textContent === code ? el : null;
+};
 
 test('WO-01 online: a confirmed scan advances to the next item', async () => {
   const onConfirmScan = jest.fn().mockResolvedValue(undefined);
@@ -133,7 +142,7 @@ test('WO-03 multi-unit quantity confirmation never advances on a lost connection
   fireEvent.click(screen.getByText(/confirm 2 picked/i));
   expect(await screen.findByText('Connection lost')).toBeInTheDocument();
   expect(goToHeading('B-2')).toBeNull();
-  expect(screen.getByLabelText('Units counted')).toHaveTextContent('2');               // still on MULTI's count
+  expect(screen.getByRole('spinbutton', { name: /quantity picked/i })).toHaveValue(2);               // still on MULTI's count
   expect(onConfirmScan).toHaveBeenCalledTimes(1);
 });
 
@@ -141,7 +150,7 @@ test('WO-04 reconnect: revalidates, reloads authoritative remaining work and res
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostErr()).mockResolvedValue(undefined);
   const revalidate = jest.fn()
     .mockRejectedValueOnce(lost())                       // still down
-    .mockResolvedValueOnce([B]);                         // the lost scan of A was committed
+    .mockResolvedValueOnce({ lineItems: [B], outcome: recordedA });                         // the lost scan of A was committed
   render(<Host initial={[A, B]} onConfirmScan={onConfirmScan} revalidate={revalidate} />);
   await reachProduct(A);
   scan(productInput(), 'EAN-variant-1');

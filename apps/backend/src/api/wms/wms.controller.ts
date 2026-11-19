@@ -1,3 +1,4 @@
+import { readPickCommittedOutcome, PickOutcomeReadError } from '../../services/wms/pickCommittedOutcome.service.js';
 import { quarantineStowUnit } from '../../services/wms/stowQuarantine.service.js';
 import { isProblemBinQuarantineEnabled, quarantineUnitToProblemBin, QUARANTINE_REASONS, type QuarantineReason } from '../../services/inventory/problemBinQuarantine.service.js';
 import { resolveProblemBinIncident, grantProblemSolver, revokeProblemSolver, listProblemSolvers, WRITE_OFF_REASONS, type WriteOffReason } from '../../services/inventory/problemBinResolution.service.js';
@@ -5,6 +6,72 @@ import { resolveActiveProblemBin } from '../../services/wms/receiveHeldCustody.s
 import { assertStowDestinationEligible, lockStowDestinationHierarchy, StowDestinationEligibilityError } from '../../services/wms/stowDestinationEligibility.service.js';
 import { LocationCapacityExceededError } from '../../services/wms/stowLocationCapacity.service.js';
 import { resolveLocationIdentity, LocationIdentityAmbiguousError } from '../../services/wms/locationIdentity.service.js';
+import {
+  PICK_DESTINATION_SQL,
+  PickLocationMismatchError,
+  PickLocationNotPickableError,
+  PickLocationTargetNotFoundError,
+  PickUnitIdentityError,
+  ROOT_ELIGIBLE_UNIT_SQL,
+  BIN_ELIGIBLE_UNIT_SQL,
+  pickDestinationProblemMessage,
+  pickUnitIdentityMessage,
+  verifyPickLocationScan,
+} from '../../services/wms/pickLocationTruth.service.js';
+
+/** SF-PICK-LOCATION-TRUTH-01 — scanned root LSU identities from a request body. */
+function parseUnitIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((v): v is string => typeof v === 'string' && v.startsWith('LSU-'));
+}
+
+/** SF-PICK-LOCATION-TRUTH-01 — the root identity refusal; nothing was written. */
+function respondPickUnitIdentityError(res: Response, error: PickUnitIdentityError) {
+  return res.status(409).json({
+    error: pickUnitIdentityMessage(error),
+    code: error.code,
+    units_required: error.unitsRequired,
+  });
+}
+
+/**
+ * SF-WMS-SCAN-UX-01 — Pick line items' display barcode: the same vetted
+ * projection as Stow's task barcode (httpGetStowTasks, SF-STOW-UX-REFINEMENT-01),
+ * over the joined `v` alias, bound to the request's shop id (one `?` per use).
+ * The merchant's external barcode is exposed only when a scan of it would
+ * resolve to exactly this variant; otherwise NULL. Read-only and display-only:
+ * never an SKU, never an LSU/LSO/LSP identity, never generated.
+ */
+const PICK_DISPLAY_BARCODE_SQL = `
+  CASE
+    WHEN NULLIF(BTRIM(v.barcode), '') IS NULL THEN NULL
+    WHEN v.barcode <> BTRIM(v.barcode) THEN NULL
+    WHEN v.barcode LIKE 'LSU-%' OR v.barcode LIKE 'LSO-%' OR v.barcode LIKE 'LSP-%' THEN NULL
+    WHEN EXISTS (
+      SELECT 1 FROM warehouse_locations wlb
+       WHERE wlb.shop_id = ?
+         AND (wlb.barcode = v.barcode OR wlb.location_code = v.barcode)
+    ) THEN NULL
+    WHEN EXISTS (
+      SELECT 1 FROM shop_wms_settings sws
+       WHERE sws.shop_id = ?
+         AND sws.legacy_barcode_fallback_enabled = false
+    ) THEN NULL
+    WHEN EXISTS (
+      SELECT 1 FROM external_product_identity_map m
+       WHERE m.shop_id = ?
+         AND m.barcode = v.barcode
+         AND m.lasyncro_variant_id IS DISTINCT FROM v.lasyncro_variant_id
+    ) THEN NULL
+    WHEN EXISTS (
+      SELECT 1 FROM variants v2
+       WHERE v2.shop_id = ?
+         AND v2.barcode = v.barcode
+         AND v2.lasyncro_variant_id <> v.lasyncro_variant_id
+    ) THEN NULL
+    ELSE v.barcode
+  END AS barcode`;
+const pickDisplayBarcodeBindings = (shopId: number) => [shopId, shopId, shopId, shopId];
 import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/wms/wms.controller.ts
 import { Request, Response } from 'express';
@@ -462,14 +529,53 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
             'pra.lasyncro_line_item_id',
             'pra.lasyncro_variant_id',
             'pra.lasyncro_order_id',
+            // `sku` stays the order-line snapshot. SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001:
+            // the allocation's own variant SKU (same RLS-scoped `v` join as title/barcode),
+            // exposed separately; clients fall back to it only when the snapshot is blank.
             'oli.sku',
+            'v.sku as variant_sku',
             trx.raw(
               `COALESCE(p.title, 'Unknown product') as product_title`
             ),
             'v.title as variant_title',
             'pra.quantity',
             'v.image_url',
+            // SF-WMS-SCAN-UX-01 — display-only vetted barcode (see helper).
+            trx.raw(PICK_DISPLAY_BARCODE_SQL, pickDisplayBarcodeBindings(shopId)),
             'pra.location_code',
+            // SF-PICK-LOCATION-TRUTH-01: same rules the scan gate enforces.
+            // The root is a product-scan stop (pickable, no location scan).
+            // Root and bins alike: one verifying LSU scan (0 or 1) while
+            // eligible labelled units of the variant exist at the location;
+            // further units are settled by quantity
+            // (SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001).
+            trx.raw(
+              `(pra.location_code = ? OR COALESCE(${PICK_DESTINATION_SQL}, false)) AS location_pickable`,
+              [`WH-${shopId}-ROOT`]
+            ),
+            trx.raw(`(pra.location_code <> ?) AS location_scan_required`, [`WH-${shopId}-ROOT`]),
+            trx.raw(
+              `LEAST(1, pra.quantity, (
+                 SELECT COUNT(*) FROM inventory_units iu
+                  WHERE iu.shop_id = pra.shop_id
+                    AND iu.lasyncro_variant_id = pra.lasyncro_variant_id
+                    AND CASE WHEN pra.location_code = ? THEN ${ROOT_ELIGIBLE_UNIT_SQL}
+                             ELSE ${BIN_ELIGIBLE_UNIT_SQL} END))::int AS unit_scan_required`,
+              [`WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`, trx.raw('pra.location_code')]
+            ),
+            // SF-PICK-UX-ADAPTIVE-01-ACTIONABLE-ID-001 — one real, eligible LSU for
+            // this exact allocation (tenant, variant, location), from the SAME
+            // predicate as unit_scan_required, deterministic by id. Display only:
+            // never verification, and any other eligible LSU stays scannable.
+            trx.raw(
+              `(SELECT iu.lasyncro_unit_id FROM inventory_units iu
+                 WHERE iu.shop_id = pra.shop_id
+                   AND iu.lasyncro_variant_id = pra.lasyncro_variant_id
+                   AND CASE WHEN pra.location_code = ? THEN ${ROOT_ELIGIBLE_UNIT_SQL}
+                            ELSE ${BIN_ELIGIBLE_UNIT_SQL} END
+                 ORDER BY iu.id LIMIT 1) AS scan_unit_id`,
+              [`WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`, trx.raw('pra.location_code')]
+            ),
             'iu.unit_ids'
           );
       }
@@ -540,10 +646,13 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'oli.lasyncro_variant_id',
           'oli.lasyncro_order_id',
           'oli.sku',
+          'v.sku as variant_sku', // SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 (see allocation path)
           trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
           'v.title as variant_title',
           'oli.quantity',
           'v.image_url',
+          // SF-WMS-SCAN-UX-01 — display-only vetted barcode (see helper).
+          trx.raw(PICK_DISPLAY_BARCODE_SQL, pickDisplayBarcodeBindings(shopId)),
           trx.raw(`
             COALESCE(
               iu.unit_location_code,
@@ -551,6 +660,46 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
               ?
             ) as location_code
           `, [`WH-${shopId}-ROOT`]),
+          // SF-PICK-LOCATION-TRUTH-01: evaluated on the exact code returned above.
+          trx.raw(`
+            (COALESCE(iu.unit_location_code, it.location_code, ?) = ? OR EXISTS (
+              SELECT 1 FROM warehouse_locations wl
+               WHERE wl.shop_id = ?
+                 AND wl.location_code = COALESCE(iu.unit_location_code, it.location_code, ?)
+                 AND ${PICK_DESTINATION_SQL}
+            )) AS location_pickable
+          `, [`WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`, shopId, `WH-${shopId}-ROOT`]),
+          trx.raw(`
+            (COALESCE(iu.unit_location_code, it.location_code, ?) <> ?) AS location_scan_required
+          `, [`WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`]),
+          // Inner alias `pu`: the outer `iu` (stowed-unit summary) supplies the location.
+          trx.raw(`
+            LEAST(1, oli.quantity, (
+              SELECT COUNT(*) FROM inventory_units pu
+               WHERE pu.shop_id = ?
+                 AND pu.lasyncro_variant_id = oli.lasyncro_variant_id
+                 AND CASE WHEN COALESCE(iu.unit_location_code, it.location_code, ?) = ?
+                          THEN ${ROOT_ELIGIBLE_UNIT_SQL.replace(/\biu\./g, 'pu.')}
+                          ELSE ${BIN_ELIGIBLE_UNIT_SQL.replace(/\biu\./g, 'pu.')} END))::int AS unit_scan_required
+          `, [
+            shopId, `WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`,
+            trx.raw('COALESCE(iu.unit_location_code, it.location_code, ?)', [`WH-${shopId}-ROOT`]),
+          ]),
+          // SF-PICK-UX-ADAPTIVE-01-ACTIONABLE-ID-001 — legacy twin of the
+          // allocation-path scan_unit_id: same predicate and location as
+          // unit_scan_required above, deterministic by id, display only.
+          trx.raw(`
+            (SELECT pu.lasyncro_unit_id FROM inventory_units pu
+              WHERE pu.shop_id = ?
+                AND pu.lasyncro_variant_id = oli.lasyncro_variant_id
+                AND CASE WHEN COALESCE(iu.unit_location_code, it.location_code, ?) = ?
+                         THEN ${ROOT_ELIGIBLE_UNIT_SQL.replace(/\biu\./g, 'pu.')}
+                         ELSE ${BIN_ELIGIBLE_UNIT_SQL.replace(/\biu\./g, 'pu.')} END
+              ORDER BY pu.id LIMIT 1) AS scan_unit_id
+          `, [
+            shopId, `WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`, `WH-${shopId}-ROOT`,
+            trx.raw('COALESCE(iu.unit_location_code, it.location_code, ?)', [`WH-${shopId}-ROOT`]),
+          ]),
           'iu.unit_ids',
         );
     });
@@ -829,7 +978,8 @@ export const httpGetPickSession = async (req: Request, res: Response) => {
       const held = req.get('X-Pick-Claim-Generation');
       if (typeof held !== 'string' || held.length === 0) throw new PickOwnershipError('PICK_GENERATION_REQUIRED');
       if (held !== batch.pick_claim_generation) throw new PickOwnershipError('PICK_GENERATION_STALE');
-      return batch;
+      const outcome = await readPickCommittedOutcome(trx, { shopId, userId, batchId, query: req.query });
+      return { ...batch, outcome };
     });
     return res.status(200).json({
       pick_batch_id: batchId,
@@ -837,8 +987,10 @@ export const httpGetPickSession = async (req: Request, res: Response) => {
       pick_claim_generation: session.pick_claim_generation,
       custody_ack_required: session.pick_custody_ack_required === true,
       units_picked: Number(session.units_picked ?? 0),
+      ...(session.outcome !== undefined ? { outcome: session.outcome } : {}),
     });
   } catch (error) {
+    if (error instanceof PickOutcomeReadError) return res.status(error.status).json({ error: error.message });
     if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
     console.error('[WMS_PICK_SESSION_READ_FAILED]', {
       shopId, userId, batchId, error: error instanceof Error ? error.message : error,
@@ -3412,6 +3564,7 @@ export const httpReportPickException = async (req: Request, res: Response) => {
     quantity_found,
     device_event_id,
     notes,
+    lasyncro_unit_ids,
   } = req.body;
 
   /**
@@ -3701,6 +3854,7 @@ export const httpReportPickException = async (req: Request, res: Response) => {
           locationCode: allocation.location_code,
           quantityFound: quantity_found,
           scannedBy: userId,
+          lasyncroUnitIds: parseUnitIds(lasyncro_unit_ids),
         });
       }
 
@@ -3750,6 +3904,16 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       .json({ pick_exception_id: outcome.pickExceptionId });
   } catch (error) {
     if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    if (error instanceof PickUnitIdentityError) return respondPickUnitIdentityError(res, error);
+    // SF-PICK-LOCATION-TRUTH-01 — found units at a non-pick-bin stop; nothing was written.
+    if (error instanceof PickLocationNotPickableError) {
+      return res.status(409).json({
+        error: pickDestinationProblemMessage(error.locationCode, error.problem),
+        code: error.code,
+        location_code: error.locationCode,
+        problem: error.problem,
+      });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
 
     if (message === 'BATCH_NOT_FOUND') {
@@ -3906,6 +4070,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     quantity_confirmed,
     scan_source, // optional: 'camera' | 'usb' | 'bt' | 'manual' — defaults to 'camera' in service
     lasyncro_unit_id,
+    lasyncro_unit_ids,
     pick_claim_generation,
   } = req.body;
 
@@ -3942,6 +4107,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
           typeof lasyncro_unit_id === 'string' && lasyncro_unit_id.startsWith('LSU-')
           ? lasyncro_unit_id
           : undefined,
+        lasyncroUnitIds: parseUnitIds(lasyncro_unit_ids),
         pickClaimGeneration:
           typeof pick_claim_generation === 'string' ? pick_claim_generation : undefined,
       });
@@ -3952,9 +4118,18 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     return res.status(201).json(result);
     } catch (error) {
     if (error instanceof PickOwnershipError) return respondPickOwnershipError(res, error);
+    if (error instanceof PickUnitIdentityError) return respondPickUnitIdentityError(res, error);
     // SF-PICK-ASSIGN-01 C006 (REVIEW-004 MEDIUM-3) — authoritative answer for a
     // replayed or repeated scan (previously an unmapped 500). Reached only after
     // the ownership/generation fence; nothing was written by this request.
+    if (error instanceof PickLocationNotPickableError) {
+      return res.status(409).json({
+        error: pickDestinationProblemMessage(error.locationCode, error.problem),
+        code: error.code,
+        location_code: error.locationCode,
+        problem: error.problem,
+      });
+    }
     if (error instanceof PickScanAlreadyRecordedError) {
       return res.status(409).json({
         error: 'This scan is already recorded.',
@@ -4727,6 +4902,63 @@ export const httpGetOrderInvoice = async (req: Request, res: Response) => {
     if (message === 'ORDER_NO_WMS_BARCODE') return res.status(409).json({ error: 'Order has no WMS barcode — batch not yet released' });
     console.error('[WMS_INVOICE_FAILED]', { shopId, orderId, error: message });
     return res.status(500).json({ error: `Failed to generate invoice: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/pick/location/verify
+// SF-PICK-LOCATION-TRUTH-01 — read-only server confirmation of a Pick
+// location scan against the persisted allocation's pick bin. No writes.
+// ─────────────────────────────────────────
+export const httpVerifyPickLocation = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { pick_batch_id, lasyncro_line_item_id, reservation_allocation_id, location_code, scanned_value } = req.body ?? {};
+  if (
+    typeof pick_batch_id !== 'string' || !pick_batch_id ||
+    typeof lasyncro_line_item_id !== 'string' || !lasyncro_line_item_id ||
+    typeof scanned_value !== 'string' || !scanned_value.trim()
+  ) {
+    return res.status(400).json({ error: 'Missing or invalid required fields' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return verifyPickLocationScan(trx, {
+        shopId,
+        pickBatchId: pick_batch_id,
+        lasyncroLineItemId: lasyncro_line_item_id,
+        reservationAllocationId: typeof reservation_allocation_id === 'string' ? reservation_allocation_id : undefined,
+        expectedLocationCode: typeof location_code === 'string' ? location_code : undefined,
+        scannedValue: scanned_value,
+      });
+    });
+    return res.status(200).json({ verified: true, location_code: result.location_code });
+  } catch (error) {
+    if (error instanceof PickLocationNotPickableError) {
+      return res.status(409).json({
+        error: pickDestinationProblemMessage(error.locationCode, error.problem),
+        code: error.code,
+        location_code: error.locationCode,
+        problem: error.problem,
+      });
+    }
+    if (error instanceof PickLocationMismatchError) {
+      return res.status(422).json({
+        error: `Wrong location (${error.scannedValue}). Scan ${error.expectedLocationCode}.`,
+        code: error.code,
+        location_code: error.expectedLocationCode,
+      });
+    }
+    if (error instanceof PickLocationTargetNotFoundError) {
+      return res.status(404).json({ error: 'Pick task not found.', code: error.code });
+    }
+    if (error instanceof LocationIdentityAmbiguousError) return res.status(409).json({ error: error.errorCode });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_PICK_LOCATION_VERIFY_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: 'Could not verify the location.' });
   }
 };
 

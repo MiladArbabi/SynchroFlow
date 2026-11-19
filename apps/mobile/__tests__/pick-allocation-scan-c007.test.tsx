@@ -7,7 +7,7 @@
  * posted live and what is persisted/replayed offline).
  */
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { apiClient, offlineQueue } from '@lasyncro/mobile-core';
 import PickBriefScreen from '../src/screens/PickBriefScreen';
@@ -128,6 +128,9 @@ const sent = () => q.submitScanOnline.mock.calls.map(([entry]) => entry);
 
 test('AS-01 an allocation-backed task sends its exact allocation with the full scan context', async () => {
   expect(await scanAt(split, 0)).toBeUndefined();
+  expect(sent()).toHaveLength(0);
+  fireEvent.changeText(screen.getByLabelText('Quantity picked'), '2');
+  await act(async () => { fireEvent.press(screen.getByText('Confirm pick (2)')); });
   expect(sent()).toHaveLength(1);
   const [entry] = sent();
   expect(entry.url).toBe('/api/v1/wms/pick/scan');
@@ -135,7 +138,9 @@ test('AS-01 an allocation-backed task sends its exact allocation with the full s
     pick_batch_id:             BATCH,
     lasyncro_line_item_id:     'l1',
     lasyncro_variant_id:       'v1',
-    lasyncro_unit_id:          'LSU-77',
+    // SF-PICK-LOCATION-TRUTH-01 (Option B): an EAN scan carries no unit
+    // identity; the resolver-attached LSU-77 was chosen by the server.
+    lasyncro_unit_id:          null,
     reservation_allocation_id: ALLOC_A,
     location_code:             'A-1',
     quantity_confirmed:        2,
@@ -160,7 +165,7 @@ test('AS-03 a legacy task without an allocation sends no allocation identity (no
     pick_batch_id:         BATCH,
     lasyncro_line_item_id: 'l9',
     lasyncro_variant_id:   'v1',
-    lasyncro_unit_id:      'LSU-77',
+    lasyncro_unit_id:      null, // SF-PICK-LOCATION-TRUTH-01: EAN scan, no identity
     location_code:         'C-3',
     quantity_confirmed:    1,
     device_event_id:       entry.deviceEventId,

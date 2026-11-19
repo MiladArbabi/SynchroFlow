@@ -90,7 +90,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Focus Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Focus Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
     expect(screen.getByText('FOCUS-1')).toBeInTheDocument();
     expect(screen.getByText('Inbound receive')).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
 
     // The execution rail now appears, task identity is preserved.
     expect(screen.getByTestId('stow-stage-location')).toBeInTheDocument();
-    expect(screen.getAllByText('Focus Widget').length + screen.getAllByText('FOCUS-1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Focus Widget( · .+)?$/).length + screen.getAllByText('FOCUS-1').length).toBeGreaterThan(0);
   });
 
   it('an in_progress resumable task landing on Brief shows Resume stowing with no execution rail, then transitions on resume', async () => {
@@ -151,7 +151,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Resume Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Resume Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
     expect(screen.getByRole('button', { name: 'Resume stowing' })).toBeInTheDocument();
     expect(screen.getByText('1 / 3')).toBeInTheDocument();
@@ -172,7 +172,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     // identity/destination/progress preserved.
     expect(await screen.findByPlaceholderText('Scan bin barcode or type location code')).toBeInTheDocument();
     expect(screen.getByTestId('stow-stage-location')).toBeInTheDocument();
-    expect(screen.getAllByText('Resume Widget').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Resume Widget( · .+)?$/).length).toBeGreaterThan(0);
     expect(screen.getByText('1 / 3')).toBeInTheDocument();
     expect(screen.getAllByText('BIN-A').length).toBeGreaterThan(0);
   });
@@ -224,7 +224,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Second Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Second Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
     expect(screen.getAllByText('SECOND-1').length).toBeGreaterThan(0);
     // STOW-UX-SCAN-RAIL-01 — the standalone active-bin card (and its
@@ -260,7 +260,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Second Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Second Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
 
     // STOW-SESSION-TRANSITION-01 — Task B is already owned/in_progress with
@@ -299,7 +299,7 @@ describe('STOW-UX-FOCUS-01 — Stow focused session UX', () => {
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Second Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Second Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
 
     // Auto-advance lands on the next VALID task (Task B) — never a legacy
@@ -453,7 +453,7 @@ describe('STOW-SESSION-TRANSITION-01 — parent adapter persists the auto-advanc
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
-      expect(screen.getAllByText('Second Widget').length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/^Second Widget( · .+)?$/).length).toBeGreaterThan(0);
     });
 
     // The parent adapter must forward Task B's ID to the URL-persistence

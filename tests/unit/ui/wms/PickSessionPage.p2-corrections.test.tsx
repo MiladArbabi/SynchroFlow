@@ -47,7 +47,7 @@ function baseProps(lineItems: LineItem[], overrides: Record<string, unknown> = {
     lineItems,
     onComplete: jest.fn(),
     onResolveBarcode: jest.fn(async (value: string) => {
-      if (value.startsWith('LSU-')) return { lasyncro_variant_id: 'variant-2', lasyncro_unit_id: value };
+      if (value.startsWith('LSU-')) return { lasyncro_variant_id: 'variant-2', lasyncro_unit_id: value, resolution_method: 'unit_barcode' };
       const match = lineItems.find((li) => `EAN-${li.lasyncro_variant_id}` === value);
       return match ? { lasyncro_variant_id: match.lasyncro_variant_id } : { lasyncro_variant_id: 'variant-other' };
     }),
@@ -68,7 +68,7 @@ function setup(lineItems: LineItem[], overrides: Record<string, unknown> = {}) {
   return { props, ...utils };
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 const addUnit = () => screen.getByLabelText(/add one unit/i);
 
@@ -100,19 +100,22 @@ const confirmException = () => screen.getByText(/confirm exception/i).closest('b
 const confirmComplete = () => screen.getByText(/confirm pick complete/i).closest('button') as HTMLButtonElement;
 
 describe('G1 — multi-unit LSU evidence', () => {
-  it('an LSU- scan on a multi-unit line carries lasyncro_unit_id into the full-quantity confirm', async () => {
-    const { props } = setup([MULTI]);
-    await reachItem(MULTI);
-    scan(productInput(), 'LSU-cccc3333');
-    await waitFor(() => expect(screen.queryByLabelText(/add one unit/i)).not.toBeNull());
-    for (let i = 0; i < 3; i += 1) fireEvent.click(addUnit());
+  // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — one LSU verifies; the rest is counted (server-settled).
+  it('one scanned LSU verifies the product; the counted full quantity is confirmed with exactly that LSU', async () => {
+    const tracked = { ...MULTI, unit_scan_required: 3 }; // stale per-unit count is clamped to one label
+    const { props } = setup([tracked]);
+    scan(locationInput(), tracked.location_code);
+    await waitFor(() => expect(screen.getByPlaceholderText(/scan unit label/i)).toBeInTheDocument());
+    scan(screen.getByPlaceholderText(/scan unit label/i) as HTMLInputElement, 'LSU-cccc3333');
+    await waitFor(() => expect(screen.getByTestId('scan-product-scanned-lsus')).toHaveTextContent('LSU-cccc3333'));
+    expect(props.onConfirmScan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText(/add one unit/i));
+    fireEvent.click(screen.getByLabelText(/add one unit/i));
     fireEvent.click(screen.getByText(/confirm 3 picked/i));
     await waitFor(() => expect(props.onConfirmScan).toHaveBeenCalledTimes(1));
     expect(props.onConfirmScan).toHaveBeenCalledWith(expect.objectContaining({
-      lasyncro_line_item_id: 'line-2',
-      reservation_allocation_id: 'alloc-2',
-      quantity_confirmed: 3,
-      lasyncro_unit_id: 'LSU-cccc3333',
+      lasyncro_line_item_id: 'line-2', reservation_allocation_id: 'alloc-2', quantity_confirmed: 3,
+      lasyncro_unit_ids: ['LSU-cccc3333'],
     }));
   });
 });
@@ -120,13 +123,13 @@ describe('G1 — multi-unit LSU evidence', () => {
 describe('G2 — exception retry identity', () => {
   it('a failed exception report retried from the same dialog reuses the same device_event_id', async () => {
     const onReportException = jest.fn()
-      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockRejectedValueOnce({ response: { status: 409, data: { error: 'Report refused' } } })
       .mockResolvedValueOnce({ pick_exception_id: 'exc-retry' });
     setup([MULTI], { onReportException });
     await reportShortFromStepper(2);
 
     fireEvent.click(confirmException());
-    expect(await screen.findByText(/network error/i)).toBeInTheDocument();
+    expect(await screen.findByText(/report refused/i)).toBeInTheDocument();
     expect(onReportException).toHaveBeenCalledTimes(1);
 
     fireEvent.click(confirmException());
@@ -163,30 +166,29 @@ describe('G3 — duplicate submissions', () => {
 
   it('a failed exception report releases the guard so a retry is possible', async () => {
     const onReportException = jest.fn()
-      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockRejectedValueOnce({ response: { status: 409, data: { error: 'Report refused' } } })
       .mockResolvedValueOnce({ pick_exception_id: 'exc-retry' });
     setup([MULTI], { onReportException });
     await reportShortFromStepper(1);
     fireEvent.click(confirmException());
-    await screen.findByText(/network error/i);
+    await screen.findByText(/report refused/i);
     fireEvent.click(confirmException());
     await waitFor(() => expect(onReportException).toHaveBeenCalledTimes(2));
   });
 
-  it('two Confirm pick complete clicks in one batched update call pick-complete once', async () => {
+  // FINALIZE-001: completion is automatic and single-flight; there is no Confirm pick complete button.
+  it('the last confirmed item finalizes automatically with exactly one pick-complete call; no success before the server answers', async () => {
     let finish!: () => void;
     const onPickComplete = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
     setup([SINGLE], { onPickComplete });
     await reachItem(SINGLE);
     scan(productInput(), 'EAN-variant-1');
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
-
-    const button = confirmComplete();
-    act(() => {
-      button.click();
-      button.click();
-    });
-    expect(onPickComplete).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onPickComplete).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('pick-finalizing')).toBeInTheDocument();
+    expect(screen.queryByText(/confirm pick complete|all items/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^pick complete$/i })).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(onPickComplete).toHaveBeenCalledTimes(1); // re-renders never re-send
     await act(async () => { finish(); });
     expect(await screen.findByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
   });
@@ -198,10 +200,10 @@ describe('G3 — duplicate submissions', () => {
     setup([SINGLE], { onPickComplete });
     await reachItem(SINGLE);
     scan(productInput(), 'EAN-variant-1');
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
-    fireEvent.click(confirmComplete());
-    await screen.findByText(/network error/i);
-    fireEvent.click(confirmComplete());
+    await screen.findByText(/network error/i); // automatic attempt failed: recoverable error, no success
+    expect(onPickComplete).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('heading', { name: /^pick complete$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /retry finishing pick/i }));
     await waitFor(() => expect(onPickComplete).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
   });
@@ -218,8 +220,6 @@ describe('G4 — late resume truthfulness (C2)', () => {
     rerender(<PickSessionPage {...(props as any)} resumePicking />);
     await reachItem(SINGLE);
     scan(productInput(), 'EAN-variant-1');
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
-    fireEvent.click(confirmComplete());
     await waitFor(() => expect(screen.queryByText(/totals cover this session/i)).not.toBeNull());
     expect(screen.queryByText(/items? processed/i)).toBeNull();
   });
@@ -229,8 +229,6 @@ describe('G4 — late resume truthfulness (C2)', () => {
     fireEvent.click(screen.getByText('Start Picking'));
     await reachItem(SINGLE);
     scan(productInput(), 'EAN-variant-1');
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
-    fireEvent.click(confirmComplete());
     await waitFor(() => expect(screen.queryByText(/1 item processed/i)).not.toBeNull());
     expect(screen.queryByText(/totals cover this session/i)).toBeNull();
   });

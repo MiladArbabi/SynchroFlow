@@ -181,7 +181,7 @@ function baseProps(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i);
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i);
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i);
 // SF-PICK-P2 (decision 4): quantity is a zero-based stepper, not a typed field.
 const qtyInput = () => screen.queryByRole('button', { name: /add one unit/i });
@@ -208,14 +208,6 @@ function scan(input: HTMLElement | null, value: string) {
   expect(input).toBeInTheDocument();
   fireEvent.change(input!, { target: { value } });
   fireEvent.keyDown(input!, { key: 'Enter', code: 'Enter' });
-}
-
-/** The ordered textual route companion (accessible list named as a route). */
-function routeStops(): string[] {
-  const route = screen.getByRole('list', { name: /route/i });
-  return within(route)
-    .getAllByRole('listitem')
-    .map((item) => (item.textContent ?? '').trim());
 }
 
 const pickMap = () => screen.getByRole('region', { name: /map/i });
@@ -324,37 +316,30 @@ describe('PICK-EXECUTION-SPATIAL-01A — canonical spatial route', () => {
     expect(lastCanvasProps().selectedLocationCode).toBe('B-4');
   });
 
-  it('SPATIAL-03 — the remaining route keeps line order and de-duplicates locations', async () => {
+  // SF-PICK-LOCATION-TRUTH-01 supersedes SPATIAL-03/04/05: the route
+  // breadcrumb is removed and the map lights exactly one place — the current
+  // stop — so it can never point somewhere the instruction does not.
+  it('SPATIAL-03 — no route breadcrumb is rendered during execution', async () => {
     await renderExecution();
 
-    expect(routeStops()).toEqual(['B-4', 'C-2', 'D-6']);
+    expect(screen.queryByRole('list', { name: /route/i })).not.toBeInTheDocument();
   });
 
-  it('SPATIAL-04/05 — only remaining route stops carry Pick-active state; unrelated geometry stays neutral', async () => {
+  it('SPATIAL-04/05 — only the current stop is highlighted (orange, pending); every other bin stays neutral', async () => {
     await renderExecution();
 
     const props = lastCanvasProps();
-    expect(props.operationalStateByLocation).toEqual({
-      'B-4': 'active',
-      'C-2': 'active',
-      'D-6': 'active',
-    });
-
+    expect(props.destinationHighlight).toEqual({ locationCode: 'B-4', tone: 'suggested' });
+    expect(props.operationalStateByLocation).toBeUndefined();
     // Unrelated bins are still drawn as warehouse context, just neutral.
     expect(zoneCodes(props)).toEqual(expect.arrayContaining(['A-1', 'B-4', 'C-2', 'D-6', 'E-9']));
-    expect(props.operationalStateByLocation).not.toHaveProperty('A-1');
-    expect(props.operationalStateByLocation).not.toHaveProperty('E-9');
   });
 
   it('SPATIAL-07 — a resumed remaining-only response never fabricates completed or visited locations', async () => {
     await renderExecution({ onFetchLineItems: jest.fn().mockResolvedValue(RESUMED_LINES) });
 
     expect(lastCanvasProps().selectedLocationCode).toBe('C-2');
-    expect(lastCanvasProps().operationalStateByLocation).toEqual({
-      'C-2': 'active',
-      'D-6': 'active',
-    });
-    expect(routeStops()).toEqual(['C-2', 'D-6']);
+    expect(lastCanvasProps().destinationHighlight).toEqual({ locationCode: 'C-2', tone: 'suggested' });
 
     // Nothing absent from lineItems is presented as done.
     expect(screen.queryByText(/A-1|B-4/)).not.toBeInTheDocument();
@@ -380,13 +365,10 @@ describe('PICK-EXECUTION-SPATIAL-01A — canonical spatial route', () => {
     await waitFor(() => expect(props.onConfirmScan).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText(/item\s+3\s+of\s+5/i)).toBeInTheDocument());
 
-    // Current is C-2; B-4 is behind the operator but is NOT marked completed.
+    // Current is C-2; B-4 is behind the operator and is not lit at all.
     await waitFor(() => expect(lastCanvasProps().selectedLocationCode).toBe('C-2'));
-    expect(lastCanvasProps().operationalStateByLocation).toEqual({
-      'C-2': 'active',
-      'D-6': 'active',
-    });
-    expect(routeStops()).toEqual(['C-2', 'D-6']);
+    expect(lastCanvasProps().destinationHighlight).toEqual({ locationCode: 'C-2', tone: 'suggested' });
+    expect(lastCanvasProps().operationalStateByLocation).toBeUndefined();
   });
 
   it('SPATIAL-08 — missing geometry degrades only the spatial area; scanning and Report problem remain', async () => {

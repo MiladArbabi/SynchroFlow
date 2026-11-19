@@ -14,7 +14,7 @@ export type {
 } from './pages/CountingSessionPage.js';
 export { default as PickSessionPage } from './pages/PickSessionPage.js';
 export { default as PackSessionPage } from './pages/PackSessionPage.js';
-export type { PickSessionPageProps, LineItem, ConfirmScanParams, ReportExceptionParams, ReportPackExceptionParams, CreateProblemTaskParams } from './pages/PickSessionPage.js';
+export type { PickSessionPageProps, LineItem, ConfirmScanParams, VerifyLocationParams, ReportExceptionParams, ReportPackExceptionParams, CreateProblemTaskParams } from './pages/PickSessionPage.js';
 export type { PackSessionPageProps, PackOrder, PackLineItem } from './pages/PackSessionPage.js';
 export { default } from './ModuleEntry.js';
 
@@ -33,3 +33,6 @@ export type {
 } from './components/OpeningInventoryCutoverCard.js';
 export { useWebPush } from './hooks/useWebPush.js';
 export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props, PickClaimResult } from './pages/WmsModuleFT2.js';
+
+export * from './pickPendingRecovery.js';
+export { isUncertainPickOutcome } from './pages/PickSessionPage.js';
