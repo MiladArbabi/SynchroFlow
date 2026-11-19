@@ -4,6 +4,11 @@
  * by table + filters. Real-Postgres proof lives in
  * tests/integration/wms/pick-location-truth-01.test.ts.
  */
+// CI-CORRECTION-003 (F1) — keep this contract DB-free: the audit and alert
+// services reach backend-core/db (via notificationDispatch), which refuses to
+// load without PG env. Neither is asserted here.
+jest.mock('../../apps/backend/src/services/audit/operatorAudit.service', () => ({ writeAuditLog: jest.fn() }));
+jest.mock('../../apps/backend/src/services/wms/wmsAlerts.service', () => ({ fireStowTaskAlert: jest.fn() }));
 import {
   PICK_DESTINATION_SQL,
   PickLocationMismatchError,
@@ -14,6 +19,7 @@ import {
   ROOT_ELIGIBLE_UNIT_SQL,
   assertPickScanDestination,
   resolvePickUnits,
+  settlePickedUnits,
   pickDestinationProblem,
   pickDestinationProblemMessage,
   verifyPickLocationScan,
@@ -189,23 +195,40 @@ describe('resolvePickUnits — unit identity at root and bins (owner decision B)
   /**
    * trx.raw answers with the locked eligible units; table reads answer the
    * scanned units' Receive lines and their open inbound Stow tasks.
+   * CI-CORRECTION-003: `lateStowTasks` exist only for the unlocked safety
+   * re-read (an inbound Stow task created after the lock). Writes are recorded
+   * so a refusal can prove that nothing was written.
    */
-  const trxWith = (eligible: Unit[], stowTasks: Record<string, unknown>[] = []) => {
+  const trxWith = (eligible: Unit[], stowTasks: Record<string, unknown>[] = [], lateStowTasks: Record<string, unknown>[] = []) => {
     const raws: { sql: string; bindings: unknown[] }[] = [];
     const reads: { table: string; forUpdate: boolean }[] = [];
+    const writes: { table: string; op: string }[] = [];
     const trx: any = (table: string) => {
       const read = { table, forUpdate: false };
       reads.push(read);
-      const rows = table === 'inventory_units' ? eligible.filter((u) => u.status === 'received') : stowTasks;
+      const excluded: { column: string; values: unknown[] }[] = [];
+      const rows = () => {
+        const base = table === 'inventory_units' ? eligible.filter((u) => u.status === 'received')
+          : read.forUpdate ? stowTasks : [...stowTasks, ...lateStowTasks];
+        return (base as Record<string, unknown>[]).filter((r) => excluded.every((x) => !x.values.includes(r[x.column])));
+      };
       const b: any = {
         where: () => b, whereIn: () => b, orderBy: () => b,
+        // F1 — custody-era builder calls, same non-filtering pass-through shape…
+        whereNull: () => b, whereNotNull: () => b,
+        modify: (fn: (q: any) => void) => { fn(b); return b; },
+        // …except whereNotIn, which really excludes (the locked Stow task ids).
+        whereNotIn: (column: string, values: unknown[]) => { excluded.push({ column, values }); return b; },
         forUpdate: () => { read.forUpdate = true; return b; },
-        select: async () => rows,
+        select: async () => rows(),
+        first: async () => rows()[0],
+        update: async () => { writes.push({ table, op: 'update' }); return 0; },
+        insert: async () => { writes.push({ table, op: 'insert' }); },
       };
       return b;
     };
     trx.raw = async (sql: string, bindings: unknown[]) => { raws.push({ sql, bindings }); return { rows: eligible }; };
-    return { trx, raws, reads };
+    return { trx, raws, reads, writes };
   };
   const u = (id: string, status = 'stowed', line = 'line-1'): Unit => ({ lasyncro_unit_id: id, status, receive_job_line_id: line });
   const resolve = (eligible: Unit[], quantity: number, unitIds: string[], locationCode = 'PICK-0A') =>
@@ -232,11 +255,40 @@ describe('resolvePickUnits — unit identity at root and bins (owner decision B)
     expect(await refusal(resolve([], 1, ['LSU-X']))).toMatchObject({ code: 'PICK_UNIT_IDENTITY_MISMATCH', unitsRequired: 0 });
   });
 
-  it('labelled units: exactly min(quantity, eligible) scanned identities; siblings are never inferred', async () => {
+  // CI-CORRECTION-003 — replaces the pre-custody "exactly min(quantity, eligible)
+  // scanned identities" rule with the ratified custody rule
+  // (SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001): one verified LSU scan, the rest
+  // settled by count, never written as verified lineage.
+  it('labelled units: one verified LSU scan; the rest are settled by quantity, never verified lineage', async () => {
     const shelf = [u('LSU-A'), u('LSU-B'), u('LSU-C')];
-    await expect(resolve(shelf, 2, ['LSU-C', 'LSU-A'])).resolves.toMatchObject({ unitIds: ['LSU-C', 'LSU-A'] });
-    expect(await refusal(resolve(shelf, 3, ['LSU-A']))).toMatchObject({ code: 'PICK_UNIT_IDENTITY_REQUIRED', unitsRequired: 3 });
-    expect(await refusal(resolve(shelf, 2, []))).toMatchObject({ code: 'PICK_UNIT_IDENTITY_REQUIRED', unitsRequired: 2 });
+    // Scanned identities are kept exactly as scanned (never reordered or inferred).
+    await expect(resolve(shelf, 2, ['LSU-C', 'LSU-A'])).resolves.toMatchObject({ unitIds: ['LSU-C', 'LSU-A'], settledUnits: [] });
+    // At least one scan is still required while labelled units are eligible.
+    expect(await refusal(resolve(shelf, 2, []))).toMatchObject({ code: 'PICK_UNIT_IDENTITY_REQUIRED', unitsRequired: 1 });
+
+    const resolved = await resolve(shelf, 3, ['LSU-A']);
+    expect(resolved.unitIds).toEqual(['LSU-A']);
+    expect(resolved.settledUnits.map((x) => x.lasyncro_unit_id)).toEqual(['LSU-B', 'LSU-C']);
+    expect(resolved.uncertainUnitIds).toEqual([]);
+
+    // Drive the real settlement and record what it writes.
+    const inserts: { table: string; rows: Record<string, unknown>[] }[] = [];
+    const trx: any = (table: string) => {
+      const b: any = {
+        where: () => b, whereIn: () => b, whereNull: () => b,
+        update: () => (table === 'inventory_units'
+          ? { returning: async () => ['LSU-A', 'LSU-B', 'LSU-C'].map((id) => ({ lasyncro_unit_id: id })) }
+          : Promise.resolve(0)),
+        insert: async (rows: Record<string, unknown>[]) => { inserts.push({ table, rows }); },
+      };
+      return b;
+    };
+    await settlePickedUnits(trx, { shopId: SHOP, scanId: 'scan-1', resolved, at: new Date(0), operatorId: 7, pickBatchId: BATCH });
+    const ids = (t: string) => inserts.filter((i) => i.table === t).flatMap((i) => i.rows.map((r) => r.lasyncro_unit_id));
+    expect(ids('pick_scan_unit_lineage')).toEqual(['LSU-A']);
+    expect(ids('pick_scan_unit_settlement')).toEqual(['LSU-B', 'LSU-C']);
+    expect(ids('pick_scan_unit_lineage')).not.toEqual(expect.arrayContaining(['LSU-B']));
+    expect(ids('pick_scan_unit_lineage')).not.toEqual(expect.arrayContaining(['LSU-C']));
   });
 
   it('a wrong, duplicate or surplus identity is refused — never substituted', async () => {
@@ -260,7 +312,30 @@ describe('resolvePickUnits — unit identity at root and bins (owner decision B)
     });
     expect([...r.receivedByLine.entries()]).toEqual([['line-1', ['LSU-A']], ['line-2', ['LSU-B']]]);
     expect(r.stowTasks).toEqual([{ ...task, quantity: 3, quantity_placed: 1, quantity_excepted: 0 }]);
-    expect(w.reads).toEqual([{ table: 'inventory_units', forUpdate: false }, { table: 'stow_tasks', forUpdate: true }]);
+    // CI-CORRECTION-003 — the Stow-task lock still precedes the unit lock; the
+    // custody code adds an unlocked safety re-read for tasks created after it.
+    expect(w.reads).toEqual([
+      { table: 'inventory_units', forUpdate: false },
+      { table: 'stow_tasks', forUpdate: true },
+      { table: 'stow_tasks', forUpdate: false },
+    ]);
     expect(w.raws).toHaveLength(1); // the unit lock follows the Stow-task lock
+    expect(w.writes).toEqual([]);
+  });
+
+  it('root: an inbound Stow task that appears after the lock refuses with UNIT_SET_CHANGED and writes nothing', async () => {
+    const units = [u('LSU-A', 'received', 'line-1'), u('LSU-B', 'received', 'line-1')];
+    const locked = { stow_task_id: 't-1', receive_job_line_id: 'line-1', quantity: '2', quantity_placed: '0', quantity_excepted: '0', status: 'pending' };
+    const late = { stow_task_id: 't-2', receive_job_line_id: 'line-1', quantity: '1', quantity_placed: '0', quantity_excepted: '0', status: 'pending' };
+    const w = trxWith(units, [locked], [late]);
+    await expect(resolvePickUnits(w.trx, {
+      shopId: SHOP, locationCode: 'WH-1-ROOT', lasyncroVariantId: 'v-1', quantity: 2, unitIds: ['LSU-A'],
+    })).rejects.toThrow('[PICK_SCAN] UNIT_SET_CHANGED');
+    expect(w.writes).toEqual([]);
+    // Control: without the late task the same pick resolves (the locked task is excluded by id).
+    const ok = trxWith(units, [locked]);
+    await expect(resolvePickUnits(ok.trx, {
+      shopId: SHOP, locationCode: 'WH-1-ROOT', lasyncroVariantId: 'v-1', quantity: 2, unitIds: ['LSU-A'],
+    })).resolves.toMatchObject({ unitIds: ['LSU-A'] });
   });
 });

@@ -49,6 +49,46 @@ function propertyNames(node: ts.ObjectLiteralExpression): string[] {
     .map(p => p.name.getText().replace(/['"]/g, ''));
 }
 
+/**
+ * CI-CORRECTION-003 (F2) — resolve a call argument to its object literal.
+ * Identifiers are resolved by scope, never by name across the file: walk the
+ * call's enclosing blocks outward; the first block that declares the name
+ * decides. It must be a single `const` declaration appearing before the call,
+ * the name must never be reassigned in that block, and its initializer (after
+ * an optional `as`/`satisfies`) must be an object literal. Otherwise throw.
+ */
+function resolvePayload(call: ts.CallExpression, arg: ts.Expression | undefined): ts.Node {
+  if (!arg) throw new Error('onReportException has no payload argument');
+  if (ts.isObjectLiteralExpression(arg)) return arg;
+  if (!ts.isIdentifier(arg)) throw new Error(`Unresolvable payload: ${arg.getText()}`);
+  const name = arg.text;
+  for (let scope: ts.Node | undefined = call.parent; scope; scope = scope.parent) {
+    if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
+    const decls: ts.VariableDeclaration[] = [];
+    for (const statement of scope.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const d of statement.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.name.text === name) decls.push(d);
+      }
+    }
+    if (decls.length === 0) continue;
+    if (decls.length !== 1) throw new Error(`Ambiguous payload ${name}: ${decls.length} declarations in one block`);
+    const decl = decls[0];
+    const list = decl.parent as ts.VariableDeclarationList;
+    if (!(list.flags & ts.NodeFlags.Const)) throw new Error(`Payload ${name} is not const`);
+    if (decl.getStart() >= call.getStart()) throw new Error(`Payload ${name} is declared after the call`);
+    const reassigned = nodes(scope, n =>
+      ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(n.left) && n.left.text === name);
+    if (reassigned.length > 0) throw new Error(`Payload ${name} is reassigned`);
+    let init: ts.Expression | undefined = decl.initializer;
+    while (init && (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init))) init = init.expression;
+    if (!init || !ts.isObjectLiteralExpression(init)) throw new Error(`Payload ${name} is not an object literal`);
+    return init;
+  }
+  throw new Error(`Payload ${name} has no declaration in an enclosing block`);
+}
+
 const web = source('modules/wms/src/ui/pages/PickSessionPage.tsx');
 const mobile = source('apps/mobile/src/screens/PickBriefScreen.tsx');
 
@@ -75,7 +115,11 @@ it('web Pick exception report forwards allocation identity and physical quantity
 
   expect(reports).toHaveLength(1);
 
-  const payload = reports[0].arguments[0];
+  // CI-CORRECTION-003 (F2) — the payload is either an inline object literal or
+  // an identifier resolved through its enclosing blocks to exactly one `const`
+  // declaration (declared before the call, never reassigned) whose initializer is
+  // an object literal. Anything else fails closed.
+  const payload = resolvePayload(reports[0], reports[0].arguments[0]);
   expect(ts.isObjectLiteralExpression(payload)).toBe(true);
 
   const names = propertyNames(payload as ts.ObjectLiteralExpression);
