@@ -29,6 +29,12 @@ function line(id: string, location: string): LineItem {
 const A = line('1', 'A-1');
 const B = line('2', 'B-2');
 
+const recordedA = { status: 'recorded' as const, operation_identity: `pick:${BATCH_ID}:${A.reservation_allocation_id}`,
+  operation_type: 'pick' as const, pick_batch_id: BATCH_ID, reservation_allocation_id: A.reservation_allocation_id,
+  lasyncro_line_item_id: A.lasyncro_line_item_id, lasyncro_variant_id: A.lasyncro_variant_id,
+  location_code: A.location_code, quantity_required: A.quantity, quantity_confirmed: A.quantity,
+  lasyncro_unit_ids: [], scan_id: 'confirmed-scan-a', inventory_movement_id: 'confirmed-removal-a' };
+
 const lostAfterSend = () => new PickConnectionLostError();
 /** An answered server failure that is neither a lost connection nor an ownership refusal. */
 const answeredServerError = () => Object.assign(new Error('Request failed with status code 500'), {
@@ -62,12 +68,12 @@ function ChurningHost(props: { onConfirmScan: jest.Mock; revalidate: jest.Mock }
       floorZones={[]}
       isOnline
       queuedCount={0}
-      onRevalidateSession={async () => { const fresh = await props.revalidate(); setItems(fresh); return fresh; }}
+      onRevalidateSession={async () => { const result = await props.revalidate(); setItems(Array.isArray(result) ? result : result.lineItems); return result; }}
     />
   );
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 function scan(input: HTMLInputElement | null, value: string) {
   expect(input).not.toBeNull();
@@ -82,13 +88,17 @@ async function lostResponseOnA(onConfirmScan: jest.Mock, revalidate: jest.Mock) 
   scan(productInput(), 'EAN-variant-1');
   expect(await screen.findByText('Connection lost')).toBeInTheDocument();
 }
-const goToHeading = (code: string) => screen.queryByText(`${code}.`);
+/** SF-PICK-LOCATION-TRUTH-01: the current stop is the prominent target code. */
+const goToHeading = (code: string) => {
+  const el = screen.queryByTestId('pick-target-location');
+  return el && el.textContent === code ? el : null;
+};
 const pageText = () => document.body.textContent ?? '';
 const PROBE_WINDOW = { timeout: 9_000 };
 
 test('RR-01 server recorded it: the probe reconciles without an online event despite host re-renders; recorded, next item, scanner unlocked, never resent', async () => {
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValue(undefined);
-  const revalidate = jest.fn().mockResolvedValue([B]);
+  const revalidate = jest.fn().mockResolvedValue({ lineItems: [B], outcome: recordedA });
   await lostResponseOnA(onConfirmScan, revalidate);
 
   await waitFor(() => expect(screen.queryByText('Connection lost')).toBeNull(), PROBE_WINDOW);
@@ -102,21 +112,20 @@ test('RR-01 server recorded it: the probe reconciles without an online event des
   expect(onConfirmScan).toHaveBeenCalledTimes(1);
 }, 15_000);
 
-test('RR-02 server did not record it: the probe reconciles; not recorded, same item offered from a fresh location scan, never resent', async () => {
+test('RR-02 a successful stale remaining-work read stays paused: it cannot establish that the original write failed', async () => {
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValue(undefined);
   const revalidate = jest.fn().mockResolvedValue([A, B]);
   await lostResponseOnA(onConfirmScan, revalidate);
-
-  await waitFor(() => expect(screen.queryByText('Connection lost')).toBeNull(), PROBE_WINDOW);
-  expect(screen.getByText(/Product 1 was not recorded — pick it now/i)).toBeInTheDocument();
-  expect(goToHeading('A-1')).toBeInTheDocument();
-  expect(locationInput()).not.toBeNull();
+  await waitFor(() => expect(revalidate).toHaveBeenCalledTimes(1), PROBE_WINDOW);
+  expect(screen.getByText('Connection lost')).toBeInTheDocument();
+  expect(productInput()).toBeDisabled();
+  expect(pageText()).not.toMatch(/was not recorded|pick it now/i);
   expect(onConfirmScan).toHaveBeenCalledTimes(1);
 }, 15_000);
 
 test('RR-03 server answers but cannot confirm: stays locked, says so truthfully, keeps checking, then resolves', async () => {
   const onConfirmScan = jest.fn().mockRejectedValueOnce(lostAfterSend()).mockResolvedValue(undefined);
-  const revalidate = jest.fn().mockRejectedValueOnce(answeredServerError()).mockResolvedValue([B]);
+  const revalidate = jest.fn().mockRejectedValueOnce(answeredServerError()).mockResolvedValue({ lineItems: [B], outcome: recordedA });
   await lostResponseOnA(onConfirmScan, revalidate);
 
   await waitFor(() => expect(revalidate).toHaveBeenCalledTimes(1), PROBE_WINDOW);

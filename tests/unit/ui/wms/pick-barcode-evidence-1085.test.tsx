@@ -55,7 +55,7 @@ function lineItem(): LineItem {
 async function pickThrough(scannedValue: string) {
   fireEvent.click(await screen.findByRole('button', { name: /start picking/i }));
 
-  const locationInput = await screen.findByPlaceholderText(/scan bin barcode/i);
+  const locationInput = await screen.findByPlaceholderText(/^scan location$/i);
   fireEvent.change(locationInput, { target: { value: LOCATION_CODE } });
   fireEvent.keyDown(locationInput, { key: 'Enter', code: 'Enter' });
 
@@ -87,6 +87,7 @@ it('C8a — an LSU- scan records that exact unit as operator evidence', async ()
   const onResolveBarcode = jest.fn().mockResolvedValue({
     lasyncro_variant_id: VARIANT_ID,
     lasyncro_unit_id: scannedUnitId,
+    resolution_method: 'unit_barcode',
   });
   const onConfirmScan = jest.fn().mockResolvedValue(undefined);
 

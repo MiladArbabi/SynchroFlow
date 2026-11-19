@@ -514,7 +514,7 @@ describe('OWNER-PIPELINE-02 — Pick and Pack entry from the pipeline keep exist
     renderOperationsAs('owner', lifecycleWms(), readyOrders);
     const picking = within(stageRegion('Pick')).getByRole('article', { name: batchName(PICKING_ID) });
     fireEvent.click(within(picking).getByRole('button', { name: /^continue picking/i }));
-    expect(await screen.findByPlaceholderText(/scan bin barcode/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/^scan location$/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^start picking/i })).not.toBeInTheDocument();
     expect(param('batchId')).toBe(PICKING_ID);
     expect(axiosInstance.post).not.toHaveBeenCalled();
@@ -593,7 +593,7 @@ describe('OPERATOR-SHELL-01 — Operator task-focused shell', () => {
     renderOperationsAs('operator', { data: { batches: operatorBatches() } });
     const current = within(screen.getByRole('region', { name: /^current work$/i })).getByRole('article', { name: batchName(PICKING_ID) });
     fireEvent.click(within(current).getByRole('button', { name: /^continue picking/i }));
-    expect(await screen.findByPlaceholderText(/scan bin barcode/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/^scan location$/i)).toBeInTheDocument();
     expect(param('batchId')).toBe(PICKING_ID);
     expect(axiosInstance.post).not.toHaveBeenCalled();
   });

@@ -6,10 +6,10 @@ import {
 } from '@mui/material';
 import {
   CheckCircle,
-  Package,
   Info,
 } from 'lucide-react';
 import ProblemBinScanFlow from '../components/ProblemBinScanFlow.js';
+import { ScanProductCard } from '../components/ScanProductCard.js';
 import { ExecutionSessionShell, type ExecutionProgressTone } from '../components/ExecutionSessionShell.js';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { DestinationHighlight, OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
@@ -19,7 +19,6 @@ import {
   ReceiveExitSheet,
   ReceiveFactStrip,
   ReceiveFooterButton,
-  ReceiveItemLine,
   ReceiveStatusLine,
   ReceiveTaskHeading,
   receiveMonoSx,
@@ -1356,6 +1355,8 @@ export default function StowSessionPage({
   const exactUnitTask = Boolean(currentTask && requiresExactUnit(currentTask));
   const unitListUnavailable = Boolean(currentTask) && (!unitListScoped || (pendingLsus.length === 0 && remainingQty > 0));
 
+  // SF-WMS-SCAN-UX-01 — ratified order: Name · Variant → Barcode → expected
+  // LSU labels → SKU → Quantity (shared ScanProductCard). Presentation only.
   const itemIdentity = currentTask ? (
     <>
       {pendingLsus.length > 0 ? (
@@ -1387,13 +1388,8 @@ export default function StowSessionPage({
           All expected units registered
         </Box>
       )}
-      {productBarcode ? (
-        <Box component="span" data-testid="stow-item-barcode" sx={{ display: 'block', color: 'var(--ink-2)' }}>
-          Barcode {productBarcode}
-        </Box>
-      ) : null}
       {currentTask.sku ? (
-        <Box component="span" data-testid="stow-item-sku" sx={{ display: 'block', fontSize: 11 }}>
+        <Box component="span" data-testid="stow-item-sku" sx={{ display: 'block', fontSize: 13, color: 'var(--ink-3)' }}>
           SKU <Box component="span">{currentTask.sku}</Box>
         </Box>
       ) : null}
@@ -1401,23 +1397,20 @@ export default function StowSessionPage({
   ) : null;
 
   const itemLine = currentTask ? (
-    <ReceiveItemLine
-      name={currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'}
-      identity={itemIdentity}
-      media={
-        currentTask.image_url ? (
-          <Box
-            component="img"
-            src={currentTask.image_url}
-            alt=""
-            sx={{ width: 44, height: 44, objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid var(--rule)' }}
-          />
-        ) : (
-          <Box sx={{ width: 44, height: 44, borderRadius: '8px', bgcolor: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Package size={18} aria-hidden="true" style={{ opacity: 0.5 }} />
-          </Box>
-        )
-      }
+    <ScanProductCard
+      stage="product"
+      stageLabel={null}
+      productTitle={currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? 'Item unavailable'}
+      variantTitle={currentTask.product_title ? currentTask.variant_title : null}
+      imageUrl={currentTask.image_url}
+      // The vetted scan target only; exact-unit tasks never show a product
+      // barcode. No barcode → no line (SF-STOW-UX-REFINEMENT-01, unchanged).
+      barcode={productBarcode ?? undefined}
+      showBarcode={!exactUnitTask}
+      middle={itemIdentity}
+      quantity={currentTask.quantity}
+      fieldTestIdPrefix="stow-item"
+      testId="stow-item-card"
     />
   ) : null;
 

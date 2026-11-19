@@ -24,7 +24,7 @@ function wrapper() {
 jest.mock('api/axiosConfig', () => ({
   axiosInstance: { get: jest.fn(), post: jest.fn(), patch: jest.fn() },
 }));
-jest.mock('contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 3, role: 'operator' } }) }));
+jest.mock('contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 3, shop_id: 1, role: 'operator' } }) }));
 jest.mock('components/UpgradePrompt', () => ({ UpgradePrompt: () => null }));
 jest.mock('pages/wms/useWms', () => ({
   useWms: () => ({
@@ -40,6 +40,8 @@ jest.mock('hooks/useSpotlight', () => ({ useSpotlight: () => ({ isDismissed: tru
 const mockProps: { current: Record<string, any> } = { current: {} };
 const mockSubmitScan = jest.fn();
 jest.mock('@lasyncro/wms', () => ({
+  ...jest.requireActual('../../../../modules/wms/src/ui/pickPendingRecovery'),
+  isUncertainPickOutcome: jest.requireActual('../../../../modules/wms/src/ui/pages/PickSessionPage').isUncertainPickOutcome,
   WmsModuleFT2: (props: Record<string, any>) => { mockProps.current = props; return null; },
   useOfflineScanQueue: () => ({ isOnline: true, queuedCount: 0, submitScan: mockSubmitScan, rejectedScans: [], dismissRejectedScan: jest.fn() }),
   useWebPush: jest.fn(),
@@ -52,7 +54,8 @@ const post = axiosInstance.post as jest.Mock;
 const refusal = (code: string) => Object.assign(new Error(code), { response: { status: 409, data: { code, error: code } } });
 const claimCalls = () => post.mock.calls.filter(([url]) => String(url).endsWith('/claim'));
 const sessionCalls = () => get.mock.calls.filter(([url]) => String(url).endsWith('/pick-session'));
-const scanParams = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', quantity_confirmed: 1, location_code: 'A1' };
+const recovery_item = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', quantity: 1, product_title: 'Product', location_code: 'A1' };
+const scanParams = { lasyncro_line_item_id: 'li', lasyncro_variant_id: 'v', quantity_confirmed: 1, location_code: 'A1', recovery_item };
 
 async function renderPage() {
   render(<MemoryRouter initialEntries={['/wms']}><WmsOperationsPage /></MemoryRouter>, { wrapper: wrapper() });
@@ -61,6 +64,8 @@ async function renderPage() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_key: string, _opts: any, run: any) => run({}) } });
   get.mockReset();
   post.mockReset();
   mockSubmitScan.mockReset();
@@ -76,7 +81,7 @@ test('WG-01 no Pick write ever calls POST /claim; a missing generation is refuse
   const props = await renderPage();
   for (const write of [
     () => props.onConfirmScan(BATCH, scanParams),
-    () => props.onReportException(BATCH, { stage: 'pick' }),
+    () => props.onReportException(BATCH, { stage: 'pick', recovery_item }),
     () => props.onAcknowledgePickCustody(BATCH),
     () => props.onPickComplete(BATCH),
   ]) {

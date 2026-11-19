@@ -4,6 +4,12 @@ import { randomUUID } from 'crypto';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { assertPickWriteOwnership, lockPickBatchRow } from './pickAssignment.service.js';
+import {
+  assertPickScanDestination,
+  resolvePickUnits,
+  settlePickedUnits,
+  type ResolvedPickUnits,
+} from './pickLocationTruth.service.js';
 
 /**
  * PICK SCAN SERVICE (WM-01)
@@ -43,12 +49,18 @@ export interface PickScanInput {
   scannedBy: number;
   shopId: number;
   /**
-   * WEB-PICK-UNIT-01: LSU- unit ID resolved at product-scan time.
-   * Optional — undefined on legacy EAN/UPC/SKU path.
-   * When present, bulk-updates inventory_units stowed → picked for
-   * scanned unit + siblings from same receive_job_line_id up to qty.
+   * WEB-PICK-UNIT-01: a single LSU- unit ID (legacy single-unit clients).
+   * Treated as lasyncroUnitIds = [id].
    */
   lasyncroUnitId?: string;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01 / SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001:
+   * the LSU(s) the operator scanned. At least one is required when eligible
+   * labelled units exist (root or bin); further units of the confirmed
+   * quantity are settled by count and recorded as not individually verified.
+   * Supersedes lasyncroUnitId.
+   */
+  lasyncroUnitIds?: string[];
   scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
   /**
    * SF-PICK-ASSIGN-01: the ownership generation returned by claim. Required;
@@ -160,6 +172,14 @@ export async function confirmPickScan(
 
   assertPickWriteOwnership(batch, scannedBy, input.pickClaimGeneration);
 
+  // SF-PICK-LOCATION-TRUTH-01 — a Pick destination is the warehouse root
+  // (product scan, root LSU identity rule) or an active pick bin. Anything
+  // else fails closed before any allocation, truth or unit lock.
+  await assertPickScanDestination(trx, shopId, locationCode);
+  // Every scanned unit identity for this pick (a legacy single LSU counts as one).
+  const requestedUnitIds = input.lasyncroUnitIds ?? (lasyncroUnitId ? [lasyncroUnitId] : []);
+  let resolvedUnits: ResolvedPickUnits | undefined;
+
   // 2. Validate line item belongs to batch
   const lineItem = await trx('order_line_items as oli')
     .join(
@@ -267,6 +287,13 @@ export async function confirmPickScan(
       allocationBacked: true,
     });
 
+    // SF-PICK-LOCATION-TRUTH-01 — unit identity gate (root and bins): Stow
+    // tasks, then unit rows, are locked before the inventory_truth row
+    // (Stow's order). Throws before any write.
+    resolvedUnits = await resolvePickUnits(trx, {
+      shopId, locationCode, lasyncroVariantId, quantity: quantityConfirmed, unitIds: requestedUnitIds, operatorId: scannedBy,
+    });
+
     const inventoryTruth = await trx('inventory_truth')
       .where({
         shop_id: shopId,
@@ -369,27 +396,19 @@ export async function confirmPickScan(
 
 
   /**
-   * SF-STOW-B1: one eligibility gate for allocation-backed and legacy scans.
-   * The scanned unit must belong to this tenant and variant and be stowed at
-   * the Pick location. The row lock is held before any inventory write, so a
-   * refused scan writes nothing and competing scans of one unit serialize.
+   * SF-STOW-B1 / SF-PICK-LOCATION-TRUTH-01: one eligibility gate for
+   * allocation-backed and legacy scans. Every scanned unit must belong to
+   * this tenant and variant and be eligible at the Pick location; exactly
+   * min(quantity, eligible) identities are required and none is inferred.
+   * Row locks are held before any inventory write, so a refused scan writes
+   * nothing and competing scans of one unit serialize.
    */
-  const scannedUnit = lasyncroUnitId
-    ? await trx('inventory_units')
-        .where({
-          shop_id: shopId,
-          lasyncro_unit_id: lasyncroUnitId,
-          lasyncro_variant_id: lasyncroVariantId,
-          current_location_code: locationCode,
-          status: 'stowed',
-        })
-        .forUpdate()
-        .first('receive_job_line_id')
-    : undefined;
-
-  if (lasyncroUnitId && !scannedUnit) {
-    throw new Error('[PICK_SCAN] INVENTORY_UNIT_MISMATCH');
+  if (!resolvedUnits) {
+    resolvedUnits = await resolvePickUnits(trx, {
+      shopId, locationCode, lasyncroVariantId, quantity: quantityConfirmed, unitIds: requestedUnitIds, operatorId: scannedBy,
+    });
   }
+  const pickedUnitIds = resolvedUnits.unitIds;
 
   // 5. Deterministic inventory movement id + device_event_id.
   // Allocation-backed tasks use allocation identity so split line items
@@ -579,13 +598,20 @@ export async function confirmPickScan(
     reservation_allocation_id: allocationBackedLine
       ? reservationAllocationId!
       : null,
-    lasyncro_unit_id: lasyncroUnitId ?? null,
+    lasyncro_unit_id: pickedUnitIds[0] ?? null,
     location_code: locationCode,
     quantity_confirmed: quantityConfirmed,
     status: 'confirmed',
     scanned_by: scannedBy,
     scanned_at: scannedAt,
     inventory_movement_id: inventoryMovementId,
+  });
+
+  // SF-PICK-LOCATION-TRUTH-01 — scanned LSUs leave the eligible set with the
+  // physical removal (no later Stow or Pick can consume them); units picked
+  // straight from Receive release their Stow obligation.
+  await settlePickedUnits(trx, {
+    shopId, scanId, resolved: resolvedUnits, at: scannedAt, operatorId: scannedBy, pickBatchId,
   });
 
   // 8. Update batch activity + units_picked
@@ -679,66 +705,6 @@ export async function confirmPickScan(
       updated_at: scannedAt,
     });
 
-  // 11. Bulk-update inventory_units → picked (WEB-PICK-UNIT-01)
-  // LSU- path only. Scanned unit updated first (guaranteed inclusion),
-  // then remaining qty-1 stowed siblings from same receive_job_line_id
-  // updated in one pass. current_location_code nulled — unit left the shelf.
-  if (lasyncroUnitId) {
-    if (scannedUnit?.receive_job_line_id) {
-      const transitionedUnits = await trx('inventory_units')
-        .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-        .update({
-          status: 'picked',
-          current_location_code: null,
-          updated_at: scannedAt,
-        })
-        .returning('lasyncro_unit_id');
-      await trx('pick_scan_unit_lineage').insert(transitionedUnits.map(unit => ({
-        scan_id: scanId, shop_id: shopId, lasyncro_unit_id: unit.lasyncro_unit_id,
-      })));
-
-      const remaining = quantityConfirmed - 1;
-      if (remaining > 0) {
-        const siblingIds = await trx('inventory_units')
-          .where({
-            shop_id: shopId,
-            lasyncro_variant_id: lasyncroVariantId,
-            receive_job_line_id: scannedUnit.receive_job_line_id,
-            current_location_code: locationCode,
-            status: 'stowed',
-          })
-          .whereNot({ lasyncro_unit_id: lasyncroUnitId })
-          .orderBy('lasyncro_unit_id')
-          .forUpdate()
-          .limit(remaining)
-          .pluck('lasyncro_unit_id');
-
-        if (siblingIds.length > 0) {
-          const transitionedSiblings = await trx('inventory_units')
-            .whereIn('lasyncro_unit_id', siblingIds)
-            .andWhere({ shop_id: shopId, status: 'stowed', current_location_code: locationCode })
-            .update({
-              status: 'picked',
-              current_location_code: null,
-              updated_at: scannedAt,
-            })
-            .returning('lasyncro_unit_id');
-          await trx('pick_scan_unit_lineage').insert(transitionedSiblings.map(unit => ({
-            scan_id: scanId, shop_id: shopId, lasyncro_unit_id: unit.lasyncro_unit_id,
-          })));
-        }
-      }
-    }
-
-    console.info('[PICK_UNIT_BULK_UPDATED]', {
-      lasyncroUnitId,
-      lasyncroVariantId,
-      quantityConfirmed,
-      shopId,
-      pickBatchId,
-    });
-  }
-
   await writeAuditLog(trx, {
     shopId,
     operatorId: scannedBy,
@@ -750,7 +716,11 @@ export async function confirmPickScan(
       lasyncro_variant_id: lasyncroVariantId,
       location_code: locationCode,
       quantity_confirmed: quantityConfirmed,
-      ...(lasyncroUnitId ? { lasyncro_unit_id: lasyncroUnitId } : {}),
+      ...(pickedUnitIds.length > 0 ? { lasyncro_unit_ids: pickedUnitIds } : {}),
+      // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — settled by quantity, NOT individually verified.
+      ...(resolvedUnits.settledUnits.length > 0
+        ? { quantity_settled_unit_ids: resolvedUnits.settledUnits.map((u) => u.lasyncro_unit_id) }
+        : {}),
     },
   });
 
@@ -797,6 +767,8 @@ export interface ShortPickPhysicalOutcomeInput {
   quantityFound: number;
   scannedBy: number;
   scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
+  /** SF-PICK-LOCATION-TRUTH-01: LSUs scanned for the found units at ROOT. */
+  lasyncroUnitIds?: string[];
 }
 
 export interface ShortPickPhysicalOutcomeResult {
@@ -825,6 +797,17 @@ export async function recordShortPickPhysicalOutcome(
   if (!Number.isInteger(quantityFound) || quantityFound <= 0) {
     throw new Error('[PICK_SHORT] QUANTITY_FOUND_INVALID');
   }
+
+  // SF-PICK-LOCATION-TRUTH-01 — the physical removal of found units is a Pick
+  // write: same destination rule as a full pick (root or an active pick bin).
+  // A blocked stop can still report item_missing (no physical write).
+  await assertPickScanDestination(trx, shopId, locationCode);
+
+  // SF-PICK-LOCATION-TRUTH-01 — same identity rule as a full pick (root and
+  // bins), for the found units only; locked before inventory_truth.
+  const resolvedUnits = await resolvePickUnits(trx, {
+    shopId, locationCode, lasyncroVariantId, quantity: quantityFound, unitIds: input.lasyncroUnitIds ?? [], operatorId: scannedBy,
+  });
 
   const inventoryTruth = await trx('inventory_truth')
     .where({
@@ -959,13 +942,17 @@ export async function recordShortPickPhysicalOutcome(
     lasyncro_line_item_id: lasyncroLineItemId,
     lasyncro_variant_id: lasyncroVariantId,
     reservation_allocation_id: reservationAllocationId,
-    lasyncro_unit_id: null,
+    lasyncro_unit_id: resolvedUnits.unitIds[0] ?? null,
     location_code: locationCode,
     quantity_confirmed: quantityFound,
     status: 'confirmed',
     scanned_by: scannedBy,
     scanned_at: occurredAt,
     inventory_movement_id: inventoryMovementId,
+  });
+
+  await settlePickedUnits(trx, {
+    shopId, scanId, resolved: resolvedUnits, at: occurredAt, operatorId: scannedBy, pickBatchId,
   });
 
   await trx('pick_batches')

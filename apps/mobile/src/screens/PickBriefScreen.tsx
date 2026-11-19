@@ -26,7 +26,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
-  Alert, TouchableOpacity, ScrollView,
+  Alert, TouchableOpacity, ScrollView, TextInput, Image,
   AppState,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -51,11 +51,71 @@ type LineItem = {
   lasyncro_order_id:     string;
   /** GH-1049: exact physical pick task; absent on legacy batches. */
   reservation_allocation_id?: string | null;
+  /** Order-line SKU snapshot. */
   sku:                   string | null;
+  /** SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — the allocation variant's current SKU. */
+  variant_sku?:          string | null;
   title:                 string;
+  /** SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — the /line-items payload's own name fields. */
+  product_title?:        string | null;
+  variant_title?:        string | null;
+  barcode?: string | null;
+  image_url?: string | null;
   quantity:              number;
   location_code:         string;
+  /** SF-PICK-LOCATION-TRUTH-01: false when location_code is not a pick bin (blocked stop). */
+  location_pickable?:    boolean;
+  /** SF-PICK-LOCATION-TRUTH-01: false for warehouse-root stock — no location label to scan. */
+  location_scan_required?: boolean;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01: units that must each be identified by their own
+   * LSU label (eligible labelled units at the location, capped at quantity).
+   * The server re-checks on every write.
+   */
+  unit_scan_required?:   number;
+  /** SF-PICK-UX-ADAPTIVE-01-ACTIONABLE-ID-001 — one eligible LSU for this task (display only, never verification). */
+  scan_unit_id?:         string | null;
 };
+
+/**
+ * SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — product name · variant from the
+ * server payload (`product_title`; `title` for payloads that carry it). Shopify's
+ * single-variant placeholder is not a variant name. Nothing is invented.
+ */
+function productName(item: LineItem): string {
+  const name = item.product_title?.trim() || item.title?.trim() || '';
+  const variant = item.variant_title?.trim();
+  return variant && variant !== 'Default Title' ? `${name} · ${variant}` : name;
+}
+
+/**
+ * SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — same precedence as web
+ * pickDisplaySku: order-line snapshot when populated, else the variant's
+ * current SKU, else none. Never invented.
+ */
+function displaySku(item: LineItem): string | null {
+  return item.sku?.trim() || item.variant_sku?.trim() || null;
+}
+
+/** SF-PICK-LOCATION-TRUTH-01 — server refusals of the scanned unit labels (nothing recorded). */
+const UNIT_IDENTITY_CODES = new Set(['PICK_UNIT_IDENTITY_REQUIRED', 'PICK_UNIT_IDENTITY_MISMATCH']);
+/** Unit statuses that can still be on a shelf (received at root, or stowed). */
+// 'picked' is passed to the server: a unit a quantity Pick settled by count may
+// still be physically here, and only the server can reverify it
+// (SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001) or refuse it.
+const PICKABLE_UNIT_STATUSES = new Set(['received', 'stowed', 'picked']);
+const taskKeyOf = (li: LineItem): string => li.reservation_allocation_id ?? li.lasyncro_line_item_id;
+/**
+ * SF-PICK-LOCATION-TRUTH-01 — the resolver's own exact-unit answer is the only
+ * unit identity. Every other method (EAN/UPC, SKU, LSP, external id) attaches a
+ * unit the server chose, so it never names a picked unit — whatever the raw
+ * text looked like.
+ */
+const scannedUnitIdentity = (resolved: {
+  resolution_method?: string;
+  lasyncro_unit_id?: string | null;
+}): string | null =>
+  resolved.resolution_method === 'unit_barcode' ? resolved.lasyncro_unit_id ?? null : null;
 
 // SF-PICK-ASSIGN-01: 'custody_ack' — a takeover with picked units confirms the
 // tote before any scan; restored like an execution phase.
@@ -153,6 +213,10 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
   const [error,       setError]       = useState<string | null>(null);
   const [claiming,    setClaiming]    = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
+  // SF-PICK-UX-ADAPTIVE-01-FINALIZE-001 — server-confirmed outcomes of this session (same basis as web).
+  const sessionTotalsRef = useRef({ picked: 0, short: 0, flagged: 0 });
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const finalizeInFlightRef = useRef(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [rejectedCount, setRejectedCount] = useState(0);
   const [queueStorageError, setQueueStorageError] = useState(false);
@@ -176,6 +240,49 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
   const pendingExQtyRef = useRef<number>(0);
 
   const currentItem = lineItems[currentIndex] ?? null;
+  const currentTaskKey = currentItem ? taskKeyOf(currentItem) : null;
+
+  // SF-PICK-LOCATION-TRUTH-01 — unit labels scanned for the current task. Held
+  // in memory only: nothing is recorded (or counted as picked) until the
+  // server confirms the Pick. Cleared whenever the task or phase changes.
+  const scannedUnitIdsRef = useRef<string[]>([]);
+  const [scannedUnitCount, setScannedUnitCount] = useState(0);
+  const [productVerified, setProductVerified] = useState(false);
+  const [quantityPicked, setQuantityPicked] = useState('0');
+  const lastScanMethodRef = useRef<string | undefined>(undefined);
+  // The server's current label count for a task, re-read after an identity refusal.
+  const [unitsRequiredOverride, setUnitsRequiredOverride] = useState<{ task: string; n: number } | null>(null);
+  const resetLabels = useCallback(() => {
+    scannedUnitIdsRef.current = [];
+    setScannedUnitCount(0);
+    setProductVerified(false);
+    setQuantityPicked('0');
+  }, []);
+  // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — one label verifies the
+  // product/location; the rest of the quantity is counted (server-settled).
+  const unitsToIdentify = currentItem
+    ? Math.min(
+        1,
+        currentItem.quantity,
+        Math.max(0, Number(
+          unitsRequiredOverride?.task === currentTaskKey
+            ? unitsRequiredOverride.n
+            : currentItem.unit_scan_required ?? 0,
+        ) || 0),
+      )
+    : 0;
+  const labelsComplete = unitsToIdentify > 0 && scannedUnitCount >= unitsToIdentify;
+  // Warehouse-root stock has no location label: the product scan comes first.
+  const currentUnbinned = currentItem?.location_scan_required === false && currentItem?.location_pickable !== false;
+
+  const labelScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const scope = phase === 'product_scan' ? currentTaskKey : null;
+    if (labelScopeRef.current !== scope) {
+      labelScopeRef.current = scope;
+      resetLabels();
+    }
+  }, [phase, currentTaskKey, resetLabels]);
 
   // ── Offline queue subscription (DECISION-F) ───────────────────────────────
   useEffect(() => {
@@ -352,6 +459,10 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
     async (raw: string): Promise<string | void> => {
       if (!currentItem) return 'No active item.';
       if (connectionLostRef.current) return PAUSED_SCAN_MESSAGE;
+      // SF-PICK-LOCATION-TRUTH-01 — a stop that is not a pick bin fails closed.
+      if (currentItem.location_pickable === false) {
+        return `${currentItem.location_code} is not a pick bin. Stow this stock into a pick bin, then use Report problem.`;
+      }
       try {
         const { data } = await apiClient.post('/api/v1/wms/location/resolve', {
           scanned_value: raw,
@@ -376,6 +487,93 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
     [currentItem, currentIndex, go, markConnectionLost]
   );
 
+  // SF-PICK-LOCATION-TRUTH-01 — warehouse-root stock is never in a bin, so
+  // there is no location label to scan: the stop starts at the product scan.
+  useEffect(() => {
+    if (phase === 'location_scan' && currentUnbinned) {
+      void go('product_scan', { currentIndex, confirmedLocation: null });
+    }
+  }, [phase, currentUnbinned, currentIndex, go]);
+
+  /**
+   * SF-PICK-LOCATION-TRUTH-01 — after an identity refusal, re-read this task's
+   * label count from the server (read-only). Matched by task identity, never
+   * by index, so the screen position is untouched.
+   */
+  const refreshUnitsRequired = useCallback(async (key: string) => {
+    try {
+      const { data } = await apiClient.get(`/api/v1/wms/batch/${task.id}/line-items`);
+      const fresh = ((data?.line_items ?? []) as LineItem[]).find((li) => taskKeyOf(li) === key);
+      if (fresh) setUnitsRequiredOverride({ task: key, n: Math.max(0, Number(fresh.unit_scan_required ?? 0) || 0) });
+    } catch {
+      // Keep the current count; the server re-checks every write.
+    }
+  }, [task.id]);
+
+  /**
+   * One /pick/scan submission (online only, C008). `identity` is exactly what
+   * the operator scanned: a list of LSU labels, or one LSU / none on the
+   * product-only path. Nothing is inferred on the device. Returns an inline
+   * message, or undefined once the server has confirmed and the screen moved on.
+   */
+  const sendPick = useCallback(
+    async (
+      variantId: string,
+      identity: { lasyncro_unit_id: string | null } | { lasyncro_unit_ids: string[] },
+      method?: string,
+    ): Promise<string | void> => {
+      if (!currentItem) return 'No active item.';
+      // MOB-PCK-07 / C008: one scan identity per pick task, reused on retry
+      // (the server's own idempotency is keyed on the task, not this id).
+      const taskKey = taskKeyOf(currentItem);
+      if (pendingScanRef.current?.task !== taskKey) {
+        pendingScanRef.current = { task: taskKey, eventId: newEventId() };
+      }
+      const eventId = pendingScanRef.current.eventId;
+      const submitError = await offlineQueue.submitScanOnline({
+        deviceEventId: eventId,
+        url: '/api/v1/wms/pick/scan',
+        body: {
+          pick_batch_id:          task.id,
+          lasyncro_line_item_id:  currentItem.lasyncro_line_item_id,
+          lasyncro_variant_id:    variantId,
+          ...identity,
+          // SF-PICK-ASSIGN-01 C007 (REVIEW-005 H-1): the exact physical pick
+          // task on screen. Required by the server for allocation-backed
+          // batches; absent (undefined, dropped from JSON) on legacy tasks.
+          // Never derived or substituted on the device.
+          reservation_allocation_id:
+            currentItem.reservation_allocation_id ?? undefined,
+          location_code:          currentItem.location_code,
+          quantity_confirmed:     currentItem.quantity,
+          device_event_id:        eventId,
+          scan_source:            method ?? 'camera',
+          // SF-PICK-ASSIGN-01 — ownership generation fence.
+          pick_claim_generation:  await ensureGeneration(),
+        },
+      });
+      if (submitError) {
+        if (submitError.code === PICK_CONNECTION_LOST) {
+          markConnectionLost();
+          return CONNECTION_LOST_SCAN_MESSAGE;
+        }
+        if (await handleOwnershipRefusal(submitError.code)) return;
+        if (submitError.code && UNIT_IDENTITY_CODES.has(submitError.code)) {
+          // Nothing was recorded. Start the labels over against the server's count.
+          resetLabels();
+          await refreshUnitsRequired(taskKey);
+          return `${submitError.error} Label cleared — scan the unit label again.`;
+        }
+        return submitError.error; // server answer: not confirmed
+      }
+      // undefined = confirmed by the server → advance
+      pendingScanRef.current = null;
+      sessionTotalsRef.current.picked += currentItem.quantity;
+      await advanceToNext(currentIndex + 1);
+    },
+    [currentItem, currentIndex, task.id, newEventId, advanceToNext, ensureGeneration, handleOwnershipRefusal, markConnectionLost, resetLabels, refreshUnitsRequired]
+  );
+
   // ── Product scan resolve ──────────────────────────────────────────────────
   const handleProductResolve = useCallback(
     async (raw: string, method?: string): Promise<string | void> => {
@@ -387,7 +585,9 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
       scanInFlightRef.current = true;
       setSubmitting(true);
       try {
-        let resolved: { lasyncro_variant_id?: string; lasyncro_unit_id?: string } | undefined;
+        let resolved:
+          | { lasyncro_variant_id?: string; lasyncro_unit_id?: string; resolution_method?: string }
+          | undefined;
         try {
           ({ data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
             scanned_value: raw,
@@ -401,47 +601,55 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
         }
         if (!resolved?.lasyncro_variant_id)
           return 'Barcode not recognised. Try scanning again.';
-        // MOB-PCK-05: server rejects variant mismatches; client check removed
-        // MOB-PCK-07 / C008: one scan identity per pick task, reused on retry
-        // (the server's own idempotency is keyed on the task, not this id).
-        const taskKey = currentItem.reservation_allocation_id ?? currentItem.lasyncro_line_item_id;
-        if (pendingScanRef.current?.task !== taskKey) {
-          pendingScanRef.current = { task: taskKey, eventId: newEventId() };
-        }
-        const eventId = pendingScanRef.current.eventId;
-        const submitError = await offlineQueue.submitScanOnline({
-          deviceEventId: eventId,
-          url: '/api/v1/wms/pick/scan',
-          body: {
-            pick_batch_id:          task.id,
-            lasyncro_line_item_id:  currentItem.lasyncro_line_item_id,
-            lasyncro_variant_id:    resolved.lasyncro_variant_id,
-            lasyncro_unit_id:       resolved.lasyncro_unit_id ?? null,
-            // SF-PICK-ASSIGN-01 C007 (REVIEW-005 H-1): the exact physical pick
-            // task on screen. Required by the server for allocation-backed
-            // batches; absent (undefined, dropped from JSON) on legacy tasks.
-            // Never derived or substituted on the device.
-            reservation_allocation_id:
-              currentItem.reservation_allocation_id ?? undefined,
-            location_code:          currentItem.location_code,
-            quantity_confirmed:     currentItem.quantity,
-            device_event_id:        eventId,
-            scan_source:            method ?? 'camera',
-            // SF-PICK-ASSIGN-01 — ownership generation fence.
-            pick_claim_generation:  await ensureGeneration(),
-          },
-        });
-        if (submitError) {
-          if (submitError.code === PICK_CONNECTION_LOST) {
-            markConnectionLost();
-            return CONNECTION_LOST_SCAN_MESSAGE;
+
+        // SF-PICK-LOCATION-TRUTH-01 — only a scanned LSU label is a unit
+        // identity, as decided by the resolver (resolution_method
+        // 'unit_barcode'), never by the raw text. The resolver attaches some
+        // available unit to a product barcode (EAN/SKU/LSP); that unit was
+        // chosen by the server, never by the operator, so it is never sent.
+        const scannedLabel = scannedUnitIdentity(resolved);
+
+        // Labelled stock: one unit label verifies the product/location (QUANTITY-CUSTODY-001).
+        const identified = scannedUnitIdsRef.current;
+        if (unitsToIdentify > 0) {
+          if (identified.length >= unitsToIdentify) {
+            return 'All labels are scanned. Tap Confirm pick.';
           }
-          if (await handleOwnershipRefusal(submitError.code)) return;
-          return submitError.error; // server answer: not confirmed
+          if (!scannedLabel) return 'Scan the unit label (LSU-…) on the item.';
+          if (resolved.lasyncro_variant_id !== currentItem.lasyncro_variant_id) {
+            return `Wrong item — this label is another product.`;
+          }
+          if (identified.includes(scannedLabel)) return `Label already scanned.`;
+          // Early feedback only; the server re-checks every identity on confirm.
+          const unitStatus = (resolved as { unit_status?: string }).unit_status;
+          if (unitStatus && !PICKABLE_UNIT_STATUSES.has(unitStatus)) {
+            return `This unit is already ${unitStatus.replace(/_/g, ' ')} — it can't be picked. Scan another label.`;
+          }
+          const unitLocation = (resolved as { current_location_code?: string | null }).current_location_code;
+          if (unitStatus === 'stowed' && unitLocation && unitLocation !== currentItem.location_code) {
+            return `This unit is stowed in ${unitLocation}, not here. Scan another label.`;
+          }
+          const next = [...identified, scannedLabel];
+          scannedUnitIdsRef.current = next;
+          setScannedUnitCount(next.length);
+          setQuantityPicked(String(next.length));
+          lastScanMethodRef.current = method;
+          // Single labelled unit: the label scan is the pick (auto-confirm).
+          if (next.length === unitsToIdentify && unitsToIdentify === 1 && currentItem.quantity === 1) {
+            return await sendPick(resolved.lasyncro_variant_id, { lasyncro_unit_ids: next }, method);
+          }
+          return; // progress shown; Confirm pick once every label is scanned
         }
-        // undefined = confirmed by the server → advance
-        pendingScanRef.current = null;
-        await advanceToNext(currentIndex + 1);
+
+        // Multi-unit product picks reveal a count in this same screen.
+        if (currentItem.quantity > 1) {
+          if (resolved.lasyncro_variant_id !== currentItem.lasyncro_variant_id) return 'Wrong item — barcode does not match.';
+          if (scannedLabel) return 'Scan the product barcode. Unit picking requires server-confirmed label requirements.';
+          lastScanMethodRef.current = method;
+          setProductVerified(true);
+          return;
+        }
+        return await sendPick(resolved.lasyncro_variant_id, { lasyncro_unit_id: scannedLabel }, method);
       } catch (err: unknown) {
         if ((err as { connectionLost?: boolean })?.connectionLost) markConnectionLost();
         if (await handleOwnershipRefusal(responseCode(err))) return;
@@ -454,8 +662,44 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
         setSubmitting(false);
       }
     },
-    [currentItem, currentIndex, task.id, newEventId, advanceToNext, ensureGeneration, handleOwnershipRefusal, markConnectionLost]
+    [currentItem, unitsToIdentify, sendPick, handleOwnershipRefusal, markConnectionLost]
   );
+
+  // SF-PICK-LOCATION-TRUTH-01 — explicit confirmation once every label is
+  // scanned (several labels, or labels plus unlabelled units).
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const handleConfirmLabels = useCallback(async () => {
+    if (!currentItem || (!labelsComplete && !productVerified)) return;
+    const picked = unitsToIdentify === currentItem.quantity ? currentItem.quantity : Number(quantityPicked);
+    if (!quantityPicked.trim() || !Number.isInteger(picked) || picked < scannedUnitIdsRef.current.length || picked < 0 || picked > currentItem.quantity) {
+      setConfirmError('Enter a whole quantity between the scanned labels and the required quantity.');
+      return;
+    }
+    if (connectionLostRef.current) { setConfirmError(PAUSED_SCAN_MESSAGE); return; }
+    if (scanInFlightRef.current) return;
+    if (picked < currentItem.quantity) { setProblemSheetVisible(true); return; }
+    scanInFlightRef.current = true;
+    setSubmitting(true);
+    setConfirmError(null);
+    try {
+      const message = await sendPick(
+        currentItem.lasyncro_variant_id,
+        unitsToIdentify > 0 ? { lasyncro_unit_ids: [...scannedUnitIdsRef.current] } : { lasyncro_unit_id: null },
+        lastScanMethodRef.current,
+      );
+      if (message) setConfirmError(message);
+    } catch (err: unknown) {
+      if ((err as { connectionLost?: boolean })?.connectionLost) markConnectionLost();
+      if (await handleOwnershipRefusal(responseCode(err))) return;
+      setConfirmError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Confirm failed. Try again.',
+      );
+    } finally {
+      scanInFlightRef.current = false;
+      setSubmitting(false);
+    }
+  }, [currentItem, labelsComplete, productVerified, quantityPicked, unitsToIdentify, sendPick, handleOwnershipRefusal, markConnectionLost]);
+  useEffect(() => { setConfirmError(null); }, [currentTaskKey]);
 
   // ── C008 — automatic recovery after a lost connection ────────────────────
   // Only a server answer ends the pause. Ownership is re-read through the
@@ -543,6 +787,14 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
           type === 'short_pick'
             ? Math.max(0, currentItem.quantity - qty)
             : 0;
+        // SF-PICK-LOCATION-TRUTH-01 — the found units carry exactly the labels
+        // already scanned; nothing is inferred for the rest.
+        const labels = [...scannedUnitIdsRef.current];
+        if (type === 'short_pick' && labels.length > quantityFound) {
+          return `You scanned ${labels.length} label${labels.length === 1 ? '' : 's'}. ` +
+            `Report at most ${currentItem.quantity - labels.length} affected.`;
+        }
+        const foundUnitIds = quantityFound > 0 ? labels : [];
 
         await apiClient.post(
           `/api/v1/wms/batch/${task.id}/exception`,
@@ -557,13 +809,27 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
             quantity_found:        quantityFound,
             device_event_id:       eventId,
             pick_claim_generation: await ensureGeneration(),
+            ...(foundUnitIds.length > 0 ? { lasyncro_unit_ids: foundUnitIds } : {}),
           }
         );
         pendingExQtyRef.current = qty;
+        // Server accepted the exception: found units are picked, the rest is short and flagged.
+        sessionTotalsRef.current.picked += quantityFound;
+        sessionTotalsRef.current.short += currentItem.quantity - quantityFound;
+        sessionTotalsRef.current.flagged += 1;
       } catch (err: unknown) {
         if (await handleOwnershipRefusal(responseCode(err))) {
           setProblemSheetVisible(false);
           return;
+        }
+        const code = responseCode(err);
+        if (code && UNIT_IDENTITY_CODES.has(code)) {
+          // Nothing was recorded. Re-read the label count so the product scan
+          // asks for labels; a refused label set is started over.
+          if (code === 'PICK_UNIT_IDENTITY_MISMATCH') resetLabels();
+          await refreshUnitsRequired(taskKeyOf(currentItem));
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Unit labels not accepted.';
+          return `${msg} Close this, scan the unit label on one item you found, then report again.`;
         }
         return (
           (err as { response?: { data?: { error?: string } } })
@@ -571,7 +837,7 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
         );
       }
     },
-    [currentItem, task.id, newEventId, ensureGeneration, handleOwnershipRefusal]
+    [currentItem, task.id, newEventId, ensureGeneration, handleOwnershipRefusal, resetLabels, refreshUnitsRequired]
   );
 
   const handleProblemClose = useCallback(async () => {
@@ -582,9 +848,17 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
     await advanceToNext(currentIndex + 1);
   }, [currentIndex, advanceToNext]);
 
-  // ── Complete pick (MOB-PCK-13: via summary phase) ─────────────────────────
+  // ── Complete pick ─────────────────────────────────────────────────────────
+  // SF-PICK-UX-ADAPTIVE-01-FINALIZE-001 — the existing pick-complete operation runs
+  // automatically, once, when the last outcome is server-settled ('summary' is now a
+  // transient finalizing state, not a confirmation screen). 'complete' renders only after
+  // the server accepts. A retry after a lost answer is answered authoritatively by the
+  // ownership fence: PICK_BATCH_NOT_PICKING + status 'pick_complete' = already committed.
   const handlePickComplete = useCallback(async () => {
+    if (finalizeInFlightRef.current) return;
+    finalizeInFlightRef.current = true;
     setSubmitting(true);
+    setFinalizeError(null);
     try {
       const eventId = newEventId();
       await apiClient.post(`/api/v1/wms/batch/${task.id}/pick-complete`, {
@@ -595,24 +869,38 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
       await clearSession();
       await setPhase('complete', {});
     } catch (err: unknown) {
+      const data = (err as { response?: { data?: { code?: string; status?: string; error?: string } } })?.response?.data;
+      if (data?.code === 'PICK_BATCH_NOT_PICKING' && data?.status === 'pick_complete') {
+        generationRef.current = null;
+        await clearSession();
+        await setPhase('complete', {});
+        return;
+      }
       if (await handleOwnershipRefusal(responseCode(err))) return;
-      const msg =
-        (err as { response?: { data?: { error?: string } } })
-          ?.response?.data?.error ?? 'Failed to complete pick.';
-      Alert.alert('Cannot complete', msg);
+      setFinalizeError(data?.error ?? 'Finishing the pick failed. Retry when the connection is restored.');
     } finally {
+      finalizeInFlightRef.current = false;
       setSubmitting(false);
     }
   }, [task.id, newEventId, clearSession, setPhase, ensureGeneration, handleOwnershipRefusal]);
+  const autoFinalizeArmedRef = useRef(true);
+  useEffect(() => {
+    if (phase !== 'summary') { autoFinalizeArmedRef.current = true; return; }
+    if (!autoFinalizeArmedRef.current) return;
+    autoFinalizeArmedRef.current = false;
+    void handlePickComplete();
+  }, [phase, handlePickComplete]);
 
   // ── NodeTrack ─────────────────────────────────────────────────────────────
   const trackNodes: TrackNode[] = [
     {
       id:       'location',
-      label:    phase === 'product_scan'
+      label:    currentUnbinned
+                  ? 'Not in a bin'
+                  : phase === 'product_scan'
                   ? (confirmedLocation ?? '—')
                   : (currentItem?.location_code ?? 'Location'),
-      sublabel: 'Bin barcode',
+      sublabel: currentUnbinned ? 'No location scan' : 'Bin barcode',
       state:    phase === 'location_scan' ? 'active'
               : phase === 'product_scan'  ? 'done'
               : 'pending',
@@ -916,61 +1204,53 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
     );
   }
 
-  // ── SUMMARY (MOB-PCK-13) ──────────────────────────────────────────────────
+  // ── FINALIZING (FINALIZE-001: replaces the MOB-PCK-13 summary/confirm screen) ──
   if (phase === 'summary') {
     return (
       <Screen>
         <AppHeader title={`Pick · ${task.title}`} showLogo={false} />
         {OfflineBanner}
-        <View style={styles.summaryHeadBlock}>
-          <Text style={styles.completeIcon}>✓</Text>
-          <Text style={styles.completeTitle}>All items picked</Text>
-          <Text style={styles.completeSub}>
-            {lineItems.length} line{lineItems.length !== 1 ? 's' : ''} confirmed.
-            {'\n'}Review and mark complete.
-          </Text>
-        </View>
-        <ScrollView contentContainerStyle={styles.list}>
-          {lineItems.map(item => (
-            <Card key={item.lasyncro_line_item_id} style={styles.lineCard}>
-              <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                  {item.sku && <Text style={styles.sku}>{item.sku}</Text>}
-                  <Text style={styles.qty}>
-                    Qty: {item.quantity} · {item.location_code}
-                  </Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-              </Row>
-            </Card>
-          ))}
-        </ScrollView>
-        <View style={styles.actions}>
-          <Button
-            label={submitting ? 'Completing…' : 'Complete pick'}
-            onPress={() => void handlePickComplete()}
-            variant="primary"
-          />
+        <View style={styles.center}>
+          {finalizeError ? (
+            <>
+              <Text style={styles.errorText} accessibilityRole="alert">{finalizeError}</Text>
+              <TouchableOpacity
+                style={styles.completeBtn}
+                disabled={submitting}
+                onPress={() => void handlePickComplete()}
+                accessibilityRole="button"
+              >
+                <Text style={styles.completeBtnText}>{submitting ? 'Finishing pick…' : 'Retry finishing pick'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.completeSub} testID="pick-finalizing" accessibilityLiveRegion="polite">Finishing pick…</Text>
+          )}
         </View>
       </Screen>
     );
   }
 
-  // ── COMPLETE ──────────────────────────────────────────────────────────────
+  // ── COMPLETE — shown only after the server accepted completion ────────────
   if (phase === 'complete') {
+    const t = sessionTotalsRef.current;
     return (
       <Screen>
         <AppHeader showLogo />
         <View style={styles.center}>
           <Text style={styles.completeIcon}>✓</Text>
           <Text style={styles.completeTitle}>Pick complete</Text>
-          <Text style={styles.completeSub}>
-            {lineItems.length} line{lineItems.length !== 1 ? 's' : ''} confirmed.
-            {'\n'}Batch is ready for packing.
+          <Text style={styles.completeSub} testID="pick-complete-totals">
+            {`Picked ${t.picked} · Short ${t.short} · Flagged ${t.flagged}`}
+          </Text>
+          <Text style={styles.completeSub} testID="pick-pack-readiness">
+            {t.flagged > 0
+              ? `Batch ready for pack. ${t.flagged} item${t.flagged === 1 ? '' : 's'} reported — routed to Problem Center.`
+              : 'Batch ready for pack.'}
+            {'\n'}Totals cover this session. Packing is done at the Pack station.
           </Text>
           <TouchableOpacity style={styles.completeBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.completeBtnText}>Back to tasks</Text>
+            <Text style={styles.completeBtnText}>Return to Operations</Text>
           </TouchableOpacity>
         </View>
       </Screen>
@@ -1032,17 +1312,96 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
         />
         {OfflineBanner}
         <NodeTrack nodes={trackNodes} />
-        <View style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
           <View style={styles.contextBlock}>
-            <Text style={styles.contextLabel}>Location confirmed</Text>
-            <Text style={styles.contextValue}>{confirmedLocation}</Text>
-            <Text style={styles.contextSub}>Scan the product barcode</Text>
+            <Text style={styles.contextLabel}>{currentUnbinned ? 'Not in a bin' : 'Location confirmed'}</Text>
+            {!currentUnbinned && <Text style={styles.contextValue}>{confirmedLocation}</Text>}
+            {/* SF-PICK-UX-ADAPTIVE-01-ACTIONABLE-ID-001 — the card shows the complete, real identifier the
+                server accepts for this task: the product barcode, or one eligible LSU from the server
+                (scan_unit_id). Display only — any other eligible LSU is still scannable; once a label is
+                scanned the verified LSU replaces it. Full value, wraps, never truncated. */}
+            <View testID="pick-product-card">
+              {currentItem.image_url && <Image source={{ uri: currentItem.image_url }} accessibilityLabel={productName(currentItem)} style={{ width: 64, height: 64 }} />}
+              <Text style={styles.contextValue} testID="pick-product-name">{productName(currentItem)}</Text>
+              {displaySku(currentItem) ? <Text style={styles.contextSub} testID="pick-product-sku">SKU: {displaySku(currentItem)}</Text> : null}
+              {unitsToIdentify > 0 ? (
+                labelsComplete ? (
+                  // QUANTITY-UX-001 — the scanned (verified) LSU replaces the suggestion, green ✓; not a commitment.
+                  <Text style={styles.contextSub} testID="pick-product-accepted-identifier" accessibilityLiveRegion="polite">
+                    {'Unit label: '}<Text style={[styles.scanTarget, styles.scanAccepted]} testID="pick-scan-accepted">{`✓ ${scannedUnitIdsRef.current[0]}`}</Text>
+                  </Text>
+                ) : currentItem.scan_unit_id?.trim() ? (
+                  <Text style={styles.contextSub} testID="pick-product-accepted-identifier">
+                    {'Unit label: '}<Text style={styles.scanTarget} testID="pick-scan-target">{currentItem.scan_unit_id.trim()}</Text>
+                  </Text>
+                ) : null
+              ) : currentItem.barcode !== undefined ? (
+                <Text style={styles.contextSub} testID="pick-product-barcode">
+                  {'Barcode: '}{currentItem.barcode?.trim()
+                    ? (productVerified
+                      ? <Text style={[styles.scanTarget, styles.scanAccepted]} testID="pick-scan-accepted">{`✓ ${currentItem.barcode.trim()}`}</Text>
+                      : <Text style={styles.scanTarget} testID="pick-scan-target">{currentItem.barcode.trim()}</Text>)
+                    : 'Not assigned'}
+                </Text>
+              ) : null}
+              <Text style={styles.contextSub}>Quantity: {currentItem.quantity}</Text>
+            </View>
+            {unitsToIdentify > 0 ? null : (
+              <Text style={styles.contextSub}>Scan the product barcode</Text>
+            )}
+            {currentItem.quantity > 1 && unitsToIdentify < currentItem.quantity && (labelsComplete || productVerified) && (
+              // QUANTITY-UX-001 — [ − ] [ n   out of N ] [ + ] on one centre line, one height;
+              // "out of N" is fixed text inside the field, never part of the value.
+              <View style={styles.qtyRow} testID="pick-qty-row">
+                <TouchableOpacity
+                  accessibilityRole="button" accessibilityLabel="Remove one unit"
+                  disabled={submitting || connectionLost || (Number(quantityPicked) || 0) <= scannedUnitIdsRef.current.length}
+                  onPress={() => { setQuantityPicked(String(Math.max(scannedUnitIdsRef.current.length, (Number(quantityPicked) || 0) - 1))); setConfirmError(null); }}
+                  style={styles.qtyStep}
+                ><Text style={styles.qtyStepText}>−</Text></TouchableOpacity>
+                <View style={styles.qtyField}>
+                  <TextInput
+                    accessibilityLabel="Quantity picked"
+                    accessibilityHint={`out of ${currentItem.quantity}`}
+                    keyboardType="number-pad"
+                    autoFocus
+                    value={quantityPicked}
+                    onChangeText={value => { setQuantityPicked(value.replace(/[^0-9]/g, '')); setConfirmError(null); }}
+                    editable={!submitting && !connectionLost}
+                    style={styles.qtyInput}
+                  />
+                  <Text style={styles.qtySuffix} testID="pick-qty-out-of" accessible={false}>{`out of ${currentItem.quantity}`}</Text>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button" accessibilityLabel="Add one unit"
+                  disabled={submitting || connectionLost || (Number(quantityPicked) || 0) >= currentItem.quantity}
+                  onPress={() => { setQuantityPicked(String(Math.min(currentItem.quantity, (Number(quantityPicked) || 0) + 1))); setConfirmError(null); }}
+                  style={styles.qtyStep}
+                ><Text style={styles.qtyStepText}>+</Text></TouchableOpacity>
+              </View>
+            )}
+            {confirmError && <Text style={styles.errorText} accessibilityRole="alert">{confirmError}</Text>}
           </View>
-        </View>
-        <ScanDock
-          hint="Point camera at product barcode"
-          onResolve={handleProductResolve}
-        />
+        </ScrollView>
+        {(labelsComplete || productVerified) && (
+          <View style={styles.actions}>
+            <Button
+              label={submitting ? 'Confirming…' : unitsToIdentify < currentItem.quantity && Number(quantityPicked) < currentItem.quantity ? `Report ${quantityPicked || 0} of ${currentItem.quantity}` : `Confirm pick (${currentItem.quantity})`}
+              onPress={() => void handleConfirmLabels()}
+              disabled={submitting || connectionLost}
+              variant="primary"
+            />
+          </View>
+        )}
+        {/* SCAN-INPUT-VISIBILITY-001 — after a valid LSU/EAN scan with quantity > 1 the scanner
+            (camera and HID wedge) is hidden: only the stepper and Confirm remain. A refusal that
+            clears the label, or the next item, brings it back. */}
+        {!(currentItem.quantity > 1 && unitsToIdentify < currentItem.quantity && (labelsComplete || productVerified)) && (
+          <ScanDock
+            hint={unitsToIdentify > scannedUnitCount ? 'Point camera at unit label' : 'Point camera at product barcode'}
+            onResolve={handleProductResolve}
+          />
+        )}
         <TouchableOpacity
           style={styles.reportProblemRow}
           onPress={() => setProblemSheetVisible(true)}
@@ -1058,7 +1417,8 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
           lasyncroVariantId={currentItem.lasyncro_variant_id}
           source="pick"
           serverOwnsProblemTask
-          defaultQty={1}
+          key={currentTaskKey}
+          defaultQty={Math.max(1, currentItem.quantity - Number(quantityPicked || 0))}
         />
       </Screen>
     );
@@ -1122,6 +1482,16 @@ const styles = StyleSheet.create({
   },
   contextValue: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
   contextSub:   { color: colors.ink3, fontSize: font.size.sm },
+  // ACTIONABLE-ID-001 — the identifier to scan: prominent, full value, wraps.
+  // QUANTITY-UX-001 — the identifier keeps the neighbouring detail size; full value, wraps.
+  scanTarget:   { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.bold, flexShrink: 1 },
+  scanAccepted: { color: colors.ok },
+  qtyRow:       { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  qtyStep:      { width: 58, height: 58, borderWidth: 1, borderColor: colors.ink3, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  qtyStepText:  { color: colors.ink, fontSize: 28 },
+  qtyField:     { flex: 1, height: 58, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.ink3, borderRadius: radius.md, paddingHorizontal: spacing.md },
+  qtyInput:     { flex: 1, color: colors.ink, fontSize: 24, padding: 0 },
+  qtySuffix:    { color: colors.ink3, fontSize: font.size.sm },
   reportProblemRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.xs, paddingVertical: spacing.md,

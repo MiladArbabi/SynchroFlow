@@ -285,7 +285,9 @@ async function fixture() {
   const pick = await request(app).post('/api/v1/wms/pick/scan').set(auth(f.token)).send({
     pick_batch_id: batchId, lasyncro_line_item_id: lineItemId,
     lasyncro_variant_id: variantId, reservation_allocation_id: allocation.allocation_id,
-    location_code: locationCode, quantity_confirmed: 3, lasyncro_unit_id: f.unitA,
+    // SF-PICK-LOCATION-TRUTH-01 (owner decision B): every picked unit is named
+    // by its own scan; siblings are never settled implicitly.
+    location_code: locationCode, quantity_confirmed: 3, lasyncro_unit_ids: [f.unitA, f.unitB, f.unitC],
     pick_claim_generation: claim.body.pick_claim_generation,
   });
   const afterPick = await state(f);
@@ -410,7 +412,8 @@ it('C — unrelated same-variant LSU-D has no order attribution and cannot enter
 type B1Shop = { shopId: number; userId: number; token: string; variantId: string; productId: string; binA: string; binB: string };
 // SF-PICK-ASSIGN-01: a claimed batch carries its ownership generation.
 type B1Line = { batchId: string; lineId: string; generation: string };
-const B1_UNIT_MISMATCH = 'lasyncro_unit_id does not match the requested pick task.';
+// SF-PICK-LOCATION-TRUTH-01: one unit-identity refusal contract for root and bins.
+const B1_UNIT_MISMATCH = 'PICK_UNIT_IDENTITY_MISMATCH';
 
 async function b1Shop(): Promise<B1Shop> {
   const tenant = await provisionFt2Shop(crypto.randomUUID());
@@ -483,7 +486,7 @@ const b1State = async (s: B1Shop, l: B1Line, unitId: string) => ({
 async function b1ExpectRefused(s: B1Shop, l: B1Line, unitId: string, locationCode: string) {
   const before = await b1State(s, l, unitId);
   const r = await b1Scan(s, l, unitId, locationCode);
-  expect({ status: r.status, error: r.body.error }).toEqual({ status: 400, error: B1_UNIT_MISMATCH });
+  expect({ status: r.status, code: r.body.code }).toEqual({ status: 409, code: B1_UNIT_MISMATCH });
   expect(await b1State(s, l, unitId)).toEqual(before);
 }
 
@@ -525,7 +528,7 @@ describe('SF-STOW-B1: legacy Pick unit eligibility', () => {
     const l = await b1Line(t1);
     const stock = await b1Stock(t1);
     const r = await b1Scan(t1, l, foreign, t1.binA);
-    expect({ status: r.status, error: r.body.error }).toEqual({ status: 400, error: B1_UNIT_MISMATCH });
+    expect({ status: r.status, code: r.body.code }).toEqual({ status: 409, code: B1_UNIT_MISMATCH });
     expect(await b1ReadUnit(t2, foreign)).toEqual(before);
     expect(await b1Stock(t1)).toEqual(stock);
   });
@@ -535,7 +538,7 @@ describe('SF-STOW-B1: legacy Pick unit eligibility', () => {
     const l = await b1Line(s);
     const stock = await b1Stock(s);
     const r = await b1Scan(s, l, `LSU-${crypto.randomUUID().slice(0, 8)}`, s.binA);
-    expect(r.status).toBe(400);
+    expect(r.status).toBe(409);
     expect(await b1Stock(s)).toEqual(stock);
   });
 
@@ -545,7 +548,7 @@ describe('SF-STOW-B1: legacy Pick unit eligibility', () => {
     const a = await b1Line(s);
     const b = await b1Line(s);
     const results = await Promise.all([b1Scan(s, a, u, s.binA), b1Scan(s, b, u, s.binA)]);
-    expect(results.map(r => r.status).sort()).toEqual([201, 400]);
+    expect(results.map(r => r.status).sort()).toEqual([201, 409]);
     const rows = await withTenant(s.shopId, trx => trx('pick_scan_unit_lineage').where({ shop_id: s.shopId, lasyncro_unit_id: u }).select('scan_id'));
     expect(rows).toHaveLength(1);
     expect((await b1Stock(s)).ledger.filter((m: any) => m.movement_type === 'pick_removal')).toHaveLength(1);
@@ -561,11 +564,23 @@ describe('SF-STOW-B1: legacy Pick unit eligibility', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('still accepts a legacy Pick with no LSU', async () => {
+  // SF-PICK-LOCATION-TRUTH-01 (owner decision B): a product-only Pick may not
+  // consume labelled stock while leaving its LSU eligible on the shelf.
+  it('refuses a product-only Pick while a labelled unit is on the shelf, with zero writes', async () => {
     const s = await b1Shop();
     const u = await b1Unit(s, s.binA);
+    const l = await b1Line(s);
+    const before = await b1State(s, l, u);
+    const r = await b1Scan(s, l, undefined, s.binA);
+    expect({ status: r.status, code: r.body.code }).toEqual({ status: 409, code: 'PICK_UNIT_IDENTITY_REQUIRED' });
+    expect(await b1State(s, l, u)).toEqual(before);
+  });
+
+  it('still accepts a legacy product-only Pick of genuinely unlabelled stock', async () => {
+    const s = await b1Shop();
+    const elsewhere = await b1Unit(s, s.binB);
     const r = await b1Scan(s, await b1Line(s), undefined, s.binA);
     expect({ status: r.status, error: r.body.error }).toEqual({ status: 201, error: undefined });
-    expect((await b1ReadUnit(s, u))?.status).toBe('stowed');
+    expect((await b1ReadUnit(s, elsewhere))?.status).toBe('stowed');
   });
 });

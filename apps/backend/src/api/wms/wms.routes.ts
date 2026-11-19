@@ -19,6 +19,7 @@ import {
   httpReviewUnconfirmedPickScan,
   httpResolveBarcode,
   httpConfirmPickScan,
+  httpVerifyPickLocation,
   httpClaimPack,
   httpGetBatchOrders,
   httpGetReadyToPack,
@@ -329,6 +330,17 @@ router.post(
   requireCapability('warehouse.operations'),
   requireAction('wms:pick:scan'),
   httpConfirmPickScan
+);
+
+// SF-PICK-LOCATION-TRUTH-01 — read-only confirmation that a scanned label is
+// the allocation's pick bin. Same permission as the scan it precedes.
+router.post(
+  '/pick/location/verify',
+  authenticateToken,
+  requireFt2,
+  requireCapability('warehouse.operations'),
+  requireAction('wms:pick:scan'),
+  httpVerifyPickLocation
 );
 
 // SF-PICK-ASSIGN-01 C010 (F2) — audited review of a historical web Pick scan

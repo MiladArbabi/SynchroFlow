@@ -1,3 +1,4 @@
+import { matchesPickReceipt, type PendingPickOperation, type PickPendingDraft, type PickReceipt } from '../pickPendingRecovery.js';
 // modules/wms/src/ui/pages/PickSessionPage.tsx
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode, type RefObject } from 'react';
 import {
@@ -11,12 +12,14 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  InputAdornment,
   useTheme,
   useMediaQuery,
 } from '@mui/material';
 import { Package } from 'lucide-react';
 import { useScanSourceDetector } from '../hooks/useScanSourceDetector.js';
 import { WmsSessionBrief } from '../components/WmsSessionBrief.js';
+import { ScanProductCard } from '../components/ScanProductCard.js';
 import { WMS_TIER1_ACTION_SX } from './CountingSessionPage.js';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import { ExecutionSessionShell, type ExecutionProgressTone } from '../components/ExecutionSessionShell.js';
@@ -32,12 +35,12 @@ import {
   receiveMonoSx,
 } from '../components/receive/ReceiveSessionShell';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
-import type { OperationalMapState, WarehouseZone } from '@lasyncro/shared/ui';
+import type { DestinationHighlight, WarehouseZone } from '@lasyncro/shared/ui';
 
 /**
  * PICK SESSION PAGE — WEBAPP
  * --------------------------
- * Playbook contract: Brief → location_scan → product_scan → [qty_confirm] → finish → done
+ * Playbook contract: Brief → location_scan → product_scan (inline count/confirm) → finish → done
  *
  * SF-PICK-P2-UI-01 — rendered inside the shared ExecutionSessionShell to the
  * owner-approved Pick Session target. Owner decisions 4/7/8/9/12/13:
@@ -83,18 +86,53 @@ export interface LineItem {
   lasyncro_order_id: string;
   /** INV-RES-01: exact physical reservation task; null on legacy batches. */
   reservation_allocation_id?: string | null;
+  /** Order-line SKU snapshot. */
   sku: string | null;
+  /** SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — the allocation variant's current SKU. */
+  variant_sku?: string | null;
   product_title: string;
   variant_title: string | null;
   quantity: number;
   location_code: string;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01: server verdict that location_code is an active
+   * pick bin. false (e.g. the warehouse root) blocks the stop; absent = unknown,
+   * the server scan gate still decides.
+   */
+  location_pickable?: boolean;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01: false for unbinned (warehouse-root) stock — no
+   * location scan, no map position; the product scan comes first.
+   */
+  location_scan_required?: boolean;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01 / SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001:
+   * 1 when eligible labelled units are at the location (one LSU scan verifies
+   * product and location; the quantity is counted), else 0. Root and bins
+   * alike. The server re-checks on every write.
+   */
+  unit_scan_required?: number;
+  /**
+   * SF-PICK-UX-ADAPTIVE-01-ACTIONABLE-ID-001: one eligible LSU for this exact
+   * task from the server (same eligibility as unit_scan_required). Display
+   * only — never verification; other eligible LSUs remain scannable.
+   */
+  scan_unit_id?: string | null;
   /** WEB-PICK-UNIT-01: variant image from Shopify sync; null when not synced. */
   image_url: string | null;
+  /**
+   * SF-WMS-SCAN-UX-01: the variant's product barcode, shown on the product
+   * scan step when the server provides it. Display only; never sent.
+   */
+  barcode?: string | null;
   /** WEB-PICK-UNIT-01: stowed LSU- unit IDs for this variant; null on legacy path. */
   unit_ids: string[] | null;
 }
 
 export interface ConfirmScanParams {
+  device_event_id?: string;
+  /** Browser recovery snapshot; stripped by the host before HTTP submission. */
+  recovery_item?: LineItem;
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
   /** INV-RES-01: exact reservation task; undefined on legacy batches. */
@@ -104,9 +142,21 @@ export interface ConfirmScanParams {
   scan_source?: 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';
   /** WEB-PICK-UNIT-01: LSU- unit ID from resolver; undefined on legacy barcode path. */
   lasyncro_unit_id?: string;
+  /** SF-PICK-LOCATION-TRUTH-01: every unit label scanned for unbinned stock. */
+  lasyncro_unit_ids?: string[];
+}
+
+/** SF-PICK-LOCATION-TRUTH-01 — server-confirmed location scan. */
+export interface VerifyLocationParams {
+  lasyncro_line_item_id: string;
+  reservation_allocation_id?: string;
+  location_code: string;
+  scanned_value: string;
 }
 
 export interface ReportExceptionParams {
+  /** Browser recovery snapshot; stripped by the host before HTTP submission. */
+  recovery_item?: LineItem;
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
   /** GH-1049: exact physical pick task; undefined on legacy batches. */
@@ -119,6 +169,8 @@ export interface ReportExceptionParams {
   /** GH-1049: stable per-report id so a retry replays instead of duplicating. */
   device_event_id: string;
   notes?: string;
+  /** SF-PICK-LOCATION-TRUTH-01: unit labels scanned for the found units (unbinned stock). */
+  lasyncro_unit_ids?: string[];
 }
 
 /**
@@ -155,8 +207,19 @@ export interface PickSessionPageProps {
   pickBatchId: string;
   lineItems: LineItem[];
   onComplete: () => void;
-  onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string; lasyncro_unit_id?: string } | null>;
+  onResolveBarcode: (scannedValue: string) => Promise<{
+    lasyncro_variant_id: string;
+    lasyncro_unit_id?: string;
+    /** Only unit_barcode proves that this exact unit was scanned. */
+    resolution_method?: string;
+  } | null>;
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
+  /**
+   * SF-PICK-LOCATION-TRUTH-01 — server confirmation of the location scan.
+   * Resolves only when the scanned label is the allocation's pick bin; the
+   * map turns green only after it resolves. Absent = client label match only.
+   */
+  onVerifyLocation?: (params: VerifyLocationParams) => Promise<{ location_code: string }>;
   onReportException: (params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
   onPickComplete: () => Promise<void>;
   /** Navigation-only handoff; physical Pack work belongs to its session. */
@@ -199,7 +262,16 @@ export interface PickSessionPageProps {
    * `lineItems`, and resolves with them. A rejection without an HTTP answer
    * keeps the session paused; an ownership refusal ends it.
    */
-  onRevalidateSession?: () => Promise<LineItem[]>;
+  pendingOperation?: PendingPickOperation | null;
+  onRecoveryConfirmed?: (receipt: PickReceipt) => void | Promise<void>;
+  onRevalidateSession?: () => Promise<LineItem[] | { lineItems: LineItem[]; outcome?: PickReceipt }>;
+  /**
+   * SF-PICK-UX-ADAPTIVE-01-CROSS-TAB-001 — synchronous read of the durable
+   * pending Pick for this shop, operator and batch (shared by every tab).
+   * Throws when it cannot be read; the session then refuses scans.
+   */
+  onCheckPendingPick?: () => PendingPickOperation | null;
+
   /**
    * SF-PICK-RESUME-GENERATION-001 — opening an already-started batch (resume)
    * verifies ownership with the server before any scanner renders: the host
@@ -230,9 +302,33 @@ function isConnectionLost(err: unknown): boolean {
   return (e.request !== undefined || e.isAxiosError === true) && !e.response;
 }
 
+/** A sent Pick is uncertain unless the API confirms a definitive business refusal.
+ * A proxy/server error can arrive after commit, even with an HTTP response.
+ * Already-recorded responses reaching this page still require reconciliation:
+ * the online transport consumes only the acknowledgement attributed to us.
+ */
+/**
+ * SF-PICK-UX-ADAPTIVE-01-PRODUCT-IDENTITY-001 — SKU shown on the Pick card: the
+ * order-line snapshot when populated, otherwise the variant's current SKU,
+ * otherwise none. Native Pick applies the same precedence. Never invented.
+ */
+export function pickDisplaySku(item: { sku?: string | null; variant_sku?: string | null }): string | null {
+  return item.sku?.trim() || item.variant_sku?.trim() || null;
+}
+
+export function isUncertainPickOutcome(err: unknown): boolean {
+  if (isConnectionLost(err)) return true;
+  const response = (err as { response?: { status?: unknown; data?: { code?: unknown; error?: unknown } } } | null)?.response;
+  const code = response?.data?.code;
+  if (code === 'PICK_SCAN_OUTCOME_UNCERTAIN' || code === 'PICK_SCAN_ALREADY_RECORDED') return true;
+  const status = response?.status;
+  return !(typeof status === 'number' && [400, 401, 403, 404, 409, 422].includes(status)
+    && typeof response?.data?.error === 'string' && response.data.error.length > 0);
+}
+
 /** SF-PICK-A6B — sent, no answer: the server may have recorded it. Never "not recorded", never a re-scan. */
 const UNCERTAIN_SCAN_MESSAGE =
-  'Connection lost — this scan may already have been recorded. Do not scan this item; Picking checks with the server and shows the result when the connection is back.';
+  'Confirmation pending — this scan may already have been recorded. Do not scan this item; Picking checks with the server before continuing.';
 /** SF-PICK-A6B — the connection failed before the scan was sent (barcode lookup): confirmed nothing recorded.
  *  Keeps the underlying cause visible (GH-1241 H1: a lookup failure is reported as a failure). */
 const notSentScanMessage = (cause: string) =>
@@ -241,6 +337,27 @@ const notSentScanMessage = (cause: string) =>
 /** Recovery probe cadence while paused (in addition to the browser's online event). */
 const RECONNECT_PROBE_MS = 5_000;
 
+/**
+ * SF-WMS-SCAN-UX-01 — Brief steps from the batch's own stops: a bin-scan
+ * instruction only when a stop is a bin; root (unbinned) stock is product-only.
+ */
+export function pickBriefSteps(items: readonly Pick<LineItem, 'location_scan_required' | 'unit_scan_required'>[]): string[] {
+  const binStops = items.filter((li) => li.location_scan_required !== false).length;
+  const rootStops = items.length - binStops;
+  const labelled = items.some((li) => (li.unit_scan_required ?? 0) > 0);
+  const steps =
+    rootStops === 0
+      ? ['At each stop, scan the bin label, then the product.']
+      : binStops === 0
+        ? ['At each stop, scan the product. No bin scan.']
+        : [
+            'Bin stops: scan the bin label, then the product.',
+            'Stops not in a bin: scan the product only.',
+          ];
+  if (labelled) steps.push('Labelled units: scan each unit’s label.');
+  return steps;
+}
+
 /** SF-PICK-ASSIGN-01 — the server refused a write because this session no longer owns the batch. */
 const OWNERSHIP_LOST_CODES = new Set([
   'PICK_OWNERSHIP_REVOKED', 'PICK_GENERATION_STALE', 'PICK_GENERATION_REQUIRED', 'PICK_BATCH_NOT_PICKING',
@@ -248,6 +365,25 @@ const OWNERSHIP_LOST_CODES = new Set([
 function pickOwnershipCode(err: unknown): string | null {
   const code = (err as { response?: { data?: { code?: unknown } } })?.response?.data?.code;
   return typeof code === 'string' ? code : null;
+}
+
+/**
+ * SF-PICK-UX-ADAPTIVE-01-FINALIZE-001 — the server says this batch is already
+ * pick_complete (a previous completion request committed but its answer was lost).
+ */
+function isCommittedPickCompletion(err: unknown): boolean {
+  const data = (err as { response?: { data?: { code?: unknown; status?: unknown } } })?.response?.data;
+  return data?.code === 'PICK_BATCH_NOT_PICKING' && data?.status === 'pick_complete';
+}
+
+/** SF-PICK-LOCATION-TRUTH-01 — the server refused the scanned unit labels; nothing was recorded. */
+function isUnitIdentityRefusal(err: unknown): boolean {
+  return pickOwnershipCode(err)?.startsWith('PICK_UNIT_IDENTITY_') ?? false;
+}
+/** The server's authoritative label count from an identity refusal, if any. */
+function unitsRequiredFrom(err: unknown): number | null {
+  const n = (err as { response?: { data?: { units_required?: unknown } } })?.response?.data?.units_required;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 type SessionPhase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'finish' | 'done';
@@ -303,6 +439,11 @@ function locationMatches(scanned: string, locationCode: string): boolean {
   return n === c || n === `LOC-${c}`;
 }
 
+/** SF-PICK-LOCATION-TRUTH-01 — short copy for a stop that is not a pick bin. */
+function blockedLocationMessage(code: string): string {
+  return `${code} is not a pick bin. Stow this stock into a pick bin, then use Report problem.`;
+}
+
 /** "A-1-3-7" → "Lane A · Bin 7" */
 function parseLocationLabel(code: string): string {
   const parts = code.split('-');
@@ -328,10 +469,11 @@ const MAX_PROGRESS_SEGMENTS = 12;
 
 export default function PickSessionPage({
   pickBatchId,
-  lineItems,
+  lineItems: sourceLineItems,
   onComplete,
   onResolveBarcode,
   onConfirmScan,
+  onVerifyLocation,
   onReportException,
   onPickComplete,
   onStartPacking,
@@ -345,7 +487,14 @@ export default function PickSessionPage({
   onAcknowledgeCustody,
   onRevalidateSession,
   onVerifyResume,
+  pendingOperation,
+  onRecoveryConfirmed,
+  onCheckPendingPick,
 }: PickSessionPageProps) {
+  const [reconciledItems, setReconciledItems] = useState<LineItem[] | null>(null);
+  const lineItems = reconciledItems ?? sourceLineItems;
+  const pendingDraftRef = useRef<PickPendingDraft | null>(pendingOperation ?? null);
+  const restoredIds = pendingOperation?.body.lasyncro_unit_ids ?? (pendingOperation?.body.lasyncro_unit_id ? [pendingOperation.body.lasyncro_unit_id] : []);
   const theme = useTheme();
   // Desktop puts the map beside the task; smaller viewports keep the scan
   // controls first and the map below them (decision 12).
@@ -357,8 +506,19 @@ export default function PickSessionPage({
 
   const locationInputRef  = useRef<HTMLInputElement>(null);
   const productInputRef   = useRef<HTMLInputElement>(null);
+  // SF-PICK-UX-ADAPTIVE-01-QUANTITY-UX-001 — the quantity field owns the keyboard once the count is active.
+  const qtyInputRef       = useRef<HTMLInputElement>(null);
   // WEB-PICK-UNIT-01: carries LSU- unit ID from product_scan into qty_confirm path.
-  const resolvedUnitIdRef = useRef<string | undefined>(undefined);
+  const resolvedUnitIdRef = useRef<string | undefined>(pendingOperation?.body.lasyncro_unit_id);
+  // SF-PICK-LOCATION-TRUTH-01: unit labels scanned for the current unbinned item.
+  const scannedUnitIdsRef = useRef<string[]>(restoredIds);
+  const [scannedUnitCount, setScannedUnitCount] = useState(restoredIds.length);
+  // The server's label count after an identity refusal (read-time count was stale).
+  const [unitsRequiredOverride, setUnitsRequiredOverride] = useState<number | null>(null);
+  const resetScannedUnits = useCallback(() => {
+    scannedUnitIdsRef.current = [];
+    setScannedUnitCount(0);
+  }, []);
   /**
    * SF-PICK-P2 — synchronous scanner lock. React state is not an atomic lock:
    * two rapid hardware scans can arrive before a rerender. Only one resolve or
@@ -375,7 +535,7 @@ export default function PickSessionPage({
   const completeInFlightRef = useRef(false);
 
   const [phase, setPhase]               = useState<SessionPhase>(
-    () => (resumePicking ? 'location_scan' : 'brief'),
+    () => (pendingOperation ? 'product_scan' : resumePicking ? 'location_scan' : 'brief'),
   );
   /**
    * Totals on Done cover this session only when execution was resumed
@@ -385,10 +545,13 @@ export default function PickSessionPage({
   const [resumedSession, setResumedSession] = useState(resumePicking);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [locationInput, setLocationInput] = useState('');
+  // SF-PICK-LOCATION-TRUTH-01: the task key whose location the server confirmed.
+  const [verifiedLocationKey, setVerifiedLocationKey] = useState<string | null>(null);
+  const [locationChecking, setLocationChecking] = useState(false);
   const [productInput,  setProductInput]  = useState('');
   /** Decision 4 — multi-unit count starts at zero and is never prefilled. */
   const [qtyCount,       setQtyCount]      = useState(0);
-  const [scanError,      setScanError]     = useState<string | null>(null);
+  const [scanError,      setScanError]     = useState<string | null>(pendingOperation ? UNCERTAIN_SCAN_MESSAGE : null);
   const [scanProcessing, setScanProcessing] = useState(false);
   const [lastAck,        setLastAck]       = useState<string | null>(null);
   const [exitOpen,       setExitOpen]      = useState(false);
@@ -439,8 +602,8 @@ export default function PickSessionPage({
 
   // C008 — online-only Pick: a lost connection pauses every scan until the
   // server answers again. The ref is the synchronous gate for the handlers.
-  const [connectionLost, setConnectionLost] = useState(false);
-  const connectionLostRef = useRef(false);
+  const [connectionLost, setConnectionLost] = useState(Boolean(pendingOperation));
+  const connectionLostRef = useRef(Boolean(pendingOperation));
   const pauseForConnection = useCallback(() => {
     connectionLostRef.current = true;
     setConnectionLost(true);
@@ -448,7 +611,7 @@ export default function PickSessionPage({
   // SF-PICK-A6B-OUTCOME-TRUTH-001 — a confirmation that was SENT but got no
   // answer has an unknown outcome. It stays unresolved (scanning paused) until
   // the server's authoritative remaining work says whether it was recorded.
-  const uncertainScanRef = useRef<{ allocationKey: string; title: string } | null>(null);
+  const uncertainScanRef = useRef<{ allocationKey: string; title: string } | null>(pendingOperation ? { allocationKey: pendingOperation.item.reservation_allocation_id ?? pendingOperation.item.lasyncro_line_item_id, title: pendingOperation.item.product_title } : null);
   const pauseAfterLostConnection = useCallback((item: LineItem | undefined, sent: boolean, err: unknown) => {
     pauseForConnection();
     if (sent && item) {
@@ -459,37 +622,61 @@ export default function PickSessionPage({
     }
   }, [pauseForConnection]);
 
-  const currentItem = lineItems[currentIndex];
+  // SF-PICK-UX-ADAPTIVE-01-CROSS-TAB-001 — another tab of this operator holds an
+  // unresolved Pick for this batch (or the durable fence cannot be read). The
+  // block is synchronous and lifts only after a fresh server read (below).
+  const [otherTabBlock, setOtherTabBlock] = useState<'pending' | 'unreadable' | null>(null);
+  const otherTabBlockRef = useRef(false);
+  const checkPendingRef = useRef(onCheckPendingPick);
+  checkPendingRef.current = onCheckPendingPick;
+  const durableBlockReason = useCallback((): 'pending' | 'unreadable' | null => {
+    const check = checkPendingRef.current;
+    if (!check) return null;
+    try {
+      const durable = check();
+      // Our own write-ahead entry (sent, or restored after refresh) is fenced by this tab's own recovery.
+      return durable && durable.requestId !== pendingDraftRef.current?.body.device_event_id ? 'pending' : null;
+    } catch {
+      return 'unreadable';
+    }
+  }, []);
+  /** Synchronous gate run before accepting every scan or Pick write. */
+  const blockedByOtherTab = useCallback((): boolean => {
+    const reason = durableBlockReason();
+    if (reason) {
+      otherTabBlockRef.current = true;
+      setOtherTabBlock(reason);
+    }
+    return otherTabBlockRef.current;
+  }, [durableBlockReason]);
+  const scanBlocked = connectionLost || otherTabBlock !== null;
+
+  const currentItem = connectionLost && pendingDraftRef.current ? pendingDraftRef.current.item : lineItems[currentIndex];
   const totalUnits  = lineItems.reduce((sum, li) => sum + li.quantity, 0);
   const isExecution = phase === 'location_scan' || phase === 'product_scan' || phase === 'qty_confirm';
 
-  // PICK-EXECUTION-SPATIAL-01B — remaining route only: lineItems from the
-  // current item on, by location, first occurrence kept. Nothing absent from
-  // lineItems is ever treated as completed or visited (a resumed allocation
-  // pick returns remaining work only), so no history is derived here.
-  const remainingRoute = useMemo(() => {
-    const seen = new Set<string>();
-    const route: string[] = [];
-    for (const item of lineItems.slice(currentIndex)) {
-      if (!seen.has(item.location_code)) {
-        seen.add(item.location_code);
-        route.push(item.location_code);
-      }
-    }
-    return route;
-  }, [lineItems, currentIndex]);
-
-  const routeStateByLocation = useMemo(
+  // SF-PICK-LOCATION-TRUTH-01 — the map lights exactly one place: the current
+  // stop's allocated pick bin. Orange while pending, green only after the
+  // server confirmed the scan. Unbinned (warehouse-root) stock and any
+  // non-pick-bin target are never lit; other route stops are never lit
+  // either, so the map can never point somewhere the instruction does not.
+  const currentKey = currentItem ? (currentItem.reservation_allocation_id ?? currentItem.lasyncro_line_item_id) : null;
+  const currentLocationBlocked = currentItem?.location_pickable === false;
+  const currentUnbinned = currentItem?.location_scan_required === false && !currentLocationBlocked;
+  const unitsToIdentify = currentItem && !currentLocationBlocked
+    // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — one label verifies the
+    // product/location; the rest of the quantity is counted (server-settled).
+    ? Math.min(1, Math.max(0, unitsRequiredOverride ?? currentItem.unit_scan_required ?? 0))
+    : 0;
+  const currentLocationCode = currentItem && !currentLocationBlocked && !currentUnbinned ? currentItem.location_code : null;
+  const locationVerified = currentKey != null && verifiedLocationKey === currentKey;
+  const destinationHighlight = useMemo<DestinationHighlight | null>(
     () =>
-      Object.fromEntries(
-        remainingRoute.map((code) => [code, 'active' as OperationalMapState]),
-      ),
-    [remainingRoute],
+      currentLocationCode
+        ? { locationCode: currentLocationCode, tone: locationVerified ? 'confirmed' : 'suggested' }
+        : null,
+    [currentLocationCode, locationVerified],
   );
-
-  // Orientation map, not manager inspection: only the current stop is an
-  // inspection target, so it stays selected and nothing else is clickable.
-  const currentLocationCode = currentItem?.location_code ?? null;
   const inspectableCodes = useMemo(
     () => new Set(currentLocationCode ? [currentLocationCode] : []),
     [currentLocationCode],
@@ -499,16 +686,34 @@ export default function PickSessionPage({
   useEffect(() => {
     if (exitOpen || exceptionDialog) return;
     if (phase === 'location_scan') setTimeout(() => locationInputRef.current?.focus(), 50);
-    if (phase === 'product_scan')  setTimeout(() => productInputRef.current?.focus(),  50);
-  }, [phase, currentIndex, scanError, exitOpen, exceptionDialog]);
+    if (phase === 'product_scan' && !scanProcessing) setTimeout(() => productInputRef.current?.focus(), 50);
+    // QUANTITY-UX-001 — once identity is verified the count is the active step: typed digits go to the
+    // quantity field, never the scanner. Re-focus only if focus is not already in the quantity field.
+    if (phase === 'qty_confirm' && !scanProcessing) {
+      setTimeout(() => {
+        const qty = qtyInputRef.current;
+        if (qty && document.activeElement !== qty) { qty.focus(); qty.select(); }
+        else if (!qty) productInputRef.current?.focus();
+      }, 50);
+    }
+  }, [phase, currentIndex, scanError, exitOpen, exceptionDialog, scanProcessing]);
+
+  // SF-PICK-LOCATION-TRUTH-01 — unbinned stock has no location to scan: the
+  // product scan is the first step, wherever the session enters the stop.
+  useEffect(() => {
+    if (phase === 'location_scan' && currentUnbinned) setPhase('product_scan');
+  }, [phase, currentUnbinned]);
 
   // ── Advance / finish ───────────────────────────────────────
   const advanceOrFinish = useCallback(() => {
+    pendingDraftRef.current = null;
     setLocationInput('');
     setProductInput('');
     setQtyCount(0);
     setScanError(null);
     resetScanDetector();
+    resetScannedUnits();
+    setUnitsRequiredOverride(null);
     resolvedUnitIdRef.current = undefined; // WEB-PICK-UNIT-01: clear between items
     if (currentIndex >= lineItems.length - 1) {
       setPhase('finish');
@@ -516,7 +721,7 @@ export default function PickSessionPage({
       setCurrentIndex(i => i + 1);
       setPhase('location_scan');
     }
-  }, [currentIndex, lineItems.length, resetScanDetector]);
+  }, [currentIndex, lineItems.length, resetScanDetector, resetScannedUnits]);
 
   // ── Resume (Brief → location_scan, already-picking batch) ──
   // One-way and Brief-only: never touches an execution phase, and never
@@ -535,7 +740,7 @@ export default function PickSessionPage({
   // that got no answer offers an explicit Retry.
   const [resumeGate, setResumeGate] = useState<'idle' | 'verifying' | 'verified' | 'refused' | 'unanswered'>('idle');
   const [resumeRefusal, setResumeRefusal] = useState<{ code: string | null; message: string } | null>(null);
-  const resumeGateActive = resumedSession && onVerifyResume !== undefined;
+  const resumeGateActive = resumedSession && onVerifyResume !== undefined && !pendingOperation;
   const verifyResume = useCallback(async () => {
     if (!onVerifyResume) return;
     setResumeGate('verifying');
@@ -575,16 +780,42 @@ export default function PickSessionPage({
   // ── Location scan ──────────────────────────────────────────
   // Client match only; the reservation's location stays authoritative at
   // /pick/scan. A mismatch changes nothing.
-  const handleLocationScan = useCallback((value: string) => {
-    if (!currentItem || connectionLostRef.current) return;
+  // SF-PICK-LOCATION-TRUTH-01: with onVerifyLocation the server confirms the
+  // label against the allocation's pick bin before the stop turns green.
+  const handleLocationScan = useCallback(async (value: string) => {
+    if (!currentItem || connectionLostRef.current || locationChecking || blockedByOtherTab()) return;
     setScanError(null);
-    if (locationMatches(value, currentItem.location_code)) {
+    if (currentItem.location_pickable === false) {
+      setScanError(blockedLocationMessage(currentItem.location_code));
+      return;
+    }
+    const key = currentItem.reservation_allocation_id ?? currentItem.lasyncro_line_item_id;
+    if (!onVerifyLocation) {
+      if (locationMatches(value, currentItem.location_code)) {
+        setLastAck(null);
+        setPhase('product_scan');
+      } else {
+        setScanError(`Wrong location (${value.trim().toUpperCase()}). Scan ${currentItem.location_code}.`);
+      }
+      return;
+    }
+    setLocationChecking(true);
+    try {
+      await onVerifyLocation({
+        lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
+        reservation_allocation_id: currentItem.reservation_allocation_id ?? undefined,
+        location_code: currentItem.location_code,
+        scanned_value: value,
+      });
+      setVerifiedLocationKey(key);
       setLastAck(null);
       setPhase('product_scan');
-    } else {
-      setScanError(`That label is ${value.trim().toUpperCase()}. Your location is ${currentItem.location_code} — nothing changed.`);
+    } catch (err) {
+      setScanError(errorMessage(err, `Location not confirmed. Scan ${currentItem.location_code} again.`));
+    } finally {
+      setLocationChecking(false);
     }
-  }, [currentItem]);
+  }, [currentItem, onVerifyLocation, locationChecking]);
 
   const recordPicked = useCallback((item: LineItem) => {
     setPickResults(prev => [...prev, {
@@ -595,29 +826,94 @@ export default function PickSessionPage({
 
   // ── Product scan ───────────────────────────────────────────
   const handleProductScan = useCallback(async (value: string) => {
-    if (!currentItem || scanInFlightRef.current || connectionLostRef.current) return;
+    if (!currentItem || scanInFlightRef.current || connectionLostRef.current || blockedByOtherTab()) return;
     scanInFlightRef.current = true;
     setScanProcessing(true);
     setScanError(null);
     let sent = false;
     try {
       const scannedValue = value.trim();
+
+      // SF-PICK-LOCATION-TRUTH-01 — labelled units (root or bin): each unit is
+      // identified by its own label; never inferred or auto-selected.
+      const identified = scannedUnitIdsRef.current;
+      if (unitsToIdentify > 0 && identified.length >= unitsToIdentify) {
+        setScanError('All required labels are scanned. Confirm the pick.');
+        return;
+      }
+      if (unitsToIdentify > identified.length) {
+        const unit = await onResolveBarcode(scannedValue);
+        // EAN/SKU/LSP resolutions can carry a server-selected candidate.
+        // Only the resolver's exact-unit method is operator identity evidence.
+        const unitId = unit?.resolution_method === 'unit_barcode' ? unit.lasyncro_unit_id : undefined;
+        if (!unitId) {
+          setScanError('Scan the unit label on the item.');
+          return;
+        }
+        if (!unit || unit.lasyncro_variant_id !== currentItem.lasyncro_variant_id) {
+          setScanError('Wrong item — label does not match.');
+          return;
+        }
+        if (identified.includes(unitId)) {
+          setScanError('Label already scanned.');
+          return;
+        }
+        const next = [...identified, unitId];
+        scannedUnitIdsRef.current = next;
+        setScannedUnitCount(next.length);
+        if (next.length < unitsToIdentify) return;
+        if (currentItem.quantity > 1) {
+          // Multi-unit picks always require explicit confirmation. Only the
+          // server-verified unlabelled remainder can be entered as a count.
+          setQtyCount(next.length);
+          setPhase('qty_confirm');
+          return;
+        }
+        if (blockedByOtherTab()) return; // re-read after the barcode lookup await
+        sent = true;
+        const params: ConfirmScanParams = {
+          lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
+          lasyncro_variant_id:   currentItem.lasyncro_variant_id,
+          reservation_allocation_id:
+            currentItem.reservation_allocation_id ?? undefined,
+          location_code:         currentItem.location_code,
+          quantity_confirmed:    currentItem.quantity,
+          scan_source:           detectSourceAndReset(),
+          lasyncro_unit_ids:     next,
+          device_event_id: newEventId(), recovery_item: currentItem,
+        };
+        pendingDraftRef.current = { kind: 'pick', body: params, item: currentItem };
+        await onConfirmScan(params);
+        recordPicked(currentItem);
+        advanceOrFinish();
+        return;
+      }
+
       const result = await onResolveBarcode(scannedValue);
 
       if (result?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
-        const resolvedUnitId = scannedValue.startsWith('LSU-')
+        if (result.resolution_method === 'unit_barcode' && !result.lasyncro_unit_id) {
+          setScanError('Scan the unit label on the item.');
+          return;
+        }
+        if (currentItem.quantity > 1 && result.resolution_method === 'unit_barcode') {
+          setScanError('Scan the product barcode. Unit picking requires server-confirmed label requirements.');
+          return;
+        }
+        const resolvedUnitId = result.resolution_method === 'unit_barcode'
           ? result.lasyncro_unit_id
           : undefined;
 
         resolvedUnitIdRef.current = resolvedUnitId;
 
-        if (currentItem.quantity > 1) {
+        if (currentItem.quantity > 1 && phase !== 'qty_confirm') {
           setQtyCount(0);
           setPhase('qty_confirm');
-        } else {
+        } else if (currentItem.quantity === 1) {
           // Single unit: the scan is the pick, accepted only when /pick/scan resolves.
+          if (blockedByOtherTab()) return; // re-read after the barcode lookup await
           sent = true;
-          await onConfirmScan({
+          const params: ConfirmScanParams = {
             lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
             lasyncro_variant_id:   currentItem.lasyncro_variant_id,
             reservation_allocation_id:
@@ -626,7 +922,10 @@ export default function PickSessionPage({
             quantity_confirmed:    currentItem.quantity,
             scan_source:           detectSourceAndReset(),
             lasyncro_unit_id:      resolvedUnitId,
-          });
+            device_event_id: newEventId(), recovery_item: currentItem,
+          };
+          pendingDraftRef.current = { kind: 'pick', body: params, item: currentItem };
+          await onConfirmScan(params);
           recordPicked(currentItem);
           advanceOrFinish();
         }
@@ -634,16 +933,34 @@ export default function PickSessionPage({
         setScanError('Wrong item — barcode does not match. Check you are at the right bin.');
       }
     } catch (err: unknown) {
+      if (sent && isUncertainPickOutcome(err)) {
+        pauseAfterLostConnection(currentItem, true, err);
+        return;
+      }
+      pendingDraftRef.current = null;
+      if (isUnitIdentityRefusal(err)) {
+        resetScannedUnits();
+        const n = unitsRequiredFrom(err);
+        if (n !== null) setUnitsRequiredOverride(n);
+      } else if (sent && currentItem.quantity === 1
+        && !OWNERSHIP_LOST_CODES.has(pickOwnershipCode(err) ?? '')) {
+        // A definitive refusal did not pick this item. Q1 has no Confirm
+        // control: discard its pending identity so the operator can rescan.
+        // Unknown network outcomes stay pending for server revalidation.
+        resetScannedUnits();
+        resolvedUnitIdRef.current = undefined;
+      }
       if (isConnectionLost(err)) pauseAfterLostConnection(currentItem, sent, err);
       else if (!absorbOwnershipError(err)) setScanError(errorMessage(err, 'Scan failed. Try again.'));
     } finally {
       scanInFlightRef.current = false;
       setScanProcessing(false);
     }
-  }, [currentItem, onResolveBarcode, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, absorbOwnershipError, pauseAfterLostConnection]);
+  }, [currentItem, phase, unitsToIdentify, onResolveBarcode, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, absorbOwnershipError, pauseAfterLostConnection, resetScannedUnits]);
 
   // ── Exception report (existing GH-1049 workflow) ───────────
   const openExceptionDialog = useCallback((prefillFound?: number) => {
+    if (connectionLostRef.current || blockedByOtherTab()) return;
     setExceptionEventId(newEventId());
     setExceptionType(null);
     // Decision 13 / F2 — a counted shortfall keeps the operator's count.
@@ -657,7 +974,15 @@ export default function PickSessionPage({
   // Only the FULL required quantity is ever sent; a lower count is a
   // shortfall and goes to the existing exception workflow instead.
   const handleQtyConfirm = useCallback(() => {
-    if (!currentItem || scanInFlightRef.current || connectionLostRef.current) return;
+    if (!currentItem || scanInFlightRef.current || connectionLostRef.current || blockedByOtherTab()) return;
+    if (scannedUnitIdsRef.current.length < unitsToIdentify) {
+      setScanError('Scan the unit label before confirming.');
+      return;
+    }
+    if (!Number.isInteger(qtyCount) || qtyCount < scannedUnitIdsRef.current.length || qtyCount < 0 || qtyCount > currentItem.quantity) {
+      setScanError('Enter a whole quantity between the scanned labels and the required quantity.');
+      return;
+    }
     if (qtyCount !== currentItem.quantity) {
       openExceptionDialog(qtyCount);
       return;
@@ -665,7 +990,8 @@ export default function PickSessionPage({
     scanInFlightRef.current = true;
     setScanProcessing(true);
     setScanError(null);
-    onConfirmScan({
+    const params: ConfirmScanParams = {
+      device_event_id: newEventId(), recovery_item: currentItem,
       lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
       lasyncro_variant_id:   currentItem.lasyncro_variant_id,
       reservation_allocation_id:
@@ -673,13 +999,29 @@ export default function PickSessionPage({
       location_code:         currentItem.location_code,
       quantity_confirmed:    currentItem.quantity,
       scan_source:           detectSourceAndReset(),
-      lasyncro_unit_id:      resolvedUnitIdRef.current,
-    })
+      ...(unitsToIdentify > 0
+        ? { lasyncro_unit_ids: scannedUnitIdsRef.current }
+        : { lasyncro_unit_id: resolvedUnitIdRef.current }),
+    };
+    pendingDraftRef.current = { kind: 'pick', body: params, item: currentItem };
+    onConfirmScan(params)
       .then(() => {
         recordPicked(currentItem);
         advanceOrFinish();
       })
       .catch((err: unknown) => {
+        if (isUncertainPickOutcome(err)) {
+          pauseAfterLostConnection(currentItem, true, err);
+          return;
+        }
+        pendingDraftRef.current = null;
+        if (isUnitIdentityRefusal(err)) {
+          resetScannedUnits();
+          const n = unitsRequiredFrom(err);
+          if (n !== null) setUnitsRequiredOverride(n);
+          setQtyCount(0);
+          setPhase('product_scan');
+        }
         if (isConnectionLost(err)) pauseAfterLostConnection(currentItem, true, err);
         else if (!absorbOwnershipError(err)) setScanError(errorMessage(err, 'Confirm failed. Try again.'));
       })
@@ -687,7 +1029,7 @@ export default function PickSessionPage({
         scanInFlightRef.current = false;
         setScanProcessing(false);
       });
-  }, [currentItem, qtyCount, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, openExceptionDialog, absorbOwnershipError, pauseAfterLostConnection]);
+  }, [currentItem, qtyCount, unitsToIdentify, onConfirmScan, detectSourceAndReset, advanceOrFinish, recordPicked, openExceptionDialog, absorbOwnershipError, pauseAfterLostConnection, resetScannedUnits]);
 
   // ── C008 — automatic recovery after a lost connection ──────
   // Only a server answer ends the pause: the host re-reads ownership and the
@@ -702,7 +1044,27 @@ export default function PickSessionPage({
     if (!connectionLostRef.current || resumeInFlightRef.current || !onRevalidateSession) return;
     resumeInFlightRef.current = true;
     try {
-      const fresh = await onRevalidateSession();
+      const result = await onRevalidateSession();
+      const fresh = Array.isArray(result) ? result : result.lineItems;
+      const receipt = Array.isArray(result) ? undefined : result.outcome;
+      const pending = pendingDraftRef.current;
+      if (!Array.isArray(fresh)) throw new Error('Pick confirmation remains pending.');
+      if (uncertainScanRef.current && (!pending || !receipt || !matchesPickReceipt(pending, receipt, pickBatchId))) {
+        setResumeUnconfirmed(true);
+        setScanError(UNCERTAIN_SCAN_MESSAGE);
+        return; // a stale successful read is still unresolved
+      }
+      if (pending && receipt) {
+        await onRecoveryConfirmed?.(receipt);
+        setPickResults(prev => [...prev, {
+          lineItem: pending.item, status: pending.kind === 'pick' ? 'picked' : 'exception',
+          exceptionType: pending.kind === 'exception' ? pending.body.exception_type : undefined,
+          unitsPicked: receipt.quantity_confirmed!, unitsShort: pending.item.quantity - receipt.quantity_confirmed!,
+        }]);
+      }
+      const remaining = pending ? fresh.filter(li => (li.reservation_allocation_id ?? li.lasyncro_line_item_id) !==
+        (pending.item.reservation_allocation_id ?? pending.item.lasyncro_line_item_id)) : fresh;
+      setReconciledItems(remaining);
       connectionLostRef.current = false;
       setConnectionLost(false);
       setResumeUnconfirmed(false);
@@ -711,6 +1073,8 @@ export default function PickSessionPage({
       setQtyCount(0);
       setScanError(null);
       resetScanDetector();
+      resetScannedUnits();
+      setUnitsRequiredOverride(null);
       resolvedUnitIdRef.current = undefined;
       // Remaining work only from here on (same rule as a resumed session).
       setResumedSession(true);
@@ -719,15 +1083,9 @@ export default function PickSessionPage({
       // (confirmed allocations are excluded). The client never resends it.
       const uncertain = uncertainScanRef.current;
       uncertainScanRef.current = null;
-      if (uncertain) {
-        const stillToPick = fresh.some((li) => (li.reservation_allocation_id ?? li.lasyncro_line_item_id) === uncertain.allocationKey);
-        setLastAck(stillToPick
-          ? `Connection restored — ${uncertain.title} was not recorded — pick it now.`
-          : `Connection restored — ${uncertain.title} was recorded.`);
-      } else {
-        setLastAck('Connection restored');
-      }
-      setPhase(fresh.length > 0 ? 'location_scan' : 'finish');
+      pendingDraftRef.current = null;
+      setLastAck(uncertain ? `Connection restored — ${uncertain.title} was recorded.` : 'Connection restored');
+      setPhase(remaining.length > 0 ? 'location_scan' : 'finish');
     } catch (err: unknown) {
       if (isConnectionLost(err)) {                       // still (or again) disconnected
         // SF-PICK-A6B-OWNERSHIP-TRUTH-003 F2 — an earlier inconclusive answer no
@@ -749,7 +1107,7 @@ export default function PickSessionPage({
     } finally {
       resumeInFlightRef.current = false;
     }
-  }, [onRevalidateSession, absorbOwnershipError, resetScanDetector]);
+  }, [onRevalidateSession, onRecoveryConfirmed, pickBatchId, absorbOwnershipError, resetScanDetector, resetScannedUnits]);
 
   // SF-PICK-A6B-RECONNECT-RECOVERY-002 — a lost response never fires `online`,
   // so the probe is the only recovery path. The host re-renders (board polling)
@@ -768,8 +1126,68 @@ export default function PickSessionPage({
     };
   }, [connectionLost]);
 
+  // SF-PICK-UX-ADAPTIVE-01-CROSS-TAB-001 — the other tab's Pick left the durable
+  // fence (server-confirmed, exact receipt or definitive refusal). This tab's
+  // allocations may be stale: re-read ownership and the authoritative remaining
+  // work, then restore scanning for unfinished work only. No answer → stay blocked.
+  const otherTabRefreshInFlightRef = useRef(false);
+  const refreshAfterOtherTab = useCallback(async () => {
+    if (!otherTabBlockRef.current || otherTabRefreshInFlightRef.current || connectionLostRef.current) return;
+    const reason = durableBlockReason();
+    if (reason) { setOtherTabBlock(reason); return; }
+    if (!onRevalidateSession) return; // no authoritative re-read available: stay blocked
+    otherTabRefreshInFlightRef.current = true;
+    try {
+      const result = await onRevalidateSession();
+      const fresh = Array.isArray(result) ? result : result.lineItems;
+      if (!Array.isArray(fresh)) return;
+      const again = durableBlockReason();
+      if (again) { setOtherTabBlock(again); return; } // a new pending appeared during the read
+      setReconciledItems(fresh);
+      setLocationInput('');
+      setProductInput('');
+      setQtyCount(0);
+      setScanError(null);
+      resetScanDetector();
+      resetScannedUnits();
+      setUnitsRequiredOverride(null);
+      resolvedUnitIdRef.current = undefined;
+      setExceptionDialog(false);
+      setCurrentIndex(0);
+      setResumedSession(true);
+      setPhase(p => (p === 'location_scan' || p === 'product_scan' || p === 'qty_confirm' || p === 'finish'
+        ? (fresh.length > 0 ? 'location_scan' : 'finish') : p));
+      setLastAck('Pick confirmed in another tab — remaining work refreshed.');
+      otherTabBlockRef.current = false;
+      setOtherTabBlock(null);
+    } catch (err: unknown) {
+      if (absorbOwnershipError(err)) {
+        otherTabBlockRef.current = false;
+        setOtherTabBlock(null);
+      }
+      // Otherwise (no answer, or any other refusal): stay blocked and retry.
+    } finally {
+      otherTabRefreshInFlightRef.current = false;
+    }
+  }, [durableBlockReason, onRevalidateSession, absorbOwnershipError, resetScanDetector, resetScannedUnits]);
+  const refreshAfterOtherTabRef = useRef(refreshAfterOtherTab);
+  refreshAfterOtherTabRef.current = refreshAfterOtherTab;
+  // Another tab's write-ahead/clear fires `storage` here immediately; the probe
+  // covers a missed event. Neither replaces the synchronous per-scan gate.
+  useEffect(() => {
+    const onStorage = () => { if (!blockedByOtherTab()) return; void refreshAfterOtherTabRef.current(); };
+    window.addEventListener('storage', onStorage);
+    onStorage();
+    return () => window.removeEventListener('storage', onStorage);
+  }, [blockedByOtherTab]);
+  useEffect(() => {
+    if (!otherTabBlock) return;
+    const probe = window.setInterval(() => { void refreshAfterOtherTabRef.current(); }, RECONNECT_PROBE_MS);
+    return () => window.clearInterval(probe);
+  }, [otherTabBlock]);
+
   const handleReportException = useCallback(() => {
-    if (!currentItem || !exceptionType || exceptionInFlightRef.current) return;
+    if (!currentItem || !exceptionType || exceptionInFlightRef.current || connectionLostRef.current || blockedByOtherTab()) return;
     if (QTY_REQUIRED.includes(exceptionType) && !exceptionQty.trim()) {
       setExceptionError('Enter the quantity found.');
       return;
@@ -778,10 +1196,18 @@ export default function PickSessionPage({
       setExceptionError('Notes are required for this exception type.');
       return;
     }
+    const qtyFound = exceptionType === 'short_pick' ? (parseInt(exceptionQty, 10) || 0) : 0;
+    // SF-PICK-LOCATION-TRUTH-01 — found units carry the labels already
+    // scanned (root or bin); nothing is inferred for the rest.
+    const foundUnitIds = qtyFound > 0 ? scannedUnitIdsRef.current : [];
+    if (foundUnitIds.length > qtyFound) {
+      setExceptionError(`You scanned ${foundUnitIds.length} labels. Enter at least ${foundUnitIds.length} found.`);
+      return;
+    }
+
     exceptionInFlightRef.current = true;
     setExceptionProcessing(true);
     setExceptionError(null);
-    const qtyFound = exceptionType === 'short_pick' ? (parseInt(exceptionQty, 10) || 0) : 0;
 
     /**
      * GH-1049 — one report carries the whole physical truth: which allocation,
@@ -789,7 +1215,8 @@ export default function PickSessionPage({
      * linked Problem Center task in the same transaction; the client must not
      * mint a second incident.
      */
-    onReportException({
+    const params: ReportExceptionParams = {
+      recovery_item: currentItem,
       lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
       lasyncro_variant_id:   currentItem.lasyncro_variant_id,
       reservation_allocation_id:
@@ -800,7 +1227,10 @@ export default function PickSessionPage({
       quantity_found:        qtyFound,
       device_event_id:       exceptionEventId,
       notes:                 exceptionNotes.trim() || undefined,
-    })
+      ...(foundUnitIds.length > 0 ? { lasyncro_unit_ids: foundUnitIds } : {}),
+    };
+    pendingDraftRef.current = { kind: 'exception', body: params, item: currentItem };
+    onReportException(params)
       .then(() => {
         setPickResults(prev => [...prev, {
           lineItem: currentItem,
@@ -817,6 +1247,12 @@ export default function PickSessionPage({
         advanceOrFinish();
       })
       .catch((err: unknown) => {
+        if (isUncertainPickOutcome(err)) {
+          setExceptionDialog(false);
+          pauseAfterLostConnection(currentItem, true, err);
+          return;
+        }
+        pendingDraftRef.current = null;
         if (absorbOwnershipError(err)) {
           setExceptionDialog(false);
           return;
@@ -827,20 +1263,30 @@ export default function PickSessionPage({
         exceptionInFlightRef.current = false;
         setExceptionProcessing(false);
       });
-  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrFinish, absorbOwnershipError]);
+  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrFinish, absorbOwnershipError, pauseAfterLostConnection]);
 
   // ── Pick complete ──────────────────────────────────────────
-  // Done renders only after the backend accepts completion (decision 7).
+  // SF-PICK-UX-ADAPTIVE-01-FINALIZE-001 — the existing pick-complete operation is
+  // called automatically, once, when the last Pick outcome has been settled by the
+  // server (phase 'finish'). Done renders only after the backend accepts it. A
+  // retry after a lost answer is answered authoritatively: the server's ownership
+  // fence refuses a second completion with PICK_BATCH_NOT_PICKING + status
+  // 'pick_complete', which means this batch's completion is already committed.
   const handlePickComplete = useCallback(() => {
-    if (completeInFlightRef.current) return;
+    if (completeInFlightRef.current || blockedByOtherTab()) return;
     completeInFlightRef.current = true;
     setCompletingPick(true);
     setCompletionError(null);
-    onPickComplete()
+    Promise.resolve()
+      .then(() => onPickComplete())
       .then(() => {
         setPhase('done');
       })
       .catch((err: unknown) => {
+        if (isCommittedPickCompletion(err)) {
+          setPhase('done');
+          return;
+        }
         if (!absorbOwnershipError(err)) {
           setCompletionError(errorMessage(err, 'Pick complete failed. Retry when connection is restored.'));
         }
@@ -850,6 +1296,16 @@ export default function PickSessionPage({
         setCompletingPick(false);
       });
   }, [onPickComplete, absorbOwnershipError]);
+
+  // FINALIZE-001 — automatic, single-flight finalization when the last outcome is settled.
+  // One automatic attempt per entry into 'finish'; a failure waits for an explicit Retry.
+  const autoFinalizeArmedRef = useRef(true);
+  useEffect(() => {
+    if (phase !== 'finish') { autoFinalizeArmedRef.current = true; return; }
+    if (!autoFinalizeArmedRef.current || connectionLost || otherTabBlock !== null || ownershipLost) return;
+    autoFinalizeArmedRef.current = false;
+    handlePickComplete();
+  }, [phase, connectionLost, otherTabBlock, ownershipLost, handlePickComplete]);
 
   // SF-PICK-ASSIGN-01 — custody acknowledgement, then a fresh location scan.
   const handleAcknowledgeCustody = useCallback(async () => {
@@ -884,17 +1340,13 @@ export default function PickSessionPage({
       <WmsSessionBrief
         eyebrow={`Batch ${batchShort}`}
         title="Pick Session"
-        description="Items are sorted by optimized pick route."
         facts={[
           { label: 'Action', value: 'Brief' },
           { label: 'Lines', value: String(lineItems.length) },
           { label: 'Units', value: String(totalUnits) },
           { label: 'Next', value: 'Start picking' },
         ]}
-        steps={[
-          'For each item, scan the bin barcode first.',
-          'Then scan the product barcode to confirm.',
-        ]}
+        steps={pickBriefSteps(lineItems)}
         error={startError}
         primaryAction={
           <Button
@@ -1076,7 +1528,7 @@ export default function PickSessionPage({
   if (isExecution && !currentItem) return null;
 
   // ── Derived presentation ───────────────────────────────────
-  const n = lineItems.length;
+  const n = Math.max(lineItems.length, connectionLost && pendingDraftRef.current ? 1 : 0);
   const unitsPicked = pickResults.reduce((sum, r) => sum + r.unitsPicked, 0);
   const unitsShort  = pickResults.reduce((sum, r) => sum + r.unitsShort, 0);
   const flaggedCount = pickResults.filter(r => r.status === 'exception').length;
@@ -1106,33 +1558,6 @@ export default function PickSessionPage({
       sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
     >
       <Box
-        component="ol"
-        aria-label="Pick route"
-        sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexWrap: 'wrap', alignItems: 'center', rowGap: 0.5 }}
-      >
-        {remainingRoute.map((code) => (
-          <Box
-            component="li"
-            key={code}
-            aria-current={code === currentLocationCode ? 'location' : undefined}
-            sx={{
-              fontSize: 12,
-              ...receiveMonoSx,
-              fontWeight: code === currentLocationCode ? 600 : 400,
-              color: code === currentLocationCode ? 'var(--accent-text)' : 'var(--ink-3)',
-              '&:not(:first-of-type)::before': {
-                content: '"→"',
-                mx: 0.75,
-                color: 'var(--ink-4)',
-              },
-            }}
-          >
-            {code}
-          </Box>
-        ))}
-      </Box>
-
-      <Box
         sx={{
           flex: 1,
           // The canvas keeps a usable floor; the region itself stays flexible.
@@ -1144,12 +1569,15 @@ export default function PickSessionPage({
           overflow: 'hidden',
         }}
       >
-        {floorZones && floorZones.length > 0 ? (
+        {/* QUANTITY-UX-001 — the map is drawn only for the current allocation's real bin with
+            canonical geometry; root (unbinned) or geometry-less stops get a truthful text fallback,
+            so no other bin is ever presented as the destination. */}
+        {floorZones && floorZones.length > 0 && currentLocationCode && floorZones.some(z => z.location_code === currentLocationCode) ? (
           <IsometricCanvas
             zones={floorZones}
             selectedLocationCode={currentLocationCode}
             inspectableLocationCodes={inspectableCodes}
-            operationalStateByLocation={routeStateByLocation}
+            destinationHighlight={destinationHighlight}
             showLegend={false}
             showControls={false}
             disablePan
@@ -1158,7 +1586,9 @@ export default function PickSessionPage({
         ) : (
           <Box sx={{ height: '100%', minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
             <Typography role="status" sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
-              Floor map unavailable. Follow the location label {currentLocationCode}.
+              {currentUnbinned
+                ? 'Not in a bin — no map position. Scan the product.'
+                : `Floor map position unavailable. Follow the location label ${currentItem?.location_code ?? ''}.`}
             </Typography>
           </Box>
         )}
@@ -1184,26 +1614,39 @@ export default function PickSessionPage({
         )
       }
       name={currentItem.variant_title ? `${currentItem.product_title} · ${currentItem.variant_title}` : currentItem.product_title}
-      identity={
-        <>
-          {[currentItem.sku, `pick ${currentItem.quantity}`].filter(Boolean).join(' · ')}
-          {(currentItem.unit_ids ?? []).length > 0 && (
-            <Box component="span" sx={{ display: 'block' }}>
-              {(currentItem.unit_ids ?? []).slice(0, 3).join(' · ')}
-              {(currentItem.unit_ids ?? []).length > 3 ? ` +${(currentItem.unit_ids ?? []).length - 3} more` : ''}
-            </Box>
-          )}
-        </>
-      }
+      // SF-WMS-SCAN-UX-01 — quantity only. Stowed LSU ids are never listed here:
+      // the operator scans the unit in hand; nothing is preselected.
+      identity={`Quantity: ${currentItem.quantity}`}
+    />
+  ) : null;
+
+  // SF-WMS-SCAN-UX-01 — shared product information for the scan steps. Values
+  // are the task's own server data and the labels actually scanned.
+  const scannedIds = scannedUnitIdsRef.current.slice(0, scannedUnitCount);
+  const productCard = (stageLabel?: string) => currentItem ? (
+    <ScanProductCard
+      stage={unitsToIdentify > 0 ? 'units' : 'product'}
+      stageLabel={stageLabel}
+      productTitle={currentItem.product_title}
+      variantTitle={currentItem.variant_title}
+      imageUrl={currentItem.image_url}
+      barcode={currentItem.barcode}
+      sku={pickDisplaySku(currentItem)}
+      quantity={currentItem.quantity}
+      unitsRequired={unitsToIdentify}
+      scanUnitId={currentItem.scan_unit_id ?? null}
+      barcodeAccepted={phase === 'qty_confirm' && unitsToIdentify === 0}
+      scannedUnitIds={scannedIds}
+      testId="pick-product-card"
     />
   ) : null;
 
   const statusLine = (hint: ReactNode) =>
     scanError ? (
       <ReceiveStatusLine tone="error" role="alert">{scanError}</ReceiveStatusLine>
-    ) : (
+    ) : lastAck || hint ? (
       <ReceiveStatusLine role="status">{lastAck ? `✓ ${lastAck}` : hint}</ReceiveStatusLine>
-    );
+    ) : null;
 
   const scanField = (opts: {
     inputRef: RefObject<HTMLInputElement | null>;
@@ -1217,7 +1660,7 @@ export default function PickSessionPage({
       fullWidth
       type="text"
       placeholder={opts.placeholder}
-      disabled={scanProcessing || connectionLost}
+      disabled={scanProcessing || locationChecking || scanBlocked}
       value={opts.value}
       onChange={(e) => { opts.setValue(e.target.value); onInputChange(); }}
       onKeyDown={(e) => {
@@ -1234,121 +1677,141 @@ export default function PickSessionPage({
   );
 
   let column: ReactNode = null;
+  // SF-PICK-LOCATION-TRUTH-01 — unbinned stock renders its product scan at once.
+  const viewPhase: SessionPhase = phase === 'location_scan' && currentUnbinned ? 'product_scan' : phase;
 
-  if (phase === 'location_scan' && currentItem) {
-    column = (
+  if (viewPhase === 'location_scan' && currentItem) {
+    // SF-PICK-LOCATION-TRUTH-01 — the target code is the instruction. A stop
+    // that is not a pick bin fails closed: no scan field, one correction path.
+    const locationHeading = (
+      <Typography
+        component="h2"
+        data-testid="pick-target-location"
+        data-location-state={currentLocationBlocked ? 'blocked' : locationVerified ? 'confirmed' : 'pending'}
+        sx={{
+          ...receiveMonoSx,
+          m: 0,
+          textAlign: 'center',
+          fontSize: { xs: 34, md: 44 },
+          fontWeight: 600,
+          lineHeight: 1.1,
+          letterSpacing: '0.02em',
+          wordBreak: 'break-all',
+          color: currentLocationBlocked ? 'var(--critical-ink)' : locationVerified ? 'var(--good-ink)' : 'var(--accent)',
+        }}
+      >
+        {currentItem.location_code}
+      </Typography>
+    );
+    column = currentLocationBlocked ? (
       <>
-        <ReceiveTaskHeading eyebrow="Go to location" title="Go to" accent={`${currentItem.location_code}.`} />
+        {locationHeading}
+        {productChip}
+        <ReceiveStatusLine tone="error" role="alert">{blockedLocationMessage(currentItem.location_code)}</ReceiveStatusLine>
+      </>
+    ) : (
+      <>
+        {locationHeading}
         {productChip}
         {scanField({
           inputRef: locationInputRef,
-          placeholder: 'Scan bin barcode or type location code',
+          placeholder: 'Scan location',
           value: locationInput,
           setValue: setLocationInput,
           submit: handleLocationScan,
         })}
-        {statusLine('Scan the location label to confirm you are at the right shelf.')}
+        {scanError
+          ? <ReceiveStatusLine tone="error" role="alert">{scanError}</ReceiveStatusLine>
+          : lastAck ? <ReceiveStatusLine role="status">{`✓ ${lastAck}`}</ReceiveStatusLine> : null}
       </>
     );
-  } else if (phase === 'product_scan' && currentItem) {
+  } else if ((viewPhase === 'product_scan' || viewPhase === 'qty_confirm') && currentItem) {
+    const required = currentItem.quantity;
+    const full = qtyCount === required;
+    const countVisible = phase === 'qty_confirm' && unitsToIdentify < required;
+    const confirmVisible = phase === 'qty_confirm' || (required > 1 && unitsToIdentify > 0);
     column = (
       <>
-        <ReceiveTaskHeading eyebrow="Scan item" title="Scan the" accent={`${currentItem.product_title.toLowerCase()}.`} />
-        {productChip}
-        {scanField({
+        {productCard()}
+        {/* SCAN-INPUT-VISIBILITY-001 — qty_confirm is reached only after a valid LSU/EAN scan
+            (quantity > 1): the scanner is hidden and the count owns the step. Any refusal that
+            needs a rescan returns to product_scan, which shows the scanner again. */}
+        {phase !== 'qty_confirm' && scanField({
           inputRef: productInputRef,
-          placeholder: 'Scan product barcode or type barcode value',
+          placeholder: unitsToIdentify > 0 ? 'Scan unit label' : 'Scan product barcode',
           value: productInput,
           setValue: setProductInput,
           submit: (val) => { void handleProductScan(val); },
         })}
-        {statusLine(
-          scanProcessing
-            ? 'Checking the scan…'
-            : currentItem.quantity === 1
-              ? 'One unit — the scan confirms the pick.'
-              : `Take ${currentItem.quantity} from the shelf and scan one of them.`,
-        )}
-      </>
-    );
-  } else if (phase === 'qty_confirm' && currentItem) {
-    const required = currentItem.quantity;
-    const full = qtyCount === required;
-    column = (
-      <>
-        <ReceiveTaskHeading eyebrow="Pick" title="Pick" accent={`${units(required)}.`} />
-        {productChip}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '58px minmax(0,1fr) 58px', md: '76px minmax(0,1fr) 76px' }, gap: { xs: 1, md: 1.5 }, height: { xs: 58, md: 76 } }}>
-          <Button
-            aria-label="Remove one unit"
-            disabled={scanProcessing || qtyCount <= 0}
-            onClick={() => { setQtyCount(c => Math.max(0, c - 1)); setScanError(null); }}
-            sx={{ borderRadius: '14px', border: '1px solid var(--rule-2)', color: 'var(--ink)', fontSize: 28, fontWeight: 300, minWidth: 0 }}
-          >
-            −
-          </Button>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 1, pt: { xs: 1.5, md: 2 }, borderRadius: '14px', border: '1px solid var(--rule-2)', bgcolor: 'var(--surface)' }}>
-            <Box component="output" aria-label="Units counted" aria-live="polite" sx={{ fontSize: { xs: 34, md: 44 }, lineHeight: 1, color: 'var(--ink)' }}>
-              {qtyCount}
-            </Box>
-            <Typography component="span" sx={{ fontSize: 15, color: 'var(--ink-3)' }}>of {required}</Typography>
+        {countVisible && (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '58px minmax(0,1fr) 58px', md: '76px minmax(0,1fr) 76px' }, gap: { xs: 1, md: 1.5 }, alignItems: 'center' }}>
+            <Button
+              aria-label="Remove one unit"
+              disabled={scanProcessing || scanBlocked || qtyCount <= scannedUnitCount}
+              onClick={() => { setQtyCount(c => Math.max(scannedUnitCount, c - 1)); setScanError(null); }}
+              sx={{ minWidth: 0, height: 58, border: '1px solid var(--rule-2)', fontSize: 28 }}
+            >−</Button>
+            {/* QUANTITY-UX-001 — no floating label (it lifted the field off the buttons' centre);
+                "out of N" is a fixed, non-editable adornment inside the field, outside its value. */}
+            <TextField
+              type="number"
+              fullWidth
+              value={Number.isNaN(qtyCount) ? '' : qtyCount}
+              disabled={scanProcessing || scanBlocked}
+              onChange={e => { setQtyCount(e.target.value === '' ? NaN : Number(e.target.value)); setScanError(null); }}
+              onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
+              inputRef={qtyInputRef}
+              inputProps={{
+                min: scannedUnitCount, max: required, step: 1, inputMode: 'numeric',
+                'aria-label': 'Quantity picked', 'aria-describedby': 'pick-qty-out-of',
+              }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end" id="pick-qty-out-of" data-testid="pick-qty-out-of" sx={{ pointerEvents: 'none', userSelect: 'none' }}>
+                    out of {required}
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ '& .MuiInputBase-root': { height: { xs: 58, md: 58 } }, '& input': { fontSize: 20, fontVariantNumeric: 'tabular-nums' } }}
+            />
+            <Button
+              aria-label="Add one unit"
+              disabled={scanProcessing || scanBlocked || qtyCount >= required}
+              onClick={() => { setQtyCount(c => Math.min(required, c + 1)); setScanError(null); }}
+              sx={{ minWidth: 0, height: 58, border: '1px solid var(--rule-2)', fontSize: 28 }}
+            >+</Button>
           </Box>
-          <Button
-            aria-label="Add one unit"
-            disabled={scanProcessing || qtyCount >= required}
-            onClick={() => { setQtyCount(c => Math.min(required, c + 1)); setScanError(null); }}
-            sx={{ borderRadius: '14px', border: '1px solid var(--rule-2)', color: 'var(--ink)', fontSize: 28, fontWeight: 300, minWidth: 0 }}
-          >
-            +
-          </Button>
-        </Box>
-        {statusLine(
-          full
-            ? `That's all ${required} this order needs.`
-            : `${required - qtyCount} fewer than the order needs — you'll report what happened.`,
         )}
-        <ReceiveActions>
-          <ReceiveCta
-            tier={full ? 'primary' : 'secondary'}
-            disabled={scanProcessing || connectionLost}
-            onClick={handleQtyConfirm}
-          >
-            {scanProcessing ? 'Confirming…' : full ? `Confirm ${required} picked` : `Report ${qtyCount} of ${required}`}
-          </ReceiveCta>
-        </ReceiveActions>
+        {statusLine(scanProcessing ? 'Confirming…' : null)}
+        {confirmVisible && (
+          <ReceiveActions>
+            <ReceiveCta
+              tier={full ? 'primary' : 'secondary'}
+              disabled={scanProcessing || scanBlocked || scannedUnitCount < unitsToIdentify}
+              onClick={handleQtyConfirm}
+            >
+              {scanProcessing ? 'Confirming…' : full || !countVisible ? `Confirm ${required} picked` : `Report ${Number.isNaN(qtyCount) ? 0 : qtyCount} of ${required}`}
+            </ReceiveCta>
+          </ReceiveActions>
+        )}
       </>
     );
   } else if (phase === 'finish') {
-    column = (
+    // FINALIZE-001 — not a confirmation screen: a transient finalizing state while the
+    // server completes the batch, or a recoverable error with Retry. Success is never shown here.
+    column = completionError ? (
       <>
-        <ReceiveTaskHeading
-          eyebrow="Finish"
-          title="All items"
-          accent="processed."
-          sub="Take the batch to Pack. Completion is recorded when you confirm."
-        />
-        <ReceiveFactStrip
-          facts={[
-            { label: 'Picked', value: unitsPicked },
-            { label: 'Short', value: unitsShort, highlight: unitsShort > 0 },
-            { label: 'Flagged', value: flaggedCount },
-          ]}
-        />
-        {completionError ? (
-          <ReceiveStatusLine tone="error" role="alert">{completionError}</ReceiveStatusLine>
-        ) : (
-          <ReceiveStatusLine role="status">
-            {flaggedCount > 0
-              ? `${flaggedCount} item${flaggedCount === 1 ? '' : 's'} reported — routed to Problem Center.`
-              : 'Every item was picked in full.'}
-          </ReceiveStatusLine>
-        )}
+        <ReceiveStatusLine tone="error" role="alert">{completionError}</ReceiveStatusLine>
         <ReceiveActions>
-          <ReceiveCta disabled={completingPick} onClick={handlePickComplete}>
-            {completingPick ? 'Confirming…' : 'Confirm pick complete'}
+          <ReceiveCta disabled={completingPick || scanBlocked} onClick={handlePickComplete}>
+            {completingPick ? 'Finishing pick…' : 'Retry finishing pick'}
           </ReceiveCta>
         </ReceiveActions>
       </>
+    ) : (
+      <Box data-testid="pick-finalizing" aria-busy="true">
+        <ReceiveStatusLine role="status">Finishing pick…</ReceiveStatusLine>
+      </Box>
     );
   } else if (phase === 'done') {
     column = (
@@ -1364,9 +1827,11 @@ export default function PickSessionPage({
           />
         </Box>
         <ReceiveStatusLine role="status">
+          {/* FINALIZE-001 — Pack readiness is the server's pick_complete; flagged items are named, never hidden. */}
           {resumedSession
             ? 'Batch ready for pack. Totals cover this session; picks confirmed before you resumed are not included.'
             : `${n} item${n === 1 ? '' : 's'} processed. Batch ready for pack.`}
+          {flaggedCount > 0 ? ` ${flaggedCount} item${flaggedCount === 1 ? '' : 's'} reported — routed to Problem Center.` : ''}
         </ReceiveStatusLine>
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Button
@@ -1412,7 +1877,7 @@ export default function PickSessionPage({
       desktopMapLayout={isDesktop && mapRegion !== null}
       footer={
         isExecution ? (
-          <ReceiveFooterButton onClick={() => openExceptionDialog()} disabled={scanProcessing}>
+          <ReceiveFooterButton onClick={() => openExceptionDialog()} disabled={scanProcessing || scanBlocked}>
             Report problem
           </ReceiveFooterButton>
         ) : undefined
@@ -1514,7 +1979,7 @@ export default function PickSessionPage({
               <Button
                 variant="contained"
                 onClick={handleReportException}
-                disabled={!exceptionType || exceptionProcessing}
+                disabled={!exceptionType || exceptionProcessing || scanBlocked}
                 sx={{
                   borderRadius: '6px', fontWeight: 600,
                   bgcolor: 'var(--accent)',
@@ -1529,6 +1994,16 @@ export default function PickSessionPage({
         </>
       }
     >
+      {otherTabBlock && (
+        <Alert severity="warning" role="status" aria-live="polite" sx={{ mb: 2 }} data-testid="pick-other-tab-pending">
+          <Typography component="p" sx={{ fontWeight: 700 }}>Pick confirmation pending</Typography>
+          <Typography component="p" sx={{ fontSize: 14 }}>
+            {otherTabBlock === 'pending'
+              ? 'A Pick for this batch is waiting for server confirmation in another tab. Do not scan or pick here; this tab continues when it is confirmed.'
+              : 'This browser could not read the pending Pick confirmation for this batch. Do not scan or pick.'}
+          </Typography>
+        </Alert>
+      )}
       {connectionLost && (
         // C008 — one persistent, non-modal state; no repeated alerts.
         <Alert severity="warning" role="status" aria-live="polite" sx={{ mb: 2 }} data-testid="pick-connection-lost">

@@ -99,7 +99,8 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('SF-STOW-UX-LSU-VISIBILITY-01 — expected LSUs in the item line', () => {
-  it('orders image → product name → LSUs → barcode → SKU, with no separate panel', async () => {
+  // SF-WMS-SCAN-UX-01 ratified order: name · variant → barcode → expected LSUs → SKU → quantity.
+  it('orders image → product name → barcode → LSUs → SKU, with no separate panel', async () => {
     renderSession({ tasks: [task()] });
     await screen.findByPlaceholderText(ITEM_HINT);
 
@@ -108,9 +109,10 @@ describe('SF-STOW-UX-LSU-VISIBILITY-01 — expected LSUs in the item line', () =
     const name = screen.getAllByText('Trail Running Shoe').find((el) => follows(el, list))!;
     expect(img).toBeTruthy();
     expect(follows(img, name)).toBe(true);
-    expect(follows(name, list)).toBe(true);
-    expect(follows(list, screen.getByTestId('stow-item-barcode'))).toBe(true);
-    expect(follows(screen.getByTestId('stow-item-barcode'), screen.getByTestId('stow-item-sku'))).toBe(true);
+    expect(follows(name, screen.getByTestId('stow-item-barcode'))).toBe(true);
+    expect(follows(screen.getByTestId('stow-item-barcode'), list)).toBe(true);
+    expect(follows(list, screen.getByTestId('stow-item-sku'))).toBe(true);
+    expect(follows(screen.getByTestId('stow-item-sku'), screen.getByTestId('stow-item-quantity'))).toBe(true);
     expect(screen.queryByRole('region', { name: 'Expected unit labels' })).not.toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Expected unit labels' })).toBe(list);
   });
@@ -148,7 +150,7 @@ describe('SF-STOW-UX-LSU-VISIBILITY-01 — expected LSUs in the item line', () =
     scan(ITEM_HINT, EAN);
 
     await waitFor(() => expect(lsus()).toEqual(['LSU-abf58408', 'LSU-ccf5bd6a']));
-    expect(screen.getByTestId('stow-item-barcode')).toHaveTextContent(`Barcode ${EAN}`);
+    expect(screen.getByTestId('stow-item-barcode')).toHaveTextContent(`Barcode: ${EAN}`);
   });
 
   it('a single remaining LSU is shown alone, and the last one leaves "all registered"', async () => {

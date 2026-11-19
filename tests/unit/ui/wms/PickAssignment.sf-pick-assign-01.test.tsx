@@ -115,7 +115,7 @@ describe('SF-PICK-ASSIGN-01 — board', () => {
     fireEvent.click(start);
     await waitFor(() => expect(props.onClaimBatch).toHaveBeenCalledWith(IDLE_ID));
     expect(await screen.findByText('Confirm picked items')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/scan bin barcode/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/^scan location$/i)).not.toBeInTheDocument();
   });
 
   it('UI-03 owner/admin assign, reassign and first-to-claim through the assignment route', async () => {
@@ -157,7 +157,7 @@ describe('SF-PICK-ASSIGN-01 — board', () => {
   it('UI-05 restoring another operator\'s picking batch shows the Brief, not their execution', async () => {
     render(<WmsModuleFT2 {...moduleProps({ pendingPickBatchId: BUSY_ID })} />);
     expect(await screen.findByRole('button', { name: /start picking/i })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/scan bin barcode/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/^scan location$/i)).not.toBeInTheDocument();
   });
 });
 
@@ -184,10 +184,10 @@ describe('SF-PICK-ASSIGN-01 — session', () => {
       onAcknowledgeCustody: jest.fn().mockResolvedValue(undefined),
     });
     expect(screen.getByText('Confirm picked items')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/scan bin barcode/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/^scan location$/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'I have the picked items' }));
     await waitFor(() => expect(props.onAcknowledgeCustody).toHaveBeenCalledTimes(1));
-    expect(await screen.findByPlaceholderText(/scan bin barcode/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/^scan location$/i)).toBeInTheDocument();
     expect(props.onConfirmScan).not.toHaveBeenCalled();
   });
 
@@ -196,11 +196,11 @@ describe('SF-PICK-ASSIGN-01 — session', () => {
       response: { status: 409, data: { code: 'PICK_OWNERSHIP_REVOKED', error: 'Batch owned by different operator' } },
     });
     const props = session({ onConfirmScan: jest.fn().mockRejectedValue(revoked) });
-    scan(screen.getByPlaceholderText(/scan bin barcode/i), 'A-1');
+    scan(screen.getByPlaceholderText(/^scan location$/i), 'A-1');
     scan(await screen.findByPlaceholderText(/scan product barcode/i), 'EAN-1');
     expect(await screen.findByText('Batch reassigned')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/scan product barcode/i)).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/scan bin barcode/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/^scan location$/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back to Warehouse' }));
     expect(props.onComplete).toHaveBeenCalled();
     expect(props.onConfirmScan).toHaveBeenCalledTimes(1);
@@ -211,7 +211,7 @@ describe('SF-PICK-ASSIGN-01 — session', () => {
       response: { status: 409, data: { code: 'PICK_CUSTODY_ACK_REQUIRED', error: 'Confirm you have the picked items' } },
     });
     session({ onConfirmScan: jest.fn().mockRejectedValue(needsAck), onAcknowledgeCustody: jest.fn() });
-    scan(screen.getByPlaceholderText(/scan bin barcode/i), 'A-1');
+    scan(screen.getByPlaceholderText(/^scan location$/i), 'A-1');
     scan(await screen.findByPlaceholderText(/scan product barcode/i), 'EAN-1');
     expect(await screen.findByText('Confirm picked items')).toBeInTheDocument();
   });

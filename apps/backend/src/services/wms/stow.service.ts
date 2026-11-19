@@ -6,6 +6,7 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { enqueueShopSnapshotJob } from '../shop-snapshot/enqueueShopSnapshotJob.js';
 import { HELD_UNIT_STATUSES } from './receiveBarcodeReadiness.service.js';
 import { confirmReceiveRecoveryStow } from './receiveHeldRecoveryStow.service.js';
+import { reverifySettledUnitForStow } from './pickLocationTruth.service.js';
 import { assertStowLocationCapacity, isLocationCapacityEnforced } from './stowLocationCapacity.service.js';
 
 /**
@@ -391,6 +392,17 @@ export async function confirmStow(
       if (qty !== 1) {
         throw new Error('[STOW_CONFIRM] INBOUND_SINGLE_UNIT_REQUIRED');
       }
+
+      // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — a received LSU that a
+      // root quantity Pick settled by count, but which is physically here,
+      // exchanges records with an identity-unverified sibling of this line.
+      await reverifySettledUnitForStow(trx, {
+        shopId,
+        unitId: lasyncroUnitId,
+        lasyncroVariantId: task.lasyncro_variant_id,
+        receiveJobLineId: task.receive_job_line_id,
+        operatorId: claimedBy,
+      });
 
       const inboundUnit = await trx('inventory_units')
         .where({
@@ -833,6 +845,13 @@ export async function confirmStow(
       current_location_code: task.location_code,
       updated_at: completedAt,
     });
+  // SF-PICK-UX-ADAPTIVE-01-QUANTITY-CUSTODY-001 — the scanned LSU is
+  // physically verified here; its identity is trusted again.
+  if (lasyncroUnitId) {
+    await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId, identity_unverified: true })
+      .update({ identity_unverified: false });
+  }
 
   // 4d. Soft capacity check — advisory mode only (S1: enforced shops use the
   // pre-mutation SUM(on_hand) guard above as the single authority).

@@ -172,7 +172,7 @@ function containsOrdinaryWarehouseBody(root: HTMLElement): boolean {
 }
 
 const startPicking = () => screen.findByRole('button', { name: /start picking/i });
-const locationScan = () => screen.queryByPlaceholderText(/scan bin barcode/i);
+const locationScan = () => screen.queryByPlaceholderText(/^scan location$/i);
 
 /** The Operations card for a batch: nearest ancestor of its id that holds a pick CTA. */
 function batchCardAction(batchId: string): HTMLElement {
@@ -691,7 +691,7 @@ describe('HANDOFF-QUEUE-01 — exclusive lifecycle queues and Pick Done', () => 
       onSessionExit: jest.fn(),
     });
     render(<WmsModuleFT2 {...props} />);
-    const binInput = await screen.findByPlaceholderText(/scan bin barcode/i);
+    const binInput = await screen.findByPlaceholderText(/^scan location$/i);
     jest.useFakeTimers();
     fireEvent.change(binInput, { target: { value: lineItems[0].location_code } });
     fireEvent.keyDown(binInput, { key: 'Enter' });
@@ -700,11 +700,11 @@ describe('HANDOFF-QUEUE-01 — exclusive lifecycle queues and Pick Done', () => 
       fireEvent.change(productInput, { target: { value: 'PBC-SKU-1' } });
       fireEvent.keyDown(productInput, { key: 'Enter' });
     });
-    act(() => { jest.advanceTimersByTime(400); });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /confirm pick complete/i }));
-    });
+    // FINALIZE-001: the last confirmed outcome finalizes automatically (no Confirm pick complete step).
+    await act(async () => { jest.advanceTimersByTime(400); });
+    await act(async () => { await Promise.resolve(); });
     expect(props.onConfirmScan).toHaveBeenCalledTimes(1);
+    expect(props.onPickComplete).toHaveBeenCalledTimes(1);
     expect(props.onPickComplete).toHaveBeenCalledWith(PICKING_ID);
     expect(screen.getByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
     return props;
@@ -764,7 +764,7 @@ describe('HANDOFF-QUEUE-01 — exclusive lifecycle queues and Pick Done', () => 
     expect(screen.getByText(new RegExp(PICKING_ID.slice(0, 8), 'i'))).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^start packing\s*→?$/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /^return to operations$/i })).toBeEnabled();
-    expect(screen.queryByPlaceholderText(/scan bin barcode|scan product barcode/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/^scan location$|scan product barcode/i)).not.toBeInTheDocument();
   });
 
   it('D — Return to Operations exits explicitly and exactly once', async () => {

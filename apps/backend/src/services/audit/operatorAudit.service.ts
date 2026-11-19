@@ -29,6 +29,8 @@ export type AuditActionType =
   | 'stow_assign'
   | 'stow_exception'
   | 'stow_confirm'
+  | 'stow_reconcile'
+  | 'pick_unit_reverified'
   | 'problem_bin_quarantine'
   | 'problem_bin_release'
   | 'problem_bin_write_off'

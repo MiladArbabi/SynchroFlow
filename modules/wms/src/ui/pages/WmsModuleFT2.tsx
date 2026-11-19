@@ -1,3 +1,4 @@
+import type { PendingPickOperation, PickReceipt } from '../pickPendingRecovery.js';
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
 import { useState, memo, useCallback, useEffect, useId, useMemo, useRef, type ReactNode } from 'react';
 import {
@@ -21,6 +22,7 @@ import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
   type ConfirmScanParams,
+  type VerifyLocationParams,
   type ReportExceptionParams,
   type ReportPackExceptionParams,
   type CreateProblemTaskParams,
@@ -294,7 +296,9 @@ export type WmsModuleFT2Props = {
    * (read-only; never claims). Rejects without an HTTP answer while still
    * disconnected, or with the server's ownership refusal.
    */
-  onRevalidatePickOwnership?: (batchId: string) => Promise<void>;
+  onRevalidatePickOwnership?: (batchId: string) => Promise<PickReceipt | void>;
+  onReadPendingPick?: (batchId: string) => PendingPickOperation | null;
+  onClearPendingPick?: (batchId: string, receipt: PickReceipt) => void;
   /**
    * SF-PICK-RESUME-GENERATION-001 — opening an already-owned, in-progress
    * batch: the host verifies ownership and obtains the current generation
@@ -304,6 +308,8 @@ export type WmsModuleFT2Props = {
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
+  /** SF-PICK-LOCATION-TRUTH-01 — server confirmation of a Pick location scan. */
+  onVerifyPickLocation?: (batchId: string, params: VerifyLocationParams) => Promise<{ location_code: string }>;
   onReportException: (batchId: string, params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
   onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
   onPickComplete: (batchId: string) => Promise<void>;
@@ -2187,10 +2193,13 @@ function WmsModuleFT2Inner({
   onFetchPickAssignees,
   onAcknowledgePickCustody,
   onRevalidatePickOwnership,
+  onReadPendingPick,
+  onClearPendingPick,
   onResumePickSession,
   onFetchLineItems,
   onResolveBarcode,
   onConfirmScan,
+  onVerifyPickLocation,
   onReportException,
   onCreateProblemTask,
   onPickComplete,
@@ -3215,14 +3224,22 @@ function WmsModuleFT2Inner({
 
   // Active pick session
   if (activeSession?.type === 'pick') {
+    let pendingOperation: PendingPickOperation | null = null;
+    try { pendingOperation = onReadPendingPick?.(activeSession.batchId) ?? null; }
+    catch { return <Alert severity="error">Pick is paused: this browser could not read its pending confirmation. Do not scan.</Alert>; }
     return (
       <PickSessionPage
+        key={`${activeSession.batchId}:${currentUserId}`}
+        pendingOperation={pendingOperation}
+        onRecoveryConfirmed={receipt => onClearPendingPick?.(activeSession.batchId, receipt)}
+        onCheckPendingPick={onReadPendingPick ? () => onReadPendingPick(activeSession.batchId) : undefined}
         pickBatchId={activeSession.batchId}
         lineItems={activeSession.lineItems}
         onComplete={exitSession}
         onStartPacking={enterPackHandoff}
         onResolveBarcode={onResolveBarcode}
         onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
+        onVerifyLocation={onVerifyPickLocation ? (params) => onVerifyPickLocation(activeSession.batchId, params) : undefined}
         onReportException={(params) => onReportException(activeSession.batchId, params)}
         onPickComplete={() => onPickComplete(activeSession.batchId)}
         onStartPicking={() => startPickBatch(activeSession.batchId)}
@@ -3250,10 +3267,10 @@ function WmsModuleFT2Inner({
         // first (read-only), then the authoritative remaining work.
         onRevalidateSession={onRevalidatePickOwnership ? async () => {
           const batchId = activeSession.batchId;
-          await onRevalidatePickOwnership(batchId);
+          const outcome = await onRevalidatePickOwnership(batchId);
           const items = await onFetchLineItems(batchId);
           setActiveSession((s) => (s?.type === 'pick' && s.batchId === batchId ? { ...s, lineItems: items } : s));
-          return items;
+          return { lineItems: items, outcome: outcome || undefined };
         } : undefined}
         onVerifyResume={onResumePickSession ? () => resumePickBatch(activeSession.batchId) : undefined}
         floorZones={pickFloorZones}

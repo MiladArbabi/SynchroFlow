@@ -70,7 +70,7 @@ function setup(lineItems: LineItem[], overrides: Record<string, unknown> = {}) {
   return props;
 }
 
-const locationInput = () => screen.queryByPlaceholderText(/scan bin barcode/i) as HTMLInputElement | null;
+const locationInput = () => screen.queryByPlaceholderText(/^scan location$/i) as HTMLInputElement | null;
 const productInput = () => screen.queryByPlaceholderText(/scan product barcode/i) as HTMLInputElement | null;
 // Navigation helpers use label/placeholder/text queries: *ByRole with a name
 // computes the accessibility tree for every element and dominated the cost of
@@ -80,7 +80,8 @@ const addUnit = () => screen.queryByLabelText(/add one unit/i);
 const removeUnit = () => screen.queryByLabelText(/remove one unit/i);
 /** The <button> whose visible text matches — a navigation helper, not a role assertion. */
 const buttonByText = (text: RegExp) => screen.getByText(text).closest('button') as HTMLButtonElement;
-const unitsCounted = () => screen.queryByLabelText(/units counted/i);
+// QUANTITY-UX-001: the separate "Units counted" output was removed; the quantity field holds the count.
+const unitsCounted = () => screen.queryByRole('spinbutton', { name: /quantity picked/i });
 
 function scan(input: HTMLInputElement | null, value: string) {
   expect(input).not.toBeNull();
@@ -119,9 +120,11 @@ describe('SF-PICK-P2 — shell, header and location step', () => {
 
   it('shows the location instruction and accepts the correct bin', async () => {
     setup([SINGLE]);
-    expect(screen.getByRole('heading', { name: /go to\s+A-1/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^A-1$/ })).toBeInTheDocument();
     await reachItem(SINGLE);
-    expect(screen.getByRole('heading', { name: /scan the\s+product 1/i })).toBeInTheDocument();
+    // SF-WMS-SCAN-UX-01 ratified copy: stage heading + the item's own name.
+    expect(screen.getByRole('heading', { name: /^scan product$/i })).toBeInTheDocument();
+    expect(screen.getByTestId('scan-product-name')).toHaveTextContent(/^Product 1$/);
   });
 
   it('a wrong bin shows an inline error, stays on location and writes nothing', async () => {
@@ -159,27 +162,29 @@ describe('SF-PICK-P2 — item step', () => {
       quantity_confirmed: 1,
     }));
     // Pending backend: still on SINGLE's item step.
-    expect(screen.getByRole('heading', { name: /scan the\s+product 1/i })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /go to\s+B-2/i })).not.toBeInTheDocument();
+    // SF-WMS-SCAN-UX-01 ratified copy: stage heading + the item's own name.
+    expect(screen.getByRole('heading', { name: /^scan product$/i })).toBeInTheDocument();
+    expect(screen.getByTestId('scan-product-name')).toHaveTextContent(/^Product 1$/);
+    expect(screen.queryByRole('heading', { name: /^B-2$/ })).not.toBeInTheDocument();
     await act(async () => { accept(); });
-    expect(await screen.findByRole('heading', { name: /go to\s+B-2/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^B-2$/ })).toBeInTheDocument();
     expect(props.onReportException).not.toHaveBeenCalled();
   });
 
-  it('single unit: a backend/network failure keeps the step, shows the error and allows retry without duplicates', async () => {
+  it('single unit: a definitive business refusal keeps the step, shows the error and allows retry without duplicates', async () => {
     const onConfirmScan = jest.fn()
-      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockRejectedValueOnce({ response: { status: 409, data: { error: 'Pick refused' } } })
       .mockResolvedValueOnce(undefined);
     setup([SINGLE, MULTI], { onConfirmScan });
     await reachItem(SINGLE);
     scan(productInput(), 'EAN-variant-1');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/network error/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/pick refused/i);
     expect(productInput()).toBeInTheDocument();
     expect(onConfirmScan).toHaveBeenCalledTimes(1);
 
     scan(productInput(), 'EAN-variant-1');
     await waitFor(() => expect(onConfirmScan).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('heading', { name: /go to\s+B-2/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^B-2$/ })).toBeInTheDocument();
   });
 
   it('duplicate hardware scans while a confirm is in flight send exactly one /pick/scan', async () => {
@@ -192,7 +197,7 @@ describe('SF-PICK-P2 — item step', () => {
     scan(productInput(), 'EAN-variant-1');
     await waitFor(() => expect(onConfirmScan).toHaveBeenCalledTimes(1));
     await act(async () => { accept(); });
-    expect(await screen.findByRole('heading', { name: /go to\s+B-2/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^B-2$/ })).toBeInTheDocument();
     expect(onConfirmScan).toHaveBeenCalledTimes(1);
   });
 });
@@ -201,16 +206,18 @@ describe('SF-PICK-P2 — multi-unit quantity (decision 4)', () => {
   it('the count starts at zero, not prefilled, and is capped at the required quantity', async () => {
     const props = setup([MULTI]);
     await reachQty(MULTI);
-    expect(unitsCounted()).toHaveTextContent(/^0$/);
-    expect(screen.getByText(/^of 3$/i)).toBeInTheDocument();
+    expect(unitsCounted()).toHaveValue(0);
+    // QUANTITY-UX-001: "out of 3" is inside the field (no separate "of 3" text).
+    expect(screen.getByTestId('pick-qty-out-of')).toHaveTextContent(/^out of 3$/);
+    expect(screen.queryByText(/^of 3$/i)).not.toBeInTheDocument();
     expect(removeUnit()).toBeDisabled();
     fireEvent.click(addUnit()!);
     fireEvent.click(addUnit()!);
     fireEvent.click(addUnit()!);
-    expect(unitsCounted()).toHaveTextContent(/^3$/);
+    expect(unitsCounted()).toHaveValue(3);
     expect(addUnit()).toBeDisabled();
     fireEvent.click(removeUnit()!);
-    expect(unitsCounted()).toHaveTextContent(/^2$/);
+    expect(unitsCounted()).toHaveValue(2);
     expectNoWrites(props);
   });
 
@@ -262,7 +269,7 @@ describe('SF-PICK-P2 — multi-unit quantity (decision 4)', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(unitsCounted()).toHaveTextContent(/^1$/);
+    expect(unitsCounted()).toHaveValue(1);
   });
 });
 
@@ -288,17 +295,20 @@ describe('SF-PICK-P2 — completion (decisions 6 off-mode and 7)', () => {
     for (let i = 0; i < 3; i += 1) fireEvent.click(addUnit()!);
     fireEvent.click(buttonByText(/confirm 3 picked/i));
     await waitFor(() => expect(props.onConfirmScan).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
   }
 
-  it('after the last item there is no summary review; completion is an explicit backend call', async () => {
+  // FINALIZE-001 — one final screen: the existing pick-complete call runs automatically, once,
+  // after the last server-confirmed outcome. No summary, no "All items processed", no Confirm button.
+  it('after the last item there is no summary or confirm step; completion is called automatically, once', async () => {
     const props = setup([SINGLE, MULTI]);
     await pickAll(props);
-    expect(await screen.findByRole('button', { name: /confirm pick complete/i })).toBeEnabled();
-    expect(screen.queryByText(/pick summary|review before confirming/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(props.onPickComplete).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: /confirm pick complete/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/all items|pick summary|review before confirming/i)).not.toBeInTheDocument();
     // Handoff is not verified without Pack stations: no station claim is shown.
     expect(screen.queryByText(/handed to|verified handoff/i)).not.toBeInTheDocument();
-    expect(props.onPickComplete).not.toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
+    expect(props.onPickComplete).toHaveBeenCalledTimes(1);
   });
 
   it('Done appears only after pick-complete succeeds, with accurate picked and short counts', async () => {
@@ -306,7 +316,6 @@ describe('SF-PICK-P2 — completion (decisions 6 off-mode and 7)', () => {
     const onPickComplete = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
     const props = setup([SINGLE, MULTI], { onPickComplete });
     await pickAll(props);
-    fireEvent.click(buttonByText(/confirm pick complete/i));
     await waitFor(() => expect(onPickComplete).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('heading', { name: /^pick complete$/i })).not.toBeInTheDocument();
     await act(async () => { finish(); });
@@ -318,14 +327,36 @@ describe('SF-PICK-P2 — completion (decisions 6 off-mode and 7)', () => {
     expect(screen.getByRole('button', { name: /^return to operations$/i })).toBeEnabled();
   });
 
-  it('a failed pick-complete keeps the operator on the completion step with the error', async () => {
+  it('a failed pick-complete shows a recoverable error with Retry, never success', async () => {
     const onPickComplete = jest.fn().mockRejectedValue({ response: { data: { error: 'BATCH_NOT_IN_PICKING:packing' } } });
     const props = setup([SINGLE, MULTI], { onPickComplete });
     await pickAll(props);
-    fireEvent.click(buttonByText(/confirm pick complete/i));
     expect(await screen.findByRole('alert')).toHaveTextContent(/BATCH_NOT_IN_PICKING/);
     expect(screen.queryByRole('heading', { name: /^pick complete$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /confirm pick complete/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /retry finishing pick/i })).toBeEnabled();
+    expect(onPickComplete).toHaveBeenCalledTimes(1); // no automatic re-send after a failure
+  });
+
+  it('FINALIZE-001 uncertain answer: a retry answered "already pick_complete" by the server shows Pick complete (committed outcome)', async () => {
+    const onPickComplete = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' }))
+      .mockRejectedValueOnce({ response: { status: 409, data: { code: 'PICK_BATCH_NOT_PICKING', status: 'pick_complete', error: 'Batch not in picking status: pick_complete' } } });
+    const props = setup([SINGLE, MULTI], { onPickComplete });
+    await pickAll(props);
+    await screen.findByRole('button', { name: /retry finishing pick/i });
+    expect(screen.queryByRole('heading', { name: /^pick complete$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /retry finishing pick/i }));
+    expect(await screen.findByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
+    expect(onPickComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it('FINALIZE-001 a different not-picking refusal is never mistaken for completion', async () => {
+    const onPickComplete = jest.fn().mockRejectedValue({ response: { status: 409, data: { code: 'PICK_BATCH_NOT_PICKING', status: 'pending', error: 'Batch not in picking status: pending' } } });
+    const props = setup([SINGLE, MULTI], { onPickComplete });
+    await pickAll(props);
+    await waitFor(() => expect(onPickComplete).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(screen.queryByRole('heading', { name: /^pick complete$/i })).not.toBeInTheDocument();
   });
 
   it('Done reports short units from a short_pick exception', async () => {
@@ -338,8 +369,6 @@ describe('SF-PICK-P2 — completion (decisions 6 off-mode and 7)', () => {
     fireEvent.click(buttonByText(/short pick/i));
     fireEvent.click(buttonByText(/confirm exception/i));
     await waitFor(() => expect(props.onReportException).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByText(/confirm pick complete/i)).not.toBeNull());
-    fireEvent.click(buttonByText(/confirm pick complete/i));
     expect(await screen.findByRole('heading', { name: /^pick complete$/i })).toBeInTheDocument();
     const facts = screen.getByTestId('pick-done-facts');
     expect(facts).toHaveTextContent(/picked\s*2/i); // quantity_found
@@ -372,7 +401,7 @@ describe('SF-PICK-P2 — exit and resume (decision 9)', () => {
 
   it('a resumed picking batch starts at the location step of the first remaining line', () => {
     setup([MULTI], { resumePicking: true });
-    expect(screen.getByRole('heading', { name: /go to\s+B-2/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^B-2$/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /start picking/i })).not.toBeInTheDocument();
   });
 });
