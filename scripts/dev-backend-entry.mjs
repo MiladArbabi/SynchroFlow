@@ -24,6 +24,10 @@ import {
   watchBackendSources
 } from './dev-backend-watcher.mjs';
 
+import {
+  assertDevMigrationParity
+} from './dev-migration-parity.mjs';
+
 const DEFAULT_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..'
@@ -183,8 +187,13 @@ export function createBackendDevEntrypoint({
   repoRoot = DEFAULT_ROOT,
   signals = process,
 
-  waitForDatabase = signal =>
-    waitForDatabasePort({ signal }),
+  // ENV-DB-PARITY-01: after TCP readiness, refuse to compile or
+  // start services against a database whose migration ledger does
+  // not match the checked-out migrations. Read-only; never migrates.
+  waitForDatabase = async signal => {
+    await waitForDatabasePort({ signal });
+    await assertDevMigrationParity({ repoRoot });
+  },
 
   makeProcessAdapter = createBackendProcessAdapter,
   makeWatcher = watchBackendSources,

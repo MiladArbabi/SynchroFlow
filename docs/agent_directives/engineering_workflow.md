@@ -299,6 +299,16 @@ Rules:
 
 Once per issue, before expensive verification, establish where relevant: repository root, branch, HEAD, origin/main relationship, status, root and touched-workspace dependency resolution, `.env` presence (without printing secrets), database reachability and migration level. Do not reinstall dependencies or build automatically. Do not mutate the environment until a missing prerequisite is proven. A failure caused by a missing dependency is an environment failure, not a code failure.
 
+### DEV-DB-PARITY-01 — Development startup requires migration parity
+
+Local development MUST NOT run against a database whose migration ledger differs from the checked-out migrations.
+
+- Root `npm run dev` runs `npm run dev:parity` (`scripts/dev-migration-parity.mjs`) first, before `dev:prepare` and before any concurrent frontend/backend process; a failure exits nonzero and nothing starts. Direct backend startup (`npm run dev-backend` / `scripts/dev-backend-entry.mjs`) repeats the same check after database TCP readiness and before compiling or starting the API or worker. It compares `apps/backend/migrations/*.ts` (as Knex `.js` ledger names) with `public.knex_migrations` and blocks startup (exit 1) on any MISSING (unapplied, newer than the newest applied), UNEXPECTED (applied but absent from the checkout) or DIVERGENT (older gap, duplicate or out-of-order) migration, or when the database cannot be reached or read.
+- The check is read-only: it connects as the restricted application role (`PGUSER`) with `default_transaction_read_only=on`, reads inside `BEGIN READ ONLY … ROLLBACK`, and never prints credentials. It MUST NEVER migrate, reset, seed or modify the database; resolving a block is a deliberate human action (`npm run migrate --workspace ./apps/backend` for MISSING; matching code or an intentional dev-DB rebuild for UNEXPECTED/DIVERGENT, never ledger edits).
+- Standalone: `node scripts/dev-migration-parity.mjs` (exit 0 PASS, 1 parity failure, 2 database unavailable). It MAY serve as the ENV-01 migration-level probe.
+- Scope: development only. Production (`npm start`), CI and the disposable integration harness (TEST-10) do not load it. There is no bypass flag; adding one, or weakening the check, requires an owner decision (EXCEPT-01).
+- Regression contract: `tests/contract/env-db-parity-01.test.mjs`, run in `test:contract` through `tests/contract/env-db-parity-01.contract.test.ts`.
+
 ## 5. Execution routing
 
 ### TERMINAL-ROUTING-01 — Cheapest reliable route

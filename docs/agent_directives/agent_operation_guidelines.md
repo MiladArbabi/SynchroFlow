@@ -100,6 +100,7 @@ When mutation is authorized:
 - Integration tests run only through the disposable harness (TEST-10, SAFE-05). Never use the development DB, `db:reset` or PGDATABASE as a scratchpad. Scratch DBs are administered with `PGMIGRATION_USER`; runtime verification uses `sf_app`.
 - When cleanup proof is requested: the exact generated DB is gone, no `synchroflow_test_*` orphan remains, and PGDATABASE still exists. Do not inspect development application tables unless authorized.
 - Shell variables do not persist between command blocks. Re-establish them, and prove that any earlier state you depend on still exists.
+- Development startup is gated by DEV-DB-PARITY-01. When `npm run dev` or `node scripts/dev-migration-parity.mjs` reports MISSING, UNEXPECTED, DIVERGENT or an unavailable database, STOP and report it verbatim. Never migrate, reset, seed or edit `knex_migrations`/`migration_checksums` to clear the block, and never bypass or weaken the check, unless the brief authorizes that exact action.
 - Do not hide failures by discarding output, and do not truncate decisive evidence; keep any bounds the brief sets.
 
 ## 6. Test execution and integrity
