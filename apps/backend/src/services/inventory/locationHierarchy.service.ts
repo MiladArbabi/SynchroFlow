@@ -2,6 +2,10 @@ import type { Knex } from 'knex';
 
 /** Acquire before location row locks. Shared with the database write guard. */
 export async function lockLocationHierarchy(trx: Knex.Transaction, shopId: number): Promise<void> {
+  const context = await trx.raw(`SELECT current_setting('app.current_tenant', true) AS tenant,
+    current_setting('transaction_isolation') AS isolation`);
+  if (context.rows[0].tenant !== String(shopId)) throw new Error('LOCATION_TENANT_CONTEXT_INVALID');
+  if (context.rows[0].isolation !== 'read committed') throw new Error('LOCATION_ISOLATION_UNSUPPORTED');
   await trx.raw('SELECT pg_advisory_xact_lock(1305, ?)', [shopId]);
 }
 

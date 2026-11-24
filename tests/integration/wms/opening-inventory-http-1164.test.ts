@@ -19,6 +19,23 @@
 // CONTRACT-1164-DTO-01: operator task reads expose purpose + scope_location_code
 //   without expected quantities.
 
+// The route uses real snapshot orchestration; only the Shopify transport is fake.
+// Each pre-start fixture authorizes one empty page for its mapped Location.
+const mockOpeningSnapshotLocations = new Set<string>();
+const mockOpeningSnapshotRequest = jest.fn(async (document: string, options: any = {}) => {
+  const locationGid = options.variables?.locationId;
+  if (/\bmutation\b/.test(document) || !/\binventoryLevels\b/.test(document)
+    || options.variables?.after !== null || !mockOpeningSnapshotLocations.delete(locationGid)) {
+    throw new Error('[OPENING_1164_FIXTURE] unexpected Shopify request');
+  }
+  return { data: { location: { id: locationGid, isActive: true, inventoryLevels: {
+    nodes: [], pageInfo: { hasNextPage: false, endCursor: null },
+  } } } };
+});
+jest.mock('api-src/services/shopify/shopifyClient.service', () => ({
+  createShopifyGraphQLClient: () => ({ request: mockOpeningSnapshotRequest }),
+}));
+
 import request from 'supertest';
 import crypto from 'crypto';
 import { createApp } from 'api-src/bootstrap/express';
@@ -29,6 +46,8 @@ import {
 } from '@lasyncro/backend-core/db.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { issueTestToken } from '../../unit/helpers/auth';
+import { encrypt } from 'api-src/security/encryption.service';
+import { SHOPIFY_REQUIRED_SCOPE_STRING, normalizeAndValidateShopifyGrantedScopes } from 'api-src/services/shopify/shopifyScopes';
 import {
   claimRecountTask,
   startOpeningInventoryReconciliation,
@@ -134,6 +153,7 @@ async function createPreStartFixture(): Promise<PreStartFixture> {
 
   const warehouseId = crypto.randomUUID();
   const rootCode = `WH-${shopId}-ROOT`;
+  const locationId = `${shopId}0001`;
 
   await withTenant(shopId, async (trx) => {
     await trx('shop_subscriptions').insert({
@@ -157,10 +177,28 @@ async function createPreStartFixture(): Promise<PreStartFixture> {
       last_event_id: crypto.randomUUID(),
     });
 
+    const [installation] = await trx('shopify_app_installations').insert({
+      shop_id: shopId,
+      shop_domain: `opening-1164-${unique}.myshopify.com`,
+      scopes: 'read_inventory,write_inventory,read_locations',
+    }).returning('id');
+    await trx('shopify_admin_credentials').insert({
+      shop_id: shopId,
+      installation_id: installation.id,
+      access_token_encrypted: encrypt('opening-1164-synthetic-access-no-network'),
+      refresh_token_encrypted: encrypt('opening-1164-synthetic-refresh-no-network'),
+      access_expires_at: new Date(Date.now() + 86400000),
+      refresh_expires_at: new Date(Date.now() + 2592000000),
+      granted_scopes: normalizeAndValidateShopifyGrantedScopes(SHOPIFY_REQUIRED_SCOPE_STRING),
+      credential_state: 'ACTIVE',
+      credential_generation: '1',
+    });
+
     await trx('warehouses').insert({
       warehouse_id: warehouseId,
       shop_id: shopId,
       name: 'Opening 1164 start warehouse',
+      external_location_id: locationId,
       root_location_code: rootCode,
       is_default: true,
       active: true,
@@ -196,6 +234,8 @@ async function createPreStartFixture(): Promise<PreStartFixture> {
       },
     ]);
   });
+
+  mockOpeningSnapshotLocations.add(`gid://shopify/Location/${locationId}`);
 
   return {
     shopId,

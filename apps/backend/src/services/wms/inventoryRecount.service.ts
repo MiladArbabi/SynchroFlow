@@ -1,3 +1,5 @@
+import { lockLocationHierarchy } from '../inventory/locationHierarchy.service.js';
+import { assertRecountLocationsEligible } from '../inventory/locationLifecycleEligibility.service.js';
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
@@ -295,6 +297,7 @@ export async function createRecountTask(
   }
 ): Promise<{ recount_task_id: string; label: string; line_count: number }> {
   const { shopId, scope, createdBy } = params;
+  await lockLocationHierarchy(trx, shopId);
   // RECOUNT-WAREHOUSE-31: resolve before anything else — a label allocated
   // against an unresolvable warehouse burns a sequence number for nothing.
   const warehouseId =
@@ -331,6 +334,16 @@ export async function createRecountTask(
           .whereRaw('pwl.location_code = inventory_truth.location_code')
           .whereIn('pwl.zone_type', RECOUNT_PROTECTED_ZONE_TYPES as unknown as string[]);
       });
+    if (scope === 'full' || scope === 'variant_set') {
+      // Scope broad candidates before validation. Retain inactive locations in
+      // this warehouse so the eligibility assertion still refuses them.
+      q.whereExists(function () {
+        this.select(trx.raw('1')).from('warehouse_locations as wl')
+          .whereRaw('wl.shop_id = inventory_truth.shop_id')
+          .whereRaw('wl.location_code = inventory_truth.location_code')
+          .where('wl.warehouse_id', warehouseId);
+      });
+    }
     if (scope === 'location') {
       if (!params.locationCode) {
         throw new Error('[RECOUNT_CREATE] scope=location requires locationCode');
@@ -389,6 +402,8 @@ export async function createRecountTask(
       `[RECOUNT_CREATE] No lines match scope=${scope} — refusing to create an empty task`
     );
   }
+
+  await assertRecountLocationsEligible(trx, shopId, lines.map(line => line.location_code), warehouseId);
 
   const [task] = await trx('inventory_recount_tasks')
     .insert({
@@ -845,6 +860,7 @@ export async function lockOpeningInventoryStart(
   trx: Knex.Transaction,
   shopId: number
 ): Promise<OpeningInventoryStartGate> {
+  await lockLocationHierarchy(trx, shopId);
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .select(
@@ -1048,6 +1064,8 @@ export async function createOpeningInventoryCohort(
   }
 ): Promise<ShopOpeningInventoryProgress> {
   const { shopId, createdBy, bins } = params;
+  await lockLocationHierarchy(trx, shopId);
+  for (const bin of bins) await assertRecountLocationsEligible(trx, shopId, [bin.location_code], bin.warehouse_id);
   const startedAt = new Date();
 
   for (const bin of bins) {
@@ -1097,6 +1115,7 @@ export async function startOpeningInventoryReconciliation(
 ): Promise<OpeningInventoryProgress> {
   const { shopId, createdBy } = params;
 
+  await lockLocationHierarchy(trx, shopId);
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .select(
@@ -1230,6 +1249,7 @@ export async function addOpeningInventoryRecountLine(
     addedBy,
   } = params;
 
+  await lockLocationHierarchy(trx, shopId);
   const task = await trx('inventory_recount_tasks')
     .where({
       shop_id: shopId,
@@ -1378,6 +1398,7 @@ export async function completeOpeningInventoryBin(
   recountTaskId: string,
   userId: number
 ): Promise<CompleteOpeningInventoryBinResult> {
+  await lockLocationHierarchy(trx, shopId);
   const task = await trx('inventory_recount_tasks')
     .where({
       shop_id: shopId,
@@ -1465,6 +1486,10 @@ export async function completeOpeningInventoryBin(
       preexisting_canonical_signals: 0,
     };
   }
+
+  // A locked committed task is durable replay evidence. Current eligibility
+  // gates new settlement only; tenant, purpose and claimant checks still apply.
+  await assertRecountLocationsEligible(trx, shopId, [String(task.scope_location_code ?? '')]);
 
   if (!['claimed', 'counting'].includes(task.status)) {
     throw new Error(
@@ -2249,9 +2274,11 @@ export async function reviewLine(
 ): Promise<void> {
   const { shopId, recountTaskId, recountLineId, decision, reviewedBy } = params;
 
+  await lockLocationHierarchy(trx, shopId);
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status')
+    .forUpdate()
     .first();
   if (!task) throw new Error(`[RECOUNT_REVIEW] Task not found: ${recountTaskId}`);
   if (task.status !== 'manual_review') {
@@ -2356,6 +2383,7 @@ export async function commitRecount(
   recountTaskId: string,
   userId: number
 ): Promise<{ corrections: number; units: number }> {
+  await lockLocationHierarchy(trx, shopId);
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status')
@@ -2365,6 +2393,10 @@ export async function commitRecount(
   if (task.status !== 'manual_review') {
     throw new Error(`[RECOUNT_COMMIT] Task not committable in status: ${task.status}`);
   }
+
+  const locationCodes: string[] = await trx('inventory_recount_lines')
+    .where({ shop_id: shopId, recount_task_id: recountTaskId }).pluck('location_code');
+  await assertRecountLocationsEligible(trx, shopId, locationCodes);
 
   const superseded = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })

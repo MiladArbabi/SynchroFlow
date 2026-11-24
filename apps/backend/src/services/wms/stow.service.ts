@@ -91,6 +91,13 @@ export async function createStowTask(
     throw new Error('[STOW_CREATE] INBOUND_RECEIVE_LINE_REQUIRED');
   }
 
+  // Destination-bearing callers must coordinate before their workflow locks.
+  // Receive close takes this lock at entry; direct creation has no prior locks.
+  // Destination-less Returns retain their existing lock path until assignment.
+  if (locationCode != null) {
+    await assertStowDestinationEligible(trx, shopId, locationCode);
+  }
+
   const result = await trx('stow_tasks')
     .insert({
       shop_id: shopId,

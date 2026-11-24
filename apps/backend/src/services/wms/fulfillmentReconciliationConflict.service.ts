@@ -1,3 +1,4 @@
+import { lockLocationHierarchy } from '../inventory/locationHierarchy.service.js';
 import type { Knex } from 'knex';
 
 import { createRecountTask }
@@ -180,6 +181,7 @@ export async function requestFulfillmentReconciliationRecount(
    * Once recount_task_id exists, every later request returns that same task
    * instead of dispatching duplicate warehouse work.
    */
+  await lockLocationHierarchy(trx, shopId);
   const conflict = await trx('inventory_reconciliation_conflicts')
     .where({
       shop_id: shopId,

@@ -1,3 +1,4 @@
+import { lockStowDestinationHierarchy } from './stowDestinationEligibility.service.js';
 // apps/backend/src/services/wms/receiveJob.service.ts
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
@@ -874,6 +875,16 @@ export async function closeReceiveJob(
   if (!actualDeliveryDate?.trim()) {
     throw new Error('[RECEIVE_JOB_CLOSE] Actual delivery date is required');
   }
+
+  // Preserve concealed-job semantics before hierarchy's tenant-context check.
+  // This RLS-scoped probe takes no row lock; lockReceiveJob re-reads under locks.
+  const visibleJob = await trx('receive_jobs')
+    .where({ shop_id: shopId, receive_job_id: receiveJobId }).first('receive_job_id');
+  if (!visibleJob) throw receiveError('Receive job not found', 404);
+
+  // Creation later revalidates its saved destination under this same lock.
+  // Coordinate before PO -> job -> line locks, never from beneath them.
+  await lockStowDestinationHierarchy(trx, shopId);
 
   // GH-1245 extends GH-1243's job fence with a shared PO-first lock.
   const { po, job } = await lockReceiveJob(trx, shopId, receiveJobId);

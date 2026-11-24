@@ -1,3 +1,4 @@
+import { assertLocationLifecycleEligible, assertProspectiveParentStowEligible, LocationLifecycleEligibilityError } from '../../services/inventory/locationLifecycleEligibility.service.js';
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
 import type { Knex } from 'knex';
@@ -778,6 +779,9 @@ export async function httpCreateZone(req: Request, res: Response) {
         barcode: barcode?.trim() ?? null,
       });
 
+      await assertLocationLifecycleEligible(trx, shopId, [location_code.trim().toUpperCase()], false);
+      await assertProspectiveParentStowEligible(trx, shopId, parent_location_code?.trim().toUpperCase() ?? null);
+
       // S2B: a new floor object must be inside the warehouse boundary.
       if (type !== 'warehouse') {
         const bounds = await readWarehouseBounds(trx, shopId, resolvedWarehouseId);
@@ -829,6 +833,7 @@ export async function httpCreateZone(req: Request, res: Response) {
     });
     return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
   } catch (err: any) {
+    if (err instanceof LocationLifecycleEligibilityError) return res.status(409).json({ error: err.message });
     if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
     if (err instanceof WarehouseBoundaryError) return res.status(422).json(err.body());
     const integrityError = locationIntegrityError(err);
@@ -1065,6 +1070,9 @@ export async function httpDuplicateZones(req: Request, res: Response) {
           parentCode: source.parent_location_code, barcode: null,
         });
 
+        await assertLocationLifecycleEligible(trx, shopId, [locationCode], false);
+        await assertProspectiveParentStowEligible(trx, shopId, source.parent_location_code);
+
         await trx('warehouse_locations').insert({
           shop_id: shopId,
           warehouse_id: source.warehouse_id,
@@ -1153,6 +1161,7 @@ export async function httpDeleteZones(req: Request, res: Response) {
   try {
     const deleted = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await lockLocationHierarchy(trx, shopId);
 
       const locations = await trx('warehouse_locations')
         .where({ shop_id: shopId })
@@ -1170,6 +1179,8 @@ export async function httpDeleteZones(req: Request, res: Response) {
           409,
         );
       }
+
+      await assertLocationLifecycleEligible(trx, shopId, normalizedCodes, false);
 
       const stocked = await trx('inventory_truth')
         .where({ shop_id: shopId })
@@ -1243,6 +1254,7 @@ export async function httpDeleteZones(req: Request, res: Response) {
       deleted,
     });
   } catch (err: unknown) {
+    if (err instanceof LocationLifecycleEligibilityError) return res.status(409).json({ error: err.message });
     const statusCode =
       err instanceof Error
         ? (err as BulkActionError).statusCode
@@ -1543,12 +1555,19 @@ export async function httpUpdateZone(req: Request, res: Response) {
 
     const current = await trx('warehouse_locations')
       .where({ shop_id: shopId, location_code: locationCode })
-      .select('location_code', 'zone_type', 'type', 'warehouse_id', 'parent_location_code', 'barcode', 'position_x', 'position_y', 'width', 'depth')
+      .select('location_code', 'active', 'zone_type', 'type', 'warehouse_id', 'parent_location_code', 'barcode', 'position_x', 'position_y', 'width', 'depth')
       .forUpdate()
       .first();
 
     if (!current) throw new Error('Zone not found');
     validateGeometry(req.body, current);
+    const identityChanged =
+      (active !== undefined && active !== current.active) ||
+      (barcode !== undefined && (barcode?.trim() ?? null) !== current.barcode) ||
+      (parent_location_code !== undefined && (parent_location_code?.trim() ?? null) !== current.parent_location_code) ||
+      (zone_type !== undefined && (zone_type ?? null) !== current.zone_type);
+    if (identityChanged) await assertLocationLifecycleEligible(trx, shopId, [locationCode]);
+
     if (parent_location_code !== undefined || barcode !== undefined) {
       await validateLocationHierarchy(trx, {
         shopId, warehouseId: current.warehouse_id, locationCode,
@@ -1556,6 +1575,10 @@ export async function httpUpdateZone(req: Request, res: Response) {
           ? parent_location_code?.trim() ?? null : current.parent_location_code,
         barcode: barcode !== undefined ? barcode?.trim() ?? null : current.barcode,
       });
+    }
+
+    if (parent_location_code !== undefined && (parent_location_code?.trim() ?? null) !== current.parent_location_code) {
+      await assertProspectiveParentStowEligible(trx, shopId, parent_location_code?.trim() ?? null);
     }
 
 
@@ -1638,6 +1661,7 @@ export async function httpUpdateZone(req: Request, res: Response) {
 
     return res.json({ success: true });
   } catch (err: any) {
+    if (err instanceof LocationLifecycleEligibilityError) return res.status(409).json({ error: err.message });
     if (err instanceof GeometryValidationError) return res.status(400).json({ error: err.message });
     const integrityError = locationIntegrityError(err);
     if (integrityError) return res.status(409).json({ error: integrityError });
@@ -1668,6 +1692,7 @@ export async function httpDeleteZone(req: Request, res: Response) {
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await lockLocationHierarchy(trx, shopId);
       // Block delete of warehouse root — lifecycle belongs to Settings › Warehouse (ISS-236)
       const location = await trx('warehouse_locations')
         .where({ shop_id: shopId, location_code: locationCode })
@@ -1677,6 +1702,7 @@ export async function httpDeleteZone(req: Request, res: Response) {
       if (location.type === 'warehouse') {
         throw new Error('Cannot delete the warehouse root. Manage warehouses in Settings › Warehouse.');
       }
+      await assertLocationLifecycleEligible(trx, shopId, [String(locationCode)], false);
       // Block delete if bin has stock
       const stock = await trx('inventory_truth')
         .where({ shop_id: shopId, location_code: locationCode })
@@ -1697,6 +1723,7 @@ export async function httpDeleteZone(req: Request, res: Response) {
     console.info('[floor-planning] zone deleted', { shopId, locationCode });
     return res.json({ success: true });
   } catch (err: any) {
+    if (err instanceof LocationLifecycleEligibilityError) return res.status(409).json({ error: err.message });
     if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
     if (err.message?.includes('Cannot delete')) return res.status(409).json({ error: err.message });
     console.error('[floor-planning] httpDeleteZone failed', err);
