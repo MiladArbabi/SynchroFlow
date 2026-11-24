@@ -133,6 +133,7 @@ module.exports = {
       // created by scripts/with-test-db.js (`npm run test:integration`).
       globalSetup: '<rootDir>/tests/setup/backend-integration.global-setup.js',
       testEnvironment: 'node',
+      setupFilesAfterEnv: ['<rootDir>/tests/setup/backend-integration.cleanup.js'],
       // TEST-DB-ISOLATION-11 Slice 2 — runtime-context disposable-DB guard, in
       // addition to globalSetup (orchestration context). backend-integration only.
       setupFiles: [

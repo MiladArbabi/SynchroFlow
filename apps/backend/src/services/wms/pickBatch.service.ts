@@ -1,3 +1,4 @@
+import { lockLocationHierarchy } from '../inventory/locationHierarchy.service.js';
 import { currentFulfillmentSlaSql } from '../orders/fulfillmentSla.service.js';
 // apps/backend/src/services/wms/pickBatch.service.ts
 import { Knex } from 'knex';
@@ -194,6 +195,7 @@ export async function releaseBatch(
    */
   exclusive?: boolean,
 ): Promise<ReleaseBatchResult | null> {
+  await lockLocationHierarchy(trx, shopId);
   // 1. Load WMS settings for this shop
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
