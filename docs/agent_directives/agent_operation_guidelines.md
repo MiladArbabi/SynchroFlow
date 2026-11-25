@@ -1,7 +1,8 @@
 # AGENT OPERATING INSTRUCTIONS — laSyncro
 
-- Aligned with: ENGINEERING WORKFLOW v5.0 (`docs/agent_directives/engineering_workflow.md`)
-- Status: OWNER-APPROVED CHANGES 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001); ratified on owner diff review
+- Aligned with: ENGINEERING WORKFLOW v5.1 (`docs/agent_directives/engineering_workflow.md`)
+- Status: CONSOLIDATED v5.1 — owner-ratified 2026-11-25 (SF-ENGINEERING-WORKFLOW-V5-1-CONSOLIDATE-001). Review-economy amendment owner-approved 2026-11-25 (SF-ENGINEERING-WORKFLOW-V5-1-REVIEW-ECONOMY-001); verification-efficiency rules owner-ratified 2026-11-25 (SF-SCAN-ACT-01-RC01-DEFERRAL-001); v5.0 baseline owner-approved 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001).
+- v5.1 alignment: review routes (REVIEW-ROUTE-01), same-session continuation, verification efficiency and bounded infrastructure troubleshooting (section 0), review-route reporting (section 11)
 - Scope: the execution contract for any agent running a laSyncro brief
 
 The workflow is the single authority. This document applies the workflow to agent execution and does not restate it. Rule IDs below (for example SAFE-05, EXEC-01) refer to the workflow. If the two conflict, follow the workflow and report the conflict under FINDINGS. MUST / MUST NOT / SHOULD / MAY / STOP have the meanings in workflow section 0.
@@ -11,14 +12,17 @@ The workflow is the single authority. This document applies the workflow to agen
 - Every brief sits in one stage of the seven-stage lifecycle (LIFECYCLE-01): **AUDIT → WORKSHOP → IMPLEMENT → REVIEW/VERIFY → RELEASE → HOUSEKEEPING → REPEAT**. Know which stage you are in and do only that stage's work. Certification is the recorded outcome of REVIEW/VERIFY, never a separate stage you add.
 - Apply SIMPLIFY-01:
   - one issue at a time; respect the current issue's boundaries and never expand scope without approval;
-  - verification depth follows the brief's risk tier; prefer targeted tests and existing CI over full runs;
+  - apply TEST-01 and ROUTE-04 when selecting the shortest safe verification approach, manual browser proof and consequential regression automation;
   - reuse valid evidence and previously certified work (EVIDENCE-REUSE-01); never repeat verification of an unchanged contract;
   - produce only the artifacts the brief asks for; no extra status documents or administrative reports;
   - once scope is authorized, continue through the authorized steps without asking for routine re-approval;
-  - classify every new finding as a blocker of the current issue or a separate follow-up; never drift;
+  - apply SIMPLIFY-01 to Shopify App Review and merchant priorities and to separate GitHub tracking of non-blocking improvements;
+  - apply INFRA-REUSE-01 to environment/fixture reuse, the infrastructure troubleshooting timebox and reassessment;
+  - record any deferred verification under CERT-01; deferral is not certification;
   - on failure, return only to the stage the failure invalidates, not to the beginning.
 - **Terminal-first.** Establish Git, environment, test and database truth with terminal commands (TERMINAL-ROUTING-01). Begin every command group with an explicit `cd` into the intended worktree.
 - **Agent and worktree restrictions.** Respect Milad's restrictions on spawning agents and on concurrent worktrees (ROLE-01, ROUTE-02, SOLO-MAIN-01). Never create an agent or worktree that the brief or Milad has not allowed, and never touch another workstream's worktree.
+- **Same-session continuation (REVIEW-ROUTE-01).** Within the authorized scope, continue implementation, correction, tests and self-review in the same session; a correction, including a P1 correction, does not need a new chat. Never spawn an independent reviewer automatically, and never create a worktree merely for verification. Prefer existing targeted test and runtime evidence. Self-review is `SAME_SESSION_VERIFY` and is never described as independent. Independent routes are not cumulative: an applicable earlier independent review is reused, not repeated. STOP when the work reaches a genuinely new safety boundary or unapproved scope, or when the brief's route requires independent review; for a required review, produce compact source-diff evidence (changed files with before/after hashes, the diff, affected contracts and RED/GREEN attribution).
 - **Production deployment** and production migrations always require Milad's explicit authorization for that release (ROLE-01, DEPLOY-01). No delegation, passing CI or roadmap status implies it.
 - Report progress in plain English and end with the two-column roadmap (section 11, REPORT-02).
 
@@ -185,7 +189,7 @@ ATTEMPT: <n>
 
 Then these sections, in order:
 
-- **FINDINGS** — one numbered answer per question, each with its observed result and the minimum proving evidence. Add one concise factual line for any material finding outside the questions.
+- **FINDINGS** — one numbered answer per question, each with its observed result and the minimum proving evidence. Add one concise factual line for any material finding outside the questions. For REVIEW/VERIFY work, include `REVIEW_ROUTE: <SAME_SESSION_VERIFY|REUSE_PRIOR_REVIEW|INDEPENDENT_DELTA|INDEPENDENT_INTEGRATED>` with its justification and the decision that selected it (REVIEW-ROUTE-01).
 - **RAW** — only the verbatim output that supports the findings. Include the decisive failure verbatim and point to the artifact holding the full log. No unrelated logs, and no paraphrased errors.
 - **DEVIATIONS** — every command change, mechanical correction or tool/runner substitution, with its exact reason; otherwise NONE.
 - **BLOCKED** — anything requested that could not be obtained or proved; otherwise NONE.
@@ -201,6 +205,7 @@ When asked to acknowledge these instructions, confirm that you will:
 
 - follow the seven-stage lifecycle and work only in the brief's stage;
 - run one brief at a time and stop at its boundary;
+- continue within the authorized session, report REVIEW_ROUTE, and never open a reviewer session or worktree automatically;
 - end every report with the two-column roadmap and the agreed status icons;
 - never deploy to production without Milad's explicit authorization;
 - treat test strategy as owned by the lead;

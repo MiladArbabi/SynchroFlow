@@ -1,8 +1,9 @@
-# ENGINEERING WORKFLOW v5.0
+# ENGINEERING WORKFLOW v5.1
 
 - Mode: solo-developer, main-first execution
-- Status: OWNER-APPROVED CHANGES 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001); ratified on owner diff review
-- Supersedes: v4.1 (ratified 2026-11-02), which superseded v3.6 and the local v3.7 revision
+- Status: CONSOLIDATED v5.1 — owner-ratified 2026-11-25 (SF-ENGINEERING-WORKFLOW-V5-1-CONSOLIDATE-001). Review-economy amendment owner-approved 2026-11-25 (SF-ENGINEERING-WORKFLOW-V5-1-REVIEW-ECONOMY-001); verification-efficiency rules owner-ratified 2026-11-25 (SF-SCAN-ACT-01-RC01-DEFERRAL-001); v5.0 baseline owner-approved 2026-11-03 (SF-ENGINEERING-WORKFLOW-V5-001).
+- Supersedes: v5.0, which superseded v4.1 (ratified 2026-11-02), v3.6 and the local v3.7 revision
+- v5.1 changes: risk-based review routes (REVIEW-ROUTE-01) with same-session verification for bounded corrections; reduced agent chat/session overhead (GATE-ECONOMY-01, ROUTE-02); review-evidence reuse (EVIDENCE-REUSE-01); proportional verification (TEST-01, ROUTE-04), infrastructure troubleshooting timebox (INFRA-REUSE-01), Shopify App Review delivery priority (SIMPLIFY-01) and explicit verification deferral (CERT-01). All unchanged v5.0 contracts and safety invariants are preserved.
 - v5.0 changes: seven-stage lifecycle (LIFECYCLE-01), simplification rules (SIMPLIFY-01), two-column roadmap (REPORT-02), issue-scope ship delegation (SHIP-DELEGATION-01), release-before-close housekeeping (CLOSE-01)
 - Repository: SynchroFlow
 - Companion: `docs/agent_directives/agent_operation_guidelines.md` (agent execution contract)
@@ -97,7 +98,7 @@ Selection rules:
 - **CONTRACT** — an approved security/business contract (ISSUE-CONTRACT-01). It MAY be inherited unchanged.
 - **EXISTING CONTRACT** — an approved contract, invariant set or certified audit that already satisfies the audit exit condition (FLOW-03); cite it instead of re-auditing.
 - **IMPLEMENT + TARGETED VERIFY** — one brief covering implementation and its targeted verification, delegated under AGENT-CLOSED-LOOP-01.
-- **RISK-BASED REVIEW** — REVIEW-01.
+- **RISK-BASED REVIEW** — REVIEW-01, conducted on the route selected under REVIEW-ROUTE-01.
 - **CERTIFY** — CERT-01.
 - **SHIP** — SHIP-01 through SHIP-04 (with SHIP-DELEGATION-01 when delegated), DOC-01's documentation decision, DEPLOY-01, and production certification at the selected level (CERT-02).
 
@@ -113,6 +114,9 @@ A separate gate or round is justified only when it establishes a material missin
 - no full-repository suite after each correction;
 - no repeated verification of an unchanged contract;
 - no repeated review or certification of an unchanged scope;
+- no automatic new agent chat or session for a correction, including a P1 correction; the authorized session continues (REVIEW-ROUTE-01);
+- no new worktree created merely for verification;
+- no repeated owner approval for work already inside an authorized scope;
 - no standalone documentation-only ship when the update can ride with the next authorized ship.
 
 ## 4. Lifecycle, execution flow and conditional gates
@@ -128,7 +132,7 @@ Every issue moves through one lifecycle:
 | 1. AUDIT | Understand the problem | Examine relevant code and behaviour; identify root cause, risks and dependencies; set a bounded scope; reuse existing evidence (FLOW-03, FLOW-04) | Problem and scope understood |
 | 2. WORKSHOP | Decide how to solve it | Evaluate feasible solutions; choose the simplest safe approach; set acceptance criteria; get owner decisions for material architecture or scope changes. Proportional to complexity; MAY be a one-line SKIP (FLOW-05) | Solution and implementation boundaries set |
 | 3. IMPLEMENT | Build the agreed solution | Scoped changes; targeted tests; necessary technical docs; no unrelated refactoring (IMPL-01, TEST-01) | Implementation complete with relevant local evidence |
-| 4. REVIEW/VERIFY | Prove it is correct | One risk-based review; relevant automated verification; security, tenant isolation, inventory correctness and regression safety where applicable; resolve genuine blockers; reuse valid evidence (VERIFY-01, REVIEW-01). Independent review only when risk justifies it | Required checks pass; no unresolved release blockers |
+| 4. REVIEW/VERIFY | Prove it is correct | One risk-based review; relevant automated verification; security, tenant isolation, inventory correctness and regression safety where applicable; resolve genuine blockers; reuse valid evidence (VERIFY-01, REVIEW-01). Review route per REVIEW-ROUTE-01; independent review only when risk justifies it | Required checks pass; no unresolved release blockers |
 | 5. RELEASE | Deliver safely | Integrate the intended changes; verify the final release SHA and required gates; rehearse migrations when relevant; get production deployment authorization; deploy; verify production (SHIP-01–04, DEPLOY-01, CERT-02) | Intended changes released and production verification successful |
 | 6. HOUSEKEEPING | Close properly | Update docs and roadmap status; record decisions and final evidence; close completed issues/PRs; clean up completed branches when safe; record genuinely necessary follow-ups (DOC-01, CLOSE-01). Not another certification pass | Issue closed; no unresolved work hidden behind a Done label |
 | 7. REPEAT | Move on | Select the next bounded scope from the project roadmap and begin its AUDIT; never restart completed work | Next issue's AUDIT started |
@@ -140,7 +144,7 @@ Every issue moves through one lifecycle:
 
 ### SIMPLIFY-01 — Process overhead rules
 
-1. **One issue at a time.** No unrelated scope expansion (FLOW-02, IMPL-01).
+1. **One issue at a time.** Prioritize Shopify App Review requirements and safe merchant functionality within owner-approved scope; no unrelated scope expansion (FLOW-02, IMPL-01).
 2. **Risk-based verification.** Depth follows actual risk (RISK-TIER-01).
 3. **No duplicate evidence gathering.** Reuse applicable successful tests and reviews (EVIDENCE-REUSE-01).
 4. **No unnecessary approval loops.** After scope authorization, routine implementation, corrections inside the boundary and authorized Git operations proceed without repeated approval (AGENT-CLOSED-LOOP-01, SHIP-DELEGATION-01).
@@ -148,7 +152,7 @@ Every issue moves through one lifecycle:
 6. **No redundant certification phases.** REVIEW/VERIFY owns certification evidence (CERT-01).
 7. **No unnecessary full test runs.** Prefer targeted tests and the applicable automated CI (BUILD-02, TEST-12).
 8. **Release before closing.** Work is complete only after its intended release, unless designated a non-release milestone (CLOSE-01).
-9. **No workflow drift.** Each new finding is either a blocker of the current issue or a separately tracked follow-up.
+9. **No workflow drift.** Each new finding is either a blocker of the current issue or a bounded follow-up tracked separately in GitHub. Non-blocking improvements do not delay the current scope.
 10. **Progress forward.** Failures return only to the relevant earlier stage (LIFECYCLE-01).
 
 GATE-ECONOMY-01 applies these rules gate by gate.
@@ -163,7 +167,7 @@ AUDIT          FLOW-01 MAIN SYNC → FLOW-02 INTAKE → FLOW-03 AUDIT [if no exi
 WORKSHOP       FLOW-05 WORKSHOP [per WORKSHOP_DECISION] → TEST-01 STRATEGY
 IMPLEMENT      IMPLEMENT + TARGETED VERIFY → correction loop [if needed]
 REVIEW/VERIFY  neighbour regression → live/DB/runtime verify [if selected]
-               → REVIEW-01 [HIGH, when required] → CERT-01 recorded [HIGH]
+               → REVIEW-01 on the REVIEW-ROUTE-01 route → CERT-01 recorded [HIGH]
 RELEASE        SHIP (DOC-01 doc decision, ship-lineage, commit, push) → CI/deploy [owner-authorized]
                → production certification
 HOUSEKEEPING   roadmap/status and evidence records → CLOSE-01
@@ -324,7 +328,7 @@ Local development MUST NOT run against a database whose migration ledger differs
 
 ### ROUTE-02 — When to use an agent
 
-Use an agent only when its leverage exceeds the coordination cost: multi-file implementation, complex fixtures, tracing across many files or domains, non-trivial refactors, migration/worker/concurrency analysis, or when reconnaissance plus roughly 2–5 targeted probes cannot answer the question. Agents are precision multipliers, not default scanners. Brief them with the established files, invariants and open questions.
+Use an agent only when its leverage exceeds the coordination cost: multi-file implementation, complex fixtures, tracing across many files or domains, non-trivial refactors, migration/worker/concurrency analysis, or when reconnaissance plus roughly 2–5 targeted probes cannot answer the question. Agents are precision multipliers, not default scanners. Brief them with the established files, invariants and open questions. Within an authorized scope, implementation, corrections, tests and self-review continue in the same session; a separate session is opened only for a selected independent review route (REVIEW-ROUTE-01).
 
 ### ROUTE-03 — Brief format
 
@@ -343,7 +347,7 @@ Use one complete brief per bounded task rather than a chain of small briefs.
 
 ### ROUTE-04 — Live browser
 
-- Milad is the default executor, guided by the lead. A browser agent MAY prove mechanics when delegated; it never replaces Milad's product/UX approval.
+- Milad is the default executor, guided by the lead. Prefer manual browser verification when it supplies the required proof; automate when the selected contract requires repeatable interaction, interception or measured overlap. A browser agent MAY prove mechanics when delegated; it never replaces Milad's product/UX approval.
 - For visual-only acceptance, reuse the already-running localhost and capture screenshots. Do not create accounts, seed fixtures or start runtimes to reproduce a visual state that is already available.
 - Escalate to a dedicated runtime only to prove or safely reach auth/role/tenant gating, state transitions, persistence, backend integration, destructive mutations, isolation from parallel work, or an otherwise unreachable state.
 - Screenshots are visual evidence, not behavioural proof. Behavioural PASS and visual PASS are separate; neither overrides a FAIL in the other.
@@ -414,7 +418,7 @@ Capture a baseline once per issue, or when environment or build state changes. R
 
 ### TEST-01 — Explicit test strategy
 
-Every issue records a test-strategy decision; for LOW/MEDIUM it MAY be inline in the intake or brief. Classify each relevant layer REQUIRED / OPTIONAL / SKIP: UNIT, API INTEGRATION, DB INVARIANT, MIGRATION, WORKER/OUTBOX, CONCURRENCY, PLAYWRIGHT, ARCHITECTURE/STATIC, LIVE BROWSER, PROVIDER E2E. Select a production certification level (CERT-02).
+Every issue records a test-strategy decision; for LOW/MEDIUM it MAY be inline in the intake or brief. Select the shortest safe approach that proves the approved contract, preserving all mandatory safety invariants. Prioritize automation for consequential regression contracts (including authorization, tenant isolation, inventory truth, replay and concurrency). Classify each relevant layer REQUIRED / OPTIONAL / SKIP: UNIT, API INTEGRATION, DB INVARIANT, MIGRATION, WORKER/OUTBOX, CONCURRENCY, PLAYWRIGHT, ARCHITECTURE/STATIC, LIVE BROWSER, PROVIDER E2E. Select a production certification level (CERT-02).
 
 Every issue ends with exactly one completion state:
 
@@ -521,9 +525,11 @@ Reuse GREEN evidence only when all of these hold:
 
 Invalidate only the affected layers. Documentation-only changes do not invalidate PostgreSQL, migration or concurrency proofs. Security or migration changes require renewed proofs for the affected authority. Timestamps never establish same-source evidence. Inspect existing logs and structured results before any rerun.
 
+An accepted review is reusable evidence under the same conditions: when the reviewed source and contract hashes are unchanged, the review is not repeated (REUSE_PRIOR_REVIEW, REVIEW-ROUTE-01). Only the changed delta and the contracts it affects are re-reviewed.
+
 ### INFRA-REUSE-01 — Infrastructure reuse first
 
-Reuse the existing harnesses, runners and CI jobs before proposing infrastructure. Where safe local execution is unavailable, extend an existing CI step and DB lifecycle. Provision new runners, databases or dependencies only when the proof is otherwise unobtainable and Milad approves. CI evidence counts only when it is attributable to the exact reviewed revision; until then CI-dependent results are PENDING. A required branch push first needs SHIP-DELEGATION-01 authorization.
+Prefer existing safe environments, fixtures, harnesses, runners, CI jobs and reusable evidence before proposing infrastructure (EVIDENCE-REUSE-01). Timebox infrastructure troubleshooting to 15–20 minutes, then stop troubleshooting and report the blocker for lead/owner reassessment of the verification approach. Keep product issues bounded; do not turn them into infrastructure projects. Track non-blocking environment improvements separately in GitHub under SIMPLIFY-01. Where safe local execution is unavailable, prefer an existing CI step and DB lifecycle. Provision new runners, databases or dependencies only when the proof is otherwise unobtainable and Milad approves. CI evidence counts only when it is attributable to the exact reviewed revision; until then CI-dependent results are PENDING. A required branch push first needs SHIP-DELEGATION-01 authorization.
 
 ### VERIFY-01 — Three verification questions
 
@@ -624,7 +630,7 @@ An approved brief (`MODE: CLOSED_LOOP_IMPLEMENT_AND_VERIFY`, or an explicitly eq
 - material unexpected behaviour appears;
 - the budget is exhausted.
 
-Agent-owned verification is preliminary evidence; review, certification and ship decisions stay with the lead and owner.
+Agent-owned verification is preliminary evidence; review, certification and ship decisions stay with the lead and owner. The implementing session's tests and self-review form a SAME_SESSION_VERIFY record (REVIEW-ROUTE-01); they are never described as independent review.
 
 ### CI-TRIAGE-01 — Classify before changing source
 
@@ -697,9 +703,31 @@ Inspect read-only first; scope narrowly by tenant and predicate; never guess sch
 ### REVIEW-01 — Proportional independent review
 
 - RISK-BASED REVIEW: the lead reviews HIGH evidence against the contract.
-- Exactly one genuinely independent review (a separate reviewer or agent session, or Milad) is required when a material security/authorization boundary, migration authority or irreversible data invariant cannot be certified from the implementing agent's evidence alone. LOW/MEDIUM work requires none.
+- A genuinely independent review (a separate reviewer or agent session, or Milad) is required when a material security/authorization boundary, migration authority or irreversible data invariant cannot be certified from the implementing agent's evidence alone. LOW/MEDIUM work requires none. The route is selected under REVIEW-ROUTE-01.
 - Independence means a separate session that re-derives conclusions from source and evidence. The reviewer is read-only.
-- Re-review is proportional to the change. A correction that alters behaviour inside a reviewed safety boundary is reviewed as a delta (changed source plus its affected contracts), not as a new full audit. Purely mechanical corrections (harness, fixture mechanics, evidence completion) are confirmed by the lead from evidence without another review round.
+- Re-review is proportional to the change and never automatically cumulative (REVIEW-ROUTE-01). A correction that alters behaviour inside a reviewed safety boundary is verified as a delta (changed source plus its affected contracts), not as a new full audit; it needs another independent session only when existing independent evidence plus same-session verification cannot adequately certify a newly changed material safety boundary. Purely mechanical corrections (harness, fixture mechanics, evidence completion) are confirmed by the lead from evidence without another review round.
+
+### REVIEW-ROUTE-01 — Risk-based review routes
+
+Every REVIEW/VERIFY step uses exactly one route. A documented lead or owner decision selects it, records a one-line justification, and the report states it as `REVIEW_ROUTE`.
+
+| Route | Use | Who reviews | Scope |
+|---|---|---|---|
+| `SAME_SESSION_VERIFY` | **Default** for LOW/MEDIUM changes and for bounded corrections whose material safety boundaries remain unchanged | The implementing session: it tests, self-reviews, records evidence and reports in the same chat | The change and its affected contracts |
+| `REUSE_PRIOR_REVIEW` | Previously accepted source and contract evidence is unchanged (EVIDENCE-REUSE-01) | Nobody; cite the accepted review and its hashes | None; the review is not repeated |
+| `INDEPENDENT_DELTA` | The changed delta materially affects a consequential security, authorization, inventory, billing, migration or concurrency guarantee, and existing independent evidence plus same-session verification cannot adequately certify it | A separate read-only session or Milad | The affected source and contracts only, never the whole project |
+| `INDEPENDENT_INTEGRATED` | A HIGH-risk milestone whose integrated consequential behaviour needs independent certification | One consolidated separate read-only session or Milad | The integrated milestone, reusing prior accepted evidence |
+
+Rules:
+
+- Severity alone does not choose the route. A P1 is corrected in the authorized session under `SAME_SESSION_VERIFY` unless the correction changes a consequential guarantee listed for `INDEPENDENT_DELTA`. Actual risk, the guarantees the change affects, and evidence sufficiency decide.
+- No new agent chat or session is opened automatically for a correction or a review. An independent route runs only when the route decision selects it.
+- `SAME_SESSION_VERIFY` is never called independent and never satisfies a review that REVIEW-01 requires to be independent. Self-review does not replace a genuinely required separate review.
+- Re-review covers only the affected delta. Accepted evidence for unchanged source is reused (`REUSE_PRIOR_REVIEW`).
+- `INDEPENDENT_DELTA` and `INDEPENDENT_INTEGRATED` are not automatically cumulative gates. An earlier independent review is reused while its source, contract and evidence remain applicable. Another independent session is required only when a newly changed material safety boundary cannot be adequately certified through existing independent evidence plus `SAME_SESSION_VERIFY`; a correction made after an independent review does not by itself trigger a further one.
+- Skipping an independent review that REVIEW-01 would otherwise require needs an explicit workflow exception under EXCEPT-01.
+- A required independent review receives compact source-diff evidence: changed files with before/after hashes, the diff, the affected contracts, and RED/GREEN attribution.
+- Routes change who reviews, not what is proven. Section 2 (SAFE-01 to SAFE-12), migration (VERIFY-04), production mutation and deployment (DEPLOY-01, SHIP-07), owner-controlled certification (CERT-01, CERT-02), the three-cycle correction budget (AGENT-CLOSED-LOOP-01), exact-source test attribution and evidence integrity (EVIDENCE-PERSISTENCE-01, EVIDENCE-REUSE-01) apply on every route.
 
 ### CERT-01 — One certification decision per scope
 
@@ -707,6 +735,7 @@ Inspect read-only first; scope narrowly by tenant and predicate; never guess sch
 - Component certification and milestone certification are distinct: certifying a component (for example, one recovery path) never certifies the milestone or sprint that contains it, and milestone certification requires its own decision over its integrated evidence.
 - One certification decision is made per scope. Unchanged certified scope is not re-certified. A later change re-opens only the affected scope, and only when EVIDENCE-REUSE-01 fails for it.
 - Certification claims describe exactly the journey and state tested: component GREEN does not prove the full merchant journey, fresh install does not prove reinstall after credential expiry, and mocked provider acceptance is not live acceptance. Require further proof only when the missing scenario is consequential and inside the approved contract.
+- Deferred verification is not certification: record the unproved scenarios, evidence limits and remaining release or feature-enablement blockers in the issue and its bounded follow-up. A deferral never waives mandatory safety invariants or grants enablement, release or deployment authority.
 - Tested is not certified, and certified is not shipped.
 
 ### CERT-02 — Production certification levels
@@ -743,6 +772,7 @@ Then: ISSUE CLOSED → REPEAT (next issue). Deferred consequential work carries 
 - Agent reports use one four-backtick block starting with RUN_ID and ATTEMPT, then FINDINGS, RAW, DEVIATIONS, BLOCKED, NOT COMPLETED, STATE_MUTATED and ROADMAP POSITION.
 - NOT COMPLETED lists every unfinished directive as `ITEM / STATUS (NOT_STARTED|PARTIAL|FAILED|SKIPPED) / REASON / TO_RESUME`, including dependent verification not run. It is distinct from BLOCKED, which names obstacles. NONE only when everything was completed and evidenced.
 - The lead reconciles NOT COMPLETED against the brief before authorizing the next phase; an explicitly deferred item stays visible until its disposition is decided.
+- Reports from REVIEW/VERIFY work state `REVIEW_ROUTE` and its justification (REVIEW-ROUTE-01).
 - Keep reports concise: verdict, baseline, manifest, evidence path and checksum, GREEN/RED results, deviations, blockers, unfinished obligations, mutated state and roadmap. Raw logs live in evidence artifacts. Do not repeat unchanged background.
 
 ### REPORT-02 — Two-column roadmap (ROADMAP-PLAIN-ENGLISH-01)
