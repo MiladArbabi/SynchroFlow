@@ -6788,6 +6788,37 @@ export const httpQuarantineProblemBin = async (req: Request, res: Response) => {
     quarantineReason: body.reason }));
 };
 
+// SCAN-ACT-01 RC-01 (#1328) — authoritative Free Scan quarantine outcome read.
+// Not gated by PROBLEM_BIN_QUARANTINE_ENABLED: the flag governs new writes,
+// never recovery of an already-committed receipt. Read-only transaction on the
+// restricted role; RLS plus explicit shop/actor/context predicates mean another
+// actor's, another tenant's, an uncommitted and an unknown operation are all
+// indistinguishable 'unresolved'. Absence is never reported as not-committed,
+// and a read failure is a 500, never 'unresolved'.
+export const httpGetProblemBinOperationOutcome = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const deviceEventId = String(req.params.deviceEventId);
+  if (!UUID_RE.test(deviceEventId)) return res.status(400).json({ error: 'A valid operation ID is required.' });
+  try {
+    const row = await db.transaction<{ operator_id: number; result: unknown } | undefined>(async (trx) => {
+      await trx.raw('SET TRANSACTION READ ONLY');
+      await trx.raw("SELECT set_config('app.current_tenant', ?, true)", [String(shopId)]);
+      const found: any = await trx('problem_bin_custody_events')
+        .where({ shop_id: shopId, device_event_id: deviceEventId, operator_id: userId, context_kind: 'free_scan' })
+        .first('operator_id', 'result');
+      return found as { operator_id: number; result: unknown } | undefined;
+    });
+    if (!row) return res.status(200).json({ status: 'unresolved', operation_identity: deviceEventId });
+    return res.status(200).json({ status: 'recorded', operation_identity: deviceEventId,
+      operator_id: row.operator_id, result: row.result });
+  } catch (error: any) {
+    console.error('[PROBLEM_BIN_OUTCOME_READ_FAILED]', { shopId, deviceEventId, error: error?.message });
+    return res.status(500).json({ error: 'Unable to confirm this operation right now. Do not repeat it; check again shortly.' });
+  }
+};
+
 /** Stow adapter: same authorization as ordinary placement. */
 export const httpQuarantineStow = async (req: Request, res: Response) => {
   if (!isProblemBinQuarantineEnabled()) return res.status(409).json(PROBLEM_BIN_DISABLED);
