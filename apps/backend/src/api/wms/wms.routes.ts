@@ -40,6 +40,7 @@ import {
   httpGetProblemBinStatus,
   httpResolveProblemBin,
   httpQuarantineProblemBin,
+  httpGetProblemBinOperationOutcome,
   httpGetStowTaskPlacements,
   httpAssignStowTask,
   httpAssignStowLocation,
@@ -429,6 +430,10 @@ router.get('/problem-bin/resolve', authenticateToken, requireFt2,
   requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpResolveProblemBin);
 router.post('/problem-bin/quarantine', authenticateToken, requireFt2,
   requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpQuarantineProblemBin);
+// SCAN-ACT-01 RC-01 (#1328) — read-only outcome of the caller's own Free Scan
+// quarantine; available regardless of the write flag.
+router.get('/problem-bin/operations/:deviceEventId/outcome', authenticateToken, requireFt2,
+  requireCapability('warehouse.operations'), requireAction('wms:exception:report'), httpGetProblemBinOperationOutcome);
 // Stow adapter: task accounting with ordinary placement authorization.
 router.post('/stow-tasks/:taskId/quarantine', authenticateToken, requireFt2,
   requireCapability('warehouse.operations'), requireAction('wms:stow:confirm'), httpQuarantineStow);
